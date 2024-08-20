@@ -1,0 +1,6 @@
+RewriteEngine On
+RewriteBase /payroll/setting
+RewriteRule ^/payroll/setting/index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /payroll/setting/index.php [L]
