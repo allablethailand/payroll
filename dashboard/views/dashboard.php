@@ -37,11 +37,19 @@
 <script src="lib/js/dashboard.js?v=<?php echo time();?>"></script>
 </head>
 <body>
-<input type="hidden" id="pages" value="payroll">
 <div class="container-fluid">
     <?php require_once '../../include_header.php'; ?>
     <div class="row">
-        <div class="col-sm-12">
+        <div class="col-sm-6 col-sm-offset-3">
+            <img src="/payroll/images/background.jpg" alt="" class="img-responsive">
+            <h1 class="text-center">Origami Payroll</h1>
+        </div>
+    </div>
+</div>
+<div class="modal fade permissionModal" role="dialog" data-backdrop="static" data-keyboard="false">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-body"></div>
         </div>
     </div>
 </div>

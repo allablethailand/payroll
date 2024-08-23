@@ -1,0 +1,28 @@
+:where(.input-field) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.input-field {
+    flex-direction: row;
+    column-gap: 10px;
+}
+.input-field input {
+    height: 45px;
+    width: 42px;
+    border-radius: 6px;
+    outline: none;
+    font-size: 1.125rem;
+    text-align: center;
+    border: 1px solid #ddd;
+}
+.input-field input:focus {
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+}
+.input-field input::-webkit-inner-spin-button,.input-field input::-webkit-outer-spin-button {
+    display: none;
+}
+.btn {
+    font-size: 12px;
+}

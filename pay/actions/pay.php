@@ -22,68 +22,6 @@
 	$filesystem_type = $fsData['fs_type'];
 	$fs_id = $fsData['fs_id'];
 	setBucket($fsData);
-    if($_POST['action'] == 'permissionControl') {
-        $columnEmail = "email";
-        $tableEmail = "m_employee";
-        $whereEmail = "where emp_id = '{$_SESSION['emp_id']}'";
-        $Email = select_data($columnEmail,$tableEmail,$whereEmail);
-        $email = $Email[0]['email'];
-        $columnData = "special_permission";
-        $tableData = "payroll_permission";
-        $whereData = "where comp_id = '{$_SESSION['comp_id']}' and emp_id = '{$_SESSION['emp_id']}' and status = 0";
-        $Data = select_data($columnData,$tableData,$whereData);
-        $count_data = count($Data);
-        if($count_data > 0) {
-            $special_permission = $Data[0]['special_permission'];
-            if($special_permission == 'Y') {
-                $status = 'Y';
-            } else {
-                if(empty($_SESSION['permission_flag'])) {
-                    // ยังไม่ได้มีการ Verify ส่ง Email แจ้งรหัส
-                    $permission_key = generateKey();
-                    $_SESSION['permission_flag'] = 'N';
-                    $_SESSION['permission_key'] = $permission_key;
-                    $status = 'N';
-                    sendEmail($email,$_SESSION['permission_key']);
-                } else {
-                    if($_SESSION['permission_flag'] == 'N') {
-                        // ส่ง Email แจ้งรหัสแล้ว บังคับให้ใส่รหัส 
-                        $status = 'N';
-                    } else {
-                        // เข้าใช้งานได้เลย 
-                        $status = 'Y';
-                    }
-                }
-            }
-        } else {
-            $status = 'E';
-            unset($_SESSION['permission_flag']);
-            unset($_SESSION['permission_key']);
-        }
-        echo json_encode([
-            'status' => $status,
-            'permission_key' => $_SESSION['permission_key'],
-            'email' => $email
-        ]);
-    }
-    if($_POST['action'] == 'checkPassCode') {
-        $passCode = $_POST['passCode'];
-        if($passCode == $_SESSION['permission_key']) {
-            $_SESSION['permission_flag'] = 'Y';
-            echo json_encode(['status' => true]);
-        } else {
-            echo json_encode(['status' => false]);
-        }
-    }
-    if($_POST['action'] == 'resendPasscode') {
-        $columnEmail = "email";
-        $tableEmail = "m_employee";
-        $whereEmail = "where emp_id = '{$_SESSION['emp_id']}'";
-        $Email = select_data($columnEmail,$tableEmail,$whereEmail);
-        $email = $Email[0]['email'];
-        sendEmail($email,$_SESSION['permission_key']);
-        echo json_encode(['status' => true]);
-    }
     if($_POST['action'] == 'buildPay') {
         $filter_date = $_POST['filter_date'];
         $filter_department = $_POST['filter_department'];
@@ -632,7 +570,7 @@
                             $total_time = $Late[0]['total_time'];
                             $data[] = ($total_time) ? $total_time : 0;
                         } else if($deduction_module == 'work') {
-                            $columnLeave = "sum((abs_request_form.request_total_time*60)) as total_time";
+                            $columnLeave = "sum(abs_request_form.request_total_time) as total_time";
                             $tableLeave = "abs_request_form";
                             $whereLeave = "left join 
                                             abs_request_approve on abs_request_approve.request_id = abs_request_form.request_id 
@@ -1341,16 +1279,9 @@
     function getFormatDate($data) {
         return substr($data,-4).'-'.substr($data,3,2).'-'.substr($data,0,2);
     }
-    function generateKey() {
-        $six_digit_random_number = mt_rand(100000, 999999);
-        return $six_digit_random_number;
-    }
     function generateMcKey() {
         $six_digit_random_number = mt_rand(1, 9);
         return $six_digit_random_number;
-    }
-    function sendEmail($email,$permission_key) {
-        return true;
     }
     function mc_encrypt($encrypt, $mc_key) {	
         $iv = mcrypt_create_iv(mcrypt_get_iv_size(MCRYPT_RIJNDAEL_256, MCRYPT_MODE_ECB), MCRYPT_RAND);

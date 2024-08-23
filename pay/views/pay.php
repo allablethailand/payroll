@@ -87,7 +87,7 @@
                     <button type="button" class="btn btn-red" onclick="approveGroup('N');"><i class="fas fa-times"></i> <span lang="en">Not Approve</span></button> 
                     <button type="button" class="btn btn-orange" onclick="approveGroup('I');"><i class="fas fa-info"></i> <span lang="en">Need Information</span></button> 
                 </div>
-                <table id="tb_pay" class="table table-border hidden">
+                <table id="tb_pay" class="table table-border">
                     <thead>
                         <tr>
                             <th>
@@ -109,13 +109,6 @@
                     <tbody></tbody>
                 </table>
             </div>
-        </div>
-    </div>
-</div>
-<div class="modal fade permissionModal" role="dialog" data-backdrop="static" data-keyboard="false">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-body"></div>
         </div>
     </div>
 </div>
