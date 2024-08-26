@@ -221,3 +221,21 @@ table.table-slider th {
 .font-12 {
     font-size: 12px;
 }
+.avatar-sm{
+	width: 35px;
+	height: 35px;
+	border-radius: 35px;
+	position: relative;
+	border:1px solid #DDDDDD;
+	background-color: #FFFFFF;
+	overflow: hidden;
+  margin: 0 auto;
+}
+.avatar-sm img {
+	position: absolute;
+	max-width: 35px;
+	height: auto;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%,-50%);
+}

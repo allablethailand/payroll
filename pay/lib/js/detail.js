@@ -23,20 +23,6 @@ $(document).ready(function() {
         }
         buildEmployeeTable();
     });
-    $("#income_all").click(function() {
-        if($(this).is(":checked")) {
-            $(".income_id").prop("checked",true);
-        } else {
-            $(".income_id").prop("checked",false);
-        }
-    });
-    $("#deduction_all").click(function() {
-        if($(this).is(":checked")) {
-            $(".deduction_id").prop("checked",true);
-        } else {
-            $(".deduction_id").prop("checked",false);
-        }
-    });
     buildPage(pages);
 });
 var payroll_status = 0;
@@ -139,6 +125,20 @@ function buildPage(pages) {
                 changeMonth: true
             });	
             buildFormFromID();
+            $("#income_all").click(function() {
+                if($(this).is(":checked")) {
+                    $(".income_id").prop("checked",true);
+                } else {
+                    $(".income_id").prop("checked",false);
+                }
+            });
+            $("#deduction_all").click(function() {
+                if($(this).is(":checked")) {
+                    $(".deduction_id").prop("checked",true);
+                } else {
+                    $(".deduction_id").prop("checked",false);
+                }
+            });
         break;
         case 'payroll':
             $(".tab-content").html(table_template);
@@ -436,7 +436,7 @@ function viewDeduction(deduction_module,emp_ids) {
                             var late_time = (ownerList[j]["late"]) ? (trClass != "") ? '<span class="badge badge2 '+trClass+'">'+ownerList[j]["late"]+'</span>' : '<span style="color:red;">'+ownerList[j]["late"]+'</span>' : '';
                             var early_time = (ownerList[j]["early"]) ? (trClass != "") ? '<span class="badge badge2 '+trClass+'">'+ownerList[j]["early"]+'</span>' : '<span style="color:red;">'+ownerList[j]["early"]+'</span>' : '';
                             var over_time = (ownerList[j]["over_time"]) ? (trClass != "") ? '<span class="badge badge2 '+trClass+'">'+ownerList[j]["over_time"]+'</span>' : '<span style="color:green;">'+ownerList[j]["over_time"]+'</span>' : '';
-                            var balance = (ownerList[j]["balance"]) ? (trClass != "") ? '<span class="badge badge2 '+trClass+'">'+ownerList[j]["balance"]+' <a onclick="viewStampHistory('+date_select+','+emp_id+')"><i class="fas fa-info-circle"></i></a>'+'</span>' : ownerList[j]["balance"]+' <a onclick="viewStampHistory('+date_select+','+emp_id+')"><i class="fas fa-info-circle"></i></a>' : '';
+                            var balance = (ownerList[j]["balance"]) ? (trClass != "") ? '<span class="badge badge2 '+trClass+'">'+ownerList[j]["balance"]+'</span>' : ownerList[j]["balance"] : '';
                             html += `
                                     <tr>
                                         ${(j == 0) ? `
@@ -444,7 +444,7 @@ function viewDeduction(deduction_module,emp_ids) {
                                         ` : ``}
                                         <td class="text-center ${weekendClass} ${trClass}">
                                             <div class="avatar-sm">
-                                                <img width="35" id="avatar_h" name="avatar_h" title="Administrator" src="/${empPic}" onerror="this.src='/images/default.png'">
+                                                <img width="35" id="avatar_h" name="avatar_h" title="Administrator" src="${empPic}" onerror="this.src='/images/default.png'">
                                             </div>
                                             <p class="font-12">${attendance}</p>
                                         </td>
@@ -797,18 +797,21 @@ function buildFormFromID() {
 		success: function(result){
             $("#form-payroll #payroll_id").val(payroll_id);
             var payroll_data = result.payroll_data;
-            var round_start = payroll_data.round_start;
-            var round_end = payroll_data.round_end;
-            var paid_day = payroll_data.paid_day;
-            var emp_delete = payroll_data.emp_delete;
-            var remark = payroll_data.remark;
             var department_data = result.department_data;
             var data_income = result.data_income;
             var data_deduction = result.data_deduction;
-            $("#start_date").val(round_start);
-            $("#end_date").val(round_end);
-            $("#payment_date").val(paid_day);
-            $("#remark").val(remark);
+            if(payroll_data) {
+                var remark = payroll_data.remark;
+                var emp_delete = payroll_data.emp_delete;
+                var round_start = payroll_data.round_start;
+                var round_end = payroll_data.round_end;
+                var paid_day = payroll_data.paid_day;
+                $("#start_date").val(round_start);
+                $("#end_date").val(round_end);
+                $("#payment_date").val(paid_day);
+                $("#remark").val(remark);
+                $("#emp_delete").val(emp_delete);
+            }
             var i_dept = 0;
             while(i_dept < department_data.length) {
                 $("#dept_id"+department_data[i_dept]).prop("checked",true);
@@ -824,7 +827,6 @@ function buildFormFromID() {
                 $("#deduction_id"+data_deduction[i_deduction]).prop("checked",true);
                 ++i_deduction;
             }
-            $("#emp_delete").val(emp_delete);
             buildEmployeeTable();
         }
     });
