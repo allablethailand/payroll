@@ -380,6 +380,7 @@
             update_data($tableUpdData,$valueUpdData,$whereUpdData);
         } else {
             $mc_key = generateMcKey();
+            $iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length('aes-256-cbc'));
             $tableInsData = "payroll_form";
             $columnInsData = "(
                 comp_id,
@@ -398,7 +399,8 @@
                 emp_modify,
                 date_modify,
                 emp_count,
-                mc_key
+                mc_key,
+                iv_key
             )";
             $valueInsData = "(
                 '{$_SESSION['comp_id']}',
@@ -417,7 +419,8 @@
                 '{$_SESSION['emp_id']}',
                 NOW(),
                 '{$count_emp}',
-                '{$mc_key}'
+                '{$mc_key}',
+                '{$iv}'
             )";
             $payroll_id = insert_data($tableInsData,$columnInsData,$valueInsData);
         }   
@@ -481,11 +484,12 @@
     }
     if($_POST['action'] == 'buildPayrollTable') {
         $payroll_id = $_POST['payroll_id'];
-        $columnMcKey = "mc_key";
+        $columnMcKey = "mc_key,iv_key";
         $tableMcKey = "payroll_form";
         $whereMcKey = "where form_id = '{$payroll_id}'";
         $McKey = select_data($columnMcKey,$tableMcKey,$whereMcKey);
         $mc_key = $McKey[0]['mc_key'];
+        $iv_key = $McKey[0]['iv_key'];
         $columnDate = "round_start,round_end";
         $tableDate = "payroll_form";
         $whereDate = "where form_id = '{$payroll_id}'";
@@ -532,13 +536,17 @@
             $emp_id = $Emp[$i_emp]['emp_id'];
             $data_income = explode(',',$Emp[$i_emp]['data_income']);
             $data_deduction = explode(',',$Emp[$i_emp]['data_deduction']);
-            $amount = explode(',',$Emp[$i_emp]['amount']);
-            $amountLen = decryptData($amount[0],$mc_key);
-            $amount_number = '';
-            $i = 1;
-            while($i <= $amountLen) {
-                $amount_number .= decryptData($amount[$i],$mc_key);
-                ++$i;
+            if($Emp[$i_emp]['amount']) {
+                $amount = explode(',',$Emp[$i_emp]['amount']);
+                $amountLen = decrypt($amount[0],$mc_key,$iv_key);
+                $amount_number = '';
+                $i = 1;
+                while($i <= $amountLen) {
+                    $amount_number .= decrypt($amount[$i],$mc_key,$iv_key);
+                    ++$i;
+                }
+            } else {
+                $amount_number = 0;
             }
             $base_salary = 0;
             $amount_number = ($amount_number) ? $amount_number : 0;
@@ -546,9 +554,9 @@
             $data = [];
             $i_income = 0;
             while($i_income < $count_income) {
-                $data[] = (!empty($data_income[$i_income])) ? decryptData($data_income[$i_income],$mc_key) : 0;
+                $data[] = (!empty($data_income[$i_income])) ? decrypt($data_income[$i_income],$mc_key,$iv_key) : 0;
                 if($Income[$i_income]['income_default'] == "Y") {
-                    $base_salary = (!empty($data_income[$i_income])) ? decryptData($data_income[$i_income],$mc_key) : 0;
+                    $base_salary = (!empty($data_income[$i_income])) ? decrypt($data_income[$i_income],$mc_key,$iv_key) : 0;
                 } else {
                     $base_salary = 0;
                 }
@@ -559,7 +567,7 @@
                 $deduction_flag = $Deduction[$i_deduction]['deduction_flag'];
                 $deduction_module = $Deduction[$i_deduction]['deduction_module'];
                 if(!empty($data_deduction[$i_deduction])) {
-                    $data[] = decryptData($data_deduction[$i_deduction],$mc_key);
+                    $data[] = decrypt($data_deduction[$i_deduction],$mc_key);
                 } else {
                     if($deduction_flag == 'O') {
                         if($deduction_module == 'time') {
@@ -612,11 +620,12 @@
     }
     if($_POST['action'] == 'saveMoney') {
         $payroll_id = $_POST['payroll_id'];
-        $columnMcKey = "mc_key";
+        $columnMcKey = "mc_key,iv_key";
         $tableMcKey = "payroll_form";
         $whereMcKey = "where form_id = '{$payroll_id}'";
         $McKey = select_data($columnMcKey,$tableMcKey,$whereMcKey);
         $mc_key = $McKey[0]['mc_key'];
+        $iv_key = $McKey[0]['iv_key'];
         $emp_id = $_POST['emp_id'];
         $money_data = $_POST['money_data'];
         $money_type_data = $_POST['money_type_data'];
@@ -628,7 +637,7 @@
         while($i < count($money_data)) {
             $money_type = $money_type_data[$i];
             $money_real = str_replace(',','',$money_data[$i]);
-            $money = mc_encrypt($money_real,$mc_key);
+            $money = encrypt($money_real,$mc_key,$iv_key);
             if($money_type == 'income') {
                 $income_data[] = $money;
                 $sumIncome = $sumIncome+$money_real;
@@ -645,12 +654,12 @@
         $amount = str_replace(',','',$amount);
         $amount_length = strlen($amount);
         $amount_data = [];
-        $amount_first = mc_encrypt($amount_length,$mc_key);
+        $amount_first = encrypt($amount_length,$mc_key,$iv_key);
         $amount_data[] = $amount_first;
         $i = 0;
         while($i < $amount_length) {
             $pos = substr($amount,$i,1);
-            $amount_data[] =  mc_encrypt($pos,$mc_key);
+            $amount_data[] =  encrypt($pos,$mc_key,$iv_key);
             ++$i;
         }
         $amount_save = escape_string(implode(',',$amount_data));
@@ -856,7 +865,7 @@
         $round_start = $Payroll[0]['round_start'];
         $round_end = $Payroll[0]['round_end'];
         if($deduction_module == 'time') {
-            $owner = $emp_id;
+            $owner = explode(',',$emp_id);
             $data_st = $round_start;
             $data_ed = $round_end;
             $dayList = createDateRangeArray($data_st,$data_ed);
@@ -1280,22 +1289,15 @@
         return substr($data,-4).'-'.substr($data,3,2).'-'.substr($data,0,2);
     }
     function generateMcKey() {
-        $six_digit_random_number = mt_rand(1, 9);
-        return $six_digit_random_number;
+        $key = bin2hex(openssl_random_pseudo_bytes(16));
+        return $key;
     }
-    function mc_encrypt($encrypt, $mc_key) {	
-        $iv = mcrypt_create_iv(mcrypt_get_iv_size(MCRYPT_RIJNDAEL_256, MCRYPT_MODE_ECB), MCRYPT_RAND);
-        $passcrypt = trim(mcrypt_encrypt(MCRYPT_RIJNDAEL_256, $mc_key, trim($encrypt), MCRYPT_MODE_ECB, $iv));
-        $encode = base64_encode($passcrypt);
-        return $encode;
+    function encrypt($number,$key,$iv) {
+        $encrypted = openssl_encrypt($number, 'aes-256-cbc', $key, 0, $iv);
+        return $encrypted;
     }
-    function mc_decrypt($decrypt, $mc_key) {
-        $decoded = base64_decode($decrypt);
-        $iv = mcrypt_create_iv(mcrypt_get_iv_size(MCRYPT_RIJNDAEL_256, MCRYPT_MODE_ECB), MCRYPT_RAND);
-        $decrypted = trim(mcrypt_decrypt(MCRYPT_RIJNDAEL_256, $mc_key, trim($decoded), MCRYPT_MODE_ECB, $iv));
+    function decrypt($number,$key,$iv) {
+        $decrypted = openssl_decrypt($number, 'aes-256-cbc', $key, 0, $iv);
         return $decrypted;
-    }
-    function decryptData($money,$mc_key) {
-        return mc_decrypt($money,$mc_key);
     }
 ?>
