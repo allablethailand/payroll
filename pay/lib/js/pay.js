@@ -79,14 +79,6 @@ $(document).ready(function() {
 		$(this).val(dt);
         buildPay();
 	});
-    $(".toggleFilter").click(function(){
-		$(".filter").toggleClass("active");
-		if($(".filter").hasClass("active")) {
-			$(".toggleFilter").html('<i class="fas fa-times"></i>');
-		} else {
-			$(".toggleFilter").html('<i class="fas fa-sliders-h"></i>');
-		}
-	});
     buildDepartment();
     buildEmployee();
 	$(".get-payroll").click(function() {
@@ -302,18 +294,6 @@ function cb(start, end) {
 };
 var tb_pay;
 function buildPay() {
-    var obj = 0;
-	$('.filter-object').each(function(){
-		if($(this).val()) {
-			++obj;
-		}
-	});
-	$(".countFilter").html(obj);
-	if(obj > 0) {
-		$(".countFilter").addClass("active");
-	} else {
-		$(".countFilter").removeClass("active");
-	}
     if ($.fn.DataTable.isDataTable('#tb_pay')) {
         $('#tb_pay').DataTable().ajax.reload(null, false);
     } else {
