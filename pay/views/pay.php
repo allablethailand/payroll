@@ -10,12 +10,10 @@
 <link rel="stylesheet" href="/dist/css/select2.min.css" />
 <link rel="stylesheet" href="/dist/css/select2-bootstrap.css">
 <link rel="stylesheet" href="/dist/css/sweetalert.css">
-<link rel="stylesheet" href="/dist/css/filter.css?v=<?php echo time(); ?>">
 <link rel="stylesheet" href="/dist/daterangepicker/v2/daterangepicker.css">
 <link rel="stylesheet" type="text/css" href="/dist/css/jquery-clockpicker.min.css">
 <link rel="stylesheet" type="text/css" href="/dist/css/jquery-ui.css">
 <link rel="stylesheet" href="/dist/css/origami.css?v=<?php echo time(); ?>">
-<link rel="stylesheet" href="/dist/css/filter.css?v=<?php echo time(); ?>">
 <link rel="stylesheet" href="lib/css/pay.css?v=<?php echo time(); ?>">
 <script src="/dist/fontawesome-5.11.2/js/all.min.js"></script>
 <script src="/dist/fontawesome-5.11.2/js/v4-shims.min.js"></script>
@@ -53,7 +51,7 @@
                 </a>
             </div>
             <div class="filter">
-                <a class="toggleFilter"><i class="fas fa-sliders-h"></i></a>
+                <a class="toggleFilter" title="Click to show or hide filter"><i class="fas fa-sliders-h"></i></a>
                 <label class="countFilter">0</label>
                 <div class="row">
                     <div class="col-md-5ths col-sm-4 col-xs-12">
