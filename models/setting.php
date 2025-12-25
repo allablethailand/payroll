@@ -1,0 +1,143 @@
+<?php
+    session_start();
+    $base_include = $_SERVER['DOCUMENT_ROOT'];
+    $base_path = '';
+    if($_SERVER['HTTP_HOST'] == 'localhost'){
+        $request_uri = $_SERVER['REQUEST_URI'];
+        $exl_path = explode('/',$request_uri);
+        if(!file_exists($base_include."/dashboard.php")){
+            $base_path .= "/".$exl_path[1];
+        }
+        $base_include .= "/".$exl_path[1];
+    }
+    define('BASE_PATH', $base_path);
+    define('BASE_INCLUDE', $base_include);
+    require_once $base_include.'/lib/connect_sqli.php';
+    if(empty($_SESSION['comp_id']) || empty($_SESSION['emp_id'])) {
+        echo json_encode([
+            'status' => false,
+            'message' => 'Connection Failed!'
+        ]);
+        exit;
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'loadPeriodList') {
+        $table = "SELECT 
+            p.period_id,
+            p.status,
+            p.period_name,
+            p.cutoff_date,
+            p.payment_date,
+            CONCAT(IFNULL(i.firstname,i.firstname_th),' ',IFNULL(i.lastname,i.lastname_th)) AS emp_name,
+            date_format(p.date_modify, '%Y/%m/%d %H:%i:%s') as date_modify
+        FROM 
+            payroll_period p
+        LEFT JOIN 
+            m_employee_info i on i.emp_id = p.emp_modify
+        WHERE 
+            p.comp_id = '{$_SESSION['comp_id']}' and p.status <> 2";
+        $primaryKey = 'period_id';
+        $columns = array(
+            array('db' => 'period_id', 'dt' => 'period_id'),
+            array('db' => 'status', 'dt' => 'status'),
+            array('db' => 'period_name', 'dt' => 'period_name'),
+            array('db' => 'cutoff_date', 'dt' => 'cutoff_date'),
+            array('db' => 'payment_date', 'dt' => 'payment_date'),
+            array('db' => 'emp_name', 'dt' => 'emp_name'),
+            array('db' => 'date_modify', 'dt' => 'date_modify'),
+        );
+        $sql_details = array('user' => $db_username,'pass' => $db_pass_word,'db'   => $db_name,'host' => $db_host);
+		require($base_include.'/lib/ssp-subquery.class.php');
+		echo json_encode(SSP::simple($_POST, $sql_details, $table, $primaryKey, $columns));
+		exit();
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'periodData') {
+        $period_id = isset($_POST['period_id']) ? $_POST['period_id'] : '';
+        if(!$period_id) {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Period Item Not Found.'
+            ]);
+            exit;
+        }
+        $period = select_data(
+            "period_name, cutoff_date, payment_date", "payroll_period", "where period_id = '{$period_id}'"
+        );
+        if(!isset($period)) {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Period Data Not Found.'
+            ]);
+            exit;
+        }
+        $p = $period[0];
+        echo json_encode([
+            'status' => true, 
+            'period_data' => [
+                'period_name' => $p['period_name'],
+                'cutoff_date' => $p['cutoff_date'],
+                'payment_date' => $p['payment_date']
+            ]
+        ]);
+    }
+    if ($_POST['action'] === 'savePeriod') {
+        $period_id    = $_POST['period_id'];
+        $period_name  = escape_string(trim($_POST['period_name']));
+        $cutoff_date  = intval($_POST['cutoff_date']);
+        $payment_date = intval($_POST['payment_date']);
+        if (!$period_name) {
+            echo json_encode(['status' => false, 'message' => 'Period name is required.']);
+            exit;
+        }
+        if ($period_id) {
+            update_data(
+                "payroll_period",
+                "period_name = '{$period_name}', cutoff_date = '{$cutoff_date}', payment_date = '{$payment_date}', emp_modify = '{$_SESSION['emp_id']}', date_modify = NOW()",
+                "period_id = '{$period_id}'"
+            );
+            $msg = 'Period updated successfully.';
+        } else {
+            insert_data(
+                "payroll_period",
+                "(period_name, cutoff_date, payment_date, status, comp_id, emp_create, date_create, emp_modify, date_modify)",
+                "('{$period_name}', '{$cutoff_date}', '{$payment_date}', 1, '{$_SESSION['comp_id']}','{$_SESSION['emp_id']}', NOW(), '{$_SESSION['emp_id']}', NOW())"
+            );
+            $msg = 'Period created successfully.';
+        }
+        echo json_encode(['status' => true, 'message' => $msg]);
+        exit;
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'delPeriod') {
+        $period_id = isset($_POST['period_id']) ? $_POST['period_id'] : '';
+        if(!$period_id) {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Period Item Not Found.'
+            ]);
+            exit;
+        }
+        update_data(
+            "payroll_period", "status = 2, emp_modify = '{$_SESSION['emp_id']}', date_modify = NOW()", "period_id = '{$period_id}'"
+        );
+        echo json_encode([
+            'status' => true,
+        ]);
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'switchPeriod') {
+        $period_id = isset($_POST['period_id']) ? $_POST['period_id'] : '';
+        $option = isset($_POST['option']) ? $_POST['option'] : '';
+        if(!$period_id || !$option) {
+            echo json_encode([
+                'status' => false,
+                'message' => 'Period Item Not Found.'
+            ]);
+            exit;
+        }
+        $status = ($option == 'off') ? 1 : 0;
+        update_data(
+            "payroll_period", "status = $status, emp_modify = '{$_SESSION['emp_id']}', date_modify = NOW()", "period_id = '{$period_id}'"
+        );
+        echo json_encode([
+            'status' => true,
+        ]);
+    }
+?>
