@@ -35,6 +35,8 @@ function buildPage() {
                 <table class="table table-border" id="tb_revenue">
                     <thead>
                         <tr>
+                            <th></th>
+                            <th></th>
                             <th lang="en">Close/Open</th>
                             <th lang="en">Revenue (EN)</th>
                             <th lang="en">Revenue (TH)</th>
@@ -47,12 +49,15 @@ function buildPage() {
                 </table>
             `;
             $(".payroll-container").html(html);
+            loadRevenueList();
             break;
         case 'deductions':
             html = `
                 <table class="table table-border" id="tb_deductions">
                     <thead>
                         <tr>
+                            <th></th>
+                            <th></th>
                             <th lang="en">Close/Open</th>
                             <th lang="en">Deductions (EN)</th>
                             <th lang="en">Deductions (TH)</th>
@@ -65,6 +70,7 @@ function buildPage() {
                 </table>
             `;
             $(".payroll-container").html(html);
+            loadDeductionList();
             break;
     }
 }
@@ -410,4 +416,414 @@ function switchPeriod(period_id,option) {
 			swal.close();
 		}
 	});	
+}
+let tb_revenue, tb_deductions;
+function loadRevenueList() {
+    if ($.fn.DataTable.isDataTable('#tb_revenue')) {
+        $('#tb_revenue').DataTable().ajax.reload(null, false);
+    } else {
+        tb_revenue = $('#tb_revenue').DataTable({
+            processing: true,
+            serverSide: true,
+			lengthMenu: [[50, 100, 250, 500, 1000, -1], [50, 100, 250, 500, 1000, "All"]],
+            ajax: {
+                url: '/payroll/models/setting.php',
+                type: 'POST',
+                data: function (d) {
+                    d.action = 'loadPayrollItem';
+                    d.item_type = 'INCOME';
+                }
+            },
+            language: default_language,
+            order: [[0,'desc'], [1,'desc']],
+            columns: [
+                { 
+                    data: 'item_key',
+                    visible: false 
+                },
+                { 
+                    data: 'item_id',
+                    visible: false 
+                },
+                {
+                    data: 'status',
+                    className: 'text-center',
+                    render: function (data, type, row) {
+                        return `
+                        <a onclick="switchPayrollItem(${row.item_id},'${data == 1 ? 'off':'on'}','${row.item_key}')">
+                            <i class="fas fa-toggle-${data == 1 ? 'on':'off'} text-${data == 1 ? 'green':'grey'} fa-2x"></i>
+                        </a>`;
+                    }
+                },
+                { data: 'item_name_en' },
+                { data: 'item_name_th' },
+                { 
+                    data: 'date_modify',
+                    render: function (data, type, row) {
+                        return `
+                            ${row.item_key == 'company' ? `
+                                ${data} 
+                            ` : ``}
+                        `;
+                    }
+                },
+                { 
+                    data: 'emp_name',
+                    render: function (data, type, row) {
+                        return `
+                            ${row.item_key == 'company' ? `
+                                ${data} 
+                            ` : ``}
+                        `;
+                    }
+                },
+                {
+                    data: 'item_id',
+                    className: 'text-center',
+                    render: function (data, type, row) {
+                        return `
+                            ${row.item_key == 'company' ? `
+                                <button class="btn btn-circle btn-orange" onclick="managePayrollItem(${data},'INCOME')">
+                                    <i class="fas fa-pencil-alt"></i>
+                                </button>
+                                <button class="btn btn-circle btn-red" onclick="delPayrollItem(${data}, 'revenue')">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button> 
+                            ` : ``}
+                        `;
+                    }
+                }
+            ]
+        });
+        $('div#tb_revenue_filter.dataTables_filter label input').remove();
+        $('div#tb_revenue_filter.dataTables_filter label span').remove();
+        var template = `
+            <input type="search" class="form-control input-sm search-datatable" placeholder="" autocomplete="off" style="margin-bottom:0px !important;"> 
+            <button type="button" class="btn btn-green" onclick="managePayrollItem('', 'INCOME')"><i class="fas fa-plus"></i> <span lang="en">Revenue</span></button>
+        `;
+        $('div#tb_revenue_filter.dataTables_filter input').hide();
+        $('div#tb_revenue_filter.dataTables_filter label').append(template);
+        var searchDataTable = $.fn.dataTable.util.throttle(function (val) {
+            if(typeof val != 'undefined') {
+                tb_revenue.search(val).draw();	
+            } 
+        },1000);
+        $('.search-datatable').on('keyup',function(e) {
+            if(e.keyCode === 13) {
+                $('.dataTables_processing.panel').css('top','5%');
+                val = e.target.value.trim().replace(/ /g, "");
+                searchDataTable(val);
+            }
+            if(e.target.value == '') {
+                tb_period.search('').draw();
+                loadRevenueList();
+            }
+        });
+    }
+}
+function loadDeductionList() {
+    if ($.fn.DataTable.isDataTable('#tb_deductions')) {
+        $('#tb_deductions').DataTable().ajax.reload(null, false);
+    } else {
+        tb_deductions = $('#tb_deductions').DataTable({
+            processing: true,
+            serverSide: true,
+            lengthMenu: [[50, 100, 250, 500, 1000, -1], [50, 100, 250, 500, 1000, "All"]],
+            ajax: {
+                url: '/payroll/models/setting.php',
+                type: 'POST',
+                data: function (d) {
+                    d.action = 'loadPayrollItem';
+                    d.item_type = 'DEDUCTION';
+                }
+            },
+            language: default_language,
+            order: [[0,'desc'], [1,'desc']],
+            columns: [
+                { 
+                    data: 'item_key',
+                    visible: false 
+                },
+                { 
+                    data: 'item_id',
+                    visible: false 
+                },
+                {
+                    data: 'status',
+                    className: 'text-center',
+                    render: function (data, type, row) {
+                        return `
+                        <a onclick="switchPayrollItem(${row.item_id},'${data == 1 ? 'off':'on'}','${row.item_key}')">
+                            <i class="fas fa-toggle-${data == 1 ? 'on':'off'} text-${data == 1 ? 'green':'grey'} fa-2x"></i>
+                        </a>`;
+                    }
+                },
+                { data: 'item_name_en' },
+                { data: 'item_name_th' },
+                { 
+                    data: 'date_modify',
+                    render: function (data, type, row) {
+                        return `
+                            ${row.item_key == 'company' ? `
+                                ${data} 
+                            ` : ``}
+                        `;
+                    }
+                },
+                { 
+                    data: 'emp_name',
+                    render: function (data, type, row) {
+                        return `
+                            ${row.item_key == 'company' ? `
+                                ${data} 
+                            ` : ``}
+                        `;
+                    }
+                },
+                {
+                    data: 'item_id',
+                    className: 'text-center',
+                    render: function (data, type, row) {
+                        return `
+                            ${row.item_key == 'company' ? `
+                                <button class="btn btn-circle btn-orange" onclick="managePayrollItem(${data},'DEDUCTION')">
+                                    <i class="fas fa-pencil-alt"></i>
+                                </button>
+                                <button class="btn btn-circle btn-red" onclick="delPayrollItem(${data}, 'deductions')">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button> 
+                            ` : ``}
+                        `;
+                    }
+                }
+            ]
+        });
+        $('div#tb_deductions_filter.dataTables_filter label input').remove();
+        $('div#tb_deductions_filter.dataTables_filter label span').remove();
+        var template = `
+            <input type="search" class="form-control input-sm search-datatable" placeholder="" autocomplete="off" style="margin-bottom:0px !important;"> 
+            <button type="button" class="btn btn-green" onclick="managePayrollItem('', 'DEDUCTION')"><i class="fas fa-plus"></i> <span lang="en">Deductions</span></button>
+        `;
+        $('div#tb_deductions_filter.dataTables_filter input').hide();
+        $('div#tb_deductions_filter.dataTables_filter label').append(template);
+        var searchDataTable = $.fn.dataTable.util.throttle(function (val) {
+            if(typeof val != 'undefined') {
+                tb_deductions.search(val).draw();	
+            } 
+        },1000);
+        $('.search-datatable').on('keyup',function(e) {
+            if(e.keyCode === 13) {
+                $('.dataTables_processing.panel').css('top','5%');
+                val = e.target.value.trim().replace(/ /g, "");
+                searchDataTable(val);
+            }
+            if(e.target.value == '') {
+                tb_deductions.search('').draw();
+                loadDeductionList();
+            }
+        });
+    }
+}
+function managePayrollItem(item_id, type) {
+    $(".systemModal").modal();
+    $(".systemModal .modal-header").html(`
+        <h5 class="modal-title">Manage ${type}</h5>
+    `);
+    $(".systemModal .modal-footer").html(`
+        <button class="btn btn-orange btn-save-item" onclick="savePayrollItem()">Save</button>
+        <button class="btn btn-white" data-dismiss="modal">Close</button>
+    `);
+    $(".systemModal .modal-body").html(`
+        <input type="hidden" id="item_id" value="${item_id||''}">
+        <input type="hidden" id="item_type" value="${type}">
+        <p style="margin:10px auto;"><span lang="en">Item Name (EN)</span> <code>*</code></p>
+        <input class="form-control" id="item_name_en">
+        <p style="margin:10px auto;"><span lang="en">Item Name (Th)</span></p>
+        <input class="form-control" id="item_name_th">
+        <p style="margin:10px auto;"><span lang="en">Description</span></p>
+        <textarea class="form-control" id="description"></textarea>
+    `);
+    if(item_id){
+        $.post('/payroll/models/setting.php',{
+            action:'payrollItemData',
+            item_id:item_id
+        },function(r){
+            if(r.status){
+                $('#item_name_en').val(r.item_name_en);
+                $('#item_name_th').val(r.item_name_th);
+                $('#description').val(r.description);
+            }
+        },'json');
+    }
+}
+function savePayrollItem() {
+    let item_id    = $('#item_id').val();
+    let item_type    = $('#item_type').val();
+    let item_name_en  = $('#item_name_en').val().trim();
+    let item_name_th  = $('#item_name_th').val().trim();
+    let description  = $('#description').val().trim();
+    if (!item_name_en) {
+        swal('Warning', 'Please enter Item Name (EN)', 'warning');
+        $('#item_name_en').focus();
+        return;
+    }
+    $.ajax({
+        url: '/payroll/models/setting.php',
+        type: 'POST',
+        dataType: 'JSON',
+        data: {
+            action: 'savePayrollItem',
+            item_id: item_id,
+            item_type: item_type,
+            item_name_en: item_name_en,
+            item_name_th: item_name_th,
+            description: description
+        },
+        beforeSend: function () {
+            $('.btn-save-period').prop('disabled', true);
+        },
+        success: function (result) {
+            if (result.status) {
+                swal({
+                    type: 'success',
+                    title: 'Success',
+                    text: result.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                $('.systemModal').modal('hide');
+                if(item_type == 'INCOME') {
+                    if (typeof loadRevenueList === 'function') {
+                        loadRevenueList();
+                    }
+                } else {
+                    if (typeof loadDeductionList === 'function') {
+                        loadDeductionList();
+                    }
+                }
+            } else {
+                swal('Error', result.message, 'error');
+            }
+        },
+        complete: function () {
+            $('.btn-save-item').prop('disabled', false);
+        },
+        error: function () {
+            swal('Error', 'System error. Please try again.', 'error');
+            $('.btn-save-item').prop('disabled', false);
+        }
+    });
+}
+function switchPayrollItem(item_id, option, item_key) {
+    if (!item_id || !option) return;
+    let message, type_color, button_color;
+    if (option === 'off') {
+        message = 'Deactivate?';
+        type_color = 'error';
+        button_color = '#FF6666';
+    } else {
+        message = 'Activate?';
+        type_color = 'info';
+        button_color = '#5bc0de';
+    }
+    event.stopPropagation();
+    swal({
+        html: true,
+        title: window.lang.translate(message),
+        text: '',
+        type: type_color,
+        showCancelButton: true,
+        closeOnConfirm: false,
+        confirmButtonText: window.lang.translate("Yes"),
+        cancelButtonText: window.lang.translate("Cancel"),
+        confirmButtonColor: button_color,
+        cancelButtonColor: '#CCCCCC',
+        showLoaderOnConfirm: true,
+    }, function (isConfirm) {
+        if (isConfirm) {
+            $.ajax({
+                url: '/payroll/models/setting.php',
+                type: 'POST',
+                dataType: 'JSON',
+                data: {
+                    action: 'switchPayrollItem',
+                    item_id: item_id,
+                    option: option,
+                    item_key: item_key
+                },
+                success: function (result) {
+                    if (result.status === true) {
+                        swal({
+                            type: 'success',
+                            title: "Successfully",
+                            showConfirmButton: false,
+                            timer: 1500
+                        });
+                        if (page === 'revenue' && typeof loadRevenueList === 'function') {
+                            loadRevenueList();
+                        }
+                        if (page === 'deductions' && typeof loadDeductionList === 'function') {
+                            loadDeductionList();
+                        }
+                    } else {
+                        swal({
+                            type: 'warning',
+                            title: "Warning...",
+                            text: result.message,
+                            timer: 2000
+                        });
+                    }
+                },
+                error: function () {
+                    swal('Error', 'System error. Please try again.', 'error');
+                }
+            });
+        } else {
+            swal.close();
+        }
+    });
+}
+function delPayrollItem(item_id, type) {
+    event.stopPropagation();
+    swal({
+        html:true,
+        title: window.lang.translate("Are you sure?"),
+        text: 'Do you want to delete these records? </br> This process cannot be undone.',
+        type: "error",
+        showCancelButton: true,
+        closeOnConfirm: false,
+        confirmButtonText: window.lang.translate("Delete"),
+        cancelButtonText: window.lang.translate("Cancel"),	
+        confirmButtonColor: '#FF6666',
+        cancelButtonColor: '#CCCCCC',
+        showLoaderOnConfirm: true,
+    },
+    function(isConfirm){
+        if (isConfirm) {
+            $.ajax({
+                url: '/payroll/models/setting.php',
+                type: "POST",
+                data: {
+                    action:'delPayrollItem',
+                    item_id: item_id
+                },
+                dataType: "JSON",
+                type: 'POST',
+                success: function(result){
+                    if(result.status === true){			
+                        swal({type: 'success', title: "Successfully", text: "", showConfirmButton: false, timer: 1500});
+                        if(type == 'revenue') {
+                            loadRevenueList();
+                        } else {
+                            loadDeductionList();
+                        }
+                    }else{
+                        swal({type: 'warning',title: "Warning...",text: result.message,timer: 2000});
+                    }
+                }
+            });
+        } else {
+            swal.close();
+        }
+    });
 }
