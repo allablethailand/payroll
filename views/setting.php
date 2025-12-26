@@ -43,12 +43,12 @@
                    <i class="far fa-calendar"></i> <span lang="en">Payroll Period</span>
                 </a>
             </li>
-            <li class="hidden">
+            <li>
                 <a href=".payroll-tab" data-toggle="tab" data-page="revenue">
                     <span class="text-green"><i class="fas fa-coins"></i> <span lang="en">Revenue</span></span>
                 </a>
             </li>
-            <li class="hidden">
+            <li>
                 <a href=".payroll-tab" data-toggle="tab" data-page="deductions">
                     <span class="text-red"><i class="fas fa-coins"></i> <span lang="en">Deductions</span></span>
                 </a>
