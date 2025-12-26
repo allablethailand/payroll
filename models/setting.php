@@ -140,4 +140,161 @@
             'status' => true,
         ]);
     }
+    if(isset($_POST['action']) && $_POST['action'] == 'loadPayrollItem'){
+        $type = $_POST['item_type'];
+        $table = "SELECT 
+                i.item_id,
+                i.item_name_en,
+                i.item_name_th,
+                i.status,
+                DATE_FORMAT(i.date_modify,'%Y/%m/%d %H:%i:%s') date_modify,
+                CONCAT(IFNULL(e.firstname,e.firstname_th),' ',IFNULL(e.lastname,e.lastname_th)) emp_name,
+                'master' as item_key
+            FROM payroll_item_master i
+            LEFT JOIN m_employee_info e ON e.emp_id = i.emp_modify
+            WHERE i.item_type = '{$type}' AND i.status <> 2
+            UNION 
+            SELECT 
+                i.item_id,
+                i.item_name_en,
+                i.item_name_th,
+                i.status,
+                DATE_FORMAT(i.date_modify,'%Y/%m/%d %H:%i:%s') date_modify,
+                CONCAT(IFNULL(e.firstname,e.firstname_th),' ',IFNULL(e.lastname,e.lastname_th)) emp_name,
+                'company' as item_key
+            FROM 
+                payroll_item_comp i
+            LEFT JOIN m_employee_info e ON e.emp_id = i.emp_modify
+            WHERE i.item_type = '{$type}' AND i.status <> 2  and i.comp_id = '{$_SESSION['comp_id']}'
+        ";
+        $primaryKey = 'item_id';
+        $columns = [
+            ['db'=>'item_id','dt'=>'item_id'],
+            ['db'=>'status','dt'=>'status'],
+            ['db'=>'item_name_en','dt'=>'item_name_en'],
+            ['db'=>'item_name_th','dt'=>'item_name_th'],
+            ['db'=>'date_modify','dt'=>'date_modify'],
+            ['db'=>'emp_name','dt'=>'emp_name'],
+            ['db'=>'item_key','dt'=>'item_key'],
+        ];
+        $sql_details = array('user' => $db_username,'pass' => $db_pass_word,'db'   => $db_name,'host' => $db_host);
+        require($base_include.'/lib/ssp-subquery.class.php');
+        echo json_encode(SSP::simple($_POST, $sql_details, $table, $primaryKey, $columns));
+        exit();
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'loadPayrollItem'){
+        $type = $_POST['item_type'];
+        $table = "SELECT 
+                i.item_id,
+                i.item_name_en,
+                i.item_name_th,
+                i.status,
+                DATE_FORMAT(i.date_modify,'%Y/%m/%d %H:%i:%s') date_modify,
+                CONCAT(IFNULL(e.firstname,e.firstname_th),' ',IFNULL(e.lastname,e.lastname_th)) emp_name,
+                'master' as item_key
+            FROM payroll_item_master i
+            LEFT JOIN m_employee_info e ON e.emp_id = i.emp_modify
+            WHERE i.item_type = '{$type}' AND i.status <> 2 
+            UNION 
+            SELECT 
+                i.item_id,
+                i.item_name_en,
+                i.item_name_th,
+                i.status,
+                DATE_FORMAT(i.date_modify,'%Y/%m/%d %H:%i:%s') date_modify,
+                CONCAT(IFNULL(e.firstname,e.firstname_th),' ',IFNULL(e.lastname,e.lastname_th)) emp_name,
+                'company' as item_key
+            FROM 
+                payroll_item_comp i
+            LEFT JOIN m_employee_info e ON e.emp_id = i.emp_modify
+            WHERE i.item_type = '{$type}' AND i.status <> 2  and i.comp_id = '{$_SESSION['comp_id']}'
+        ";
+        $primaryKey = 'item_id';
+        $columns = [
+            ['db'=>'item_id','dt'=>'item_id'],
+            ['db'=>'status','dt'=>'status'],
+            ['db'=>'item_name_en','dt'=>'item_name_en'],
+            ['db'=>'item_name_th','dt'=>'item_name_th'],
+            ['db'=>'date_modify','dt'=>'date_modify'],
+            ['db'=>'emp_name','dt'=>'emp_name'],
+            ['db'=>'item_key','dt'=>'item_key'],
+        ];
+        $sql_details = array('user' => $db_username,'pass' => $db_pass_word,'db'   => $db_name,'host' => $db_host);
+        require($base_include.'/lib/ssp-subquery.class.php');
+        echo json_encode(SSP::simple($_POST, $sql_details, $table, $primaryKey, $columns));
+        exit();
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'savePayrollItem'){
+        $id = $_POST['item_id'];
+        $en = escape_string($_POST['item_name_en']);
+        $th = escape_string($_POST['item_name_th']);
+        $description = escape_string($_POST['description']);
+        $type = $_POST['item_type'];
+        if($id) {
+            update_data(
+                'payroll_item_comp',
+                "item_name_en = '{$en}', item_name_th = '{$th}', description = '{$description}', emp_modify = '{$_SESSION['emp_id']}', date_modify = NOW()",
+                "item_id='{$id}'"
+            );
+            $msg = 'Updated successfully';
+        } else {
+            insert_data(
+                'payroll_item_comp',
+                '(item_name_en,item_name_th,description,item_type,status,emp_create,date_create,emp_modify,date_modifyม comp_id)',
+                "('{$en}','{$th}','{$description}','{$type}',1,'{$_SESSION['emp_id']}',NOW(),'{$_SESSION['emp_id']}',NOW(),'{$_SESSION['comp_id']}')"
+            );
+            $msg = 'Created successfully';
+        }
+        echo json_encode(['status'=>true,'message'=>$msg]);
+        exit;
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'delPayrollItem'){
+        update_data(
+            'payroll_item_comp',
+            "status = 2, emp_modify = '{$_SESSION['emp_id']}', date_modify = NOW()",
+            "item_id = '{$_POST['item_id']}'"
+        );
+        echo json_encode(['status'=>true]); exit;
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'switchPayrollItem'){
+        $item_key = $_POST['item_key'];
+        $status = ($_POST['option'] == 'off') ? 0 : 1;
+        if($item_key == 'company') {
+            update_data(
+                'payroll_item_comp',
+                "status = '{$status}', emp_modify = '{$_SESSION['emp_id']}', date_modify = NOW()",
+                "item_id = '{$_POST['item_id']}'"
+            );
+        } else {
+            $exits = select_data(
+                "close_id", "payroll_item_comp_close", "where item_id = '{$_POST['item_id']}' and comp_id = '{$_SESSION['comp_id']}'"
+            );
+            if(!empty($exits)) {
+                update_data(
+                    "payroll_item_comp_close", 
+                    "status = '{$status}', emp_modify = '{$_SESSION['emp_id']}', date_modify = NOW()", 
+                    "item_id = '{$_POST['item_id']}' and comp_id = '{$_SESSION['comp_id']}'"
+                );
+            } else {
+                insert_data(
+                    "payroll_item_comp_close", 
+                    "(item_id, comp_id, status, emp_create, date_create, emp_modify, date_modify)",
+                    "('{$_POST['item_id']}', '{$_SESSION['comp_id']}', '{$status}', '{$_SESSION['emp_id']}', NOW(), '{$_SESSION['emp_id']}', NOW())"
+                );
+            }
+        }
+        echo json_encode(['status'=>true]); exit;
+    }
+    if(isset($_POST['action']) && $_POST['action'] == 'payrollItemData') {
+        $item_id = $_POST['item_id'];
+        $item = select_data(
+            "item_name_en, item_name_th, description", "payroll_item_comp", "where item_id = '{$item_id}'"
+        );
+        echo json_encode([
+            'status' => true,
+            'item_name_en' => $item[0]['item_name_en'],
+            'item_name_th' => $item[0]['item_name_th'],
+            'description' => $item[0]['description'],
+        ]);
+    }
 ?>
