@@ -1,0 +1,8 @@
+# Environment
+.env
+
+# Apache
+.htaccess
+
+# Config
+config.php
