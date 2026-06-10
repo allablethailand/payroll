@@ -1,16 +1,30 @@
 <?php
-    session_start();
-    $url = $_SERVER['REQUEST_URI'];
-    switch($url) {
-        case '/payroll/':
-        case '/payroll':
-            require __DIR__.'/views/payroll.php';
-        break;
-        case '/payroll/setting':
-            require __DIR__.'/views/setting.php';
-        break;
-        default: 
-            $_SESSION['page'] = 'home';
-            header('Location: /payroll');
+    ini_set('session.cookie_httponly', 1);
+    if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
+        ini_set('session.cookie_secure', 1);
     }
-?>
+    ini_set('session.cookie_samesite', 'Lax');
+    session_start();
+    require_once __DIR__ . '/vendor/autoload.php';
+    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+    $dotenv->load();
+    require_once __DIR__ . '/app/helpers/helpers.php';
+    require_once __DIR__ . '/config.php';
+    require_once __DIR__ . '/app/core/Database.php';
+    require_once __DIR__ . '/app/core/Controller.php';
+    require_once __DIR__ . '/app/core/Router.php';
+    spl_autoload_register(function ($class) {
+        $paths = ['app/controllers/', 'app/models/', 'app/core/'];
+        foreach ($paths as $path) {
+            $file = __DIR__ . '/' . $path . $class . '.php';
+            if (file_exists($file)) {
+                require_once $file;
+                return;
+            }
+        }
+    });
+    $router = new Router();
+    $router->get('/', 'DashboardController@index'); 
+    $router->get('dashboard', 'DashboardController@index');
+    $router->get('setup/company', 'SetupCompanyController@index');
+    $router->dispatch();

@@ -1,0 +1,18 @@
+{
+    "dashboard": "แผงควบคุม",
+    "employees": "ข้อมูลพนักงาน",
+    "timesheets": "สรุปเวลาเข้างาน",
+    "payroll_process": "ประมวลผลเงินเดือน",
+    "reports": "รายงานและเอกสาร",
+    "settings": "ตั้งค่าระบบ",
+    "company_setup": "ตั้งค่าบริษัท",
+    "payroll_cycle": "รอบการจ่ายเงิน",
+    "earnings_deductions": "จัดการรายรับ/รายหัก",
+    "general_info": "ข้อมูลทั่วไป",
+    "save": "บันทึกข้อมูล",
+    "cancel": "ยกเลิก",
+    "company_name": "ชื่อบริษัท",
+    "thai": "ภาษาไทย",
+    "english": "ภาษาอังกฤษ",
+    "tax_id": "เลขประจำตัวผู้เสียภาษี"
+}
