@@ -1,0 +1,17 @@
+{
+    "name": "alb-charkit/payroll",
+    "autoload": {
+        "psr-4": {
+            "AlbCharkit\\Payroll\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Chakrit",
+            "email": "chakrit@origami.life"
+        }
+    ],
+    "require": {
+        "vlucas/phpdotenv": "^5.6"
+    }
+}
