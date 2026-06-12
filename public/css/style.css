@@ -338,3 +338,19 @@ html, body {
 .bg-head-first {
     background-color: #ec6622;
 }
+.nav-tabs .nav-link {
+    color: #6c757d;
+    border: none;
+    border-bottom: 3px solid transparent;
+    font-weight: 600;
+}
+.nav-tabs .nav-link.active {
+    color: #ff9900 !important;
+    border-none: none;
+    border-bottom: 3px solid #ff9900 !important;
+    background: transparent;
+}
+.nav-tabs .nav-link:hover {
+    border-color: transparent;
+    color: #ff9900;
+}

@@ -9,10 +9,8 @@ class CompanyController extends Controller {
     public function getMetadata() {
         header('Content-Type: application/json');
         $countryCode = $_GET['country'] ?? '';
-
         $model = $this->model;
         $metadata = $model->getCountryMetadata($countryCode);
-
         if ($metadata) {
             echo json_encode(['success' => true, 'data' => $metadata]);
         } else {

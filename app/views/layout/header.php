@@ -9,6 +9,7 @@
 <link href="<?=BASE_URL?>/node_modules/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="<?=BASE_URL?>/node_modules/fontawesome-free-7.1.0-web/css/all.min.css" rel="stylesheet">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/sweetalert2/dist/sweetalert2.min.css">
+<link rel="stylesheet" href="<?=BASE_URL?>/node_modules/datatables.net-bs5/css/dataTables.bootstrap5.min.css">
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";
