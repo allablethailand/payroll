@@ -26,5 +26,7 @@
     $router = new Router();
     $router->get('/', 'DashboardController@index'); 
     $router->get('dashboard', 'DashboardController@index');
-    $router->get('setup/company', 'SetupCompanyController@index');
+    $router->get('setup/company', 'CompanyController@index');
+    $router->get('api/payroll/metadata', 'CompanyController@getMetadata');
+    $router->post('api/payroll/save', 'CompanyController@save');
     $router->dispatch();

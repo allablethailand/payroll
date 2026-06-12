@@ -14,7 +14,7 @@
     const BASE_URL = "<?=BASE_URL?>";
 </script>
 </head>
-<body class="bg-light">
+<body>
 <script src="<?=BASE_URL?>/node_modules/jquery/dist/jquery.min.js"></script>
 <script src="<?=asset('public/js/app.js')?>"></script>
 <nav class="origami-navbar">

@@ -1,7 +1,7 @@
 html, body {
     color: #555555;
     min-width: 375px;
-    font-size: 13px;
+    font-size: 12px;
     font-family: 'Sarabun', sans-serif;
     margin: 0;
     padding: 0;
@@ -331,4 +331,10 @@ html, body {
 }
 .container-body {
     margin-top: 100px;
+}
+.label-head {
+    padding: 0.5em 0.7em;
+}
+.bg-head-first {
+    background-color: #ec6622;
 }
