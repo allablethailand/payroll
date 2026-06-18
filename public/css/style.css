@@ -354,3 +354,28 @@ html, body {
     border-color: transparent;
     color: #ff9900;
 }
+.payroll-breadcrumb {
+    display: flex;
+    align-items: center;
+    font-size: 1rem;
+}
+.bc-root, .bc-parent {
+    color: #888888;
+    text-decoration: none;
+    transition: all 0.3s;
+}
+.bc-root:hover, .bc-parent:hover {
+    color: #333333;
+}
+.bc-separator {
+    margin: 0 12px;
+    color: #ccc;
+}
+.bc-current {
+    background-color: rgb(255, 153, 0, 0.12);
+    color: #ff9900;
+    padding: 4px 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 1rem;
+}

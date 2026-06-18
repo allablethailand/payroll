@@ -1,26 +1,22 @@
 <div class="container container-body">
-    <h5 class="payroll-breadcrumb mt-5 mb-5">
-        <span class="bc-root">Payroll</span>
-        <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-        <span class="bc-parent" data-i18n="settings">Settings</span>
-        <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-        <span class="bc-current" data-i18n="earnings_deductions">Earnings & Deductions</span>
-    </h5>
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h5 class="text-secondary fw-bold m-0">
-                <i class="fa-solid fa-calculator me-2"></i>
-                <span data-i18n="earning_deduction_management">Earnings & Deductions Management</span>
-            </h5>
-            <p class="text-muted small m-0 mt-1">กำหนดและจัดการประเภทรายรับ (Earnings) และรายหัก (Deductions) เพื่อนำไปคำนวณในสลิปเงินเดือน</p>
-        </div>
-        <button type="button" class="btn btn-warning text-white px-3 d-flex align-items-center gap-2" 
-                style="background-color: #ff9900; border-color: #ff9900;"
-                data-bs-toggle="modal" data-bs-target="#itemModal" onclick="resetItemForm()">
-            <i class="fas fa-plus"></i> <span data-i18n="add_new_item">Add New Item</span>
-        </button>
+    <nav aria-label="breadcrumb">
+        <h5 class="payroll-breadcrumb mt-5 mb-5">
+            <span class="bc-root"><i class="fas fa-home me-1"></i> Payroll</span>
+            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
+            <span class="bc-parent" data-i18n="settings">Settings</span>
+            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
+            <span class="bc-current" data-i18n="payroll_cycle">Earnings & Deductions</span>
+        </h5>
+    </nav>
+    <div class="mb-4">
+        <h5 class="text-secondary fw-bold m-0">
+            <i class="fa-solid fa-calculator me-2"></i>
+            <span data-i18n="earning_deduction_management">Payroll Cycle Management</span>
+        </h5>
+        <p class="text-muted small m-0 mt-1" data-i18n="company_management_description">Configure and manage earnings and deductions to automate payslip calculations.</p>
     </div>
-    <ul class="nav nav-tabs mb-4 border-bottom" id="payrollItemsTab" role="tablist">
+    <button type="button" class="btn btn-warning text-white px-3 d-flex align-items-center gap-2" style="background-color: #ff9900; border-color: #ff9900;" data-bs-toggle="modal" data-bs-target="#itemModal" onclick="resetItemForm()"><i class="fas fa-plus"></i> <span data-i18n="add_new_item">Add New Item</span></button>
+    <ul class="nav nav-tabs" id="payrollItemsTab" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active px-4 py-2" id="earnings-tab" data-bs-toggle="tab" data-bs-target="#earnings-pane" type="button" role="tab" aria-controls="earnings-pane" aria-selected="true">
                 <i class="fa-solid fa-arrow-trend-up me-2 text-success"></i><span data-i18n="tab_earnings">Earnings (รายรับ)</span>
@@ -32,79 +28,75 @@
             </button>
         </li>
     </ul>
-    <div class="tab-content" id="payrollItemsTabContent">
+    <div class="tab-content mt-5 mb-5" id="payrollItemsTabContent">
         <div class="tab-pane fade show active" id="earnings-pane" role="tabpanel" aria-labelledby="earnings-tab" tabindex="0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle w-100" id="earningsTable">
-                    <thead class="table-light text-secondary">
-                        <tr>
-                            <th scope="col" style="width: 15%;" data-i18n="col_code">Code</th>
-                            <th scope="col" style="width: 25%;" data-i18n="col_name">Item Name</th>
-                            <th scope="col" style="width: 20%;" data-i18n="col_tax_type">Tax Treatment</th>
-                            <th scope="col" style="width: 15%;" data-i18n="col_sso">SSO Cal</th>
-                            <th scope="col" style="width: 15%;" data-i18n="col_pf">Provident Fund</th>
-                            <th scope="col" style="width: 10%; text-align: center;" data-i18n="col_actions">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr id="earning-row-1">
-                            <td><code class="fw-bold text-dark">E001</code></td>
-                            <td><div><strong>Incentive</strong></div><div class="text-muted small">เงินจูงใจพิเศษ</div></td>
-                            <td><span class="badge bg-success-subtle text-success">Taxable (คำนวณภาษี)</span></td>
-                            <td><i class="fa-solid fa-circle-check text-success fs-5"></i></td>
-                            <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
-                            <td class="text-center">
-                                <div class="d-flex justify-content-center gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('earning', 1)"><i class="fas fa-edit"></i></button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('earning', 1)"><i class="fas fa-trash-alt"></i></button>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr id="earning-row-2">
-                            <td><code class="fw-bold text-dark">E002</code></td>
-                            <td><div><strong>Meal Allowance</strong></div><div class="text-muted small">ค่าอาหาร</div></td>
-                            <td><span class="badge bg-secondary-subtle text-secondary">Non-Taxable (ยกเว้นภาษี)</span></td>
-                            <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
-                            <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
-                            <td class="text-center">
-                                <div class="d-flex justify-content-center gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('earning', 2)"><i class="fas fa-edit"></i></button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('earning', 2)"><i class="fas fa-trash-alt"></i></button>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+            <table class="table table-hover table-border align-middle w-100" id="earningsTable">
+                <thead class="table-light text-secondary">
+                    <tr>
+                        <th scope="col" style="width: 15%;" data-i18n="col_code">Code</th>
+                        <th scope="col" style="width: 25%;" data-i18n="col_name">Item Name</th>
+                        <th scope="col" style="width: 20%;" data-i18n="col_tax_type">Tax Treatment</th>
+                        <th scope="col" style="width: 15%;" data-i18n="col_sso">SSO Cal</th>
+                        <th scope="col" style="width: 15%;" data-i18n="col_pf">Provident Fund</th>
+                        <th scope="col" style="width: 10%; text-align: center;" data-i18n="col_actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr id="earning-row-1">
+                        <td><code class="fw-bold text-dark">E001</code></td>
+                        <td><div><strong>Incentive</strong></div><div class="text-muted small">เงินจูงใจพิเศษ</div></td>
+                        <td><span class="badge bg-success-subtle text-success">Taxable (คำนวณภาษี)</span></td>
+                        <td><i class="fa-solid fa-circle-check text-success fs-5"></i></td>
+                        <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
+                        <td class="text-center">
+                            <div class="d-flex justify-content-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('earning', 1)"><i class="fas fa-edit"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('earning', 1)"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr id="earning-row-2">
+                        <td><code class="fw-bold text-dark">E002</code></td>
+                        <td><div><strong>Meal Allowance</strong></div><div class="text-muted small">ค่าอาหาร</div></td>
+                        <td><span class="badge bg-secondary-subtle text-secondary">Non-Taxable (ยกเว้นภาษี)</span></td>
+                        <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
+                        <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
+                        <td class="text-center">
+                            <div class="d-flex justify-content-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('earning', 2)"><i class="fas fa-edit"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('earning', 2)"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
         <div class="tab-pane fade" id="deductions-pane" role="tabpanel" aria-labelledby="deductions-tab" tabindex="0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle w-100" id="deductionsTable">
-                    <thead class="table-light text-secondary">
-                        <tr>
-                            <th scope="col" style="width: 15%;" data-i18n="col_code">Code</th>
-                            <th scope="col" style="width: 30%;" data-i18n="col_name">Item Name</th>
-                            <th scope="col" style="width: 25%;" data-i18n="col_deduct_type">Tax Deduction Impact</th>
-                            <th scope="col" style="width: 20%;" data-i18n="col_cycles">Linked Cycles</th>
-                            <th scope="col" style="width: 10%; text-align: center;" data-i18n="col_actions">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr id="deduction-row-1">
-                            <td><code class="fw-bold text-dark">D001</code></td>
-                            <td><div><strong>Unpaid Leave</strong></div><div class="text-muted small">หักมาสาย / ขาดงาน</div></td>
-                            <td><span class="badge bg-danger-subtle text-danger">Reduce Gross Income (หักก่อนภาษี)</span></td>
-                            <td><span class="badge bg-light text-dark border">All Cycles</span></td>
-                            <td class="text-center">
-                                <div class="d-flex justify-content-center gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('deduction', 1)"><i class="fas fa-edit"></i></button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('deduction', 1)"><i class="fas fa-trash-alt"></i></button>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+            <table class="table table-hover table-border align-middle w-100" id="deductionsTable">
+                <thead class="table-light text-secondary">
+                    <tr>
+                        <th scope="col" style="width: 15%;" data-i18n="col_code">Code</th>
+                        <th scope="col" style="width: 30%;" data-i18n="col_name">Item Name</th>
+                        <th scope="col" style="width: 25%;" data-i18n="col_deduct_type">Tax Deduction Impact</th>
+                        <th scope="col" style="width: 20%;" data-i18n="col_cycles">Linked Cycles</th>
+                        <th scope="col" style="width: 10%; text-align: center;" data-i18n="col_actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr id="deduction-row-1">
+                        <td><code class="fw-bold text-dark">D001</code></td>
+                        <td><div><strong>Unpaid Leave</strong></div><div class="text-muted small">หักมาสาย / ขาดงาน</div></td>
+                        <td><span class="badge bg-danger-subtle text-danger">Reduce Gross Income (หักก่อนภาษี)</span></td>
+                        <td><span class="badge bg-light text-dark border">All Cycles</span></td>
+                        <td class="text-center">
+                            <div class="d-flex justify-content-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('deduction', 1)"><i class="fas fa-edit"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('deduction', 1)"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

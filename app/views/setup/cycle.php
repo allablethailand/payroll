@@ -1,82 +1,76 @@
 <div class="container container-body">
-    <h5 class="payroll-breadcrumb mt-5 mb-5">
-        <span class="bc-root">Payroll</span>
-        <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-        <span class="bc-parent" data-i18n="settings">Settings</span>
-        <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-        <span class="bc-current" data-i18n="payroll_cycle">Payroll Cycle</span>
-    </h5>
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h5 class="text-secondary fw-bold m-0">
-                <i class="fa-solid fa-calendar-day me-2"></i>
-                <span data-i18n="payroll_cycle_management">Payroll Cycle Management</span>
-            </h5>
-            <p class="text-muted small m-0 mt-1">กำหนดและจัดการรอบการจ่ายเงินเดือนพนักงาน (สามารถแยกตามกลุ่มพนักงาน หรือประเภทการจ้างงานได้)</p>
-        </div>
-        <button type="button" class="btn btn-warning text-white px-3 d-flex align-items-center gap-2" 
-                style="background-color: #ff9900; border-color: #ff9900;"
-                data-bs-toggle="modal" data-bs-target="#payrollCycleModal" onclick="resetForm()">
-            <i class="fas fa-plus"></i> <span data-i18n="add_cycle">Add Payroll Cycle</span>
-        </button>
+    <nav aria-label="breadcrumb">
+        <h5 class="payroll-breadcrumb mt-5 mb-5">
+            <span class="bc-root"><i class="fas fa-home me-1"></i> Payroll</span>
+            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
+            <span class="bc-parent" data-i18n="settings">Settings</span>
+            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
+            <span class="bc-current" data-i18n="payroll_cycle">Payroll Cycle</span>
+        </h5>
+    </nav>
+    <div class="mb-4">
+        <h5 class="text-secondary fw-bold m-0">
+            <i class="fa-solid fa-calendar-day me-2"></i>
+            <span data-i18n="company_management_title">Payroll Cycle Management</span>
+        </h5>
+        <p class="text-muted small m-0 mt-1" data-i18n="company_management_description">Define and manage employee payroll cycles, with the flexibility to categorize by employee groups or employment types.</p>
     </div>
+    <button type="button" class="btn btn-warning text-white px-3 d-flex align-items-center gap-2" style="background-color: #ff9900; border-color: #ff9900;" data-bs-toggle="modal" data-bs-target="#payrollCycleModal" onclick="resetForm()"><i class="fas fa-plus"></i> <span data-i18n="add_cycle">Add Payroll Cycle</span></button>
     <div class="mt-5 mb-5">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle w-100" id="payrollCycleTable">
-                <thead class="table-light text-secondary">
-                    <tr>
-                        <th scope="col" style="width: 25%;" data-i18n="table_cycle_name">Cycle Name</th>
-                        <th scope="col" style="width: 15%;" data-i18n="table_frequency">Frequency</th>
-                        <th scope="col" style="width: 20%;" data-i18n="table_cutoff">Attendance Cut-off</th>
-                        <th scope="col" style="width: 15%;" data-i18n="table_payment_day">Payment Day</th>
-                        <th scope="col" style="width: 15%;" data-i18n="table_bank_format">Bank Format</th>
-                        <th scope="col" style="width: 10%; text-align: center;" data-i18n="table_actions">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr id="cycle-row-1">
-                        <td>
-                            <strong class="text-dark">Office Staff Cycle</strong>
-                            <div class="text-muted small">พนักงานประจำสำนักงาน</div>
-                        </td>
-                        <td><span class="badge bg-primary-subtle text-primary px-2 py-1">Monthly</span></td>
-                        <td>Every 25th of the month</td>
-                        <td>Every 30th of the month</td>
-                        <td>KBANK_SMART</td>
-                        <td class="text-center">
-                            <div class="d-flex justify-content-center gap-2">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editCycle(1)" title="Edit">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCycle(1)" title="Delete">
-                                    <i class="fas fa-trash-alt"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr id="cycle-row-2">
-                        <td>
-                            <strong class="text-dark">Part-time / Subcontract</strong>
-                            <div class="text-muted small">พนักงานรายสัปดาห์ / คลังสินค้า</div>
-                        </td>
-                        <td><span class="badge bg-info-subtle text-info px-2 py-1">Weekly</span></td>
-                        <td>Every Friday</td>
-                        <td>Every Monday</td>
-                        <td>SCB</td>
-                        <td class="text-center">
-                            <div class="d-flex justify-content-center gap-2">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editCycle(2)" title="Edit">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCycle(2)" title="Delete">
-                                    <i class="fas fa-trash-alt"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+        <table class="table table-hover table-border align-middle w-100" id="payrollCycleTable">
+            <thead class="table-light text-secondary">
+                <tr>
+                    <th scope="col" style="width: 25%;" data-i18n="table_cycle_name">Cycle Name</th>
+                    <th scope="col" style="width: 15%;" data-i18n="table_frequency">Frequency</th>
+                    <th scope="col" style="width: 20%;" data-i18n="table_cutoff">Attendance Cut-off</th>
+                    <th scope="col" style="width: 15%;" data-i18n="table_payment_day">Payment Day</th>
+                    <th scope="col" style="width: 15%;" data-i18n="table_bank_format">Bank Format</th>
+                    <th scope="col" style="width: 10%; text-align: center;" data-i18n="table_actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr id="cycle-row-1">
+                    <td>
+                        <strong class="text-dark">Office Staff Cycle</strong>
+                        <div class="text-muted small">พนักงานประจำสำนักงาน</div>
+                    </td>
+                    <td><span class="badge bg-primary-subtle text-primary px-2 py-1">Monthly</span></td>
+                    <td>Every 25th of the month</td>
+                    <td>Every 30th of the month</td>
+                    <td>KBANK_SMART</td>
+                    <td class="text-center">
+                        <div class="d-flex justify-content-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editCycle(1)" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCycle(1)" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <tr id="cycle-row-2">
+                    <td>
+                        <strong class="text-dark">Part-time / Subcontract</strong>
+                        <div class="text-muted small">พนักงานรายสัปดาห์ / คลังสินค้า</div>
+                    </td>
+                    <td><span class="badge bg-info-subtle text-info px-2 py-1">Weekly</span></td>
+                    <td>Every Friday</td>
+                    <td>Every Monday</td>
+                    <td>SCB</td>
+                    <td class="text-center">
+                        <div class="d-flex justify-content-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editCycle(2)" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCycle(2)" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 </div>
 <div class="modal fade" id="payrollCycleModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="payrollCycleModalLabel" aria-hidden="true">
