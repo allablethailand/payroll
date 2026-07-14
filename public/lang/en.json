@@ -1,18 +1,10 @@
 {
-    "dashboard": "Dashboard",
-    "employees": "Employees",
-    "timesheets": "Time Sheets",
-    "payroll_process": "Payroll Process",
-    "reports": "Reports",
-    "settings": "Settings",
-    "company_setup": "Company Setup",
-    "payroll_cycle": "Payroll Cycle",
-    "earnings_deductions": "Earnings / Deductions",
-    "general_info": "General Info",
-    "save": "Save",
-    "cancel": "Cancel",
-    "company_name": "Company Name",
-    "thai": "Thai",
-    "english": "English",
-    "tax_id": "Tax ID"
+    "search": "Search",
+    "next": "Next",
+    "previous": "Previous",
+    "lengthMenu": "Show _MENU_ entries",
+    "zeroRecords": "No matching records found",
+    "info": "Showing _START_ to _END_ of _TOTAL_ entries",
+    "infoEmpty": "Showing 0 to 0 of 0 entries",
+    "infoFiltered": "(filtered from _MAX_ total entries)"
 }

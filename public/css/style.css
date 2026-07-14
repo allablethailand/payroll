@@ -379,3 +379,13 @@ html, body {
     font-weight: 600;
     font-size: 1rem;
 }
+.profile-upload-circle {
+    cursor: pointer;
+    object-fit: cover;
+}
+.profile-upload-badge {
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+    transform: translate(-6px, -6px);
+}

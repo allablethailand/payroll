@@ -40,18 +40,7 @@
                     <img class="current-flag" src="<?=BASE_URL?>/public/flags/gb.png" width="15" alt="EN flag">
                     <span class="lang-text text-current-lang">EN</span>
                 </button>
-                <ul class="nav-lang-menu" id="languageMenu">
-                    <li>
-                        <a href="javascript:void(0)" class="dropdown-lang-item" data-value="en" data-lang="EN" data-flag="<?=BASE_URL?>/public/flags/gb.png">
-                            <img src="<?=BASE_URL?>/public/flags/gb.png" width="15" alt="EN"> English
-                        </a>
-                    </li>
-                    <li>
-                        <a href="javascript:void(0)" class="dropdown-lang-item" data-value="th" data-lang="TH" data-flag="<?=BASE_URL?>/public/flags/th.png">
-                            <img src="<?=BASE_URL?>/public/flags/th.png" width="15" alt="TH"> ไทย
-                        </a>
-                    </li>
-                </ul>
+                <ul class="nav-lang-menu" id="languageMenu"></ul>
             </div>
             <a href="#" class="nav-profile-link">
                 <div class="profile-img-box">
@@ -80,14 +69,6 @@
             </a>
         </li>
         <li class="menu-item">
-            <a href="<?=BASE_URL?>/timesheets" class="menu-link">
-                <span class="menu-icon">
-                    <img src="<?=BASE_URL?>/public/images/menu/TIMESHEET.SVG" alt="Time Sheets">
-                </span>
-                <span class="menu-text" data-i18n="timesheets">Time Sheets</span>
-            </a>
-        </li>
-        <li class="menu-item">
             <a href="<?=BASE_URL?>/payroll-process" class="menu-link">
                 <span class="menu-icon">
                     <img src="<?=BASE_URL?>/public/images/menu/PAYROLL.SVG" alt="Payroll Process">
@@ -101,6 +82,14 @@
                     <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Reports">
                 </span>
                 <span class="menu-text" data-i18n="reports">Reports</span>
+            </a>
+        </li>
+        <li class="menu-item">
+            <a href="<?=BASE_URL?>/submission" class="menu-link">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/SUBMISSION.SVG" alt="Submission">
+                </span>
+                <span class="menu-text" data-i18n="submission">Submission</span>
             </a>
         </li>
         <li class="menu-item has-submenu">
@@ -134,6 +123,30 @@
                             <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Earnings / Deductions">
                         </span>
                         <span class="submenu-text" data-i18n="earnings_deductions">Earnings / Deductions</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/setup/approval" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Approval">
+                        </span>
+                        <span class="submenu-text" data-i18n="approval">Approval</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/setup/tax-statutory" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/TAX.SVG" alt="Approval">
+                        </span>
+                        <span class="submenu-text" data-i18n="approval">Tax And Statutory</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/setup/notification-setting" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/SETTING.SVG" alt="Notification">
+                        </span>
+                        <span class="submenu-text" data-i18n="notification">Notification Setting</span>
                     </a>
                 </li>
             </ul>

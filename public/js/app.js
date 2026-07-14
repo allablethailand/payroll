@@ -1,41 +1,28 @@
-$(document).ready(function() {
-    let currentLang = localStorage.getItem('preferred_language') || 'en';
-    loadLanguage(currentLang);
+const pageLength = 50;
+const lengthMenu = [[50, 100, 250, 500, 1000, -1], [50, 100, 250, 500, 1000, "All"]];
+let currentLang = 'en';
+let langData = {};
+const langInfo = {
+    en: { flag: 'gb', label: 'EN', full: 'English' },
+    th: { flag: 'th', label: 'TH', full: 'ไทย' }
+};
+$(document).ready(async function() {
+    currentLang = localStorage.getItem('preferred_language') || 'en';
+    await loadLang(currentLang);
+    buildLanguageMenu();
     $('.nav-lang-btn').on('click', function(e) {
         e.stopPropagation();
         $('#languageMenu').toggleClass('active');
     });
-    $('.dropdown-lang-item').on('click', function(e) {
+    $(document).on('click', '.dropdown-lang-item', async function(e) {
         e.preventDefault();
         const selectedValue = $(this).data('value');
-        loadLanguage(selectedValue);
+        await changeLanguage(selectedValue);
         $('#languageMenu').removeClass('active');
     });
     $(document).on('click', function() {
         $('#languageMenu').removeClass('active');
     });
-    function loadLanguage(lang) {
-        const langPath = `${BASE_URL}/public/lang/${lang}.json?v=${Date.now()}`; 
-        $.getJSON(langPath, function(translations) {
-            const activeMenuItem = $(`.dropdown-lang-item[data-value="${lang}"]`);
-            if (activeMenuItem.length) {
-                const textBtn = activeMenuItem.data('lang');
-                const flagBtn = activeMenuItem.data('flag');
-                $('.text-current-lang').text(textBtn);
-                $('.current-flag').attr('src', flagBtn);
-            }
-            $('[data-i18n]').each(function() {
-                const key = $(this).data('i18n');
-                if (translations[key]) {
-                    $(this).text(translations[key]);
-                }
-            });
-            localStorage.setItem('preferred_language', lang);
-            console.log(`[i18n] โหลดภาษาสำเร็จ: ${lang.toUpperCase()}`);
-        }).fail(function() {
-            console.error(`ไม่สามารถโหลดไฟล์ภาษาจากพาธ: ${langPath} ได้`);
-        });
-    }
     $('.nav-btn-hamberger').on('click', function(e) {
         e.stopPropagation();
         $('#origamiSidebar').toggleClass('active');
@@ -54,3 +41,87 @@ $(document).ready(function() {
         $parent.siblings('.has-submenu').removeClass('open').find('.submenu').slideUp(200);
     });
 });
+function getTableLang() {
+    return {
+        search: langData.search || "Search",
+        lengthMenu: langData.lengthMenu || "Show _MENU_ entries",
+        zeroRecords: langData.zeroRecords || "No matching records found",
+        info: langData.info || "Showing _START_ to _END_ of _TOTAL_ entries",
+        infoEmpty: langData.infoEmpty || "Showing 0 to 0 of 0 entries",
+        infoFiltered: langData.infoFiltered || "(filtered from _MAX_ total entries)",
+        paginate: {
+            first: langData.first || "First",
+            last: langData.last || "Last",
+            next: langData.next || "Next",
+            previous: langData.previous || "Previous"
+        }
+    };
+}
+async function changeLanguage(lang) {
+    if (currentLang === lang) return;
+    currentLang = lang;
+    localStorage.setItem('preferred_language', lang);
+    await loadLang(lang);
+}
+async function loadLang(lang) {
+    try {
+        const res = await fetch(`${BASE_URL}/public/lang/${lang}.json?v=${Date.now()}`);
+        if (!res.ok) throw new Error('Language file missing');
+        langData = await res.json();
+        applyLanguage(lang);
+        const info = langInfo[lang];
+        if (info) {
+            $('.text-current-lang').text(info.label);
+            $('.current-flag').attr('src', `${BASE_URL}/public/flags/${info.flag}.png`);
+        } 
+        console.log(`[i18n] โหลดภาษาสำเร็จ: ${lang.toUpperCase()}`);
+    } catch (e) {
+        console.error("Error loading language file:", e);
+    }
+}
+function applyLanguage(lang, root = document) {
+    updateText(root);
+    if (typeof refreshAllTables === 'function') {
+        refreshAllTables();
+    }
+}
+function buildLanguageMenu() {
+    const langs = ['en', 'th'];
+    const menu = $('#languageMenu').empty();
+    langs.forEach(lang => {
+        const info = langInfo[lang];
+        if (!info) return;
+        const item = $(`
+            <li>
+                <a class="dropdown-item dropdown-lang-item" href="javascript:void(0)" data-value="${lang}" data-lang="${info.label}" data-flag="${BASE_URL}/public/flags/${info.flag}.png">
+                    <img src="${BASE_URL}/public/flags/${info.flag}.png" width="15" class="me-2" loading="lazy">
+                    ${info.full}
+                </a>
+            </li>
+        `);
+        menu.append(item);
+    });
+}
+function updateText(root = document) {
+    $(root).find('[data-i18n]').each(function () {
+        const key = $(this).data('i18n');
+        if (langData[key]) {
+            if ($(this).is('input, textarea')) {
+                $(this).attr('placeholder', langData[key]);
+            } else {
+                $(this).text(langData[key]);
+            }
+        }
+    });
+}
+function refreshAllTables() {
+    const tableMappings = {
+        'tb_employee': typeof initEmployeeTable === 'function' ? initEmployeeTable : null,
+    };
+    $('.dataTable').each(function () {
+        const initFn = tableMappings[this.id];
+        if (initFn) {
+            initFn(); 
+        }
+    });
+}
