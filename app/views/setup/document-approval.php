@@ -1,41 +1,3 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>อนุมัติ &amp; เอกสาร — Settings</title>
-<link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-:root{--brand:#0F6E5D;--brand-dark:#0A4F43;--brand-light:#E6F3F0;--gold:#C08A2E;--ink:#1E2A28;--muted:#6B7876;--bg:#F5F7F6;--line:#E1E7E5;}
-body{font-family:'Noto Sans Thai',sans-serif;background:var(--bg);color:var(--ink);}
-.container-body{max-width:1180px;margin:0 auto;padding-bottom:60px;}
-.payroll-breadcrumb{color:var(--muted);font-weight:500;font-size:.95rem;}
-.payroll-breadcrumb .bc-current{color:var(--ink);font-weight:700;}
-.payroll-breadcrumb .bc-separator{margin:0 6px;color:#B7C2BF;}
-.btn-brand{background:var(--brand);border-color:var(--brand);color:#fff;}
-.btn-brand:hover{background:var(--brand-dark);border-color:var(--brand-dark);color:#fff;}
-.btn-outline-brand{border-color:var(--brand);color:var(--brand);}
-.btn-outline-brand:hover{background:var(--brand);color:#fff;}
-.card-surface{background:#fff;border:1px solid var(--line);border-radius:12px;}
-.settings-nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
-.settings-nav a{border:1px solid var(--line);background:#fff;border-radius:20px;padding:6px 14px;font-size:.83rem;font-weight:600;color:var(--muted);text-decoration:none;}
-.settings-nav a.active{background:var(--brand);border-color:var(--brand);color:#fff;}
-.nav-tabs .nav-link{color:var(--muted);font-weight:700;border:none;border-bottom:3px solid transparent;}
-.nav-tabs .nav-link.active{color:var(--brand-dark);border-bottom:3px solid var(--brand);background:none;}
-table.pl-table thead th{font-size:.78rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);border-bottom:2px solid var(--line);font-weight:700;}
-table.pl-table td{vertical-align:middle;}
-.status-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:.78rem;font-weight:700;}
-.status-pill .dot{width:6px;height:6px;border-radius:50%;}
-.status-active{background:#E9F5EA;color:#2E7D32;} .status-active .dot{background:#2E7D32;}
-.step-row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#FAFBFB;}
-.step-order{width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;}
-.tpl-card{border:2px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;text-align:center;}
-.tpl-card.selected{border-color:var(--brand);background:var(--brand-light);}
-.mock-tag{position:fixed;bottom:16px;right:16px;background:var(--ink);color:#fff;padding:6px 14px;border-radius:20px;font-size:.75rem;font-weight:600;opacity:.85;z-index:1050;}
-</style>
-</head>
-<body>
 <div class="container container-body">
   <nav aria-label="breadcrumb">
     <h5 class="payroll-breadcrumb mt-5 mb-3">
@@ -131,10 +93,6 @@ table.pl-table td{vertical-align:middle;}
     </div>
   </div>
 </div>
-
-<div class="mock-tag"><i class="fa-solid fa-flask me-1"></i> Mockup — ข้อมูลจำลอง</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
 <script>
 let steps = [
   {role:'หัวหน้าฝ่ายบุคคล (HR Manager)', name:'สุกัญญา รักษ์งาน'},
@@ -165,4 +123,3 @@ function selectTpl(el){ $('.tpl-card').removeClass('selected'); $(el).addClass('
 function mockToast(msg){ const t=$(`<div class="mock-tag" style="right:auto;left:16px;background:var(--brand);">${msg}</div>`); $('body').append(t); setTimeout(()=>t.fadeOut(400,()=>t.remove()),2200); }
 renderSteps();
 </script>
-</body></html>

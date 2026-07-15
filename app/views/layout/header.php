@@ -92,6 +92,25 @@
                 <span class="menu-text" data-i18n="submission">Submission</span>
             </a>
         </li>
+        <li class="menu-item">
+            <a href="javascript:void(0);" class="menu-link submenu-toggle">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/SETTINGS.SVG" alt="Settings">
+                </span>
+                <span class="menu-text" data-i18n="settings">Time & Leave</span>
+                <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
+            </a>
+            <ul class="submenu">
+                <li>
+                    <a href="<?=BASE_URL?>/setup-rules" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/COMPANY.SVG" alt="Setup & Rules">
+                        </span>
+                        <span class="submenu-text" data-i18n="company_setup">Setup & Rules</span>
+                    </a>
+                </li>
+            </ul>
+        </li>
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
@@ -102,51 +121,43 @@
             </a>
             <ul class="submenu">
                 <li>
-                    <a href="<?=BASE_URL?>/setup/company" class="submenu-link">
+                    <a href="<?=BASE_URL?>/setup/company-profile" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/COMPANY.SVG" alt="Company Setup">
+                            <img src="<?=BASE_URL?>/public/images/menu/COMPANY.SVG" alt="Company Profile">
                         </span>
-                        <span class="submenu-text" data-i18n="company_setup">Company Setup</span>
+                        <span class="submenu-text" data-i18n="company_setup">Company Profile</span>
                     </a>
                 </li>
                 <li>
-                    <a href="<?=BASE_URL?>/setup/cycle" class="submenu-link">
+                    <a href="<?=BASE_URL?>/setup/payroll-configuration" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Payroll Cycle">
+                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Payroll Configuration">
                         </span>
-                        <span class="submenu-text" data-i18n="payroll_cycle">Payroll Cycle</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="<?=BASE_URL?>/setup/earnings-deductions" class="submenu-link">
-                        <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Earnings / Deductions">
-                        </span>
-                        <span class="submenu-text" data-i18n="earnings_deductions">Earnings / Deductions</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="<?=BASE_URL?>/setup/approval" class="submenu-link">
-                        <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Approval">
-                        </span>
-                        <span class="submenu-text" data-i18n="approval">Approval</span>
+                        <span class="submenu-text" data-i18n="payroll_cycle">Payroll Configuration</span>
                     </a>
                 </li>
                 <li>
                     <a href="<?=BASE_URL?>/setup/tax-statutory" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/TAX.SVG" alt="Approval">
+                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Tax & Statutory">
                         </span>
-                        <span class="submenu-text" data-i18n="approval">Tax And Statutory</span>
+                        <span class="submenu-text" data-i18n="earnings_deductions">Tax & Statutory</span>
                     </a>
                 </li>
                 <li>
-                    <a href="<?=BASE_URL?>/setup/notification-setting" class="submenu-link">
+                    <a href="<?=BASE_URL?>/setup/document-approval" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/SETTING.SVG" alt="Notification">
+                            <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Document & Approval">
                         </span>
-                        <span class="submenu-text" data-i18n="notification">Notification Setting</span>
+                        <span class="submenu-text" data-i18n="approval">Document & Approval</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/setup/notification" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/TAX.SVG" alt="Approval">
+                        </span>
+                        <span class="submenu-text" data-i18n="approval">Notification</span>
                     </a>
                 </li>
             </ul>

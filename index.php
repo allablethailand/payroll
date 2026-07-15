@@ -28,12 +28,12 @@
     $router->get('dashboard', 'DashboardController@index');
     $router->get('employees', 'EmployeeController@index');
     $router->get('/payroll-process', 'PayrollController@index');
-    $router->get('setup/company', 'CompanyController@index');
-    $router->get('setup/cycle', 'CycleController@index');
-    $router->get('setup/earnings-deductions', 'EarningsDeductionsController@index');
-    $router->get('setup/approval', 'ApprovalController@index');
-    $router->get('setup/tax-statutory', 'TaxController@index');
-    $router->get('setup/notification-setting', 'NotificationController@index');
+    $router->get('setup/company-profile', 'CompanyProfileController@index');
+    $router->get('setup/payroll-configuration', 'PayrollConfigurationController@index');
+    $router->get('setup/tax-statutory', 'TaxStatutoryController@index');
+    $router->get('setup/document-approval', 'DocumentApprovalController@index');
+    $router->get('setup/notification', 'NotificationController@index');
+    $router->get('setup-rules', 'SetupRulesController@index');
     $router->get('reports', 'ReportsController@index');
     $router->get('submission', 'SubmissionController@index');
     $router->get('api/payroll/metadata', 'CompanyController@getMetadata');
