@@ -41,4 +41,5 @@
     $router->post('api/employee.list', 'EmployeeController@list');
     $router->get('/employees/create', 'EmployeeController@create');
     $router->get('/employees/{id}', 'EmployeeController@detail');
+    $router->get('api/address/search', 'AddressController@getMetadata');
     $router->dispatch();

@@ -6,5 +6,73 @@
     "zeroRecords": "No matching records found",
     "info": "Showing _START_ to _END_ of _TOTAL_ entries",
     "infoEmpty": "Showing 0 to 0 of 0 entries",
-    "infoFiltered": "(filtered from _MAX_ total entries)"
+    "infoFiltered": "(filtered from _MAX_ total entries)",
+    "dashboard": "Dashboard",
+    "employees": "Employees",
+    "payroll_process": "Payroll Process",
+    "reports": "Reports",
+    "time_and_leave": "Time & Leave",
+    "setup_and_rules": "Setup & Rules",
+    "payroll_configuration": "Payroll Configuration",
+    "tax_and_statutory": "Tax & Statutory",
+    "document_and_approval": "Document & Approval",
+    "payroll": "Payroll",
+    "settings": "Settings",
+    "company_setup": "Company Setup",
+    "company_management": "Company Management",
+    "company_management_description": "Configure and manage corporate profile, local tax identification, and primary bank accounts for payroll processing.",
+    "company_profile": "Company Profile",
+    "bank_accounts": "Bank Accounts",
+    "role": "Role",
+    "organization_structure": "Organization Structure",
+    "company_information": "Company Information",
+    "registered_country": "Registered Country",
+    "tax_id_ein": "Tax ID / EIN",
+    "company_legal_name": "Company Legal Name",
+    "local_name": "Local Name",
+    "registered_address": "Registered Address",
+    "address_line_1": "Address Line 1",
+    "address_line_2": "Address Line 2 (Optional)",
+    "search_address_label": "City / State / Zip Code",
+    "local_statutory": "Local Statutory",
+    "tax_settings": "Tax Settings",
+    "local_statutory_description": "*Please enter information based on the statutory requirements of your company's country of registration.",
+    "authorized_signatory_name": "Authorized Signatory Name",
+    "tax": {
+        "default_label": "Tax ID / EIN",
+        "th_label": "Tax ID",
+        "sg_label": "Unique Entity Number (UEN)",
+        "my_label": "Income Tax Number",
+        "us_label": "EIN"
+    },
+    "fields": {
+        "th_branch_code": {
+            "label": "Tax Branch Code"
+        },
+        "th_sso_id": {
+            "label": "Social Security Employer ID"
+        },
+        "sg_csn": {
+            "label": "CPF Submission Number (CSN)"
+        },
+        "my_epf_no": {
+            "label": "EPF Employer Number"
+        },
+        "my_socso_no": {
+            "label": "SOCSO Number"
+        },
+        "us_sui_account_number": {
+            "label": "State Unemployment ID (SUI)"
+        }
+    },
+    "cancel": "Cancel",
+    "save": "Save",
+    "success": "Success",
+    "ok": "OK",
+    "warning": "Warning",
+    "yes": "Yes",
+    "no": "No",
+    "required_star_message": "Please fill all fields marked with *",
+    "confirm_cancel_title": "Confirm Cancel",
+    "confirm_cancel_message": "Are you sure you want to cancel this operation?"
 }

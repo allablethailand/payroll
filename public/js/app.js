@@ -1,6 +1,7 @@
 const pageLength = 50;
 const lengthMenu = [[50, 100, 250, 500, 1000, -1], [50, 100, 250, 500, 1000, "All"]];
-let currentLang = 'en';
+let currentLang = 'th';
+let registered_country = 'TH';
 let langData = {};
 const langInfo = {
     en: { flag: 'gb', label: 'EN', full: 'English' },
@@ -102,14 +103,20 @@ function buildLanguageMenu() {
         menu.append(item);
     });
 }
+function getLangValue(key) {
+    return key.split('.').reduce((acc, part) => {
+        return (acc && acc[part] !== undefined) ? acc[part] : undefined;
+    }, langData);
+}
 function updateText(root = document) {
     $(root).find('[data-i18n]').each(function () {
         const key = $(this).data('i18n');
-        if (langData[key]) {
+        const value = getLangValue(key);
+        if (value !== undefined) {
             if ($(this).is('input, textarea')) {
-                $(this).attr('placeholder', langData[key]);
+                $(this).attr('placeholder', value);
             } else {
-                $(this).text(langData[key]);
+                $(this).text(value);
             }
         }
     });
@@ -125,3 +132,32 @@ function refreshAllTables() {
         }
     });
 }
+const SiteLoader = {
+    /**
+     * สั่งปิดตัว Loader (ใช้เมื่อหน้าเว็บหรือ Component โหลดเสร็จ)
+     */
+    hide: function() {
+        const $preloader = $('#site-preloader');
+        if ($preloader.length) {
+            $preloader.addClass('fade-out');
+        }
+    },
+    
+    /**
+     * สั่งเปิดตัว Loader (ใช้เมื่อกดสลับหน้า หรือยิง AJAX งานใหญ่ๆ)
+     */
+    show: function() {
+        const $preloader = $('#site-preloader');
+        if ($preloader.length) {
+            $preloader.removeClass('fade-out');
+        }
+    }
+};
+
+// 1. ดักจับเมื่อหน้าแรกของเว็บไซต์โหลดทรัพยากร (DOM, Image, CSS) เสร็จสิ้นทั้งหมด
+$(window).on('load', function() {
+    // หน่วงเวลาเล็กน้อยเพื่อให้แอนิเมชันดูสมูท (เช่น 400ms) ก่อนปิด
+    setTimeout(function() {
+        SiteLoader.hide();
+    }, 400);
+});

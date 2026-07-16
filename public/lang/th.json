@@ -3,8 +3,77 @@
     "next": "ถัดไป",
     "previous": "ก่อนหน้า",
     "lengthMenu": "แสดง _MENU_ รายการ",
-    "zeroRecords": "ไม่พบข้อมูลที่ค้นหา",
+    "zeroRecords": "ไม่พบข้อมูลที่ตรงกัน",
     "info": "แสดงรายการที่ _START_ ถึง _END_ จากทั้งหมด _TOTAL_ รายการ",
-    "infoEmpty": "แสดง 0 ถึง 0 จาก 0 รายการ",
-    "infoFiltered": "(คัดกรองจากทั้งหมด _MAX_ รายการ)"
+    "infoEmpty": "แสดงรายการที่ 0 ถึง 0 จากทั้งหมด 0 รายการ",
+    "infoFiltered": "(กรองจากรายการทั้งหมด _MAX_ รายการ)",
+    "dashboard": "แดชบอร์ด",
+    "employees": "พนักงาน",
+    "payroll_process": "กระบวนการคิดเงินเดือน",
+    "reports": "รายงาน",
+    "time_and_leave": "เวลาทำงานและวันลา",
+    "setup_and_rules": "ตั้งค่าและกฎเกณฑ์",
+    "payroll_configuration": "การกำหนดค่าเงินเดือน",
+    "tax_and_statutory": "ภาษีและสิทธิประโยชน์ตามกฎหมาย",
+    "document_and_approval": "เอกสารและการอนุมัติ",
+    "payroll": "เงินเดือน",
+    "settings": "การตั้งค่า",
+    "company_setup": "ตั้งค่าบริษัท",
+    "company_management": "การจัดการบริษัท",
+    "company_management_description": "กำหนดค่าและจัดการโปรไฟล์องค์กร ข้อมูลประจำตัวผู้เสียภาษีท้องถิ่น และบัญชีธนาคารหลักสำหรับการประมวลผลเงินเดือน",
+    "company_profile": "โปรไฟล์บริษัท",
+    "bank_accounts": "บัญชีธนาคาร",
+    "role": "บทบาท/ตำแหน่ง",
+    "organization_structure": "โครงสร้างองค์กร",
+    "company_information": "ข้อมูลบริษัท",
+    "registered_country": "ประเทศที่จดทะเบียน",
+    "tax_id_ein": "เลขประจำตัวผู้เสียภาษี / EIN",
+    "company_legal_name": "ชื่อจดทะเบียนของบริษัท (ภาษาอังกฤษ)",
+    "local_name": "ชื่อบริษัท (ภาษาท้องถิ่น)",
+    "registered_address": "ที่อยู่จดทะเบียน",
+    "address_line_1": "ที่อยู่บรรทัดที่ 1",
+    "address_line_2": "ที่อยู่บรรทัดที่ 2 (ไม่บังคับ)",
+    "search_address_label": "ตำบล / อำเภอ / จังหวัด / รหัสไปรษณีย์",
+    "local_statutory": "ข้อกำหนดตามกฎหมายท้องถิ่น",
+    "tax_settings": "การตั้งค่าภาษี",
+    "local_statutory_description": "*กรุณากรอกข้อมูลตามข้อกำหนดทางกฎหมายของประเทศที่บริษัทของคุณจดทะเบียน",
+    "authorized_signatory_name": "ชื่อผู้มีอำนาจลงนาม",
+    "default_label": "เลขประจำตัวผู้เสียภาษี / EIN",
+    "tax": {
+        "default_label": "เลขประจำตัวผู้เสียภาษี / EIN",
+        "th_label": "เลขประจำตัวผู้เสียภาษี (Tax ID)",
+        "sg_label": "หมายเลขทะเบียนนิติบุคคล (UEN)",
+        "my_label": "เลขประจำตัวผู้เสียภาษีเงินได้",
+        "us_label": "หมายเลขประจำตัวนายจ้าง (EIN)"
+    },
+    "fields": {
+        "th_branch_code": {
+            "label": "รหัสสาขา"
+        },
+        "th_sso_id": {
+            "label": "เลขที่บัญชีนายจ้าง สปส."
+        },
+        "sg_csn": {
+            "label": "หมายเลขนำส่งเงินสมทบ CPF (CSN)"
+        },
+        "my_epf_no": {
+            "label": "หมายเลขนายจ้าง EPF"
+        },
+        "my_socso_no": {
+            "label": "หมายเลขกองทุนประกันสังคม (SOCSO)"
+        },
+        "us_sui_account_number": {
+            "label": "เลขบัญชีประกันการว่างงานรัฐ (SUI)"
+        }
+    },
+    "cancel": "ยกเลิก",
+    "save": "บันทึก",
+    "success": "สำเร็จ",
+    "ok": "ตกลง",
+    "warning": "คำเตือน",
+    "yes": "ใช่",
+    "no": "ไม่",
+    "required_star_message": "กรุณากรอกข้อมูลในช่องที่มีเครื่องหมาย * ให้ครบถ้วน",
+    "confirm_cancel_title": "ยืนยันการยกเลิก",
+    "confirm_cancel_message": "ต้องการยกเลิกการดำเนินการใช่หรือไม่?"
 }
