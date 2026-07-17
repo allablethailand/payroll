@@ -18,10 +18,8 @@ class AddressModel {
                     $lvl3 AS city,
                     $lvl4 AS sub_district
                 FROM master_addresses
-                WHERE country_code = :country 
-                  AND search_text LIKE :search
+                WHERE country_code = :country AND search_text LIKE :search
                 LIMIT :limit";
-
         $stmt = $this->db->prepare($sql);
         $stmt->bindValue(':country', $country, PDO::PARAM_STR);
         $stmt->bindValue(':search', $searchPattern, PDO::PARAM_STR);

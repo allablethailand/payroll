@@ -47,13 +47,7 @@
                 </label>
             </div>
             <div class="col-sm-4 mt-3">
-                <select class="form-select required" id="registered_country">
-                    <option value="">-- Select Country --</option>
-                    <option value="TH">Thailand</option>
-                    <option value="SG">Singapore</option>
-                    <option value="MY">Malaysia</option>
-                    <option value="US">United States</option>
-                </select>
+                <select id="registered_country" class="select2-remote" data-api="/api/country.get" data-type="country"></select>
             </div>
             <div class="col-sm-2 mt-3">
                 <label class="form-label">
@@ -119,6 +113,7 @@
                 <input type="text" class="form-control required autocomplete-address" id="search_address" autocomplete="off">
                 <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
                 <input type="hidden" name="master_address_id" class="master-address-id-field" id="master_address_id">
+                <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
             </div>
         </div>
         <h6 class="text-secondary fw-bold mb-3 mt-4">

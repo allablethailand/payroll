@@ -2,5 +2,6 @@
 <script src="<?=BASE_URL?>/node_modules/sweetalert2/dist/sweetalert2.all.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/datatables.net/js/dataTables.js"></script>
 <script src="<?=BASE_URL?>/node_modules/datatables.net-bs5/js/dataTables.bootstrap5.js"></script>
+<script src="<?=BASE_URL?>/node_modules/select2/dist/js/select2.min.js"></script>
 </body>
 </html>

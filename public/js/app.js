@@ -41,6 +41,7 @@ $(document).ready(async function() {
         $parent.toggleClass('open');
         $parent.siblings('.has-submenu').removeClass('open').find('.submenu').slideUp(200);
     });
+    initSelect2Remote('.select2-remote');
 });
 function getTableLang() {
     return {
@@ -82,6 +83,37 @@ async function loadLang(lang) {
 }
 function applyLanguage(lang, root = document) {
     updateText(root);
+    if ($('#search_address').length && typeof currentCompanyAddresses !== 'undefined') {
+        const addressText = (lang === 'th') ? currentCompanyAddresses.th : currentCompanyAddresses.en;
+        $('#search_address').val(addressText);
+    }
+    $(root).find('.select2-remote.select2-hidden-accessible').each(function() {
+        const $this = $(this);
+        const val = $this.val();
+        let selectedData = null;
+        const select2Data = $this.select2('data');
+        if (select2Data && select2Data.length > 0) {
+            selectedData = select2Data[0];
+            const extraData = $this.find('option:selected').data('data');
+            if (extraData) {
+                selectedData = $.extend({}, selectedData, extraData);
+            }
+        }
+        initSelect2Remote($this); 
+        if (val && selectedData) {
+            const newText = (lang === 'th') ? selectedData.text_th : selectedData.text_en;
+            if (newText) {
+                $this.empty();
+                const newOption = new Option(newText, val, true, true);
+                selectedData.text = newText;
+                $(newOption).data('data', selectedData); 
+                $this.append(newOption);
+            }
+            $this.trigger('change'); 
+            $this.trigger('change.select2');
+        }
+    });
+
     if (typeof refreshAllTables === 'function') {
         refreshAllTables();
     }
@@ -109,8 +141,9 @@ function getLangValue(key) {
     }, langData);
 }
 function updateText(root = document) {
-    $(root).find('[data-i18n]').each(function () {
-        const key = $(this).data('i18n');
+    const $elements = $(root).find('[data-i18n]').add($(root).filter('[data-i18n]'));
+    $elements.each(function () {
+        const key = $(this).attr('data-i18n'); 
         const value = getLangValue(key);
         if (value !== undefined) {
             if ($(this).is('input, textarea')) {
@@ -132,32 +165,3 @@ function refreshAllTables() {
         }
     });
 }
-const SiteLoader = {
-    /**
-     * สั่งปิดตัว Loader (ใช้เมื่อหน้าเว็บหรือ Component โหลดเสร็จ)
-     */
-    hide: function() {
-        const $preloader = $('#site-preloader');
-        if ($preloader.length) {
-            $preloader.addClass('fade-out');
-        }
-    },
-    
-    /**
-     * สั่งเปิดตัว Loader (ใช้เมื่อกดสลับหน้า หรือยิง AJAX งานใหญ่ๆ)
-     */
-    show: function() {
-        const $preloader = $('#site-preloader');
-        if ($preloader.length) {
-            $preloader.removeClass('fade-out');
-        }
-    }
-};
-
-// 1. ดักจับเมื่อหน้าแรกของเว็บไซต์โหลดทรัพยากร (DOM, Image, CSS) เสร็จสิ้นทั้งหมด
-$(window).on('load', function() {
-    // หน่วงเวลาเล็กน้อยเพื่อให้แอนิเมชันดูสมูท (เช่น 400ms) ก่อนปิด
-    setTimeout(function() {
-        SiteLoader.hide();
-    }, 400);
-});

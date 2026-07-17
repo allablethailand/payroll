@@ -1,4 +1,5 @@
 <?php
+    date_default_timezone_set('UTC');
     ini_set('session.cookie_httponly', 1);
     if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
         ini_set('session.cookie_secure', 1);
@@ -23,7 +24,14 @@
             }
         }
     });
+    $_SESSION['user'] = [
+        'employee_id' => 1,
+        'company_id'  => 1,
+        'role'        => 'admin'
+    ];
+    ensure_login();
     $router = new Router();
+    $router->get('auth', 'AuthController@permission'); 
     $router->get('/', 'DashboardController@index'); 
     $router->get('dashboard', 'DashboardController@index');
     $router->get('employees', 'EmployeeController@index');
@@ -42,4 +50,7 @@
     $router->get('/employees/create', 'EmployeeController@create');
     $router->get('/employees/{id}', 'EmployeeController@detail');
     $router->get('api/address/search', 'AddressController@getMetadata');
+    $router->post('api/company.get', 'CompanyProfileController@get');
+    $router->post('api/company.save', 'CompanyProfileController@save');
+    $router->post('api/country.get', 'MasterController@getMaster');
     $router->dispatch();
