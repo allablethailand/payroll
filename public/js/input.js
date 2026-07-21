@@ -3,6 +3,8 @@ function requiredMark(isRequired) {
 }
 $(document).on('input change', '.required', function () {
     let value = $(this).val();
+
+    // 1. จัดการ Checkbox และ Radio
     if ($(this).is(':checkbox') || $(this).is(':radio')) {
         if ($(this).is(':checked')) {
             $(this).removeClass('is-invalid');
@@ -11,9 +13,24 @@ $(document).on('input change', '.required', function () {
         }
         return;
     }
-    value = value ? value.trim() : '';
-    if (value) {
+
+    // 2. จัดการข้อมูลประเภทอื่นๆ (ป้องกัน Error จาก Array หรือค่าน้อยกว่า String)
+    let isValid = false;
+
+    if (Array.isArray(value)) {
+        // กรณีเป็น Select Multiple ให้เช็กว่ามีเลือกไว้ไหม
+        isValid = value.length > 0;
+    } else {
+        // แปลงเป็น String เสมอก่อนแล้วค่อย trim() ป้องกันปัญหา value เป็นประเภทอื่น
+        let strValue = value ? String(value).trim() : '';
+        isValid = strValue.length > 0;
+    }
+
+    // 3. ปรับ Class ตามผลการตรวจสอบ
+    if (isValid) {
         $(this).removeClass('is-invalid');
+    } else {
+        $(this).addClass('is-invalid');
     }
 });
 function debounce(func, delay) {

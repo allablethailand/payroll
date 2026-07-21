@@ -17,20 +17,36 @@
   </div>
 
   <ul class="nav nav-tabs mb-4">
-    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button"><i class="fa-solid fa-diagram-project me-1"></i> ลำดับผู้อนุมัติ</button></li>
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button"><i class="fa-solid fa-diagram-project me-1"></i> <span data-i18n="approval_workflow">Approval Workflow</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-monitor" type="button" id="approvalMonitorTabBtn"><i class="fa-solid fa-list-check me-1"></i> <span data-i18n="approval_monitor">Monitor</span></button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-run" type="button"><i class="fa-solid fa-hashtag me-1"></i> เลขที่เอกสาร</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tpl" type="button"><i class="fa-solid fa-file-invoice me-1"></i> เทมเพลตสลิปเงินเดือน</button></li>
   </ul>
 
   <div class="tab-content">
     <!-- APPROVAL WORKFLOW -->
-    <div class="tab-pane fade show active card-surface p-3 p-md-4" id="tab-flow">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <div><h6 class="fw-bold mb-0">ลำดับผู้อนุมัติงวดเงินเดือน</h6><div class="text-secondary small">เรียงลำดับขั้นตอนการอนุมัติก่อนจ่ายเงินจริง</div></div>
-        <button class="btn btn-outline-brand btn-sm" onclick="addStep()"><i class="fa-solid fa-plus me-1"></i> เพิ่มขั้นตอน</button>
+    <div class="tab-pane fade show active p-0" id="tab-flow">
+      <div class="card-surface p-3 p-md-4">
+        <table class="table table-hover align-middle w-100" id="tb_approval_workflow">
+          <thead class="table-light text-secondary">
+            <tr>
+              <th data-i18n="workflow_name">Workflow Name</th>
+              <th data-i18n="document_types">Document Types</th>
+              <th data-i18n="steps">Steps</th>
+              <th data-i18n="status">Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <div id="stepList"></div>
-      <div class="d-flex justify-content-end mt-3"><button class="btn btn-brand">บันทึกลำดับการอนุมัติ</button></div>
+    </div>
+
+    <!-- APPROVAL MONITOR -->
+    <div class="tab-pane fade p-0" id="tab-monitor">
+      <div class="card-surface p-3 p-md-4">
+        <div class="text-center text-secondary py-4" data-i18n="approval_monitor_coming_soon">The monitor page will be built in the next phase.</div>
+      </div>
     </div>
 
     <!-- RUNNING NUMBER -->
@@ -92,34 +108,74 @@
       </div>
     </div>
   </div>
+
+  <!-- Approval Workflow editor modal -->
+  <div class="modal fade" id="workflowModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="workflowModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold text-secondary" id="workflowModalLabel">
+            <i class="fa-solid fa-pen-to-square me-2"></i><span data-i18n="approval_workflow">Approval Workflow</span>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="workflowForm">
+          <input type="hidden" id="workflow_id" name="id">
+          <div class="modal-body">
+            <div class="row mb-3">
+              <div class="col-sm-3 align-self-center">
+                <label class="form-label mb-0"><span data-i18n="workflow_name">Workflow Name</span> <span class="text-danger">*</span></label>
+              </div>
+              <div class="col-sm-9">
+                <input type="text" class="form-control required" id="workflow_name" name="workflow_name" maxlength="150">
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-sm-3 align-self-center">
+                <label class="form-label mb-0" data-i18n="description">Description</label>
+              </div>
+              <div class="col-sm-9">
+                <textarea class="form-control" id="workflow_description" name="description" rows="2" maxlength="500"></textarea>
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-sm-3 align-self-center">
+                <label class="form-label mb-0"><span data-i18n="document_types">Document Types</span> <span class="text-danger">*</span></label>
+              </div>
+              <div class="col-sm-9">
+                <select class="form-select select2-remote required" id="workflow_document_types" name="document_type_codes" multiple data-api="/api/approval-workflow.document-type-options"></select>
+              </div>
+            </div>
+            <div class="row mb-4">
+              <div class="col-sm-3 align-self-center">
+                <label class="form-label mb-0" data-i18n="status">Status</label>
+              </div>
+              <div class="col-sm-3">
+                <select class="form-select select2-static" id="workflow_status" name="status" data-option-keys="active,inactive" data-option-values="active,inactive"></select>
+              </div>
+            </div>
+            <hr>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h6 class="fw-bold mb-0" data-i18n="approval_steps">Approval Steps</h6>
+                <div class="text-secondary small" data-i18n="approval_steps_hint">Drag to reorder. Each step's approver is either one specific user or anyone holding a role.</div>
+              </div>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddStep"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_step">Add Step</span></button>
+            </div>
+            <div id="stepList"></div>
+            <div class="text-center text-secondary small py-3 d-none" id="noStepsMessage" data-i18n="no_steps_yet">No steps yet — add at least one.</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
 <script>
-let steps = [
-  {role:'หัวหน้าฝ่ายบุคคล (HR Manager)', name:'สุกัญญา รักษ์งาน'},
-  {role:'ผู้จัดการฝ่ายบัญชี (Finance Manager)', name:'ประยุทธ์ ตั้งใจทำ'},
-  {role:'ผู้บริหารระดับสูง (Director)', name:'เอกชัย มั่งมี'},
-];
-function renderSteps(){
-  const wrap=$('#stepList').empty();
-  steps.forEach((s,i)=>{
-    wrap.append(`<div class="step-row">
-      <div class="step-order">${i+1}</div>
-      <div class="flex-grow-1">
-        <input class="form-control form-control-sm mb-1" value="${s.role}" style="font-weight:700;">
-        <input class="form-control form-control-sm" value="${s.name}">
-      </div>
-      <div class="d-flex flex-column gap-1">
-        <button class="btn btn-sm btn-outline-secondary" ${i===0?'disabled':''} onclick="moveStep(${i},-1)"><i class="fa-solid fa-arrow-up"></i></button>
-        <button class="btn btn-sm btn-outline-secondary" ${i===steps.length-1?'disabled':''} onclick="moveStep(${i},1)"><i class="fa-solid fa-arrow-down"></i></button>
-      </div>
-      <button class="btn btn-sm btn-outline-danger" onclick="removeStep(${i})"><i class="fa-solid fa-trash"></i></button>
-    </div>`);
-  });
-}
-function moveStep(i,dir){ const j=i+dir; [steps[i],steps[j]]=[steps[j],steps[i]]; renderSteps(); }
-function removeStep(i){ steps.splice(i,1); renderSteps(); }
-function addStep(){ steps.push({role:'ผู้อนุมัติใหม่', name:'ระบุชื่อผู้อนุมัติ'}); renderSteps(); }
 function selectTpl(el){ $('.tpl-card').removeClass('selected'); $(el).addClass('selected'); }
 function mockToast(msg){ const t=$(`<div class="mock-tag" style="right:auto;left:16px;background:var(--brand);">${msg}</div>`); $('body').append(t); setTimeout(()=>t.fadeOut(400,()=>t.remove()),2200); }
-renderSteps();
 </script>
+<script src="<?=asset('public/js/setup/approval-workflow.js')?>"></script>

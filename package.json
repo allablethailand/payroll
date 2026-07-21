@@ -4,6 +4,7 @@
     "datatables.net-bs5": "^2.3.8",
     "fontawesome-free": "^1.0.4",
     "jquery": "^4.0.0",
+    "sortablejs": "^1.15.7",
     "sweetalert2": "^11.26.25"
   }
 }

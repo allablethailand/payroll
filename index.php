@@ -88,6 +88,18 @@
     $router->post('api/company-statutory-setting.save', 'TaxStatutoryController@companySettingSave');
     $router->post('api/company-statutory-setting.reset', 'TaxStatutoryController@companySettingReset');
     $router->get('setup/document-approval', 'DocumentApprovalController@index');
+    $router->post('api/approval-workflow.document-type-options', 'ApprovalWorkflowController@documentTypeOptions');
+    $router->get('api/approval-workflow.list', 'ApprovalWorkflowController@workflowList');
+    $router->get('api/approval-workflow.get', 'ApprovalWorkflowController@workflowGet');
+    $router->post('api/approval-workflow.save', 'ApprovalWorkflowController@workflowSave');
+    $router->post('api/approval-workflow.delete', 'ApprovalWorkflowController@workflowDelete');
+    $router->post('api/approval-workflow.duplicate', 'ApprovalWorkflowController@workflowDuplicate');
+    $router->post('api/approval-workflow.toggle-status', 'ApprovalWorkflowController@workflowToggleStatus');
+    $router->post('api/approval-request.create', 'ApprovalWorkflowController@requestCreate');
+    $router->post('api/approval-request.act', 'ApprovalWorkflowController@requestAct');
+    $router->get('api/approval-request.get', 'ApprovalWorkflowController@requestGet');
+    $router->get('api/approval-request.list', 'ApprovalWorkflowController@requestList');
+    $router->get('api/approval-request.logs', 'ApprovalWorkflowController@requestLogs');
     $router->get('setup/notification', 'NotificationController@index');
     $router->get('setup-rules', 'SetupRulesController@index');
     $router->get('reports', 'ReportsController@index');

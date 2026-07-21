@@ -5,6 +5,7 @@
 <script src="<?=BASE_URL?>/node_modules/select2/dist/js/select2.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/locales/bootstrap-datepicker.th.min.js"></script>
+<script src="<?=BASE_URL?>/node_modules/sortablejs/Sortable.min.js"></script>
 <div class="modal fade" id="systemModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
