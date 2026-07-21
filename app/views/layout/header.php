@@ -82,6 +82,14 @@
             </a>
         </li>
         <li class="menu-item">
+            <a href="<?=BASE_URL?>/payroll-approval" class="menu-link">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Payroll Approval">
+                </span>
+                <span class="menu-text" data-i18n="payroll_approval">Payroll Approval</span>
+            </a>
+        </li>
+        <li class="menu-item">
             <a href="<?=BASE_URL?>/reports" class="menu-link">
                 <span class="menu-icon">
                     <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Reports">

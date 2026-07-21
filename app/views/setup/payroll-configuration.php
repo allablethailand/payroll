@@ -173,7 +173,7 @@
                                             <label class="form-label mb-0"><span data-i18n="modal_bank_format">Bank Text Format</span> <span class="text-danger">*</span></label>
                                         </div>
                                         <div class="col-sm-9">
-                                            <select class="form-select select2-static required" id="bank_file_format" name="bank_file_format" data-option-keys="bank_fmt_kbank,bank_fmt_scb,bank_fmt_bbl,bank_fmt_dbs" data-option-values="KBANK_SMART,SCB,BBL,DBS_IDEAL"></select>
+                                            <select class="form-select select2-remote required" id="bank_file_format_id" name="bank_file_format_id" data-api="/api/bank-file-format.options"></select>
                                         </div>
                                     </div>
                                     <div class="row mb-3">
@@ -483,6 +483,14 @@
                             </div>
                             <div class="col-sm-9">
                                 <select class="form-select select2-static" id="tax_deduction_impact" name="tax_deduction_impact" data-option-keys="impact_before_tax,impact_after_tax" data-option-values="before_tax,after_tax"></select>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0" data-i18n="statutory_report_code">Statutory Report Mapping</label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-static" id="statutory_report_code" name="statutory_report_code" data-option-keys="statutory_report_th_slf" data-option-values="TH_SLF"></select>
                             </div>
                         </div>
                     </div>

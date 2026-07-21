@@ -17,6 +17,11 @@ function sourceEventTag(row) {
     const label = (currentLang === 'th' ? row.source_event_name_th : row.source_event_name_en) || row.source_event_code;
     return `<div class="text-muted small mt-1"><i class="fa-solid fa-link me-1"></i>${label}</div>`;
 }
+function statutoryReportTag(row) {
+    if (!row.statutory_report_code) return '';
+    const label = langData['statutory_report_' + row.statutory_report_code.toLowerCase()] || row.statutory_report_code;
+    return `<div class="text-muted small mt-1"><i class="fa-solid fa-landmark me-1"></i>${label}</div>`;
+}
 function statusBadge(row) {
     const isActive = row.status === 'active';
     const cls = isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary';
@@ -102,7 +107,7 @@ function initDeductionTypeTable() {
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
             {
                 data: null,
-                render: (data, type, row) => `<div><strong>${row.item_name_en}</strong></div><div class="text-muted small">${row.item_name_th}</div>${sourceEventTag(row)}`
+                render: (data, type, row) => `<div><strong>${row.item_name_en}</strong></div><div class="text-muted small">${row.item_name_th}</div>${sourceEventTag(row)}${statutoryReportTag(row)}`
             },
             { data: null, render: (d, t, row) => calcMethodBadge(row) },
             {
@@ -152,6 +157,7 @@ function resetPedTypeForm(itemType) {
     $('#calculation_method').val('').trigger('change');
     $('#tax_treatment').val('').trigger('change');
     $('#tax_deduction_impact').val('').trigger('change');
+    $('#statutory_report_code').val('').trigger('change');
     $('#country_code').val('').trigger('change');
     $('#ped_status').val('active').trigger('change');
     applyItemTypeFields(itemType);
@@ -173,6 +179,7 @@ function populatePedTypeForm(row) {
     $('#percent_rate').val(row.percent_rate || '');
     $('#tax_treatment').val(row.tax_treatment || '').trigger('change');
     $('#tax_deduction_impact').val(row.tax_deduction_impact || '').trigger('change');
+    $('#statutory_report_code').val(row.statutory_report_code || '').trigger('change');
     $('#calc_sso').prop('checked', Number(row.calc_sso) === 1);
     $('#calc_pf').prop('checked', Number(row.calc_pf) === 1);
     $('#country_code').val(row.country_code || '').trigger('change');
@@ -218,6 +225,7 @@ function collectPedTypeFormData() {
         percent_rate: $('#percent_rate').val(),
         tax_treatment: $('#tax_treatment').val(),
         tax_deduction_impact: $('#tax_deduction_impact').val(),
+        statutory_report_code: $('#statutory_report_code').val(),
         calc_sso: $('#calc_sso').is(':checked'),
         calc_pf: $('#calc_pf').is(':checked'),
         country_code: $('#country_code').val(),
@@ -233,13 +241,14 @@ $(document).ready(function () {
         initSelect2('#calculation_method', { mode: 'static' });
         initSelect2('#tax_treatment', { mode: 'static' });
         initSelect2('#tax_deduction_impact', { mode: 'static' });
+        initSelect2('#statutory_report_code', { mode: 'static', allowClear: true });
         initSelect2('#source_event_code', { mode: 'ajax', allowClear: true });
         initSelect2('#ped_status', { mode: 'static' });
         initSelect2('#country_code', { mode: 'ajax' });
         initSelect2('#payroll_frequency', { mode: 'static' });
         initSelect2('#cutoff_day_of_week', { mode: 'static' });
         initSelect2('#payment_day_of_week', { mode: 'static' });
-        initSelect2('#bank_file_format', { mode: 'static' });
+        initSelect2('#bank_file_format_id', { mode: 'ajax' });
         initSelect2('#cycle_status', { mode: 'static' });
         initSelect2('#reset_cycle_start_month', { mode: 'static' });
         initSelect2('#bonus_status', { mode: 'static' });
@@ -414,7 +423,7 @@ function initPayrollCycleTable() {
             { data: 'payroll_frequency', render: d => cycleFrequencyBadge(d) },
             { data: null, render: (d, t, row) => cycleCutoffCell(row) },
             { data: null, render: (d, t, row) => cyclePaymentCell(row) },
-            { data: 'bank_file_format', render: d => escapeHtmlPc(d) },
+            { data: null, render: (d, t, row) => escapeHtmlPc((currentLang === 'th' ? row.bank_file_format_name_th : row.bank_file_format_name_en) || row.bank_file_format_name_th || row.bank_file_format_name_en || '') },
             { data: 'status', render: d => cycleStatusBadge(d) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => cycleActionButtons(row) }
         ],
@@ -461,7 +470,7 @@ function resetCycleForm() {
     $('#payroll_frequency').val('').trigger('change');
     $('#cutoff_day_of_week').val('').trigger('change');
     $('#payment_day_of_week').val('').trigger('change');
-    $('#bank_file_format').val('').trigger('change');
+    $('#bank_file_format_id').val('').trigger('change');
     $('#cycle_status').val('active').trigger('change');
     $('#cutoff_day_of_month, #payment_day_of_month, #ot_cutoff_day_of_month').prop('disabled', false);
     applyFrequencyFields('');
@@ -490,7 +499,13 @@ function populateCycleForm(row) {
         $('#ot_cutoff_day_of_month').val(row.ot_cutoff_day_of_month || '');
         applyLastDayToggle('ot_cutoff_use_last_day', 'ot_cutoff_day_of_month');
     }
-    $('#bank_file_format').val(row.bank_file_format).trigger('change');
+    if (row.bank_file_format_id) {
+        const bankFormatLabel = (currentLang === 'th' ? row.bank_file_format_name_th : row.bank_file_format_name_en) || row.bank_file_format_name_th || row.bank_file_format_name_en || '';
+        const opt = new Option(bankFormatLabel, row.bank_file_format_id, true, true);
+        $('#bank_file_format_id').append(opt).trigger('change');
+    } else {
+        $('#bank_file_format_id').val('').trigger('change');
+    }
     $('#cycle_status').val(row.status).trigger('change');
 }
 function validateCycleForm() {
@@ -515,7 +530,7 @@ function collectCycleFormData() {
         cycle_name: $('#cycle_name').val().trim(),
         payroll_frequency: freq,
         ot_cutoff_type: $('input[name="ot_cutoff_type"]:checked').val(),
-        bank_file_format: $('#bank_file_format').val(),
+        bank_file_format_id: $('#bank_file_format_id').val(),
         status: $('#cycle_status').val()
     };
     if (freq === 'weekly') {

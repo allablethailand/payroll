@@ -3,23 +3,80 @@ declare(strict_types=1);
 class PayrollCycleModel {
     private $db;
     private const DAYS_OF_WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    private const BANK_FORMATS = ['KBANK_SMART', 'SCB', 'BBL', 'DBS_IDEAL'];
 
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
     }
 
     public function list(int $compId): array {
-        $stmt = $this->db->prepare("SELECT * FROM `payroll_cycles` WHERE comp_id = :comp_id AND deleted_at IS NULL ORDER BY id ASC");
+        $sql = "SELECT pc.*, f.name_th AS bank_file_format_name_th, f.name_en AS bank_file_format_name_en
+                FROM `payroll_cycles` pc
+                LEFT JOIN `master_bank_file_formats` f ON f.id = pc.bank_file_format_id
+                WHERE pc.comp_id = :comp_id AND pc.deleted_at IS NULL ORDER BY pc.id ASC";
+        $stmt = $this->db->prepare($sql);
         $stmt->execute([':comp_id' => $compId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function get(int $id, int $compId): ?array {
-        $stmt = $this->db->prepare("SELECT * FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $sql = "SELECT pc.*, f.name_th AS bank_file_format_name_th, f.name_en AS bank_file_format_name_en
+                FROM `payroll_cycles` pc
+                LEFT JOIN `master_bank_file_formats` f ON f.id = pc.bank_file_format_id
+                WHERE pc.id = :id AND pc.comp_id = :comp_id AND pc.deleted_at IS NULL";
+        $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
+    }
+
+    public function options(int $compId, string $search, int $page, int $limit): array {
+        $offset = ($page - 1) * $limit;
+        $where = "WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active'";
+        $params = [':comp_id' => $compId];
+        if ($search !== '') {
+            $where .= " AND cycle_name LIKE :search";
+            $params[':search'] = "%{$search}%";
+        }
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) FROM `payroll_cycles` {$where}");
+        $totalStmt->execute($params);
+        $totalCount = (int)$totalStmt->fetchColumn();
+
+        $sql = "SELECT id, cycle_name AS text_th, cycle_name AS text_en FROM `payroll_cycles` {$where} ORDER BY cycle_name ASC LIMIT :offset, :limit";
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return ['items' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'total_count' => $totalCount];
+    }
+
+    public function bankFileFormatOptions(string $search, int $page, int $limit): array {
+        $offset = ($page - 1) * $limit;
+        $where = "WHERE is_active = 1";
+        $params = [];
+        if ($search !== '') {
+            $where .= " AND (name_th LIKE :search1 OR name_en LIKE :search2 OR code LIKE :search3)";
+            $params[':search1'] = "%{$search}%";
+            $params[':search2'] = "%{$search}%";
+            $params[':search3'] = "%{$search}%";
+        }
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) FROM `master_bank_file_formats` {$where}");
+        $totalStmt->execute($params);
+        $totalCount = (int)$totalStmt->fetchColumn();
+
+        $sql = "SELECT id, name_th AS text_th, name_en AS text_en FROM `master_bank_file_formats` {$where} ORDER BY sort_order ASC, id ASC LIMIT :offset, :limit";
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return ['items' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'total_count' => $totalCount];
     }
 
     private function isCycleNameDuplicate(int $compId, string $name, ?int $excludeId): bool {
@@ -56,7 +113,7 @@ class PayrollCycleModel {
     public function save(int $compId, array $data, int $userId): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
-        foreach (['cycle_name', 'payroll_frequency', 'ot_cutoff_type', 'bank_file_format'] as $field) {
+        foreach (['cycle_name', 'payroll_frequency', 'ot_cutoff_type', 'bank_file_format_id'] as $field) {
             if (empty($data[$field])) {
                 return ['status' => false, 'message' => "Missing required field: {$field}"];
             }
@@ -72,9 +129,11 @@ class PayrollCycleModel {
             return ['status' => false, 'message' => 'Invalid payroll_frequency.'];
         }
 
-        $bankFormat = (string)$data['bank_file_format'];
-        if (!in_array($bankFormat, self::BANK_FORMATS, true)) {
-            return ['status' => false, 'message' => 'Invalid bank_file_format.'];
+        $bankFileFormatId = (int)$data['bank_file_format_id'];
+        $stmtFormat = $this->db->prepare("SELECT id FROM `master_bank_file_formats` WHERE id = :id AND is_active = 1");
+        $stmtFormat->execute([':id' => $bankFileFormatId]);
+        if (!$stmtFormat->fetch()) {
+            return ['status' => false, 'message' => 'Invalid bank_file_format_id.'];
         }
 
         $cutoffDayOfMonth = null;
@@ -136,7 +195,7 @@ class PayrollCycleModel {
             ':ot_cutoff_type' => $otCutoffType,
             ':ot_cutoff_day_of_month' => $otCutoffDayOfMonth,
             ':ot_cutoff_use_last_day' => $otCutoffUseLastDay,
-            ':bank_file_format' => $bankFormat,
+            ':bank_file_format_id' => $bankFileFormatId,
             ':status' => $status,
         ];
 
@@ -152,7 +211,7 @@ class PayrollCycleModel {
                             cutoff_day_of_month = :cutoff_day_of_month, cutoff_use_last_day = :cutoff_use_last_day, cutoff_day_of_week = :cutoff_day_of_week,
                             payment_day_of_month = :payment_day_of_month, payment_use_last_day = :payment_use_last_day, payment_day_of_week = :payment_day_of_week,
                             ot_cutoff_type = :ot_cutoff_type, ot_cutoff_day_of_month = :ot_cutoff_day_of_month, ot_cutoff_use_last_day = :ot_cutoff_use_last_day,
-                            bank_file_format = :bank_file_format, status = :status,
+                            bank_file_format_id = :bank_file_format_id, status = :status,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $params[':updated_by'] = $userId;
@@ -165,11 +224,11 @@ class PayrollCycleModel {
             $sql = "INSERT INTO `payroll_cycles`
                         (comp_id, cycle_name, payroll_frequency, cutoff_day_of_month, cutoff_use_last_day, cutoff_day_of_week,
                          payment_day_of_month, payment_use_last_day, payment_day_of_week,
-                         ot_cutoff_type, ot_cutoff_day_of_month, ot_cutoff_use_last_day, bank_file_format, status, created_by)
+                         ot_cutoff_type, ot_cutoff_day_of_month, ot_cutoff_use_last_day, bank_file_format_id, status, created_by)
                     VALUES
                         (:comp_id, :cycle_name, :payroll_frequency, :cutoff_day_of_month, :cutoff_use_last_day, :cutoff_day_of_week,
                          :payment_day_of_month, :payment_use_last_day, :payment_day_of_week,
-                         :ot_cutoff_type, :ot_cutoff_day_of_month, :ot_cutoff_use_last_day, :bank_file_format, :status, :created_by)";
+                         :ot_cutoff_type, :ot_cutoff_day_of_month, :ot_cutoff_use_last_day, :bank_file_format_id, :status, :created_by)";
             $params[':comp_id'] = $compId;
             $params[':created_by'] = $userId;
             $stmt = $this->db->prepare($sql);

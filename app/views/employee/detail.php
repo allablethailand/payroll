@@ -1078,6 +1078,14 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="external_reference_no">Reference / Contract No.</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control" id="eed_external_reference_no" name="external_reference_no" maxlength="100">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0" data-i18n="notes">Notes</label>
                         </div>
                         <div class="col-sm-9">

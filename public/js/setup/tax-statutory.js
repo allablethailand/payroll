@@ -1,6 +1,8 @@
 let tb_statutory_item;
 let tb_rate_history;
+let tb_company_setting;
 let currentItemCtx = null;
+let currentCsItem = null;
 
 function toIsoDateTs(displayVal) {
     if (!displayVal) return '';
@@ -569,9 +571,201 @@ function initStatutoryItemUI() {
     });
 }
 
+/* ---------- Company Statutory Settings (Part 2) ---------- */
+function csEffectiveStatusBadgeTs(status) {
+    const isActive = status === 'active';
+    const cls = isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary';
+    const text = isActive ? (langData['active'] || 'Active') : (langData['inactive'] || 'Inactive');
+    return `<span class="badge ${cls}">${text}</span>`;
+}
+function csHasOverrideTs(row) {
+    return row.employee_rate_override !== null || row.employer_rate_override !== null
+        || row.employee_amount_override !== null || row.employer_amount_override !== null;
+}
+function csRateInUseCellTs(row) {
+    const hasOverride = csHasOverrideTs(row);
+    const badge = hasOverride
+        ? `<span class="badge bg-warning-subtle text-warning border me-1">${langData['custom_rate'] || 'Custom Rate'}</span>`
+        : `<span class="badge bg-light text-dark border me-1">${langData['using_default'] || 'Using Default'}</span>`;
+    let valueText = '';
+    if (row.calc_method === 'flat_rate') {
+        const empRate = hasOverride ? row.employee_rate_override : row.master_employee_rate;
+        const erRate = hasOverride ? row.employer_rate_override : row.master_employer_rate;
+        const parts = [];
+        if (row.is_employee_applicable == 1 && empRate !== null) parts.push(`${Number(empRate)}%`);
+        if (row.is_employer_applicable == 1 && erRate !== null) parts.push(`${Number(erRate)}%`);
+        valueText = parts.join(' / ');
+    } else if (row.calc_method === 'fixed_amount') {
+        const empAmt = hasOverride ? row.employee_amount_override : row.master_employee_amount;
+        const erAmt = hasOverride ? row.employer_amount_override : row.master_employer_amount;
+        const parts = [];
+        if (row.is_employee_applicable == 1 && empAmt !== null) parts.push(fmtNumTs(empAmt));
+        if (row.is_employer_applicable == 1 && erAmt !== null) parts.push(fmtNumTs(erAmt));
+        valueText = parts.join(' / ');
+    } else if (row.calc_method === 'progressive_bracket') {
+        valueText = langData['tax_brackets'] || 'Tax Brackets';
+    } else {
+        valueText = langData['calc_method_formula'] || 'Formula-based';
+    }
+    return `<div>${badge}</div><div class="small mt-1">${valueText}</div>`;
+}
+function csAdjustableCellTs(row) {
+    const adjustable = Number(row.is_company_rate_editable) === 1 && ['flat_rate', 'fixed_amount'].includes(row.calc_method);
+    return adjustable ? (langData['yes'] || 'Yes') : `<span class="text-muted">${langData['no'] || 'No'}</span>`;
+}
+function csActionButtonsTs(row) {
+    return `<div class="d-flex justify-content-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-cs" data-id="${row.statutory_item_id}"><i class="fas fa-edit"></i></button>
+    </div>`;
+}
+function initCompanySettingTable() {
+    if ($.fn.DataTable.isDataTable('#tb_company_setting')) {
+        $('#tb_company_setting').DataTable().ajax.reload(null, false);
+        return;
+    }
+    tb_company_setting = $('#tb_company_setting').DataTable({
+        responsive: true,
+        searching: false,
+        paging: false,
+        info: false,
+        ajax: {
+            url: `${BASE_URL}/api/company-statutory-setting.list`,
+            dataSrc: 'data'
+        },
+        columns: [
+            { data: 'code', render: d => `<code class="fw-bold text-dark">${escapeHtmlTs(d)}</code>` },
+            { data: null, render: (d, t, row) => escapeHtmlTs(itemNameTs(row)) },
+            { data: 'category', render: d => categoryBadgeTs(d) },
+            { data: null, render: (d, t, row) => csRateInUseCellTs(row) },
+            { data: 'effective_status', render: d => csEffectiveStatusBadgeTs(d) },
+            { data: null, render: (d, t, row) => csAdjustableCellTs(row) },
+            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => csActionButtonsTs(row) }
+        ],
+        language: getTableLang(),
+        drawCallback: function () { getTableLang(); }
+    });
+}
+function masterRateDisplayTs(row) {
+    if (row.calc_method === 'flat_rate') {
+        const parts = [];
+        if (row.is_employee_applicable == 1 && row.master_employee_rate !== null) parts.push(`${langData['modal_employee_rate'] || 'Employee'}: ${Number(row.master_employee_rate)}%`);
+        if (row.is_employer_applicable == 1 && row.master_employer_rate !== null) parts.push(`${langData['modal_employer_rate'] || 'Employer'}: ${Number(row.master_employer_rate)}%`);
+        return parts.join(', ');
+    }
+    if (row.calc_method === 'fixed_amount') {
+        const parts = [];
+        if (row.is_employee_applicable == 1 && row.master_employee_amount !== null) parts.push(`${langData['modal_employee_amount'] || 'Employee'}: ${fmtNumTs(row.master_employee_amount)}`);
+        if (row.is_employer_applicable == 1 && row.master_employer_amount !== null) parts.push(`${langData['modal_employer_amount'] || 'Employer'}: ${fmtNumTs(row.master_employer_amount)}`);
+        return parts.join(', ');
+    }
+    return '';
+}
+function openCompanySettingModal(row) {
+    const adjustable = Number(row.is_company_rate_editable) === 1 && ['flat_rate', 'fixed_amount'].includes(row.calc_method);
+    currentCsItem = {
+        id: row.statutory_item_id,
+        calc_method: row.calc_method,
+        adjustable: adjustable
+    };
+    $('#companySettingForm')[0].reset();
+    $('.is-invalid').removeClass('is-invalid');
+    $('#cs_statutory_item_id').val(row.statutory_item_id);
+    $('#companySettingItemName').text(`(${row.code} - ${itemNameTs(row)})`);
+    $('#cs_is_active').prop('checked', row.effective_status === 'active');
+    $('#cs_rate_fields').toggleClass('d-none', !adjustable || row.calc_method !== 'flat_rate');
+    $('#cs_amount_fields').toggleClass('d-none', !adjustable || row.calc_method !== 'fixed_amount');
+    $('#cs_employee_rate_override').val(row.employee_rate_override !== null ? row.employee_rate_override : '');
+    $('#cs_employer_rate_override').val(row.employer_rate_override !== null ? row.employer_rate_override : '');
+    $('#cs_employee_amount_override').val(row.employee_amount_override !== null ? row.employee_amount_override : '');
+    $('#cs_employer_amount_override').val(row.employer_amount_override !== null ? row.employer_amount_override : '');
+    $('#cs_remark').val(row.remark || '');
+    if (adjustable) {
+        const tpl = langData['company_setting_rate_hint'] || "Master default rate: {value}. Leave the fields below blank to use this default.";
+        $('#cs_master_default_hint').text(tpl.replace('{value}', masterRateDisplayTs(row) || '-'));
+    } else {
+        $('#cs_master_default_hint').text(langData['not_adjustable_hint'] || "This item's rate is fixed by law and cannot be adjusted per company. You may only enable or disable it.");
+    }
+    new bootstrap.Modal(document.getElementById('companySettingModal')).show();
+}
+function collectCompanySettingFormData() {
+    return {
+        statutory_item_id: $('#cs_statutory_item_id').val(),
+        is_active: $('#cs_is_active').is(':checked'),
+        employee_rate_override: $('#cs_employee_rate_override').val(),
+        employer_rate_override: $('#cs_employer_rate_override').val(),
+        employee_amount_override: $('#cs_employee_amount_override').val(),
+        employer_amount_override: $('#cs_employer_amount_override').val(),
+        remark: $('#cs_remark').val().trim()
+    };
+}
+function initCompanySettingUI() {
+    $(document).on('click', '.btn-edit-cs', function () {
+        const itemId = $(this).data('id');
+        const rowData = tb_company_setting.rows().data().toArray().find(r => Number(r.statutory_item_id) === Number(itemId));
+        if (rowData) openCompanySettingModal(rowData);
+    });
+    $(document).on('submit', '#companySettingForm', function (e) {
+        e.preventDefault();
+        const payload = collectCompanySettingFormData();
+        const $btn = $('#companySettingForm button[type="submit"]');
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>Saving...</span>');
+        $.ajax({
+            url: `${BASE_URL}/api/company-statutory-setting.save`,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    bootstrap.Modal.getInstance(document.getElementById('companySettingModal')).hide();
+                    if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+            }
+        });
+    });
+    $(document).on('click', '#btnResetCompanySetting', function () {
+        if (!currentCsItem) return;
+        const title = langData['reset_confirm_title'] || 'Reset to system default?';
+        const message = langData['reset_confirm_message'] || "This will remove your company's custom rate/enable setting for this item and fall back to the system default.";
+        showConfirm(title, message, function () {
+            $.ajax({
+                url: `${BASE_URL}/api/company-statutory-setting.reset`,
+                method: 'POST',
+                contentType: 'application/json',
+                dataType: 'json',
+                data: JSON.stringify({ statutory_item_id: currentCsItem.id }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(langData['reset_success'] || 'Reset to system default successfully.');
+                        bootstrap.Modal.getInstance(document.getElementById('companySettingModal')).hide();
+                        if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                    } else {
+                        showWarning(res.message || langData['save_failed'] || 'Failed to reset data.');
+                    }
+                },
+                error: function () {
+                    showWarning(langData['save_failed'] || 'An error occurred.');
+                }
+            });
+        });
+    });
+}
+
 $(document).ready(function () {
     initStatutoryItemTable();
     initStatutoryItemUI();
+    initCompanySettingUI();
     if (typeof initSelect2 === 'function') {
         initSelect2('#filter_country_code', { mode: 'ajax' });
         initSelect2('#item_country_code', { mode: 'ajax' });
@@ -583,4 +777,11 @@ $(document).ready(function () {
         initDatepicker('#rate_effective_date');
         initDatepicker('#rate_end_date');
     }
+    $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function (e) {
+        const tabId = $(e.target).attr('id');
+        if (tabId === 'company-setting-tab') {
+            initCompanySettingTable();
+        }
+        $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+    });
 });

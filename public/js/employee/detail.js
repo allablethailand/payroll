@@ -725,6 +725,7 @@ function populateEedForm(row) {
     $('#eed_total_installments').val(row.total_installments);
     $('#eed_total_amount').val(row.total_amount);
     $('#eed_notes').val(row.notes || '');
+    $('#eed_external_reference_no').val(row.external_reference_no || '');
     applyAmountModeFields(row.amount_mode);
     if (row.amount_mode === 'custom_per_installment' && row.installments) {
         const amounts = row.installments.map(i => i.amount);
@@ -755,7 +756,8 @@ function collectEedFormData() {
         effective_date: toIsoDate($('#eed_effective_date').val()),
         total_installments: $('#eed_total_installments').val(),
         amount_mode: $('input[name="amount_mode"]:checked').val(),
-        notes: $('#eed_notes').val().trim()
+        notes: $('#eed_notes').val().trim(),
+        external_reference_no: $('#eed_external_reference_no').val().trim()
     };
     if (data.amount_mode === 'even_split') {
         data.total_amount = $('#eed_total_amount').val();

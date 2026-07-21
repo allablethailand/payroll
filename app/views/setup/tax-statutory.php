@@ -16,7 +16,20 @@
         <p class="text-muted small m-0 mt-1" data-i18n="tax_statutory_description">Configure statutory items (tax, social insurance, provident fund) per country, with rate history and progressive tax brackets.</p>
     </div>
 
-    <div class="card-surface p-3 p-md-4">
+    <ul class="nav nav-tabs" id="taxStatutoryTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="master-rate-tab" data-bs-toggle="tab" data-bs-target="#master-rate-pane" type="button" role="tab" aria-controls="master-rate-pane" aria-selected="true">
+                <i class="fa-solid fa-globe me-2"></i><span data-i18n="tab_master_rate">Master Rates</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="false">
+                <i class="fa-solid fa-building me-2"></i><span data-i18n="tab_company_setting">Company Settings</span>
+            </button>
+        </li>
+    </ul>
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-pane fade show active p-3 p-md-4" id="master-rate-pane" role="tabpanel" aria-labelledby="master-rate-tab" tabindex="0">
         <div class="row mb-3">
             <div class="col-sm-4 col-md-3">
                 <label class="form-label mb-1"><span data-i18n="filter_country">Country</span></label>
@@ -38,6 +51,24 @@
             </thead>
             <tbody></tbody>
         </table>
+    </div>
+    <div class="tab-pane fade p-3 p-md-4" id="company-setting-pane" role="tabpanel" aria-labelledby="company-setting-tab" tabindex="0">
+        <p class="text-muted small" data-i18n="company_setting_description">Enable/disable statutory items for your company and adjust rates where the law permits, based on your company's registered country.</p>
+        <table class="table table-hover table-border align-middle w-100" id="tb_company_setting">
+            <thead class="table-light text-secondary">
+                <tr>
+                    <th scope="col" style="width: 12%;" data-i18n="table_code">Code</th>
+                    <th scope="col" style="width: 22%;" data-i18n="table_name">Name</th>
+                    <th scope="col" style="width: 13%;" data-i18n="table_category">Category</th>
+                    <th scope="col" style="width: 18%;" data-i18n="table_current_rate">Rate in Use</th>
+                    <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
+                    <th scope="col" style="width: 8%;" data-i18n="modal_company_rate_editable_short">Adjustable</th>
+                    <th scope="col" style="width: 10%; text-align: center;"></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
     </div>
 
     <!-- Statutory Item Modal -->
@@ -343,6 +374,87 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" id="btnBackToRateHistory" data-i18n="back">Back</button>
                         <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Company Statutory Setting Modal -->
+    <div class="modal fade" id="companySettingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="companySettingModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="companySettingModalLabel">
+                        <i class="fa-solid fa-building me-1"></i><span data-i18n="tab_company_setting">Company Settings</span>
+                        <span class="text-muted small ms-1" id="companySettingItemName"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="companySettingForm" novalidate>
+                    <input type="hidden" name="statutory_item_id" id="cs_statutory_item_id">
+                    <div class="modal-body">
+                        <div class="row mb-3">
+                            <div class="col-sm-12">
+                                <input type="checkbox" class="me-2" id="cs_is_active" name="is_active" checked>
+                                <span data-i18n="modal_company_enable_item">Enable this statutory item for our company</span>
+                            </div>
+                        </div>
+                        <div id="cs_override_wrapper">
+                            <hr class="my-3 text-muted opacity-25">
+                            <p class="text-muted small" id="cs_master_default_hint"></p>
+                            <div id="cs_rate_fields" class="d-none">
+                                <div class="row mb-3">
+                                    <div class="col-sm-4 align-self-center">
+                                        <label class="form-label mb-0"><span data-i18n="modal_employee_rate">Employee Rate (%)</span></label>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <input type="number" step="0.0001" min="0" class="form-control" id="cs_employee_rate_override" name="employee_rate_override" placeholder="Default">
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-sm-4 align-self-center">
+                                        <label class="form-label mb-0"><span data-i18n="modal_employer_rate">Employer Rate (%)</span></label>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <input type="number" step="0.0001" min="0" class="form-control" id="cs_employer_rate_override" name="employer_rate_override" placeholder="Default">
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="cs_amount_fields" class="d-none">
+                                <div class="row mb-3">
+                                    <div class="col-sm-4 align-self-center">
+                                        <label class="form-label mb-0"><span data-i18n="modal_employee_amount">Employee Amount</span></label>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="cs_employee_amount_override" name="employee_amount_override" placeholder="Default">
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-sm-4 align-self-center">
+                                        <label class="form-label mb-0"><span data-i18n="modal_employer_amount">Employer Amount</span></label>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="cs_employer_amount_override" name="employer_amount_override" placeholder="Default">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-sm-4 align-self-center">
+                                    <label class="form-label mb-0"><span data-i18n="modal_remark">Remark</span></label>
+                                </div>
+                                <div class="col-sm-8">
+                                    <input type="text" class="form-control" id="cs_remark" name="remark">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer justify-content-between">
+                        <button type="button" class="btn btn-outline-danger" id="btnResetCompanySetting"><i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="reset_to_default">Reset to Default</span></button>
+                        <div>
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                            <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
+                        </div>
                     </div>
                 </form>
             </div>

@@ -182,6 +182,25 @@ class PayrollConfigurationController extends Controller {
         $this->json($result);
     }
 
+    public function bankFileFormatOptions() {
+        $page = intval($_POST['page'] ?? 1);
+        $limit = intval($_POST['limit'] ?? 10);
+        $search = (string)($_POST['searchTerm'] ?? '');
+        $this->json(['status' => true, 'data' => $this->cycleModel->bankFileFormatOptions($search, $page, $limit)]);
+    }
+
+    public function cycleOptions() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['items' => [], 'total_count' => 0]]);
+            return;
+        }
+        $page = intval($_POST['page'] ?? 1);
+        $limit = intval($_POST['limit'] ?? 10);
+        $search = (string)($_POST['searchTerm'] ?? '');
+        $this->json(['status' => true, 'data' => $this->cycleModel->options((int)$compId, $search, $page, $limit)]);
+    }
+
     public function cycleList() {
         $compId = getCompId();
         if (!$compId) {

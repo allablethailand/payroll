@@ -92,6 +92,15 @@ class PayrollEarningDeductionTypeModel {
         return ['items' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'total_count' => $totalCount];
     }
 
+    /** @return string[] item_code values of this company's active deduction types tagged with the given statutory_report_code */
+    public function itemCodesByStatutoryReportCode(int $compId, string $statutoryReportCode): array {
+        $stmt = $this->db->prepare("SELECT item_code FROM `payroll_earning_deduction_types`
+            WHERE comp_id = :comp_id AND item_type = 'deduction' AND statutory_report_code = :code
+            AND status = 'active' AND deleted_at IS NULL");
+        $stmt->execute([':comp_id' => $compId, ':code' => $statutoryReportCode]);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'item_code');
+    }
+
     private function isItemCodeDuplicate(int $compId, string $itemCode, ?int $excludeId): bool {
         $sql = "SELECT COUNT(*) FROM `payroll_earning_deduction_types` WHERE comp_id = :comp_id AND item_code = :item_code AND deleted_at IS NULL";
         $params = [':comp_id' => $compId, ':item_code' => $itemCode];
@@ -183,6 +192,21 @@ class PayrollEarningDeductionTypeModel {
             }
         }
 
+        // Tags this deduction type as feeding a known statutory report (e.g. TH_SLF = กยศ.),
+        // so a report generator can find "whichever deduction type the company set up for this"
+        // without guessing by item_code/name. Earning-only concept; whitelist kept small and
+        // explicit rather than a lookup table since there is currently exactly one such report.
+        $statutoryReportCode = null;
+        if (!empty($data['statutory_report_code'])) {
+            if ($itemType !== 'deduction') {
+                return ['status' => false, 'message' => 'statutory_report_code only applies to deduction items.'];
+            }
+            $statutoryReportCode = trim((string)$data['statutory_report_code']);
+            if (!in_array($statutoryReportCode, ['TH_SLF'], true)) {
+                return ['status' => false, 'message' => 'Invalid statutory_report_code.'];
+            }
+        }
+
         $calcSso = !empty($data['calc_sso']) ? 1 : 0;
         $calcPf = !empty($data['calc_pf']) ? 1 : 0;
         $statusInput = $data['status'] ?? 'active';
@@ -204,6 +228,7 @@ class PayrollEarningDeductionTypeModel {
             ':calc_pf' => $calcPf,
             ':country_code' => $countryCode,
             ':source_event_code' => $sourceEventCode,
+            ':statutory_report_code' => $statutoryReportCode,
             ':status' => $status,
         ];
 
@@ -224,7 +249,7 @@ class PayrollEarningDeductionTypeModel {
                             fixed_amount = :fixed_amount, percent_rate = :percent_rate,
                             tax_treatment = :tax_treatment, tax_deduction_impact = :tax_deduction_impact,
                             calc_sso = :calc_sso, calc_pf = :calc_pf, country_code = :country_code,
-                            source_event_code = :source_event_code,
+                            source_event_code = :source_event_code, statutory_report_code = :statutory_report_code,
                             status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $params[':updated_by'] = $userId;
@@ -237,11 +262,11 @@ class PayrollEarningDeductionTypeModel {
             $sql = "INSERT INTO `payroll_earning_deduction_types`
                         (comp_id, item_code, item_name_th, item_name_en, item_type, calculation_method,
                          fixed_amount, percent_rate, tax_treatment, tax_deduction_impact, calc_sso, calc_pf,
-                         country_code, source_event_code, is_sync_only, status, created_by)
+                         country_code, source_event_code, statutory_report_code, is_sync_only, status, created_by)
                     VALUES
                         (:comp_id, :item_code, :item_name_th, :item_name_en, :item_type, :calculation_method,
                          :fixed_amount, :percent_rate, :tax_treatment, :tax_deduction_impact, :calc_sso, :calc_pf,
-                         :country_code, :source_event_code, 0, :status, :created_by)";
+                         :country_code, :source_event_code, :statutory_report_code, 0, :status, :created_by)";
             $params[':comp_id'] = $compId;
             $params[':created_by'] = $userId;
             $stmt = $this->db->prepare($sql);

@@ -7688,6 +7688,9 @@ CREATE TABLE `structure_roles` (
   `role_name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `role_name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `salary_access` tinyint(1) DEFAULT '0' COMMENT '1 = ดูเงินเดือนได้, 0 = ไม่มีสิทธิ์',
+  `can_process_payroll` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'สร้าง/แก้ไข/คำนวณ/ส่งอนุมัติ payroll run ได้',
+  `can_approve_payroll` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'อนุมัติ/ปฏิเสธ/ส่งกลับแก้ไข payroll run ได้',
+  `can_finalize_payroll` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'บันทึกจ่ายเงินและ lock ปิดรอบได้',
   `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci DEFAULT 'active',
   `created_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -7862,6 +7865,7 @@ CREATE TABLE `employees` (
   `work_location_id` int(11) DEFAULT NULL COMMENT 'ยังไม่มี master table รองรับ',
   `shift_id` int(11) DEFAULT NULL COMMENT 'ยังไม่มี master table รองรับ (รอโมดูล Time & Leave)',
   `employment_date` date NOT NULL,
+  `employment_end_date` date DEFAULT NULL COMMENT 'วันที่พ้นสภาพ (ลาออก/เลิกจ้าง)',
   `employment_status` enum('probation','permanent','contract','resigned','terminated') COLLATE utf8mb4_unicode_ci NOT NULL,
   `employment_type` enum('full_time','part_time','daily','internship') COLLATE utf8mb4_unicode_ci NOT NULL,
   `report_to_id` int(11) DEFAULT NULL,
@@ -8017,6 +8021,7 @@ CREATE TABLE `payroll_earning_deduction_types` (
   `calc_pf` tinyint(1) NOT NULL DEFAULT 0,
   `country_code` varchar(2) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'NULL = ทุกประเทศ',
   `source_event_code` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ผูกกับเหตุการณ์ attendance เช่น late/absent/early_leave เพื่อให้ Payroll Process ดึงข้อมูลอัตโนมัติ',
+  `statutory_report_code` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'tag ระบุว่า deduction type นี้ต้องรายงานไปหน่วยงานภายนอกตัวไหน เช่น TH_SLF = กยศ. (nullable, deduction only)',
   `is_sync_only` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'true = sync เท่านั้น เช่น trip allowance ห้ามสร้าง/แก้ manual',
   `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci DEFAULT 'active',
   `created_by` int(11) DEFAULT NULL,
@@ -8044,6 +8049,7 @@ CREATE TABLE `employee_earning_deductions` (
   `effective_date` date NOT NULL,
   `status` enum('active','paused','completed','cancelled','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
   `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `external_reference_no` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขอ้างอิงภายนอก เช่น เลขสัญญา กยศ., เลขที่คำสั่งอายัดเงินเดือน',
   `created_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_by` int(11) DEFAULT NULL,
@@ -8090,7 +8096,7 @@ CREATE TABLE `payroll_cycles` (
   `ot_cutoff_type` enum('same_as_attendance','custom') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'same_as_attendance',
   `ot_cutoff_day_of_month` tinyint(3) unsigned DEFAULT NULL COMMENT 'ใช้เมื่อ ot_cutoff_type = custom, 1-28',
   `ot_cutoff_use_last_day` tinyint(1) NOT NULL DEFAULT 0,
-  `bank_file_format` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bank_file_format_id` int(11) DEFAULT NULL,
   `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci DEFAULT 'active',
   `created_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -8283,6 +8289,162 @@ INSERT INTO `statutory_item_brackets` (`id`, `statutory_item_rate_history_id`, `
 (7,3,7,2000000.01,5000000.00,30.0000,'2026-07-21 03:30:31','2026-07-21 03:30:31'),
 (8,3,8,5000000.01,NULL,35.0000,'2026-07-21 03:30:31','2026-07-21 03:30:31');
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `company_statutory_settings`
+--
+
+CREATE TABLE `company_statutory_settings` (
+  `id` int(11) NOT NULL,
+  `comp_id` int(11) NOT NULL,
+  `statutory_item_id` int(11) NOT NULL,
+  `employee_rate_override` decimal(8,4) DEFAULT NULL,
+  `employer_rate_override` decimal(8,4) DEFAULT NULL,
+  `employee_amount_override` decimal(14,2) DEFAULT NULL,
+  `employer_amount_override` decimal(14,2) DEFAULT NULL,
+  `remark` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `payroll_runs`
+--
+
+CREATE TABLE `payroll_runs` (
+  `id` int(11) NOT NULL,
+  `comp_id` int(11) NOT NULL,
+  `cycle_id` int(11) NOT NULL,
+  `run_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `period_start_date` date NOT NULL,
+  `period_end_date` date NOT NULL,
+  `payment_date` date NOT NULL,
+  `state` enum('draft','pending_approval','approved','paid','locked','rejected') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `employee_count` int(11) NOT NULL DEFAULT 0,
+  `total_gross_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `total_deduction_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `total_net_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `has_validation_errors` tinyint(1) NOT NULL DEFAULT 0,
+  `submitted_at` timestamp NULL DEFAULT NULL,
+  `submitted_by` int(11) DEFAULT NULL,
+  `approved_at` timestamp NULL DEFAULT NULL,
+  `approved_by` int(11) DEFAULT NULL,
+  `rejected_at` timestamp NULL DEFAULT NULL,
+  `rejected_by` int(11) DEFAULT NULL,
+  `reject_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `paid_at` timestamp NULL DEFAULT NULL,
+  `paid_by` int(11) DEFAULT NULL,
+  `payment_method` enum('bank_transfer','cash','cheque') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `payment_reference` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `locked_at` timestamp NULL DEFAULT NULL,
+  `locked_by` int(11) DEFAULT NULL,
+  `notes` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('active','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `payroll_run_details`
+--
+
+CREATE TABLE `payroll_run_details` (
+  `id` int(11) NOT NULL,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `base_salary_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `prorate_days` int(11) DEFAULT NULL,
+  `prorate_total_days` int(11) DEFAULT NULL,
+  `earning_breakdown` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `deduction_breakdown` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `statutory_breakdown` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `gross_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `total_deduction_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `net_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `employer_cost_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `calc_status` enum('pending','calculated','error') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `calc_errors` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `payroll_run_audit_logs`
+--
+
+CREATE TABLE `payroll_run_audit_logs` (
+  `id` int(11) NOT NULL,
+  `run_id` int(11) NOT NULL,
+  `from_state` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `to_state` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `action` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `performed_by` int(11) NOT NULL,
+  `performed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `master_bank_file_formats`
+--
+
+CREATE TABLE `master_bank_file_formats` (
+  `id` int(11) NOT NULL,
+  `bank_id` int(11) DEFAULT NULL,
+  `code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `file_extension` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'txt',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `master_bank_file_formats` (`id`, `bank_id`, `code`, `name_th`, `name_en`, `file_extension`, `is_active`, `sort_order`, `created_at`, `updated_at`) VALUES
+(1, NULL, 'KBANK_SMART', 'กสิกรไทย - K-Cash Connect Smart', 'Kasikornbank - K-Cash Connect Smart', 'txt', 1, 1, '2026-07-21 17:50:24', NULL),
+(2, NULL, 'SCB', 'ไทยพาณิชย์ - SCB Business Net', 'Siam Commercial Bank - SCB Business Net', 'txt', 1, 2, '2026-07-21 17:50:24', NULL),
+(3, NULL, 'BBL', 'กรุงเทพ - Bualuang iBanking', 'Bangkok Bank - Bualuang iBanking', 'txt', 1, 3, '2026-07-21 17:50:24', NULL),
+(4, NULL, 'DBS_IDEAL', 'DBS - IDEAL', 'DBS - IDEAL', 'csv', 1, 4, '2026-07-21 17:50:24', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `report_export_logs`
+--
+
+CREATE TABLE `report_export_logs` (
+  `id` int(11) NOT NULL,
+  `comp_id` int(11) NOT NULL,
+  `report_type` enum('statutory','payment','internal') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `report_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `period_year` smallint(4) unsigned DEFAULT NULL,
+  `period_month` tinyint(2) unsigned DEFAULT NULL,
+  `payroll_run_id` int(11) DEFAULT NULL,
+  `file_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `format` enum('pdf','excel','csv','txt') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `generated_by` int(11) DEFAULT NULL,
+  `generated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 --
 -- Indexes for dumped tables
 --
@@ -8442,7 +8604,8 @@ ALTER TABLE `employee_earning_deduction_installments`
 ALTER TABLE `payroll_cycles`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uq_comp_cycle_name` (`comp_id`,`cycle_name`,`deleted_at`),
-  ADD KEY `idx_comp_status` (`comp_id`,`status`);
+  ADD KEY `idx_comp_status` (`comp_id`,`status`),
+  ADD KEY `bank_file_format_id` (`bank_file_format_id`);
 
 --
 -- Indexes for table `attendance_bonus_schemes`
@@ -8490,6 +8653,54 @@ ALTER TABLE `statutory_item_brackets`
   ADD PRIMARY KEY (`id`),
   ADD KEY `statutory_item_rate_history_id` (`statutory_item_rate_history_id`),
   ADD KEY `bracket_order` (`bracket_order`);
+
+--
+-- Indexes for table `company_statutory_settings`
+--
+ALTER TABLE `company_statutory_settings`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_comp_item` (`comp_id`,`statutory_item_id`),
+  ADD KEY `statutory_item_id` (`statutory_item_id`);
+
+--
+-- Indexes for table `payroll_runs`
+--
+ALTER TABLE `payroll_runs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `comp_id` (`comp_id`),
+  ADD KEY `cycle_id` (`cycle_id`),
+  ADD KEY `state` (`state`);
+
+--
+-- Indexes for table `payroll_run_details`
+--
+ALTER TABLE `payroll_run_details`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_run_employee` (`run_id`,`employee_id`),
+  ADD KEY `employee_id` (`employee_id`);
+
+--
+-- Indexes for table `payroll_run_audit_logs`
+--
+ALTER TABLE `payroll_run_audit_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `run_id` (`run_id`);
+
+--
+-- Indexes for table `master_bank_file_formats`
+--
+ALTER TABLE `master_bank_file_formats`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_bank_file_format_code` (`code`),
+  ADD KEY `bank_id` (`bank_id`);
+
+--
+-- Indexes for table `report_export_logs`
+--
+ALTER TABLE `report_export_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `comp_id` (`comp_id`),
+  ADD KEY `payroll_run_id` (`payroll_run_id`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -8646,6 +8857,42 @@ ALTER TABLE `statutory_item_brackets`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
+-- AUTO_INCREMENT for table `company_statutory_settings`
+--
+ALTER TABLE `company_statutory_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `payroll_runs`
+--
+ALTER TABLE `payroll_runs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `payroll_run_details`
+--
+ALTER TABLE `payroll_run_details`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `payroll_run_audit_logs`
+--
+ALTER TABLE `payroll_run_audit_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `master_bank_file_formats`
+--
+ALTER TABLE `master_bank_file_formats`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `report_export_logs`
+--
+ALTER TABLE `report_export_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- Constraints for dumped tables
 --
 
@@ -8753,7 +9000,8 @@ ALTER TABLE `employee_earning_deduction_installments`
 -- Constraints for table `payroll_cycles`
 --
 ALTER TABLE `payroll_cycles`
-  ADD CONSTRAINT `fk_payroll_cycles_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+  ADD CONSTRAINT `fk_payroll_cycles_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_payroll_cycles_bank_file_format` FOREIGN KEY (`bank_file_format_id`) REFERENCES `master_bank_file_formats` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
 -- Constraints for table `attendance_bonus_schemes`
@@ -8785,6 +9033,46 @@ ALTER TABLE `statutory_item_rate_history`
 --
 ALTER TABLE `statutory_item_brackets`
   ADD CONSTRAINT `statutory_item_brackets_history_fk` FOREIGN KEY (`statutory_item_rate_history_id`) REFERENCES `statutory_item_rate_history` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `company_statutory_settings`
+--
+ALTER TABLE `company_statutory_settings`
+  ADD CONSTRAINT `fk_company_statutory_settings_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_company_statutory_settings_item` FOREIGN KEY (`statutory_item_id`) REFERENCES `statutory_items` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+--
+-- Constraints for table `payroll_runs`
+--
+ALTER TABLE `payroll_runs`
+  ADD CONSTRAINT `fk_payroll_runs_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_payroll_runs_cycle` FOREIGN KEY (`cycle_id`) REFERENCES `payroll_cycles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+--
+-- Constraints for table `payroll_run_details`
+--
+ALTER TABLE `payroll_run_details`
+  ADD CONSTRAINT `fk_payroll_run_details_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_payroll_run_details_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+--
+-- Constraints for table `payroll_run_audit_logs`
+--
+ALTER TABLE `payroll_run_audit_logs`
+  ADD CONSTRAINT `fk_payroll_run_audit_logs_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `master_bank_file_formats`
+--
+ALTER TABLE `master_bank_file_formats`
+  ADD CONSTRAINT `fk_bank_file_format_bank` FOREIGN KEY (`bank_id`) REFERENCES `master_banks` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+--
+-- Constraints for table `report_export_logs`
+--
+ALTER TABLE `report_export_logs`
+  ADD CONSTRAINT `fk_report_export_logs_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_report_export_logs_run` FOREIGN KEY (`payroll_run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

@@ -145,11 +145,15 @@ class EmployeeEarningDeductionModel {
         }
 
         $notes = !empty($data['notes']) ? trim((string)$data['notes']) : null;
+        $externalReferenceNo = !empty($data['external_reference_no']) ? trim((string)$data['external_reference_no']) : null;
 
         $installmentAmounts = $this->buildInstallmentAmounts($amountMode, $totalAmount, $totalInstallments, $customAmounts);
 
+        $own = !$this->db->inTransaction();
         try {
-            $this->db->beginTransaction();
+            if ($own) {
+                $this->db->beginTransaction();
+            }
 
             if ($id !== null) {
                 $stmtCheck = $this->db->prepare("SELECT eed.id, eed.current_installment FROM `employee_earning_deductions` eed
@@ -158,18 +162,22 @@ class EmployeeEarningDeductionModel {
                 $stmtCheck->execute([':id' => $id, ':employee_id' => $employeeId, ':comp_id' => $compId]);
                 $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
                 if (!$existing) {
-                    $this->db->rollBack();
+                    if ($own) {
+                        $this->db->rollBack();
+                    }
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 if ((int)$existing['current_installment'] > 0) {
-                    $this->db->rollBack();
+                    if ($own) {
+                        $this->db->rollBack();
+                    }
                     return ['status' => false, 'message' => 'This assignment has already started processing installments and can no longer be edited. Use pause/cancel instead.'];
                 }
 
                 $sql = "UPDATE `employee_earning_deductions` SET
                             ped_type_id = :ped_type_id, total_installments = :total_installments,
                             amount_mode = :amount_mode, total_amount = :total_amount,
-                            effective_date = :effective_date, notes = :notes,
+                            effective_date = :effective_date, notes = :notes, external_reference_no = :external_reference_no,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $stmt = $this->db->prepare($sql);
@@ -180,6 +188,7 @@ class EmployeeEarningDeductionModel {
                     ':total_amount' => $totalAmount,
                     ':effective_date' => $effectiveDate,
                     ':notes' => $notes,
+                    ':external_reference_no' => $externalReferenceNo,
                     ':updated_by' => $userId,
                     ':id' => $id,
                 ]);
@@ -189,9 +198,9 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = $id;
             } else {
                 $sql = "INSERT INTO `employee_earning_deductions`
-                            (employee_id, ped_type_id, total_installments, current_installment, amount_mode, total_amount, effective_date, status, notes, created_by)
+                            (employee_id, ped_type_id, total_installments, current_installment, amount_mode, total_amount, effective_date, status, notes, external_reference_no, created_by)
                         VALUES
-                            (:employee_id, :ped_type_id, :total_installments, 0, :amount_mode, :total_amount, :effective_date, 'active', :notes, :created_by)";
+                            (:employee_id, :ped_type_id, :total_installments, 0, :amount_mode, :total_amount, :effective_date, 'active', :notes, :external_reference_no, :created_by)";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':employee_id' => $employeeId,
@@ -201,6 +210,7 @@ class EmployeeEarningDeductionModel {
                     ':total_amount' => $totalAmount,
                     ':effective_date' => $effectiveDate,
                     ':notes' => $notes,
+                    ':external_reference_no' => $externalReferenceNo,
                     ':created_by' => $userId,
                 ]);
                 $assignmentId = (int)$this->db->lastInsertId();
@@ -215,10 +225,14 @@ class EmployeeEarningDeductionModel {
                 ]);
             }
 
-            $this->db->commit();
+            if ($own) {
+                $this->db->commit();
+            }
             return ['status' => true, 'message' => $id !== null ? 'Updated successfully.' : 'Created successfully.', 'id' => $assignmentId];
         } catch (PDOException $e) {
-            $this->db->rollBack();
+            if ($own) {
+                $this->db->rollBack();
+            }
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
     }
