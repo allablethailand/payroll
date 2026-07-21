@@ -1,7 +1,7 @@
 <div class="container container-body">
     <nav aria-label="breadcrumb">
         <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> Payroll</span>
+            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
             <span class="bc-current" data-i18n="reports">Reports</span>
         </h5>

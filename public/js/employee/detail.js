@@ -154,7 +154,7 @@ function saveEmployee($btn, onSuccessTabId) {
         payload.id = currentEmployeeId;
     }
     const originalHtml = $btn.html();
-    $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>Saving...</span>');
+    $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
     $.ajax({
         url: `${BASE_URL}/api/employee.save`,
         method: 'POST',
@@ -219,11 +219,11 @@ function loadEmployeeIfEditing() {
                     loadDocumentList();
                 }
             } else {
-                showWarning(res.message || 'Employee not found.');
+                showWarning(res.message || langData['employee_not_found'] || 'Employee not found.');
             }
         },
         error: function () {
-            showWarning('Failed to load employee data.');
+            showWarning(langData['load_employee_failed'] || 'Failed to load employee data.');
         }
     });
 }
@@ -804,7 +804,7 @@ function initEedUI() {
         const payload = collectEedFormData();
         const $btn = $('#eedForm button[type="submit"]');
         const originalHtml = $btn.html();
-        $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>Saving...</span>');
+        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
         $.ajax({
             url: `${BASE_URL}/api/employee.earning-deduction.save`,
             method: 'POST',

@@ -1,7 +1,7 @@
 <div class="container container-body">
     <nav aria-label="breadcrumb">
         <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> Payroll</span>
+            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
             <span class="bc-parent" data-i18n="settings">Settings</span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
@@ -101,7 +101,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_code">Code</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
-                                <input type="text" class="form-control required" id="item_code" name="code" placeholder="e.g. TH_SSO">
+                                <input type="text" class="form-control required" id="item_code" name="code" data-i18n="statutory_item_code_placeholder" placeholder="e.g. TH_SSO">
                             </div>
                         </div>
                         <div class="row mb-3">
@@ -327,7 +327,7 @@
                                     <label class="form-label mb-0"><span data-i18n="modal_formula_config">Formula Config (JSON)</span> <span class="text-danger">*</span></label>
                                 </div>
                                 <div class="col-sm-9">
-                                    <textarea class="form-control" id="rate_formula_config" name="formula_config" rows="4" placeholder='{"base_rate": 1.45, "additional_rate": 0.9, "additional_threshold": 200000}'></textarea>
+                                    <textarea class="form-control" id="rate_formula_config" name="formula_config" rows="4" data-i18n="formula_config_json_example" placeholder='{"base_rate": 1.45, "additional_rate": 0.9, "additional_threshold": 200000}'></textarea>
                                     <p class="text-muted small mt-1 mb-0" data-i18n="formula_config_hint">Reserved for future formula-based calculations, e.g. threshold-based extra rates. Enter a valid JSON object.</p>
                                 </div>
                             </div>
@@ -409,7 +409,7 @@
                                         <label class="form-label mb-0"><span data-i18n="modal_employee_rate">Employee Rate (%)</span></label>
                                     </div>
                                     <div class="col-sm-4">
-                                        <input type="number" step="0.0001" min="0" class="form-control" id="cs_employee_rate_override" name="employee_rate_override" placeholder="Default">
+                                        <input type="number" step="0.0001" min="0" class="form-control" id="cs_employee_rate_override" name="employee_rate_override" data-i18n="default" placeholder="Default">
                                     </div>
                                 </div>
                                 <div class="row mb-3">
@@ -417,7 +417,7 @@
                                         <label class="form-label mb-0"><span data-i18n="modal_employer_rate">Employer Rate (%)</span></label>
                                     </div>
                                     <div class="col-sm-4">
-                                        <input type="number" step="0.0001" min="0" class="form-control" id="cs_employer_rate_override" name="employer_rate_override" placeholder="Default">
+                                        <input type="number" step="0.0001" min="0" class="form-control" id="cs_employer_rate_override" name="employer_rate_override" data-i18n="default" placeholder="Default">
                                     </div>
                                 </div>
                             </div>
@@ -427,7 +427,7 @@
                                         <label class="form-label mb-0"><span data-i18n="modal_employee_amount">Employee Amount</span></label>
                                     </div>
                                     <div class="col-sm-4">
-                                        <input type="number" step="0.01" min="0" class="form-control" id="cs_employee_amount_override" name="employee_amount_override" placeholder="Default">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="cs_employee_amount_override" name="employee_amount_override" data-i18n="default" placeholder="Default">
                                     </div>
                                 </div>
                                 <div class="row mb-3">
@@ -435,7 +435,7 @@
                                         <label class="form-label mb-0"><span data-i18n="modal_employer_amount">Employer Amount</span></label>
                                     </div>
                                     <div class="col-sm-4">
-                                        <input type="number" step="0.01" min="0" class="form-control" id="cs_employer_amount_override" name="employer_amount_override" placeholder="Default">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="cs_employer_amount_override" name="employer_amount_override" data-i18n="default" placeholder="Default">
                                     </div>
                                 </div>
                             </div>

@@ -71,8 +71,8 @@ function initEarningTypeTable() {
             {
                 data: 'tax_treatment',
                 render: d => d === 'taxable'
-                    ? `<span class="badge bg-success-subtle text-success">${langData['tax_taxable'] || 'Taxable'}</span>`
-                    : `<span class="badge bg-secondary-subtle text-secondary">${langData['tax_non_taxable'] || 'Non-Taxable'}</span>`
+                    ? `<span class="badge bg-success-subtle text-success">${langData['taxable'] || 'Taxable'}</span>`
+                    : `<span class="badge bg-secondary-subtle text-secondary">${langData['non_taxable'] || 'Tax-exempt'}</span>`
             },
             { data: 'calc_sso', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
             { data: 'calc_pf', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },

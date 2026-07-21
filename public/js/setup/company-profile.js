@@ -179,7 +179,7 @@ $(document).on('click', '.save-company-profile', function () {
         $('.is-invalid').first().focus();
         return;
     }
-    $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> Saving...');
+    $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
     let formData = {
         registered_country: $('#registered_country').val(),
         global_tax_id: $('input[name="global_tax_id"]').val()?.trim() || '',
@@ -204,31 +204,31 @@ $(document).on('click', '.save-company-profile', function () {
         dataType: 'json',
         data: JSON.stringify(formData),
         success: function (res) {
-            $btn.prop('disabled', false).html('<i class="fa-solid fa-floppy-disk me-1"></i> <span>Save</span>');
+            $btn.prop('disabled', false).html('<i class="fa-solid fa-floppy-disk me-1"></i> <span data-i18n="save">Save</span>');
             if (typeof updateText === 'function') updateText($btn[0]);
             if (res.status) {
                 if (typeof showSuccess === 'function') {
-                    showSuccess(res.message || 'Company profile saved successfully!');
+                    showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 } else {
-                    alert('Company profile saved successfully!');
+                    alert(res.message || langData['save_success'] || 'Saved successfully.');
                 }
                 initCompanyData();
             } else {
                 if (typeof showWarning === 'function') {
-                    showWarning(res.message || 'Failed to save company profile.');
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
                 } else {
-                    alert(res.message || 'Failed to save company profile.');
+                    alert(res.message || langData['save_failed'] || 'Failed to save data.');
                 }
             }
         },
         error: function (xhr, status, error) {
-            $btn.prop('disabled', false).html('<i class="fa-solid fa-floppy-disk me-1"></i> <span>Save</span>');
+            $btn.prop('disabled', false).html('<i class="fa-solid fa-floppy-disk me-1"></i> <span data-i18n="save">Save</span>');
             if (typeof updateText === 'function') updateText($btn[0]);
             console.error('Save error:', error);
             if (typeof showWarning === 'function') {
-                showWarning('An error occurred while saving the data.');
+                showWarning(langData['save_failed'] || 'Failed to save data.');
             } else {
-                alert('An error occurred while saving the data.');
+                alert(langData['save_failed'] || 'Failed to save data.');
             }
         }
     });
@@ -316,10 +316,10 @@ function initBankAccountTable() {
                 className: 'text-center',
                 render: (data, type, row) => `
                     <div class="btn-group border rounded-3 bg-white">
-                        <button class="btn btn-link text-warning btn-open-modal manage-bank_account" data-action="edit" data-type="bank_account" data-id="${row.id}" data-i18n-tooltip="edit">
+                        <button class="btn btn-link text-warning btn-open-modal manage-bank_account" data-action="edit" data-type="bank_account" data-id="${row.id}" data-i18n-title="edit">
                             <i class="fa-solid fa-pen-to-square"></i>
                         </button>
-                        <button class="btn btn-link py-1 text-danger border-start btn-delete-item delete-bank_account" data-type="bank_account" data-id="${row.id}" data-i18n-tooltip="delete">
+                        <button class="btn btn-link py-1 text-danger border-start btn-delete-item delete-bank_account" data-type="bank_account" data-id="${row.id}" data-i18n-title="delete">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
                     </div>
@@ -447,10 +447,10 @@ function getStructureColumns(type) {
     const getActionButtons = (row, type) => {
         return `
             <div class="btn-group border rounded-3 bg-white">
-                <button class="btn btn-link text-warning btn-open-modal manage-${type}" data-action="edit" data-type="${type}" data-id="${row.id}" data-i18n-tooltip="edit">
+                <button class="btn btn-link text-warning btn-open-modal manage-${type}" data-action="edit" data-type="${type}" data-id="${row.id}" data-i18n-title="edit">
                     <i class="fa-solid fa-pen-to-square"></i>
                 </button>
-                <button class="btn btn-link py-1 text-danger border-start btn-delete-item delete-${type}" data-type="${type}" data-id="${row.id}" data-i18n-tooltip="delete">
+                <button class="btn btn-link py-1 text-danger border-start btn-delete-item delete-${type}" data-type="${type}" data-id="${row.id}" data-i18n-title="delete">
                     <i class="fa-solid fa-trash-can"></i>
                 </button> 
             </div>
@@ -672,7 +672,7 @@ $(document).on('click', '.btn-open-modal', function (e) {
     const schema = formSchemas[type];
     if (!schema) return;
     $('#systemModal .modal-header').html(`
-        <h5 class="modal-title"><i class="fa-solid fa-pen-to-square me-1"></i>${langData[type]}</h5>
+        <h5 class="modal-title"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="${type}">${langData[type]}</span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
     `);
     let rowData = {};
@@ -686,7 +686,7 @@ $(document).on('click', '.btn-open-modal', function (e) {
         const val = rowData[field.name] !== undefined && rowData[field.name] !== null ? rowData[field.name] : '';
         const requiredAttr = field.required ? 'required' : '';
         bodyHtml += `<div class="mb-3 row">
-            <label class="col-sm-3 col-form-label text-end">${langData[field.label]} ${(field.legal_key) ? `(${langData[field.legal_key]})` : ``} ${requiredMark(field.required)}</label>
+            <label class="col-sm-3 col-form-label text-end"><span data-i18n="${field.label}">${langData[field.label]}</span> ${(field.legal_key) ? `(<span data-i18n="${field.legal_key}">${langData[field.legal_key]}</span>)` : ``} ${requiredMark(field.required)}</label>
             <div class="col-sm-9">`;
         if (field.type === 'select') {
             const requiredClass = field.required ? 'required' : '';
@@ -768,7 +768,7 @@ $(document).on('click', '#btnSubmitModalForm', function () {
             payload[field.name] = $field.val()?.trim() ?? '';
         }
     });
-    $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>Saving...</span>');
+    $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
     $.ajax({
         url: `${BASE_URL}/api/${apiEndpointPrefix[type] || `structure.${type}`}.save`,
         method: 'POST',

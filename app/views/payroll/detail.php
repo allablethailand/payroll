@@ -1,7 +1,7 @@
 <div class="container container-body">
     <nav aria-label="breadcrumb">
         <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> Payroll</span>
+            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
             <a href="<?=BASE_URL?>/payroll-process" class="bc-parent text-decoration-none" data-i18n="payroll_process">Payroll Process</a>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
@@ -189,7 +189,7 @@
                 <form id="rejectRunForm" novalidate>
                     <div class="modal-body">
                         <label class="form-label"><span data-i18n="reject_reason_label">Reject Reason</span> <span class="text-danger">*</span></label>
-                        <textarea class="form-control required" id="reject_reason" name="reason" rows="3" placeholder="Explain what needs to be fixed before resubmitting..."></textarea>
+                        <textarea class="form-control required" id="reject_reason" name="reason" rows="3" data-i18n="reject_reason_placeholder" placeholder="Explain what needs to be fixed before resubmitting..."></textarea>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>

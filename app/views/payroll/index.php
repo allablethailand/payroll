@@ -4,7 +4,7 @@
 <div class="container container-body">
     <nav aria-label="breadcrumb">
         <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> Payroll</span>
+            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
             <span class="bc-current" data-i18n="payroll_process">Payroll Process</span>
         </h5>
@@ -79,7 +79,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_run_name">Run Name</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
-                                <input type="text" class="form-control required" id="run_name" name="run_name" placeholder="e.g., Payroll July 2026">
+                                <input type="text" class="form-control required" id="run_name" name="run_name" data-i18n="run_name_placeholder" placeholder="e.g., Payroll July 2026">
                             </div>
                         </div>
                         <div class="row mb-3">
@@ -95,7 +95,7 @@
                             <div class="col-sm-1 align-self-center text-center text-muted">-</div>
                             <div class="col-sm-4">
                                 <div class="input-group">
-                                    <input type="text" class="form-control required datepicker" id="run_period_end" name="period_end_date" placeholder="Period End" autocomplete="off">
+                                    <input type="text" class="form-control required datepicker" id="run_period_end" name="period_end_date" data-i18n="modal_period_end" placeholder="Period End" autocomplete="off">
                                     <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                                 </div>
                             </div>

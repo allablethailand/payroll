@@ -135,7 +135,7 @@ $(document).on('submit', '#payrollRunForm', function (e) {
     const payload = collectRunFormData();
     const $btn = $('#payrollRunForm button[type="submit"]');
     const originalHtml = $btn.html();
-    $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>Saving...</span>');
+    $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.save`,
         method: 'POST',

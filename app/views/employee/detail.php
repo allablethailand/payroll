@@ -3,7 +3,7 @@
         <h5 class="payroll-breadcrumb mt-5 mb-5">
             <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-parent" data-i18n="settings">Employee</span>
+            <span class="bc-parent" data-i18n="employee">Employee</span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
             <span class="bc-current">
                 <?php if ($employee_no): ?>
@@ -725,7 +725,7 @@
                         <thead>
                             <tr>
                                 <th data-i18n="item_name">Item</th>
-                                <th data-i18n="col_calc_method" style="width:150px;">Amount</th>
+                                <th data-i18n="amount" style="width:150px;">Amount</th>
                                 <th data-i18n="installment_progress" style="width:110px;">Installments</th>
                                 <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
                                 <th data-i18n="col_status" style="width:100px;">Status</th>
@@ -750,8 +750,8 @@
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="tax_calculation_method" id="tax_calculation_method">
                         <option value="" data-i18n="please_choose">Please choose.</option>
-                        <option value="average" data-i18n="average_method">Average (เฉลี่ยทั้งปี)</option>
-                        <option value="actual" data-i18n="actual_method">Actual (ตามที่จ่ายจริงแต่ละงวด)</option>
+                        <option value="average" data-i18n="average_method">Average</option>
+                        <option value="actual" data-i18n="actual_method">Actual</option>
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">

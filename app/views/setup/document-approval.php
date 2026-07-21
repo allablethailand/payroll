@@ -45,7 +45,31 @@
     <!-- APPROVAL MONITOR -->
     <div class="tab-pane fade p-0" id="tab-monitor">
       <div class="card-surface p-3 p-md-4">
-        <div class="text-center text-secondary py-4" data-i18n="approval_monitor_coming_soon">The monitor page will be built in the next phase.</div>
+        <div class="row mb-3 g-2">
+          <div class="col-sm-3">
+            <label class="form-label mb-1 small" data-i18n="status">Status</label>
+            <select class="form-select select2-static" id="monitor_filter_status" data-option-keys="status_pending,status_approved,status_rejected,status_cancelled" data-option-values="pending,approved,rejected,cancelled"></select>
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label mb-1 small" data-i18n="document_types">Document Types</label>
+            <select class="form-select select2-remote" id="monitor_filter_document_type" data-api="/api/approval-workflow.document-type-options"></select>
+          </div>
+        </div>
+        <table class="table table-hover align-middle w-100" id="tb_approval_monitor">
+          <thead class="table-light text-secondary">
+            <tr>
+              <th data-i18n="document_types">Document Type</th>
+              <th data-i18n="reference">Reference</th>
+              <th data-i18n="workflow_name">Workflow</th>
+              <th data-i18n="current_step">Current Step</th>
+              <th data-i18n="status">Status</th>
+              <th data-i18n="requested_by">Requested By</th>
+              <th data-i18n="requested_at">Requested At</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
 
@@ -170,6 +194,37 @@
             <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Approval Request detail modal -->
+  <div class="modal fade" id="requestDetailModal" tabindex="-1" aria-labelledby="requestDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold text-secondary" id="requestDetailModalLabel">
+            <i class="fa-solid fa-list-check me-2"></i><span data-i18n="approval_request_detail">Request Detail</span>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="requestDetailSummary" class="mb-3"></div>
+          <h6 class="fw-bold" data-i18n="approval_history">History</h6>
+          <div id="requestDetailTimeline"></div>
+          <div id="requestActionArea" class="mt-3 d-none">
+            <hr>
+            <div class="mb-2">
+              <label class="form-label small" data-i18n="note_optional">Note (optional)</label>
+              <textarea id="requestActionNote" class="form-control" rows="2" maxlength="500"></textarea>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-success btn-sm" id="btnApproveRequest"><i class="fa-solid fa-check me-1"></i><span data-i18n="approve">Approve</span></button>
+              <button type="button" class="btn btn-outline-danger btn-sm" id="btnRejectRequest"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="reject">Reject</span></button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCancelRequest"><i class="fa-solid fa-ban me-1"></i><span data-i18n="cancel_request">Cancel Request</span></button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

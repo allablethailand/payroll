@@ -1,7 +1,7 @@
 <div class="container container-body">
     <nav aria-label="breadcrumb">
         <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> Payroll</span>
+            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
             <span class="bc-parent" data-i18n="settings">Settings</span>
             <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
@@ -82,7 +82,7 @@
                                             <label class="form-label mb-0"><span data-i18n="modal_cycle_name">Cycle Name</span> <span class="text-danger">*</span></label>
                                         </div>
                                         <div class="col-sm-9">
-                                            <input type="text" class="form-control required" id="cycle_name" name="cycle_name" placeholder="e.g., Office Staff Cycle / Part-time Weekly">
+                                            <input type="text" class="form-control required" id="cycle_name" name="cycle_name" data-i18n="cycle_name_placeholder" placeholder="e.g., Office Staff Cycle / Part-time Weekly">
                                         </div>
                                     </div>
                                     <div class="row mb-3">
@@ -351,7 +351,7 @@
                                     <label class="form-check-label" for="fail_reason_time_adjust" data-i18n="condition_no_time_adjust">No time clock adjustments</label>
                                 </div>
                             </div>
-                            <textarea class="form-control" id="fail_reasons" name="fail_reasons" rows="2" placeholder="e.g., Late 2 times"></textarea>
+                            <textarea class="form-control" id="fail_reasons" name="fail_reasons" rows="2" data-i18n="fail_reasons_placeholder" placeholder="e.g., Late 2 times"></textarea>
                         </div>
                     </div>
                 </div>
@@ -400,7 +400,7 @@
                             <label class="form-label mb-0"><span data-i18n="item_code">Item Code</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="text" class="form-control required" id="item_code" name="item_code" placeholder="E003 / D002">
+                            <input type="text" class="form-control required" id="item_code" name="item_code" data-i18n="item_code_placeholder" placeholder="E003 / D002">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -548,7 +548,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_scheme_name">Scheme Name</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="scheme_name" name="scheme_name" placeholder="e.g., Office Staff Attendance Bonus">
+                            <input type="text" class="form-control required" id="scheme_name" name="scheme_name" data-i18n="scheme_name_placeholder" placeholder="e.g., Office Staff Attendance Bonus">
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">

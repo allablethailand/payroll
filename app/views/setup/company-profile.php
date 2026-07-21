@@ -121,7 +121,7 @@
         </div>
         <h6 class="text-secondary fw-bold mb-3 mt-4">
             <label class="label label-head bg-head-first rounded-2 text-white me-2">3</label>
-            <span data-i18n="local_statutory">Local Statutory</span> & <span data-i18n="tax_settings">Tax Settings</span>
+            <span data-i18n="local_statutory_and_tax_settings">Local Statutory & Tax Settings</span>
         </h6>
         <p class="text-muted small mb-3" data-i18n="local_statutory_description">*Please enter information based on the statutory requiredments of your company's country of registration.</p>
         <div id="dynamic_statutory_fields_container" class="row"></div>
@@ -238,7 +238,7 @@
                     <th data-i18n="department_name">Department Name</th>
                     <th data-i18n="cost_center">Cost Center</th>
                     <th data-i18n="status">Status</th>
-                    <th style="width: 120px;">Actions</th>
+                    <th style="width: 120px;"></th>
                 </tr>
             </thead>
         </table>

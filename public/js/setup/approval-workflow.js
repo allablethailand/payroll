@@ -485,10 +485,171 @@ $(document).on('submit', '#workflowForm', function (e) {
     });
 });
 
+/* ---------- Approval Monitor ---------- */
+let tb_approval_monitor;
+let currentDetailRequestId = null;
+
+function requestStatusBadge(status) {
+    const map = {
+        pending: { cls: 'bg-warning-subtle text-warning', key: 'status_pending', fallback: 'Pending' },
+        approved: { cls: 'bg-success-subtle text-success', key: 'status_approved', fallback: 'Approved' },
+        rejected: { cls: 'bg-danger-subtle text-danger', key: 'status_rejected', fallback: 'Rejected' },
+        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' }
+    };
+    const m = map[status] || { cls: 'bg-secondary-subtle text-secondary', key: '', fallback: status };
+    return `<span class="badge ${m.cls}">${langData[m.key] || m.fallback}</span>`;
+}
+
+function initApprovalMonitorTable() {
+    if ($.fn.DataTable.isDataTable('#tb_approval_monitor')) {
+        $('#tb_approval_monitor').DataTable().ajax.reload(null, false);
+        return;
+    }
+    tb_approval_monitor = $('#tb_approval_monitor').DataTable({
+        responsive: true,
+        ajax: {
+            url: `${BASE_URL}/api/approval-request.list`,
+            dataSrc: 'data',
+            data: function (d) {
+                d.status = $('#monitor_filter_status').val() || '';
+                d.document_type_code = $('#monitor_filter_document_type').val() || '';
+            }
+        },
+        columns: [
+            { data: null, render: (d, t, row) => escapeHtmlAw((currentLang === 'th' ? row.document_type_name_th : row.document_type_name_en) || row.document_type_name_th || row.document_type_name_en || '') },
+            { data: 'reference_label', render: d => escapeHtmlAw(d || '-') },
+            { data: 'workflow_name', render: d => escapeHtmlAw(d) },
+            { data: 'current_step_name', render: d => escapeHtmlAw(d || '-') },
+            { data: 'status', render: d => requestStatusBadge(d) },
+            { data: null, render: (d, t, row) => escapeHtmlAw((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || row.requested_by_name_th || row.requested_by_name_en || '-') },
+            { data: 'requested_at' },
+            {
+                data: null, orderable: false, className: 'text-center',
+                render: (d, t, row) => `<button type="button" class="btn btn-sm btn-outline-secondary btn-view-request" data-id="${row.id}"><i class="fa-solid fa-eye"></i></button>`
+            }
+        ],
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang(),
+        drawCallback: function () { getTableLang(); }
+    });
+}
+
+function renderRequestSummary(req) {
+    const requesterName = (currentLang === 'th' ? req.requested_by_name_th : req.requested_by_name_en) || req.requested_by_name_th || req.requested_by_name_en || '-';
+    const docTypeName = (currentLang === 'th' ? req.document_type_name_th : req.document_type_name_en) || req.document_type_name_th || req.document_type_name_en || '';
+    $('#requestDetailSummary').html(`
+        <div class="row g-2 small">
+            <div class="col-sm-6"><strong>${langData['document_types'] || 'Document Type'}:</strong> ${escapeHtmlAw(docTypeName)}</div>
+            <div class="col-sm-6"><strong>${langData['reference'] || 'Reference'}:</strong> ${escapeHtmlAw(req.reference_label || '-')}</div>
+            <div class="col-sm-6"><strong>${langData['workflow_name'] || 'Workflow'}:</strong> ${escapeHtmlAw(req.workflow_name)}</div>
+            <div class="col-sm-6"><strong>${langData['status'] || 'Status'}:</strong> ${requestStatusBadge(req.status)}</div>
+            <div class="col-sm-6"><strong>${langData['requested_by'] || 'Requested By'}:</strong> ${escapeHtmlAw(requesterName)}</div>
+            <div class="col-sm-6"><strong>${langData['requested_at'] || 'Requested At'}:</strong> ${escapeHtmlAw(req.requested_at)}</div>
+        </div>
+    `);
+}
+
+function renderRequestTimeline(logs) {
+    const $wrap = $('#requestDetailTimeline').empty();
+    if (logs.length === 0) {
+        $wrap.append(`<div class="text-secondary small">${langData['no_history_yet'] || 'No action has been taken on this request yet.'}</div>`);
+        return;
+    }
+    logs.forEach(l => {
+        const actorName = (currentLang === 'th' ? l.acted_by_name_th : l.acted_by_name_en) || l.acted_by_name_th || l.acted_by_name_en || '-';
+        const actionKey = { approve: 'approve', reject: 'reject', cancel: 'cancel_request' }[l.action] || l.action;
+        $wrap.append(`
+            <div class="border-start ps-3 pb-3" style="border-color:#dee2e6 !important;">
+                <div class="small text-secondary">${escapeHtmlAw(l.acted_at)}</div>
+                <div><strong>${escapeHtmlAw(l.step_name_snapshot || '')}</strong> — ${langData[actionKey] || l.action} (${escapeHtmlAw(actorName)})</div>
+                ${l.note ? `<div class="small text-secondary">${escapeHtmlAw(l.note)}</div>` : ''}
+            </div>
+        `);
+    });
+}
+
+function openRequestDetail(id) {
+    currentDetailRequestId = id;
+    $.ajax({
+        url: `${BASE_URL}/api/approval-request.get`,
+        method: 'GET',
+        data: { id },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            renderRequestSummary(res.data);
+            $('#requestActionArea').toggleClass('d-none', res.data.status !== 'pending');
+            $('#requestActionNote').val('');
+            new bootstrap.Modal(document.getElementById('requestDetailModal')).show();
+        }
+    });
+    $.ajax({
+        url: `${BASE_URL}/api/approval-request.logs`,
+        method: 'GET',
+        data: { request_id: id },
+        dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                renderRequestTimeline(res.data);
+            }
+        }
+    });
+}
+
+function actOnCurrentRequest(action) {
+    if (!currentDetailRequestId) return;
+    $.ajax({
+        url: `${BASE_URL}/api/approval-request.act`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ request_id: currentDetailRequestId, action, note: $('#requestActionNote').val().trim() }),
+        dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Success.');
+                openRequestDetail(currentDetailRequestId);
+                if (tb_approval_monitor) tb_approval_monitor.ajax.reload(null, false);
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred.'); }
+    });
+}
+
+$(document).on('click', '.btn-view-request', function () {
+    openRequestDetail($(this).data('id'));
+});
+$(document).on('click', '#btnApproveRequest', function () {
+    actOnCurrentRequest('approve');
+});
+$(document).on('click', '#btnRejectRequest', function () {
+    showConfirm(langData['confirm_reject_request'] || 'Reject this request?', '', function () {
+        actOnCurrentRequest('reject');
+    });
+});
+$(document).on('click', '#btnCancelRequest', function () {
+    showConfirm(langData['confirm_cancel_request'] || 'Cancel this request?', '', function () {
+        actOnCurrentRequest('cancel');
+    });
+});
+$(document).on('change', '#monitor_filter_status, #monitor_filter_document_type', function () {
+    if (tb_approval_monitor) tb_approval_monitor.ajax.reload(null, true);
+});
+
 $(document).ready(function () {
     initApprovalWorkflowTable();
     if (typeof initSelect2 === 'function') {
         initSelect2('#workflow_status', { mode: 'static' });
         initSelect2('#workflow_document_types', { mode: 'ajax', allowClear: true });
+        initSelect2('#monitor_filter_status', { mode: 'static', allowClear: true });
+        initSelect2('#monitor_filter_document_type', { mode: 'ajax', allowClear: true });
     }
+    $('#approvalMonitorTabBtn').on('shown.bs.tab', function () {
+        initApprovalMonitorTable();
+    });
 });
