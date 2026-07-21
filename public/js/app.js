@@ -42,6 +42,7 @@ $(document).ready(async function() {
         $parent.siblings('.has-submenu').removeClass('open').find('.submenu').slideUp(200);
     });
     initSelect2Remote('.select2-remote');
+    initSelect2('.select2-static', { mode: 'static' });
 });
 function getTableLang() {
     return {
@@ -83,10 +84,44 @@ async function loadLang(lang) {
 }
 function applyLanguage(lang, root = document) {
     updateText(root);
+
+    // --- [เพิ่มส่วนนี้] สำหรับประมวลผล select ที่ใช้ data-option-keys ---
+    $(root).find('select[data-option-keys]').each(function() {
+        const $select = $(this);
+        const keys = $select.attr('data-option-keys').split(',');
+        const currentVal = $select.val(); // เก็บค่าที่เลือกไว้อยู่เดิม
+
+        $select.empty(); // ล้าง option เดิมออกก่อน
+
+        // วนลูปสร้าง option ใหม่ตามภาษาปัจจุบัน
+        keys.forEach(function(key) {
+            const cleanKey = key.trim();
+            // ดึงคำแปลจาก langData ถ้าไม่มีให้ใช้ cleanKey เป็นค่าเริ่มต้น
+            const translatedText = (typeof langData !== 'undefined' && langData[cleanKey]) 
+                ? langData[cleanKey] 
+                : cleanKey;
+
+            const newOption = new Option(translatedText, cleanKey);
+            $select.append(newOption);
+        });
+
+        // คืนค่าที่เคยเลือกไว้ (ถ้ามี)
+        if (currentVal) {
+            $select.val(currentVal);
+        }
+        
+        // Trigger หากใช้ Select2
+        if ($select.hasClass('select2-hidden-accessible')) {
+            $select.trigger('change.select2');
+        }
+    });
+    // -------------------------------------------------------------
+
     if ($('#search_address').length && typeof currentCompanyAddresses !== 'undefined') {
         const addressText = (lang === 'th') ? currentCompanyAddresses.th : currentCompanyAddresses.en;
         $('#search_address').val(addressText);
     }
+
     $(root).find('.select2-remote.select2-hidden-accessible').each(function() {
         const $this = $(this);
         const val = $this.val();
@@ -109,9 +144,15 @@ function applyLanguage(lang, root = document) {
                 $(newOption).data('data', selectedData); 
                 $this.append(newOption);
             }
-            $this.trigger('change'); 
+            $this.trigger('change');
             $this.trigger('change.select2');
         }
+    });
+
+    $(root).find('.select2-static.select2-hidden-accessible').each(function() {
+        const $this = $(this);
+        const val = $this.val();
+        initSelect2($this, { mode: 'static', selectedValue: val });
     });
 
     if (typeof refreshAllTables === 'function') {
@@ -143,14 +184,29 @@ function getLangValue(key) {
 function updateText(root = document) {
     const $elements = $(root).find('[data-i18n]').add($(root).filter('[data-i18n]'));
     $elements.each(function () {
-        const key = $(this).attr('data-i18n'); 
+        const $el = $(this);
+        const key = $el.attr('data-i18n'); 
+        const value = getLangValue(key);
+        if (value !== undefined && value !== null) {
+            if ($el.is('input, textarea')) {
+                $el.attr('placeholder', value);
+            } else if ($el.is('input[type="button"], input[type="submit"]')) {
+                $el.val(value);
+            } else if ($el.find('> i, > svg').length > 0) {
+                const $icon = $el.find('> i, > svg').first();
+                $el.html($icon[0].outerHTML + ' ' + value);
+            } 
+            else {
+                $el.text(value);
+            }
+        }
+    });
+    $(root).find('[data-i18n-title]').each(function() {
+        const $el = $(this);
+        const key = $el.attr('data-i18n-title');
         const value = getLangValue(key);
         if (value !== undefined) {
-            if ($(this).is('input, textarea')) {
-                $(this).attr('placeholder', value);
-            } else {
-                $(this).text(value);
-            }
+            $el.attr('title', value);
         }
     });
 }
@@ -161,7 +217,15 @@ function refreshAllTables() {
     $('.dataTable').each(function () {
         const initFn = tableMappings[this.id];
         if (initFn) {
-            initFn(); 
+            initFn();
         }
     });
+    if (typeof structureTables !== 'undefined' && structureTables) {
+        Object.keys(structureTables).forEach(key => {
+            const tableInstance = structureTables[key];
+            if (tableInstance && $.fn.DataTable.isDataTable(tableInstance.table().node())) {
+                tableInstance.rows().invalidate().draw(false);
+            }
+        });
+    }
 }

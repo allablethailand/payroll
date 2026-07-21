@@ -16,25 +16,25 @@
     </nav>
     <ul class="nav nav-tabs" id="employeeTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info-pane" type="button" role="tab" aria-controls="info-pane" aria-selected="true"><i class="fa-solid fa-circle-user me-1"></i><span data-i18n="employee_info">Employee Info</span></button>
+            <button class="nav-link text-secondary active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info-pane" type="button" role="tab" aria-controls="info-pane" aria-selected="true"><i class="fa-solid fa-circle-user me-1"></i><span data-i18n="employee_info">Employee Info</span></button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact-pane" type="button" role="tab" aria-controls="contact-pane" aria-selected="false"><i class="fa-solid fa-address-book me-1"></i><span data-i18n="contact">Contact</span></button>
+            <button class="nav-link text-secondary" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact-pane" type="button" role="tab" aria-controls="contact-pane" aria-selected="false"><i class="fa-solid fa-address-book me-1"></i><span data-i18n="contact">Contact</span></button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="employment-tab" data-bs-toggle="tab" data-bs-target="#employment-pane" type="button" role="tab" aria-controls="employment-pane" aria-selected="false"><i class="fa-solid fa-building-user me-1"></i><span data-i18n="employment">Employment</span></button>
+            <button class="nav-link text-secondary" id="employment-tab" data-bs-toggle="tab" data-bs-target="#employment-pane" type="button" role="tab" aria-controls="employment-pane" aria-selected="false"><i class="fa-solid fa-building-user me-1"></i><span data-i18n="employment">Employment</span></button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="salary-tab" data-bs-toggle="tab" data-bs-target="#salary-pane" type="button" role="tab" aria-controls="salary-pane" aria-selected="false"><i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="salary">Salary</span></button>
+            <button class="nav-link text-secondary" id="salary-tab" data-bs-toggle="tab" data-bs-target="#salary-pane" type="button" role="tab" aria-controls="salary-pane" aria-selected="false"><i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="salary">Salary</span></button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="social-tab" data-bs-toggle="tab" data-bs-target="#social-pane" type="button" role="tab" aria-controls="social-pane" aria-selected="false"><i class="fa-solid fa-hospital-user me-1"></i><span data-i18n="social_security">Social Security</span></button>
+            <button class="nav-link text-secondary" id="social-tab" data-bs-toggle="tab" data-bs-target="#social-pane" type="button" role="tab" aria-controls="social-pane" aria-selected="false"><i class="fa-solid fa-hospital-user me-1"></i><span data-i18n="social_security">Social Security</span></button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="family-tab" data-bs-toggle="tab" data-bs-target="#family-pane" type="button" role="tab" aria-controls="family-pane" aria-selected="false"><i class="fa-solid fa-people-roof me-1"></i><span data-i18n="family_tax">Family / Tax Allowance</span></button>
+            <button class="nav-link text-secondary" id="family-tab" data-bs-toggle="tab" data-bs-target="#family-pane" type="button" role="tab" aria-controls="family-pane" aria-selected="false"><i class="fa-solid fa-people-roof me-1"></i><span data-i18n="family_tax">Family / Tax Allowance</span></button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false"><i class="fa-solid fa-paperclip me-1"></i><span data-i18n="documents">Documents</span></button>
+            <button class="nav-link text-secondary" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false"><i class="fa-solid fa-paperclip me-1"></i><span data-i18n="documents">Documents</span></button>
         </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-5" id="employeeTabsContent">
@@ -76,7 +76,7 @@
                     <label class="form-label"><span data-i18n="employee_status">Employee Status</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="employee_status" id="employee_status">
+                    <select class="form-select select2-native required" name="employee_status" id="employee_status">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="active" data-i18n="status_active">Active</option>
                         <option value="probation" data-i18n="status_probation">Probation</option>
@@ -91,7 +91,7 @@
                     <label class="form-label"><span data-i18n="title">Title</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="title" id="title">
+                    <select class="form-select select2-native required" name="title" id="title">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="mr" data-i18n="title_mr">Mr.</option>
                         <option value="mrs" data-i18n="title_mrs">Mrs.</option>
@@ -118,13 +118,13 @@
                     <label class="form-label"><span data-i18n="name_local">Name (Local)</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="name_th" id="name_th">
+                    <input type="text" class="form-control required" name="name_th" id="name_th">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="surname_local">Surname (Local)</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="surname_th" id="surname_th">
+                    <input type="text" class="form-control required" name="surname_th" id="surname_th">
                 </div>
             </div>
             <div class="row">
@@ -132,13 +132,13 @@
                     <label class="form-label"><span data-i18n="name_en">Name (EN)</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="name_en" id="name_en">
+                    <input type="text" class="form-control required" name="name_en" id="name_en">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="surname_en">Surname (EN)</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="surname_en" id="surname_en">
+                    <input type="text" class="form-control required" name="surname_en" id="surname_en">
                 </div>
             </div>
             <div class="row">
@@ -161,7 +161,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="date_of_birth" id="date_of_birth" autocomplete="off">
+                        <input type="text" class="form-control datepicker required" name="date_of_birth" id="date_of_birth" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                     </div>
                 </div>
@@ -169,7 +169,7 @@
                     <label class="form-label"><span data-i18n="nationality">Nationality</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="nationality" id="nationality">
+                    <select class="form-select select2-remote required" name="nationality" id="nationality" data-api="/api/nationality.get" data-type="nationality"></select>
                 </div>
             </div>
             <div class="row">
@@ -177,13 +177,13 @@
                     <label class="form-label"><span data-i18n="religion">Religion</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="religion" id="religion">
+                    <select class="form-select select2-remote" name="religion" id="religion" data-api="/api/religion.get" data-type="religion"></select>
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="marital_status">Marital Status</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="marital_status" id="marital_status">
+                    <select class="form-select select2-native" name="marital_status" id="marital_status">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="single" data-i18n="single">Single</option>
                         <option value="married" data-i18n="married">Married</option>
@@ -192,12 +192,12 @@
                     </select>
                 </div>
             </div>
-            <div class="row">
+            <div class="row d-none" id="militaryStatusGroup">
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="military_status">Military Status</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="military_status" id="military_status">
+                    <select class="form-select select2-native" name="military_status" id="military_status">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="exempted" data-i18n="exempted">Exempted</option>
                         <option value="served" data-i18n="served">Served</option>
@@ -302,7 +302,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
-                <button type="button" class="btn btn-primary" id="btnNextContact">
+                <button type="button" class="btn btn-warning" id="btnNextContact">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -338,13 +338,13 @@
                     <label class="form-label"><span data-i18n="personal_email">Personal Email Address</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="email" class="form-control" name="personal_email" id="personal_email">
+                    <input type="email" class="form-control required" name="personal_email" id="personal_email">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="mobile_no">Mobile No.</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="mobile_no" id="mobile_no" maxlength="10">
+                    <input type="text" class="form-control required" name="mobile_no" id="mobile_no" maxlength="10">
                 </div>
                 <div class="col-sm-12 mt-3">
                     <input type="checkbox" class="me-2" name="send_preboarding_email" id="send_preboarding_email"><span data-i18n="send_preboarding">Send preboarding access email.</span>
@@ -362,40 +362,29 @@
             </h6>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="address">Address</span> <span class="text-danger">*</span></label>
+                    <label class="form-label"><span data-i18n="address_line_1">Address Line 1</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="address_register" id="address_register">
+                    <input type="text" class="form-control required" name="address_line_1_register" id="address_line_1_register">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="subdistrict">Subdistrict</span> <span class="text-danger">*</span></label>
+                    <label class="form-label"><span data-i18n="address_line_2">Address Line 2 (Optional)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="subdistrict_register" id="subdistrict_register">
+                    <input type="text" class="form-control" name="address_line_2_register" id="address_line_2_register">
                 </div>
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="district">District</span> <span class="text-danger">*</span></label>
+                    <label class="form-label"><span data-i18n="search_address_label">Sub-district / City / Postcode</span> <span class="text-danger">*</span></label>
                 </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="district_register" id="district_register">
-                </div>
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="province">Province</span> <span class="text-danger">*</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="province_register" id="province_register">
+                <div class="col-sm-4 mt-3 position-relative">
+                    <input type="text" class="form-control required autocomplete-address" id="search_address_register" autocomplete="off">
+                    <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                    <input type="hidden" name="master_address_id_register" class="master-address-id-field" id="master_address_id_register">
                 </div>
             </div>
-            <div class="row">
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="postal_code">Postal Code</span> <span class="text-danger">*</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="postal_code_register" id="postal_code_register" maxlength="5">
-                </div>
-            </div>
+            <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
             <h6 class="text-secondary fw-bold mb-3 mt-5">
                 <label class="label label-head bg-head-first rounded-2 text-white">4</label>
                 <span data-i18n="contact_address">Contact Address</span>
@@ -407,38 +396,26 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="address">Address</span> <span class="text-danger">*</span></label>
+                    <label class="form-label"><span data-i18n="address_line_1">Address Line 1</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="address_contact" id="address_contact">
+                    <input type="text" class="form-control required" name="address_line_1_contact" id="address_line_1_contact">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="subdistrict">Subdistrict</span> <span class="text-danger">*</span></label>
+                    <label class="form-label"><span data-i18n="address_line_2">Address Line 2 (Optional)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="subdistrict_contact" id="subdistrict_contact">
+                    <input type="text" class="form-control" name="address_line_2_contact" id="address_line_2_contact">
                 </div>
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="district">District</span> <span class="text-danger">*</span></label>
+                    <label class="form-label"><span data-i18n="search_address_label">Sub-district / City / Postcode</span> <span class="text-danger">*</span></label>
                 </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="district_contact" id="district_contact">
-                </div>
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="province">Province</span> <span class="text-danger">*</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="province_contact" id="province_contact">
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="postal_code">Postal Code</span> <span class="text-danger">*</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="postal_code_contact" id="postal_code_contact" maxlength="5">
+                <div class="col-sm-4 mt-3 position-relative">
+                    <input type="text" class="form-control required autocomplete-address" id="search_address_contact" autocomplete="off">
+                    <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                    <input type="hidden" name="master_address_id_contact" class="master-address-id-field" id="master_address_id_contact">
                 </div>
             </div>
             <h6 class="text-secondary fw-bold mb-3 mt-5">
@@ -450,13 +427,13 @@
                     <label class="form-label"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="emergency_name" id="emergency_name">
+                    <input type="text" class="form-control required" name="emergency_name" id="emergency_name">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="surname">Surname</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="emergency_surname" id="emergency_surname">
+                    <input type="text" class="form-control required" name="emergency_surname" id="emergency_surname">
                 </div>
             </div>
             <div class="row">
@@ -464,17 +441,17 @@
                     <label class="form-label"><span data-i18n="relationship">Relationship</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="emergency_relationship" id="emergency_relationship">
+                    <input type="text" class="form-control required" name="emergency_relationship" id="emergency_relationship">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="mobile_no">Mobile No.</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="emergency_mobile" id="emergency_mobile" maxlength="10">
+                    <input type="text" class="form-control required" name="emergency_mobile" id="emergency_mobile" maxlength="10">
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
-                <button type="button" class="btn btn-primary" id="btnNextEmployment">
+                <button type="button" class="btn btn-warning" id="btnNextEmployment">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -489,16 +466,14 @@
                     <label class="form-label"><span data-i18n="department">Department</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="department_id" id="department_id">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                    <select class="form-select select2-remote required" name="department_id" id="department_id" data-api="/api/department.get" data-type="department">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="role">Role</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="role_id" id="role_id">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                    <select class="form-select select2-remote required" name="role_id" id="role_id" data-api="/api/role.get" data-type="role">
                     </select>
                 </div>
             </div>
@@ -507,15 +482,14 @@
                     <label class="form-label"><span data-i18n="position">Position</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="position_id" id="position_id">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                    <select class="form-select select2-remote required" name="position_id" id="position_id" data-api="/api/position.get" data-type="position">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="employee_no">Employee No.</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="employee_no" id="employee_no_input">
+                    <input type="text" class="form-control required" name="employee_no" id="employee_no_input">
                 </div>
             </div>
             <div class="row">
@@ -523,8 +497,7 @@
                     <label class="form-label"><span data-i18n="branch">Branch</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="branch_id" id="branch_id">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                    <select class="form-select select2-remote required" name="branch_id" id="branch_id" data-api="/api/branch.get" data-type="branch">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
@@ -550,7 +523,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="employment_date" id="employment_date" autocomplete="off">
+                        <input type="text" class="form-control datepicker required" name="employment_date" id="employment_date" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                     </div>
                 </div>
@@ -564,7 +537,7 @@
                     <label class="form-label"><span data-i18n="employment_status">Employment Status</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="employment_status" id="employment_status">
+                    <select class="form-select select2-native required" name="employment_status" id="employment_status">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="probation" data-i18n="probation">Probation</option>
                         <option value="permanent" data-i18n="permanent">Permanent</option>
@@ -577,7 +550,7 @@
                     <label class="form-label"><span data-i18n="employment_type">Employment Type</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="employment_type" id="employment_type">
+                    <select class="form-select select2-native required" name="employment_type" id="employment_type">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="full_time" data-i18n="full_time">Full-time</option>
                         <option value="part_time" data-i18n="part_time">Part-time</option>
@@ -591,8 +564,7 @@
                     <label class="form-label"><span data-i18n="report_to">Report To</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="report_to_id" id="report_to_id">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                    <select class="form-select select2-remote" name="report_to_id" id="report_to_id" data-api="/api/employee.report_to.get" data-type="">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
@@ -626,7 +598,7 @@
                     <label class="form-label"><span data-i18n="workforce_type">Workforce Type</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="workforce_type" id="workforce_type">
+                    <select class="form-select select2-native required" name="workforce_type" id="workforce_type">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="office" data-i18n="office">Office</option>
                         <option value="field" data-i18n="field">Field</option>
@@ -638,7 +610,7 @@
                     <label class="form-label"><span data-i18n="record_time_method">Time Record Method</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="record_time_method" id="record_time_method">
+                    <select class="form-select select2-native required" name="record_time_method" id="record_time_method">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="fingerprint" data-i18n="fingerprint">Fingerprint</option>
                         <option value="qr_code" data-i18n="qr_code">QR Code</option>
@@ -671,8 +643,7 @@
                     <label class="form-label"><span data-i18n="bank_name">Bank</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="bank_name" id="bank_name">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                    <select class="form-select select2-remote" name="bank_id" id="bank_id" data-api="/api/bank.get" data-type="bank">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
@@ -695,7 +666,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
-                <button type="button" class="btn btn-primary" id="btnNextSalary">
+                <button type="button" class="btn btn-warning" id="btnNextSalary">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -710,7 +681,7 @@
                     <label class="form-label"><span data-i18n="salary_type">Salary Type</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="salary_type" id="salary_type">
+                    <select class="form-select select2-native required" name="salary_type" id="salary_type">
                         <option value="monthly" data-i18n="monthly">Monthly</option>
                         <option value="daily" data-i18n="daily">Daily</option>
                         <option value="hourly" data-i18n="hourly">Hourly</option>
@@ -721,7 +692,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
-                        <input type="number" step="0.01" class="form-control text-end" name="base_salary_amount" id="base_salary_amount">
+                        <input type="number" step="0.01" class="form-control text-end required" name="base_salary_amount" id="base_salary_amount">
                         <span class="input-group-text" data-i18n="thb">THB</span>
                     </div>
                 </div>
@@ -732,7 +703,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="salary_effective_date" id="salary_effective_date" autocomplete="off">
+                        <input type="text" class="form-control datepicker required" name="salary_effective_date" id="salary_effective_date" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                     </div>
                 </div>
@@ -745,24 +716,25 @@
             </div>
             <h6 class="text-secondary fw-bold mb-3 mt-5">
                 <label class="label label-head bg-head-first rounded-2 text-white">2</label>
-                <span data-i18n="allowances">Allowances / Deductions</span>
+                <span data-i18n="earning_deduction_assignments">Earnings & Deductions</span>
             </h6>
-            <p class="text-secondary small ms-5 mb-3" data-i18n="allowances_hint">*Recurring items such as position allowance, transport, or per-diem. Managed as line items linked to this employee.</p>
+            <p class="text-secondary small ms-5 mb-3" data-i18n="earning_deduction_assignments_hint">*Assign recurring or installment-based items from the payroll master list, such as loan deductions or split bonus payments.</p>
             <div class="row">
                 <div class="col-sm-12 mt-3">
-                    <table class="table table-bordered table-sm" id="tableAllowance">
+                    <table class="table table-bordered table-sm align-middle" id="tableEarningDeduction">
                         <thead>
                             <tr>
                                 <th data-i18n="item_name">Item</th>
-                                <th data-i18n="item_type" style="width:150px;">Type</th>
-                                <th data-i18n="amount" style="width:150px;">Amount</th>
-                                <th data-i18n="taxable" style="width:100px;">Taxable</th>
-                                <th style="width:60px;"></th>
+                                <th data-i18n="col_calc_method" style="width:150px;">Amount</th>
+                                <th data-i18n="installment_progress" style="width:110px;">Installments</th>
+                                <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
+                                <th data-i18n="col_status" style="width:100px;">Status</th>
+                                <th style="width:130px;"></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
                     </table>
-                    <button type="button" class="btn btn-sm btn-outline-brand" id="btnAddAllowance">
+                    <button type="button" class="btn btn-sm text-white" id="btnAddEarningDeduction" style="background-color:#FF9900;border-color:#FF9900;">
                         <i class="fas fa-plus me-1"></i><span data-i18n="add_item">Add item</span>
                     </button>
                 </div>
@@ -776,7 +748,7 @@
                     <label class="form-label"><span data-i18n="tax_calculation_method">Tax Calculation Method</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="tax_calculation_method" id="tax_calculation_method">
+                    <select class="form-select select2-native required" name="tax_calculation_method" id="tax_calculation_method">
                         <option value="" data-i18n="please_choose">Please choose.</option>
                         <option value="average" data-i18n="average_method">Average (เฉลี่ยทั้งปี)</option>
                         <option value="actual" data-i18n="actual_method">Actual (ตามที่จ่ายจริงแต่ละงวด)</option>
@@ -1024,6 +996,100 @@
                     </table>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="eedModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="eedModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary" id="eedModalLabel">
+                    <span data-i18n="add_earning_deduction">Add Earning / Deduction</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="eedForm" novalidate>
+                <input type="hidden" id="eed_id" name="id">
+                <div class="modal-body">
+                    <h6 class="text-secondary fw-bold mb-3 mt-2">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
+                        <span data-i18n="sec_general_info">General Information</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-remote required" id="eed_ped_type_id" name="ped_type_id" data-api="/api/employee.earning-deduction.options" data-type=""></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker required" id="eed_effective_date" name="effective_date" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="my-4 text-muted opacity-25">
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
+                        <span data-i18n="sec_installment_settings">Installment Settings</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="total_installments">Total Installments</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-3">
+                            <input type="number" step="1" min="1" class="form-control required" id="eed_total_installments" name="total_installments" value="1">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="amount_mode">Amount Mode</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input" type="radio" name="amount_mode" id="eed_mode_even" value="even_split" checked>
+                                <label class="form-check-label" for="eed_mode_even" data-i18n="even_split">Split evenly across installments</label>
+                            </div>
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input" type="radio" name="amount_mode" id="eed_mode_custom" value="custom_per_installment">
+                                <label class="form-check-label" for="eed_mode_custom" data-i18n="custom_per_installment">Set amount per installment</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3" id="eed_total_amount_wrapper">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="total_amount">Total Amount</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-3">
+                            <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_total_amount" name="total_amount">
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="eed_custom_amounts_wrapper">
+                        <div class="col-sm-3">
+                            <label class="form-label mb-0" data-i18n="installment_amounts">Amount per Installment</label>
+                        </div>
+                        <div class="col-sm-9" id="eed_custom_amounts_container"></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="notes">Notes</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <textarea class="form-control" id="eed_notes" name="notes" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" data-i18n="save_item">Save Item</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

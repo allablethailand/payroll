@@ -13,24 +13,24 @@
         </h5>
         <p class="text-muted small m-0 mt-1" data-i18n="employee_management_description">Configure and manage employee profiles, tax identifications, and bank accounts for payroll processing.</p>
     </div>
-    <ul class="nav nav-tabs" id="employeeTabs" role="tablist">
+    <ul class="nav nav-tabs flex-nowrap scrollable-tabs" id="employeeTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary active" id="employee-tab" data-bs-toggle="tab" data-bs-target="#employee-pane" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="active">Active</button>
+            <button class="nav-link text-secondary active employee-status-tab" id="tab-emp-active" type="button" role="tab" aria-controls="employee" aria-selected="true" data-i18n="active" data-filter-status="active">Active</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="employee-tab" data-bs-toggle="tab" data-bs-target="#employee-pane" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="start_soon">Start Soon</button>
+            <button class="nav-link text-secondary employee-status-tab" id="tab-emp-start-soon" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="start_soon" data-unsupported="true">Start Soon</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="employee-tab" data-bs-toggle="tab" data-bs-target="#employee-pane" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="probation">Probation</button>
+            <button class="nav-link text-secondary employee-status-tab" id="tab-emp-probation" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="probation" data-filter-status="probation">Probation</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="employee-tab" data-bs-toggle="tab" data-bs-target="#employee-pane" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="permanent">Permanent</button>
+            <button class="nav-link text-secondary employee-status-tab" id="tab-emp-permanent" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="permanent" data-filter-employment-status="permanent">Permanent</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="employee-tab" data-bs-toggle="tab" data-bs-target="#employee-pane" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="resign">Resign</button>
+            <button class="nav-link text-secondary employee-status-tab" id="tab-emp-resign" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="resign" data-filter-status="resigned">Resign</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold text-secondary" id="employee-tab" data-bs-toggle="tab" data-bs-target="#employee-pane" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="invite_accepted">Invite Accepted</button>
+            <button class="nav-link text-secondary employee-status-tab" id="tab-emp-invite-accepted" type="button" role="tab" aria-controls="employee" aria-selected="false" data-i18n="invite_accepted" data-unsupported="true">Invite Accepted</button>
         </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-5" id="employeeTabsContent">

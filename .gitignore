@@ -6,3 +6,6 @@
 
 # Config
 config.php
+
+# DB backups produced by database/migrate_encrypt_legacy.php — contain live plaintext PII, never commit
+database/backups/

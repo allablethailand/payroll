@@ -40,3 +40,6 @@
             }
         }
     }
+    function getCompId() {
+        return $_SESSION['comp_id'] ?? 1; 
+    }

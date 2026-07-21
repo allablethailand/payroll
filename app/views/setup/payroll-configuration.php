@@ -11,101 +11,70 @@
     <div class="mb-4">
         <h5 class="text-secondary fw-bold m-0">
             <i class="fa-solid fa-calendar-day me-2"></i>
-            <span data-i18n="company_management_title">Payroll Cycle Management</span>
+            <span data-i18n="payroll_configuration">Payroll Configuration</span>
         </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="company_management_description">Define and manage employee payroll cycles, with the flexibility to categorize by employee groups or employment types.</p>
+        <p class="text-muted small m-0 mt-1" data-i18n="payroll_configuration_description">Set up payroll cycles, earning types, and deduction types by employee group or employment type.</p>
     </div>
     <ul class="nav nav-tabs" id="companySetupTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active fw-bold" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
+            <button class="nav-link active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
                 <i class="fa-regular fa-calendar-days me-2"></i><span data-i18n="cycle">Cycle</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold" id="earnings-tab" data-bs-toggle="tab" data-bs-target="#earnings-pane" type="button" role="tab" aria-controls="earnings-pane" aria-selected="false">
+            <button class="nav-link" id="earnings-tab" data-bs-toggle="tab" data-bs-target="#earnings-pane" type="button" role="tab" aria-controls="earnings-pane" aria-selected="false">
                 <i class="fa-solid fa-calendar-day me-2"></i><span data-i18n="earnings">Earnings</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold" id="deductions-tab" data-bs-toggle="tab" data-bs-target="#deductions-pane" type="button" role="tab" aria-controls="deductions-pane" aria-selected="false">
+            <button class="nav-link" id="deductions-tab" data-bs-toggle="tab" data-bs-target="#deductions-pane" type="button" role="tab" aria-controls="deductions-pane" aria-selected="false">
                 <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="deductions">Deductions</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="attendance-bonus-tab" data-bs-toggle="tab" data-bs-target="#attendance-bonus-pane" type="button" role="tab" aria-controls="attendance-bonus-pane" aria-selected="false">
+                <i class="fa-solid fa-medal me-2"></i><span data-i18n="attendance_bonus">Attendance Bonus</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="bonus-ledger-tab" data-bs-toggle="tab" data-bs-target="#bonus-ledger-pane" type="button" role="tab" aria-controls="bonus-ledger-pane" aria-selected="false">
+                <i class="fa-solid fa-list-check me-2"></i><span data-i18n="bonus_ledger">Ledger</span>
             </button>
         </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
         <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
             <div class="mt-5 mb-5">
-                <button type="button" class="btn btn-warning text-white px-3 d-flex align-items-center gap-2" style="background-color: #ff9900; border-color: #ff9900;" data-bs-toggle="modal" data-bs-target="#payrollCycleModal" onclick="resetForm()"><i class="fas fa-plus"></i> <span data-i18n="add_cycle">Add Payroll Cycle</span></button>
                 <div class="mt-5 mb-5">
-                    <table class="table table-hover table-border align-middle w-100" id="payrollCycleTable">
+                    <table class="table table-hover table-border align-middle w-100" id="tb_payroll_cycle">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th scope="col" style="width: 25%;" data-i18n="table_cycle_name">Cycle Name</th>
-                                <th scope="col" style="width: 15%;" data-i18n="table_frequency">Frequency</th>
-                                <th scope="col" style="width: 20%;" data-i18n="table_cutoff">Attendance Cut-off</th>
-                                <th scope="col" style="width: 15%;" data-i18n="table_payment_day">Payment Day</th>
+                                <th scope="col" style="width: 22%;" data-i18n="table_cycle_name">Cycle Name</th>
+                                <th scope="col" style="width: 13%;" data-i18n="table_frequency">Frequency</th>
+                                <th scope="col" style="width: 18%;" data-i18n="table_cutoff">Attendance Cut-off</th>
+                                <th scope="col" style="width: 18%;" data-i18n="table_payment_day">Payment Day</th>
                                 <th scope="col" style="width: 15%;" data-i18n="table_bank_format">Bank Format</th>
-                                <th scope="col" style="width: 10%; text-align: center;" data-i18n="table_actions">Actions</th>
+                                <th scope="col" style="width: 8%;" data-i18n="col_status">Status</th>
+                                <th scope="col" style="width: 6%; text-align: center;"></th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <tr id="cycle-row-1">
-                                <td>
-                                    <strong class="text-dark">Office Staff Cycle</strong>
-                                    <div class="text-muted small">พนักงานประจำสำนักงาน</div>
-                                </td>
-                                <td><span class="badge bg-primary-subtle text-primary px-2 py-1">Monthly</span></td>
-                                <td>Every 25th of the month</td>
-                                <td>Every 30th of the month</td>
-                                <td>KBANK_SMART</td>
-                                <td class="text-center">
-                                    <div class="d-flex justify-content-center gap-2">
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editCycle(1)" title="Edit">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCycle(1)" title="Delete">
-                                            <i class="fas fa-trash-alt"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr id="cycle-row-2">
-                                <td>
-                                    <strong class="text-dark">Part-time / Subcontract</strong>
-                                    <div class="text-muted small">พนักงานรายสัปดาห์ / คลังสินค้า</div>
-                                </td>
-                                <td><span class="badge bg-info-subtle text-info px-2 py-1">Weekly</span></td>
-                                <td>Every Friday</td>
-                                <td>Every Monday</td>
-                                <td>SCB</td>
-                                <td class="text-center">
-                                    <div class="d-flex justify-content-center gap-2">
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editCycle(2)" title="Edit">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCycle(2)" title="Delete">
-                                            <i class="fas fa-trash-alt"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
+                        <tbody></tbody>
                     </table>
                 </div>
                 <div class="modal fade" id="payrollCycleModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="payrollCycleModalLabel" aria-hidden="true">
                     <div class="modal-dialog modal-lg modal-dialog-centered">
                         <div class="modal-content border-0 shadow">
-                            <div class="modal-header border-bottom-0 pt-4 px-4">
-                                <h5 class="modal-title fw-bold text-secondary" id="payrollCycleModalLabel">
-                                    <span data-i18n="modal_title_add">Create New Payroll Cycle</span>
+                            <div class="modal-header">
+                                <h5 class="modal-title text-secondary">
+                                    <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="cycle">Cycle</span>
                                 </h5>
                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                             </div>
                             <form id="payrollCycleForm" novalidate>
-                                <input type="hidden" name="cycle_id" id="cycle_id">
-                                <div class="modal-body px-4 py-0">
+                                <input type="hidden" name="id" id="cycle_id">
+                                <div class="modal-body">
                                     <h6 class="text-secondary fw-bold mb-3 mt-2">
-                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0" style="background-color: #ff9900;">1</label> 
+                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
                                         <span data-i18n="modal_sec_general">Cycle Information</span>
                                     </h6>
                                     <div class="row mb-3">
@@ -113,7 +82,7 @@
                                             <label class="form-label mb-0"><span data-i18n="modal_cycle_name">Cycle Name</span> <span class="text-danger">*</span></label>
                                         </div>
                                         <div class="col-sm-9">
-                                            <input type="text" class="form-control" id="cycle_name" name="cycle_name" required placeholder="e.g., Office Staff Cycle / Part-time Weekly">
+                                            <input type="text" class="form-control required" id="cycle_name" name="cycle_name" placeholder="e.g., Office Staff Cycle / Part-time Weekly">
                                         </div>
                                     </div>
                                     <div class="row mb-3">
@@ -121,46 +90,51 @@
                                             <label class="form-label mb-0"><span data-i18n="modal_frequency">Payroll Frequency</span> <span class="text-danger">*</span></label>
                                         </div>
                                         <div class="col-sm-9">
-                                            <select class="form-select" id="payroll_frequency" name="payroll_frequency" required>
-                                                <option value="">-- Select Frequency --</option>
-                                                <option value="monthly">Monthly (รายเดือน)</option>
-                                                <option value="semi_monthly">Semi-Monthly (รายปักษ์)</option>
-                                                <option value="weekly">Weekly (รายสัปดาห์)</option>
-                                                <option value="bi_weekly">Bi-Weekly (ราย 2 สัปดาห์)</option>
-                                            </select>
+                                            <select class="form-select select2-static required" id="payroll_frequency" name="payroll_frequency" data-option-keys="freq_monthly,freq_semi_monthly,freq_weekly,freq_bi_weekly" data-option-values="monthly,semi_monthly,weekly,bi_weekly"></select>
                                         </div>
                                     </div>
                                     <hr class="my-4 text-muted opacity-25">
                                     <h6 class="text-secondary fw-bold mb-3">
-                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0" style="background-color: #ff9900;">2</label> 
+                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
                                         <span data-i18n="modal_sec_dates">Cut-off & Payment Settings</span>
                                     </h6>
-                                    <div class="row mb-3">
+                                    <div class="row mb-3" id="cutoff_dom_wrapper">
                                         <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off</span> <span class="text-danger">*</span></label>
+                                            <label class="form-label mb-0"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
                                         </div>
-                                        <div class="col-sm-9">
-                                            <select class="form-select" id="attendance_cutoff_day" name="attendance_cutoff_day" required>
-                                                <option value="">-- Select Day --</option>
-                                                <option value="20">Every 20th of the month</option>
-                                                <option value="25">Every 25th of the month</option>
-                                                <option value="last_day">Last day of the month</option>
-                                                <option value="friday">Every Friday (สำหรับรายสัปดาห์)</option>
-                                            </select>
+                                        <div class="col-sm-3">
+                                            <input type="number" min="1" max="28" class="form-control required" id="cutoff_day_of_month" name="cutoff_day_of_month">
+                                        </div>
+                                        <div class="col-sm-6 pt-2">
+                                            <input type="checkbox" class="me-2" id="cutoff_use_last_day" name="cutoff_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
                                         </div>
                                     </div>
-                                    <div class="row mb-3">
+                                    <div class="row mb-3 d-none" id="cutoff_dow_wrapper">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-0"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
+                                        </div>
+                                        <div class="col-sm-9">
+                                            <select class="form-select select2-static" id="cutoff_day_of_week" name="cutoff_day_of_week" data-option-keys="dow_monday,dow_tuesday,dow_wednesday,dow_thursday,dow_friday,dow_saturday,dow_sunday" data-option-values="monday,tuesday,wednesday,thursday,friday,saturday,sunday"></select>
+                                        </div>
+                                    </div>
+                                    <p class="text-muted small ms-0 mb-3" data-i18n="day_of_month_hint">*Day must be between 1-28 so it exists in every month, or use "last day of the month".</p>
+                                    <div class="row mb-3" id="payment_dom_wrapper">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-0"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
+                                        </div>
+                                        <div class="col-sm-3">
+                                            <input type="number" min="1" max="28" class="form-control required" id="payment_day_of_month" name="payment_day_of_month">
+                                        </div>
+                                        <div class="col-sm-6 pt-2">
+                                            <input type="checkbox" class="me-2" id="payment_use_last_day" name="payment_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3 d-none" id="payment_dow_wrapper">
                                         <div class="col-sm-3 align-self-center">
                                             <label class="form-label mb-0"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
                                         </div>
                                         <div class="col-sm-9">
-                                            <select class="form-select" id="payroll_payment_day" name="payroll_payment_day" required>
-                                                <option value="">-- Select Day --</option>
-                                                <option value="25">Every 25th of the month</option>
-                                                <option value="30">Every 30th of the month</option>
-                                                <option value="last_day">Last day of the month</option>
-                                                <option value="monday">Every Monday (สำหรับรายสัปดาห์)</option>
-                                            </select>
+                                            <select class="form-select select2-static" id="payment_day_of_week" name="payment_day_of_week" data-option-keys="dow_monday,dow_tuesday,dow_wednesday,dow_thursday,dow_friday,dow_saturday,dow_sunday" data-option-values="monday,tuesday,wednesday,thursday,friday,saturday,sunday"></select>
                                         </div>
                                     </div>
                                     <div class="row mb-3">
@@ -169,18 +143,29 @@
                                         </div>
                                         <div class="col-sm-9">
                                             <div class="form-check form-check-inline mt-1">
-                                                <input class="form-check-input" type="radio" name="ot_cutoff_type" id="ot_same" value="same" checked>
-                                                <label class="form-check-label" for="ot_same">Same as Attendance</label>
+                                                <input class="form-check-input" type="radio" name="ot_cutoff_type" id="ot_same" value="same_as_attendance" checked>
+                                                <label class="form-check-label" for="ot_same" data-i18n="same_as_attendance">Same as Attendance</label>
                                             </div>
                                             <div class="form-check form-check-inline mt-1">
                                                 <input class="form-check-input" type="radio" name="ot_cutoff_type" id="ot_custom" value="custom">
-                                                <label class="form-check-label" for="ot_custom">Custom Definition</label>
+                                                <label class="form-check-label" for="ot_custom" data-i18n="custom_definition">Custom Definition</label>
                                             </div>
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3 d-none" id="ot_custom_wrapper">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-0"><span data-i18n="modal_ot_cutoff_day">OT Cut-off Day</span> <span class="text-danger">*</span></label>
+                                        </div>
+                                        <div class="col-sm-3">
+                                            <input type="number" min="1" max="28" class="form-control" id="ot_cutoff_day_of_month" name="ot_cutoff_day_of_month">
+                                        </div>
+                                        <div class="col-sm-6 pt-2">
+                                            <input type="checkbox" class="me-2" id="ot_cutoff_use_last_day" name="ot_cutoff_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
                                         </div>
                                     </div>
                                     <hr class="my-4 text-muted opacity-25">
                                     <h6 class="text-secondary fw-bold mb-3">
-                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0" style="background-color: #ff9900;">3</label> 
+                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">3</label>
                                         <span data-i18n="modal_sec_bank">Bank File Configuration</span>
                                     </h6>
                                     <div class="row mb-3">
@@ -188,343 +173,481 @@
                                             <label class="form-label mb-0"><span data-i18n="modal_bank_format">Bank Text Format</span> <span class="text-danger">*</span></label>
                                         </div>
                                         <div class="col-sm-9">
-                                            <select class="form-select" id="bank_file_format" name="bank_file_format" required>
-                                                <option value="">-- Select Bank File Format --</option>
-                                                <option value="KBANK_SMART">Kasikorn Bank (K-Smart)</option>
-                                                <option value="SCB">Siam Commercial Bank (SCB Business Net)</option>
-                                                <option value="BBL">Bangkok Bank (iBIZ)</option>
-                                                <option value="DBS_IDEAL">DBS IDEAL (Singapore)</option>
-                                            </select>
+                                            <select class="form-select select2-static required" id="bank_file_format" name="bank_file_format" data-option-keys="bank_fmt_kbank,bank_fmt_scb,bank_fmt_bbl,bank_fmt_dbs" data-option-values="KBANK_SMART,SCB,BBL,DBS_IDEAL"></select>
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-0" data-i18n="status">Status</label>
+                                        </div>
+                                        <div class="col-sm-3">
+                                            <select class="form-select select2-static" id="cycle_status" name="status" data-option-keys="active,inactive"></select>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="modal-footer border-top-0 px-4 pb-4 pt-3">
+                                <div class="modal-footer">
+                                    <button type="submit" class="btn btn-warning px-4" data-i18n="save">Save</button>
                                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #ff9900; border-color: #ff9900;" data-i18n="save_settings">Save Cycle</button>
                                 </div>
                             </form>
                         </div>
                     </div>
                 </div>
-                <script>
-                    let cycleDataTable;
-                    $(document).ready(function() {
-                        cycleDataTable = $('#payrollCycleTable').DataTable({
-                            "paging": true,
-                            "lengthChange": true,
-                            "searching": true,
-                            "ordering": true,
-                            "info": true,
-                            "autoWidth": false,
-                            "responsive": true,
-                            "pageLength": 10,
-                            "columnDefs": [
-                                { "orderable": false, "targets": 5 } 
-                            ],
-                            "language": {
-                                "search": "Search:",
-                                "lengthMenu": "Display _MENU_ records per page",
-                                "zeroRecords": "No matching records found",
-                                "infoEmpty": "No records available",
-                                "infoFiltered": "(filtered from _MAX_ total records)"
-                            }
-                        });
-                    });
-                    function resetForm() {
-                        document.getElementById('payrollCycleForm').reset();
-                        document.getElementById('cycle_id').value = '';
-                        document.getElementById('payrollCycleModalLabel').innerText = 'Create New Payroll Cycle';
-                    }
-                    function editCycle(id) {
-                        resetForm();
-                        document.getElementById('payrollCycleModalLabel').innerText = 'Edit Payroll Cycle';
-                        document.getElementById('cycle_id').value = id;
-                        if (id === 1) {
-                            document.getElementById('cycle_name').value = 'Office Staff Cycle';
-                            document.getElementById('payroll_frequency').value = 'monthly';
-                            document.getElementById('attendance_cutoff_day').value = '25';
-                            document.getElementById('payroll_payment_day').value = '30';
-                            document.getElementById('bank_file_format').value = 'KBANK_SMART';
-                        } else if (id === 2) {
-                            document.getElementById('cycle_name').value = 'Part-time / Subcontract';
-                            document.getElementById('payroll_frequency').value = 'weekly';
-                            document.getElementById('attendance_cutoff_day').value = 'friday';
-                            document.getElementById('payroll_payment_day').value = 'monday';
-                            document.getElementById('bank_file_format').value = 'SCB';
-                        }
-                        var myModal = new bootstrap.Modal(document.getElementById('payrollCycleModal'));
-                        myModal.show();
-                    }
-                    function deleteCycle(id) {
-                        if (confirm("Are you sure you want to delete this payroll cycle? This action cannot be undone.")) {
-                            const rowElement = document.getElementById(`cycle-row-${id}`);
-                            if (rowElement) {
-                                cycleDataTable.row($(rowElement)).remove().draw(false);
-                            }
-                        }
-                    }
-                </script>
             </div>
         </div>
         <div class="tab-pane fade" id="earnings-pane" role="tabpanel" aria-labelledby="earnings-tab" tabindex="0">
             <div class="mt-5 mb-5">
-                <table class="table table-hover table-border align-middle w-100" id="earningsTable">
+                <table class="table table-hover table-border align-middle w-100" id="tb_earning_type">
                     <thead class="table-light text-secondary">
                         <tr>
-                            <th scope="col" style="width: 15%;" data-i18n="col_code">Code</th>
-                            <th scope="col" style="width: 25%;" data-i18n="col_name">Item Name</th>
-                            <th scope="col" style="width: 20%;" data-i18n="col_tax_type">Tax Treatment</th>
-                            <th scope="col" style="width: 15%;" data-i18n="col_sso">SSO Cal</th>
-                            <th scope="col" style="width: 15%;" data-i18n="col_pf">Provident Fund</th>
-                            <th scope="col" style="width: 10%; text-align: center;" data-i18n="col_actions">Actions</th>
+                            <th scope="col" style="width: 12%;" data-i18n="col_code">Code</th>
+                            <th scope="col" style="width: 23%;" data-i18n="col_name">Item Name</th>
+                            <th scope="col" style="width: 17%;" data-i18n="col_calc_method">Calculation</th>
+                            <th scope="col" style="width: 16%;" data-i18n="col_tax_type">Tax Treatment</th>
+                            <th scope="col" style="width: 10%;" data-i18n="col_sso">SSO Cal</th>
+                            <th scope="col" style="width: 10%;" data-i18n="col_pf">Provident Fund</th>
+                            <th scope="col" style="width: 8%;" data-i18n="col_status">Status</th>
+                            <th scope="col" style="width: 4%; text-align: center;"></th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr id="earning-row-1">
-                            <td><code class="fw-bold text-dark">E001</code></td>
-                            <td><div><strong>Incentive</strong></div><div class="text-muted small">เงินจูงใจพิเศษ</div></td>
-                            <td><span class="badge bg-success-subtle text-success">Taxable (คำนวณภาษี)</span></td>
-                            <td><i class="fa-solid fa-circle-check text-success fs-5"></i></td>
-                            <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
-                            <td class="text-center">
-                                <div class="d-flex justify-content-center gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('earning', 1)"><i class="fas fa-edit"></i></button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('earning', 1)"><i class="fas fa-trash-alt"></i></button>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr id="earning-row-2">
-                            <td><code class="fw-bold text-dark">E002</code></td>
-                            <td><div><strong>Meal Allowance</strong></div><div class="text-muted small">ค่าอาหาร</div></td>
-                            <td><span class="badge bg-secondary-subtle text-secondary">Non-Taxable (ยกเว้นภาษี)</span></td>
-                            <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
-                            <td><i class="fa-solid fa-circle-xmark text-muted fs-5"></i></td>
-                            <td class="text-center">
-                                <div class="d-flex justify-content-center gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('earning', 2)"><i class="fas fa-edit"></i></button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('earning', 2)"><i class="fas fa-trash-alt"></i></button>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
+                    <tbody></tbody>
                 </table>
             </div>
         </div>
         <div class="tab-pane fade" id="deductions-pane" role="tabpanel" aria-labelledby="deductions-tab" tabindex="0">
             <div class="mt-5 mb-5">
-                <table class="table table-hover table-border align-middle w-100" id="deductionsTable">
+                <table class="table table-hover table-border align-middle w-100" id="tb_deduction_type">
                     <thead class="table-light text-secondary">
                         <tr>
                             <th scope="col" style="width: 15%;" data-i18n="col_code">Code</th>
                             <th scope="col" style="width: 30%;" data-i18n="col_name">Item Name</th>
-                            <th scope="col" style="width: 25%;" data-i18n="col_deduct_type">Tax Deduction Impact</th>
-                            <th scope="col" style="width: 20%;" data-i18n="col_cycles">Linked Cycles</th>
-                            <th scope="col" style="width: 10%; text-align: center;" data-i18n="col_actions">Actions</th>
+                            <th scope="col" style="width: 20%;" data-i18n="col_calc_method">Calculation</th>
+                            <th scope="col" style="width: 20%;" data-i18n="col_deduct_type">Tax Deduction Impact</th>
+                            <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
+                            <th scope="col" style="width: 5%; text-align: center;"></th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr id="deduction-row-1">
-                            <td><code class="fw-bold text-dark">D001</code></td>
-                            <td><div><strong>Unpaid Leave</strong></div><div class="text-muted small">หักมาสาย / ขาดงาน</div></td>
-                            <td><span class="badge bg-danger-subtle text-danger">Reduce Gross Income (หักก่อนภาษี)</span></td>
-                            <td><span class="badge bg-light text-dark border">All Cycles</span></td>
-                            <td class="text-center">
-                                <div class="d-flex justify-content-center gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editItem('deduction', 1)"><i class="fas fa-edit"></i></button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteItem('deduction', 1)"><i class="fas fa-trash-alt"></i></button>
-                                </div>
-                            </td>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="attendance-bonus-pane" role="tabpanel" aria-labelledby="attendance-bonus-tab" tabindex="0">
+            <div class="mt-5 mb-5">
+                <table class="table table-hover table-border align-middle w-100" id="tb_attendance_bonus">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th scope="col" style="width: 20%;" data-i18n="table_scheme_name">Scheme Name</th>
+                            <th scope="col" style="width: 22%;" data-i18n="table_conditions">Conditions</th>
+                            <th scope="col" style="width: 18%;" data-i18n="table_amount">Amount</th>
+                            <th scope="col" style="width: 18%;" data-i18n="table_reset_cycle">Reset Cycle</th>
+                            <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
+                            <th scope="col" style="width: 12%; text-align: center;"></th>
                         </tr>
-                    </tbody>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="bonus-ledger-pane" role="tabpanel" aria-labelledby="bonus-ledger-tab" tabindex="0">
+            <div class="mt-5 mb-3">
+                <div class="row g-2 align-items-end">
+                    <div class="col-sm-4">
+                        <label class="form-label mb-1" data-i18n="attendance_bonus">Scheme</label>
+                        <select class="form-select select2-remote" id="ledger_filter_scheme" data-api="/api/attendance-bonus.scheme-options" data-type=""></select>
+                    </div>
+                    <div class="col-sm-2">
+                        <label class="form-label mb-1" data-i18n="period_year">Year</label>
+                        <input type="number" class="form-control" id="ledger_filter_year" value="<?=date('Y')?>">
+                    </div>
+                    <div class="col-sm-3">
+                        <label class="form-label mb-1" data-i18n="period_month">Month</label>
+                        <select class="form-select select2-static" id="ledger_filter_month" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3 mb-5">
+                <table class="table table-hover table-border align-middle w-100" id="tb_bonus_ledger">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th scope="col" style="width: 30%;" data-i18n="table_employee">Employee</th>
+                            <th scope="col" style="width: 12%;" data-i18n="col_status">Status</th>
+                            <th scope="col" style="width: 10%;" data-i18n="table_streak">Streak</th>
+                            <th scope="col" style="width: 10%;" data-i18n="table_cycle_no">Cycle</th>
+                            <th scope="col" style="width: 15%;" data-i18n="table_amount">Amount</th>
+                            <th scope="col" style="width: 10%;" data-i18n="table_locked">Locked</th>
+                            <th scope="col" style="width: 13%; text-align: center;"></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
                 </table>
             </div>
         </div>
     </div>
 </div>
-<div class="modal fade" id="itemModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="itemModalLabel" aria-hidden="true">
+<div class="modal fade" id="ledgerEntryModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="ledgerEntryModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header border-bottom-0 pt-4 px-4">
-                <h5 class="modal-title fw-bold text-secondary" id="itemModalLabel">
-                    <span data-i18n="modal_add_title">Add Payroll Config Item</span>
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary" id="ledgerEntryModalLabel">
+                    <span data-i18n="add_ledger_entry">Add Ledger Entry</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="itemForm" novalidate>
-                <input type="hidden" id="item_id" name="item_id"> 
-                <div class="modal-body px-4 py-0">
-                    <h6 class="text-secondary fw-bold mb-3 mt-2">
-                        <label class="label label-head rounded-2 text-white px-2 py-0" style="background-color: #ff9900;">1</label> 
-                        <span data-i18n="sec_general_info">General Information</span>
-                    </h6>
+            <form id="ledgerEntryForm" novalidate>
+                <input type="hidden" name="id" id="ledger_id">
+                <input type="hidden" name="scheme_id" id="ledger_scheme_id">
+                <input type="hidden" name="period_year" id="ledger_period_year">
+                <input type="hidden" name="period_month" id="ledger_period_month">
+                <div class="modal-body">
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0">Item Type <span class="text-danger">*</span></label>
+                            <label class="form-label mb-0"><span data-i18n="table_employee">Employee</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <div class="form-check form-check-inline mt-1">
-                                <input class="form-check-input" type="radio" name="item_type" id="type_earning" value="earning" checked onchange="toggleFormFields()">
-                                <label class="form-check-label" for="type_earning">Earnings (รายรับ)</label>
-                            </div>
-                            <div class="form-check form-check-inline mt-1">
-                                <input class="form-check-input" type="radio" name="item_type" id="type_deduction" value="deduction" onchange="toggleFormFields()">
-                                <label class="form-check-label" for="type_deduction">Deductions (รายหัก)</label>
-                            </div>
+                            <select class="form-select select2-remote required" id="ledger_employee_id" name="employee_id" data-api="/api/employee.report_to.get" data-type=""></select>
                         </div>
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0">Code / รหัสรายการ <span class="text-danger">*</span></label>
+                            <label class="form-label mb-0" data-i18n="modal_scheme_period">Scheme / Period</label>
                         </div>
+                        <div class="col-sm-9 pt-2 text-muted" id="ledger_period_display"></div>
+                    </div>
+                    <div class="row mb-3">
                         <div class="col-sm-3">
-                            <input type="text" class="form-control" id="item_code" name="item_code" required placeholder="e.g., E003 / D002">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0">Item Name (EN) <span class="text-danger">*</span></label>
+                            <label class="form-label pt-1"><span data-i18n="col_status">Status</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control" id="item_name_en" name="item_name_en" required placeholder="English name">
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input" type="radio" name="ledger_status" id="ledger_status_passed" value="passed" checked>
+                                <label class="form-check-label" for="ledger_status_passed" data-i18n="status_passed">Passed</label>
+                            </div>
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input" type="radio" name="ledger_status" id="ledger_status_failed" value="failed">
+                                <label class="form-check-label" for="ledger_status_failed" data-i18n="status_failed">Failed</label>
+                            </div>
                         </div>
                     </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0">ชื่อรายการ (TH) <span class="text-danger">*</span></label>
+                    <div class="row mb-3 d-none" id="ledger_fail_reasons_wrapper">
+                        <div class="col-sm-3">
+                            <label class="form-label pt-1" data-i18n="fail_reasons">Reason (not met)</label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control" id="item_name_th" name="item_name_th" required placeholder="ชื่อภาษาไทย">
-                        </div>
-                    </div>
-                    <hr class="my-4 text-muted opacity-25">
-                    <h6 class="text-secondary fw-bold mb-3">
-                        <label class="label label-head rounded-2 text-white px-2 py-0" style="background-color: #ff9900;">2</label> 
-                        <span data-i18n="sec_calculation_rules">Calculation & Legal Settings</span>
-                    </h6>
-                    <div id="earnings_fields_wrapper">
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0">Tax Treatment</label>
-                            </div>
-                            <div class="col-sm-9">
-                                <select class="form-select" id="tax_treatment" name="tax_treatment">
-                                    <option value="taxable">Taxable (นำไปคำนวated ภาษีปกติ)</option>
-                                    <option value="non_taxable">Non-Taxable (ได้รับการยกเว้นภาษี)</option>
-                                    <option value="one_time_tax">One-time Tax (คำนวณภาษีแบบจ่ายครั้งเดียว)</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-sm-3">
-                                <label class="form-label pt-1">Statutory Calculations</label>
-                            </div>
-                            <div class="col-sm-9">
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="calc_sso" name="calc_sso" value="1">
-                                    <label class="form-check-label" for="calc_sso">คำนวณเงินสมทบประกันสังคม (SSO)</label>
+                            <div class="mb-2">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input fail-reason-check" type="checkbox" id="fail_reason_absent" data-label-key="condition_no_absent">
+                                    <label class="form-check-label" for="fail_reason_absent" data-i18n="condition_no_absent">No absences</label>
                                 </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="calc_pf" name="calc_pf" value="1">
-                                    <label class="form-check-label" for="calc_pf">คำนวณกองทุนสำรองเลี้ยงชีพ (Provident Fund)</label>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input fail-reason-check" type="checkbox" id="fail_reason_late" data-label-key="condition_no_late">
+                                    <label class="form-check-label" for="fail_reason_late" data-i18n="condition_no_late">No late arrivals</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input fail-reason-check" type="checkbox" id="fail_reason_leave" data-label-key="condition_no_leave">
+                                    <label class="form-check-label" for="fail_reason_leave" data-i18n="condition_no_leave">No leave taken</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input fail-reason-check" type="checkbox" id="fail_reason_time_adjust" data-label-key="condition_no_time_adjust">
+                                    <label class="form-check-label" for="fail_reason_time_adjust" data-i18n="condition_no_time_adjust">No time clock adjustments</label>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    <div id="deductions_fields_wrapper" style="display: none;">
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0">Tax Deduction Impact</label>
-                            </div>
-                            <div class="col-sm-9">
-                                <select class="form-select" id="tax_deduct_impact" name="tax_deduct_impact">
-                                    <option value="before_tax">Reduce Gross Income (หักก่อนคำนวณภาษี ทำให้ภาษีลดลง)</option>
-                                    <option value="after_tax">Net Deduction (หักหลังคำนวณภาษี/หักจากยอดสุทธิ)</option>
-                                </select>
-                            </div>
+                            <textarea class="form-control" id="fail_reasons" name="fail_reasons" rows="2" placeholder="e.g., Late 2 times"></textarea>
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer border-top-0 px-4 pb-4 pt-3">
+                <div class="modal-footer">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #ff9900; border-color: #ff9900;" data-i18n="save_item">Save Item</button>
+                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" data-i18n="save_item">Save</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
-<script>
-    let earningsDataTable;
-    let deductionsDataTable;
-    $(document).ready(function() {
-        earningsDataTable = $('#earningsTable').DataTable({
-            "responsive": true,
-            "autoWidth": false,
-            "columnDefs": [{ "orderable": false, "targets": 5 }]
-        });
-        deductionsDataTable = $('#deductionsTable').DataTable({
-            "responsive": true,
-            "autoWidth": false,
-            "columnDefs": [{ "orderable": false, "targets": 4 }]
-        });
-        $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function (e) {
-            $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
-        });
-    });
-    function toggleFormFields() {
-        if (document.getElementById('type_earning').checked) {
-            document.getElementById('earnings_fields_wrapper').style.display = 'block';
-            document.getElementById('deductions_fields_wrapper').style.display = 'none';
-        } else {
-            document.getElementById('earnings_fields_wrapper').style.display = 'none';
-            document.getElementById('deductions_fields_wrapper').style.display = 'block';
-        }
-    }
-    function resetItemForm() {
-        document.getElementById('itemForm').reset();
-        document.getElementById('item_id').value = '';
-        document.getElementById('itemModalLabel').innerText = 'Add Payroll Config Item';
-        document.getElementById('type_earning').disabled = false;
-        document.getElementById('type_deduction').disabled = false;
-        toggleFormFields();
-    }
-    function editItem(type, id) {
-        resetItemForm();
-        document.getElementById('itemModalLabel').innerText = 'Edit Payroll Config Item';
-        document.getElementById('item_id').value = id;
-        document.getElementById('type_earning').disabled = true;
-        document.getElementById('type_deduction').disabled = true;
-        if (type === 'earning') {
-            document.getElementById('type_earning').checked = true;
-            if (id === 1) {
-                document.getElementById('item_code').value = 'E001';
-                document.getElementById('item_name_en').value = 'Incentive';
-                document.getElementById('item_name_th').value = 'เงินจูงใจพิเศษ';
-                document.getElementById('tax_treatment').value = 'taxable';
-                document.getElementById('calc_sso').checked = true;
-                document.getElementById('calc_pf').checked = false;
-            }
-        } else if (type === 'deduction') {
-            document.getElementById('type_deduction').checked = true;
-            if (id === 1) {
-                document.getElementById('item_code').value = 'D001';
-                document.getElementById('item_name_en').value = 'Unpaid Leave';
-                document.getElementById('item_name_th').value = 'หักมาสาย / ขาดงาน';
-                document.getElementById('tax_deduct_impact').value = 'before_tax';
-            }
-        }
-        toggleFormFields();
-        var myModal = new bootstrap.Modal(document.getElementById('itemModal'));
-        myModal.show();
-    }
-    function deleteItem(type, id) {
-        if (confirm("Are you sure you want to delete this config item?")) {
-            if (type === 'earning') {
-                const row = document.getElementById(`earning-row-${id}`);
-                if (row) earningsDataTable.row($(row)).remove().draw(false);
-            } else {
-                const row = document.getElementById(`deduction-row-${id}`);
-                if (row) deductionsDataTable.row($(row)).remove().draw(false);
-            }
-        }
-    }
-</script>
+<div class="modal fade" id="itemModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="pedTypeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+               <h5 class="modal-title fw-bold text-secondary" id="pedTypeModalLabel">
+                    <i class="fa-solid fa-pen-to-square me-2" id="pedTypeModalIcon"></i>
+                    <span data-i18n="earning_type">Earning Type</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="pedTypeForm" novalidate>
+                <input type="hidden" id="ped_type_id" name="id">
+                <div class="modal-body">
+                    <h6 class="text-secondary fw-bold mb-3 mt-2">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
+                        <span data-i18n="sec_general_info">General Information</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="item_type">Item Type</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input" type="radio" name="item_type" id="type_earning" value="earning" checked>
+                                <label class="form-check-label" for="type_earning" data-i18n="earning_singular">Earning</label>
+                            </div>
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input" type="radio" name="item_type" id="type_deduction" value="deduction">
+                                <label class="form-check-label" for="type_deduction" data-i18n="deduction_singular">Deduction</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="item_code">Item Code</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-3">
+                            <input type="text" class="form-control required" id="item_code" name="item_code" placeholder="E003 / D002">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="item_name_en">Item Name (EN)</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control required" id="item_name_en" name="item_name_en">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="item_name_th">Item Name (TH)</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control required" id="item_name_th" name="item_name_th">
+                        </div>
+                    </div>
+                    <hr class="my-4 text-muted opacity-25">
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
+                        <span data-i18n="sec_calculation_rules">Calculation & Legal Settings</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="calculation_method">Calculation Method</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-static required" id="calculation_method" name="calculation_method" data-option-keys="fixed_amount,percent_of_base_salary,manual_entry"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="fixed_amount_wrapper">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="fixed_amount">Fixed Amount</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-3">
+                            <input type="number" step="0.01" min="0" class="form-control" id="fixed_amount" name="fixed_amount">
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="percent_rate_wrapper">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="percent_rate">Percent of Base Salary</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-3">
+                            <div class="input-group">
+                                <input type="number" step="0.01" min="0" max="100" class="form-control" id="percent_rate" name="percent_rate">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="earnings_fields_wrapper">
+                        <div class="row mb-3">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0"><span data-i18n="tax_treatment">Tax Treatment</span> <span class="text-danger">*</span></label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-static" id="tax_treatment" name="tax_treatment" data-option-keys="taxable,non_taxable" data-option-values="taxable,non_taxable"></select>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-sm-3">
+                                <label class="form-label pt-1" data-i18n="statutory_calculations">Statutory Calculations</label>
+                            </div>
+                            <div class="col-sm-9">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="calc_sso" name="calc_sso" value="1">
+                                    <label class="form-check-label" for="calc_sso" data-i18n="calc_sso_label">Include in SSO contribution base</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="calc_pf" name="calc_pf" value="1">
+                                    <label class="form-check-label" for="calc_pf" data-i18n="calc_pf_label">Include in Provident Fund base</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="deductions_fields_wrapper" class="d-none">
+                        <div class="row mb-3">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0"><span data-i18n="tax_deduction_impact">Tax Deduction Impact</span> <span class="text-danger">*</span></label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-static" id="tax_deduction_impact" name="tax_deduction_impact" data-option-keys="impact_before_tax,impact_after_tax" data-option-values="before_tax,after_tax"></select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="country_scope">Country Scope</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-remote" id="country_code" name="country_code" data-api="/api/country.get" data-type="country"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="source_event_code">Linked Attendance Event</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-remote" id="source_event_code" name="source_event_code" data-api="/api/ped-type.source-event-options" data-type="earning"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="status">Status</label>
+                        </div>
+                        <div class="col-sm-3">
+                            <select class="form-select select2-static" id="ped_status" name="status" data-option-keys="active,inactive"></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-warning px-4" data-i18n="save">Save</button> 
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="attendanceBonusModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="attendanceBonusModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary" id="attendanceBonusModalLabel">
+                    <span data-i18n="add_attendance_bonus">Add Attendance Bonus Scheme</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="attendanceBonusForm" novalidate>
+                <input type="hidden" name="id" id="bonus_id">
+                <div class="modal-body">
+                    <h6 class="text-secondary fw-bold mb-3 mt-2">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
+                        <span data-i18n="modal_sec_general">General Information</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="modal_scheme_name">Scheme Name</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control required" id="scheme_name" name="scheme_name" placeholder="e.g., Office Staff Attendance Bonus">
+                        </div>
+                    </div>
+                    <hr class="my-4 text-muted opacity-25">
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
+                        <span data-i18n="modal_sec_conditions">Eligibility Conditions</span>
+                    </h6>
+                    <p class="text-muted small mb-2" data-i18n="conditions_hint">*Select at least one condition. All selected conditions must be met in the month to earn the bonus.</p>
+                    <div class="row mb-3">
+                        <div class="col-sm-12">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="condition_no_absent" name="condition_no_absent">
+                                <label class="form-check-label" for="condition_no_absent" data-i18n="condition_no_absent">No absences</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="condition_no_late" name="condition_no_late">
+                                <label class="form-check-label" for="condition_no_late" data-i18n="condition_no_late">No late arrivals</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="condition_no_leave" name="condition_no_leave">
+                                <label class="form-check-label" for="condition_no_leave" data-i18n="condition_no_leave">No leave taken</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="condition_no_time_adjust" name="condition_no_time_adjust">
+                                <label class="form-check-label" for="condition_no_time_adjust" data-i18n="condition_no_time_adjust">No time clock adjustments</label>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="my-4 text-muted opacity-25">
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">3</label>
+                        <span data-i18n="modal_sec_amount">Amount & Escalation</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="starting_amount">Starting Amount</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-3">
+                            <input type="number" step="0.01" min="0" class="form-control required" id="starting_amount" name="starting_amount">
+                        </div>
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="increment_amount">Monthly Increment</label>
+                        </div>
+                        <div class="col-sm-3">
+                            <input type="number" step="0.01" min="0" class="form-control" id="increment_amount" name="increment_amount" value="0">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="max_amount">Maximum Cap</label>
+                        </div>
+                        <div class="col-sm-3">
+                            <input type="number" step="0.01" min="0" class="form-control" id="max_amount" name="max_amount">
+                        </div>
+                        <div class="col-sm-6 pt-2 text-muted small" data-i18n="max_amount_hint">*Leave blank for no cap.</div>
+                    </div>
+                    <hr class="my-4 text-muted opacity-25">
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">4</label>
+                        <span data-i18n="modal_sec_reset_cycle">Reset Cycle</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="reset_cycle_months">Reset Every (Months)</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-3">
+                            <input type="number" step="1" min="1" max="60" class="form-control required" id="reset_cycle_months" name="reset_cycle_months" value="12">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3">
+                            <label class="form-label pt-1" data-i18n="reset_cycle_basis">Reset Cycle Basis</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input" type="radio" name="reset_cycle_basis" id="basis_anniversary" value="employee_anniversary" checked>
+                                <label class="form-check-label" for="basis_anniversary" data-i18n="basis_employee_anniversary">From employee's first eligible month</label>
+                            </div>
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input" type="radio" name="reset_cycle_basis" id="basis_fixed" value="fixed_month">
+                                <label class="form-check-label" for="basis_fixed" data-i18n="basis_fixed_month">Fixed calendar month</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="reset_start_month_wrapper">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="reset_cycle_start_month">Reset Month</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-static" id="reset_cycle_start_month" name="reset_cycle_start_month" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="status">Status</label>
+                        </div>
+                        <div class="col-sm-3">
+                            <select class="form-select select2-static" id="bonus_status" name="status" data-option-keys="active,inactive"></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" data-i18n="save_item">Save Scheme</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script src="<?=asset('public/js/setup/payroll-configuration.js')?>"></script>

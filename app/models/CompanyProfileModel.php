@@ -1,5 +1,6 @@
 <?php
-class CompanyProfileModel { 
+declare(strict_types=1);
+class CompanyProfileModel {
     private $db;
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
@@ -92,5 +93,192 @@ class CompanyProfileModel {
                 ':authorized_signatory_name' => $data['authorized_signatory_name'] ?? null
             ]);
         } 
+    }
+    public function paginateData($tableName, $compId, $searchColumns, $sortColumns, $start, $length, $search, $colIndex, $orderDir) {
+        $sortColumn = $sortColumns[$colIndex] ?? $sortColumns[0];
+        $orderDir = strtoupper($orderDir) === 'DESC' ? 'DESC' : 'ASC';
+        $baseWhere = "comp_id = :comp_id AND deleted_at IS NULL AND status != 'deleted'";
+        $totalQuery = "SELECT COUNT(*) FROM `{$tableName}` WHERE {$baseWhere}";
+        $stmtTotal = $this->db->prepare($totalQuery);
+        $stmtTotal->execute([':comp_id' => $compId]);
+        $recordsTotal = (int)$stmtTotal->fetchColumn();
+        $whereSql = $baseWhere;
+        $params = [':comp_id' => $compId];
+        if (!empty($search)) {
+            $searchTerms = [];
+            foreach ($searchColumns as $index => $col) {
+                $paramName = ":search_" . $index;
+                $searchTerms[] = "`{$col}` LIKE {$paramName}";
+                $params[$paramName] = "%{$search}%";
+            }
+            $whereSql .= " AND (" . implode(" OR ", $searchTerms) . ")";
+        }
+        $countQuery = "SELECT COUNT(*) FROM `{$tableName}` WHERE {$whereSql}";
+        $stmtCount = $this->db->prepare($countQuery);
+        $stmtCount->execute($params);
+        $recordsFiltered = (int)$stmtCount->fetchColumn();
+        $dataQuery = "SELECT * FROM `{$tableName}` 
+                      WHERE {$whereSql} 
+                      ORDER BY `{$sortColumn}` {$orderDir} 
+                      LIMIT :limit OFFSET :offset";
+        $stmtData = $this->db->prepare($dataQuery);
+        foreach ($params as $key => $val) {
+            $stmtData->bindValue($key, $val);
+        }
+        $stmtData->bindValue(':limit', (int)$length, PDO::PARAM_INT);
+        $stmtData->bindValue(':offset', (int)$start, PDO::PARAM_INT);
+        $stmtData->execute();
+        $data = $stmtData->fetchAll(PDO::FETCH_ASSOC);
+        return [
+            'recordsTotal' => $recordsTotal,
+            'recordsFiltered' => $recordsFiltered,
+            'data' => $data
+        ];
+    }
+
+    private function structureConfig(): array {
+        return [
+            'branch' => [
+                'table' => 'structure_branches',
+                'columns' => ['branch_code', 'branch_name_th', 'branch_name_en', 'tax_branch_id', 'sso_branch_code', 'is_default', 'lock_stamp', 'location', 'status'],
+                'required' => ['branch_code', 'branch_name_th', 'branch_name_en'],
+                'unique_columns' => ['branch_code'],
+                'booleans' => ['is_default', 'lock_stamp'],
+            ],
+            'role' => [
+                'table' => 'structure_roles',
+                'columns' => ['role_name_th', 'role_name_en', 'salary_access', 'status'],
+                'required' => ['role_name_th', 'role_name_en'],
+                'unique_columns' => ['role_name_th', 'role_name_en'],
+                'booleans' => ['salary_access'],
+            ],
+            'department' => [
+                'table' => 'structure_departments',
+                'columns' => ['department_code', 'department_name_th', 'department_name_en', 'cost_center', 'status'],
+                'required' => ['department_code', 'department_name_th', 'department_name_en'],
+                'unique_columns' => ['department_code'],
+                'booleans' => [],
+            ],
+            'position' => [
+                'table' => 'structure_positions',
+                'columns' => ['position_code', 'position_name_th', 'position_name_en', 'position_allowance', 'status'],
+                'required' => ['position_code', 'position_name_th', 'position_name_en'],
+                'unique_columns' => ['position_code'],
+                'booleans' => [],
+            ],
+            'rank' => [
+                'table' => 'structure_ranks',
+                'columns' => ['rank_code', 'rank_name_th', 'rank_name_en', 'salary_min', 'salary_max', 'ot_eligible', 'status'],
+                'required' => ['rank_code', 'rank_name_th', 'rank_name_en'],
+                'unique_columns' => ['rank_code'],
+                'booleans' => ['ot_eligible'],
+            ],
+        ];
+    }
+
+    public function getStructureConfig(string $type): ?array {
+        return $this->structureConfig()[$type] ?? null;
+    }
+
+    private function isStructureValueDuplicate(string $table, int $compId, string $column, string $value, ?int $excludeId): bool {
+        $sql = "SELECT COUNT(*) FROM `{$table}` WHERE comp_id = :comp_id AND `{$column}` = :value AND deleted_at IS NULL";
+        $params = [':comp_id' => $compId, ':value' => $value];
+        if ($excludeId !== null) {
+            $sql .= " AND id != :exclude_id";
+            $params[':exclude_id'] = $excludeId;
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn() > 0;
+    }
+
+    public function saveStructure(string $type, int $compId, array $data, int $userId): array {
+        $config = $this->getStructureConfig($type);
+        if (!$config) {
+            return ['status' => false, 'message' => 'Invalid entity type.'];
+        }
+        $table = $config['table'];
+        $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
+
+        foreach ($config['required'] as $field) {
+            if (empty($data[$field])) {
+                return ['status' => false, 'message' => "Missing required field: {$field}"];
+            }
+        }
+
+        foreach ($config['unique_columns'] as $col) {
+            if (!empty($data[$col]) && $this->isStructureValueDuplicate($table, $compId, $col, (string)$data[$col], $id)) {
+                return ['status' => false, 'message' => "Duplicate value for field: {$col}"];
+            }
+        }
+
+        $values = [];
+        foreach ($config['columns'] as $col) {
+            if ($col === 'status') {
+                $statusInput = $data['status'] ?? 'active';
+                $values[$col] = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : 'active';
+                continue;
+            }
+            if (in_array($col, $config['booleans'], true)) {
+                $values[$col] = !empty($data[$col]) ? 1 : 0;
+                continue;
+            }
+            $val = $data[$col] ?? null;
+            $values[$col] = ($val === '' || $val === null) ? null : $val;
+        }
+
+        try {
+            if ($id !== null) {
+                $stmtCheck = $this->db->prepare("SELECT id FROM `{$table}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
+                if (!$stmtCheck->fetch()) {
+                    return ['status' => false, 'message' => 'Record not found.'];
+                }
+                $setSql = [];
+                $params = [':id' => $id, ':updated_by' => $userId];
+                foreach ($values as $col => $val) {
+                    $setSql[] = "`{$col}` = :{$col}";
+                    $params[":{$col}"] = $val;
+                }
+                $sql = "UPDATE `{$table}` SET " . implode(', ', $setSql) . ", updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id";
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute($params);
+                return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
+            }
+
+            $cols = array_keys($values);
+            $colList = implode(', ', array_map(fn($c) => "`{$c}`", $cols));
+            $placeholderList = implode(', ', array_map(fn($c) => ":{$c}", $cols));
+            $sql = "INSERT INTO `{$table}` (comp_id, {$colList}, created_by) VALUES (:comp_id, {$placeholderList}, :created_by)";
+            $params = [':comp_id' => $compId, ':created_by' => $userId];
+            foreach ($values as $col => $val) {
+                $params[":{$col}"] = $val;
+            }
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            return ['status' => true, 'message' => 'Created successfully.', 'id' => (int)$this->db->lastInsertId()];
+        } catch (PDOException $e) {
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    public function deleteStructure(string $type, int $compId, int $id, int $userId): array {
+        $config = $this->getStructureConfig($type);
+        if (!$config) {
+            return ['status' => false, 'message' => 'Invalid entity type.'];
+        }
+        $table = $config['table'];
+        try {
+            $stmtCheck = $this->db->prepare("SELECT id FROM `{$table}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
+            if (!$stmtCheck->fetch()) {
+                return ['status' => false, 'message' => 'Record not found.'];
+            }
+            $stmt = $this->db->prepare("UPDATE `{$table}` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
+            $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+            return ['status' => true, 'message' => 'Deleted successfully.'];
+        } catch (PDOException $e) {
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
     }
 }

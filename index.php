@@ -15,7 +15,7 @@
     require_once __DIR__ . '/app/core/Controller.php';
     require_once __DIR__ . '/app/core/Router.php';
     spl_autoload_register(function ($class) {
-        $paths = ['app/controllers/', 'app/models/', 'app/core/'];
+        $paths = ['app/controllers/', 'app/models/', 'app/core/', 'app/services/'];
         foreach ($paths as $path) {
             $file = __DIR__ . '/' . $path . $class . '.php';
             if (file_exists($file)) {
@@ -25,8 +25,8 @@
         }
     });
     $_SESSION['user'] = [
-        'employee_id' => 1,
-        'company_id'  => 1,
+        'employee_id' => 2,
+        'company_id'  => 2,
         'role'        => 'admin'
     ];
     ensure_login();
@@ -38,14 +38,39 @@
     $router->get('/payroll-process', 'PayrollController@index');
     $router->get('setup/company-profile', 'CompanyProfileController@index');
     $router->get('setup/payroll-configuration', 'PayrollConfigurationController@index');
+    $router->get('api/payroll-cycle.list', 'PayrollConfigurationController@cycleList');
+    $router->get('api/payroll-cycle.get', 'PayrollConfigurationController@cycleGet');
+    $router->post('api/payroll-cycle.save', 'PayrollConfigurationController@cycleSave');
+    $router->post('api/payroll-cycle.delete', 'PayrollConfigurationController@cycleDelete');
+    $router->get('api/attendance-bonus.list', 'PayrollConfigurationController@attendanceBonusList');
+    $router->get('api/attendance-bonus.get', 'PayrollConfigurationController@attendanceBonusGet');
+    $router->post('api/attendance-bonus.save', 'PayrollConfigurationController@attendanceBonusSave');
+    $router->post('api/attendance-bonus.delete', 'PayrollConfigurationController@attendanceBonusDelete');
+    $router->post('api/attendance-bonus.scheme-options', 'PayrollConfigurationController@bonusSchemeOptions');
+    $router->get('api/attendance-bonus.ledger.list', 'PayrollConfigurationController@bonusLedgerList');
+    $router->get('api/attendance-bonus.ledger.get', 'PayrollConfigurationController@bonusLedgerGet');
+    $router->post('api/attendance-bonus.ledger.save', 'PayrollConfigurationController@bonusLedgerSave');
+    $router->post('api/attendance-bonus.ledger.lock', 'PayrollConfigurationController@bonusLedgerLock');
+    $router->post('api/attendance-bonus.ledger.delete', 'PayrollConfigurationController@bonusLedgerDelete');
+    $router->post('api/ped-type.source-event-options', 'PayrollConfigurationController@pedSourceEventOptions');
+    $router->post('api/ped-type.list', 'PayrollConfigurationController@pedTypeList');
+    $router->get('api/ped-type.get', 'PayrollConfigurationController@pedTypeGet');
+    $router->post('api/ped-type.save', 'PayrollConfigurationController@pedTypeSave');
+    $router->post('api/ped-type.delete', 'PayrollConfigurationController@pedTypeDelete');
     $router->get('setup/tax-statutory', 'TaxStatutoryController@index');
+    $router->get('api/statutory-item.list', 'TaxStatutoryController@itemList');
+    $router->get('api/statutory-item.get', 'TaxStatutoryController@itemGet');
+    $router->post('api/statutory-item.save', 'TaxStatutoryController@itemSave');
+    $router->post('api/statutory-item.delete', 'TaxStatutoryController@itemDelete');
+    $router->get('api/statutory-item.rate-history.list', 'TaxStatutoryController@rateHistoryList');
+    $router->get('api/statutory-item.rate-history.get', 'TaxStatutoryController@rateHistoryGet');
+    $router->post('api/statutory-item.rate-history.save', 'TaxStatutoryController@rateHistorySave');
+    $router->post('api/statutory-item.rate-history.delete', 'TaxStatutoryController@rateHistoryDelete');
     $router->get('setup/document-approval', 'DocumentApprovalController@index');
     $router->get('setup/notification', 'NotificationController@index');
     $router->get('setup-rules', 'SetupRulesController@index');
     $router->get('reports', 'ReportsController@index');
     $router->get('submission', 'SubmissionController@index');
-    $router->get('api/payroll/metadata', 'CompanyController@getMetadata');
-    $router->post('api/payroll/save', 'CompanyController@save');
     $router->post('api/employee.list', 'EmployeeController@list');
     $router->get('/employees/create', 'EmployeeController@create');
     $router->get('/employees/{id}', 'EmployeeController@detail');
@@ -53,4 +78,49 @@
     $router->post('api/company.get', 'CompanyProfileController@get');
     $router->post('api/company.save', 'CompanyProfileController@save');
     $router->post('api/country.get', 'MasterController@getMaster');
+    $router->post('api/nationality.get', 'MasterController@getMaster');
+    $router->post('api/religion.get', 'MasterController@getMaster');
+    $router->post('api/structure.role', 'CompanyProfileController@role');
+    $router->post('api/structure.branch', 'CompanyProfileController@branch');
+    $router->post('api/structure.department', 'CompanyProfileController@department');
+    $router->post('api/structure.position', 'CompanyProfileController@position');
+    $router->post('api/structure.rank', 'CompanyProfileController@rank');
+    $router->post('api/structure.branch.save', 'CompanyProfileController@branchSave');
+    $router->post('api/structure.branch.delete', 'CompanyProfileController@branchDelete');
+    $router->post('api/structure.role.save', 'CompanyProfileController@roleSave');
+    $router->post('api/structure.role.delete', 'CompanyProfileController@roleDelete');
+    $router->post('api/structure.department.save', 'CompanyProfileController@departmentSave');
+    $router->post('api/structure.department.delete', 'CompanyProfileController@departmentDelete');
+    $router->post('api/structure.position.save', 'CompanyProfileController@positionSave');
+    $router->post('api/structure.position.delete', 'CompanyProfileController@positionDelete');
+    $router->post('api/structure.rank.save', 'CompanyProfileController@rankSave');
+    $router->post('api/structure.rank.delete', 'CompanyProfileController@rankDelete');
+    $router->post('api/bank.get', 'MasterController@getMaster');
+    $router->post('api/department.get', 'MasterController@getMaster');
+    $router->post('api/role.get', 'MasterController@getMaster');
+    $router->post('api/position.get', 'MasterController@getMaster');
+    $router->post('api/branch.get', 'MasterController@getMaster');
+    $router->post('api/employee.report_to.get', 'EmployeeController@reportToOptions');
+    $router->post('api/bank_account.list', 'BankAccountController@list');
+    $router->post('api/bank_account.save', 'BankAccountController@save');
+    $router->post('api/bank_account.delete', 'BankAccountController@delete');
+    $router->get('api/employee.get', 'EmployeeController@get');
+    $router->post('api/employee.save', 'EmployeeController@save');
+    $router->post('api/employee.delete', 'EmployeeController@delete');
+    $router->get('api/employee.dependent.list', 'EmployeeController@dependentList');
+    $router->post('api/employee.dependent.save', 'EmployeeController@dependentSave');
+    $router->post('api/employee.dependent.delete', 'EmployeeController@dependentDelete');
+    $router->get('api/employee.parent.list', 'EmployeeController@parentList');
+    $router->post('api/employee.parent.save', 'EmployeeController@parentSave');
+    $router->post('api/employee.parent.delete', 'EmployeeController@parentDelete');
+    $router->post('api/employee.earning-deduction.options', 'EmployeeController@earningDeductionOptions');
+    $router->get('api/employee.earning-deduction.list', 'EmployeeController@earningDeductionList');
+    $router->get('api/employee.earning-deduction.get', 'EmployeeController@earningDeductionGet');
+    $router->post('api/employee.earning-deduction.save', 'EmployeeController@earningDeductionSave');
+    $router->post('api/employee.earning-deduction.status', 'EmployeeController@earningDeductionStatus');
+    $router->post('api/employee.earning-deduction.delete', 'EmployeeController@earningDeductionDelete');
+    $router->get('api/employee.document.list', 'EmployeeController@documentList');
+    $router->post('api/employee.document.upload', 'EmployeeController@documentUpload');
+    $router->get('api/employee.document.view', 'EmployeeController@documentView');
+    $router->post('api/employee.document.delete', 'EmployeeController@documentDelete');
     $router->dispatch();

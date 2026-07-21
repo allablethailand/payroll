@@ -1,3 +1,6 @@
+function requiredMark(isRequired) {
+    return isRequired ? '<span class="text-danger">*</span>' : '';
+}
 $(document).on('input change', '.required', function () {
     let value = $(this).val();
     if ($(this).is(':checkbox') || $(this).is(':radio')) {
@@ -59,9 +62,26 @@ $(document).on('click', '.select-address-item', function() {
     const $btn = $(this);
     const itemData = $btn.data('address-data');
     const $suggestionsBox = $btn.closest('.address-suggestions-box');
-    const $container = $suggestionsBox.parent();
-    $container.find('.autocomplete-address').val(itemData.formatted_text);
-    $container.find('.master-address-id-field').val(itemData.id);
+    const $trigger = $suggestionsBox.siblings('.autocomplete-address');
+    const groupId = $trigger.data('addressGroup');
+    if (groupId) {
+        const fieldMap = {
+            subdistrict: itemData.sub_district || '',
+            district: itemData.city || '',
+            province: itemData.state || '',
+            postcode: itemData.postcode || ''
+        };
+        $(`[data-address-group="${groupId}"]`).each(function () {
+            const field = $(this).data('addressField');
+            if (field && fieldMap[field] !== undefined) {
+                $(this).val(fieldMap[field]).trigger('change');
+            }
+        });
+    } else {
+        const $container = $suggestionsBox.parent();
+        $container.find('.autocomplete-address').val(itemData.formatted_text);
+        $container.find('.master-address-id-field').val(itemData.id);
+    }
     $suggestionsBox.empty().addClass('d-none');
 });
 $(document).on('click', function(e) {
@@ -69,64 +89,99 @@ $(document).on('click', function(e) {
         $('.address-suggestions-box').addClass('d-none');
     }
 });
-function initSelect2Remote(selector) {
+function initDatepicker(selector = '.datepicker', options = {}) {
+    if (!$.fn.datepicker) return;
+    $(selector).datepicker($.extend({
+        format: 'dd/mm/yyyy',
+        autoclose: true,
+        todayHighlight: true,
+        language: (typeof currentLang !== 'undefined' && currentLang === 'th') ? 'th' : 'en',
+        orientation: 'auto'
+    }, options));
+}
+function initSelect2(selector, options = {}) {
     $(selector).each(function () {
         const $this = $(this);
         const $modal = $this.closest('.modal');
-        const apiUrl = $this.data('api') ? `${BASE_URL}${$this.data('api')}` : null;
-        if (!apiUrl) return;
         const originalTabIndex = $this.attr('tabindex') || '0';
-        const extraData = {
-            type: $this.data('type') || ''
-        };
-        const config = {
-            theme: 'bootstrap-5',
-            width: '100%',
-            allowClear: true,
-            ajax: {
-                url: apiUrl,
-                type: 'POST',
-                dataType: 'json',
-                delay: 250,
-                data: function (params) {
-                    return $.extend({
-                        searchTerm: params.term,
-                        page: params.page || 1,
-                        limit: 10
-                    }, extraData);
+        const isStatic = options.mode === 'static' || (options.mode !== 'ajax' && $this.hasClass('select2-static'));
+        let config;
+        if (isStatic) {
+            const keys = options.keys || (($this.data('optionKeys') || '') + '').split(',').filter(Boolean);
+            const explicitValues = options.values || (($this.data('optionValues') || '') + '').split(',').filter(Boolean);
+            const data = keys.map((key, idx) => ({ id: explicitValues[idx] !== undefined ? explicitValues[idx] : key, text: getLangValue(key) || key }));
+            config = {
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: !!options.allowClear,
+                data: data,
+                placeholder: {
+                    id: '',
+                    text: langData['select_option'] || 'Select an option'
                 },
-                processResults: function (res, params) {
-                    params.page = params.page || 1;
-                    const data = res.data || res.status || {};
-                    const items = (data.items || []).map(item => {
-                        const localizedText = (currentLang === 'th') ? item.text_th : item.text_en;
+                language: {
+                    noResults: () => langData['no_results'] || 'No results found'
+                },
+                minimumResultsForSearch: options.searchable ? 0 : Infinity
+            };
+        } else {
+            const apiUrl = ($this.data('api') || options.api) ? `${BASE_URL}${$this.data('api') || options.api}` : null;
+            if (!apiUrl) return;
+            const extraData = {
+                type: $this.data('type') || options.apiType || ''
+            };
+            if ($this.data('excludeId') !== undefined && $this.data('excludeId') !== '') {
+                extraData.exclude_id = $this.data('excludeId');
+            }
+            config = {
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: true,
+                ajax: {
+                    url: apiUrl,
+                    type: 'POST',
+                    dataType: 'json',
+                    delay: 250,
+                    data: function (params) {
+                        return $.extend({
+                            searchTerm: params.term,
+                            page: params.page || 1,
+                            limit: 10
+                        }, extraData);
+                    },
+                    processResults: function (res, params) {
+                        params.page = params.page || 1;
+                        const data = res.data || res.status || {};
+                        const items = (data.items || []).map(item => {
+                            const localizedText = (currentLang === 'th') ? item.text_th : item.text_en;
+                            return {
+                                ...item,
+                                id: item.id,
+                                text: localizedText || item.text_th || item.text_en || item.text
+                            };
+                        });
+                        const total = parseInt(data.total_count || 0);
                         return {
-                            ...item,
-                            id: item.id,
-                            text: localizedText || item.text_th || item.text_en || item.text 
+                            results: items,
+                            pagination: {
+                                more: (params.page * 10) < total
+                            }
                         };
-                    });
-                    const total = parseInt(data.total_count || 0);
-                    return {
-                        results: items,
-                        pagination: {
-                            more: (params.page * 10) < total
-                        }
-                    };
+                    },
+                    cache: true
                 },
-                cache: true
-            },
-            language: {
-                searching: () => langData['searching'] || "Searching...",
-                noResults: () => langData['no_results'] || "No results found",
-                inputTooShort: () => langData['input_too_short'] || "Please enter more characters"
-            },
-            placeholder: {
-                id: '',
-                text: langData['select_option'] || 'Select an option'
-            },
-            minimumInputLength: 0
-        };
+                language: {
+                    searching: () => langData['searching'] || "Searching...",
+                    noResults: () => langData['no_results'] || "No results found",
+                    inputTooShort: () => langData['input_too_short'] || "Please enter more characters"
+                },
+                placeholder: {
+                    id: '',
+                    text: langData['select_option'] || 'Select an option'
+                },
+                minimumInputLength: 0
+            };
+        }
         if ($modal.length) {
             config.dropdownParent = $modal;
         }
@@ -138,7 +193,13 @@ function initSelect2Remote(selector) {
         if ($container.length) {
             $container.find('.select2-selection').attr('tabindex', originalTabIndex);
         }
+        if (isStatic && options.selectedValue !== undefined && options.selectedValue !== '' && options.selectedValue !== null) {
+            $this.val(options.selectedValue).trigger('change.select2');
+        }
     });
+}
+function initSelect2Remote(selector) {
+    initSelect2(selector, { mode: 'ajax' });
 }
 function initDateRangePicker(selector, callback) {
     $(selector).daterangepicker({
