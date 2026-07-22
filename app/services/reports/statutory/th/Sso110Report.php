@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../PdfRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../export/th/Sso110Exporter.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
  * สปส.1-10 monthly contribution report — one payroll run = one month's submission. Delegates
@@ -48,22 +49,19 @@ class Sso110Report implements ReportGeneratorInterface {
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
         if ($compId <= 0) {
-            throw new InvalidArgumentException('comp_id is required.');
+            throw new LocalizedException('comp_id is required.', 'comp_id_required');
         }
         if (!isset($context['run_id']) || !is_numeric($context['run_id']) || (int)$context['run_id'] <= 0) {
-            throw new InvalidArgumentException('run_id is required and must be a positive integer.');
+            throw new LocalizedException('run_id is required and must be a positive integer.', 'run_id_required');
         }
         $runId = (int)$context['run_id'];
 
         $dataModel = new PayrollReportDataModel();
         $run = $dataModel->getRun($runId, $compId);
         if (!$run) {
-            throw new RuntimeException('Payroll run not found.');
+            throw new LocalizedException('Payroll run not found.', 'run_not_found');
         }
-        $stateError = $dataModel->assertRunState($run, self::ALLOWED_STATES);
-        if ($stateError !== null) {
-            throw new RuntimeException($stateError);
-        }
+        $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
         $details = $dataModel->getRunDetails($runId);
 
         $employees = [];
@@ -87,7 +85,7 @@ class Sso110Report implements ReportGeneratorInterface {
             ];
         }
         if (empty($employees)) {
-            throw new RuntimeException('No SSO-enrolled employees with a contribution were found in this payroll run.');
+            throw new LocalizedException('No SSO-enrolled employees with a contribution were found in this payroll run.', 'sso_no_enrolled_employees');
         }
 
         $company = $dataModel->getCompany($compId);

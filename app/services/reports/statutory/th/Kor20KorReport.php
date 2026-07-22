@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../PdfRendererTrait.php';
 require_once __DIR__ . '/../../ExcelRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
  * DRAFT — กท.20ก. (annual provident fund contribution report), aggregating TH_PVD employee
@@ -46,15 +47,15 @@ class Kor20KorReport implements ReportGeneratorInterface {
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
         if ($compId <= 0) {
-            throw new InvalidArgumentException('comp_id is required.');
+            throw new LocalizedException('comp_id is required.', 'comp_id_required');
         }
         if (!isset($context['year']) || !is_numeric($context['year'])) {
-            throw new InvalidArgumentException('year (พ.ศ.) is required and must be numeric.');
+            throw new LocalizedException('year (พ.ศ.) is required and must be numeric.', 'year_required');
         }
         $yearBe = (int)$context['year'];
         $currentYearBe = (int)date('Y') + 543;
         if ($yearBe < 2500 || $yearBe > $currentYearBe + 1) {
-            throw new InvalidArgumentException("year must be a valid Buddhist Era year (2500–{$currentYearBe}).");
+            throw new LocalizedException("year must be a valid Buddhist Era year (2500–{$currentYearBe}).", 'year_out_of_range', ['min' => 2500, 'max' => $currentYearBe]);
         }
         $yearAd = $yearBe - 543;
 
@@ -62,7 +63,7 @@ class Kor20KorReport implements ReportGeneratorInterface {
         $runs = $dataModel->getRunsInYear($compId, $yearAd, self::ALLOWED_STATES);
         if (empty($runs)) {
             $allowedLabel = implode('/', self::ALLOWED_STATES);
-            throw new RuntimeException("No payroll runs in state {$allowedLabel} were found for B.E. {$yearBe}.");
+            throw new LocalizedException("No payroll runs in state {$allowedLabel} were found for B.E. {$yearBe}.", 'no_runs_in_state_for_year', ['states' => self::ALLOWED_STATES, 'year' => $yearBe]);
         }
 
         $employees = [];

@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../ExcelRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../export/th/PndOneExporter.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
  * ภ.ง.ด.1 monthly withholding return — one payroll run = one month's submission (unlike
@@ -45,22 +46,19 @@ class PndOneReport implements ReportGeneratorInterface {
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
         if ($compId <= 0) {
-            throw new InvalidArgumentException('comp_id is required.');
+            throw new LocalizedException('comp_id is required.', 'comp_id_required');
         }
         if (!isset($context['run_id']) || !is_numeric($context['run_id']) || (int)$context['run_id'] <= 0) {
-            throw new InvalidArgumentException('run_id is required and must be a positive integer.');
+            throw new LocalizedException('run_id is required and must be a positive integer.', 'run_id_required');
         }
         $runId = (int)$context['run_id'];
 
         $dataModel = new PayrollReportDataModel();
         $run = $dataModel->getRun($runId, $compId);
         if (!$run) {
-            throw new RuntimeException('Payroll run not found.');
+            throw new LocalizedException('Payroll run not found.', 'run_not_found');
         }
-        $stateError = $dataModel->assertRunState($run, self::ALLOWED_STATES);
-        if ($stateError !== null) {
-            throw new RuntimeException($stateError);
-        }
+        $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
         $details = $dataModel->getRunDetails($runId);
 
         $employeeList = [];
@@ -81,7 +79,7 @@ class PndOneReport implements ReportGeneratorInterface {
             ];
         }
         if (empty($employeeList)) {
-            throw new RuntimeException('This payroll run has no calculated employees yet. Recalculate it first.');
+            throw new LocalizedException('This payroll run has no calculated employees yet. Recalculate it first.', 'run_no_calculated_employees');
         }
 
         $yearBe = (int)date('Y', strtotime($run['period_start_date'])) + 543;

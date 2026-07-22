@@ -421,28 +421,25 @@
             <div class="modal-body">
                 <input type="hidden" id="otId">
                 <div class="row g-3">
-                    <div class="col-12">
+                    <div class="col-md-6">
                         <label class="form-label"><span data-i18n="ot_name">OT Name</span> <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="otName" data-i18n="ot_name_placeholder" placeholder="e.g., Weekday OT">
+                        <input type="text" class="form-control required" id="otNameTh" data-i18n="ot_name_placeholder" placeholder="e.g., OT วันธรรมดา">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">&nbsp;</label>
+                        <input type="text" class="form-control" id="otNameEn" placeholder="e.g., Weekday OT">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="applies_to">Applies To</label>
-                        <select class="form-select" id="otScope">
-                            <option value="Weekday" data-i18n="ot_scope_weekday">Weekday</option>
-                            <option value="Weekend" data-i18n="ot_scope_weekend">Weekend</option>
-                            <option value="Holiday" data-i18n="holiday">Holiday</option>
-                        </select>
+                        <select class="form-select select2-remote required" id="otScope" data-api="/api/ot-rate.scope-options" data-type="ot_scope"></select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="multiplier_rate">Multiplier Rate (x)</label>
-                        <input type="number" step="0.1" min="1" class="form-control" id="otMultiplier" value="1.5">
+                        <input type="number" step="0.1" min="0.1" class="form-control" id="otMultiplier" value="1.5">
                     </div>
                     <div class="col-12">
                         <label class="form-label" data-i18n="calculation_base">Calculation Base</label>
-                        <select class="form-select" id="otBase">
-                            <option value="Hourly" data-i18n="ot_base_hourly">Hourly</option>
-                            <option value="Daily" data-i18n="ot_base_daily">Daily</option>
-                        </select>
+                        <select class="form-select select2-static" id="otBase" data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select>
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2 mt-1">
                         <div class="form-check form-switch m-0">

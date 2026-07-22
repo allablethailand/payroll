@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/../services/reports/LocalizedException.php';
 
 /**
  * Shared read-only helpers used by report generators across all three report types
@@ -158,5 +159,23 @@ class PayrollReportDataModel {
             return "This report requires the payroll run to be in one of these states: {$allowedLabel}. Current state: {$run['state']}.";
         }
         return null;
+    }
+
+    /**
+     * Same check as assertRunState(), but throws a LocalizedException (error_key='run_state_invalid',
+     * params={states: string[], current_state: string}) instead of returning a pre-formatted English
+     * string. Frontend translates each state code via the existing state_{code} lang keys. Prefer this
+     * over assertRunState() in new code -- kept both since assertRunState() may still be called
+     * elsewhere and changing its return contract isn't worth the blast radius for this pass.
+     */
+    public function assertRunStateOrThrow(array $run, array $allowedStates): void {
+        if (!in_array($run['state'], $allowedStates, true)) {
+            $allowedLabel = implode(', ', $allowedStates);
+            throw new LocalizedException(
+                "This report requires the payroll run to be in one of these states: {$allowedLabel}. Current state: {$run['state']}.",
+                'run_state_invalid',
+                ['states' => $allowedStates, 'current_state' => $run['state']]
+            );
+        }
     }
 }

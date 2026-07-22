@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../PdfRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../../../../models/PayrollEarningDeductionTypeModel.php';
+require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
  * DRAFT — กยศ. (กองทุนเงินให้กู้ยืมเพื่อการศึกษา / Student Loan Fund) monthly deduction remittance
@@ -59,27 +60,24 @@ class StudentLoanReport implements ReportGeneratorInterface {
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
         if ($compId <= 0) {
-            throw new InvalidArgumentException('comp_id is required.');
+            throw new LocalizedException('comp_id is required.', 'comp_id_required');
         }
         if (!isset($context['run_id']) || !is_numeric($context['run_id']) || (int)$context['run_id'] <= 0) {
-            throw new InvalidArgumentException('run_id is required and must be a positive integer.');
+            throw new LocalizedException('run_id is required and must be a positive integer.', 'run_id_required');
         }
         $runId = (int)$context['run_id'];
 
         $dataModel = new PayrollReportDataModel();
         $run = $dataModel->getRun($runId, $compId);
         if (!$run) {
-            throw new RuntimeException('Payroll run not found.');
+            throw new LocalizedException('Payroll run not found.', 'run_not_found');
         }
-        $stateError = $dataModel->assertRunState($run, self::ALLOWED_STATES);
-        if ($stateError !== null) {
-            throw new RuntimeException($stateError);
-        }
+        $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
 
         $pedTypeModel = new PayrollEarningDeductionTypeModel();
         $mappedCodes = $pedTypeModel->itemCodesByStatutoryReportCode($compId, self::REPORT_TAG);
         if (empty($mappedCodes)) {
-            throw new RuntimeException('No deduction type is mapped to the Student Loan Fund (กยศ.) report yet. Set this in Payroll Configuration > Earning-Deduction Types.');
+            throw new LocalizedException('No deduction type is mapped to the Student Loan Fund (กยศ.) report yet. Set this in Payroll Configuration > Earning-Deduction Types.', 'student_loan_not_mapped');
         }
         $mappedCodes = array_flip($mappedCodes);
 
@@ -111,7 +109,7 @@ class StudentLoanReport implements ReportGeneratorInterface {
             ];
         }
         if (empty($rows)) {
-            throw new RuntimeException('No employees had a กยศ. deduction in this payroll run.');
+            throw new LocalizedException('No employees had a กยศ. deduction in this payroll run.', 'student_loan_no_deductions_in_run');
         }
 
         $refByAssignment = $dataModel->getEarningDeductionReferenceNos($assignmentIds);

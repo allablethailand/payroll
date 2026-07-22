@@ -131,6 +131,12 @@
     $router->post('api/payslip-template.toggle-status', 'PayslipTemplateController@toggleStatus');
     $router->post('api/payslip-template.upload-logo', 'PayslipTemplateController@uploadLogo');
     $router->post('api/payslip-template.preview', 'PayslipTemplateController@preview');
+    $router->post('api/ot-rate.scope-options', 'SetupRulesController@otScopeOptions');
+    $router->get('api/ot-rate.list', 'SetupRulesController@otRateList');
+    $router->get('api/ot-rate.get', 'SetupRulesController@otRateGet');
+    $router->post('api/ot-rate.save', 'SetupRulesController@otRateSave');
+    $router->post('api/ot-rate.delete', 'SetupRulesController@otRateDelete');
+    $router->post('api/ot-rate.toggle-status', 'SetupRulesController@otRateToggleStatus');
     $router->get('api/holiday.list', 'SetupRulesController@holidayList');
     $router->get('api/holiday.get', 'SetupRulesController@holidayGet');
     $router->post('api/holiday.save', 'SetupRulesController@holidaySave');

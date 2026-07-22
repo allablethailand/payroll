@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../ReportGeneratorInterface.php';
 require_once __DIR__ . '/../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../LocalizedException.php';
 
 /**
  * DRAFT — Bank transfer batch file for paying net salary via bulk bank transfer.
@@ -53,25 +54,22 @@ class BankTransferFileReport implements ReportGeneratorInterface {
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
         if ($compId <= 0) {
-            throw new InvalidArgumentException('comp_id is required.');
+            throw new LocalizedException('comp_id is required.', 'comp_id_required');
         }
         if (!isset($context['run_id']) || !is_numeric($context['run_id']) || (int)$context['run_id'] <= 0) {
-            throw new InvalidArgumentException('run_id is required and must be a positive integer.');
+            throw new LocalizedException('run_id is required and must be a positive integer.', 'run_id_required');
         }
         $runId = (int)$context['run_id'];
 
         $dataModel = new PayrollReportDataModel();
         $run = $dataModel->getRun($runId, $compId);
         if (!$run) {
-            throw new RuntimeException('Payroll run not found.');
+            throw new LocalizedException('Payroll run not found.', 'run_not_found');
         }
-        $stateError = $dataModel->assertRunState($run, self::ALLOWED_STATES);
-        if ($stateError !== null) {
-            throw new RuntimeException($stateError);
-        }
+        $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
         $details = $dataModel->getRunDetails($runId);
         if (empty($details)) {
-            throw new RuntimeException('This payroll run has no calculated employees yet. Recalculate it first.');
+            throw new LocalizedException('This payroll run has no calculated employees yet. Recalculate it first.', 'run_no_calculated_employees');
         }
 
         $lines = ['เลขที่บัญชี,ชื่อบัญชี,ธนาคาร,รหัสธนาคาร,จำนวนเงิน,หมายเหตุ'];
@@ -101,7 +99,7 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             array_unshift($lines, '# คำเตือน: พนักงานต่อไปนี้ไม่มีเลขบัญชี/ธนาคารในระบบ ถูกข้ามจากไฟล์นี้: ' . implode(', ', $skipped));
         }
         if ($total <= 0) {
-            throw new RuntimeException('No employees with a valid bank account were found to include in the transfer file.');
+            throw new LocalizedException('No employees with a valid bank account were found to include in the transfer file.', 'bank_transfer_no_valid_accounts');
         }
 
         $content = implode("\r\n", $lines) . "\r\n";

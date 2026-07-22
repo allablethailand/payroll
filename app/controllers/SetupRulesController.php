@@ -242,4 +242,49 @@ class SetupRulesController extends Controller {
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->model->leaveTypeToggleStatus($id, (int)$compId, $this->userId()));
     }
+
+    /* ==================== OT RATE ==================== */
+
+    public function otScopeOptions() {
+        $this->json(['status' => true, 'data' => ['items' => $this->model->otScopeOptions(), 'total_count' => 0]]);
+    }
+
+    public function otRateList() {
+        $compId = getCompId();
+        $this->json(['status' => true, 'data' => $this->model->otRateList((int)$compId)]);
+    }
+
+    public function otRateGet() {
+        $compId = getCompId();
+        $id = (int)($_GET['id'] ?? 0);
+        $row = $this->model->otRateGet($id, (int)$compId);
+        if (!$row) {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $row]);
+    }
+
+    public function otRateSave() {
+        $compId = getCompId();
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $this->json($this->model->otRateSave($data, (int)$compId, $this->userId()));
+    }
+
+    public function otRateDelete() {
+        $compId = getCompId();
+        $id = (int)($_POST['id'] ?? 0);
+        $this->json($this->model->otRateDelete($id, (int)$compId, $this->userId()));
+    }
+
+    public function otRateToggleStatus() {
+        $compId = getCompId();
+        $id = (int)($_POST['id'] ?? 0);
+        $this->json($this->model->otRateToggleStatus($id, (int)$compId, $this->userId()));
+    }
 }

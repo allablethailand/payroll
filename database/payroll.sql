@@ -8979,6 +8979,61 @@ CREATE TABLE `payslip_template_fields` (
   CONSTRAINT `fk_ptf_template` FOREIGN KEY (`template_id`) REFERENCES `payslip_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `master_ot_scope_types`
+--
+-- Global (not per-company) master list, replacing the old hardcoded Weekday/Weekend/Holiday
+-- dropdown per CLAUDE.md's fixed-but-growable-set convention.
+--
+
+CREATE TABLE `master_ot_scope_types` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ot_scope_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_ot_scope_types` (`code`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('weekday','วันธรรมดา','Weekday',1,10),
+('weekend','วันหยุดสุดสัปดาห์','Weekend',1,20),
+('holiday','วันหยุดนักขัตฤกษ์','Holiday',1,30);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `ot_rates`
+--
+
+CREATE TABLE `ot_rates` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL COMMENT 'ID บริษัทที่ล็อกอิน',
+  `ot_name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ot_name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ot_scope_id` int(11) NOT NULL,
+  `multiplier_rate` decimal(4,2) NOT NULL DEFAULT 1.50,
+  `calculation_base` enum('hourly','daily') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'hourly',
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ot_rates_tenant` (`comp_id`,`deleted_at`,`status`),
+  KEY `idx_ot_rates_scope` (`ot_scope_id`),
+  CONSTRAINT `fk_ot_rates_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ot_rates_scope` FOREIGN KEY (`ot_scope_id`) REFERENCES `master_ot_scope_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
 --
 -- Indexes for dumped tables
 --

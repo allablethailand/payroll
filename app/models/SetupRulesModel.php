@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Shift + Holiday + Work Location + Leave Type backend for the Setup & Rules page.
+ * Shift + Holiday + Work Location + Leave Type + OT Rate backend for the Setup & Rules page.
  *
  * Holiday scope priority (employee > position > department > shift) is enforced in
  * resolveHolidaysForEmployee(), used when two active holidays would otherwise both apply to the
@@ -851,6 +851,106 @@ class SetupRulesModel {
         }
         $newStatus = $current === 'active' ? 'inactive' : 'active';
         $this->db->prepare("UPDATE leave_types SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
+            ->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+        return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
+    }
+
+    /* ==================== OT RATE ==================== */
+
+    public function otScopeOptions(): array {
+        $stmt = $this->db->query("SELECT id, name_th AS text_th, name_en AS text_en FROM master_ot_scope_types WHERE is_active = 1 ORDER BY sort_order ASC");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function otRateList(int $compId): array {
+        $stmt = $this->db->prepare("SELECT o.*, s.name_th AS scope_name_th, s.name_en AS scope_name_en
+            FROM ot_rates o
+            JOIN master_ot_scope_types s ON s.id = o.ot_scope_id
+            WHERE o.comp_id = :comp_id AND o.deleted_at IS NULL
+            ORDER BY o.ot_name_th ASC");
+        $stmt->execute([':comp_id' => $compId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function otRateGet(int $id, int $compId): ?array {
+        $stmt = $this->db->prepare("SELECT o.*, s.name_th AS scope_name_th, s.name_en AS scope_name_en
+            FROM ot_rates o
+            JOIN master_ot_scope_types s ON s.id = o.ot_scope_id
+            WHERE o.id = :id AND o.comp_id = :comp_id AND o.deleted_at IS NULL");
+        $stmt->execute([':id' => $id, ':comp_id' => $compId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    public function otRateSave(array $data, int $compId, int $userId): array {
+        $nameTh = trim((string)($data['ot_name_th'] ?? ''));
+        $nameEn = trim((string)($data['ot_name_en'] ?? ''));
+        $scopeId = (int)($data['ot_scope_id'] ?? 0);
+        $multiplier = (float)($data['multiplier_rate'] ?? 0);
+        $calcBase = in_array($data['calculation_base'] ?? '', ['hourly', 'daily'], true) ? $data['calculation_base'] : 'hourly';
+        $status = in_array($data['status'] ?? '', ['active', 'inactive'], true) ? $data['status'] : 'active';
+        $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
+
+        if ($nameTh === '' || $scopeId <= 0 || $multiplier <= 0) {
+            return ['status' => false, 'message' => 'Missing required field.'];
+        }
+        if ($nameEn === '') {
+            $nameEn = $nameTh;
+        }
+        $stmtScope = $this->db->prepare("SELECT id FROM master_ot_scope_types WHERE id = :id AND is_active = 1");
+        $stmtScope->execute([':id' => $scopeId]);
+        if (!$stmtScope->fetch()) {
+            return ['status' => false, 'message' => 'Selected scope not found.'];
+        }
+
+        try {
+            if ($id !== null) {
+                $stmtCheck = $this->db->prepare("SELECT id FROM ot_rates WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
+                if (!$stmtCheck->fetch()) {
+                    return ['status' => false, 'message' => 'Record not found.'];
+                }
+                $stmt = $this->db->prepare("UPDATE ot_rates SET ot_name_th = :th, ot_name_en = :en, ot_scope_id = :scope_id,
+                    multiplier_rate = :multiplier, calculation_base = :calc_base, status = :status,
+                    updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+                $stmt->execute([
+                    ':th' => $nameTh, ':en' => $nameEn, ':scope_id' => $scopeId, ':multiplier' => $multiplier,
+                    ':calc_base' => $calcBase, ':status' => $status, ':updated_by' => $userId, ':id' => $id,
+                ]);
+                return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
+            }
+            $stmt = $this->db->prepare("INSERT INTO ot_rates (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate,
+                calculation_base, status, created_by) VALUES (:comp_id, :th, :en, :scope_id, :multiplier, :calc_base, :status, :created_by)");
+            $stmt->execute([
+                ':comp_id' => $compId, ':th' => $nameTh, ':en' => $nameEn, ':scope_id' => $scopeId, ':multiplier' => $multiplier,
+                ':calc_base' => $calcBase, ':status' => $status, ':created_by' => $userId,
+            ]);
+            return ['status' => true, 'message' => 'Created successfully.', 'id' => (int)$this->db->lastInsertId()];
+        } catch (PDOException $e) {
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    public function otRateDelete(int $id, int $compId, int $userId): array {
+        $stmt = $this->db->prepare("SELECT id FROM ot_rates WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $id, ':comp_id' => $compId]);
+        if (!$stmt->fetch()) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $this->db->prepare("UPDATE ot_rates SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id")
+            ->execute([':deleted_by' => $userId, ':id' => $id]);
+        return ['status' => true, 'message' => 'Deleted successfully.'];
+    }
+
+    public function otRateToggleStatus(int $id, int $compId, int $userId): array {
+        $stmt = $this->db->prepare("SELECT status FROM ot_rates WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $id, ':comp_id' => $compId]);
+        $current = $stmt->fetchColumn();
+        if ($current === false) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $newStatus = $current === 'active' ? 'inactive' : 'active';
+        $this->db->prepare("UPDATE ot_rates SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
             ->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
         return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
     }

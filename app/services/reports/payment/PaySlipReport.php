@@ -5,6 +5,7 @@ require_once __DIR__ . '/../PdfRendererTrait.php';
 require_once __DIR__ . '/../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../../../models/PayslipTemplateModel.php';
+require_once __DIR__ . '/../LocalizedException.php';
 
 /**
  * Pay Slip — one PDF per employee for a given payroll run, showing the earning/deduction/
@@ -64,13 +65,13 @@ class PaySlipReport implements ReportGeneratorInterface {
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
         if ($compId <= 0) {
-            throw new InvalidArgumentException('comp_id is required.');
+            throw new LocalizedException('comp_id is required.', 'comp_id_required');
         }
         if (!isset($context['run_id']) || !is_numeric($context['run_id']) || (int)$context['run_id'] <= 0) {
-            throw new InvalidArgumentException('run_id is required and must be a positive integer.');
+            throw new LocalizedException('run_id is required and must be a positive integer.', 'run_id_required');
         }
         if (!isset($context['employee_id']) || !is_numeric($context['employee_id']) || (int)$context['employee_id'] <= 0) {
-            throw new InvalidArgumentException('employee_id is required and must be a positive integer.');
+            throw new LocalizedException('employee_id is required and must be a positive integer.', 'employee_id_required');
         }
         $runId = (int)$context['run_id'];
         $employeeId = (int)$context['employee_id'];
@@ -78,15 +79,12 @@ class PaySlipReport implements ReportGeneratorInterface {
         $dataModel = new PayrollReportDataModel();
         $run = $dataModel->getRun($runId, $compId);
         if (!$run) {
-            throw new RuntimeException('Payroll run not found.');
+            throw new LocalizedException('Payroll run not found.', 'run_not_found');
         }
-        $stateError = $dataModel->assertRunState($run, self::ALLOWED_STATES);
-        if ($stateError !== null) {
-            throw new RuntimeException($stateError);
-        }
+        $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
         $detail = $dataModel->getRunDetailForEmployee($runId, $employeeId);
         if (!$detail) {
-            throw new RuntimeException('This employee is not part of the selected payroll run.');
+            throw new LocalizedException('This employee is not part of the selected payroll run.', 'employee_not_in_run');
         }
 
         $company = $dataModel->getCompany($compId);
@@ -135,20 +133,23 @@ class PaySlipReport implements ReportGeneratorInterface {
      *
      * @param array $draftTemplate { language_mode, header_text_th/en, footer_text_th/en, logo_path,
      *   fields: [{field_key, custom_label_th?, custom_label_en?}] }
-     * @throws InvalidArgumentException on an invalid field_key or an empty field list
-     * @throws RuntimeException if the company can't be found
+     * @throws LocalizedException on an invalid field_key, an empty field list, or a missing company
      */
     public function generatePreview(array $draftTemplate, int $compId): string {
         $dataModel = new PayrollReportDataModel();
         $company = $dataModel->getCompany($compId);
         if (!$company) {
-            throw new RuntimeException('Company not found.');
+            throw new LocalizedException('Company not found.', 'company_not_found');
         }
 
         $templateModel = new PayslipTemplateModel();
-        $resolvedFields = $templateModel->resolveFieldsForPreview(is_array($draftTemplate['fields'] ?? null) ? $draftTemplate['fields'] : []);
+        try {
+            $resolvedFields = $templateModel->resolveFieldsForPreview(is_array($draftTemplate['fields'] ?? null) ? $draftTemplate['fields'] : []);
+        } catch (InvalidArgumentException $e) {
+            throw new LocalizedException($e->getMessage(), 'invalid_field_selection', ['detail' => $e->getMessage()]);
+        }
         if (empty($resolvedFields)) {
-            throw new InvalidArgumentException('Select at least one field to preview.');
+            throw new LocalizedException('Select at least one field to preview.', 'select_at_least_one_field');
         }
 
         $template = [

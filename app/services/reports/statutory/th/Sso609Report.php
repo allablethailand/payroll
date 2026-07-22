@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../ExcelRendererTrait.php';
 require_once __DIR__ . '/../../PdfRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
  * DRAFT — สปส.6-09 (แจ้งการสิ้นสุดความเป็นผู้ประกันตน / SSO termination notice).
@@ -50,13 +51,13 @@ class Sso609Report implements ReportGeneratorInterface {
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
         if ($compId <= 0) {
-            throw new InvalidArgumentException('comp_id is required.');
+            throw new LocalizedException('comp_id is required.', 'comp_id_required');
         }
         if (!isset($context['year']) || !is_numeric($context['year'])) {
-            throw new InvalidArgumentException('year (พ.ศ.) is required and must be numeric.');
+            throw new LocalizedException('year (พ.ศ.) is required and must be numeric.', 'year_required');
         }
         if (!isset($context['month']) || !is_numeric($context['month']) || (int)$context['month'] < 1 || (int)$context['month'] > 12) {
-            throw new InvalidArgumentException('month is required and must be between 1-12.');
+            throw new LocalizedException('month is required and must be between 1-12.', 'month_required');
         }
         $yearBe = (int)$context['year'];
         $month = (int)$context['month'];
@@ -65,7 +66,7 @@ class Sso609Report implements ReportGeneratorInterface {
         $dataModel = new PayrollReportDataModel();
         $employees = $dataModel->getResignedEmployeesInMonth($compId, $yearAd, $month);
         if (empty($employees)) {
-            throw new RuntimeException("No employees with an employment end date in {$month}/{$yearBe} were found.");
+            throw new LocalizedException("No employees with an employment end date in {$month}/{$yearBe} were found.", 'no_resignations_in_month', ['month' => $month, 'year' => $yearBe]);
         }
 
         $rows = [];

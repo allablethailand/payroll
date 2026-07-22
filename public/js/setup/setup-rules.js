@@ -1,18 +1,11 @@
 /**
- * Setup & Rules page. Shift, Holiday, Work Location, and Leave Type are wired to real backends
- * (SetupRulesController). OT Rate is still an in-memory mockup -- out of scope for now (see
- * project memory).
+ * Setup & Rules page. Shift, Holiday, Work Location, Leave Type, and OT Rate are all wired to
+ * real backends (SetupRulesController).
  *
  * All DataTables here rely on DataTables' own built-in search box (default `dom`, no override)
  * with the "Add" button injected into `.dt-search` via `initComplete`, matching the convention
  * used by Approval Workflow / Payroll Cycle / Employee list -- NOT a hand-written search box.
  */
-let otRates = [
-    { id: 1, name: "OT วันธรรมดา", scope: "Weekday", multiplier: 1.5, base: "Hourly", status: 1 },
-    { id: 2, name: "OT วันหยุดสุดสัปดาห์", scope: "Weekend", multiplier: 2.0, base: "Hourly", status: 1 },
-    { id: 3, name: "OT วันหยุดนักขัตฤกษ์", scope: "Holiday", multiplier: 3.0, base: "Daily", status: 1 },
-];
-let nextId = { ot: 4 };
 let deleteContext = null;
 
 function statusSwitch(checked, onchange) {
@@ -74,11 +67,7 @@ function confirmDelete() {
     else if (type === 'holiday') { ajaxDelete('/api/holiday.delete', dtHoliday); }
     else if (type === 'location') { ajaxDelete('/api/work-location.delete', dtWorkLocation); }
     else if (type === 'leave') { ajaxDelete('/api/leave-type.delete', dtLeave); }
-    else if (type === 'ot') {
-        otRates = otRates.filter(s => s.id !== deleteContext.id); renderOt();
-        bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
-        showSuccess(langData['delete_success'] || 'Deleted successfully.');
-    }
+    else if (type === 'ot') { ajaxDelete('/api/ot-rate.delete', dtOt); }
     deleteContext = null;
 }
 
@@ -547,66 +536,91 @@ function saveLeave() {
     });
 }
 
-/* ==================== OT RATE (mockup, out of scope this pass) ==================== */
+/* ==================== OT RATE ==================== */
 let dtOt;
-function otScopeLabel(scope) {
-    if (scope === 'Weekday') return langData['ot_scope_weekday'] || 'Weekday';
-    if (scope === 'Weekend') return langData['ot_scope_weekend'] || 'Weekend';
-    return langData['holiday'] || 'Holiday';
-}
-function scopeBadge(scope) {
-    const cls = scope === 'Weekday' ? 'badge-weekday' : (scope === 'Weekend' ? 'badge-weekend' : 'badge-holiday');
-    return `<span class="badge-soft ${cls}">${otScopeLabel(scope)}</span>`;
-}
 function renderOt() {
-    const rows = otRates.map(o => [
-        `<div class="row-name">${escapeHtmlSr(o.name)}</div>`,
-        scopeBadge(o.scope),
-        `<span class="row-code">${o.multiplier.toFixed(1)}x</span>`,
-        `<span class="text-faint">${o.base === 'Hourly' ? (langData['ot_base_hourly'] || 'Hourly') : (langData['ot_base_daily'] || 'Daily')}</span>`,
-        statusSwitch(o.status, `toggleOtStatus(${o.id})`),
-        actionBtns(`openOtModal(${o.id})`, `askDelete('ot', ${o.id}, '${o.name.replace(/'/g, "\\'")}')`)
-    ]);
-    if (dtOt) dtOt.destroy();
+    if ($.fn.DataTable.isDataTable('#tb_ot')) { $('#tb_ot').DataTable().ajax.reload(null, false); return; }
     dtOt = $('#tb_ot').DataTable({
-        data: rows,
-        columns: [{}, {}, {}, {}, { className: "text-center" }, { className: "text-end" }],
+        ajax: { url: `${BASE_URL}/api/ot-rate.list`, dataSrc: 'data' },
+        columns: [
+            { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}</div>` },
+            { data: null, render: (d, t, row) => `<span class="badge-soft badge-weekday">${escapeHtmlSr(currentLang === 'th' ? row.scope_name_th : row.scope_name_en)}</span>` },
+            { data: null, render: (d, t, row) => `<span class="row-code">${parseFloat(row.multiplier_rate).toFixed(1)}x</span>` },
+            { data: null, render: (d, t, row) => `<span class="text-faint">${row.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>` },
+            { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleOtStatus(${row.id})`) },
+            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}')`) }
+        ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_ot_rates_yet'] || 'No OT rates have been added yet.' },
         initComplete: addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'Add OT Rate', 'openOtModal()')
     });
 }
 function toggleOtStatus(id) {
-    const o = otRates.find(x => x.id === id); o.status = o.status ? 0 : 1;
-    renderOt();
+    $.ajax({
+        url: `${BASE_URL}/api/ot-rate.toggle-status`, method: 'POST', data: { id }, dataType: 'json',
+        success: function (res) {
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
+            dtOt.ajax.reload(null, false);
+        }
+    });
 }
 function openOtModal(id) {
     $('#otModalTitle').html(`<i class="fa-solid fa-coins"></i> <span data-i18n="ot_rate">${langData['ot_rate'] || 'OT Rate'}</span>`);
+    initSelect2('#otScope', { mode: 'ajax' });
+    initSelect2('#otBase', { mode: 'static' });
     if (id) {
-        const o = otRates.find(x => x.id === id);
-        $('#otId').val(o.id); $('#otName').val(o.name); $('#otScope').val(o.scope);
-        $('#otMultiplier').val(o.multiplier); $('#otBase').val(o.base);
-        $('#otStatus').prop('checked', !!o.status);
-    } else {
-        $('#otId').val(''); $('#otName').val(''); $('#otScope').val('Weekday');
-        $('#otMultiplier').val(1.5); $('#otBase').val('Hourly');
-        $('#otStatus').prop('checked', true);
+        $.ajax({
+            url: `${BASE_URL}/api/ot-rate.get`, method: 'GET', data: { id }, dataType: 'json',
+            success: function (res) {
+                if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                const o = res.data;
+                $('#otId').val(o.id);
+                $('#otNameTh').val(o.ot_name_th);
+                $('#otNameEn').val(o.ot_name_en);
+                const $scope = $('#otScope');
+                $scope.empty().append(new Option(currentLang === 'th' ? o.scope_name_th : o.scope_name_en, o.ot_scope_id, true, true)).trigger('change.select2');
+                $('#otMultiplier').val(o.multiplier_rate);
+                $('#otBase').val(o.calculation_base).trigger('change.select2');
+                $('#otStatus').prop('checked', o.status === 'active');
+                new bootstrap.Modal(document.getElementById('otModal')).show();
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+        });
+        return;
     }
+    $('#otId').val(''); $('#otNameTh').val(''); $('#otNameEn').val('');
+    $('#otScope').empty().trigger('change.select2');
+    $('#otMultiplier').val(1.5);
+    $('#otBase').val('hourly').trigger('change.select2');
+    $('#otStatus').prop('checked', true);
     new bootstrap.Modal(document.getElementById('otModal')).show();
 }
 function saveOt() {
-    const name = $('#otName').val().trim();
-    if (!name) { showWarning(langData['required_star_message'] || 'Please fill all fields marked with *'); return; }
-    const id = $('#otId').val();
-    const payload = { name, scope: $('#otScope').val(), multiplier: parseFloat($('#otMultiplier').val()) || 1, base: $('#otBase').val(), status: $('#otStatus').is(':checked') ? 1 : 0 };
-    if (id) {
-        const o = otRates.find(x => x.id == id); Object.assign(o, payload);
-    } else {
-        otRates.push({ id: nextId.ot++, ...payload });
+    const nameTh = $('#otNameTh').val().trim();
+    const scopeId = $('#otScope').val();
+    const multiplier = parseFloat($('#otMultiplier').val());
+    if (!nameTh || !scopeId || !multiplier || multiplier <= 0) {
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
     }
-    showSuccess(langData['save_success'] || 'Saved successfully.');
-    bootstrap.Modal.getInstance(document.getElementById('otModal')).hide();
-    renderOt();
+    const payload = {
+        id: $('#otId').val() || null,
+        ot_name_th: nameTh, ot_name_en: $('#otNameEn').val().trim(),
+        ot_scope_id: parseInt(scopeId), multiplier_rate: multiplier,
+        calculation_base: $('#otBase').val() || 'hourly',
+        status: $('#otStatus').is(':checked') ? 'active' : 'inactive'
+    };
+    $.ajax({
+        url: `${BASE_URL}/api/ot-rate.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('otModal')).hide();
+                dtOt.ajax.reload(null, false);
+            } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
 }
 
 $(function () {
