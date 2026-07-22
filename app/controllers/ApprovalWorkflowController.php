@@ -2,18 +2,41 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/ApprovalWorkflowModel.php';
 require_once __DIR__ . '/../models/ApprovalRequestModel.php';
+require_once __DIR__ . '/../models/PermissionModel.php';
 
 class ApprovalWorkflowController extends Controller {
     private $model;
     private $requestModel;
+    private PermissionModel $permissionModel;
 
     public function __construct() {
         $this->model = new ApprovalWorkflowModel();
         $this->requestModel = new ApprovalRequestModel();
+        $this->permissionModel = new PermissionModel();
     }
 
     private function actingUserId(): int {
         return (int)($_SESSION['user']['employee_id'] ?? 0);
+    }
+
+    private function isAdmin(): bool {
+        return ($_SESSION['user']['role'] ?? '') === 'admin';
+    }
+
+    /**
+     * Coarse RBAC gate (approval_workflow.view/manage, approval_request.act). requestCreate() is
+     * deliberately left ungated -- it's meant to be called by other modules' flows on behalf of
+     * whoever is submitting something for approval, not a direct user action through this UI, and
+     * nothing calls it from a real flow yet (see CLAUDE.md).
+     */
+    private function requirePermission(string $permissionKey): bool {
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->actingUserId(), $permissionKey, $this->isAdmin(), $compId);
+        if (!$check['allowed']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to perform this action.']);
+            return false;
+        }
+        return true;
     }
 
     private function jsonBody(): ?array {
@@ -30,6 +53,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowList() {
+        if (!$this->requirePermission('approval_workflow.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -39,6 +63,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowGet() {
+        if (!$this->requirePermission('approval_workflow.view')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -54,6 +79,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowSave() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -68,6 +94,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowDelete() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
         $compId = getCompId();
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -78,6 +105,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowDuplicate() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
         $compId = getCompId();
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -88,6 +116,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowToggleStatus() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
         $compId = getCompId();
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         $status = (string)($_POST['status'] ?? '');
@@ -116,6 +145,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function requestAct() {
+        if (!$this->requirePermission('approval_request.act')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -133,6 +163,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function requestGet() {
+        if (!$this->requirePermission('approval_workflow.view')) return;
         $compId = getCompId();
         $requestId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $requestId <= 0) {
@@ -148,6 +179,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function requestList() {
+        if (!$this->requirePermission('approval_workflow.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -161,6 +193,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function requestLogs() {
+        if (!$this->requirePermission('approval_workflow.view')) return;
         $compId = getCompId();
         $requestId = isset($_GET['request_id']) ? (int)$_GET['request_id'] : 0;
         if (!$compId || $requestId <= 0) {

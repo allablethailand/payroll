@@ -504,8 +504,7 @@
                     <label class="form-label"><span data-i18n="work_location">Work Location</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="work_location_id" id="work_location_id">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                    <select class="form-select select2-remote required" name="work_location_id" id="work_location_id" data-api="/api/work-location.options" data-type="location">
                     </select>
                 </div>
             </div>
@@ -514,8 +513,7 @@
                     <label class="form-label"><span data-i18n="shift">Shift</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select" name="shift_id" id="shift_id">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                    <select class="form-select select2-remote required" name="shift_id" id="shift_id" data-api="/api/shift.options" data-type="shift">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">

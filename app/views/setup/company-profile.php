@@ -189,6 +189,11 @@
                         <i class="fa-solid fa-ranking-star me-2"></i><span data-i18n="rank">Rank</span>
                     </button>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link structure-menu" id="structure-tab-p6" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p6">
+                        <i class="fa-solid fa-shield-halved me-2"></i><span data-i18n="permissions">Permissions</span>
+                    </button>
+                </li>
             </ul>
         </div>
         <div class="tab-content border-0 bg-white mb-5 mt-0">
@@ -275,4 +280,16 @@
         </table>
     </div>
 </template>
+<template id="tmpl-permission-pane">
+    <div class="mt-5 mb-5">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <p class="text-muted small mb-0" data-i18n="permission_matrix_hint">Check the boxes to grant each role access. Roles are managed in the Role tab.</p>
+            <button type="button" class="btn btn-primary btn-sm" id="btnSavePermissionMatrix">
+                <i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span>
+            </button>
+        </div>
+        <div id="permissionMatrixContainer" class="table-responsive"></div>
+    </div>
+</template>
 <script src="<?=asset('public/js/setup/company-profile.js')?>"></script>
+<script src="<?=asset('public/js/setup/permission-matrix.js')?>"></script>

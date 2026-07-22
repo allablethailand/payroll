@@ -388,6 +388,11 @@ function initStructure(page) {
             $structureContent.html($('#tmpl-rank-pane').html());
             initStructureTable('rank', '#tb_rank');
             break;
+        case 'p6':
+            $structureContent.html($('#tmpl-permission-pane').html());
+            updateText($structureContent[0]);
+            if (typeof initPermissionMatrix === 'function') { initPermissionMatrix(); }
+            break;
     }
 }
 function initStructureTable(type, tableId) {

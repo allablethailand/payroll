@@ -8604,6 +8604,381 @@ CREATE TABLE `approval_request_logs` (
   CONSTRAINT `fk_arl_request` FOREIGN KEY (`request_id`) REFERENCES `approval_requests` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `master_work_locations`
+--
+-- Per-company work location list (physical work site, e.g. head office / branch site / WFH),
+-- deliberately separate from structure_branches (which is a legal/org-structure concept). Exists
+-- to finally back employees.work_location_id, which has been a dead column with no master table
+-- since the original schema (see its column comment).
+--
+
+CREATE TABLE `master_work_locations` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL COMMENT 'ID บริษัทที่ล็อกอิน',
+  `location_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `location_name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `location_name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `address` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_comp_location_code` (`comp_id`,`location_code`,`deleted_at`),
+  KEY `idx_work_locations_tenant` (`comp_id`,`deleted_at`,`status`),
+  CONSTRAINT `fk_work_locations_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `shifts`
+--
+-- Minimal real table for the Shift tab, added only to give holiday_assignments.scope_type='shift'
+-- something real to reference. Does not cover the rest of the Shift tab's requirements.
+--
+
+CREATE TABLE `shifts` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL COMMENT 'ID บริษัทที่ล็อกอิน',
+  `shift_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `shift_name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `shift_name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `start_time` time NOT NULL,
+  `end_time` time NOT NULL,
+  `break_minutes` int(11) NOT NULL DEFAULT 0,
+  `work_location_id` int(11) DEFAULT NULL COMMENT 'default work location for employees on this shift',
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_comp_shift_code` (`comp_id`,`shift_code`,`deleted_at`),
+  KEY `idx_shifts_tenant` (`comp_id`,`deleted_at`,`status`),
+  KEY `idx_shifts_work_location` (`work_location_id`),
+  CONSTRAINT `fk_shifts_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_shifts_work_location` FOREIGN KEY (`work_location_id`) REFERENCES `master_work_locations` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `holidays`
+--
+
+CREATE TABLE `holidays` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL COMMENT 'ID บริษัทที่ล็อกอิน',
+  `country_code` varchar(2) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ต้องตรงกับ companies.registered_country ของบริษัทนี้ เช็คที่ application layer',
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `holiday_date` date NOT NULL COMMENT 'วันที่จริงสำหรับ one-time, หรือวันที่อ้างอิง (ใช้แค่เดือน/วัน) สำหรับ recurring',
+  `is_recurring` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = ทุกปี (ใช้เดือน/วันของ holiday_date ซ้ำทุกปี), 0 = เฉพาะปีของ holiday_date เท่านั้น',
+  `assignment_mode` enum('include','exclude') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'include' COMMENT 'include = เฉพาะ scope ที่เลือกใน holiday_assignments, exclude = ทุกคนยกเว้น scope ที่เลือก',
+  `remark` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_holidays_tenant` (`comp_id`,`deleted_at`,`status`),
+  KEY `idx_holidays_date` (`holiday_date`),
+  CONSTRAINT `fk_holidays_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `holiday_assignments`
+--
+-- Whole set deleted + reinserted on every holiday save, same pattern as approval_workflow_steps /
+-- employee_earning_deduction_installments. scope_id is polymorphic (shifts/structure_departments/
+-- structure_positions/employees depending on scope_type) validated at the application layer.
+--
+
+CREATE TABLE `holiday_assignments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `holiday_id` int(11) NOT NULL,
+  `scope_type` enum('shift','department','position','employee') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `scope_id` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ha_holiday` (`holiday_id`),
+  KEY `idx_ha_scope` (`scope_type`,`scope_id`),
+  CONSTRAINT `fk_ha_holiday` FOREIGN KEY (`holiday_id`) REFERENCES `holidays` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `master_leave_categories`
+--
+
+CREATE TABLE `master_leave_categories` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_leave_category_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_leave_categories` (`code`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('sick','ลาป่วย','Sick Leave',1,10),
+('personal','ลากิจ','Personal Leave',1,20),
+('annual','ลาพักร้อน','Annual/Vacation Leave',1,30),
+('maternity','ลาคลอดบุตร','Maternity Leave',1,40),
+('ordination','ลาบวช','Ordination Leave',1,50),
+('military','ลาราชการทหาร','Military Leave',1,60),
+('leave_without_pay','ลาโดยไม่รับค่าจ้าง','Leave Without Pay',1,70),
+('family_parental','ลาเพื่อดูแลครอบครัว/บุตร','Family/Parental Leave',1,80),
+('emergency','ลาฉุกเฉิน','Emergency Leave',1,90),
+('other','อื่นๆ','Other',1,100);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `leave_types`
+--
+
+CREATE TABLE `leave_types` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL COMMENT 'ID บริษัทที่ล็อกอิน',
+  `category_id` int(11) NOT NULL,
+  `code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `quota_type` enum('fixed','prorate') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'fixed',
+  `quota_amount` decimal(6,2) NOT NULL DEFAULT 0.00 COMMENT 'จำนวนโควต้าต่อปี หน่วยตาม unit_type',
+  `unit_type` enum('day','hour','half_day') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'day',
+  `requires_document` tinyint(1) NOT NULL DEFAULT 0,
+  `is_continuous` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = นับรวมวันหยุด/วันหยุดนักขัตฤกษ์ที่คั่นระหว่างวันลาด้วย (นับทุกวัน), 0 = นับเฉพาะวันทำงาน',
+  `is_paid` tinyint(1) NOT NULL DEFAULT 1,
+  `allow_carry_over` tinyint(1) NOT NULL DEFAULT 0,
+  `statutory_minimum_days` decimal(6,2) DEFAULT NULL COMMENT 'อ้างอิง master_statutory_leave_minimums ของ country_code บริษัทนี้ ห้ามตั้ง quota_amount ต่ำกว่านี้',
+  `gender_restriction` enum('all','male','female') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'all',
+  `min_service_days` int(11) DEFAULT NULL COMMENT 'อายุงานขั้นต่ำก่อนมีสิทธิ์ใช้ลาประเภทนี้ (วัน), NULL = ไม่จำกัด',
+  `advance_notice_days` int(11) DEFAULT NULL COMMENT 'ต้องแจ้งล่วงหน้าก่อนวันลากี่วัน, NULL = ไม่จำกัด',
+  `max_consecutive_days` decimal(6,2) DEFAULT NULL COMMENT 'จำนวนวันสูงสุดต่อการลา 1 ครั้ง, NULL = ไม่จำกัด',
+  `applicable_employment_statuses` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'CSV ของ employees.employment_status ที่มีสิทธิ์ เช่น "permanent,contract"; NULL = ทุกสถานะ',
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_comp_leave_code` (`comp_id`,`code`,`deleted_at`),
+  KEY `idx_leave_types_tenant` (`comp_id`,`deleted_at`,`status`),
+  KEY `idx_leave_types_category` (`category_id`),
+  CONSTRAINT `fk_leave_types_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_leave_types_category` FOREIGN KEY (`category_id`) REFERENCES `master_leave_categories` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `master_statutory_leave_minimums`
+--
+-- Global reference table (not per-company) used only to validate that a company's leave_types.statutory_minimum_days
+-- isn't set below the legal floor for its country. Seed values below are DRAFT / NOT verified against the official
+-- statute text in this environment -- do not treat as legal advice. SG/MY intentionally left unseeded here because
+-- their statutory annual leave is a tenure-based sliding scale (a single flat floor would misrepresent the law).
+-- US intentionally left empty -- no federal statutory minimum, varies by state.
+--
+
+CREATE TABLE `master_statutory_leave_minimums` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `country_code` varchar(2) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `category_id` int(11) NOT NULL,
+  `min_days` decimal(6,2) NOT NULL,
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_country_category` (`country_code`,`category_id`),
+  CONSTRAINT `fk_msl_category` FOREIGN KEY (`category_id`) REFERENCES `master_leave_categories` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_statutory_leave_minimums` (`country_code`,`category_id`,`min_days`,`note`) VALUES
+('TH',3,6.00,'DRAFT, unverified: ลาพักร้อนขั้นต่ำตามความเข้าใจทั่วไปของ พ.ร.บ.คุ้มครองแรงงาน ม.30 (6 วันทำงาน/ปี หลังทำงานครบ 1 ปี) ยังไม่ได้เทียบกับตัวบทกฎหมายจริง'),
+('TH',4,98.00,'DRAFT, unverified: ลาคลอดบุตรตามความเข้าใจทั่วไปของ พ.ร.บ.คุ้มครองแรงงาน ม.41 (98 วัน รวมลาตรวจครรภ์ก่อนคลอด) ยังไม่ได้เทียบกับตัวบทกฎหมายจริง');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `permissions`
+--
+-- Global (not per-company) master list of system capabilities, module_code + action_code pair.
+--
+
+CREATE TABLE `permissions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `module_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `action_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `permission_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'module_code.action_code เช่น holiday.manage',
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_permission_key` (`permission_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `permissions` (`module_code`,`action_code`,`permission_key`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('holiday','view','holiday.view','ดูวันหยุด','View Holidays',1,10),
+('holiday','manage','holiday.manage','จัดการวันหยุด','Manage Holidays',1,20),
+('leave_type','view','leave_type.view','ดูประเภทการลา','View Leave Types',1,30),
+('leave_type','manage','leave_type.manage','จัดการประเภทการลา','Manage Leave Types',1,40),
+('approval_workflow','view','approval_workflow.view','ดูลำดับผู้อนุมัติ','View Approval Workflows',1,50),
+('approval_workflow','manage','approval_workflow.manage','จัดการลำดับผู้อนุมัติ','Manage Approval Workflows',1,60),
+('approval_request','act','approval_request.act','อนุมัติ/ปฏิเสธคำขอ','Act on Approval Requests',1,70),
+('rbac','manage','rbac.manage','จัดการสิทธิ์การใช้งาน','Manage Roles & Permissions',1,80);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `role_permissions`
+--
+-- Links structure_roles (existing role table) to permissions. No new roles/user_roles table --
+-- employees.role_id already provides the one-role-per-employee link.
+--
+
+CREATE TABLE `role_permissions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `role_id` int(11) NOT NULL,
+  `permission_id` int(11) NOT NULL,
+  `allow_scope` enum('all','own_department') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'all',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_role_permission` (`role_id`,`permission_id`),
+  KEY `idx_rp_permission` (`permission_id`),
+  CONSTRAINT `fk_rp_role` FOREIGN KEY (`role_id`) REFERENCES `structure_roles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_rp_permission` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `master_payslip_field_types`
+--
+-- Global (not per-company) master list of payslip fields a template can toggle on/off. 'earning'
+-- and 'deduction' groups only include the two block-level catch-all rows (earning_lines_all /
+-- deduction_lines_all) -- individual earning/deduction TYPES (OT, trip allowance, etc.) are an
+-- open, per-company-growable set (payroll_earning_deduction_types), not enumerable here, so a
+-- template shows a whole breakdown block rather than picking specific item codes.
+--
+
+CREATE TABLE `master_payslip_field_types` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `field_group` enum('employee_info','company_info','earning','deduction','statutory','summary') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payslip_field_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_payslip_field_types` (`code`,`name_th`,`name_en`,`field_group`,`is_active`,`sort_order`) VALUES
+('employee_no','รหัสพนักงาน','Employee No.','employee_info',1,10),
+('employee_name','ชื่อ-นามสกุล','Employee Name','employee_info',1,20),
+('department','แผนก','Department','employee_info',1,30),
+('position','ตำแหน่ง','Position','employee_info',1,40),
+('pay_period','งวดการจ่าย','Pay Period','employee_info',1,50),
+('payment_date','วันที่จ่าย','Payment Date','employee_info',1,60),
+('bank_account_masked','เลขบัญชีธนาคาร (4 ตัวท้าย)','Bank Account (last 4 digits)','employee_info',1,70),
+('company_name','ชื่อบริษัท','Company Name','company_info',1,80),
+('company_address','ที่อยู่บริษัท','Company Address','company_info',1,90),
+('company_tax_id','เลขประจำตัวผู้เสียภาษีบริษัท','Company Tax ID','company_info',1,100),
+('company_signatory','ผู้มีอำนาจลงนาม','Authorized Signatory','company_info',1,110),
+('company_logo','โลโก้บริษัท','Company Logo','company_info',1,120),
+('basic_salary','เงินเดือนพื้นฐาน','Basic Salary','earning',1,130),
+('earning_lines_all','รายการเงินได้ทั้งหมด (OT, ค่าเที่ยว ฯลฯ)','All Earning Line Items (OT, Trip Allowance, etc.)','earning',1,140),
+('deduction_lines_all','รายการเงินหักทั้งหมด','All Deduction Line Items','deduction',1,150),
+('statutory_lines_all','รายการหักตามกฎหมาย (SSO/ภาษี/กองทุน)','All Statutory Deductions (SSO/Tax/Fund)','statutory',1,160),
+('gross_amount','รายได้รวม','Gross Amount','summary',1,170),
+('total_deduction_amount','หักรวม','Total Deduction','summary',1,180),
+('net_amount','ยอดจ่ายสุทธิ','Net Amount','summary',1,190),
+('ytd_summary','ยอดสะสมทั้งปี (YTD)','Year-to-Date Summary','summary',1,200);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `payslip_templates`
+--
+
+CREATE TABLE `payslip_templates` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL COMMENT 'ID บริษัทที่ล็อกอิน',
+  `country_code` varchar(2) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ต้องตรงกับ companies.registered_country ของบริษัทนี้ เช็คที่ application layer',
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_default` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'ใช้ template นี้อัตโนมัติตอน generate PAY_SLIP ถ้าไม่ระบุ ต้องมีได้แค่ 1 active default ต่อบริษัท เช็คที่ application layer',
+  `logo_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เก็บที่ template ไม่ใช่ companies เพราะ companies ไม่มีคอลัมน์ logo',
+  `header_text_th` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `header_text_en` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `footer_text_th` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `footer_text_en` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `language_mode` enum('th','en','both') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'both',
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_payslip_templates_tenant` (`comp_id`,`deleted_at`,`status`),
+  CONSTRAINT `fk_payslip_templates_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `payslip_template_fields`
+--
+-- Whole set deleted + reinserted on every template save, same pattern as holiday_assignments /
+-- approval_workflow_steps. sort_order is derived from array position client-side, never trusted
+-- from the client directly.
+--
+
+CREATE TABLE `payslip_template_fields` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `field_key` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'references master_payslip_field_types.code, validated at application layer',
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `custom_label_th` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'optional override of master_payslip_field_types.name_th for this template',
+  `custom_label_en` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ptf_template` (`template_id`),
+  CONSTRAINT `fk_ptf_template` FOREIGN KEY (`template_id`) REFERENCES `payslip_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
 --
 -- Indexes for dumped tables
 --
@@ -8699,6 +9074,8 @@ ALTER TABLE `employees`
   ADD KEY `idx_employees_branch` (`branch_id`),
   ADD KEY `idx_employees_bank` (`bank_id`),
   ADD KEY `idx_employees_report_to` (`report_to_id`),
+  ADD KEY `idx_employees_shift` (`shift_id`),
+  ADD KEY `idx_employees_work_location` (`work_location_id`),
   ADD KEY `fk_employee_address_register` (`master_address_id_register`),
   ADD KEY `fk_employee_address_contact` (`master_address_id_contact`),
   ADD KEY `idx_id_card_no_hash` (`id_card_no_hash`),
@@ -9110,7 +9487,9 @@ ALTER TABLE `employees`
   ADD CONSTRAINT `fk_employees_bank` FOREIGN KEY (`bank_id`) REFERENCES `master_banks` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_employees_report_to` FOREIGN KEY (`report_to_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_employee_address_register` FOREIGN KEY (`master_address_id_register`) REFERENCES `master_addresses` (`id`) ON DELETE SET NULL,
-  ADD CONSTRAINT `fk_employee_address_contact` FOREIGN KEY (`master_address_id_contact`) REFERENCES `master_addresses` (`id`) ON DELETE SET NULL;
+  ADD CONSTRAINT `fk_employee_address_contact` FOREIGN KEY (`master_address_id_contact`) REFERENCES `master_addresses` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_employees_shift` FOREIGN KEY (`shift_id`) REFERENCES `shifts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_employees_work_location` FOREIGN KEY (`work_location_id`) REFERENCES `master_work_locations` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 --
 -- Constraints for table `employee_allowances`

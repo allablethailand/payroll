@@ -19,6 +19,7 @@ require_once __DIR__ . '/../app/models/PayrollEarningDeductionTypeModel.php';
 require_once __DIR__ . '/../app/models/EmployeeEarningDeductionModel.php';
 require_once __DIR__ . '/../app/services/EncryptionService.php';
 require_once __DIR__ . '/../app/services/reports/ReportRegistry.php';
+require_once __DIR__ . '/../app/models/PayslipTemplateModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -249,6 +250,41 @@ try {
         $blockedByState = true;
     }
     checkTrue('pay slip blocked for a draft (not yet approved) run', $blockedByState);
+
+    // ---------- Pay Slip: template-driven rendering (falls back to fixed layout above when no default template exists) ----------
+    echo "=== PaySlipReport: template-driven rendering ===\n";
+    $payslipTemplateModel = new PayslipTemplateModel($pdo);
+    check('no default payslip template exists yet for this fixture company', $payslipTemplateModel->getDefaultForCompany($compId), null);
+
+    $templateSave = $payslipTemplateModel->save([
+        'name_th' => 'ทดสอบสลิป', 'name_en' => 'Test Slip Template', 'language_mode' => 'both', 'is_default' => 1, 'status' => 'active',
+        'header_text_th' => 'ทดสอบหัวกระดาษ', 'footer_text_en' => 'Test footer',
+        'fields' => [
+            ['field_key' => 'company_name'], ['field_key' => 'employee_no'], ['field_key' => 'employee_name'],
+            ['field_key' => 'department'], ['field_key' => 'position'], ['field_key' => 'basic_salary'],
+            ['field_key' => 'earning_lines_all'], ['field_key' => 'deduction_lines_all'], ['field_key' => 'statutory_lines_all'],
+            ['field_key' => 'gross_amount'], ['field_key' => 'total_deduction_amount'], ['field_key' => 'net_amount'],
+            ['field_key' => 'ytd_summary'], ['field_key' => 'bank_account_masked'], ['field_key' => 'company_logo'],
+        ],
+    ], $compId, $adminUserId);
+    checkTrue('payslip template with a broad field mix saves', $templateSave['status']);
+    checkTrue('getDefaultForCompany now finds the new default template', $payslipTemplateModel->getDefaultForCompany($compId) !== null);
+
+    $templatedSlip = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
+    checkTrue('templated PDF content starts with %PDF header', str_starts_with($templatedSlip['content'], '%PDF'));
+    checkTrue('templated PDF has non-trivial content length', strlen($templatedSlip['content']) > 1000);
+    checkTrue('templated PDF file_name follows the same naming convention', str_starts_with($templatedSlip['file_name'], 'PaySlip_') && str_ends_with($templatedSlip['file_name'], "_{$runId}.pdf"));
+
+    // company_logo field with no logo_path set must not error -- it should just be skipped.
+    checkTrue('generate() does not throw when company_logo field has no uploaded logo', is_string($templatedSlip['content']));
+
+    $toggleOff = $payslipTemplateModel->toggleStatus((int)$templateSave['id'], $compId, $adminUserId);
+    checkTrue('deactivating the template succeeds', $toggleOff['status']);
+    check('deactivating clears is_default', $toggleOff['new_status'], 'inactive');
+    check('no default template again after deactivation', $payslipTemplateModel->getDefaultForCompany($compId), null);
+
+    $fallbackAgainSlip = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
+    checkTrue('generate() falls back cleanly after the template is deactivated', str_starts_with($fallbackAgainSlip['content'], '%PDF'));
 
     $invalidEmployeeId = false;
     try {

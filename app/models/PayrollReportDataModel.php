@@ -46,15 +46,17 @@ class PayrollReportDataModel {
     /** @return array<int,array> decoded payroll_run_details rows keyed by nothing in particular, joined with employee info. */
     public function getRunDetails(int $runId): array {
         $sql = "SELECT d.*, e.employee_no, e.title, e.name_th, e.surname_th, e.name_en, e.surname_en,
-                    e.tax_id_no, e.sso_no, e.key_version, e.department_id, e.branch_id,
+                    e.tax_id_no, e.sso_no, e.key_version, e.department_id, e.branch_id, e.position_id,
                     e.bank_id, e.bank_account_no, e.bank_account_name, e.payment_type,
                     dep.department_name_th, dep.department_name_en,
                     br.branch_name_th, br.branch_name_en,
+                    pos.position_name_th, pos.position_name_en,
                     mb.bank_code, mb.bank_name_th, mb.bank_name_en
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `structure_departments` dep ON dep.id = e.department_id
                 LEFT JOIN `structure_branches` br ON br.id = e.branch_id
+                LEFT JOIN `structure_positions` pos ON pos.id = e.position_id
                 LEFT JOIN `master_banks` mb ON mb.id = e.bank_id
                 WHERE d.run_id = :run_id
                 ORDER BY e.employee_no ASC";
@@ -124,6 +126,32 @@ class PayrollReportDataModel {
      * ก่อนออกรายงานยื่นราชการ") — a Draft run's numbers can still change and must not be
      * mistaken for something submittable.
      */
+    /**
+     * Sums gross/deduction/net across this employee's payroll_run_details rows for runs whose
+     * period falls in the same calendar year as $uptoDate and starts on or before it -- used for
+     * the payslip template's "ytd_summary" field. Only counts runs in an allowed (reportable) state.
+     */
+    public function getYtdTotals(int $compId, int $employeeId, string $uptoDate, array $allowedStates): array {
+        $year = (int)substr($uptoDate, 0, 4);
+        $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
+        $sql = "SELECT COALESCE(SUM(d.gross_amount), 0) AS ytd_gross,
+                    COALESCE(SUM(d.total_deduction_amount), 0) AS ytd_deduction,
+                    COALESCE(SUM(d.net_amount), 0) AS ytd_net
+                FROM `payroll_run_details` d
+                JOIN `payroll_runs` r ON r.id = d.run_id
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
+                    AND YEAR(r.period_start_date) = ? AND r.period_start_date <= ?
+                    AND d.employee_id = ?";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge([$compId], $allowedStates, [$year, $uptoDate, $employeeId]));
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return [
+            'ytd_gross' => (float)($row['ytd_gross'] ?? 0),
+            'ytd_deduction' => (float)($row['ytd_deduction'] ?? 0),
+            'ytd_net' => (float)($row['ytd_net'] ?? 0),
+        ];
+    }
+
     public function assertRunState(array $run, array $allowedStates): ?string {
         if (!in_array($run['state'], $allowedStates, true)) {
             $allowedLabel = implode(', ', $allowedStates);

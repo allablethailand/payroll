@@ -91,6 +91,7 @@ class MasterModel {
             case 'role':
             case 'position':
             case 'branch':
+            case 'shift':
                 if ($compId === null) {
                     break;
                 }
@@ -99,6 +100,7 @@ class MasterModel {
                     'role' => ['table' => 'structure_roles', 'code' => null, 'nameTh' => 'role_name_th', 'nameEn' => 'role_name_en'],
                     'position' => ['table' => 'structure_positions', 'code' => 'position_code', 'nameTh' => 'position_name_th', 'nameEn' => 'position_name_en'],
                     'branch' => ['table' => 'structure_branches', 'code' => 'branch_code', 'nameTh' => 'branch_name_th', 'nameEn' => 'branch_name_en'],
+                    'shift' => ['table' => 'shifts', 'code' => 'shift_code', 'nameTh' => 'shift_name_th', 'nameEn' => 'shift_name_en'],
                 ];
                 $cfg = $tableMap[$type];
                 $where = " WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' ";
