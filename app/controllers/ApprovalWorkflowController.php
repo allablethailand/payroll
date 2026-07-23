@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../models/ApprovalWorkflowModel.php';
 require_once __DIR__ . '/../models/ApprovalRequestModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
+require_once __DIR__ . '/../models/PayslipRequestModel.php';
 
 class ApprovalWorkflowController extends Controller {
     private $model;
@@ -144,6 +145,26 @@ class ApprovalWorkflowController extends Controller {
         $this->json($this->requestModel->create((int)$compId, $documentTypeCode, $referenceId, $referenceLabel, $this->actingUserId()));
     }
 
+    /**
+     * After the generic engine acts, a thin per-document-type sync hook runs for any document
+     * type that needs one -- keeps ApprovalRequestModel itself document-type-agnostic (per its
+     * own docblock) while still letting a terminal outcome (approved/rejected/cancelled) update
+     * the document's own table. Currently only SLIP_REQUEST_APPROVAL has one; add more `case`s
+     * here as other document types get wired to this engine.
+     */
+    private function syncDocumentAfterAct(int $compId, int $requestId, string $requestStatus, array $data): void {
+        $request = $this->requestModel->get($compId, $requestId);
+        if (!$request) {
+            return;
+        }
+        switch ($request['document_type_code']) {
+            case 'SLIP_REQUEST_APPROVAL':
+                $selectedChannel = isset($data['selected_channel']) ? (string)$data['selected_channel'] : null;
+                (new PayslipRequestModel())->syncFromApprovalStatus((int)$request['reference_id'], $requestStatus, $selectedChannel);
+                break;
+        }
+    }
+
     public function requestAct() {
         if (!$this->requirePermission('approval_request.act')) return;
         $compId = getCompId();
@@ -159,7 +180,11 @@ class ApprovalWorkflowController extends Controller {
         $requestId = isset($data['request_id']) ? (int)$data['request_id'] : 0;
         $action = (string)($data['action'] ?? '');
         $note = isset($data['note']) ? (string)$data['note'] : null;
-        $this->json($this->requestModel->act((int)$compId, $requestId, $this->actingUserId(), $action, $note));
+        $result = $this->requestModel->act((int)$compId, $requestId, $this->actingUserId(), $action, $note);
+        if ($result['status'] && !empty($result['request_status'])) {
+            $this->syncDocumentAfterAct((int)$compId, $requestId, (string)$result['request_status'], $data);
+        }
+        $this->json($result);
     }
 
     public function requestGet() {

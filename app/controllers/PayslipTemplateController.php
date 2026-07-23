@@ -84,6 +84,12 @@ class PayslipTemplateController extends Controller {
             header('Content-Type: application/json');
             echo json_encode(['status' => false, 'message' => $e->getMessage()]);
             return;
+        } catch (LocalizedException $e) {
+            $validationKeys = ['invalid_field_selection', 'select_at_least_one_field'];
+            http_response_code(in_array($e->getErrorKey(), $validationKeys, true) ? 422 : 500);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => $e->getMessage(), 'error_key' => $e->getErrorKey()]);
+            return;
         } catch (RuntimeException $e) {
             http_response_code(500);
             header('Content-Type: application/json');

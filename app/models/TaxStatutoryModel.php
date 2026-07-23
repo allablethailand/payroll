@@ -319,8 +319,11 @@ class TaxStatutoryModel {
         $maxErCont = ($data['max_employer_contribution'] ?? '') !== '' && is_numeric($data['max_employer_contribution']) ? (float)$data['max_employer_contribution'] : null;
         $remark = trim((string)($data['remark'] ?? ''));
 
+        $ownTransaction = !$this->db->inTransaction();
         try {
-            $this->db->beginTransaction();
+            if ($ownTransaction) {
+                $this->db->beginTransaction();
+            }
 
             if ($id === null && $endDate === null) {
                 $stmtOpen = $this->db->prepare("SELECT id, effective_date FROM `statutory_item_rate_history`
@@ -336,7 +339,9 @@ class TaxStatutoryModel {
             }
 
             if ($this->hasOverlap($itemId, $effectiveDate, $endDate, $id)) {
-                $this->db->rollBack();
+                if ($ownTransaction) {
+                    $this->db->rollBack();
+                }
                 return ['status' => false, 'message' => 'This effective date range overlaps with an existing rate version.'];
             }
 
@@ -360,7 +365,9 @@ class TaxStatutoryModel {
                 $stmtCheck = $this->db->prepare("SELECT id FROM `statutory_item_rate_history` WHERE id = :id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id]);
                 if (!$stmtCheck->fetch()) {
-                    $this->db->rollBack();
+                    if ($ownTransaction) {
+                        $this->db->rollBack();
+                    }
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 $sql = "UPDATE `statutory_item_rate_history` SET
@@ -406,10 +413,14 @@ class TaxStatutoryModel {
                 }
             }
 
-            $this->db->commit();
+            if ($ownTransaction) {
+                $this->db->commit();
+            }
             return ['status' => true, 'message' => $id !== null ? 'Updated successfully.' : 'Created successfully.', 'id' => $rateHistoryId];
         } catch (PDOException $e) {
-            $this->db->rollBack();
+            if ($ownTransaction) {
+                $this->db->rollBack();
+            }
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
     }

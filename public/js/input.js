@@ -121,7 +121,8 @@ function initSelect2(selector, options = {}) {
         const $this = $(this);
         const $modal = $this.closest('.modal');
         const originalTabIndex = $this.attr('tabindex') || '0';
-        const isStatic = options.mode === 'static' || (options.mode !== 'ajax' && $this.hasClass('select2-static'));
+        const isStatic = options.mode === 'static' || (!options.mode && $this.hasClass('select2-static'));
+        const isNative = !isStatic && (options.mode === 'native' || (!options.mode && $this.hasClass('select2-native')));
         let config;
         if (isStatic) {
             const keys = options.keys || (($this.data('optionKeys') || '') + '').split(',').filter(Boolean);
@@ -140,6 +141,24 @@ function initSelect2(selector, options = {}) {
                     noResults: () => langData['no_results'] || 'No results found'
                 },
                 minimumResultsForSearch: options.searchable ? 0 : Infinity
+            };
+        } else if (isNative) {
+            // Keeps the native look (no Select2 dropdown chrome beyond the required init) while
+            // reading whichever <option> elements already exist in the DOM -- no ajax, no fixed
+            // data-option-keys list. Callers repopulate options themselves (e.g. a cascading
+            // dropdown fetched once via a plain $.ajax call) then call .trigger('change').
+            config = {
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: !!options.allowClear,
+                placeholder: {
+                    id: '',
+                    text: langData['select_option'] || 'Select an option'
+                },
+                language: {
+                    noResults: () => langData['no_results'] || 'No results found'
+                },
+                minimumResultsForSearch: options.searchable === false ? Infinity : 0
             };
         } else {
             const apiUrl = ($this.data('api') || options.api) ? `${BASE_URL}${$this.data('api') || options.api}` : null;

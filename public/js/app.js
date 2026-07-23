@@ -43,6 +43,7 @@ $(document).ready(async function() {
     });
     initSelect2Remote('.select2-remote');
     initSelect2('.select2-static', { mode: 'static' });
+    initSelect2('.select2-native', { mode: 'native' });
 });
 function getTableLang() {
     return {
@@ -153,6 +154,15 @@ function applyLanguage(lang, root = document) {
         const $this = $(this);
         const val = $this.val();
         initSelect2($this, { mode: 'static', selectedValue: val });
+    });
+
+    $(root).find('.select2-native.select2-hidden-accessible').each(function() {
+        const $this = $(this);
+        const val = $this.val();
+        initSelect2($this, { mode: 'native' });
+        if (val) {
+            $this.val(val).trigger('change');
+        }
     });
 
     if (typeof refreshAllTables === 'function') {

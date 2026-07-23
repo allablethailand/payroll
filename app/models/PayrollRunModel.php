@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/AttendanceBonusLedgerModel.php';
 require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
+require_once __DIR__ . '/../services/PayslipDeliveryService.php';
 
 /**
  * Payroll Run state machine + calculation.
@@ -710,6 +711,19 @@ class PayrollRunModel {
             ]);
             $this->logAudit($id, 'approved', 'paid', 'markPaid', $userId, $paymentReference);
             if ($ownTransaction) { $this->db->commit(); }
+
+            // Best-effort, outside the transaction: a slow/failing SMTP call must never roll back
+            // the state change itself (that already committed) or block the API response longer
+            // than necessary. Failures are logged per-employee in payslip_delivery_logs by the
+            // service itself; nothing further to do with the summary here yet (no admin-facing
+            // "last auto-send result" surface exists -- see payslip_delivery_logs for detail).
+            try {
+                (new PayslipDeliveryService($this->db))->autoSendForRun($compId, $id);
+            } catch (Throwable $e) {
+                // Swallow -- payroll state is already committed; auto-send is a side effect, not
+                // a precondition of "marked as paid" succeeding.
+            }
+
             return ['status' => true, 'message' => 'Marked as paid.'];
         } catch (PDOException $e) {
             if ($ownTransaction) { $this->db->rollBack(); }

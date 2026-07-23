@@ -15,36 +15,36 @@
         </h5>
         <p class="text-muted small m-0 mt-1" data-i18n="setup_and_rules_description">Define work shifts, public holidays, leave types, and overtime (OT) calculation rates for employees.</p>
     </div>
-    <ul class="nav nav-tabs" id="companySetupTabs" role="tablist">
+    <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active fw-bold" id="shift-tab" data-bs-toggle="tab" data-bs-target="#shift-pane" type="button" role="tab" aria-controls="shift-pane" aria-selected="true">
+            <button class="nav-link active" id="shift-tab" data-bs-toggle="tab" data-bs-target="#shift-pane" type="button" role="tab" aria-controls="shift-pane" aria-selected="true">
                 <i class="fa-regular fa-calendar-days me-2"></i><span data-i18n="shift">Shift</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold" id="holiday-tab" data-bs-toggle="tab" data-bs-target="#holiday-pane" type="button" role="tab" aria-controls="holiday-pane" aria-selected="false">
+            <button class="nav-link" id="holiday-tab" data-bs-toggle="tab" data-bs-target="#holiday-pane" type="button" role="tab" aria-controls="holiday-pane" aria-selected="false">
                 <i class="fa-solid fa-calendar-day me-2"></i><span data-i18n="holiday">Holiday</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold" id="leave-type-tab" data-bs-toggle="tab" data-bs-target="#leave-type-pane" type="button" role="tab" aria-controls="leave-type-pane" aria-selected="false">
+            <button class="nav-link" id="leave-type-tab" data-bs-toggle="tab" data-bs-target="#leave-type-pane" type="button" role="tab" aria-controls="leave-type-pane" aria-selected="false">
                 <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="leave_type">Leave Type</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold" id="ot-rate-tab" data-bs-toggle="tab" data-bs-target="#ot-rate-pane" type="button" role="tab" aria-controls="ot-rate-pane" aria-selected="false">
+            <button class="nav-link" id="ot-rate-tab" data-bs-toggle="tab" data-bs-target="#ot-rate-pane" type="button" role="tab" aria-controls="ot-rate-pane" aria-selected="false">
                 <i class="fa-solid fa-coins me-2"></i><span data-i18n="ot_rate">OT Rate</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link fw-bold" id="work-location-tab" data-bs-toggle="tab" data-bs-target="#work-location-pane" type="button" role="tab" aria-controls="work-location-pane" aria-selected="false">
+            <button class="nav-link" id="work-location-tab" data-bs-toggle="tab" data-bs-target="#work-location-pane" type="button" role="tab" aria-controls="work-location-pane" aria-selected="false">
                 <i class="fa-solid fa-location-dot me-2"></i><span data-i18n="work_location">Work Location</span>
             </button>
         </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
         <div class="tab-pane fade show active" id="shift-pane" role="tabpanel" aria-labelledby="shift-tab" tabindex="0">
-            <div class="table-responsive">
+            <div class="mt-5 mb-5 table-responsive">
                 <table class="table" id="tb_shift" style="width:100%">
                     <thead>
                         <tr>
@@ -62,7 +62,7 @@
             </div>
         </div>
         <div class="tab-pane fade" id="holiday-pane" role="tabpanel" aria-labelledby="holiday-tab" tabindex="0">
-            <div class="table-responsive">
+            <div class="mt-5 mb-5 table-responsive">
                 <table class="table" id="tb_holiday" style="width:100%">
                     <thead>
                         <tr>
@@ -79,7 +79,7 @@
             </div>
         </div>
         <div class="tab-pane fade" id="leave-type-pane" role="tabpanel" aria-labelledby="leave-type-tab" tabindex="0">
-            <div class="table-responsive">
+            <div class="mt-5 mb-5 table-responsive">
                 <table class="table" id="tb_leave" style="width:100%">
                     <thead>
                         <tr>
@@ -98,7 +98,7 @@
             </div>
         </div>
         <div class="tab-pane fade" id="ot-rate-pane" role="tabpanel" aria-labelledby="ot-rate-tab" tabindex="0">
-            <div class="table-responsive">
+            <div class="mt-5 mb-5 table-responsive">
                 <table class="table" id="tb_ot" style="width:100%">
                     <thead>
                         <tr>
@@ -115,7 +115,7 @@
             </div>
         </div>
         <div class="tab-pane fade" id="work-location-pane" role="tabpanel" aria-labelledby="work-location-tab" tabindex="0">
-            <div class="table-responsive">
+            <div class="mt-5 mb-5 table-responsive">
                 <table class="table" id="tb_work_location" style="width:100%">
                     <thead>
                         <tr>

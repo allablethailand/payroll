@@ -216,8 +216,8 @@ try {
     $invalidRunId = false;
     try {
         $registerReport->generate(['comp_id' => $compId, 'run_id' => 'not-a-number'], 'excel');
-    } catch (InvalidArgumentException $e) {
-        $invalidRunId = true;
+    } catch (LocalizedException $e) {
+        $invalidRunId = ($e->getErrorKey() === 'run_id_required');
     }
     checkTrue('non-numeric run_id rejected', $invalidRunId);
 
@@ -289,8 +289,8 @@ try {
     $invalidEmployeeId = false;
     try {
         $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => 'nope'], 'pdf');
-    } catch (InvalidArgumentException $e) {
-        $invalidEmployeeId = true;
+    } catch (LocalizedException $e) {
+        $invalidEmployeeId = ($e->getErrorKey() === 'employee_id_required');
     }
     checkTrue('non-numeric employee_id rejected', $invalidEmployeeId);
 

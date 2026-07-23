@@ -8980,6 +8980,146 @@ CREATE TABLE `payslip_template_fields` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 -- --------------------------------------------------------
+-- Table structure for table `master_notification_channels`
+-- Global master (not per-company) for outbound payslip delivery channels, same
+-- fixed-but-growable-set convention as `master_ot_scope_types`. Adding a new channel
+-- (e.g. WhatsApp) later = insert a row + write a NotificationChannelInterface class,
+-- no ALTER needed.
+-- --------------------------------------------------------
+
+CREATE TABLE `master_notification_channels` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_notification_channel_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_notification_channels` (`code`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('email','อีเมล','Email',1,10),
+('line','LINE','LINE',1,20),
+('telegram','Telegram','Telegram',1,30);
+
+-- --------------------------------------------------------
+-- Table structure for table `payslip_distribution_settings`
+-- Singleton config per company (one active row per comp_id) -- not a deletable list,
+-- so `is_active` is a simple toggle rather than the full status/deleted_at soft-delete
+-- pattern used for record lists elsewhere in this project.
+-- --------------------------------------------------------
+
+CREATE TABLE `payslip_distribution_settings` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `distribution_mode` enum('auto','request_only','both') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'request_only',
+  `send_delay_hours` int(11) NOT NULL DEFAULT 0 COMMENT 'ใช้เฉพาะโหมด auto/both, 0 = ส่งทันทีเมื่อ run เข้าสถานะ paid',
+  `scope_department_ids` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'CSV ของ structure_departments.id ที่ auto-send ใช้ได้, NULL/ว่าง = ทุกแผนก',
+  `scope_employment_statuses` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'CSV ของ employees.employment_status ที่ auto-send ใช้ได้, NULL/ว่าง = ทุกสถานะ',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payslip_distribution_settings_comp` (`comp_id`),
+  CONSTRAINT `fk_pds_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+-- Table structure for table `payslip_distribution_channels`
+-- Ordered channel + fallback chain per company setting. Whole set deleted + reinserted
+-- on every settings save, same pattern as `holiday_assignments` / `approval_workflow_steps`.
+-- --------------------------------------------------------
+
+CREATE TABLE `payslip_distribution_channels` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `setting_id` int(11) NOT NULL,
+  `channel_code` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'references master_notification_channels.code, validated at application layer',
+  `sort_order` int(11) NOT NULL DEFAULT 0 COMMENT '1 = ช่องทางหลัก, 2 = fallback แรก, 3 = fallback ถัดไป ...',
+  PRIMARY KEY (`id`),
+  KEY `idx_pdc_setting` (`setting_id`),
+  CONSTRAINT `fk_pdc_setting` FOREIGN KEY (`setting_id`) REFERENCES `payslip_distribution_settings` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+-- Table structure for table `payslip_requests`
+-- Mode B: employee-initiated payslip request. Created together with its
+-- `approval_requests` row (document_type_code = 'SLIP_REQUEST_APPROVAL'). approval_request_id
+-- is nullable only for the instant between inserting this row and creating the linked
+-- approval_requests row within the same transaction (reference_id on that side points back to
+-- this row's id, so this row must exist first) -- PayslipRequestModel::create() always fills it
+-- in before commit, and rolls back the whole thing (never leaving an orphan) if no active
+-- workflow is mapped to SLIP_REQUEST_APPROVAL for the company.
+-- --------------------------------------------------------
+
+CREATE TABLE `payslip_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL COMMENT 'พนักงานเจ้าของสลิปที่ขอ',
+  `run_id` int(11) NOT NULL COMMENT 'งวด payroll ที่ขอสลิป',
+  `requested_by` int(11) NOT NULL COMMENT 'employees.id ของผู้กดขอจริง (ตอนนี้คือ HR กดแทน, อนาคตอาจเป็นตัวพนักงานเองผ่าน portal)',
+  `approval_request_id` int(11) DEFAULT NULL,
+  `selected_channel` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลือกตอนอนุมัติ - NULL = ใช้ employees.default_payslip_channel ตอนส่งจริง, references master_notification_channels.code',
+  `status` enum('pending','approved','rejected','cancelled','sent','send_failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payslip_requests_approval_request` (`approval_request_id`),
+  KEY `idx_payslip_requests_lookup` (`comp_id`,`employee_id`,`run_id`),
+  CONSTRAINT `fk_pr_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_pr_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_pr_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_pr_approval_request` FOREIGN KEY (`approval_request_id`) REFERENCES `approval_requests` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+-- Table structure for table `payslip_delivery_logs`
+-- Every send attempt across both modes (auto + request), including each hop of a
+-- fallback chain, and manual HR resends. Audit-only: log/list, no update/delete,
+-- same convention as `payroll_run_audit_logs`.
+-- --------------------------------------------------------
+
+CREATE TABLE `payslip_delivery_logs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `run_id` int(11) NOT NULL,
+  `source` enum('auto','request') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `payslip_request_id` int(11) DEFAULT NULL COMMENT 'เฉพาะ source=request',
+  `channel_code` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'references master_notification_channels.code',
+  `attempt_order` int(11) NOT NULL DEFAULT 1 COMMENT 'ลำดับใน fallback chain ของการส่งครั้งนี้ (1=ช่องทางหลัก)',
+  `recipient` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ปลายทางจริงที่ใช้ส่ง (email address / LINE user id / telegram chat id)',
+  `status` enum('success','failed') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `error_message` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sent_by` int(11) DEFAULT NULL COMMENT 'NULL = ระบบส่งอัตโนมัติ, มีค่า = HR สั่ง resend เอง',
+  `sent_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pdl_lookup` (`comp_id`,`employee_id`,`run_id`),
+  KEY `idx_pdl_request` (`payslip_request_id`),
+  CONSTRAINT `fk_pdl_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_pdl_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_pdl_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_pdl_request` FOREIGN KEY (`payslip_request_id`) REFERENCES `payslip_requests` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+-- employees: Telegram recipient id (line_id already existed; telegram had no equivalent column
+-- anywhere -- added for TelegramChannel's recipient resolution, even though that channel is a
+-- stub for now) + default delivery channel preference (settable by HR in Employee Detail for now,
+-- until real employee self-service exists)
+-- --------------------------------------------------------
+
+ALTER TABLE `employees`
+  ADD COLUMN `telegram_chat_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `line_id`;
+
+ALTER TABLE `employees`
+  ADD COLUMN `default_payslip_channel` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'references master_notification_channels.code, validated at application layer' AFTER `telegram_chat_id`;
+
+-- --------------------------------------------------------
 
 --
 -- Table structure for table `master_ot_scope_types`

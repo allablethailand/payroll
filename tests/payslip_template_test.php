@@ -126,16 +126,16 @@ try {
     $previewInvalidField = false;
     try {
         $paySlipReport->generatePreview(['fields' => [['field_key' => 'not_a_real_field']]], $compId);
-    } catch (InvalidArgumentException $e) {
-        $previewInvalidField = true;
+    } catch (LocalizedException $e) {
+        $previewInvalidField = ($e->getErrorKey() === 'invalid_field_selection');
     }
     checkTrue('preview rejects an invalid field_key', $previewInvalidField);
 
     $previewEmptyFields = false;
     try {
         $paySlipReport->generatePreview(['fields' => []], $compId);
-    } catch (InvalidArgumentException $e) {
-        $previewEmptyFields = true;
+    } catch (LocalizedException $e) {
+        $previewEmptyFields = ($e->getErrorKey() === 'select_at_least_one_field');
     }
     checkTrue('preview rejects an empty field list', $previewEmptyFields);
 

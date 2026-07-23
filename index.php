@@ -131,6 +131,16 @@
     $router->post('api/payslip-template.toggle-status', 'PayslipTemplateController@toggleStatus');
     $router->post('api/payslip-template.upload-logo', 'PayslipTemplateController@uploadLogo');
     $router->post('api/payslip-template.preview', 'PayslipTemplateController@preview');
+    $router->post('api/payslip-distribution.channel-options', 'PayslipDistributionController@channelOptions');
+    $router->get('api/payslip-distribution.settings-get', 'PayslipDistributionController@settingsGet');
+    $router->post('api/payslip-distribution.settings-save', 'PayslipDistributionController@settingsSave');
+    $router->get('api/payslip-request.list', 'PayslipRequestController@list');
+    $router->get('api/payslip-request.get', 'PayslipRequestController@get');
+    $router->post('api/payslip-request.run-options', 'PayslipRequestController@runOptions');
+    $router->post('api/payslip-request.employee-options', 'PayslipRequestController@employeeOptions');
+    $router->post('api/payslip-request.create', 'PayslipRequestController@create');
+    $router->get('api/payslip-delivery-log.list', 'PayslipDeliveryLogController@list');
+    $router->post('api/payslip-delivery-log.resend', 'PayslipDeliveryLogController@resend');
     $router->post('api/ot-rate.scope-options', 'SetupRulesController@otScopeOptions');
     $router->get('api/ot-rate.list', 'SetupRulesController@otRateList');
     $router->get('api/ot-rate.get', 'SetupRulesController@otRateGet');
