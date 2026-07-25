@@ -9806,6 +9806,204 @@ ALTER TABLE `master_bank_file_formats`
 ALTER TABLE `report_export_logs`
   ADD CONSTRAINT `fk_report_export_logs_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_report_export_logs_run` FOREIGN KEY (`payroll_run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- --------------------------------------------------------
+--
+-- Origami HR sync (attendance/leave/OT sync + master data sync). companies.ref_id
+-- ("รหัส Company กรณีที่ Sync มาจาก Origami") already existed for this before this feature --
+-- no ALTER needed there, just never had any code using it until now.
+--
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `sync_batches`
+-- One row per sync run per entity_type (a "Sync All Master Data" click produces multiple rows,
+-- one per entity_type, in dependency order). Powers the audit trail (per-row sync_batch_id FK on
+-- every synced table) and the results screen (per-type success/error counts, last-sync-at
+-- derived from MAX(completed_at)).
+--
+
+CREATE TABLE `sync_batches` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `entity_type` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'department/position/shift/holiday/leave_type/ot_rate/employee/attendance/leave/overtime -- fixed set owned by the sync engine, validated at application layer',
+  `source` enum('sync','import') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'sync' COMMENT 'distinguishes an Origami API sync batch from an Excel/CSV import batch of the same entity_type -- added alongside the import engine (Step 5); manual-entry writes are per-record and never create a batch row at all',
+  `trigger_type` enum('manual','auto') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual' COMMENT 'auto reserved for when a scheduled-job system exists -- not built yet; import is always manual',
+  `scope_date_from` date DEFAULT NULL COMMENT 'transaction-data batches only',
+  `scope_date_to` date DEFAULT NULL,
+  `status` enum('running','completed','failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'running',
+  `total_count` int(11) NOT NULL DEFAULT 0,
+  `success_count` int(11) NOT NULL DEFAULT 0,
+  `error_count` int(11) NOT NULL DEFAULT 0,
+  `error_detail` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'JSON array of {ref, message} for failed items',
+  `started_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `completed_at` timestamp NULL DEFAULT NULL,
+  `triggered_by` int(11) DEFAULT NULL COMMENT 'employees.id; NULL = system/auto',
+  PRIMARY KEY (`id`),
+  KEY `idx_sync_batches_lookup` (`comp_id`,`entity_type`,`status`),
+  CONSTRAINT `fk_sync_batches_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+--
+-- Master data: add origami_ref_id / data_source / sync_batch_id to all 7 tables. Unique
+-- (origami_ref_id, comp_id) works cleanly here (unlike the deleted_at+unique caveat elsewhere in
+-- this project) because MySQL treats each NULL as distinct -- many import/manual rows with no
+-- Origami ref never collide with each other, only genuine duplicate non-null refs do.
+--
+
+ALTER TABLE `structure_departments`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL AFTER `department_code`,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual' AFTER `origami_ref_id`,
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL AFTER `data_source`,
+  ADD UNIQUE KEY `uq_departments_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_departments_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `structure_positions`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL AFTER `position_code`,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual' AFTER `origami_ref_id`,
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL AFTER `data_source`,
+  ADD UNIQUE KEY `uq_positions_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_positions_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `shifts`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL,
+  ADD UNIQUE KEY `uq_shifts_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_shifts_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `holidays`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL,
+  ADD UNIQUE KEY `uq_holidays_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_holidays_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `leave_types`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL,
+  ADD UNIQUE KEY `uq_leave_types_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_leave_types_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `ot_rates`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL,
+  ADD UNIQUE KEY `uq_ot_rates_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_ot_rates_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `employees`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL AFTER `employee_no`,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual' AFTER `origami_ref_id`,
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL AFTER `data_source`,
+  ADD UNIQUE KEY `uq_employees_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_employees_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+--
+-- Table structure for table `attendance_records`
+-- Transaction data -- did not exist anywhere in this codebase before. `attendance_bonus_ledger`
+-- is a payroll bonus-calculation ledger, not raw clock-in/out data; unrelated.
+--
+
+CREATE TABLE `attendance_records` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `origami_ref_id` bigint(20) DEFAULT NULL,
+  `work_date` date NOT NULL,
+  `shift_id` int(11) DEFAULT NULL,
+  `clock_in` datetime DEFAULT NULL,
+  `clock_out` datetime DEFAULT NULL,
+  `actual_work_minutes` int(11) DEFAULT NULL,
+  `late_minutes` int(11) NOT NULL DEFAULT 0,
+  `early_leave_minutes` int(11) NOT NULL DEFAULT 0,
+  `status` enum('present','absent','leave','holiday') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'present',
+  `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  `sync_batch_id` int(11) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_attendance_origami_ref` (`origami_ref_id`,`comp_id`),
+  KEY `idx_attendance_lookup` (`comp_id`,`employee_id`,`work_date`),
+  CONSTRAINT `fk_attendance_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_attendance_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_attendance_shift` FOREIGN KEY (`shift_id`) REFERENCES `shifts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_attendance_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+--
+-- Table structure for table `leave_requests`
+-- Transaction data -- did not exist anywhere in this codebase before (leave_types is master
+-- config only). status defaults to 'approved' because sync/import rows represent an outcome
+-- already decided in the source HR system, not a request awaiting approval in this system.
+--
+
+CREATE TABLE `leave_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `origami_ref_id` bigint(20) DEFAULT NULL,
+  `leave_type_id` int(11) NOT NULL,
+  `start_date` date NOT NULL,
+  `end_date` date NOT NULL,
+  `total_days` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('pending','approved','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'approved',
+  `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  `sync_batch_id` int(11) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_leave_requests_origami_ref` (`origami_ref_id`,`comp_id`),
+  KEY `idx_leave_requests_lookup` (`comp_id`,`employee_id`,`start_date`,`end_date`),
+  CONSTRAINT `fk_leave_requests_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_leave_requests_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_leave_requests_type` FOREIGN KEY (`leave_type_id`) REFERENCES `leave_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_leave_requests_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+--
+-- Table structure for table `overtime_records`
+-- Transaction data -- did not exist anywhere in this codebase before (ot_rates is master config
+-- only). Same status-default reasoning as leave_requests.
+--
+
+CREATE TABLE `overtime_records` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `origami_ref_id` bigint(20) DEFAULT NULL,
+  `ot_date` date NOT NULL,
+  `ot_rate_id` int(11) NOT NULL,
+  `hours` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `amount` decimal(15,2) DEFAULT NULL COMMENT 'precomputed amount from source if provided; NULL = to be calculated by payroll engine',
+  `status` enum('pending','approved','rejected') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'approved',
+  `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual',
+  `sync_batch_id` int(11) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_overtime_records_origami_ref` (`origami_ref_id`,`comp_id`),
+  KEY `idx_overtime_records_lookup` (`comp_id`,`employee_id`,`ot_date`),
+  CONSTRAINT `fk_overtime_records_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_overtime_records_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_overtime_records_rate` FOREIGN KEY (`ot_rate_id`) REFERENCES `ot_rates` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_overtime_records_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

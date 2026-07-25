@@ -114,6 +114,14 @@
                         <span class="submenu-text" data-i18n="setup_and_rules">Setup & Rules</span>
                     </a>
                 </li>
+                <li>
+                    <a href="<?=BASE_URL?>/manual-entry" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/TIME.SVG" alt="Manual Time Entry">
+                        </span>
+                        <span class="submenu-text" data-i18n="manual_time_entry">Manual Time Entry</span>
+                    </a>
+                </li>
             </ul>
         </li>
         <li class="menu-item has-submenu">
