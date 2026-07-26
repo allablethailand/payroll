@@ -1,0 +1,131 @@
+/**
+ * Payslip Requests (Mode B) — Document & Approval > "Payslip Requests" tab.
+ * HR submits a request on behalf of an employee (no employee self-service portal exists in this
+ * codebase yet). Approve/Reject/Cancel deliberately reuse the existing generic Approval Monitor
+ * tab -- this file only handles creation + listing.
+ */
+let tb_payslip_request;
+
+function escapeHtmlPr(str) {
+    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
+}
+
+function payslipRequestStatusBadge(status) {
+    const map = {
+        pending: { cls: 'bg-warning-subtle text-warning', key: 'status_pending', fallback: 'Pending' },
+        approved: { cls: 'bg-success-subtle text-success', key: 'status_approved', fallback: 'Approved' },
+        rejected: { cls: 'bg-danger-subtle text-danger', key: 'status_rejected', fallback: 'Rejected' },
+        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' },
+        sent: { cls: 'bg-success-subtle text-success', key: 'status_sent', fallback: 'Sent' },
+        send_failed: { cls: 'bg-danger-subtle text-danger', key: 'status_send_failed', fallback: 'Send Failed' }
+    };
+    const m = map[status] || { cls: 'bg-secondary-subtle text-secondary', key: '', fallback: status };
+    return `<span class="badge ${m.cls}">${langData[m.key] || m.fallback}</span>`;
+}
+
+function formatPayPeriod(row) {
+    if (!row.period_start_date || !row.period_end_date) return escapeHtmlPr(row.run_name);
+    return `${escapeHtmlPr(row.run_name)} <span class="text-secondary small">(${row.period_start_date} - ${row.period_end_date})</span>`;
+}
+
+function initPayslipRequestTable() {
+    if ($.fn.DataTable.isDataTable('#tb_payslip_request')) {
+        $('#tb_payslip_request').DataTable().ajax.reload(null, false);
+        return;
+    }
+    tb_payslip_request = $('#tb_payslip_request').DataTable({
+        responsive: true,
+        ajax: { url: `${BASE_URL}/api/payslip-request.list`, dataSrc: 'data' },
+        columns: [
+            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtmlPr(row.employee_no)} - ${escapeHtmlPr(currentLang === 'th' ? row.employee_name_th : row.employee_name_en)}</strong>` },
+            { data: null, render: (d, t, row) => formatPayPeriod(row) },
+            { data: null, render: (d, t, row) => escapeHtmlPr((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || '-') },
+            { data: 'status', render: d => payslipRequestStatusBadge(d) },
+            { data: 'created_at' }
+        ],
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang(),
+        order: [[4, 'desc']],
+        initComplete: function () {
+            const $wrapper = $(this.api().table().container());
+            const $searchDiv = $wrapper.find('.dt-search');
+            if ($searchDiv.find('.btn-add-pr').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-primary ms-1 btn-add-pr">
+                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="request_payslip">${langData['request_payslip'] || 'Request Payslip'}</span>
+                    </button>
+                `);
+            }
+        }
+    });
+}
+
+function resetPayslipRequestForm() {
+    $('#payslipRequestForm')[0].reset();
+    $('#pr_run').val(null).trigger('change');
+    $('#pr_employee').empty().prop('disabled', true).trigger('change');
+}
+
+$(document).on('click', '.btn-add-pr', function () {
+    resetPayslipRequestForm();
+    new bootstrap.Modal(document.getElementById('payslipRequestModal')).show();
+});
+
+$(document).on('change', '#pr_run', function () {
+    const runId = $(this).val();
+    const $employee = $('#pr_employee');
+    $employee.empty().trigger('change');
+    if (!runId) {
+        $employee.prop('disabled', true);
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payslip-request.employee-options`,
+        method: 'POST',
+        data: { run_id: runId },
+        dataType: 'json',
+        success: function (res) {
+            const items = (res.data && res.data.items) || [];
+            items.forEach(item => {
+                const label = (currentLang === 'th' ? item.text_th : item.text_en) || item.text_th || item.text_en;
+                $employee.append(new Option(label, item.id, false, false));
+            });
+            $employee.prop('disabled', items.length === 0).trigger('change');
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+});
+
+$(document).on('submit', '#payslipRequestForm', function (e) {
+    e.preventDefault();
+    const runId = $('#pr_run').val();
+    const employeeId = $('#pr_employee').val();
+    if (!runId || !employeeId) {
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payslip-request.create`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ run_id: runId, employee_id: employeeId }),
+        dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('payslipRequestModal')).hide();
+                tb_payslip_request.ajax.reload(null, false);
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
+
+$(document).ready(function () {
+    $('#payslipRequestTabBtn').on('shown.bs.tab', function () {
+        initPayslipRequestTable();
+    });
+});

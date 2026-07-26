@@ -9,14 +9,20 @@
 <link href="<?=BASE_URL?>/node_modules/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="<?=BASE_URL?>/node_modules/fontawesome-free-7.1.0-web/css/all.min.css" rel="stylesheet">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/sweetalert2/dist/sweetalert2.min.css">
+<link rel="stylesheet" href="<?=BASE_URL?>/node_modules/datatables.net-bs5/css/dataTables.bootstrap5.min.css">
+<link href="<?=BASE_URL?>/node_modules/select2/dist/css/select2.min.css" rel="stylesheet">
+<link href="<?=BASE_URL?>/node_modules/select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<link rel="stylesheet" href="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/css/bootstrap-datepicker.standalone.min.css">
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";
 </script>
 </head>
-<body class="bg-light">
+<body>
 <script src="<?=BASE_URL?>/node_modules/jquery/dist/jquery.min.js"></script>
 <script src="<?=asset('public/js/app.js')?>"></script>
+<script src="<?=asset('public/js/alert.js')?>"></script>
+<script src="<?=asset('public/js/input.js')?>"></script>
 <nav class="origami-navbar">
     <div class="nav-container">
         <div class="nav-left">
@@ -39,18 +45,7 @@
                     <img class="current-flag" src="<?=BASE_URL?>/public/flags/gb.png" width="15" alt="EN flag">
                     <span class="lang-text text-current-lang">EN</span>
                 </button>
-                <ul class="nav-lang-menu" id="languageMenu">
-                    <li>
-                        <a href="javascript:void(0)" class="dropdown-lang-item" data-value="en" data-lang="EN" data-flag="<?=BASE_URL?>/public/flags/gb.png">
-                            <img src="<?=BASE_URL?>/public/flags/gb.png" width="15" alt="EN"> English
-                        </a>
-                    </li>
-                    <li>
-                        <a href="javascript:void(0)" class="dropdown-lang-item" data-value="th" data-lang="TH" data-flag="<?=BASE_URL?>/public/flags/th.png">
-                            <img src="<?=BASE_URL?>/public/flags/th.png" width="15" alt="TH"> ไทย
-                        </a>
-                    </li>
-                </ul>
+                <ul class="nav-lang-menu" id="languageMenu"></ul>
             </div>
             <a href="#" class="nav-profile-link">
                 <div class="profile-img-box">
@@ -79,19 +74,19 @@
             </a>
         </li>
         <li class="menu-item">
-            <a href="<?=BASE_URL?>/timesheets" class="menu-link">
-                <span class="menu-icon">
-                    <img src="<?=BASE_URL?>/public/images/menu/TIMESHEET.SVG" alt="Time Sheets">
-                </span>
-                <span class="menu-text" data-i18n="timesheets">Time Sheets</span>
-            </a>
-        </li>
-        <li class="menu-item">
             <a href="<?=BASE_URL?>/payroll-process" class="menu-link">
                 <span class="menu-icon">
                     <img src="<?=BASE_URL?>/public/images/menu/PAYROLL.SVG" alt="Payroll Process">
                 </span>
                 <span class="menu-text" data-i18n="payroll_process">Payroll Process</span>
+            </a>
+        </li>
+        <li class="menu-item">
+            <a href="<?=BASE_URL?>/payroll-approval" class="menu-link">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Payroll Approval">
+                </span>
+                <span class="menu-text" data-i18n="payroll_approval">Payroll Approval</span>
             </a>
         </li>
         <li class="menu-item">
@@ -101,6 +96,33 @@
                 </span>
                 <span class="menu-text" data-i18n="reports">Reports</span>
             </a>
+        </li>
+        <li class="menu-item">
+            <a href="javascript:void(0);" class="menu-link submenu-toggle">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/TIME.SVG" alt="Settings">
+                </span>
+                <span class="menu-text" data-i18n="time_and_leave">Time & Leave</span>
+                <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
+            </a>
+            <ul class="submenu">
+                <li>
+                    <a href="<?=BASE_URL?>/setup-rules" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/Shift.SVG" alt="Setup & Rules">
+                        </span>
+                        <span class="submenu-text" data-i18n="setup_and_rules">Setup & Rules</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/manual-entry" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/TIME.SVG" alt="Manual Time Entry">
+                        </span>
+                        <span class="submenu-text" data-i18n="manual_time_entry">Manual Time Entry</span>
+                    </a>
+                </li>
+            </ul>
         </li>
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
@@ -112,27 +134,35 @@
             </a>
             <ul class="submenu">
                 <li>
-                    <a href="<?=BASE_URL?>/setup/company" class="submenu-link">
+                    <a href="<?=BASE_URL?>/setup/company-profile" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/COMPANY.SVG" alt="Company Setup">
+                            <img src="<?=BASE_URL?>/public/images/menu/COMPANY.SVG" alt="Company Profile">
                         </span>
-                        <span class="submenu-text" data-i18n="company_setup">Company Setup</span>
+                        <span class="submenu-text" data-i18n="company_profile">Company Profile</span>
                     </a>
                 </li>
                 <li>
-                    <a href="<?=BASE_URL?>/setup/cycle" class="submenu-link">
+                    <a href="<?=BASE_URL?>/setup/payroll-configuration" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Payroll Cycle">
+                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Payroll Configuration">
                         </span>
-                        <span class="submenu-text" data-i18n="payroll_cycle">Payroll Cycle</span>
+                        <span class="submenu-text" data-i18n="payroll_configuration">Payroll Configuration</span>
                     </a>
                 </li>
                 <li>
-                    <a href="<?=BASE_URL?>/setup/earnings-deductions" class="submenu-link">
+                    <a href="<?=BASE_URL?>/setup/tax-statutory" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Earnings / Deductions">
+                            <img src="<?=BASE_URL?>/public/images/menu/TAX.SVG" alt="Tax & Statutory">
                         </span>
-                        <span class="submenu-text" data-i18n="earnings_deductions">Earnings / Deductions</span>
+                        <span class="submenu-text" data-i18n="tax_and_statutory">Tax & Statutory</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/setup/document-approval" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Document & Approval">
+                        </span>
+                        <span class="submenu-text" data-i18n="document_and_approval">Document & Approval</span>
                     </a>
                 </li>
             </ul>
