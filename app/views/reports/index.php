@@ -1,0 +1,108 @@
+<div class="container container-body">
+    <nav aria-label="breadcrumb">
+        <h5 class="payroll-breadcrumb mt-5 mb-5">
+            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
+            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
+            <span class="bc-current" data-i18n="reports">Reports</span>
+        </h5>
+    </nav>
+    <div class="mb-4">
+        <h5 class="text-secondary fw-bold m-0">
+            <i class="fa-solid fa-file-invoice me-2"></i>
+            <span data-i18n="reports">Reports</span>
+        </h5>
+        <p class="text-muted small m-0 mt-1" data-i18n="reports_description">Generate statutory, payment, and internal payroll reports. New report types can be added over time without changing this page's layout.</p>
+    </div>
+
+    <ul class="nav nav-tabs" id="reportsTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="statutory-tab" data-bs-toggle="tab" data-bs-target="#statutory-pane" type="button" role="tab" aria-controls="statutory-pane" aria-selected="true">
+                <i class="fa-solid fa-landmark me-2"></i><span data-i18n="tab_statutory_reports">Statutory Reports</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="payment-tab" data-bs-toggle="tab" data-bs-target="#payment-pane" type="button" role="tab" aria-controls="payment-pane" aria-selected="false">
+                <i class="fa-solid fa-money-check-dollar me-2"></i><span data-i18n="tab_payment_reports">Payment Reports</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="internal-tab" data-bs-toggle="tab" data-bs-target="#internal-pane" type="button" role="tab" aria-controls="internal-pane" aria-selected="false">
+                <i class="fa-solid fa-building me-2"></i><span data-i18n="tab_internal_reports">Internal Reports</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button" role="tab" aria-controls="history-pane" aria-selected="false">
+                <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="tab_export_history">Export History</span>
+            </button>
+        </li>
+    </ul>
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+        <div class="tab-pane fade show active p-3 p-md-4" id="statutory-pane" role="tabpanel" aria-labelledby="statutory-tab" tabindex="0">
+            <div class="row g-3" id="reportCards_statutory"></div>
+            <div class="text-center text-secondary py-4 d-none" id="noReports_statutory"><span data-i18n="no_reports_available">No reports are registered in this category yet.</span></div>
+        </div>
+        <div class="tab-pane fade p-3 p-md-4" id="payment-pane" role="tabpanel" aria-labelledby="payment-tab" tabindex="0">
+            <div class="row g-3" id="reportCards_payment"></div>
+            <div class="text-center text-secondary py-4 d-none" id="noReports_payment"><span data-i18n="no_reports_available">No reports are registered in this category yet.</span></div>
+        </div>
+        <div class="tab-pane fade p-3 p-md-4" id="internal-pane" role="tabpanel" aria-labelledby="internal-tab" tabindex="0">
+            <div class="row g-3" id="reportCards_internal"></div>
+            <div class="text-center text-secondary py-4 d-none" id="noReports_internal"><span data-i18n="no_reports_available">No reports are registered in this category yet.</span></div>
+        </div>
+        <div class="tab-pane fade p-3 p-md-4" id="history-pane" role="tabpanel" aria-labelledby="history-tab" tabindex="0">
+            <div class="row mb-3">
+                <div class="col-sm-4 col-md-3">
+                    <label class="form-label mb-1"><span data-i18n="filter_report_type">Report Type</span></label>
+                    <select class="form-select select2-static" id="filter_export_report_type" data-option-keys="report_type_statutory,report_type_payment,report_type_internal" data-option-values="statutory,payment,internal"></select>
+                </div>
+            </div>
+            <table class="table table-hover table-border align-middle w-100" id="tb_export_history">
+                <thead class="table-light text-secondary">
+                    <tr>
+                        <th data-i18n="table_generated_at">Generated At</th>
+                        <th data-i18n="table_report_name">Report</th>
+                        <th data-i18n="table_format">Format</th>
+                        <th data-i18n="table_file_name">File Name</th>
+                        <th data-i18n="table_generated_by">Generated By</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Report card template (cloned per report by JS) -->
+    <template id="reportCardTemplate">
+        <div class="col-sm-6 col-lg-4">
+            <div class="card-surface p-3 h-100 d-flex flex-column">
+                <h6 class="fw-bold mb-1 report-card-label"></h6>
+                <form class="report-generate-form mt-2 flex-grow-1 d-flex flex-column">
+                    <div class="mb-2 field-year d-none">
+                        <label class="form-label mb-1 small"><span data-i18n="input_year_be">Year (B.E.)</span></label>
+                        <input type="number" class="form-control form-control-sm required field-year-input" min="2500" max="2700">
+                    </div>
+                    <div class="mb-2 field-month d-none">
+                        <label class="form-label mb-1 small"><span data-i18n="period_month">Month</span></label>
+                        <select class="form-select form-select-sm select2-static required field-month-input" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
+                    </div>
+                    <div class="mb-2 field-run d-none">
+                        <label class="form-label mb-1 small"><span data-i18n="input_payroll_run">Payroll Run</span></label>
+                        <select class="form-select form-select-sm select2-remote required field-run-input" data-api="/api/payroll-run.options"></select>
+                    </div>
+                    <div class="mb-2 field-employee d-none">
+                        <label class="form-label mb-1 small"><span data-i18n="input_employee">Employee</span></label>
+                        <select class="form-select form-select-sm select2-remote required field-employee-input" data-api="/api/employee.report_to.get"></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label mb-1 small"><span data-i18n="report_format_label">Format</span></label>
+                        <select class="form-select form-select-sm select2-static required field-format-input"></select>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm mt-auto">
+                        <i class="fa-solid fa-file-export me-1"></i><span data-i18n="btn_generate">Generate</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </template>
+</div>
+<script src="<?=asset('public/js/reports/index.js')?>"></script>

@@ -1,7 +1,7 @@
 html, body {
     color: #555555;
     min-width: 375px;
-    font-size: 13px;
+    font-size: 12px;
     font-family: 'Sarabun', sans-serif;
     margin: 0;
     padding: 0;
@@ -331,4 +331,137 @@ html, body {
 }
 .container-body {
     margin-top: 100px;
+}
+.label-head {
+    padding: 0.5em 0.7em;
+}
+.bg-head-first {
+    background-color: #ec6622;
+}
+.nav-tabs .nav-link {
+    color: #6c757d;
+    border: none;
+    border-bottom: 3px solid transparent;
+}
+.nav-tabs .nav-link.active {
+    color: #ff9900 !important;
+    border-none: none;
+    border-bottom: 3px solid #ff9900 !important;
+    background: transparent;
+}
+.nav-tabs .nav-link:hover {
+    border-color: transparent;
+    color: #ff9900;
+}
+.payroll-breadcrumb {
+    display: flex;
+    align-items: center;
+    font-size: 1rem;
+}
+.bc-root, .bc-parent {
+    color: #888888;
+    text-decoration: none;
+    transition: all 0.3s;
+}
+.bc-root:hover, .bc-parent:hover {
+    color: #333333;
+}
+.bc-separator {
+    margin: 0 12px;
+    color: #ccc;
+}
+.bc-current {
+    background-color: rgb(255, 153, 0, 0.12);
+    color: #ff9900;
+    padding: 4px 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 1rem;
+}
+.profile-upload-circle {
+    cursor: pointer;
+    object-fit: cover;
+}
+.profile-upload-badge {
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+    transform: translate(-6px, -6px);
+}
+.scrollable-tabs {
+    display: flex;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.scrollable-tabs::-webkit-scrollbar {
+    display: none; 
+}
+.scrollable-tabs .nav-item {
+    flex: 0 0 auto;
+}
+.structure-tabs-wrap .structure-tabs .nav-link {
+    border-radius: 999px;
+    color: #6c757d;
+    font-size: 0.9rem;
+    padding: 0.4rem 1rem;
+}
+.structure-tabs-wrap .structure-tabs .nav-link.active {
+    background-color: #FF9900;
+    color: #fff;
+    font-weight: 600;
+}
+.structure-tabs-wrap .structure-tabs .nav-link:hover:not(.active) {
+    background-color: rgba(255, 153, 0, 0.12);
+}
+
+/* Select2 — brand orange theme (applies app-wide, all Select2 instances share this design system) */
+.select2-container--bootstrap-5.select2-container--focus .select2-selection,
+.select2-container--bootstrap-5.select2-container--open .select2-selection {
+    border-color: #FF9900;
+    box-shadow: 0 0 0 .25rem rgba(255, 153, 0, .25);
+}
+.select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-results__option--highlighted {
+    background-color: rgba(255, 153, 0, .12);
+    color: #212529;
+}
+.select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-results__option--selected,
+.select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option[aria-selected="true"]:not(.select2-results__option--highlighted) {
+    background-color: #FF9900;
+    color: #fff;
+}
+
+/* Bootstrap-datepicker — brand orange theme (applies app-wide, all .datepicker inputs share this design system) */
+.datepicker.datepicker-dropdown {
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, .15);
+    border: 1px solid rgba(255, 153, 0, .25);
+    padding: 0.5rem;
+}
+.datepicker table tr td.active.active,
+.datepicker table tr td.active:hover.active,
+.datepicker table tr td.selected,
+.datepicker table tr td.selected:hover {
+    background-color: #FF9900 !important;
+    background-image: none;
+    color: #fff;
+    text-shadow: none;
+}
+.datepicker table tr td.today,
+.datepicker table tr td.today:hover {
+    background-color: rgba(255, 153, 0, .18) !important;
+    background-image: none;
+    color: #212529;
+}
+.datepicker table tr td:hover,
+.datepicker table tr th:hover {
+    background-color: rgba(255, 153, 0, .12);
+    cursor: pointer;
+}
+.datepicker table tr td.day.focused,
+.datepicker table tr td.day:focus {
+    background-color: rgba(255, 153, 0, .12);
 }

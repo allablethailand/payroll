@@ -1,0 +1,41 @@
+{
+    "TH": {
+        "taxLabelKey": "tax.th_label",
+        "taxDefaultText": "Tax ID / เลขประจำตัวผู้เสียภาษี",
+        "currency": "THB",
+        "timezone": "Asia/Bangkok",
+        "fields": [
+            { "name": "th_branch_code", "labelKey": "fields.th_branch_code.label", "labelDefault": "Tax Branch Code", "required": true },
+            { "name": "th_sso_id", "labelKey": "fields.th_sso_id.label", "labelDefault": "Social Security Employer ID", "required": true }
+        ]
+    }, 
+    "SG": {
+        "taxLabelKey": "tax.sg_label",
+        "taxDefaultText": "Unique Entity Number (UEN)",
+        "currency": "SGD",
+        "timezone": "Asia/Singapore",
+        "fields": [
+            { "name": "sg_csn", "labelKey": "fields.sg_csn.label", "labelDefault": "CPF Submission Number (CSN)", "required": true }
+        ]
+    },
+    "MY": {
+        "taxLabelKey": "tax.my_label",
+        "taxDefaultText": "Income Tax Number",
+        "currency": "MYR",
+        "timezone": "Asia/Kuala_Lumpur",
+        "fields": [
+            { "name": "my_epf_no", "labelKey": "fields.my_epf_no.label", "labelDefault": "EPF Employer Number", "required": true },
+            { "name": "my_socso_no", "labelKey": "fields.my_socso_no.label", "labelDefault": "SOCSO Number", "required": true }
+        ]
+    },
+    "US": {
+        "taxLabelKey": "tax.us_label",
+        "taxDefaultText": "EIN",
+        "currency": "USD",
+        "timezone": "America/New_York",
+        "fields": [
+            { "name": "us_sui_account_number", "labelKey": "fields.us_sui_account_number.label", "labelDefault": "State Unemployment ID (SUI)", "placeholderKey": "fields.us_sui_account_number.placeholder", "placeholderDefault": "State-issued SUI Account Number", "required": true }
+        ]
+    }
+    
+}
