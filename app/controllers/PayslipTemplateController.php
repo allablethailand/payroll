@@ -2,16 +2,33 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/PayslipTemplateModel.php';
 require_once __DIR__ . '/../services/reports/payment/PaySlipReport.php';
+require_once __DIR__ . '/../models/PermissionModel.php';
 
 class PayslipTemplateController extends Controller {
     private PayslipTemplateModel $model;
+    private PermissionModel $permissionModel;
 
     public function __construct() {
         $this->model = new PayslipTemplateModel();
+        $this->permissionModel = new PermissionModel();
     }
 
     private function userId(): int {
         return (int)($_SESSION['user']['employee_id'] ?? 0);
+    }
+
+    private function isAdmin(): bool {
+        return ($_SESSION['user']['role'] ?? '') === 'admin';
+    }
+
+    private function requirePermission(string $permissionKey): bool {
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
+        if (!$check['allowed']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to perform this action.']);
+            return false;
+        }
+        return true;
     }
 
     public function fieldTypeOptions() {
@@ -19,11 +36,13 @@ class PayslipTemplateController extends Controller {
     }
 
     public function list() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         $this->json(['status' => true, 'data' => $this->model->list((int)$compId)]);
     }
 
     public function get() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         $id = (int)($_GET['id'] ?? 0);
         $row = $this->model->get($id, (int)$compId);
@@ -35,6 +54,7 @@ class PayslipTemplateController extends Controller {
     }
 
     public function save() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -46,12 +66,14 @@ class PayslipTemplateController extends Controller {
     }
 
     public function delete() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->model->delete($id, (int)$compId, $this->userId()));
     }
 
     public function toggleStatus() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->model->toggleStatus($id, (int)$compId, $this->userId()));
@@ -62,6 +84,7 @@ class PayslipTemplateController extends Controller {
      * a PDF directly -- no persistence, nothing written to payslip_templates.
      */
     public function preview() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             http_response_code(400);
@@ -103,6 +126,7 @@ class PayslipTemplateController extends Controller {
 
     /** Uploads a logo image, returns its web-relative path for the client to include in save(). */
     public function uploadLogo() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);

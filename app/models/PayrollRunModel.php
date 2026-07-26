@@ -147,6 +147,13 @@ class PayrollRunModel {
 
     /* ==================== PERMISSIONS ==================== */
 
+    /** True if the employee holds ANY of the 3 payroll role-flags (or is admin) -- gates read access to run detail/salary data. */
+    public function canView(int $actingEmployeeId, bool $isAdmin): bool {
+        return $this->userCan($actingEmployeeId, 'can_process_payroll', $isAdmin)
+            || $this->userCan($actingEmployeeId, 'can_approve_payroll', $isAdmin)
+            || $this->userCan($actingEmployeeId, 'can_finalize_payroll', $isAdmin);
+    }
+
     private function userCan(int $actingEmployeeId, string $permissionColumn, bool $isAdmin): bool {
         if ($isAdmin) {
             return true;
@@ -471,6 +478,11 @@ class PayrollRunModel {
                 foreach ($statutoryResult['items'] as $sItem) {
                     $statutoryEmployeeTotal += $sItem['employee_amount'];
                     $statutoryEmployerTotal += $sItem['employer_amount'];
+                    // 'no_rate_configured' = a real gap in an otherwise-maintained rate timeline -- block the run.
+                    // 'no_rate_ever_configured' = this item has zero rate history rows anywhere (not rolled out on
+                    // this deployment yet, e.g. SG/MY/US items with no CPF/SOCSO/EPF rates entered) -- don't block
+                    // payroll for every non-TH company over data nobody has entered yet; the line just computes to
+                    // 0 with the note preserved in statutory_breakdown so it's still visible on the payslip/report.
                     if ($sItem['note'] === 'no_rate_configured') {
                         $errors[] = "no_rate_configured:{$sItem['code']}";
                     }

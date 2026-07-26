@@ -1,11 +1,33 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../models/CompanyProfileModel.php';
+require_once __DIR__ . '/../models/PermissionModel.php';
 class CompanyProfileController extends Controller {
     private $model;
-    public function __construct() { 
-        $this->model = new CompanyProfileModel(); 
+    private PermissionModel $permissionModel;
+    public function __construct() {
+        $this->model = new CompanyProfileModel();
+        $this->permissionModel = new PermissionModel();
     }
+
+    private function userId(): int {
+        return (int)($_SESSION['user']['employee_id'] ?? 0);
+    }
+
+    private function isAdmin(): bool {
+        return ($_SESSION['user']['role'] ?? '') === 'admin';
+    }
+
+    private function requirePermission(string $permissionKey): bool {
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
+        if (!$check['allowed']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to perform this action.']);
+            return false;
+        }
+        return true;
+    }
+
     public function index() {
         $this->view('setup/company-profile');
     }
@@ -19,6 +41,7 @@ class CompanyProfileController extends Controller {
         }
     }
     public function save() {
+        if (!$this->requirePermission('company_profile.manage')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         if (empty($data['registered_country']) || empty($data['company_legal_name']) || empty($data['global_tax_id'])) {
@@ -37,9 +60,10 @@ class CompanyProfileController extends Controller {
         }
     }
     public function branch() {
+        if (!$this->requirePermission('company_structure.view')) return;
         $compId = getCompId();
         if (!$compId) {
-            return $this->json(['total' => 0, 'data' => []]);
+            return $this->json(['draw' => intval($_REQUEST['draw'] ?? 1), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
         }
         $request = $_REQUEST;
         $start = isset($request['start']) ? (int)$request['start'] : 0;
@@ -70,12 +94,14 @@ class CompanyProfileController extends Controller {
             $row['is_default'] = isset($row['is_default']) ? (bool)$row['is_default'] : false;
             $row['lock_stamp'] = isset($row['lock_stamp']) ? (bool)$row['lock_stamp'] : false;
         }
+        $result['draw'] = intval($request['draw'] ?? 1);
         return $this->json($result);
     }
     public function role() {
+        if (!$this->requirePermission('company_structure.view')) return;
         $compId = getCompId();
         if (!$compId) {
-            return $this->json(['total' => 0, 'data' => []]);
+            return $this->json(['draw' => intval($_REQUEST['draw'] ?? 1), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
         }
         $request = $_REQUEST;
         $start = isset($request['start']) ? (int)$request['start'] : 0;
@@ -105,12 +131,14 @@ class CompanyProfileController extends Controller {
         foreach ($result['data'] as &$row) {
             $row['salary_access'] = isset($row['salary_access']) ? (bool)$row['salary_access'] : false;
         }
+        $result['draw'] = intval($request['draw'] ?? 1);
         return $this->json($result);
     }
     public function department() {
+        if (!$this->requirePermission('company_structure.view')) return;
         $compId = getCompId();
         if (!$compId) {
-            return $this->json(['total' => 0, 'data' => []]);
+            return $this->json(['draw' => intval($_REQUEST['draw'] ?? 1), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
         }
         $request = $_REQUEST;
         $start = isset($request['start']) ? (int)$request['start'] : 0;
@@ -138,12 +166,14 @@ class CompanyProfileController extends Controller {
             $colIndex, 
             $orderDir
         );
+        $result['draw'] = intval($request['draw'] ?? 1);
         return $this->json($result);
     }
     public function position() {
+        if (!$this->requirePermission('company_structure.view')) return;
         $compId = getCompId();
         if (!$compId) {
-            return $this->json(['total' => 0, 'data' => []]);
+            return $this->json(['draw' => intval($_REQUEST['draw'] ?? 1), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
         }
         $request = $_REQUEST;
         $start = isset($request['start']) ? (int)$request['start'] : 0;
@@ -174,12 +204,14 @@ class CompanyProfileController extends Controller {
         foreach ($result['data'] as &$row) {
             $row['position_allowance'] = isset($row['position_allowance']) ? (float)$row['position_allowance'] : 0.00;
         }
+        $result['draw'] = intval($request['draw'] ?? 1);
         return $this->json($result);
     }
     public function rank() {
+        if (!$this->requirePermission('company_structure.view')) return;
         $compId = getCompId();
         if (!$compId) {
-            return $this->json(['total' => 0, 'data' => []]);
+            return $this->json(['draw' => intval($_REQUEST['draw'] ?? 1), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
         }
         $request = $_REQUEST;
         $start = isset($request['start']) ? (int)$request['start'] : 0;
@@ -213,6 +245,7 @@ class CompanyProfileController extends Controller {
             $row['salary_max'] = isset($row['salary_max']) ? (float)$row['salary_max'] : 0.00;
             $row['ot_eligible'] = isset($row['ot_eligible']) ? (bool)$row['ot_eligible'] : false;
         }
+        $result['draw'] = intval($request['draw'] ?? 1);
         return $this->json($result);
     }
     public function branchSave() { $this->handleStructureSave('branch'); }
@@ -226,6 +259,7 @@ class CompanyProfileController extends Controller {
     public function rankSave() { $this->handleStructureSave('rank'); }
     public function rankDelete() { $this->handleStructureDelete('rank'); }
     private function handleStructureSave(string $type): void {
+        if (!$this->requirePermission('company_structure.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -242,6 +276,7 @@ class CompanyProfileController extends Controller {
         $this->json($result);
     }
     private function handleStructureDelete(string $type): void {
+        if (!$this->requirePermission('company_structure.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);

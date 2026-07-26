@@ -152,13 +152,18 @@ class PaySlipReport implements ReportGeneratorInterface {
             throw new LocalizedException('Select at least one field to preview.', 'select_at_least_one_field');
         }
 
+        $logoPath = !empty($draftTemplate['logo_path']) ? (string)$draftTemplate['logo_path'] : null;
+        if (!PayslipTemplateModel::isValidLogoPath($logoPath, $compId)) {
+            throw new LocalizedException('Invalid logo_path.', 'invalid_field_selection');
+        }
+
         $template = [
             'language_mode' => in_array($draftTemplate['language_mode'] ?? '', ['th', 'en', 'both'], true) ? $draftTemplate['language_mode'] : 'both',
             'header_text_th' => (string)($draftTemplate['header_text_th'] ?? ''),
             'header_text_en' => (string)($draftTemplate['header_text_en'] ?? ''),
             'footer_text_th' => (string)($draftTemplate['footer_text_th'] ?? ''),
             'footer_text_en' => (string)($draftTemplate['footer_text_en'] ?? ''),
-            'logo_path' => !empty($draftTemplate['logo_path']) ? (string)$draftTemplate['logo_path'] : null,
+            'logo_path' => $logoPath,
             'country_code' => (string)($company['registered_country'] ?? ''),
             'fields' => $resolvedFields,
         ];
@@ -364,8 +369,11 @@ HTML;
                     break;
                 case 'company_logo':
                     if (!empty($template['logo_path'])) {
-                        $logoAbsPath = dirname(__DIR__, 4) . '/' . ltrim((string)$template['logo_path'], '/');
-                        if (is_file($logoAbsPath)) {
+                        // Defense-in-depth beyond the regex check at the input boundaries (save()/generatePreview()):
+                        // confine the resolved path inside the uploads root regardless of how logo_path got here.
+                        $uploadsRoot = realpath(dirname(__DIR__, 4) . '/public/uploads/payslip_logos');
+                        $logoAbsPath = realpath(dirname(__DIR__, 4) . '/' . ltrim((string)$template['logo_path'], '/'));
+                        if ($uploadsRoot !== false && $logoAbsPath !== false && strpos($logoAbsPath, $uploadsRoot) === 0 && is_file($logoAbsPath)) {
                             $buffer .= '<div class="logo-wrap"><img src="' . htmlspecialchars($logoAbsPath) . '" style="max-height:60px;"></div>';
                         }
                     }

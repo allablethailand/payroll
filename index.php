@@ -24,9 +24,13 @@
             }
         }
     });
+    // TODO(A5, deferred): replace with real login/session issuance. company_id must match a
+    // real row in `companies` -- getCompId() now reads this key directly (previously it read
+    // $_SESSION['comp_id'], which was never set anywhere, so every request silently fell back to
+    // a hardcoded comp_id=1 regardless of this array; fixed alongside the Phase A security pass).
     $_SESSION['user'] = [
         'employee_id' => 2,
-        'company_id'  => 2,
+        'company_id'  => 1,
         'role'        => 'admin'
     ];
     ensure_login();

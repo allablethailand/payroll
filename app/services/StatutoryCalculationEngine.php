@@ -105,11 +105,12 @@ class StatutoryCalculationEngine {
         }
 
         $rateRow = $this->resolveEffectiveRate((int)$item['statutory_item_id'], $calcDate);
+        $noRateNote = $this->itemHasAnyRateHistory((int)$item['statutory_item_id']) ? 'no_rate_configured' : 'no_rate_ever_configured';
 
         switch ($item['calc_method']) {
             case 'flat_rate':
                 if (!$rateRow) {
-                    $line['note'] = 'no_rate_configured';
+                    $line['note'] = $noRateNote;
                     return $line;
                 }
                 $isOverride = $item['employee_rate_override'] !== null || $item['employer_rate_override'] !== null;
@@ -119,7 +120,7 @@ class StatutoryCalculationEngine {
 
             case 'fixed_amount':
                 if (!$rateRow) {
-                    $line['note'] = 'no_rate_configured';
+                    $line['note'] = $noRateNote;
                     return $line;
                 }
                 $isOverride = $item['employee_amount_override'] !== null || $item['employer_amount_override'] !== null;
@@ -129,7 +130,7 @@ class StatutoryCalculationEngine {
 
             case 'progressive_bracket':
                 if (!$rateRow) {
-                    $line['note'] = 'no_rate_configured';
+                    $line['note'] = $noRateNote;
                     return $line;
                 }
                 $brackets = $this->fetchBrackets((int)$rateRow['id']);
@@ -143,7 +144,7 @@ class StatutoryCalculationEngine {
                 return $line;
 
             case 'formula':
-                [$line['employee_amount'], $line['employer_amount'], $note] = $this->computeFormula($item, $rateRow, $base);
+                [$line['employee_amount'], $line['employer_amount'], $note] = $this->computeFormula($item, $rateRow, $base, $noRateNote);
                 if ($note) {
                     $line['note'] = $note;
                 }
@@ -163,6 +164,20 @@ class StatutoryCalculationEngine {
         $stmt->execute([':item_id' => $itemId, ':calc_date' => $calcDate]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
+    }
+
+    /**
+     * True if this statutory item has NEVER had a single rate history row entered, for anyone,
+     * at any date -- i.e. "not rolled out on this deployment yet" (e.g. SG/MY/US items seeded in
+     * statutory_items with zero real CPF/SOCSO/EPF rates configured), as opposed to a real gap in
+     * an otherwise-maintained timeline. Distinguishing these two lets recalculate() treat the
+     * former as a soft "not yet configured" note (0 amount, no hard block) and the latter as a
+     * real misconfiguration worth blocking the run over.
+     */
+    private function itemHasAnyRateHistory(int $itemId): bool {
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM `statutory_item_rate_history` WHERE statutory_item_id = :item_id AND deleted_at IS NULL");
+        $stmt->execute([':item_id' => $itemId]);
+        return (int)$stmt->fetchColumn() > 0;
     }
 
     private function fetchBrackets(int $rateHistoryId): array {
@@ -234,9 +249,9 @@ class StatutoryCalculationEngine {
      * {"employee": {"base_rate":1.45,"extra_rate":0.9,"extra_threshold":200000}, "employer": {"base_rate":1.45}}
      * @return array{0:float,1:float,2:?string} [employee_amount, employer_amount, note]
      */
-    private function computeFormula(array $item, ?array $rateRow, float $base): array {
+    private function computeFormula(array $item, ?array $rateRow, float $base, string $noRateNote = 'no_rate_configured'): array {
         if (!$rateRow || empty($rateRow['formula_config'])) {
-            return [0.0, 0.0, 'no_rate_configured'];
+            return [0.0, 0.0, $noRateNote];
         }
         $config = json_decode($rateRow['formula_config'], true);
         if (!is_array($config)) {

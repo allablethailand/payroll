@@ -259,6 +259,13 @@ class EmployeeModel {
         return (bool)$stmt->fetch();
     }
 
+    private function getCompanyCountry(int $compId): ?string {
+        $stmt = $this->db->prepare("SELECT registered_country FROM `companies` WHERE id = :id");
+        $stmt->execute([':id' => $compId]);
+        $country = $stmt->fetchColumn();
+        return $country !== false ? (string)$country : null;
+    }
+
     private function isValidThaiId(string $id): bool {
         if (!preg_match('/^\d{13}$/', $id)) {
             return false;
@@ -273,8 +280,19 @@ class EmployeeModel {
 
     public function save(int $compId, array $data, int $userId): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
+        $isThCompany = $this->getCompanyCountry($compId) === 'TH';
 
-        foreach ($this->requiredColumns() as $field) {
+        // master_addresses/tax_calculation_method are Thailand-specific (address picker only has TH
+        // data; average/actual annualization only means something for TH withholding tax) -- don't
+        // force a TH-only required field on SG/MY/US companies just because they share this form.
+        $requiredColumns = $this->requiredColumns();
+        if (!$isThCompany) {
+            $requiredColumns = array_diff($requiredColumns, ['master_address_id_register', 'master_address_id_contact', 'tax_calculation_method']);
+            if (empty($data['tax_calculation_method'])) {
+                $data['tax_calculation_method'] = 'average'; // DB column is NOT NULL; unused/meaningless outside TH.
+            }
+        }
+        foreach ($requiredColumns as $field) {
             if (!isset($data[$field]) || $data[$field] === null || $data[$field] === '') {
                 return ['status' => false, 'message' => "Missing required field: {$field}"];
             }
@@ -285,7 +303,9 @@ class EmployeeModel {
             if (empty($data['id_card_no'])) {
                 return ['status' => false, 'message' => 'Missing required field: id_card_no'];
             }
-            if (!$this->isValidThaiId((string)$data['id_card_no'])) {
+            // Checksum only applies to a real Thai national ID -- for a non-TH company this field
+            // still captures *a* local ID number, just not one this app can format-validate.
+            if ($isThCompany && !$this->isValidThaiId((string)$data['id_card_no'])) {
                 return ['status' => false, 'message' => 'Invalid Thai ID card number.'];
             }
         } elseif ($employeeType === 'foreigner') {
@@ -304,10 +324,13 @@ class EmployeeModel {
             }
         }
 
-        if (!preg_match('/^\d{9,10}$/', (string)$data['mobile_no'])) {
+        // TH mobile numbers are always 9-10 digits; outside TH just accept a plausible-length
+        // international mobile number (e.g. Singapore is 8 digits) rather than assuming TH's format.
+        $mobilePattern = $isThCompany ? '/^\d{9,10}$/' : '/^\d{7,15}$/';
+        if (!preg_match($mobilePattern, (string)$data['mobile_no'])) {
             return ['status' => false, 'message' => 'Invalid mobile number.'];
         }
-        if (!preg_match('/^\d{9,10}$/', (string)$data['emergency_mobile'])) {
+        if (!preg_match($mobilePattern, (string)$data['emergency_mobile'])) {
             return ['status' => false, 'message' => 'Invalid emergency contact mobile number.'];
         }
         if (!filter_var($data['personal_email'], FILTER_VALIDATE_EMAIL)) {

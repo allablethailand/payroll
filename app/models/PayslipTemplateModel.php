@@ -102,6 +102,21 @@ class PayslipTemplateModel {
         return $this->get((int)$id, $compId);
     }
 
+    /**
+     * logo_path must exactly match what uploadLogo() produces for THIS company -- a random
+     * 32-hex-char filename under public/uploads/payslip_logos/{comp_id}/. Rejects anything else
+     * (including ../ traversal) before it ever reaches the filesystem or Dompdf, since both
+     * save() and PaySlipReport::generatePreview() accept this value straight from the request
+     * body with no other gate in front of it.
+     */
+    public static function isValidLogoPath(?string $path, int $compId): bool {
+        if ($path === null || $path === '') {
+            return true;
+        }
+        $pattern = '#^public/uploads/payslip_logos/' . $compId . '/[a-f0-9]{32}\.(jpg|png|svg)$#';
+        return (bool)preg_match($pattern, $path);
+    }
+
     private function isNameDuplicate(int $compId, string $nameTh, ?int $excludeId): bool {
         $sql = "SELECT COUNT(*) FROM payslip_templates WHERE comp_id = :comp_id AND name_th = :name_th AND deleted_at IS NULL";
         $params = [':comp_id' => $compId, ':name_th' => $nameTh];
@@ -119,6 +134,9 @@ class PayslipTemplateModel {
         $nameEn = trim((string)($data['name_en'] ?? ''));
         $isDefault = !empty($data['is_default']) ? 1 : 0;
         $logoPath = isset($data['logo_path']) && $data['logo_path'] !== '' ? (string)$data['logo_path'] : null;
+        if (!self::isValidLogoPath($logoPath, $compId)) {
+            return ['status' => false, 'message' => 'Invalid logo_path.'];
+        }
         $headerTh = trim((string)($data['header_text_th'] ?? ''));
         $headerEn = trim((string)($data['header_text_en'] ?? ''));
         $footerTh = trim((string)($data['footer_text_th'] ?? ''));

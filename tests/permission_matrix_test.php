@@ -77,7 +77,7 @@ try {
     $permissions = $model->listPermissions();
     $byKey = [];
     foreach ($permissions as $p) { $byKey[$p['permission_key']] = (int)$p['id']; }
-    check('8 permissions seeded', count($permissions), 8);
+    check('17 permissions seeded', count($permissions), 17);
 
     // ---------- checkPermission: isAdmin bypass ----------
     $adminCheck = $model->checkPermission($empStaff, 'holiday.manage', true, $compId);
@@ -94,7 +94,7 @@ try {
     // ---------- matrix(): empty grants ----------
     $matrixBefore = $model->matrix($compId);
     check('matrix returns 2 roles', count($matrixBefore['roles']), 2);
-    check('matrix returns 8 permissions', count($matrixBefore['permissions']), 8);
+    check('matrix returns 17 permissions', count($matrixBefore['permissions']), 17);
     check('matrix returns 0 grants before any save', count($matrixBefore['grants']), 0);
 
     // ---------- saveMatrix(): grant holiday.manage (all) to manager, approval_request.act (own_department) to manager ----------

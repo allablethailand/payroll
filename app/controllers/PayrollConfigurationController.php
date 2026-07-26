@@ -5,19 +5,42 @@ require_once __DIR__ . '/../models/PayrollEarningDeductionTypeModel.php';
 require_once __DIR__ . '/../models/PayrollCycleModel.php';
 require_once __DIR__ . '/../models/AttendanceBonusSchemeModel.php';
 require_once __DIR__ . '/../models/AttendanceBonusLedgerModel.php';
+require_once __DIR__ . '/../models/PermissionModel.php';
 class PayrollConfigurationController extends Controller {
     private $model;
     private $pedTypeModel;
     private $cycleModel;
     private $attendanceBonusModel;
     private $ledgerModel;
+    private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new PayrollConfigurationModel();
         $this->pedTypeModel = new PayrollEarningDeductionTypeModel();
         $this->cycleModel = new PayrollCycleModel();
         $this->attendanceBonusModel = new AttendanceBonusSchemeModel();
         $this->ledgerModel = new AttendanceBonusLedgerModel();
+        $this->permissionModel = new PermissionModel();
     }
+
+    private function userId(): int {
+        return (int)($_SESSION['user']['employee_id'] ?? 0);
+    }
+
+    private function isAdmin(): bool {
+        return ($_SESSION['user']['role'] ?? '') === 'admin';
+    }
+
+    /** Gates the actual CRUD; dropdown-option lookups (*Options methods) stay ungated -- they're consumed by other forms and carry no PII/financial figures. */
+    private function requirePermission(string $permissionKey): bool {
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
+        if (!$check['allowed']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to perform this action.']);
+            return false;
+        }
+        return true;
+    }
+
     public function index() {
         $this->view('setup/payroll-configuration');
     }
@@ -45,6 +68,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function bonusLedgerList() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         $schemeId = isset($_GET['scheme_id']) ? (int)$_GET['scheme_id'] : 0;
         $year = isset($_GET['year']) ? (int)$_GET['year'] : 0;
@@ -57,6 +81,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function bonusLedgerGet() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -72,6 +97,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function bonusLedgerSave() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -89,6 +115,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function bonusLedgerLock() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -107,6 +134,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function bonusLedgerDelete() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -124,6 +152,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function attendanceBonusList() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -133,6 +162,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function attendanceBonusGet() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -148,6 +178,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function attendanceBonusSave() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -165,6 +196,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function attendanceBonusDelete() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -202,6 +234,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function cycleList() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -211,6 +244,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function cycleGet() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -226,6 +260,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function cycleSave() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -243,6 +278,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function cycleDelete() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -261,6 +297,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function pedTypeList() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['draw' => 1, 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
@@ -286,6 +323,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function pedTypeGet() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -301,6 +339,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function pedTypeSave() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -318,6 +357,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function pedTypeDelete() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);

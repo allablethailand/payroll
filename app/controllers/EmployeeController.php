@@ -2,13 +2,36 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/EmployeeModel.php';
 require_once __DIR__ . '/../models/EmployeeEarningDeductionModel.php';
+require_once __DIR__ . '/../models/PermissionModel.php';
 class EmployeeController extends Controller {
     private $model;
     private $earningDeductionModel;
+    private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new EmployeeModel();
         $this->earningDeductionModel = new EmployeeEarningDeductionModel();
+        $this->permissionModel = new PermissionModel();
     }
+
+    private function userId(): int {
+        return (int)($_SESSION['user']['employee_id'] ?? 0);
+    }
+
+    private function isAdmin(): bool {
+        return ($_SESSION['user']['role'] ?? '') === 'admin';
+    }
+
+    /** Full employee PII (salary, bank, national ID, documents) requires employee.view/.manage -- list() stays ungated (no PII in its columns). */
+    private function requirePermission(string $permissionKey): bool {
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
+        if (!$check['allowed']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to perform this action.']);
+            return false;
+        }
+        return true;
+    }
+
     public function index() {
         $this->view('employee/list');
     }
@@ -49,6 +72,7 @@ class EmployeeController extends Controller {
         ]);
     }
     public function get() {
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         $employeeNo = isset($_GET['employee_no']) ? trim((string)$_GET['employee_no']) : '';
         if (!$compId || $employeeNo === '') {
@@ -76,6 +100,7 @@ class EmployeeController extends Controller {
         $this->json(['status' => true, 'data' => $data]);
     }
     public function save() {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -92,6 +117,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     public function delete() {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -127,6 +153,7 @@ class EmployeeController extends Controller {
         $this->json(['status' => true, 'data' => $data]);
     }
     public function earningDeductionList() {
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
         if (!$compId || $employeeId <= 0) {
@@ -137,6 +164,7 @@ class EmployeeController extends Controller {
         $this->json(['status' => true, 'data' => $data]);
     }
     public function earningDeductionGet() {
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -151,6 +179,7 @@ class EmployeeController extends Controller {
         }
     }
     public function earningDeductionSave() {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -172,6 +201,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     public function earningDeductionStatus() {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -191,6 +221,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     public function earningDeductionDelete() {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -209,6 +240,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     private function handleChildList(string $type): void {
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
         if (!$compId || $employeeId <= 0) {
@@ -219,6 +251,7 @@ class EmployeeController extends Controller {
         $this->json(['status' => true, 'data' => $data]);
     }
     private function handleChildSave(string $type): void {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -240,6 +273,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     private function handleChildDelete(string $type): void {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -258,6 +292,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     public function documentList() {
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
         if (!$compId || $employeeId <= 0) {
@@ -268,6 +303,7 @@ class EmployeeController extends Controller {
         $this->json(['status' => true, 'data' => $data]);
     }
     public function documentUpload() {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -334,6 +370,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     public function documentView() {
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -365,6 +402,7 @@ class EmployeeController extends Controller {
         exit;
     }
     public function documentDelete() {
+        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);

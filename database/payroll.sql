@@ -8853,7 +8853,16 @@ INSERT INTO `permissions` (`module_code`,`action_code`,`permission_key`,`name_th
 ('approval_workflow','view','approval_workflow.view','ดูลำดับผู้อนุมัติ','View Approval Workflows',1,50),
 ('approval_workflow','manage','approval_workflow.manage','จัดการลำดับผู้อนุมัติ','Manage Approval Workflows',1,60),
 ('approval_request','act','approval_request.act','อนุมัติ/ปฏิเสธคำขอ','Act on Approval Requests',1,70),
-('rbac','manage','rbac.manage','จัดการสิทธิ์การใช้งาน','Manage Roles & Permissions',1,80);
+('rbac','manage','rbac.manage','จัดการสิทธิ์การใช้งาน','Manage Roles & Permissions',1,80),
+('employee','view','employee.view','ดูข้อมูลพนักงาน','View Employees',1,90),
+('employee','manage','employee.manage','จัดการข้อมูลพนักงาน','Manage Employees',1,100),
+('company_structure','view','company_structure.view','ดูโครงสร้างองค์กร','View Company Structure',1,110),
+('company_structure','manage','company_structure.manage','จัดการโครงสร้างองค์กร','Manage Company Structure',1,120),
+('bank_account','manage','bank_account.manage','จัดการบัญชีธนาคารบริษัท','Manage Company Bank Accounts',1,130),
+('payslip_template','manage','payslip_template.manage','จัดการเทมเพลตสลิปเงินเดือน','Manage Payslip Templates',1,140),
+('payroll_configuration','manage','payroll_configuration.manage','จัดการการตั้งค่าระบบเงินเดือน','Manage Payroll Configuration',1,150),
+('tax_statutory','manage','tax_statutory.manage','จัดการภาษีและกองทุนตามกฎหมาย','Manage Tax & Statutory Settings',1,160),
+('company_profile','manage','company_profile.manage','จัดการข้อมูลบริษัท','Manage Company Profile',1,170);
 
 -- --------------------------------------------------------
 

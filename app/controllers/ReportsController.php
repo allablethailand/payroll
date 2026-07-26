@@ -2,12 +2,32 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../services/reports/ReportRegistry.php';
 require_once __DIR__ . '/../models/ReportExportLogModel.php';
+require_once __DIR__ . '/../models/PayrollRunModel.php';
 
 class ReportsController extends Controller {
     private $logModel;
+    private PayrollRunModel $payrollRunModel;
 
     public function __construct() {
         $this->logModel = new ReportExportLogModel();
+        $this->payrollRunModel = new PayrollRunModel();
+    }
+
+    private function userId(): int {
+        return (int)($_SESSION['user']['employee_id'] ?? 0);
+    }
+
+    private function isAdmin(): bool {
+        return ($_SESSION['user']['role'] ?? '') === 'admin';
+    }
+
+    /** Every registered report exposes salary/bank/statutory PII for the whole run/period -- same gate as viewing a payroll run. */
+    private function requireViewAccess(): bool {
+        if (!$this->payrollRunModel->canView($this->userId(), $this->isAdmin())) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to generate or view reports.']);
+            return false;
+        }
+        return true;
     }
 
     public function index() {
@@ -38,6 +58,7 @@ class ReportsController extends Controller {
      * string is a perfectly natural fit; error responses (JSON) work the same either way.
      */
     public function generate() {
+        if (!$this->requireViewAccess()) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -94,6 +115,7 @@ class ReportsController extends Controller {
     }
 
     public function exportLogs() {
+        if (!$this->requireViewAccess()) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);

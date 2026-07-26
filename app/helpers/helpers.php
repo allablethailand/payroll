@@ -41,5 +41,5 @@
         }
     }
     function getCompId() {
-        return $_SESSION['comp_id'] ?? 1; 
+        return $_SESSION['user']['company_id'] ?? null;
     }

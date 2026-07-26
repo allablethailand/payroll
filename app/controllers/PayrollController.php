@@ -45,7 +45,17 @@ class PayrollController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    /** Any of the 3 payroll role-flags grants read access -- mutating actions already check the SPECIFIC flag they need inside PayrollRunModel. */
+    private function requireViewAccess(): bool {
+        if (!$this->model->canView($this->userId(), $this->isAdmin())) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to view payroll data.']);
+            return false;
+        }
+        return true;
+    }
+
     public function list() {
+        if (!$this->requireViewAccess()) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -60,6 +70,7 @@ class PayrollController extends Controller {
     }
 
     public function get() {
+        if (!$this->requireViewAccess()) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
