@@ -107,14 +107,22 @@ $(document).on('click', function(e) {
     }
 });
 function initDatepicker(selector = '.datepicker', options = {}) {
-    if (!$.fn.datepicker) return;
-    $(selector).datepicker($.extend({
+    // 1. ตรวจสอบว่ามี jQuery และ Datepicker Plugin พร้อมใช้งานหรือไม่
+    if (typeof $ === 'undefined' || !$.fn || !$.fn.datepicker) return;
+
+    // 2. ดึงค่าภาษา ป้องกันกรณี variable currentLang ไม่ถูกกำหนดไว้
+    const lang = (typeof currentLang !== 'undefined' && currentLang === 'th') ? 'th' : 'en';
+
+    // 3. กำหนดค่าเริ่มต้น และรวมเข้ากับ options ที่ส่งเข้ามา
+    const defaultOptions = {
         format: 'dd/mm/yyyy',
         autoclose: true,
         todayHighlight: true,
-        language: (typeof currentLang !== 'undefined' && currentLang === 'th') ? 'th' : 'en',
-        orientation: 'auto'
-    }, options));
+        language: lang,
+        orientation: 'auto bottom' // ระบุทิศทางให้ชัดเจนเพื่อป้องกัน UI แสดงผลล้นจอ
+    };
+
+    $(selector).datepicker($.extend(true, {}, defaultOptions, options));
 }
 function initSelect2(selector, options = {}) {
     $(selector).each(function () {
@@ -273,19 +281,6 @@ function initDateRangePicker(selector, callback) {
         if (typeof callback === 'function') {
             callback('');
         }
-    });
-}
-function initDatePicker(selector, minDate = null, maxDate = null) {
-    $(selector).datepicker('destroy');
-    $(selector).datepicker({
-        format: "dd/mm/yyyy",
-        autoclose: true,  
-        todayHighlight: true,
-        orientation: "auto",
-        language: "en",
-        startDate: minDate,
-        endDate: maxDate,
-        forceParse: false,
     });
 }
 function initMonthYearPicker(selector, callback) {
