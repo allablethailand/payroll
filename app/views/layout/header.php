@@ -7,7 +7,7 @@
 <link rel="icon" type="image/png" href="<?=BASE_URL?>/public/images/logo_vertical.png">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&display=swap" rel="stylesheet">
 <link href="<?=BASE_URL?>/node_modules/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="<?=BASE_URL?>/node_modules/fontawesome-free-7.1.0-web/css/all.min.css" rel="stylesheet">
+<link href="<?=BASE_URL?>/node_modules/@fortawesome/fontawesome-free/css/all.min.css" rel="stylesheet">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/sweetalert2/dist/sweetalert2.min.css">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/datatables.net-bs5/css/dataTables.bootstrap5.min.css">
 <link href="<?=BASE_URL?>/node_modules/select2/dist/css/select2.min.css" rel="stylesheet">
