@@ -174,6 +174,18 @@ class PayrollController extends Controller {
         $this->json($this->model->reject($id, (int)$compId, $this->userId(), $this->isAdmin(), $reason));
     }
 
+    public function cancel() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $reason = (string)($data['reason'] ?? '');
+        $this->json($this->model->cancel($id, (int)$compId, $this->userId(), $this->isAdmin(), $reason));
+    }
+
     public function reviseAfterReject() {
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);

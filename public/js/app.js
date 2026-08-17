@@ -21,8 +21,13 @@ $(document).ready(async function() {
         await changeLanguage(selectedValue);
         $('#languageMenu').removeClass('active');
     });
+    $('.nav-hub-btn').on('click', function(e) {
+        e.stopPropagation();
+        $('#hubMenu').toggleClass('active');
+    });
     $(document).on('click', function() {
         $('#languageMenu').removeClass('active');
+        $('#hubMenu').removeClass('active');
     });
     $('.nav-btn-hamberger').on('click', function(e) {
         e.stopPropagation();

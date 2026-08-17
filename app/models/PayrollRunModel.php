@@ -205,6 +205,17 @@ class PayrollRunModel {
         if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to create a payroll run.'];
         }
+        // A company auto-provisioned via Origami SSO (auth/index.php) starts as
+        // setup_status='draft' with placeholder registered_country/global_tax_id/etc -- block
+        // real payroll runs until Company Profile is saved with real values (CompanyProfileModel
+        // ::save() flips this to 'active'). Nothing else in the app is gated this way; editing
+        // Company Profile, adding employees, etc. all stay usable in draft mode since that's the
+        // only way to get out of it.
+        $stmtComp = $this->db->prepare("SELECT setup_status FROM `companies` WHERE id = :id");
+        $stmtComp->execute([':id' => $compId]);
+        if (($stmtComp->fetchColumn() ?: 'active') === 'draft') {
+            return ['status' => false, 'message' => 'บริษัทนี้ยังตั้งค่าไม่ครบ (สร้างจาก Origami SSO อัตโนมัติ) กรุณาไปที่ Company Profile เพื่อกรอกข้อมูลให้ครบก่อนสร้างรอบจ่ายเงินเดือน'];
+        }
         foreach (['cycle_id', 'run_name', 'period_start_date', 'period_end_date', 'payment_date'] as $field) {
             if (empty($data[$field])) {
                 return ['status' => false, 'message' => "Missing required field: {$field}"];
@@ -230,14 +241,31 @@ class PayrollRunModel {
             return ['status' => false, 'message' => 'A payroll run already exists for this cycle and period.'];
         }
 
+        // Payroll Process page "Pending Pull" station: creating a run from an unconsumed
+        // payroll_sync_processes row (as opposed to a standalone run, the default/normal path)
+        // links it via sync_process_id so it drops out of that station afterward. Validated here
+        // (not just left to the DB's UNIQUE constraint) for a clear error message instead of a
+        // raw constraint-violation surfacing to the user.
+        $syncProcessId = null;
+        if (!empty($data['sync_process_id'])) {
+            $syncProcessId = (int)$data['sync_process_id'];
+            $stmtSync = $this->db->prepare("SELECT p.id FROM `payroll_sync_processes` p
+                LEFT JOIN `payroll_runs` r ON r.sync_process_id = p.id
+                WHERE p.id = :id AND p.comp_id = :comp_id AND r.id IS NULL");
+            $stmtSync->execute([':id' => $syncProcessId, ':comp_id' => $compId]);
+            if (!$stmtSync->fetch()) {
+                return ['status' => false, 'message' => 'Invalid or already-pulled sync process.'];
+            }
+        }
+
         $runName = trim((string)$data['run_name']);
         $notes = !empty($data['notes']) ? trim((string)$data['notes']) : null;
 
         $stmt = $this->db->prepare("INSERT INTO `payroll_runs`
-            (comp_id, cycle_id, run_name, period_start_date, period_end_date, payment_date, state, notes, created_by)
-            VALUES (:comp_id, :cycle_id, :run_name, :start, :end, :pay_date, 'draft', :notes, :created_by)");
+            (comp_id, cycle_id, sync_process_id, run_name, period_start_date, period_end_date, payment_date, state, notes, created_by)
+            VALUES (:comp_id, :cycle_id, :sync_process_id, :run_name, :start, :end, :pay_date, 'draft', :notes, :created_by)");
         $stmt->execute([
-            ':comp_id' => $compId, ':cycle_id' => $cycleId, ':run_name' => $runName,
+            ':comp_id' => $compId, ':cycle_id' => $cycleId, ':sync_process_id' => $syncProcessId, ':run_name' => $runName,
             ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
             ':notes' => $notes, ':created_by' => $userId,
         ]);
@@ -347,10 +375,14 @@ class PayrollRunModel {
         // not on the current employee_status label — a "resigned" employee's status is usually
         // updated as soon as they leave, but their FINAL (partial) period still needs to be paid,
         // so status alone would wrongly exclude them from their own last run.
+        // is_payroll_ready=0 additionally excludes employees auto-provisioned via Origami SSO
+        // (auth/index.php) whose salary/tax/employment fields are still placeholders -- until a
+        // real EmployeeModel::save() completes their profile, they must never enter a real
+        // payroll calculation.
         $stmtEmp = $this->db->prepare("SELECT id, base_salary_amount, employment_date, employment_end_date,
                 sso_enrolled, pvd_enrolled, tax_exempt
             FROM `employees`
-            WHERE comp_id = :comp_id AND deleted_at IS NULL
+            WHERE comp_id = :comp_id AND deleted_at IS NULL AND is_payroll_ready = 1
             AND employment_date <= :period_end
             AND (employment_end_date IS NULL OR employment_end_date >= :period_start)");
         $stmtEmp->execute([':comp_id' => $compId, ':period_end' => $periodEnd, ':period_start' => $periodStart]);
@@ -634,6 +666,32 @@ class PayrollRunModel {
         $stmt->execute([':rejected_by' => $userId, ':reason' => trim($reason), ':id' => $id]);
         $this->logAudit($id, 'pending_approval', 'rejected', 'reject', $userId, $reason);
         return ['status' => true, 'message' => 'Rejected.'];
+    }
+
+    public function cancel(int $id, int $compId, int $userId, bool $isAdmin, string $reason): array {
+        if (!$this->userCan($userId, 'can_approve_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to cancel this payroll run.'];
+        }
+        if (trim($reason) === '') {
+            return ['status' => false, 'message' => 'A cancel reason is required.'];
+        }
+        $run = $this->get($id, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        // Cancellable any time before money has actually moved -- draft/pending_approval/approved/
+        // rejected. Once paid/locked, cancelling the *record* would be misleading (the payment
+        // already happened); that needs a real reversal process, not a state flip, so it's
+        // deliberately not allowed here.
+        if (!in_array($run['state'], ['draft', 'pending_approval', 'approved', 'rejected'], true)) {
+            return ['status' => false, 'message' => 'Only a payroll run that has not been paid yet can be cancelled.'];
+        }
+        $fromState = $run['state'];
+        $stmt = $this->db->prepare("UPDATE `payroll_runs` SET state = 'cancelled', cancelled_at = CURRENT_TIMESTAMP,
+            cancelled_by = :cancelled_by, cancel_reason = :reason, updated_by = :cancelled_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+        $stmt->execute([':cancelled_by' => $userId, ':reason' => trim($reason), ':id' => $id]);
+        $this->logAudit($id, $fromState, 'cancelled', 'cancel', $userId, $reason);
+        return ['status' => true, 'message' => 'Cancelled.'];
     }
 
     public function reviseAfterReject(int $id, int $compId, int $userId, bool $isAdmin): array {

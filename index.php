@@ -24,15 +24,9 @@
             }
         }
     });
-    // TODO(A5, deferred): replace with real login/session issuance. company_id must match a
-    // real row in `companies` -- getCompId() now reads this key directly (previously it read
-    // $_SESSION['comp_id'], which was never set anywhere, so every request silently fell back to
-    // a hardcoded comp_id=1 regardless of this array; fixed alongside the Phase A security pass).
-    $_SESSION['user'] = [
-        'employee_id' => 2,
-        'company_id'  => 1,
-        'role'        => 'admin'
-    ];
+    // Real sessions are issued by auth/index.php (Origami SSO login). No dev-fallback session here
+    // anymore -- anyone without a real session gets redirected to /auth (or a 401 on API routes)
+    // by ensure_login() below, same as any other unauthenticated request.
     ensure_login();
     $router = new Router();
     $router->get('auth', 'AuthController@permission'); 
@@ -52,6 +46,7 @@
     $router->post('api/payroll-run.revert', 'PayrollController@revert');
     $router->post('api/payroll-run.approve', 'PayrollController@approve');
     $router->post('api/payroll-run.reject', 'PayrollController@reject');
+    $router->post('api/payroll-run.cancel', 'PayrollController@cancel');
     $router->post('api/payroll-run.revise-after-reject', 'PayrollController@reviseAfterReject');
     $router->post('api/payroll-run.mark-paid', 'PayrollController@markPaid');
     $router->post('api/payroll-run.lock', 'PayrollController@lock');
@@ -229,4 +224,7 @@
     $router->post('api/employee.document.upload', 'EmployeeController@documentUpload');
     $router->get('api/employee.document.view', 'EmployeeController@documentView');
     $router->post('api/employee.document.delete', 'EmployeeController@documentDelete');
+    $router->post('api/payroll-sync.ingest', 'PayrollSyncController@ingest');
+    $router->get('api/payroll-sync.pending-list', 'PayrollSyncController@pendingList');
+    $router->get('api/payroll-sync.pending-get', 'PayrollSyncController@pendingGet');
     $router->dispatch();

@@ -10013,6 +10013,167 @@ CREATE TABLE `overtime_records` (
   CONSTRAINT `fk_overtime_records_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
+-- --------------------------------------------------------
+
+--
+-- Origami SSO auto-provisioning (auth/index.php). Origami's OAuth response only ever exposes a
+-- one-way SHA256 hash of its internal numeric IDs (never the raw ID), so identity established via
+-- SSO alone cannot be matched against companies.ref_id / employees.origami_ref_id (which store the
+-- raw ID, populated only by a real Master Data Sync -- still a stub, see OrigamiSyncClient). These
+-- hash columns are a second, independent matching path used only by auth/index.php; once a real
+-- sync eventually populates ref_id/origami_ref_id for the same row, both paths simply agree.
+--
+
+ALTER TABLE `companies`
+  ADD COLUMN `origami_sso_comp_key` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+    COMMENT 'SHA256(Origami comp_id) -- set only when auto-provisioned via SSO login, ref_id unknown at that point' AFTER `ref_id`,
+  ADD COLUMN `setup_status` enum('draft','active') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active'
+    COMMENT 'draft = auto-provisioned via SSO with placeholder registered_country/global_tax_id/etc; blocks PayrollRunModel::create() until Company Profile is saved with real values',
+  ADD UNIQUE KEY `uq_companies_origami_sso_comp_key` (`origami_sso_comp_key`);
+
+ALTER TABLE `employees`
+  ADD COLUMN `origami_sso_user_key` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+    COMMENT 'SHA256(Origami emp_id) -- set only when auto-provisioned via SSO login, origami_ref_id unknown at that point' AFTER `origami_ref_id`,
+  ADD COLUMN `is_payroll_ready` tinyint(1) NOT NULL DEFAULT 1
+    COMMENT '0 = auto-provisioned via SSO with placeholder salary/tax/employment data; excluded from PayrollRunModel::recalculate() until a real EmployeeModel::save() completes the profile',
+  ADD UNIQUE KEY `uq_employees_origami_sso_user_key` (`comp_id`, `origami_sso_user_key`);
+
+-- --------------------------------------------------------
+
+--
+-- Payroll Sync ingest API (see C:\xampp\htdocs\origami\payroll\docs\PAYROLL_SYNC_API.md).
+-- Origami Payroll (attendance/OT/leave processing) pushes an approved cycle's computed
+-- attendance-derived variable pay (OT, late/absent, leave, trip allowance, custom items) to
+-- POST /api/payroll-sync.ingest. `origami_payroll_comp_code` is a SEPARATE mapping key/ID-space
+-- from `ref_id`/`origami_sso_comp_key` above -- that doc explicitly says its own `comp_id` is
+-- "not meaningful outside" the sending app, so it must not be conflated with the SSO integration's
+-- Origami IDs. Employee mapping needs no new column: `items[].payroll_code` is guaranteed
+-- non-empty and matches `employees.employee_no` directly (Origami echoing back a code we own).
+--
+
+ALTER TABLE `companies`
+  ADD COLUMN `origami_payroll_comp_code` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+    COMMENT 'Mapping key for the Payroll Sync ingest API -- matches items[].comp_code, a different Origami subsystem/ID-space than ref_id/origami_sso_comp_key' AFTER `origami_sso_comp_key`,
+  ADD UNIQUE KEY `uq_companies_origami_payroll_comp_code` (`origami_payroll_comp_code`);
+
+CREATE TABLE `payroll_sync_processes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `origami_process_id` bigint(20) NOT NULL COMMENT 'idempotency key -- globally unique, not scoped per company',
+  `process_no` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `origami_report_id` bigint(20) DEFAULT NULL,
+  `origami_comp_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `origami_comp_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `origami_period_id` bigint(20) DEFAULT NULL,
+  `period_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `frequency_type` enum('monthly','semimonthly','weekly','biweekly') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `schema_version` tinyint(3) unsigned NOT NULL,
+  `item_count` int(11) NOT NULL DEFAULT 0,
+  `unmapped_item_count` int(11) NOT NULL DEFAULT 0,
+  `raw_payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'full original JSON as received, verbatim -- the audit trail for this table (no created_by/updated_by: the actor is Origami''s cron, not a logged-in employee)',
+  `received_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_sync_processes_origami_process_id` (`origami_process_id`),
+  KEY `idx_payroll_sync_processes_comp` (`comp_id`),
+  CONSTRAINT `fk_payroll_sync_processes_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payroll_sync_items` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `process_id` int(11) NOT NULL,
+  `employee_id` int(11) DEFAULT NULL COMMENT 'NULL when payroll_code could not be matched -- see mapping_status',
+  `payroll_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `emp_code` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `mapping_status` enum('mapped','unmapped') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `origami_report_item_id` bigint(20) DEFAULT NULL,
+  `dept_description` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `position_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `origami_branch_id` bigint(20) DEFAULT NULL,
+  `branch_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `origami_shift_working_id` bigint(20) DEFAULT NULL,
+  `shift_working_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pay_type` enum('cash','transfer') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `origami_pay_bank_id` bigint(20) DEFAULT NULL COMMENT 'Origami internal m_bank.id -- not meaningful outside Origami, kept for traceability only',
+  `pay_bank_code` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pay_bank_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pay_bank_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
+  `deduct_sso` tinyint(1) DEFAULT NULL COMMENT 'tri-state: NULL = never configured on Origami side (m_employee_welfare not populated), distinct from explicit false',
+  `key_version` tinyint(3) unsigned DEFAULT NULL COMMENT 'ENCRYPTION_KEY_V{n} version used for pay_bank_no in this row',
+  `working_days` decimal(6,2) DEFAULT NULL,
+  `working_mins` int(11) DEFAULT NULL,
+  `absent_days` decimal(6,2) DEFAULT NULL,
+  `absent_mins` int(11) DEFAULT NULL,
+  `late_mins` int(11) DEFAULT NULL,
+  `early_mins` int(11) DEFAULT NULL,
+  `ot_mins` int(11) DEFAULT NULL,
+  `ot_req_hrs` decimal(6,2) DEFAULT NULL,
+  `ot_req_working_day_hrs` decimal(6,2) DEFAULT NULL,
+  `ot_req_weekend_hrs` decimal(6,2) DEFAULT NULL,
+  `ot_req_holiday_hrs` decimal(6,2) DEFAULT NULL,
+  `leave_approve_days` decimal(6,2) DEFAULT NULL,
+  `leave_wait_days` decimal(6,2) DEFAULT NULL,
+  `leave_without_pay_days` decimal(6,2) DEFAULT NULL,
+  `trip_allowance` decimal(15,2) DEFAULT NULL,
+  `item_values` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw items[].item_values[] JSON array as sent -- opaque computed data at this stage, not normalized further',
+  PRIMARY KEY (`id`),
+  KEY `idx_payroll_sync_items_process` (`process_id`),
+  KEY `idx_payroll_sync_items_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_sync_items_process` FOREIGN KEY (`process_id`) REFERENCES `payroll_sync_processes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_sync_items_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payroll_sync_employee_status` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `process_id` int(11) NOT NULL,
+  `employee_id` int(11) DEFAULT NULL,
+  `payroll_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `emp_code` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `emp_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `dept_description` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `position_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `emp_start_date` date DEFAULT NULL,
+  `emp_resign_date` date DEFAULT NULL,
+  `is_new_hire` tinyint(1) NOT NULL DEFAULT 0,
+  `is_resigned_this_period` tinyint(1) NOT NULL DEFAULT 0,
+  `status_text` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_payroll_sync_employee_status_process` (`process_id`),
+  KEY `idx_payroll_sync_employee_status_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_sync_employee_status_process` FOREIGN KEY (`process_id`) REFERENCES `payroll_sync_processes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_sync_employee_status_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Payroll Process "Pending Pull" station: links a payroll_runs row back to the
+-- payroll_sync_processes row it was pulled from (Payroll Process page, station bar). NULL =
+-- created standalone, not from an Origami sync push -- the whole point is both paths stay
+-- supported. UNIQUE so a given sync process can only ever be pulled into one run.
+--
+
+ALTER TABLE `payroll_runs`
+  ADD COLUMN `sync_process_id` int(11) DEFAULT NULL
+    COMMENT 'payroll_sync_processes.id this run was pulled from via the Pending Pull station; NULL = created standalone, not from an Origami sync push' AFTER `cycle_id`,
+  ADD UNIQUE KEY `uq_payroll_runs_sync_process` (`sync_process_id`),
+  ADD CONSTRAINT `fk_payroll_runs_sync_process` FOREIGN KEY (`sync_process_id`) REFERENCES `payroll_sync_processes` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- --------------------------------------------------------
+
+--
+-- Payroll Process station bar: Cancelled state. Cancellable from draft/pending_approval/
+-- approved/rejected (anything before money has actually moved) -- not from paid/locked, since a
+-- run that's already been paid needs a real reversal process, not a state flip. Reason required,
+-- same shape as reject_reason/rejected_at/rejected_by.
+--
+
+ALTER TABLE `payroll_runs`
+  MODIFY COLUMN `state` enum('draft','pending_approval','approved','paid','locked','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  ADD COLUMN `cancelled_at` timestamp NULL DEFAULT NULL AFTER `reject_reason`,
+  ADD COLUMN `cancelled_by` int(11) DEFAULT NULL AFTER `cancelled_at`,
+  ADD COLUMN `cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `cancelled_by`;
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

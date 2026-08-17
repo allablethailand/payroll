@@ -30,6 +30,7 @@ function stateBadgeRd(state) {
         paid: 'bg-success-subtle text-success',
         locked: 'bg-dark-subtle text-dark',
         rejected: 'bg-danger-subtle text-danger',
+        cancelled: 'bg-dark-subtle text-muted',
     };
     const cls = map[state] || 'bg-light text-dark';
     const text = langData['state_' + state] || state;
@@ -79,6 +80,12 @@ function renderActionButtons(run) {
     } else if (run.state === 'rejected') {
         addBtn('btn-primary', 'fa-rotate', 'action_revise', 'Revise').attr('id', 'btnReviseRun');
     }
+    // Cancellable any time before money has moved -- draft/pending_approval/approved/rejected --
+    // matches PayrollRunModel::cancel()'s own allowed-state check exactly. Not shown for
+    // paid/locked/cancelled.
+    if (['draft', 'pending_approval', 'approved', 'rejected'].includes(run.state)) {
+        addBtn('btn-outline-dark', 'fa-ban', 'action_cancel', 'Cancel').attr('id', 'btnCancelRun');
+    }
 }
 
 function renderRunHeader(run) {
@@ -101,6 +108,11 @@ function renderRunHeader(run) {
         $('#rejectReasonBox').removeClass('d-none').html(`<i class="fa-solid fa-circle-exclamation me-1"></i><strong>${langData['reject_reason_display'] || 'Reject Reason'}:</strong> ${escapeHtmlRd(run.reject_reason)}`);
     } else {
         $('#rejectReasonBox').addClass('d-none').html('');
+    }
+    if (run.state === 'cancelled' && run.cancel_reason) {
+        $('#cancelReasonBox').removeClass('d-none').html(`<i class="fa-solid fa-ban me-1"></i><strong>${langData['cancel_reason_display'] || 'Cancel Reason'}:</strong> ${escapeHtmlRd(run.cancel_reason)}`);
+    } else {
+        $('#cancelReasonBox').addClass('d-none').html('');
     }
 
     if (Number(run.has_validation_errors) === 1) {
@@ -146,7 +158,7 @@ function auditActionLabel(action) {
         create: 'action_create', update: 'action_edit', recalculate: 'action_recalculate',
         submit: 'action_submit', revert: 'action_revert', approve: 'action_approve',
         reject: 'action_reject', reviseAfterReject: 'action_revise', markPaid: 'action_mark_paid',
-        lock: 'action_lock', delete: 'action_delete',
+        lock: 'action_lock', delete: 'action_delete', cancel: 'action_cancel',
     };
     const key = map[action];
     return (key && langData[key]) || action;
@@ -342,6 +354,38 @@ $(document).on('submit', '#rejectRunForm', function (e) {
             if (res.status) {
                 showSuccess(langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('rejectRunModal')).hide();
+                loadRunDetail();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
+    });
+});
+$(document).on('click', '#btnCancelRun', function () {
+    $('#cancel_reason').val('').removeClass('is-invalid').attr('placeholder', langData['cancel_reason_placeholder'] || 'Explain why this payroll run is being cancelled...');
+    new bootstrap.Modal(document.getElementById('cancelRunModal')).show();
+});
+$(document).on('submit', '#cancelRunForm', function (e) {
+    e.preventDefault();
+    const reason = $('#cancel_reason').val().trim();
+    if (!reason) {
+        $('#cancel_reason').addClass('is-invalid');
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.cancel`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({ id: PAYROLL_RUN_ID, reason: reason }),
+        success: function (res) {
+            if (res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('cancelRunModal')).hide();
                 loadRunDetail();
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');

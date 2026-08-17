@@ -67,7 +67,25 @@ class CompanyProfileModel {
             $statutoryJson = json_encode($data['statutory_data'], JSON_UNESCAPED_UNICODE);
         }
         if ($existing) {
-            $sql = "UPDATE companies SET 
+            // A company auto-provisioned via Origami SSO (auth/index.php) starts as
+            // setup_status='draft' with placeholder registered_country='XX'/'PENDING' fields --
+            // only advance it to 'active' once a real, supported country and non-placeholder
+            // required fields are actually saved. A draft re-saved with placeholders still
+            // pending stays draft. Existing companies are already setup_status='active' by
+            // default, so this only ever matters for auto-provisioned rows.
+            $isRealCountry = false;
+            if (!empty($data['registered_country']) && $data['registered_country'] !== 'XX') {
+                $chkCountry = $this->db->prepare("SELECT 1 FROM master_countries WHERE countries_code = :code LIMIT 1");
+                $chkCountry->execute([':code' => $data['registered_country']]);
+                $isRealCountry = (bool)$chkCountry->fetchColumn();
+            }
+            $placeholder = ['PENDING', ''];
+            $isComplete = $isRealCountry
+                && !in_array((string)($data['global_tax_id'] ?? ''), $placeholder, true)
+                && !in_array((string)($data['authorized_signatory_name'] ?? ''), $placeholder, true)
+                && !in_array((string)($data['address_line_1'] ?? ''), $placeholder, true);
+
+            $sql = "UPDATE companies SET
                         company_legal_name = :company_legal_name,
                         local_name = :local_name,
                         registered_country = :registered_country,
@@ -77,6 +95,7 @@ class CompanyProfileModel {
                         master_address_id = :master_address_id,
                         statutory_data = :statutory_data,
                         authorized_signatory_name = :authorized_signatory_name,
+                        setup_status = :setup_status,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id";
             $stmt = $this->db->prepare($sql);
@@ -90,9 +109,10 @@ class CompanyProfileModel {
                 ':address_line_2' => !empty($data['address_line_2']) ? $data['address_line_2'] : null,
                 ':master_address_id' => !empty($data['master_address_id']) ? (int)$data['master_address_id'] : null,
                 ':statutory_data' => $statutoryJson,
-                ':authorized_signatory_name' => $data['authorized_signatory_name'] ?? null
+                ':authorized_signatory_name' => $data['authorized_signatory_name'] ?? null,
+                ':setup_status' => $isComplete ? 'active' : 'draft',
             ]);
-        } 
+        }
     }
     public function paginateData($tableName, $compId, $searchColumns, $sortColumns, $start, $length, $search, $colIndex, $orderDir) {
         $sortColumn = $sortColumns[$colIndex] ?? $sortColumns[0];

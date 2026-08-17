@@ -140,6 +140,181 @@ html, body {
     width: 18px;
     border-radius: 2px;
 }
+.nav-hub-dropdown {
+    position: relative;
+}
+.nav-hub-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+.nav-hub-btn:hover {
+    opacity: 0.8;
+}
+.nav-hub-btn img {
+    width: 25px;
+    height: 25px;
+}
+.nav-hub-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 12px);
+    list-style: none;
+    margin: 0;
+    padding: 5px;
+    width: 260px;
+    box-sizing: border-box;
+    max-height: 450px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    z-index: 1010;
+    grid-template-columns: repeat(3, 1fr);
+    /* Firefox scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: #FF9900 rgba(255, 153, 0, 0.1);
+}
+.nav-hub-menu.active {
+    display: grid;
+}
+.nav-hub-menu::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border-radius: 14px;
+    background: linear-gradient(45deg, 
+        #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, 
+        #feca57, #ff9ff3, #54a0ff, #5f27cd, 
+        #ff6b6b);
+    background-size: 300% 300%;
+    animation: siriGlow 3s ease-in-out infinite;
+    z-index: -1;
+}
+.nav-hub-menu li {
+    background-color: #ffffff;
+}
+.nav-hub-menu li:first-child {
+    border-top-left-radius: 10px;
+}
+.nav-hub-menu li:nth-child(3) {
+    border-top-right-radius: 10px;
+}
+.nav-hub-menu li:nth-last-child(3) {
+  border-bottom-left-radius: 10px;
+}
+.nav-hub-menu li:last-child {
+    border-bottom-right-radius: 10px;
+}
+@keyframes siriGlow {
+    0% {
+        background-position: 0% 50%;
+        filter: hue-rotate(0deg) brightness(1);
+    }
+    25% {
+        background-position: 50% 0%;
+        filter: hue-rotate(90deg) brightness(1.2);
+    }
+    50% {
+        background-position: 100% 50%;
+        filter: hue-rotate(180deg) brightness(1);
+    }
+    75% {
+        background-position: 50% 100%;
+        filter: hue-rotate(270deg) brightness(1.2);
+    }
+    100% {
+        background-position: 0% 50%;
+        filter: hue-rotate(360deg) brightness(1);
+    }
+}
+/* Chrome/Edge/Safari scrollbar */
+.nav-hub-menu::-webkit-scrollbar {
+    width: 6px;
+}
+.nav-hub-menu::-webkit-scrollbar-track {
+    background: rgba(255, 153, 0, 0.1);
+    border-radius: 10px;
+}
+.nav-hub-menu::-webkit-scrollbar-thumb {
+    background: #FF9900;
+    border-radius: 10px;
+}
+.nav-hub-menu::-webkit-scrollbar-thumb:hover {
+    background: #e68a00;
+}
+.nav-hub-tile {
+    min-width: 0;
+}
+.nav-hub-tile-filler {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 18px 4px;
+    cursor: default;
+}
+.nav-hub-tile a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 18px 4px;
+    color: #4a5568;
+    text-decoration: none;
+    font-weight: 400;
+    text-align: center;
+    border-radius: 10px;
+    transition: background-color 0.15s ease;
+}
+.nav-hub-tile a:hover {
+    background-color: rgba(255, 153, 0, 0.1);
+    color: #1a202c;
+}
+.nav-hub-tile-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+}
+.nav-hub-tile-icon img {
+    max-width: 40px;
+    max-height: 40px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+.nav-hub-tile-label {
+    font-size: 0.75em;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    width: 100%;
+}
+.nav-hub-empty {
+    grid-column: 1 / -1;
+    padding: 10px 16px;
+    color: #94a3b8;
+    font-size: 0.9em;
+    text-align: center;
+}
 .profile-img-box {
     width: 42px;
     height: 42px;
@@ -461,6 +636,260 @@ html, body {
     background-color: rgba(255, 153, 0, .12);
     cursor: pointer;
 }
+/* ==========================================================================
+   Payroll Process "Station" bar + collapsible filter box.
+   Adapted from Origami's own Process page (app/views/process.php,
+   public/css/header.css .filter / .rows .columns .cards / .last-item / .inner) -- same
+   collapsible bordered filter box with a corner label + toggle icon, and the same
+   chevron-shaped station cards (fake-arrow via ::before/::after triangle notches) with a
+   reversed/rotated exception card for the branch-off state (Rejected here, Origami's own
+   Not Approved/Need Changes there) -- recolored to this app's orange/gold brand instead of
+   Origami's flat gray-on-white, same adaptation approach used for the header app-switcher.
+   ========================================================================== */
+.station-filter {
+    position: relative;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 22px 44px 16px 16px;
+    margin-bottom: 16px;
+    margin-top: 11px;
+    background: #ffffff;
+}
+/* Collapse/expand only clips this inner wrapper -- .station-filter itself must stay
+   overflow:visible or the corner label (positioned above the border) and the toggle icon get
+   cut off along with the collapsing content. */
+.station-filter-body {
+    overflow: hidden;
+    max-height: 200px;
+    transition: max-height 0.3s ease;
+}
+.station-filter.collapsed .station-filter-body {
+    max-height: 0;
+}
+.station-filter-label {
+    position: absolute;
+    top: -11px;
+    left: 14px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 1px 10px;
+    font-size: 12px;
+    color: #94a3b8;
+    z-index: 1;
+}
+.station-filter-toggle {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+    color: #FF9900;
+    cursor: pointer;
+    transition: color 0.15s ease, transform 0.2s ease;
+}
+.station-filter.collapsed .station-filter-toggle {
+    color: #94a3b8;
+}
+
+.station-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin-bottom: 18px;
+    padding: 4px 2px 8px;
+}
+.station-row::-webkit-scrollbar {
+    height: 5px;
+}
+.station-row::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 10px;
+}
+.station-row::-webkit-scrollbar-thumb {
+    background: #FF9900;
+    border-radius: 10px;
+}
+.station-col {
+    flex: 0 0 auto;
+    padding: 2px;
+}
+.station-col--reject {
+    margin-left: 24px;
+}
+.station-col--reject ~ .station-col--reject {
+    margin-left: 0;
+}
+.station-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 130px;
+    height: 38px;
+    padding: 0 20px 0 26px;
+    background: #f1f5f9;
+    color: #4a5568;
+    font-weight: 500;
+    white-space: nowrap;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.station-card::before,
+.station-card::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 0;
+    height: 0;
+    margin-top: -19px;
+    border-top: 19px solid transparent;
+    border-bottom: 19px solid transparent;
+}
+.station-card::before {
+    left: 0;
+    border-left: 12px solid #ffffff;
+}
+.station-card::after {
+    left: 100%;
+    border-left: 12px solid #f1f5f9;
+    z-index: 1;
+}
+.station-card:hover {
+    background: #e2e8f0;
+}
+.station-card:hover::after {
+    border-left-color: #e2e8f0;
+}
+.station-card.active {
+    background: #FF9900;
+    color: #ffffff;
+}
+.station-card.active::after {
+    border-left-color: #FF9900;
+}
+.station-count {
+    display: inline-block;
+    min-width: 18px;
+    background: #e2e8f0;
+    color: #64748b;
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+}
+.station-card.active .station-count {
+    background: rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+}
+
+/* Exception/branch-off station: whole card rotated 180deg so its chevron notches point the
+   opposite way (visually "branches off" instead of continuing the forward flow); .station-card-inner
+   is counter-rotated so its text/count still read normally. */
+.station-card--reject {
+    transform: rotate(180deg);
+}
+.station-card--reject::before {
+    border-left-color: #ffffff;
+}
+.station-card--reject::after {
+    border-left-color: #f1f5f9;
+}
+.station-card--reject:hover::after {
+    border-left-color: #e2e8f0;
+}
+.station-card--reject.active {
+    background: #dc3545;
+}
+.station-card--reject.active::after {
+    border-left-color: #dc3545;
+}
+/* Cancelled shares the reject card's rotated/branch-off shape but its own muted color -- a
+   deliberate stop, not an error to fix and resubmit, so it shouldn't read as "red = wrong". */
+.station-card--cancel.active {
+    background: #6c757d;
+}
+.station-card--cancel.active::after {
+    border-left-color: #6c757d;
+}
+.station-card-inner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transform: rotate(180deg);
+}
+
+#tb_pending_sync_wrapper .dt-length {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.bulk-pull-bar {
+    /* inline-flex (toggled from JS) so the pill sizes to its content instead of stretching the
+       full row width with a big empty gap between the count and the button */
+    align-items: center;
+    gap: 14px;
+    background: rgba(255, 153, 0, 0.08);
+    border-radius: 20px;
+    padding: 6px 8px 6px 16px;
+}
+.bulk-pull-bar-count {
+    color: #b45f00;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.sync-summary-card {
+    background: rgba(255, 153, 0, 0.06);
+    border: 1px solid rgba(255, 153, 0, 0.2);
+    border-radius: 14px;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 16px 12px 6px;
+}
+.sync-summary-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.sync-summary-icon {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 153, 0, 0.15);
+    color: #ec6622;
+    font-size: 0.9em;
+}
+.sync-detail-table {
+    border: 1px solid #eee;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.sync-detail-table table {
+    margin-bottom: 0;
+}
+.sync-detail-table thead th {
+    border-top: none;
+    padding: 12px 14px;
+}
+.sync-detail-table tbody td {
+    padding: 12px 14px;
+}
+
 .datepicker table tr td.day.focused,
 .datepicker table tr td.day:focus {
     background-color: rgba(255, 153, 0, .12);

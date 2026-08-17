@@ -403,6 +403,11 @@ class EmployeeModel {
         if ($encryptedAny) {
             $values['key_version'] = EncryptionService::currentKeyVersion();
         }
+        // requiredColumns() above has already validated completeness -- a successful save through
+        // this form (create or edit) always marks the profile ready for payroll, whether it
+        // started as an Origami SSO auto-provisioned placeholder or not. Not part of allColumns(),
+        // so origami_ref_id/origami_sso_user_key are never touched by this generic form.
+        $values['is_payroll_ready'] = 1;
 
         try {
             if ($id !== null) {

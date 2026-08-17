@@ -37,9 +37,46 @@
             <a href="#" class="nav-icon-link">
                 <img src="<?=BASE_URL?>/public/images/Bell.svg" alt="Notifications">
             </a>
-            <a href="#" class="nav-icon-link">
-                <img src="<?=BASE_URL?>/public/images/HUB.svg" alt="Origami Hub">
-            </a>
+            <div class="nav-hub-dropdown">
+                <button class="nav-hub-btn" type="button" title="Switch application">
+                    <img src="<?=BASE_URL?>/public/images/HUB.svg" alt="Origami Hub">
+                </button>
+                <ul class="nav-hub-menu" id="hubMenu">
+                    <?php
+                        $origamiApps = array_filter($_SESSION['origami_apps'] ?? [], fn($a) => (int)($a['app_active'] ?? 0) !== 1);
+                        $switchToken = $_SESSION['origami_switch_token'] ?? '';
+                    ?>
+                    <?php if (empty($origamiApps) || $switchToken === ''): ?>
+                        <li class="nav-hub-empty">No other applications</li>
+                    <?php else: ?>
+                        <?php foreach ($origamiApps as $app): ?>
+                            <li class="nav-hub-tile">
+                                <a href="<?=htmlspecialchars(rtrim(ORIGAMI_BASE_URL, '/'), ENT_QUOTES, 'UTF-8')?>/api/oauth/v2/switch?token=<?=urlencode($switchToken)?>&app=<?=urlencode((string)($app['app_key'] ?? ''))?>">
+                                    <span class="nav-hub-tile-icon">
+                                        <img src="<?=htmlspecialchars((string)($app['app_logo'] ?? ''), ENT_QUOTES, 'UTF-8')?>" alt="" onerror="this.onerror=null;this.src='<?=BASE_URL?>/public/images/origami_logo.png';">
+                                    </span>
+                                    <span class="nav-hub-tile-label"><?=htmlspecialchars(trim((string)($app['app_name'] ?? '')), ENT_QUOTES, 'UTF-8')?></span>
+                                </a>
+                            </li>
+                        <?php endforeach; ?>
+                        <?php
+                            // Grid is always exactly 3 columns wide and the corner-rounding CSS
+                            // (:first-child / :nth-child(3) / :nth-last-child(3) / :last-child)
+                            // assumes a full last row -- pad it out with inert, unclickable filler
+                            // tiles so the bottom corners always land on the actual last row
+                            // instead of wherever the item count % 3 happens to put them.
+                            $remainder = count($origamiApps) % 3;
+                            $fillersNeeded = $remainder > 0 ? 3 - $remainder : 0;
+                        ?>
+                        <?php for ($i = 0; $i < $fillersNeeded; $i++): ?>
+                            <li class="nav-hub-tile nav-hub-tile-filler" aria-hidden="true">
+                                <span class="nav-hub-tile-icon"><img src="<?=BASE_URL?>/public/images/origami_logo.png" alt="" style="opacity:0;"></span>
+                                <span class="nav-hub-tile-label">&nbsp;</span>
+                            </li>
+                        <?php endfor; ?>
+                    <?php endif; ?>
+                </ul>
+            </div>
             <div class="nav-lang-dropdown">
                 <button class="nav-lang-btn" type="button">
                     <img class="current-flag" src="<?=BASE_URL?>/public/flags/gb.png" width="15" alt="EN flag">

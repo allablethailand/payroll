@@ -15,6 +15,7 @@
                 <h5 class="fw-bold mb-1" id="runNameHeading">-</h5>
                 <div id="runStateBadge"></div>
                 <div class="text-danger small mt-2 d-none" id="rejectReasonBox"></div>
+                <div class="text-muted small mt-2 d-none" id="cancelReasonBox"></div>
             </div>
             <div class="d-flex gap-2 align-items-start flex-wrap justify-content-end">
                 <div id="runActionButtons" class="d-flex gap-2 flex-wrap justify-content-end"></div>
@@ -194,6 +195,30 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-danger"><span data-i18n="action_reject">Reject</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cancel Modal -->
+    <div class="modal fade" id="cancelRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="cancelRunModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="cancelRunModalLabel">
+                        <i class="fa-solid fa-ban me-1"></i><span data-i18n="cancel_modal_title">Cancel Payroll Run</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="cancelRunForm" novalidate>
+                    <div class="modal-body">
+                        <label class="form-label"><span data-i18n="cancel_reason_label">Cancel Reason</span> <span class="text-danger">*</span></label>
+                        <textarea class="form-control required" id="cancel_reason" name="reason" rows="3" data-i18n="cancel_reason_placeholder" placeholder="Explain why this payroll run is being cancelled..."></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-danger"><span data-i18n="confirm_cancel_run">Confirm Cancellation</span></button>
                     </div>
                 </form>
             </div>

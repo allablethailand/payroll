@@ -189,6 +189,38 @@ try {
     ], $adminUserId, true);
     check('duplicate period+cycle rejected', $dupRes['status'], false);
 
+    echo "=== Pending Pull (sync_process_id) ===\n";
+    $insSyncProc = $pdo->prepare("INSERT INTO payroll_sync_processes
+        (comp_id, origami_process_id, process_no, origami_comp_code, origami_comp_name, frequency_type, schema_version, raw_payload)
+        VALUES (:comp_id, :origami_process_id, :process_no, 'TESTCODE', 'Test Co.', 'monthly', 1, '{}')");
+    $insSyncProc->execute([':comp_id' => $compId, ':origami_process_id' => random_int(1000000, 9999999), ':process_no' => 'SYNCTEST_' . uniqid()]);
+    $syncProcessId = (int)$pdo->lastInsertId();
+
+    // Distinct periods from every other run created in this test (this-month is already taken by
+    // the very first fixture run above; next-month is taken by the "Delete only allowed in draft"
+    // run further down) -- +2/+3 months so isDuplicatePeriod() never interferes with what this
+    // section is actually testing.
+    $pullPeriodStart = (clone $today)->modify('first day of +2 months')->format('Y-m-d');
+    $pullPeriodEnd = (clone $today)->modify('last day of +2 months')->format('Y-m-d');
+    $pullRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'PULLED_' . uniqid(),
+        'period_start_date' => $pullPeriodStart, 'period_end_date' => $pullPeriodEnd, 'payment_date' => $pullPeriodEnd,
+        'sync_process_id' => $syncProcessId,
+    ], $adminUserId, true);
+    checkTrue('create with a valid unlinked sync_process_id succeeds' . (empty($pullRes['status']) ? " ({$pullRes['message']})" : ''), $pullRes['status']);
+    $pulledRunId = $pullRes['id'] ?? 0;
+    $pulledRunRow = $pdo->query("SELECT sync_process_id FROM payroll_runs WHERE id = {$pulledRunId}")->fetch(PDO::FETCH_ASSOC);
+    check('created run stored the sync_process_id', (int)($pulledRunRow['sync_process_id'] ?? 0), $syncProcessId);
+
+    $secondPullDate = (clone $today)->modify('first day of +3 months')->format('Y-m-d');
+    $secondPullEnd = (clone $today)->modify('last day of +3 months')->format('Y-m-d');
+    $reuseRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'REUSE_' . uniqid(),
+        'period_start_date' => $secondPullDate, 'period_end_date' => $secondPullEnd, 'payment_date' => $secondPullEnd,
+        'sync_process_id' => $syncProcessId,
+    ], $adminUserId, true);
+    check('reusing an already-pulled sync_process_id is rejected', $reuseRes['status'], false);
+
     echo "=== Recalculate ===\n";
     $calcRes = $runModel->recalculate($runId, $compId, $adminUserId, true);
     checkTrue('recalculate succeeds', $calcRes['status']);
@@ -306,6 +338,33 @@ try {
     $deleteRes = $runModel->delete($secondRun['id'], $compId, $adminUserId, true);
     checkTrue('delete succeeds on draft run', $deleteRes['status']);
     check('deleted run no longer retrievable', $runModel->get($secondRun['id'], $compId), null);
+
+    echo "=== Cancel ===\n";
+    $cancelTargetRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_CANCEL_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +4 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +4 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +4 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $cancelTargetId = $cancelTargetRes['id'];
+
+    $emptyReasonRes = $runModel->cancel($cancelTargetId, $compId, $adminUserId, true, '   ');
+    check('cancel without a reason is rejected', $emptyReasonRes['status'], false);
+
+    $cancelRes = $runModel->cancel($cancelTargetId, $compId, $adminUserId, true, 'No longer needed this period.');
+    checkTrue('cancel from draft succeeds' . (empty($cancelRes['status']) ? " ({$cancelRes['message']})" : ''), $cancelRes['status']);
+    $cancelledRun = $runModel->get($cancelTargetId, $compId);
+    check('state is cancelled', $cancelledRun['state'], 'cancelled');
+    check('cancel_reason stored', $cancelledRun['cancel_reason'], 'No longer needed this period.');
+    check('cancelled_by stored', (int)$cancelledRun['cancelled_by'], $adminUserId);
+
+    $recancelRes = $runModel->cancel($cancelTargetId, $compId, $adminUserId, true, 'Again.');
+    check('cancelling an already-cancelled run is rejected', $recancelRes['status'], false);
+
+    // $runId is 'locked' at this point in the test (happy-path section above) -- money has moved,
+    // so cancel() must refuse it regardless of reason.
+    $cancelLockedRes = $runModel->cancel($runId, $compId, $adminUserId, true, 'Trying to cancel a locked run.');
+    check('cancelling a locked (already-paid) run is rejected', $cancelLockedRes['status'], false);
 
     echo "=== Audit log has one entry per action ===\n";
     $auditLog = $runModel->getAuditLog($runId, $compId);
