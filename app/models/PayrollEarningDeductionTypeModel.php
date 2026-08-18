@@ -277,6 +277,56 @@ class PayrollEarningDeductionTypeModel {
         }
     }
 
+    /**
+     * A starter set of commonly-used/necessary earning & deduction items (per explicit request,
+     * 2026-08-19: "give the system defaults, widely-used + necessary ones, admin can add more or
+     * delete them -- but all soft delete"). Deletable like any other row here -- nothing about a
+     * seeded row is special/protected (is_sync_only stays 0) -- these are just a starting point,
+     * not a fixed system requirement. Idempotent: skips any item_code the company already has
+     * (active OR soft-deleted -- item_code stays reserved per the deleted_at-composite-unique
+     * caveat this project always double-checks at the application layer, same as everywhere else),
+     * so calling this again (e.g. re-clicking "Load Default Items") never creates duplicates or
+     * resurrects something an admin deliberately deleted.
+     * @return array{inserted:int,skipped:int}
+     */
+    public function seedDefaults(int $compId, ?int $userId): array {
+        $defaults = [
+            ['item_code' => 'OT', 'item_name_th' => 'ค่าล่วงเวลา', 'item_name_en' => 'Overtime Pay', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1, 'source_event_code' => 'ot_hours'],
+            ['item_code' => 'TRIP_ALLOW', 'item_name_th' => 'ค่าเที่ยว', 'item_name_en' => 'Trip Allowance', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable', 'source_event_code' => 'trip_allowance'],
+            ['item_code' => 'POSITION_ALLOW', 'item_name_th' => 'ค่าตำแหน่ง', 'item_name_en' => 'Position Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1],
+            ['item_code' => 'DILIGENCE', 'item_name_th' => 'เบี้ยขยัน', 'item_name_en' => 'Diligence Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1],
+            ['item_code' => 'MEAL_ALLOW', 'item_name_th' => 'ค่าอาหาร', 'item_name_en' => 'Meal Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'non_taxable'],
+            ['item_code' => 'PHONE_ALLOW', 'item_name_th' => 'ค่าโทรศัพท์', 'item_name_en' => 'Phone Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'taxable'],
+            ['item_code' => 'BONUS', 'item_name_th' => 'โบนัส', 'item_name_en' => 'Bonus', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable'],
+            ['item_code' => 'COMMISSION', 'item_name_th' => 'ค่าคอมมิชชั่น', 'item_name_en' => 'Commission', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1],
+            ['item_code' => 'LATE_DEDUCT', 'item_name_th' => 'หักมาสาย', 'item_name_en' => 'Late Deduction', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'before_tax', 'source_event_code' => 'late'],
+            ['item_code' => 'ABSENT_DEDUCT', 'item_name_th' => 'หักขาดงาน', 'item_name_en' => 'Absence Deduction', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'before_tax', 'source_event_code' => 'absent'],
+            ['item_code' => 'LOAN_REPAY', 'item_name_th' => 'หักเงินกู้ยืมพนักงาน', 'item_name_en' => 'Loan Repayment', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'after_tax'],
+            ['item_code' => 'STUDENT_LOAN', 'item_name_th' => 'หักเงินกู้ยืม กยศ.', 'item_name_en' => 'Student Loan (SLF)', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'before_tax', 'statutory_report_code' => 'TH_SLF'],
+            ['item_code' => 'UNIFORM_DEDUCT', 'item_name_th' => 'หักค่าเครื่องแบบ', 'item_name_en' => 'Uniform Deduction', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'after_tax'],
+        ];
+
+        $existingStmt = $this->db->prepare("SELECT item_code FROM `payroll_earning_deduction_types` WHERE comp_id = :comp_id");
+        $existingStmt->execute([':comp_id' => $compId]);
+        $existingCodes = array_map('strtoupper', array_column($existingStmt->fetchAll(PDO::FETCH_ASSOC), 'item_code'));
+
+        $inserted = 0;
+        $skipped = 0;
+        foreach ($defaults as $item) {
+            if (in_array(strtoupper($item['item_code']), $existingCodes, true)) {
+                $skipped++;
+                continue;
+            }
+            $res = $this->save($compId, $item, (int)$userId);
+            if (!empty($res['status'])) {
+                $inserted++;
+            } else {
+                $skipped++;
+            }
+        }
+        return ['inserted' => $inserted, 'skipped' => $skipped];
+    }
+
     public function delete(int $compId, int $id, int $userId): array {
         try {
             $stmtCheck = $this->db->prepare("SELECT id, is_sync_only FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");

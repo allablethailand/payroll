@@ -10,6 +10,46 @@ declare(strict_types=1);
  * consumed) -- actually turning item_values/attendance figures into earning/deduction lines on a
  * run is still separate, later work; this model never touches employee_earning_deductions.
  *
+ * remapUnmappedItems() is called by PayrollRunModel::create() at the moment of pulling a pending
+ * process into a run -- it runs a full Origami HR master-data sync first (department/position/
+ * shift/employee, via MasterDataSyncOrchestrator) then re-resolves any row still unmapped, so the
+ * user doesn't have to click "Sync Now" as a separate step before pulling (per explicit request).
+ * It never re-writes employee_id for a row already mapped -- only rows still sitting at
+ * mapping_status='unmapped' from ingest time are touched.
+ *
+ * createPlaceholderEmployeesForUnmapped() (called right after remapUnmappedItems(), same Pending
+ * Pull moment) is a DIFFERENT, deliberately simpler mechanism from the Origami-HR-API sync above --
+ * per explicit clarification (2026-08-19), "Sync employee ข้อมูล" here means pulling an employee
+ * IN using only what THIS payload already told us (payroll_code + payroll_sync_employee_status),
+ * not calling out to the real Origami HR API. It auto-creates a minimal `employees` row
+ * (is_payroll_ready=0, data_source='sync') for any payroll_code that still doesn't match an
+ * employee after remapUnmappedItems() ran, so the run isn't blocked on an admin manually creating
+ * the employee first -- HR fills in the rest afterward via the normal Employee edit form. Calling
+ * the real Origami HR employee sync directly (rather than this payload-derived placeholder) remains
+ * a separate, future feature -- this method never touches MasterDataSyncOrchestrator/EmployeeSyncer.
+ *
+ * applyEmployeeMasterFields() (called right after createPlaceholderEmployeesForUnmapped(), same
+ * Pending Pull moment) overwrites payment_type/bank_id/bank_account_no/sso_enrolled/id_card_no/id_card_issue_date/
+ * id_card_expire_date on `employees` for every row resolved to an employee this pull -- per
+ * explicit request (2026-08-19), this data is treated as HR-owned/source-of-truth on every pull,
+ * NOT "payroll-owned, default-once" like the rest of employees' payment/tax config -- the
+ * reasoning is that this data originates from Origami's own already-approved payroll process, not
+ * from a payroll admin's local config in this app, so there's nothing local to protect from being
+ * overwritten. `pay_bank_name` (the bank's own name, e.g. "Kasikornbank") is never written to
+ * `employees.bank_account_name` (the account HOLDER's name) -- the payload has no equivalent for
+ * that field, so it (and bank_branch) are deliberately left untouched, same reasoning as
+ * `EmployeeSyncer` never touching payroll-owned fields it has no real source for.
+ * `employees.id_card_issue_date` (new column, added alongside this feature) is a sync-pull-only
+ * field -- deliberately left OUT of `EmployeeModel::allColumns()` so the generic Employee Detail
+ * edit form (which has no input for it) can never silently null it out on an unrelated save; if a
+ * manual-edit UI is ever added for it, that omission needs to be revisited at the same time.
+ * `employees.key_version` is a single column shared by every encrypted field on the row (id_card_no,
+ * tax_id_no, passport_no, bank_account_no, sso_no, spouse_id_card_no) -- overwriting just the two
+ * fields this method cares about without re-encrypting the others under the same key version would
+ * desync that shared column and make sibling fields undecryptable, so this method reads, decrypts,
+ * and re-encrypts the WHOLE encrypted set together (same invariant EmployeeModel::save() keeps by
+ * always round-tripping every encrypted field through the form together).
+ *
  * Company mapping uses `companies.origami_payroll_comp_code` -- a separate ID-space from the SSO
  * integration's `ref_id`/`origami_sso_comp_key` (the doc is explicit that this payload's own
  * `comp_id` is "not meaningful outside" the sending app). Employee mapping needs no new column:
@@ -23,16 +63,65 @@ declare(strict_types=1);
  * payroll_run_details.calc_status/calc_errors: per-row failure, operation still succeeds).
  *
  * items[].pay_type / .pay_bank_id / .pay_bank_code / .pay_bank_name / .pay_bank_no / .deduct_sso
- * (added to the doc 2026-08-17) are stored as-received
- * but, per this task's scope, never touched beyond storage -- nothing here writes to
- * bank_accounts/employees or any statutory config; a human still has to review and pull each
- * process into a run before any of this becomes real payroll data. pay_bank_no is the one field
- * here that's genuine PII (an account number), so it's encrypted at rest the same way as
- * BankAccountModel/EmployeeModel (EncryptionService, value + row-level key_version column) even
- * though this table is just a staging area -- same class of sensitive data deserves the same
- * protection regardless of which table it's passing through. getProcessDetail() decrypts it back
- * only to mask it to the last 4 digits for the View modal; the raw decrypted number and
- * key_version never leave this model.
+ * (added to the doc 2026-08-17) are stored as-received at ingest time, encrypted at rest the same
+ * way as BankAccountModel/EmployeeModel where PII (pay_bank_no is an account number) is involved
+ * (EncryptionService, value + row-level key_version column) even though this table is just a
+ * staging area -- same class of sensitive data deserves the same protection regardless of which
+ * table it's passing through. getProcessDetail() decrypts pay_bank_no back only to mask it to the
+ * last 4 digits for the View modal; the raw decrypted number and key_version never leave this
+ * model there. Applied to `employees` on pull by applyEmployeeMasterFields() -- see that method's
+ * own docblock above; ingest() itself never writes to `employees`, only applyEmployeeMasterFields()
+ * (a later, separate step in the Pending Pull flow) does.
+ *
+ * items[].idcard / .idcard_issued / .idcard_expire (added to the doc 2026-08-18) are stored the
+ * same as pay_bank_no above -- idcard (the national ID number) is genuine PII so it's encrypted
+ * at rest via EncryptionService, sharing this row's single key_version column with pay_bank_no
+ * (both are encrypted with whatever the current key version is at ingest time, so one column can
+ * serve both, same convention as employees.key_version covering several encrypted columns at
+ * once). idcard_issued/idcard_expire are plain dates, not PII on their own. getProcessDetail()
+ * decrypts and masks id_card_no to the last 4 digits the same way as pay_bank_no_masked. Also
+ * applied to `employees` by applyEmployeeMasterFields(), same as pay_bank_no above.
+ *
+ * items[].dept_id / .posi_id / .title / .gender / .date_birth / .nickname / .nationality /
+ * .religion / .marital_status / .military_service / .emp_pic / .email / .emp_tel / .spouse /
+ * .children (added to the doc 2026-08-18 rev 2) are all stored as-received at ingest time (see
+ * `payroll_sync_items` column comments). What applyEmployeeMasterFields() actually does with each
+ * on pull, per explicit request (2026-08-19, "map correctly into the Employee form -- Department/
+ * Position/Bank: create if missing, else fetch the existing ID"):
+ *   - dept_id/.posi_id (+ the existing dept_description/position_name) resolve-or-create against
+ *     structure_departments/structure_positions -- see resolveOrCreateDepartmentId()/
+ *     resolveOrCreatePositionId() docblock. pay_bank_code/.pay_bank_name got the equivalent
+ *     upgrade (resolveBankId() -> resolveOrCreateBankId()) at the same time, same "create if
+ *     missing" treatment applied consistently across all three.
+ *   - title/.gender/.marital_status are mapped only when they normalize to a recognized value
+ *     (see normalizeTitle()/normalizeGender()/normalizeMaritalStatus()) -- these are documented as
+ *     raw legacy values on the wire, sometimes a numeric code with no glossary given, so an
+ *     unrecognized value is left unmapped rather than guessed.
+ *   - date_birth/.nationality/.religion map directly to date_of_birth/nationality/religion
+ *     (unambiguous, low-risk free-text/date fields).
+ *   - nickname maps to BOTH nickname_th and nickname_en (no separate TH/EN source on the wire).
+ *   - email maps to company_email (NOT personal_email, which is this app's own NOT NULL field --
+ *     overwriting it from an ambiguous upstream source risked clobbering real data with a possibly-
+ *     different work email). emp_tel maps to office_tel (NOT mobile_no, which is NOT NULL/10-char
+ *     mobile-specific and not guaranteed to match emp_tel's format).
+ *   - military_service is intentionally NEVER mapped to employees.military_status -- the two
+ *     aren't even documented as the same concept (free text vs. a structured enum) and no example
+ *     values were given to build a mapping from.
+ *   - pass_pro/.pass_pro_date are intentionally NEVER mapped -- "probation passed" logically
+ *     implies an employment_status transition (probation -> permanent/contract), which is a
+ *     business decision (what should it become, effective when) beyond a pure field copy; stored
+ *     for a human to act on, not auto-applied.
+ *   - emp_pic is intentionally NEVER copied into employees.profile_photo_path -- it's a path on
+ *     Origami's own local filesystem ("not resolved to an absolute/public URL" per the doc), so
+ *     copying it verbatim would just produce a broken image reference on this app's side.
+ *   - spouse/.children are stored encrypted (spouse_data/children_data, whole-JSON-blob encryption
+ *     since there's no per-field column to encrypt individually -- both contain real PII like
+ *     spouse_idcard/child_idcard) but intentionally NOT yet written to employees.has_spouse/
+ *     .spouse_name/.spouse_id_card_no or the `employee_dependents` table -- doing that safely needs
+ *     its own design pass (e.g. how to avoid a sync-driven overwrite clobbering a dependent a
+ *     payroll admin entered manually and Origami doesn't know about), not something to fold in as
+ *     a side effect of this task. getProcessDetail() decrypts+masks the idcard-like nested fields
+ *     before they'd ever reach the frontend, same policy as pay_bank_no/id_card_no above.
  */
 class PayrollSyncModel {
     private PDO $db;
@@ -147,18 +236,26 @@ class PayrollSyncModel {
                 (process_id, employee_id, payroll_code, emp_code, mapping_status, origami_report_item_id,
                  dept_description, position_name, origami_branch_id, branch_name,
                  origami_shift_working_id, shift_working_name,
-                 pay_type, origami_pay_bank_id, pay_bank_code, pay_bank_name, pay_bank_no, deduct_sso, key_version,
+                 pay_type, origami_pay_bank_id, pay_bank_code, pay_bank_name, pay_bank_no, deduct_sso,
+                 id_card_no, id_card_issue_date, id_card_expire_date, key_version,
                  working_days, working_mins, absent_days, absent_mins, late_mins, early_mins,
                  ot_mins, ot_req_hrs, ot_req_working_day_hrs, ot_req_weekend_hrs, ot_req_holiday_hrs,
-                 leave_approve_days, leave_wait_days, leave_without_pay_days, trip_allowance, item_values)
+                 leave_approve_days, leave_wait_days, leave_without_pay_days, trip_allowance, item_values,
+                 dept_id, posi_id, pass_pro, pass_pro_date, title, gender, date_birth, nickname,
+                 nationality, religion, marital_status, military_service, emp_pic, email, emp_tel,
+                 spouse_data, children_data)
             VALUES
                 (:process_id, :employee_id, :payroll_code, :emp_code, :mapping_status, :report_item_id,
                  :dept_description, :position_name, :branch_id, :branch_name,
                  :shift_working_id, :shift_working_name,
-                 :pay_type, :pay_bank_id, :pay_bank_code, :pay_bank_name, :pay_bank_no, :deduct_sso, :key_version,
+                 :pay_type, :pay_bank_id, :pay_bank_code, :pay_bank_name, :pay_bank_no, :deduct_sso,
+                 :id_card_no, :id_card_issue_date, :id_card_expire_date, :key_version,
                  :working_days, :working_mins, :absent_days, :absent_mins, :late_mins, :early_mins,
                  :ot_mins, :ot_req_hrs, :ot_req_working_day_hrs, :ot_req_weekend_hrs, :ot_req_holiday_hrs,
-                 :leave_approve_days, :leave_wait_days, :leave_without_pay_days, :trip_allowance, :item_values)");
+                 :leave_approve_days, :leave_wait_days, :leave_without_pay_days, :trip_allowance, :item_values,
+                 :dept_id, :posi_id, :pass_pro, :pass_pro_date, :title, :gender, :date_birth, :nickname,
+                 :nationality, :religion, :marital_status, :military_service, :emp_pic, :email, :emp_tel,
+                 :spouse_data, :children_data)");
 
         $unmappedCount = 0;
         foreach ($items as $item) {
@@ -169,11 +266,21 @@ class PayrollSyncModel {
                 $unmappedCount++;
             }
             $payType = in_array($item['pay_type'] ?? null, self::PAY_TYPES, true) ? $item['pay_type'] : null;
-            // deduct_sso is tri-state on the wire (true/false/null) -- strict compare so "not sent"
-            // and "explicitly false" don't collapse into the same stored value.
+            // deduct_sso / pass_pro are both tri-state on the wire (true/false/null) -- strict
+            // compare so "not sent" and "explicitly false" don't collapse into the same stored value.
             $deductSso = array_key_exists('deduct_sso', $item) && $item['deduct_sso'] !== null
                 ? ($item['deduct_sso'] ? 1 : 0) : null;
+            $passPro = array_key_exists('pass_pro', $item) && $item['pass_pro'] !== null
+                ? ($item['pass_pro'] ? 1 : 0) : null;
             $bankNoEnc = isset($item['pay_bank_no']) ? EncryptionService::encrypt((string)$item['pay_bank_no']) : null;
+            $idCardEnc = isset($item['idcard']) ? EncryptionService::encrypt((string)$item['idcard']) : null;
+            // spouse/children (2026-08-18 rev 2) carry nested PII (spouse_idcard, child_idcard,
+            // spouse_tax, etc.) -- same protection as pay_bank_no/idcard above, just applied to the
+            // whole JSON blob at once rather than field-by-field, since there's no per-field column
+            // to encrypt individually. Sharing this row's single key_version column, same as the
+            // other two encrypted fields.
+            $spouseEnc = !empty($item['spouse']) ? EncryptionService::encrypt(json_encode($item['spouse'], JSON_UNESCAPED_UNICODE)) : null;
+            $childrenEnc = !empty($item['children']) ? EncryptionService::encrypt(json_encode($item['children'], JSON_UNESCAPED_UNICODE)) : null;
             $stmt->execute([
                 ':process_id' => $processRowId, ':employee_id' => $employeeId, ':payroll_code' => $payrollCode,
                 ':emp_code' => $item['emp_code'] ?? null, ':mapping_status' => $mappingStatus,
@@ -184,7 +291,10 @@ class PayrollSyncModel {
                 ':pay_type' => $payType, ':pay_bank_id' => $item['pay_bank_id'] ?? null,
                 ':pay_bank_code' => $item['pay_bank_code'] ?? null, ':pay_bank_name' => $item['pay_bank_name'] ?? null,
                 ':pay_bank_no' => $bankNoEnc['value'] ?? null, ':deduct_sso' => $deductSso,
-                ':key_version' => $bankNoEnc['key_version'] ?? null,
+                ':id_card_no' => $idCardEnc['value'] ?? null,
+                ':id_card_issue_date' => $item['idcard_issued'] ?? null,
+                ':id_card_expire_date' => $item['idcard_expire'] ?? null,
+                ':key_version' => $bankNoEnc['key_version'] ?? $idCardEnc['key_version'] ?? $spouseEnc['key_version'] ?? $childrenEnc['key_version'] ?? null,
                 ':working_days' => $item['working_days'] ?? null, ':working_mins' => $item['working_mins'] ?? null,
                 ':absent_days' => $item['absent_days'] ?? null, ':absent_mins' => $item['absent_mins'] ?? null,
                 ':late_mins' => $item['late_mins'] ?? null, ':early_mins' => $item['early_mins'] ?? null,
@@ -194,6 +304,14 @@ class PayrollSyncModel {
                 ':leave_approve_days' => $item['leave_approve_days'] ?? null, ':leave_wait_days' => $item['leave_wait_days'] ?? null,
                 ':leave_without_pay_days' => $item['leave_without_pay_days'] ?? null, ':trip_allowance' => $item['trip_allowance'] ?? null,
                 ':item_values' => isset($item['item_values']) ? json_encode($item['item_values'], JSON_UNESCAPED_UNICODE) : null,
+                ':dept_id' => $item['dept_id'] ?? null, ':posi_id' => $item['posi_id'] ?? null,
+                ':pass_pro' => $passPro, ':pass_pro_date' => $item['pass_pro_date'] ?? null,
+                ':title' => $item['title'] ?? null, ':gender' => $item['gender'] ?? null,
+                ':date_birth' => $item['date_birth'] ?? null, ':nickname' => $item['nickname'] ?? null,
+                ':nationality' => $item['nationality'] ?? null, ':religion' => $item['religion'] ?? null,
+                ':marital_status' => $item['marital_status'] ?? null, ':military_service' => $item['military_service'] ?? null,
+                ':emp_pic' => $item['emp_pic'] ?? null, ':email' => $item['email'] ?? null, ':emp_tel' => $item['emp_tel'] ?? null,
+                ':spouse_data' => $spouseEnc['value'] ?? null, ':children_data' => $childrenEnc['value'] ?? null,
             ]);
         }
         return $unmappedCount;
@@ -225,6 +343,523 @@ class PayrollSyncModel {
         }
     }
 
+    /**
+     * Re-resolves employee_id for whatever's still unmapped on a process -- called from the
+     * "Pending Pull" flow (PayrollRunModel::create()) right after a fresh master-data sync, so an
+     * employee who only just landed in `employees` (or whose employee_no was only just corrected)
+     * becomes mapped without needing Origami to re-push the whole payload. payroll_code/emp_code/
+     * attendance figures never change here -- only which employee row a row resolves to.
+     * @return int number of rows newly resolved (was unmapped, now mapped)
+     */
+    public function remapUnmappedItems(int $processRowId, int $compId): int {
+        $stmt = $this->db->prepare("SELECT id, payroll_code FROM payroll_sync_items WHERE process_id = :process_id AND mapping_status = 'unmapped'");
+        $stmt->execute([':process_id' => $processRowId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows)) {
+            return 0;
+        }
+        $update = $this->db->prepare("UPDATE payroll_sync_items SET employee_id = :employee_id, mapping_status = 'mapped' WHERE id = :id");
+        $resolvedCount = 0;
+        foreach ($rows as $row) {
+            $employeeId = $this->resolveEmployeeId($compId, (string)$row['payroll_code']);
+            if ($employeeId !== null) {
+                $update->execute([':employee_id' => $employeeId, ':id' => $row['id']]);
+                $resolvedCount++;
+            }
+        }
+        if ($resolvedCount > 0) {
+            $this->db->prepare("UPDATE payroll_sync_processes SET unmapped_item_count = unmapped_item_count - :n WHERE id = :id")
+                ->execute([':n' => $resolvedCount, ':id' => $processRowId]);
+        }
+        return $resolvedCount;
+    }
+
+    /**
+     * Auto-creates a minimal placeholder `employees` row for every payroll_sync_items row still
+     * unmapped after remapUnmappedItems() -- per explicit request (2026-08-19): "Sync ข้อมูล
+     * Employee" here means pulling the employee IN from whatever this already-received sync
+     * payload knows about them (payroll_code + payroll_sync_employee_status.emp_name/emp_start_date),
+     * NOT calling out to the real Origami HR API (that's MasterDataSyncOrchestrator/EmployeeSyncer,
+     * a separate, still-future feature -- this method never touches it). Mirrors the exact
+     * placeholder-provisioning pattern already established in auth/index.php for SSO first-login
+     * (is_payroll_ready=0, dummy-but-NOT-NULL contact/emergency fields) with one difference:
+     * employee_no is set to payroll_code verbatim rather than a generated code, because
+     * resolveEmployeeId() (and the rest of this class) matches payroll_code against
+     * employees.employee_no directly -- a generated code would make the row unmatchable forever.
+     * data_source='sync' (not 'manual' like the SSO placeholder) so it's visibly distinguishable
+     * as sync-originated once HR fills in the rest via the normal Employee edit form (which flips
+     * is_payroll_ready back to 1, same as any other placeholder profile in this app).
+     * @return int number of employees newly created (rows merely re-resolved to an
+     *   already-existing employee via the race-safety fallback below do NOT count here)
+     */
+    public function createPlaceholderEmployeesForUnmapped(int $processRowId, int $compId, ?int $triggeredBy): int {
+        $stmt = $this->db->prepare("SELECT id, payroll_code FROM payroll_sync_items WHERE process_id = :process_id AND mapping_status = 'unmapped' AND employee_id IS NULL");
+        $stmt->execute([':process_id' => $processRowId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows)) {
+            return 0;
+        }
+
+        $statusStmt = $this->db->prepare("SELECT emp_name, emp_start_date FROM payroll_sync_employee_status WHERE process_id = :process_id AND payroll_code = :payroll_code LIMIT 1");
+        $insertEmployee = $this->db->prepare(
+            "INSERT INTO employees
+                (comp_id, employee_no, data_source, is_payroll_ready, employee_type, employee_status,
+                 title, gender, name_th, surname_th, name_en, surname_en,
+                 date_of_birth, nationality, personal_email, mobile_no,
+                 address_line_1_register, address_line_1_contact,
+                 emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+                 employment_date, employment_status, employment_type, workforce_type, record_time_method,
+                 payment_type, salary_type, salary_effective_date, tax_calculation_method)
+             VALUES
+                (:comp_id, :employee_no, 'sync', 0, 'domestic', 'active',
+                 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en,
+                 '1900-01-01', 'Unknown', :email, '0000000000',
+                 'PENDING', 'PENDING',
+                 'PENDING', 'PENDING', 'PENDING', '0000000000',
+                 :employment_date, 'probation', 'full_time', 'office', 'none',
+                 'cash', 'monthly', :employment_date, 'average')"
+        );
+        $mapItem = $this->db->prepare("UPDATE payroll_sync_items SET employee_id = :employee_id, mapping_status = 'mapped' WHERE id = :id");
+
+        $ownTransaction = !$this->db->inTransaction();
+        if ($ownTransaction) { $this->db->beginTransaction(); }
+        $createdCount = 0;
+        $resolvedCount = 0;
+        try {
+            foreach ($rows as $row) {
+                $payrollCode = trim((string)$row['payroll_code']);
+                if ($payrollCode === '') {
+                    continue;
+                }
+
+                // Race/idempotency safety: another row in this same batch (or a concurrent pull)
+                // may have already created this employee_no since remapUnmappedItems() last ran.
+                $existingId = $this->resolveEmployeeId($compId, $payrollCode);
+                if ($existingId !== null) {
+                    $mapItem->execute([':employee_id' => $existingId, ':id' => $row['id']]);
+                    $resolvedCount++;
+                    continue;
+                }
+
+                $statusStmt->execute([':process_id' => $processRowId, ':payroll_code' => $payrollCode]);
+                $status = $statusStmt->fetch(PDO::FETCH_ASSOC);
+                $empName = trim((string)($status['emp_name'] ?? ''));
+                if ($empName !== '') {
+                    $parts = preg_split('/\s+/', $empName, 2);
+                    $firstName = $parts[0];
+                    $lastName = $parts[1] ?? $parts[0];
+                } else {
+                    // No employee_status row (or no name on it) for this payroll_code -- still
+                    // create the row so the pull isn't blocked, using the code itself as a visible
+                    // "needs a real name" placeholder rather than leaving NOT NULL columns empty.
+                    $firstName = $payrollCode;
+                    $lastName = $payrollCode;
+                }
+                $empStartDate = $status['emp_start_date'] ?? null;
+                $employmentDate = (is_string($empStartDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $empStartDate)) ? $empStartDate : date('Y-m-d');
+                $placeholderEmail = 'sync-pending-' . strtolower(preg_replace('/[^A-Za-z0-9]/', '', $payrollCode)) . '-' . $processRowId . '@placeholder.local';
+
+                try {
+                    $insertEmployee->execute([
+                        ':comp_id' => $compId, ':employee_no' => $payrollCode,
+                        ':name_th' => $firstName, ':surname_th' => $lastName,
+                        ':name_en' => $firstName, ':surname_en' => $lastName,
+                        ':email' => $placeholderEmail, ':employment_date' => $employmentDate,
+                    ]);
+                    $newEmployeeId = (int)$this->db->lastInsertId();
+                    $mapItem->execute([':employee_id' => $newEmployeeId, ':id' => $row['id']]);
+                    $createdCount++;
+                    $resolvedCount++;
+                } catch (PDOException $e) {
+                    // Race: another concurrent pull already created this employee_no since the
+                    // check above -- re-resolve and map to it rather than failing the whole batch
+                    // (same per-row-failure-tolerant shape as the rest of this class).
+                    $raceId = $this->resolveEmployeeId($compId, $payrollCode);
+                    if ($raceId !== null) {
+                        $mapItem->execute([':employee_id' => $raceId, ':id' => $row['id']]);
+                        $resolvedCount++;
+                    }
+                }
+            }
+            if ($resolvedCount > 0) {
+                $this->db->prepare("UPDATE payroll_sync_processes SET unmapped_item_count = unmapped_item_count - :n WHERE id = :id")
+                    ->execute([':n' => $resolvedCount, ':id' => $processRowId]);
+            }
+            if ($ownTransaction) { $this->db->commit(); }
+        } catch (Throwable $e) {
+            if ($ownTransaction && $this->db->inTransaction()) { $this->db->rollBack(); }
+            throw $e;
+        }
+        return $createdCount;
+    }
+
+    /**
+     * Overwrites payment/SSO/ID-card master data on `employees` from every currently-mapped row
+     * of a process -- see the class docblock for why this is treated as source-of-truth (overwrite
+     * every pull) rather than the usual "payroll-owned, default-once" rule.
+     * @return int number of employees written to
+     */
+    public function applyEmployeeMasterFields(int $processRowId, int $compId, ?int $triggeredBy): int {
+        $stmt = $this->db->prepare("SELECT employee_id, pay_type, pay_bank_code, pay_bank_name, pay_bank_no, deduct_sso,
+                id_card_no, id_card_issue_date, id_card_expire_date, key_version,
+                dept_id, dept_description, posi_id, position_name,
+                title, gender, date_birth, nickname, nationality, religion, marital_status, email, emp_tel
+            FROM payroll_sync_items WHERE process_id = :process_id AND mapping_status = 'mapped' AND employee_id IS NOT NULL");
+        $stmt->execute([':process_id' => $processRowId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $updated = 0;
+        foreach ($rows as $row) {
+            if ($this->applyOneEmployeeMasterFields($compId, (int)$row['employee_id'], $row, $triggeredBy)) {
+                $updated++;
+            }
+        }
+        return $updated;
+    }
+
+    /**
+     * Resolve-or-create for department/position/bank (per explicit request, 2026-08-19: "if it
+     * doesn't exist yet, create it; if it already exists, just fetch its ID and use it" --
+     * department, position, AND bank all get the same treatment). Department/position reuse the
+     * exact origami_ref_id + data_source='sync' columns already built for the real Origami HR API
+     * sync (MasterDataSyncOrchestrator/DepartmentSyncer/PositionSyncer, see AbstractMasterDataSyncer)
+     * -- items[].dept_id/.posi_id (added to the doc 2026-08-18 rev 2) line up with that column
+     * directly. This is deliberately NOT a call into DepartmentSyncer/PositionSyncer::sync() itself
+     * -- that does a full fetch-and-reconcile (including deactivating anything missing from the
+     * fetch), wrong for touching one single department/position mentioned on one sync row. Matches
+     * by origami_ref_id first (when the payload sent an id), falls back to an exact name match
+     * (structure_departments/positions have no natural code equivalent to key a sync row on), and
+     * only creates a new row when neither resolves -- a generated code (since department_code/
+     * position_code are NOT NULL with nothing equivalent on the wire) using the origami id when
+     * available, else a hash of the name, so a re-pull of the same unmatched name/id is idempotent
+     * (matches its own previously-created row via origami_ref_id or name, not a fresh row every time).
+     */
+    private function resolveOrCreateDepartmentId(int $compId, ?int $origamiDeptId, ?string $deptName, ?int $triggeredBy): ?int {
+        $deptName = $deptName !== null ? trim($deptName) : null;
+        if ($origamiDeptId === null && ($deptName === null || $deptName === '')) {
+            return null;
+        }
+        if ($origamiDeptId !== null) {
+            $stmt = $this->db->prepare("SELECT id FROM structure_departments WHERE origami_ref_id = :ref AND comp_id = :comp AND deleted_at IS NULL");
+            $stmt->execute([':ref' => $origamiDeptId, ':comp' => $compId]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) {
+                return (int)$id;
+            }
+        }
+        if ($deptName !== null && $deptName !== '') {
+            $stmt = $this->db->prepare("SELECT id FROM structure_departments WHERE comp_id = :comp AND deleted_at IS NULL AND status != 'deleted' AND (department_name_th = :name OR department_name_en = :name) LIMIT 1");
+            $stmt->execute([':comp' => $compId, ':name' => $deptName]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) {
+                return (int)$id;
+            }
+        }
+        if ($deptName === null || $deptName === '') {
+            // Nothing to label a brand-new department with -- an id alone (no dept_description
+            // sent) isn't enough to create a meaningful row.
+            return null;
+        }
+        $code = 'SYNC-' . ($origamiDeptId !== null ? (string)$origamiDeptId : strtoupper(substr(md5($deptName), 0, 8)));
+        try {
+            $ins = $this->db->prepare("INSERT INTO structure_departments (comp_id, department_code, department_name_th, department_name_en, status, origami_ref_id, data_source, created_by)
+                VALUES (:comp_id, :code, :name, :name, 'active', :ref_id, 'sync', :created_by)");
+            $ins->execute([':comp_id' => $compId, ':code' => $code, ':name' => $deptName, ':ref_id' => $origamiDeptId, ':created_by' => $triggeredBy]);
+            return (int)$this->db->lastInsertId();
+        } catch (PDOException $e) {
+            // Race: another concurrent pull already created this department -- re-resolve.
+            if ($origamiDeptId !== null) {
+                $stmt = $this->db->prepare("SELECT id FROM structure_departments WHERE origami_ref_id = :ref AND comp_id = :comp AND deleted_at IS NULL");
+                $stmt->execute([':ref' => $origamiDeptId, ':comp' => $compId]);
+                $id = $stmt->fetchColumn();
+                if ($id !== false) { return (int)$id; }
+            }
+            $stmt = $this->db->prepare("SELECT id FROM structure_departments WHERE comp_id = :comp AND department_code = :code AND deleted_at IS NULL");
+            $stmt->execute([':comp' => $compId, ':code' => $code]);
+            $id = $stmt->fetchColumn();
+            return $id !== false ? (int)$id : null;
+        }
+    }
+
+    private function resolveOrCreatePositionId(int $compId, ?int $origamiPosiId, ?string $positionName, ?int $triggeredBy): ?int {
+        $positionName = $positionName !== null ? trim($positionName) : null;
+        if ($origamiPosiId === null && ($positionName === null || $positionName === '')) {
+            return null;
+        }
+        if ($origamiPosiId !== null) {
+            $stmt = $this->db->prepare("SELECT id FROM structure_positions WHERE origami_ref_id = :ref AND comp_id = :comp AND deleted_at IS NULL");
+            $stmt->execute([':ref' => $origamiPosiId, ':comp' => $compId]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) {
+                return (int)$id;
+            }
+        }
+        if ($positionName !== null && $positionName !== '') {
+            $stmt = $this->db->prepare("SELECT id FROM structure_positions WHERE comp_id = :comp AND deleted_at IS NULL AND status != 'deleted' AND (position_name_th = :name OR position_name_en = :name) LIMIT 1");
+            $stmt->execute([':comp' => $compId, ':name' => $positionName]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) {
+                return (int)$id;
+            }
+        }
+        if ($positionName === null || $positionName === '') {
+            return null;
+        }
+        $code = 'SYNC-' . ($origamiPosiId !== null ? (string)$origamiPosiId : strtoupper(substr(md5($positionName), 0, 8)));
+        try {
+            $ins = $this->db->prepare("INSERT INTO structure_positions (comp_id, position_code, position_name_th, position_name_en, status, origami_ref_id, data_source, created_by)
+                VALUES (:comp_id, :code, :name, :name, 'active', :ref_id, 'sync', :created_by)");
+            $ins->execute([':comp_id' => $compId, ':code' => $code, ':name' => $positionName, ':ref_id' => $origamiPosiId, ':created_by' => $triggeredBy]);
+            return (int)$this->db->lastInsertId();
+        } catch (PDOException $e) {
+            if ($origamiPosiId !== null) {
+                $stmt = $this->db->prepare("SELECT id FROM structure_positions WHERE origami_ref_id = :ref AND comp_id = :comp AND deleted_at IS NULL");
+                $stmt->execute([':ref' => $origamiPosiId, ':comp' => $compId]);
+                $id = $stmt->fetchColumn();
+                if ($id !== false) { return (int)$id; }
+            }
+            $stmt = $this->db->prepare("SELECT id FROM structure_positions WHERE comp_id = :comp AND position_code = :code AND deleted_at IS NULL");
+            $stmt->execute([':comp' => $compId, ':code' => $code]);
+            $id = $stmt->fetchColumn();
+            return $id !== false ? (int)$id : null;
+        }
+    }
+
+    /**
+     * Same resolve-or-create treatment as department/position above, but against `master_banks` --
+     * a GLOBAL registry (no comp_id column), not per-company, so a bank created here becomes visible
+     * to every company, which is correct for a real bank (its existence doesn't depend on which
+     * company reported it first). country_code is taken from the pulling company's own
+     * registered_country (same source Holiday/Payslip Template already use for their own
+     * country_code) since the sync payload carries no country of its own for the bank. `bank_code`
+     * is NOT NULL + UNIQUE with country_code -- when the payload sent one, it's used as-is (a real
+     * bank code should match the official registry); when absent, a deterministic code is generated
+     * from the bank name so a repeat pull with the same name resolves back to the same generated
+     * code (and, either way, the name-match lookup above would already have found it on a repeat
+     * pull regardless of the code).
+     */
+    private function resolveOrCreateBankId(int $compId, ?string $bankCode, ?string $bankName, ?int $triggeredBy): ?int {
+        if ($bankCode !== null && $bankCode !== '') {
+            $stmt = $this->db->prepare("SELECT id FROM master_banks WHERE LOWER(bank_code) = LOWER(:code) LIMIT 1");
+            $stmt->execute([':code' => $bankCode]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) {
+                return (int)$id;
+            }
+        }
+        if ($bankName !== null && $bankName !== '') {
+            $stmt = $this->db->prepare("SELECT id FROM master_banks WHERE bank_name_en = :name OR bank_name_th = :name LIMIT 1");
+            $stmt->execute([':name' => $bankName]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) {
+                return (int)$id;
+            }
+        }
+        if (($bankCode === null || $bankCode === '') && ($bankName === null || $bankName === '')) {
+            // Nothing to key or label a new bank with at all.
+            return null;
+        }
+        $countryStmt = $this->db->prepare("SELECT registered_country FROM companies WHERE id = :id");
+        $countryStmt->execute([':id' => $compId]);
+        $countryCode = (string)($countryStmt->fetchColumn() ?: 'TH');
+        $finalCode = ($bankCode !== null && $bankCode !== '') ? $bankCode : ('SYNC-' . strtoupper(substr(md5((string)$bankName), 0, 8)));
+        $label = ($bankName !== null && $bankName !== '') ? $bankName : $finalCode;
+        try {
+            $ins = $this->db->prepare("INSERT INTO master_banks (bank_code, bank_name_th, bank_name_en, country_code, is_active)
+                VALUES (:code, :name, :name, :country, 1)");
+            $ins->execute([':code' => $finalCode, ':name' => $label, ':country' => $countryCode]);
+            return (int)$this->db->lastInsertId();
+        } catch (PDOException $e) {
+            // Race: another concurrent pull (possibly for a different company) already created
+            // this exact bank_code/country_code combination -- re-resolve rather than fail the pull.
+            $stmt = $this->db->prepare("SELECT id FROM master_banks WHERE LOWER(bank_code) = LOWER(:code) AND country_code = :country LIMIT 1");
+            $stmt->execute([':code' => $finalCode, ':country' => $countryCode]);
+            $id = $stmt->fetchColumn();
+            return $id !== false ? (int)$id : null;
+        }
+    }
+
+    /**
+     * items[].title/.gender/.marital_status are raw legacy values on the wire -- "sometimes
+     * human-readable text, sometimes an internal numeric code depending on when/how the row was
+     * entered" per the doc's own field notes, with no glossary given for what the numeric codes
+     * mean. Only recognized TEXT variants are mapped to this app's own enum values below;
+     * numeric-only or unrecognized values are deliberately left unmapped (existing value on
+     * `employees` stays untouched) rather than guessed at -- same "don't write what isn't verified"
+     * stance as the DRAFT statutory exporters elsewhere in this app. military_service has no
+     * equivalent normalization at all (see class docblock) -- intentionally never mapped.
+     */
+    private function normalizeTitle(?string $raw): ?string {
+        $map = ['mr' => 'mr', 'mr.' => 'mr', 'mister' => 'mr', 'mrs' => 'mrs', 'mrs.' => 'mrs', 'ms' => 'ms', 'ms.' => 'ms', 'miss' => 'ms'];
+        $key = strtolower(trim((string)$raw));
+        return $map[$key] ?? null;
+    }
+
+    private function normalizeGender(?string $raw): ?string {
+        $map = ['m' => 'male', 'male' => 'male', 'f' => 'female', 'female' => 'female'];
+        $key = strtolower(trim((string)$raw));
+        return $map[$key] ?? null;
+    }
+
+    private function normalizeMaritalStatus(?string $raw): ?string {
+        $map = ['single' => 'single', 'married' => 'married', 'divorced' => 'divorced', 'widowed' => 'widowed', 'widow' => 'widowed'];
+        $key = strtolower(trim((string)$raw));
+        return $map[$key] ?? null;
+    }
+
+    private function applyOneEmployeeMasterFields(int $compId, int $employeeId, array $row, ?int $triggeredBy): bool {
+        $stmt = $this->db->prepare("SELECT id_card_no, tax_id_no, passport_no, bank_account_no, sso_no, spouse_id_card_no, key_version
+            FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $current = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$current) {
+            return false;
+        }
+        $existingKeyVersion = isset($current['key_version']) ? (int)$current['key_version'] : null;
+        $plain = [
+            'id_card_no' => EncryptionService::decrypt($current['id_card_no'], $existingKeyVersion),
+            'tax_id_no' => EncryptionService::decrypt($current['tax_id_no'], $existingKeyVersion),
+            'passport_no' => EncryptionService::decrypt($current['passport_no'], $existingKeyVersion),
+            'bank_account_no' => EncryptionService::decrypt($current['bank_account_no'], $existingKeyVersion),
+            'sso_no' => EncryptionService::decrypt($current['sso_no'], $existingKeyVersion),
+            'spouse_id_card_no' => EncryptionService::decrypt($current['spouse_id_card_no'], $existingKeyVersion),
+        ];
+
+        $set = [];
+        $params = [':id' => $employeeId, ':comp_id' => $compId];
+        $touchedEncrypted = false;
+
+        $sourceKeyVersion = isset($row['key_version']) ? (int)$row['key_version'] : null;
+        $payType = $row['pay_type'] ?? null;
+        if ($payType !== null) {
+            $set[] = "payment_type = :payment_type";
+            $params[':payment_type'] = $payType === 'transfer' ? 'bank' : 'cash';
+            if ($payType === 'transfer' && !empty($row['pay_bank_no'])) {
+                $plain['bank_account_no'] = EncryptionService::decrypt($row['pay_bank_no'], $sourceKeyVersion);
+                $set[] = "bank_id = :bank_id";
+                $params[':bank_id'] = $this->resolveOrCreateBankId($compId, $row['pay_bank_code'] ?? null, $row['pay_bank_name'] ?? null, $triggeredBy);
+            } else {
+                $plain['bank_account_no'] = null;
+                $set[] = "bank_id = NULL";
+            }
+            $touchedEncrypted = true;
+        }
+
+        if (array_key_exists('deduct_sso', $row) && $row['deduct_sso'] !== null) {
+            $set[] = "sso_enrolled = :sso_enrolled";
+            $params[':sso_enrolled'] = (int)$row['deduct_sso'];
+        }
+
+        if (!empty($row['id_card_no'])) {
+            $plain['id_card_no'] = EncryptionService::decrypt($row['id_card_no'], $sourceKeyVersion);
+            $touchedEncrypted = true;
+        }
+        if (!empty($row['id_card_issue_date'])) {
+            $set[] = "id_card_issue_date = :id_card_issue_date";
+            $params[':id_card_issue_date'] = $row['id_card_issue_date'];
+        }
+        if (!empty($row['id_card_expire_date'])) {
+            $set[] = "id_card_expire_date = :id_card_expire_date";
+            $params[':id_card_expire_date'] = $row['id_card_expire_date'];
+        }
+
+        // Department/Position (2026-08-19 request): resolve against this row's dept_id/posi_id +
+        // dept_description/position_name, creating a new structure_departments/positions row when
+        // neither the id nor the name matches anything already there. Only touches department_id/
+        // position_id when the sync row actually carries something to resolve -- an employee with
+        // neither stays untouched rather than being nulled out.
+        $deptId = $this->resolveOrCreateDepartmentId($compId, isset($row['dept_id']) ? (int)$row['dept_id'] : null, $row['dept_description'] ?? null, $triggeredBy);
+        if ($deptId !== null) {
+            $set[] = "department_id = :department_id";
+            $params[':department_id'] = $deptId;
+        }
+        $posiId = $this->resolveOrCreatePositionId($compId, isset($row['posi_id']) ? (int)$row['posi_id'] : null, $row['position_name'] ?? null, $triggeredBy);
+        if ($posiId !== null) {
+            $set[] = "position_id = :position_id";
+            $params[':position_id'] = $posiId;
+        }
+
+        // Personal profile fields (2026-08-18 rev 2) -- title/gender/marital_status only written
+        // when they normalize to a recognized value (see normalizeTitle()/normalizeGender()/
+        // normalizeMaritalStatus() docblock for why raw/numeric-coded values are skipped rather
+        // than guessed). date_birth/nationality/religion/email/emp_tel have no such ambiguity --
+        // written through whenever present. nickname has no separate TH/EN source on the wire, so
+        // (same fallback already used for placeholder employee names elsewhere in this class) the
+        // same raw value is written to both nickname_th and nickname_en.
+        $title = $this->normalizeTitle($row['title'] ?? null);
+        if ($title !== null) {
+            $set[] = "title = :title";
+            $params[':title'] = $title;
+        }
+        $gender = $this->normalizeGender($row['gender'] ?? null);
+        if ($gender !== null) {
+            $set[] = "gender = :gender";
+            $params[':gender'] = $gender;
+        }
+        $maritalStatus = $this->normalizeMaritalStatus($row['marital_status'] ?? null);
+        if ($maritalStatus !== null) {
+            $set[] = "marital_status = :marital_status";
+            $params[':marital_status'] = $maritalStatus;
+        }
+        if (!empty($row['date_birth']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$row['date_birth'])) {
+            $set[] = "date_of_birth = :date_of_birth";
+            $params[':date_of_birth'] = $row['date_birth'];
+        }
+        if (!empty($row['nickname'])) {
+            $set[] = "nickname_th = :nickname_th";
+            $params[':nickname_th'] = $row['nickname'];
+            $set[] = "nickname_en = :nickname_en";
+            $params[':nickname_en'] = $row['nickname'];
+        }
+        if (!empty($row['nationality'])) {
+            $set[] = "nationality = :nationality";
+            $params[':nationality'] = $row['nationality'];
+        }
+        if (!empty($row['religion'])) {
+            $set[] = "religion = :religion";
+            $params[':religion'] = $row['religion'];
+        }
+        // email/emp_tel go into company_email/office_tel, not personal_email (NOT NULL, this app's
+        // own field, risky to overwrite from an ambiguous source)/mobile_no (NOT NULL, 10-char
+        // mobile-specific format that emp_tel isn't guaranteed to match) -- see class docblock.
+        if (!empty($row['email'])) {
+            $set[] = "company_email = :company_email";
+            $params[':company_email'] = $row['email'];
+        }
+        if (!empty($row['emp_tel'])) {
+            $set[] = "office_tel = :office_tel";
+            $params[':office_tel'] = $row['emp_tel'];
+        }
+
+        if ($touchedEncrypted) {
+            // Re-encrypt the WHOLE encrypted set together, not just the field(s) this row touched
+            // -- see class docblock. Every encrypted column always gets rewritten under the same
+            // (current) key version in this branch, keeping employees.key_version valid for all of
+            // them, exactly like EmployeeModel::save() does for a full-form save.
+            foreach (['id_card_no' => 'id_card_no_hash', 'tax_id_no' => 'tax_id_no_hash', 'passport_no' => null,
+                      'bank_account_no' => 'bank_account_no_hash', 'sso_no' => 'sso_no_hash', 'spouse_id_card_no' => null] as $col => $hashCol) {
+                $enc = EncryptionService::encrypt($plain[$col]);
+                $set[] = "{$col} = :{$col}";
+                $params[":{$col}"] = $enc['value'] ?? null;
+                if ($hashCol !== null) {
+                    $set[] = "{$hashCol} = :{$hashCol}";
+                    $params[":{$hashCol}"] = EncryptionService::hash($plain[$col]);
+                }
+            }
+            $set[] = "key_version = :key_version";
+            $params[':key_version'] = EncryptionService::currentKeyVersion();
+        }
+
+        if (empty($set)) {
+            return false;
+        }
+        $set[] = "updated_by = :updated_by";
+        $params[':updated_by'] = $triggeredBy;
+        $set[] = "updated_at = CURRENT_TIMESTAMP";
+        $sql = "UPDATE employees SET " . implode(', ', $set) . " WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL";
+        $this->db->prepare($sql)->execute($params);
+        return true;
+    }
+
     private function resolveEmployeeId(int $compId, string $payrollCode): ?int {
         $stmt = $this->db->prepare("SELECT id FROM employees WHERE comp_id = :comp_id AND employee_no = :employee_no AND deleted_at IS NULL LIMIT 1");
         $stmt->execute([':comp_id' => $compId, ':employee_no' => $payrollCode]);
@@ -232,15 +867,32 @@ class PayrollSyncModel {
         return $id !== false ? (int)$id : null;
     }
 
-    /** Sync processes not yet pulled into a payroll run -- the Payroll Process page's "Pending Pull" station. */
-    public function pendingList(int $compId): array {
+    /**
+     * Sync processes not yet pulled into a payroll run -- the Payroll Process page's "Pending
+     * Pull" station. date_from/date_to filter on received_at (the only real date this table has --
+     * payroll_sync_processes has no period_start/end of its own, just the free-text period_name
+     * label) -- shares the List page's own Date From/To filter box by explicit request, so picking
+     * a range that matches nothing here correctly shows empty instead of silently ignoring the
+     * filter and always returning the full unfiltered list.
+     */
+    public function pendingList(int $compId, array $filters = []): array {
+        $where = "WHERE p.comp_id = :comp_id AND r.id IS NULL";
+        $params = [':comp_id' => $compId];
+        if (!empty($filters['date_from'])) {
+            $where .= " AND p.received_at >= :date_from";
+            $params[':date_from'] = $filters['date_from'] . ' 00:00:00';
+        }
+        if (!empty($filters['date_to'])) {
+            $where .= " AND p.received_at <= :date_to";
+            $params[':date_to'] = $filters['date_to'] . ' 23:59:59';
+        }
         $stmt = $this->db->prepare("SELECT p.id, p.origami_process_id, p.process_no, p.origami_comp_name, p.period_name, p.frequency_type,
                 p.item_count, p.unmapped_item_count, p.received_at
             FROM payroll_sync_processes p
             LEFT JOIN payroll_runs r ON r.sync_process_id = p.id
-            WHERE p.comp_id = :comp_id AND r.id IS NULL
+            {$where}
             ORDER BY p.received_at DESC");
-        $stmt->execute([':comp_id' => $compId]);
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -249,6 +901,25 @@ class PayrollSyncModel {
      * (item_values JSON decoded back into an array for the frontend) + employee_status snapshot.
      * Not scoped to "still pending" -- once pulled it's still fine to look back at what was sent.
      */
+    /**
+     * Masks every idcard/tax-number-like key in a decrypted spouse/children array to its last 4
+     * characters, in place -- same masking rule as pay_bank_no_masked/id_card_no_masked above,
+     * just applied to the handful of known PII keys nested inside these two JSON blobs rather than
+     * a single top-level column.
+     */
+    private function maskNestedIdLikeFields(?array $data): ?array {
+        if ($data === null) {
+            return null;
+        }
+        foreach (['spouse_idcard', 'spouse_tax', 'father_idcard', 'mother_idcard', 'child_idcard'] as $key) {
+            if (!empty($data[$key]) && is_string($data[$key])) {
+                $val = $data[$key];
+                $data[$key] = strlen($val) > 4 ? str_repeat('x', strlen($val) - 4) . substr($val, -4) : $val;
+            }
+        }
+        return $data;
+    }
+
     public function getProcessDetail(int $id, int $compId): ?array {
         $stmt = $this->db->prepare("SELECT * FROM payroll_sync_processes WHERE id = :id AND comp_id = :comp_id");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
@@ -269,9 +940,23 @@ class PayrollSyncModel {
             // pay_bank_no is stored encrypted (see replaceItems()) -- decrypt then mask to the last
             // 4 digits for display, same convention as PaySlipReport's bank_account_masked field.
             // Never send the raw decrypted number or key_version to the frontend.
-            $bankNo = EncryptionService::decrypt($item['pay_bank_no'] ?? null, isset($item['key_version']) ? (int)$item['key_version'] : null);
+            $keyVersion = isset($item['key_version']) ? (int)$item['key_version'] : null;
+            $bankNo = EncryptionService::decrypt($item['pay_bank_no'] ?? null, $keyVersion);
             $item['pay_bank_no_masked'] = $bankNo !== null && strlen($bankNo) > 4 ? str_repeat('x', strlen($bankNo) - 4) . substr($bankNo, -4) : $bankNo;
-            unset($item['pay_bank_no'], $item['key_version']);
+            $idCardNo = EncryptionService::decrypt($item['id_card_no'] ?? null, $keyVersion);
+            $item['id_card_no_masked'] = $idCardNo !== null && strlen($idCardNo) > 4 ? str_repeat('x', strlen($idCardNo) - 4) . substr($idCardNo, -4) : $idCardNo;
+
+            // spouse/children (2026-08-18 rev 2): decrypt the whole blob back to an array/object,
+            // then mask every idcard-like nested field before this ever reaches the frontend --
+            // same policy as pay_bank_no/id_card_no above, just applied recursively since the PII
+            // here is nested inside a JSON structure rather than its own column.
+            $spouseJson = EncryptionService::decrypt($item['spouse_data'] ?? null, $keyVersion);
+            $item['spouse'] = $spouseJson !== null ? $this->maskNestedIdLikeFields(json_decode($spouseJson, true)) : null;
+            $childrenJson = EncryptionService::decrypt($item['children_data'] ?? null, $keyVersion);
+            $children = $childrenJson !== null ? json_decode($childrenJson, true) : [];
+            $item['children'] = is_array($children) ? array_map([$this, 'maskNestedIdLikeFields'], $children) : [];
+
+            unset($item['pay_bank_no'], $item['id_card_no'], $item['key_version'], $item['spouse_data'], $item['children_data']);
         }
         unset($item);
 

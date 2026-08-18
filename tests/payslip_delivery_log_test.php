@@ -61,6 +61,17 @@ function makeEmployee(PDO $pdo, int $compId, string $employeeNo): int {
 try {
     $compId = 1;
     $adminUserId = 1;
+
+    // Same isolation as tests/payroll_run_test.php: recalculate() now pulls incomplete-profile
+    // employees (is_payroll_ready=0) into the calculation table instead of excluding them (see
+    // PayrollRunModel::recalculate(), 2026-08-19), so leftover placeholder employees anyone has
+    // ever created against this real, shared dev-DB company (id 1) now legitimately show up in
+    // every run this test creates and block submit()/approve() through no fault of this test's own
+    // fixture. Soft-delete them for this run only, entirely inside this script's own transaction
+    // (rolled back at the very end), so nothing here is a real/permanent change.
+    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND is_payroll_ready = 0 AND deleted_at IS NULL")
+        ->execute([':comp_id' => $compId]);
+
     $today = new DateTime();
     $periodStart = (clone $today)->modify('first day of this month')->format('Y-m-d');
     $periodEnd = (clone $today)->modify('last day of this month')->format('Y-m-d');

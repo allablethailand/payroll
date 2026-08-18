@@ -43,6 +43,39 @@ function employeeNamePr(row) {
 function frequencyLabelPr(freq) {
     return (freq && langData['frequency_' + freq]) || freq || '-';
 }
+// Actions column for tb_payroll_run, rendered as one Bootstrap button-group (per explicit
+// request). Edit/View are now a SINGLE merged button (per explicit request) -- both just
+// navigate to the Detail page in a NEW tab using public_id (the IdCodec-encoded token, see
+// PayrollController::list(), never the raw numeric id); only the icon/label/tooltip differ by
+// state (pencil "Edit" for draft, eye "View" for anything else), since PayrollRunModel::update()
+// itself only allows editing a draft run anyway -- actual editing happens on the Detail page's
+// own edit modal, not a separate one here. Delete only makes sense for draft
+// (PayrollRunModel::delete() rejects any other state); Cancel for anything not yet paid (matches
+// PayrollRunModel::cancel()'s own allowed-state check).
+function renderRunActionsPr(row) {
+    const isDraft = row.state === 'draft';
+    let html = '<div class="btn-group border rounded-3 bg-white row-actions" role="group">';
+    html += `<a href="${BASE_URL}/payroll-process/${row.public_id}" target="_blank" rel="noopener" class="btn ${isDraft ? 'btn-link text-warning' : 'btn-link text-info'}" title="${langData[isDraft ? 'action_edit' : 'view'] || (isDraft ? 'Edit' : 'View')}"><i class="fa-solid ${isDraft ? 'fa-pen-to-square' : 'fa-eye'}"></i></a>`;
+    if (['draft', 'pending_approval', 'approved', 'rejected'].includes(row.state)) {
+        html += `<button type="button" class="btn btn-link text-danger border-start btn-cancel-run" data-id="${row.id}" title="${langData['action_cancel'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
+    }
+    if (isDraft) {
+        html += `<button type="button" class="btn btn-link text-danger border-start btn-delete-run" data-id="${row.id}" title="${langData['action_delete'] || 'Delete'}"><i class="fa-solid fa-trash-alt"></i></button>`;
+    }
+    html += '</div>';
+    return html;
+}
+// Cancelling/deleting a run pulled from Origami sync returns its source process to the Pending
+// Pull station (PayrollRunModel::cancel()/delete() clear sync_process_id) -- refresh that station
+// too after either action succeeds, not just the main runs table, so it doesn't look stale.
+function refreshAfterRunMutation() {
+    if (tb_payroll_run) tb_payroll_run.ajax.reload(null, false);
+    if (tb_pending_sync) {
+        tb_pending_sync.ajax.reload(null, false);
+    } else {
+        loadPendingSyncCount();
+    }
+}
 
 // Client-side filter for the Station bar -- runs are fetched unfiltered-by-state (only the Date
 // filter hits the server); clicking a station card just re-draws with this filter instead of a
@@ -97,6 +130,7 @@ function initPayrollRunTable() {
             { data: 'total_net_amount', className: 'text-end', render: d => fmtNumPr(d) },
             { data: null, render: (d, t, row) => escapeHtmlPr(employeeNamePr(row)) },
             { data: 'updated_at', render: d => d ? toDisplayDatePr(d.substring(0, 10)) + ' ' + d.substring(11, 16) : '-' },
+            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => renderRunActionsPr(row) },
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
@@ -116,9 +150,10 @@ function initPayrollRunTable() {
     });
     $('#tb_payroll_run tbody').off('click', 'tr').on('click', 'tr', function (e) {
         if ($(e.target).closest('.btn-add-run').length) return;
+        if ($(e.target).closest('.row-actions').length) return;
         const rowData = tb_payroll_run.row(this).data();
-        if (rowData && rowData.id) {
-            window.location.href = `${BASE_URL}/payroll-process/${rowData.id}`;
+        if (rowData && rowData.public_id) {
+            window.location.href = `${BASE_URL}/payroll-process/${rowData.public_id}`;
         }
     });
 }
@@ -150,6 +185,10 @@ function initPendingSyncTable() {
         order: [[7, 'desc']],
         ajax: {
             url: `${BASE_URL}/api/payroll-sync.pending-list`,
+            data: function (d) {
+                d.date_from = toIsoDatePr($('#filter_date_from').val());
+                d.date_to = toIsoDatePr($('#filter_date_to').val());
+            },
             dataSrc: function (json) {
                 const rows = json.data || [];
                 $('.station-card[data-state="pending_sync"] .station-count').text(rows.length);
@@ -159,17 +198,18 @@ function initPendingSyncTable() {
         columns: [
             { data: 'id', orderable: false, className: 'text-center', render: d => `<input type="checkbox" class="pending-sync-checkbox" value="${d}">` },
             { data: 'process_no', render: d => `<strong class="text-dark">${escapeHtmlPr(d)}</strong>` },
-            { data: 'origami_comp_name', render: d => escapeHtmlPr(d || '-') },
             { data: 'period_name', render: d => escapeHtmlPr(d || '-') },
             { data: 'frequency_type', render: d => escapeHtmlPr(frequencyLabelPr(d)) },
             { data: 'item_count', className: 'text-end' },
             { data: 'unmapped_item_count', className: 'text-end', render: d => Number(d) > 0 ? `<span class="text-danger fw-semibold">${d}</span>` : d },
             { data: 'received_at', render: d => d ? toDisplayDatePr(d.substring(0, 10)) + ' ' + d.substring(11, 16) : '-' },
             {
-                data: null, orderable: false, className: 'text-end',
+                data: null, orderable: false, className: 'text-center',
                 render: (d, t, row) => `
-                    <button type="button" class="btn btn-sm btn-outline-secondary me-1 btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
-                    <button type="button" class="btn btn-sm btn-primary btn-pull-sync" data-id="${row.id}" data-label="${escapeHtmlPr(row.process_no)}"><i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">${langData['btn_pull_to_run'] || 'Pull to Run'}</span></button>
+                    <div class="btn-group rounded-3 row-actions" role="group">
+                        <button type="button" class="btn btn-warning btn-pull-sync" data-id="${row.id}" data-label="${escapeHtmlPr(row.process_no)}" title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">${langData['btn_pull_to_run'] || 'Pull to Run'}</span></button>
+                        <button type="button" class="btn btn-outline-info btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
+                    </div>
                 `
             },
         ],
@@ -223,51 +263,75 @@ function syncDetailSectionHeaderPr(num, i18nKey, fallback) {
         </h6>
     `;
 }
-function renderSyncItemRowPr(item) {
+// Per-employee CARD, not a table row -- 11 columns of mixed badges/stacked-lines/small-text
+// squeezed into one wide table row was the core complaint ("too dense, too many columns, no
+// clear direction"), and no amount of border/stripe styling on a table fixes a structural
+// density problem. A card per employee lets each attribute get its own labeled slot instead of
+// fighting for horizontal space, and color is now used ONLY for status meaning (mapped/unmapped,
+// SSO) -- every purely decorative icon (bank, id-card) stays neutral text-muted so color always
+// means something specific instead of just decorating.
+function renderSyncItemCardPr(item) {
     const isMapped = !!item.matched_employee_no;
-    const matchedName = isMapped
-        ? `<div class="fw-semibold">${escapeHtmlPr(item.matched_employee_no)}</div><div class="text-muted small">${escapeHtmlPr((currentLang === 'th' ? `${item.matched_name_th} ${item.matched_surname_th}` : `${item.matched_name_en} ${item.matched_surname_en}`).trim())}</div>`
+    const nameLine = isMapped
+        ? `<span class="fw-semibold">${escapeHtmlPr(item.matched_employee_no)}</span> <span class="text-muted">— ${escapeHtmlPr((currentLang === 'th' ? `${item.matched_name_th} ${item.matched_surname_th}` : `${item.matched_name_en} ${item.matched_surname_en}`).trim())}</span>`
         : `<span class="text-muted">${escapeHtmlPr(item.payroll_code)}</span>`;
     const values = (item.item_values || [])
         .filter(v => Number(v.value) !== 0)
         .map(v => {
             const unitLabel = syncUnitLabelPr(v.unit_type);
             return `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtmlPr(v.item_code)}: ${escapeHtmlPr(v.value)}${unitLabel ? ` ${escapeHtmlPr(unitLabel)}` : ''}</span>`;
-        }).join('') || '<span class="text-muted small">-</span>';
+        }).join('');
     const otBreakdown = [
         ['sync_ot_working_day', 'Working Day', item.ot_req_working_day_hrs],
         ['sync_ot_day_off', 'Day Off', item.ot_req_weekend_hrs],
         ['sync_ot_holiday', 'Holiday', item.ot_req_holiday_hrs],
     ]
         .filter(([, , hrs]) => Number(hrs || 0) !== 0)
-        .map(([key, fallback, hrs]) => `<div class="small text-nowrap"><span class="text-muted">${langData[key] || fallback}:</span> ${escapeHtmlPr(hrs)}</div>`)
-        .join('') || `<span class="text-muted small">${item.ot_mins ? escapeHtmlPr(item.ot_mins) + ' ' + (langData['sync_unit_minutes'] || 'minute(s)') : '-'}</span>`;
-    const paymentSso = renderPaymentSsoCellPr(item);
+        .map(([key, fallback, hrs]) => `${langData[key] || fallback} ${escapeHtmlPr(hrs)}h`)
+        .join(' · ') || (item.ot_mins ? `${escapeHtmlPr(item.ot_mins)} ${langData['sync_unit_minutes'] || 'minute(s)'}` : '-');
     return `
-        <tr>
-            <td>${mappingStatusBadgePr(isMapped)}</td>
-            <td>${matchedName}</td>
-            <td>${escapeHtmlPr(item.dept_description || '-')}<br><span class="text-muted small">${escapeHtmlPr(item.position_name || '-')}</span></td>
-            <td class="text-end">${escapeHtmlPr(item.working_days ?? '-')}</td>
-            <td class="text-end">${escapeHtmlPr(item.absent_days ?? '-')}</td>
-            <td class="text-end">${escapeHtmlPr(item.late_mins ?? '-')}</td>
-            <td>${otBreakdown}</td>
-            <td class="text-end">${escapeHtmlPr(item.trip_allowance ?? '-')}</td>
-            <td>${paymentSso}</td>
-            <td>${values}</td>
-        </tr>
+        <div class="sync-emp-card${isMapped ? '' : ' sync-emp-card-unmapped'}">
+            <div class="sync-emp-card-header">
+                <div class="sync-emp-card-identity">
+                    ${mappingStatusBadgePr(isMapped)}
+                    <span class="sync-emp-card-name">${nameLine}</span>
+                </div>
+                <div class="sync-emp-card-dept">${escapeHtmlPr(item.dept_description || '-')} <span class="text-muted">/ ${escapeHtmlPr(item.position_name || '-')}</span></div>
+            </div>
+            <div class="sync-emp-stats">
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_working_days'] || 'Working Days'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.working_days ?? '-')}</span></div>
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_absent_days'] || 'Absent Days'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.absent_days ?? '-')}</span></div>
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_late_mins'] || 'Late (min)'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.late_mins ?? '-')}</span></div>
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_ot_breakdown'] || 'OT (hrs)'}</span><span class="sync-emp-stat-value">${otBreakdown}</span></div>
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_trip_allowance'] || 'Trip Allowance'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.trip_allowance ?? '-')}</span></div>
+            </div>
+            <div class="sync-emp-card-footer">
+                <span class="sync-emp-card-payment">${renderPaymentSsoCellPr(item)}</span>
+                <span class="sync-emp-card-idcard">${renderIdCardCellPr(item)}</span>
+                ${values ? `<span class="sync-emp-card-items">${values}</span>` : ''}
+            </div>
+        </div>
     `;
+}
+function renderIdCardCellPr(item) {
+    if (!item.id_card_no_masked) {
+        return `<span class="text-muted">-</span>`;
+    }
+    const expire = item.id_card_expire_date
+        ? ` <span class="text-muted">(${langData['id_card_expire'] || 'ID Card Expire Date'}: ${toDisplayDatePr(item.id_card_expire_date)})</span>`
+        : '';
+    return `<span><i class="fa-solid fa-id-card text-muted me-1"></i>${escapeHtmlPr(item.id_card_no_masked)}</span>${expire}`;
 }
 function renderPaymentSsoCellPr(item) {
     let payLine;
     if (item.pay_type === 'transfer') {
         const bankLabel = item.pay_bank_name ? escapeHtmlPr(item.pay_bank_name) : (langData['sync_pay_transfer'] || 'Transfer');
         const maskedNo = item.pay_bank_no_masked ? ` (${escapeHtmlPr(item.pay_bank_no_masked)})` : '';
-        payLine = `<div class="small"><i class="fa-solid fa-building-columns text-muted me-1"></i>${bankLabel}${maskedNo}</div>`;
+        payLine = `<i class="fa-solid fa-building-columns text-muted me-1"></i>${bankLabel}${maskedNo}`;
     } else if (item.pay_type === 'cash') {
-        payLine = `<div class="small"><i class="fa-solid fa-money-bill text-muted me-1"></i>${langData['sync_pay_cash'] || 'Cash'}</div>`;
+        payLine = `<i class="fa-solid fa-money-bill text-muted me-1"></i>${langData['sync_pay_cash'] || 'Cash'}`;
     } else {
-        payLine = `<div class="small text-muted">-</div>`;
+        payLine = `<span class="text-muted">-</span>`;
     }
     let ssoBadge;
     if (item.deduct_sso === null || item.deduct_sso === undefined) {
@@ -277,7 +341,7 @@ function renderPaymentSsoCellPr(item) {
     } else {
         ssoBadge = `<span class="badge rounded-pill bg-light text-secondary border">${langData['sync_sso_no_deduct'] || 'SSO: No Deduct'}</span>`;
     }
-    return `${payLine}${ssoBadge}`;
+    return `<span>${payLine}</span> ${ssoBadge}`;
 }
 function renderSyncStatusRowPr(row) {
     return `
@@ -321,43 +385,31 @@ function renderSyncDetail(data) {
             ${syncSummaryFieldPr('fa-triangle-exclamation', 'table_unmapped', 'Unmapped', unmapped > 0 ? `<span class="text-danger">${unmapped}</span>` : unmapped)}
             ${syncSummaryFieldPr('fa-clock', 'table_received_at', 'Received', receivedAt)}
         </div>
-        ${syncDetailSectionHeaderPr(1, 'sync_detail_items_section', 'Employee Attendance Data')}
-        <div class="table-responsive mb-4 sync-detail-table">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>${langData['sync_detail_mapped'] || 'Mapped'}</th>
-                        <th>${langData['table_matched_employee'] || 'Matched Employee'}</th>
-                        <th>${langData['table_dept_position'] || 'Dept / Position'}</th>
-                        <th class="text-end">${langData['table_working_days'] || 'Working Days'}</th>
-                        <th class="text-end">${langData['table_absent_days'] || 'Absent Days'}</th>
-                        <th class="text-end">${langData['table_late_mins'] || 'Late (min)'}</th>
-                        <th>${langData['table_ot_breakdown'] || 'OT (hrs)'}</th>
-                        <th class="text-end">${langData['table_trip_allowance'] || 'Trip Allowance'}</th>
-                        <th>${langData['table_payment_sso'] || 'Payment / SSO'}</th>
-                        <th>${langData['table_item_values'] || 'Items'}</th>
-                    </tr>
-                </thead>
-                <tbody>${items.length ? items.map(renderSyncItemRowPr).join('') : `<tr><td colspan="10" class="text-center text-muted py-3">-</td></tr>`}</tbody>
-            </table>
+        <div class="detail-section mb-4">
+            ${syncDetailSectionHeaderPr(1, 'sync_detail_items_section', 'Employee Attendance Data')}
+            <div class="sync-emp-card-list">
+                ${items.length ? items.map(renderSyncItemCardPr).join('') : `<div class="text-center text-muted py-3">-</div>`}
+            </div>
         </div>
-        ${syncDetailSectionHeaderPr(2, 'sync_detail_status_section', 'Employee Status Snapshot')}
-        <div class="table-responsive sync-detail-table">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>${langData['table_payroll_code'] || 'Payroll Code'}</th>
-                        <th>${langData['table_matched_employee'] || 'Matched Employee'}</th>
-                        <th>${langData['table_dept_position'] || 'Dept / Position'}</th>
-                        <th>${langData['table_start_date'] || 'Start Date'}</th>
-                        <th>${langData['table_resign_date'] || 'Resign Date'}</th>
-                        <th class="text-center">${langData['table_new_hire'] || 'New Hire'}</th>
-                        <th class="text-center">${langData['table_resigned_this_period'] || 'Resigned'}</th>
-                        <th>${langData['table_status_text'] || 'Status'}</th>
-                    </tr>
-                </thead>
-                <tbody>${statusRows.length ? statusRows.map(renderSyncStatusRowPr).join('') : `<tr><td colspan="8" class="text-center text-muted py-3">-</td></tr>`}</tbody>
-            </table>
+        <div class="detail-section">
+            ${syncDetailSectionHeaderPr(2, 'sync_detail_status_section', 'Employee Status Snapshot')}
+            <div class="table-responsive sync-detail-table">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>${langData['table_payroll_code'] || 'Payroll Code'}</th>
+                            <th>${langData['table_matched_employee'] || 'Matched Employee'}</th>
+                            <th>${langData['table_dept_position'] || 'Dept / Position'}</th>
+                            <th>${langData['table_start_date'] || 'Start Date'}</th>
+                            <th>${langData['table_resign_date'] || 'Resign Date'}</th>
+                            <th class="text-center">${langData['table_new_hire'] || 'New Hire'}</th>
+                            <th class="text-center">${langData['table_resigned_this_period'] || 'Resigned'}</th>
+                            <th>${langData['table_status_text'] || 'Status'}</th>
+                        </tr>
+                    </thead>
+                    <tbody>${statusRows.length ? statusRows.map(renderSyncStatusRowPr).join('') : `<tr><td colspan="8" class="text-center text-muted py-3">-</td></tr>`}</tbody>
+                </table>
+            </div>
         </div>
     `;
     $('#pendingSyncViewBody').html(html);
@@ -368,6 +420,69 @@ function resetRunForm() {
     $('.is-invalid').removeClass('is-invalid');
     $('#run_cycle_id').val('').trigger('change');
     $('#run_sync_process_id').val('');
+    $('#run_is_offcycle').prop('checked', false);
+    $('#run_offcycle_row').removeClass('d-none');
+    $('#run_purpose').val('payroll').trigger('change');
+    $('#run_compute_statutory').prop('checked', true);
+    setOffCycleMode(false);
+}
+// Off-cycle runs (e.g. an out-of-cycle payment) skip the Payroll Cycle field entirely -- per
+// explicit request. Only offered on the standalone "Add" flow; Pull-to-run hides the toggle
+// entirely (that data is inherently cycle-based) via #run_offcycle_row.addClass('d-none').
+function setOffCycleMode(isOffCycle) {
+    $('#run_cycle_row').toggleClass('d-none', isOffCycle);
+    $('#run_cycle_id').toggleClass('required', !isOffCycle);
+    if (isOffCycle) {
+        $('#run_cycle_id').val('').trigger('change');
+        $('#run_cycle_id').removeClass('is-invalid');
+    }
+    // Period Start/End are only required for a cycle-based run -- an off-cycle run (e.g. a
+    // special bonus payout) doesn't always have a meaningful attendance period, per explicit
+    // request. Payment Date stays required either way -- toggled independently, never touched
+    // here. #run_period_required_mark is the red "*" next to the Period Start/End label only
+    // (Payment Date has its own separate, always-shown "*").
+    $('#run_period_start, #run_period_end').toggleClass('required', !isOffCycle);
+    $('#run_period_required_mark').toggleClass('d-none', isOffCycle);
+    if (isOffCycle) {
+        $('#run_period_start, #run_period_end').removeClass('is-invalid');
+    }
+    // Run Purpose (Payroll / Incentive-Other Payment) only makes sense for a genuine off-cycle
+    // run, per explicit request (2026-08-19) -- PayrollRunModel::create() rejects run_purpose=
+    // 'incentive' outright whenever a cycle is selected, so hiding it here just keeps the form
+    // from offering a choice the backend would reject anyway.
+    $('#run_purpose_row').toggleClass('d-none', !isOffCycle);
+    if (!isOffCycle) {
+        $('#run_purpose').val('payroll').trigger('change');
+    }
+}
+// Compute Statutory only matters (and only shows) once Incentive/Other Payment is actually
+// selected -- a normal Payroll run always computes it, no choice to offer.
+function updateComputeStatutoryVisibility() {
+    $('#run_compute_statutory_row').toggleClass('d-none', $('#run_purpose').val() !== 'incentive');
+}
+// Auto-fills Period Start/End/Payment Date from the selected cycle's own configured cutoff/
+// payment day settings, per explicit request -- pure convenience default, every field stays
+// editable afterward. Silently does nothing on failure (cycle not fully configured, network
+// error, etc.) so manual entry always still works as a fallback.
+function applySuggestedPeriod(cycleId) {
+    if (!cycleId) {
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-cycle.suggest-period`,
+        method: 'GET',
+        data: { id: cycleId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                return;
+            }
+            $('#run_period_start').val(toDisplayDatePr(res.period_start_date));
+            $('#run_period_end').val(toDisplayDatePr(res.period_end_date));
+            $('#run_payment_date').val(toDisplayDatePr(res.payment_date));
+            $('#run_period_start, #run_period_end, #run_payment_date').removeClass('is-invalid');
+        }
+    });
 }
 function validateRunForm() {
     let firstInvalid = null;
@@ -384,8 +499,12 @@ function validateRunForm() {
     return firstInvalid;
 }
 function collectRunFormData() {
+    const isOffCycle = $('#run_is_offcycle').is(':checked');
+    const runPurpose = isOffCycle ? ($('#run_purpose').val() || 'payroll') : 'payroll';
     return {
-        cycle_id: $('#run_cycle_id').val(),
+        cycle_id: isOffCycle ? null : $('#run_cycle_id').val(),
+        run_purpose: runPurpose,
+        compute_statutory: runPurpose === 'incentive' && $('#run_compute_statutory').is(':checked') ? 1 : 0,
         run_name: $('#run_name').val().trim(),
         period_start_date: toIsoDatePr($('#run_period_start').val()),
         period_end_date: toIsoDatePr($('#run_period_end').val()),
@@ -423,8 +542,35 @@ $(document).on('click', '#stationFilterToggle', function () {
     const collapsed = $filter.hasClass('collapsed');
     $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
 });
-$(document).on('change', '#filter_date_from, #filter_date_to', function () {
+// bootstrap-datepicker's core _setDate() fires BOTH 'changeDate' and the native 'change' event
+// together, unconditionally, for every date-picked interaction (confirmed in the bundled
+// library's own source) -- binding to both (an earlier fix here) double-fired this handler,
+// causing two back-to-back ajax.reload() calls per pick (visible in Network as one cancelled
+// request immediately followed by one 200). 'changeDate' alone is reliable on its own since it's
+// the one _setDate() always fires regardless of code path (clicking a day, clearDates(), etc.).
+// Clear Filter only makes sense (and only shows) once at least one of the two fields actually has
+// a value -- per explicit request, hidden by default rather than always visible.
+function updateClearFilterVisibility() {
+    const hasFilter = !!($('#filter_date_from').val() || $('#filter_date_to').val());
+    $('#btnClearDateFilter').toggleClass('d-none', !hasFilter);
+}
+$(document).on('changeDate', '#filter_date_from, #filter_date_to', function () {
+    updateClearFilterVisibility();
     if (tb_payroll_run) tb_payroll_run.ajax.reload(null, true);
+    // Also reload the Pending Pull ("Wait") table -- its own ajax now sends the same date_from/
+    // date_to (filtered on received_at, its only real date field -- payroll_sync_processes has no
+    // period_start/end of its own). Blindly reloading it unfiltered here used to make a genuinely
+    // empty result on the main table look like "the filter gave up and fetched everything", since
+    // this table would always come back full regardless of the date picked -- per explicit
+    // feedback, a filter that matches nothing should just show nothing, not fall back to showing
+    // everything.
+    if (tb_pending_sync) tb_pending_sync.ajax.reload(null, true);
+});
+$(document).on('click', '#btnClearDateFilter', function () {
+    // .datepicker('clearDates') goes through the same library API used to set them, so it fires
+    // 'changeDate' itself and the handler above reloads both tables (and re-hides this button)
+    // automatically -- no need to duplicate that here.
+    $('#filter_date_from, #filter_date_to').datepicker('clearDates');
 });
 $(document).on('click', '.btn-add-run', function () {
     resetRunForm();
@@ -432,9 +578,21 @@ $(document).on('click', '.btn-add-run', function () {
 });
 $(document).on('click', '.btn-pull-sync', function () {
     resetRunForm();
+    // Pulling from a sync process is inherently cycle-based data -- the off-cycle option doesn't
+    // apply here, so hide it entirely rather than just leaving it unchecked.
+    $('#run_offcycle_row').addClass('d-none');
     $('#run_sync_process_id').val($(this).data('id'));
     $('#run_name').val($(this).data('label'));
     new bootstrap.Modal(document.getElementById('payrollRunModal')).show();
+});
+$(document).on('change', '#run_is_offcycle', function () {
+    setOffCycleMode($(this).is(':checked'));
+});
+$(document).on('change', '#run_cycle_id', function () {
+    applySuggestedPeriod($(this).val());
+});
+$(document).on('change', '#run_purpose', function () {
+    updateComputeStatutoryVisibility();
 });
 $(document).on('click', '.btn-view-sync', function () {
     $('#pendingSyncViewBody').html(`<div class="text-center text-muted py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['loading'] || 'Loading...'}</span></div>`);
@@ -521,10 +679,18 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
     const rowEls = $rows.toArray();
     let successCount = 0;
     let failCount = 0;
+    let remappedTotal = 0;
+    let placeholdersTotal = 0;
     function processNext(i) {
         if (i >= rowEls.length) {
             $btn.prop('disabled', false);
-            const summary = `${successCount} ${langData['bulk_pull_result_success'] || 'created'}, ${failCount} ${langData['bulk_pull_result_failed'] || 'failed'}`;
+            let summary = `${successCount} ${langData['bulk_pull_result_success'] || 'created'}, ${failCount} ${langData['bulk_pull_result_failed'] || 'failed'}`;
+            const notes = [];
+            if (remappedTotal > 0) notes.push(`${remappedTotal} ${langData['sync_remapped_employees'] || 'employee(s) newly matched via auto-sync'}`);
+            if (placeholdersTotal > 0) notes.push(`${placeholdersTotal} ${langData['sync_placeholders_created'] || 'placeholder employee(s) created from sync data -- please complete their profiles'}`);
+            if (notes.length > 0) {
+                summary += ` (${notes.join(', ')})`;
+            }
             if (failCount === 0) {
                 showSuccess(summary);
                 bootstrap.Modal.getInstance(document.getElementById('bulkPullModal')).hide();
@@ -559,6 +725,8 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
             success: function (res) {
                 if (res.status) {
                     successCount++;
+                    remappedTotal += Number(res.sync_summary?.remapped_count) || 0;
+                    placeholdersTotal += Number(res.sync_summary?.placeholders_created) || 0;
                     $row.find('.bulk-pull-row-status').html(`<span class="text-success small"><i class="fa-solid fa-check me-1"></i>${langData['bulk_pull_result_success'] || 'created'}</span>`);
                 } else {
                     failCount++;
@@ -596,7 +764,15 @@ $(document).on('submit', '#payrollRunForm', function (e) {
             $btn.prop('disabled', false).html(originalHtml);
             if (typeof updateText === 'function') updateText($btn[0]);
             if (res.status) {
-                showSuccess(langData['save_success'] || 'Saved successfully.');
+                const remapped = Number(res.sync_summary?.remapped_count) || 0;
+                const placeholders = Number(res.sync_summary?.placeholders_created) || 0;
+                const notes = [];
+                if (remapped > 0) notes.push(`${remapped} ${langData['sync_remapped_employees'] || 'employee(s) newly matched via auto-sync'}`);
+                if (placeholders > 0) notes.push(`${placeholders} ${langData['sync_placeholders_created'] || 'placeholder employee(s) created from sync data -- please complete their profiles'}`);
+                const successMsg = notes.length > 0
+                    ? `${langData['save_success'] || 'Saved successfully.'} (${notes.join(', ')})`
+                    : (langData['save_success'] || 'Saved successfully.');
+                showSuccess(successMsg);
                 bootstrap.Modal.getInstance(document.getElementById('payrollRunModal')).hide();
                 if (tb_payroll_run) tb_payroll_run.ajax.reload(null, false);
                 if (tb_pending_sync) {
@@ -616,13 +792,79 @@ $(document).on('submit', '#payrollRunForm', function (e) {
     });
 });
 
+/* ---------- Row "Cancel" action ---------- */
+$(document).on('click', '.btn-cancel-run', function (e) {
+    e.stopPropagation();
+    $('#cancel_run_id').val($(this).data('id'));
+    $('#cancel_reason').val('').removeClass('is-invalid').attr('placeholder', langData['cancel_reason_placeholder'] || 'Explain why this payroll run is being cancelled...');
+    new bootstrap.Modal(document.getElementById('cancelRunModal')).show();
+});
+$(document).on('submit', '#cancelRunForm', function (e) {
+    e.preventDefault();
+    const reason = $('#cancel_reason').val().trim();
+    if (!reason) {
+        $('#cancel_reason').addClass('is-invalid');
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.cancel`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({ id: $('#cancel_run_id').val(), reason: reason }),
+        success: function (res) {
+            if (res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('cancelRunModal')).hide();
+                refreshAfterRunMutation();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
+    });
+});
+
+/* ---------- Row "Delete" action (draft only) ---------- */
+$(document).on('click', '.btn-delete-run', function (e) {
+    e.stopPropagation();
+    const id = $(this).data('id');
+    const title = langData['confirm_delete_title'] || 'Confirm Delete';
+    const message = langData['confirm_delete_run_message'] || 'Delete this draft payroll run? This cannot be undone.';
+    showConfirm(title, message, function () {
+        $.ajax({
+            url: `${BASE_URL}/api/payroll-run.delete`,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify({ id: id }),
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(langData['delete_success'] || 'Deleted successfully.');
+                    refreshAfterRunMutation();
+                } else {
+                    showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
+                }
+            },
+            error: function () {
+                showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
+            }
+        });
+    });
+});
+
 $(document).ready(function () {
     registerStationSearchFilter();
     initPayrollRunTable();
     loadPendingSyncCount();
     if (typeof initSelect2 === 'function') {
         initSelect2('#run_cycle_id', { mode: 'ajax' });
+        initSelect2('#run_purpose', { mode: 'static' });
     }
+    updateComputeStatutoryVisibility();
     if (typeof initDatepicker === 'function') {
         initDatepicker('#filter_date_from');
         initDatepicker('#filter_date_to');
@@ -630,4 +872,5 @@ $(document).ready(function () {
         initDatepicker('#run_period_end');
         initDatepicker('#run_payment_date');
     }
+    updateClearFilterVisibility();
 });

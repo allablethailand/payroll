@@ -47,9 +47,14 @@ class PayrollSyncController extends Controller {
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
+            return;
         }
+        $filters = [
+            'date_from' => (string)($_GET['date_from'] ?? ''),
+            'date_to' => (string)($_GET['date_to'] ?? ''),
+        ];
         $model = new PayrollSyncModel();
-        $this->json(['status' => true, 'data' => $model->pendingList((int)$compId)]);
+        $this->json(['status' => true, 'data' => $model->pendingList((int)$compId, $filters)]);
     }
 
     public function pendingGet(): void {
@@ -57,6 +62,7 @@ class PayrollSyncController extends Controller {
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
             $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
         }
         $model = new PayrollSyncModel();
         $detail = $model->getProcessDetail($id, (int)$compId);

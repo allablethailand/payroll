@@ -52,8 +52,8 @@ function initPayrollApprovalTable() {
     });
     $('#tb_payroll_approval tbody').off('click', 'tr').on('click', 'tr', function () {
         const rowData = tb_payroll_approval.row(this).data();
-        if (rowData && rowData.id) {
-            window.location.href = `${BASE_URL}/payroll-process/${rowData.id}`;
+        if (rowData && rowData.public_id) {
+            window.location.href = `${BASE_URL}/payroll-process/${rowData.public_id}`;
         }
     });
 }

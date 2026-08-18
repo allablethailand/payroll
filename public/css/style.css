@@ -839,12 +839,14 @@ html, body {
        full row width with a big empty gap between the count and the button */
     align-items: center;
     gap: 14px;
-    background: rgba(255, 153, 0, 0.08);
+    /* Warning/amber tint, matching the row-level "Pull to Run" button's own color family
+       (text-warning) -- same direction, not the brand-orange tint used elsewhere on this page. */
+    background: rgba(255, 193, 7, 0.12);
     border-radius: 20px;
     padding: 6px 8px 6px 16px;
 }
 .bulk-pull-bar-count {
-    color: #b45f00;
+    color: #92720c;
     font-size: 0.9em;
     white-space: nowrap;
 }
@@ -855,25 +857,38 @@ html, body {
     border-radius: 14px;
     margin-left: 0;
     margin-right: 0;
-    padding: 16px 12px 6px;
+    padding: 18px 16px;
 }
 .sync-summary-field {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
 }
 .sync-summary-icon {
     flex: 0 0 auto;
-    width: 34px;
-    height: 34px;
+    width: 40px;
+    height: 40px;
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(255, 153, 0, 0.15);
     color: #ec6622;
-    font-size: 0.9em;
+    font-size: 1.05rem;
 }
+/* Explicit sizes for the summary card's own label/value text -- Bootstrap's .small/.fw-bold
+   alone read too small against this app's 12px base font, per explicit feedback. Scoped under
+   .sync-summary-field so it doesn't affect .small/.fw-bold usage anywhere else. */
+.sync-summary-field .small {
+    font-size: 11.5px;
+}
+.sync-summary-field .fw-bold {
+    font-size: 15px;
+}
+/* Dense, many-column tables (11 columns of mixed badges/stacked-lines/small-text in the Pending
+   Sync View modal) read as a disorganized wall of content with nothing to anchor the eye per
+   explicit feedback -- vertical dividers between columns + zebra striping + a firmer header give
+   it an actual grid to scan instead of everything blending together. */
 .sync-detail-table {
     border: 1px solid #eee;
     border-radius: 10px;
@@ -884,13 +899,467 @@ html, body {
 }
 .sync-detail-table thead th {
     border-top: none;
-    padding: 12px 14px;
+    border-bottom-width: 2px;
+    padding: 10px 14px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6c757d;
+    white-space: nowrap;
 }
 .sync-detail-table tbody td {
     padding: 12px 14px;
+    vertical-align: middle;
+    font-size: 13px;
+}
+.sync-detail-table th:not(:last-child),
+.sync-detail-table td:not(:last-child) {
+    border-right: 1px solid #f2f2f2;
+}
+.sync-detail-table tbody tr:nth-child(even) {
+    background-color: #fbfbfc;
+}
+
+/* Per-employee card list (Pending Sync View modal, section 1) -- replaces an 11-column table.
+   Color is reserved for status meaning only (the Mapped/Unmapped badge, SSO badge) -- every
+   purely decorative icon here (bank, id-card) stays neutral text-muted so nothing competes with
+   what the color is actually trying to say. */
+.sync-emp-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.sync-emp-card {
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: #fff;
+}
+.sync-emp-card-unmapped {
+    border-color: #f3c2bd;
+    background: #fff9f8;
+}
+.sync-emp-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-bottom: 10px;
+}
+.sync-emp-card-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.sync-emp-card-name {
+    font-size: 14px;
+}
+.sync-emp-card-dept {
+    font-size: 12.5px;
+    color: #495057;
+}
+.sync-emp-stats {
+    display: flex;
+    flex-wrap: wrap;
+    background: #fbfbfc;
+    border: 1px solid #f2f2f2;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+.sync-emp-stat {
+    flex: 1 1 0;
+    min-width: 100px;
+    padding: 7px 12px;
+    border-right: 1px solid #f2f2f2;
+    display: flex;
+    flex-direction: column;
+}
+.sync-emp-stat:last-child {
+    border-right: none;
+}
+.sync-emp-stat-label {
+    font-size: 10.5px;
+    color: #9aa1a9;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+.sync-emp-stat-value {
+    font-weight: 600;
+    font-size: 14px;
+    color: #343a40;
+    white-space: nowrap;
+}
+.sync-emp-card-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    align-items: center;
+    padding-top: 8px;
+    border-top: 1px dashed #eef0f2;
+    font-size: 13px;
+}
+.sync-emp-card .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0.4em 0.65em;
+}
+.sync-emp-card-payment,
+.sync-emp-card-idcard {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.sync-emp-card-items {
+    flex: 1 1 100%;
+    order: 3;
+}
+@media (min-width: 768px) {
+    .sync-emp-card-items {
+        flex: 0 1 auto;
+        order: 0;
+        margin-left: auto;
+        text-align: right;
+    }
 }
 
 .datepicker table tr td.day.focused,
 .datepicker table tr td.day:focus {
     background-color: rgba(255, 153, 0, .12);
+}
+
+/* ==========================================================================
+   Bootstrap "primary" recolor -- brand orange (#FF9900), not Bootstrap's stock blue.
+   The project convention (CLAUDE.md) has always required primary buttons to be brand
+   orange, but nothing in this file was actually overriding Bootstrap's own --bs-primary
+   token before now (only .btn-primary usages happened to exist without a matching
+   override) -- found and fixed while building the Payroll Run Detail timeline below,
+   whose whole "the ONE primary action is visually obvious" point depends on this actually
+   being orange. Root-level so .btn-primary/.text-primary/.bg-primary-subtle/etc. all
+   follow together via Bootstrap 5.3's own CSS variable system, not just buttons.
+   ========================================================================== */
+:root {
+    --bs-primary: #FF9900;
+    --bs-primary-rgb: 255, 153, 0;
+    --bs-primary-text-emphasis: #b45f00;
+    --bs-primary-bg-subtle: #fff3e0;
+    --bs-primary-border-subtle: #ffd699;
+}
+/* ==========================================================================
+   Payroll Run Detail — process timeline (per-record step tracker) + next-step banner.
+   Adapted from Origami's own Process Detail page (C:\xampp\htdocs\origami\payroll,
+   assets/js/process-detail.js TIMELINE_STEPS/renderChrome()/renderNextStepHtml() +
+   assets/css/app.css .process-timeline/.tl-step/.process-next-step) -- same connected-
+   badge spine with a per-step date + action button directly underneath it, and a
+   colored next-step callout below the spine. Recolored to this app's own orange/green/
+   red/grey palette (same as the List page's own station-bar chevrons, itself already an
+   earlier adaptation of this same Origami page) instead of copying Origami's own tones.
+   ========================================================================== */
+.process-timeline-wrap {
+    padding: 20px 20px 16px;
+    margin-top: 6px;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    background: #fbfbfc;
+}
+.process-timeline {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.process-timeline .tl-step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    position: relative;
+    color: #adb5bd;
+    min-width: 0;
+    padding: 0 4px;
+}
+.process-timeline .tl-step:not(:first-child)::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    right: 50%;
+    width: 100%;
+    height: 2px;
+    background: #e2e8f0;
+    z-index: 0;
+}
+.process-timeline .tl-step.done::before,
+.process-timeline .tl-step.current::before {
+    background: #a8d5ae;
+}
+.process-timeline .tl-step.rejected::before {
+    background: #f3c2bd;
+}
+.process-timeline .tl-step.cancelled::before {
+    background: #d6d8db;
+}
+.process-timeline .tl-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid #e2e8f0;
+    background: #fff;
+    position: relative;
+    z-index: 1;
+    color: #c2c2c2;
+    font-size: 15px;
+    box-shadow: 0 2px 5px rgba(16, 24, 40, .06);
+}
+.process-timeline .tl-step.done .tl-icon {
+    border-color: #198754;
+    background: linear-gradient(135deg, #e8f6ee, #d1e7dd);
+    color: #198754;
+}
+.process-timeline .tl-step.current .tl-icon {
+    border-color: #FF9900;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(255, 153, 0, .35);
+    animation: process-tl-pulse 1.8s infinite;
+}
+.process-timeline .tl-step.rejected .tl-icon {
+    border-color: #dc3545;
+    background: linear-gradient(135deg, #fdecea, #f8d7da);
+    color: #dc3545;
+}
+.process-timeline .tl-step.cancelled .tl-icon {
+    border-color: #6c757d;
+    background: linear-gradient(135deg, #f1f3f5, #e2e8f0);
+    color: #6c757d;
+}
+.process-timeline .tl-label {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: #999;
+}
+.process-timeline .tl-step.current .tl-label {
+    color: #b45f00;
+    font-weight: 600;
+}
+.process-timeline .tl-step.done .tl-label {
+    color: #198754;
+    font-weight: 600;
+}
+.process-timeline .tl-step.rejected .tl-label {
+    color: #dc3545;
+    font-weight: 600;
+}
+.process-timeline .tl-step.cancelled .tl-label {
+    color: #6c757d;
+    font-weight: 600;
+}
+.process-timeline .tl-date {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.7rem;
+    color: #9aa1a9;
+    white-space: nowrap;
+}
+.process-timeline .tl-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    margin-top: 10px;
+    width: 100%;
+    padding: 0 4px;
+}
+.process-timeline .tl-actions .btn {
+    width: 100%;
+    max-width: 168px;
+}
+.process-timeline .tl-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+}
+.process-timeline .tl-actions-row .btn {
+    width: auto;
+    flex: 1 1 auto;
+    max-width: 110px;
+}
+@keyframes process-tl-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 153, 0, .45); }
+    70% { box-shadow: 0 0 0 8px rgba(255, 153, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 153, 0, 0); }
+}
+/* Stack vertically on narrow screens instead of squeezing 5 columns into a phone width. */
+@media (max-width: 576px) {
+    .process-timeline {
+        flex-direction: column;
+        gap: 20px;
+    }
+    .process-timeline .tl-step:not(:first-child)::before {
+        display: none;
+    }
+}
+
+.process-next-step {
+    margin: 14px 0 0;
+    padding: 10px 16px;
+    background: #fff8ec;
+    border-left: 3px solid #FF9900;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #7a5200;
+}
+.process-next-step i {
+    margin-right: 6px;
+}
+.process-next-step.waiting {
+    background: #f4f8fb;
+    border-left-color: #5bc0de;
+    color: #2b5f76;
+}
+.process-next-step.done {
+    background: #f0f9f0;
+    border-left-color: #198754;
+    color: #2e6b2e;
+}
+.process-next-step.error {
+    background: #fdecea;
+    border-left-color: #dc3545;
+    color: #a83232;
+}
+.process-next-step.muted {
+    background: #f1f3f5;
+    border-left-color: #6c757d;
+    color: #495057;
+}
+
+/* ==========================================================================
+   Payroll Run Detail — colored stat cards (Employees/Gross/Deductions/Net Pay), replacing
+   the single shared-frame summary row per explicit request ("แบ่ง Card เป็นสีๆ ตอนนี้เป็น
+   กรอบเดียวกันไม่สวย" -- split into colored cards, one shared frame doesn't look good).
+   Each variant is its own card with a colored left accent + tinted icon chip, not just a
+   text color change, so they read as genuinely separate cards at a glance.
+   ========================================================================== */
+.stat-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 100%;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-left: 4px solid transparent;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+}
+.stat-card-icon {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+.stat-card-label {
+    font-size: 0.78rem;
+    color: #6c757d;
+}
+.stat-card-value {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #212529;
+}
+.stat-card-info { border-left-color: #0dcaf0; }
+.stat-card-info .stat-card-icon { background: rgba(13, 202, 240, .15); color: #087990; }
+.stat-card-success { border-left-color: #198754; }
+.stat-card-success .stat-card-icon { background: rgba(25, 135, 84, .15); color: #198754; }
+.stat-card-danger { border-left-color: #dc3545; }
+.stat-card-danger .stat-card-icon { background: rgba(220, 53, 69, .15); color: #dc3545; }
+.stat-card-primary { border-left-color: #FF9900; }
+.stat-card-primary .stat-card-icon { background: rgba(255, 153, 0, .15); color: #FF9900; }
+.stat-card-primary .stat-card-value { color: #b45f00; }
+
+/* ==========================================================================
+   .card-surface -- used as the page-section card wrapper across this app (Payroll Process,
+   Company Setup, Setup & Rules, etc.) but was never actually defined anywhere; every page
+   using it had to also tack on p-3/p-md-4 utility classes just to get padding, and never got
+   a border/shadow/radius at all -- plain invisible box. Defined properly now (found while
+   addressing "everything under the tabs looks too cramped" on Payroll Run Detail). Padding
+   here matches the p-3/p-md-4 values pages were already using by hand, so any page that still
+   sets those utility classes explicitly keeps its exact existing spacing (Bootstrap's utility
+   padding carries !important and wins over this plain class rule) -- only the border/shadow/
+   radius newly apply everywhere, and pages that (like this one) no longer set the padding
+   utilities by hand now get sensible default padding instead of none.
+   ========================================================================== */
+.card-surface {
+    background: #ffffff;
+    border: 1px solid #eef0f2;
+    border-radius: 14px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+}
+@media (min-width: 768px) {
+    .card-surface {
+        padding: 1.5rem;
+    }
+}
+
+/* ==========================================================================
+   Payroll Run Detail — Details/Action History tab card polish. Nav-tabs + tab-content had no
+   visible frame at all (tab-content only had rounded-bottom, no border), and the panes had no
+   padding once the p-3/p-md-4 utility classes were dropped from them -- both contributed to
+   the "too cramped" feedback. Scoped to this page's own tab ids, not .nav-tabs/.tab-content
+   globally, so other pages' tabs (Employee Detail, Company Setup, etc.) are untouched.
+   ========================================================================== */
+#runDetailTabs.nav-tabs {
+    border-bottom-color: #dee2e6;
+}
+#runDetailTabs .nav-link {
+    font-weight: 500;
+    padding: 0.65rem 1.25rem;
+}
+#runDetailTabs .nav-link.active {
+    color: #b45f00;
+    font-weight: 600;
+}
+#runDetailTabsContent {
+    border: 1px solid #eef0f2;
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    box-shadow: 0 2px 10px rgba(16, 24, 40, .04);
+}
+#run-details-pane,
+#run-history-pane {
+    padding: 1.75rem 1.5rem;
+}
+@media (min-width: 768px) {
+    #run-details-pane,
+    #run-history-pane {
+        padding: 2rem 2rem;
+    }
+}
+/* Run Information / Employee Breakdown as two visually distinct sub-sections within the Details
+   tab (per explicit request) -- deliberately lighter than .card-surface (no shadow, thinner
+   border) since they already sit inside #runDetailTabsContent's own bordered/shadowed card;
+   stacking two full .card-surface-strength cards there would look like cards-within-cards. */
+.detail-section {
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    padding: 1.5rem;
+    background: #fff;
+}
+.detail-section + .detail-section {
+    margin-top: 1.75rem;
 }

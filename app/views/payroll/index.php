@@ -17,7 +17,6 @@
         <p class="text-muted small m-0 mt-1" data-i18n="payroll_process_description">Manage payroll runs from draft through approval, payment, and closing. Click a row to open its management page.</p>
     </div>
 
-    <div class="card-surface">
         <div class="station-filter" id="stationFilter">
             <span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="stationFilterToggle" title="Toggle filter">
@@ -41,6 +40,11 @@
                     </div>
                 </div>
             </div>
+        </div>
+        <div class="d-flex justify-content-end mb-3">
+            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearDateFilter">
+                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+            </button>
         </div>
 
         <div class="station-row" id="stationRow">
@@ -93,13 +97,14 @@
         <table class="table table-hover table-border align-middle w-100" id="tb_payroll_run">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th scope="col" style="width: 22%;" data-i18n="table_run_name">Run Name</th>
-                    <th scope="col" style="width: 16%;" data-i18n="table_period">Pay Period</th>
-                    <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 10%;" data-i18n="table_employee_count">Employees</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_net_amount">Net Total</th>
-                    <th scope="col" style="width: 14%;" data-i18n="table_created_by">Created By</th>
-                    <th scope="col" style="width: 15%;" data-i18n="table_updated_at">Last Updated</th>
+                    <th scope="col" style="width: 20%;" data-i18n="table_run_name">Run Name</th>
+                    <th scope="col" style="width: 15%;" data-i18n="table_period">Pay Period</th>
+                    <th scope="col" style="width: 9%;" data-i18n="col_status">Status</th>
+                    <th scope="col" style="width: 9%;" data-i18n="table_employee_count">Employees</th>
+                    <th scope="col" style="width: 12%;" data-i18n="table_net_amount">Net Total</th>
+                    <th scope="col" style="width: 13%;" data-i18n="table_created_by">Created By</th>
+                    <th scope="col" style="width: 12%;" data-i18n="table_updated_at">Last Updated</th>
+                    <th scope="col" style="width: 10%;" class="text-center" data-i18n="col_actions">Actions</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -107,7 +112,7 @@
 
         <div class="d-none align-items-center mb-2 bulk-pull-bar" id="bulkPullBar">
             <span class="bulk-pull-bar-count"><strong id="bulkPullCount">0</strong> <span data-i18n="bulk_pull_selected_label">selected</span></span>
-            <button type="button" class="btn btn-sm btn-primary" id="btnBulkPull">
+            <button type="button" class="btn btn-sm btn-warning" id="btnBulkPull">
                 <i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">Pull to Run</span>
             </button>
         </div>
@@ -116,19 +121,17 @@
             <thead class="table-light text-secondary">
                 <tr>
                     <th scope="col" style="width: 3%;"><input type="checkbox" id="pendingSyncSelectAll"></th>
-                    <th scope="col" style="width: 15%;" data-i18n="table_process_no">Process No</th>
-                    <th scope="col" style="width: 15%;" data-i18n="table_comp_name">Company</th>
-                    <th scope="col" style="width: 15%;" data-i18n="table_period">Pay Period</th>
-                    <th scope="col" style="width: 10%;" data-i18n="table_frequency">Frequency</th>
-                    <th scope="col" style="width: 9%;" data-i18n="table_employee_count">Employees</th>
-                    <th scope="col" style="width: 9%;" data-i18n="table_unmapped">Unmapped</th>
-                    <th scope="col" style="width: 12%;" data-i18n="table_received_at">Received</th>
-                    <th scope="col" style="width: 12%;"></th>
+                    <th scope="col" style="width: 20%;" data-i18n="table_process_no">Process No</th>
+                    <th scope="col" style="width: 18%;" data-i18n="table_period">Pay Period</th>
+                    <th scope="col" style="width: 12%;" data-i18n="table_frequency">Frequency</th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_employee_count">Employees</th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_unmapped">Unmapped</th>
+                    <th scope="col" style="width: 14%;" data-i18n="table_received_at">Received</th>
+                    <th scope="col" style="width: 13%;"></th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
-    </div>
 
     <!-- Pending Sync View Modal -->
     <div class="modal fade" id="pendingSyncViewModal" tabindex="-1" aria-labelledby="pendingSyncViewModalLabel" aria-hidden="true">
@@ -185,7 +188,32 @@
                 <form id="payrollRunForm" novalidate>
                     <input type="hidden" id="run_sync_process_id" name="sync_process_id" value="">
                     <div class="modal-body">
-                        <div class="row mb-3">
+                        <div class="row mb-3" id="run_offcycle_row">
+                            <div class="col-sm-9 offset-sm-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="run_is_offcycle">
+                                    <label class="form-check-label" for="run_is_offcycle" data-i18n="offcycle_run_label">Off-cycle run (no payroll cycle needed -- e.g. an out-of-cycle payment)</label>
+                                </div>
+                            </div>
+                        </div>
+        <div class="row mb-3 d-none" id="run_purpose_row">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0" data-i18n="modal_run_purpose">Run Purpose</label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-static" id="run_purpose" name="run_purpose"
+                                        data-option-keys="run_purpose_payroll,run_purpose_incentive" data-option-values="payroll,incentive"></select>
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="run_compute_statutory_row">
+                            <div class="col-sm-9 offset-sm-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="run_compute_statutory" checked>
+                                    <label class="form-check-label" for="run_compute_statutory" data-i18n="compute_statutory_label">Compute tax/social security (SSO/PVD) for this payment</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mb-3" id="run_cycle_row">
                             <div class="col-sm-3 align-self-center">
                                 <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Cycle</span> <span class="text-danger">*</span></label>
                             </div>
@@ -203,7 +231,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-0"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger" id="run_period_required_mark">*</span></label>
                             </div>
                             <div class="col-sm-4">
                                 <div class="input-group">
@@ -247,5 +275,32 @@
             </div>
         </div>
     </div>
+
+    <!-- Cancel Run Modal (row action -- same reason-required flow as the Detail page's own cancel
+         modal; needs a hidden run id here since this page has many rows, not one) -->
+    <div class="modal fade" id="cancelRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="cancelRunModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="cancelRunModalLabel">
+                        <i class="fa-solid fa-ban me-1"></i><span data-i18n="cancel_modal_title">Cancel Payroll Run</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="cancelRunForm" novalidate>
+                    <input type="hidden" id="cancel_run_id" value="">
+                    <div class="modal-body">
+                        <label class="form-label"><span data-i18n="cancel_reason_label">Cancel Reason</span> <span class="text-danger">*</span></label>
+                        <textarea class="form-control required" id="cancel_reason" name="reason" rows="3" data-i18n="cancel_reason_placeholder" placeholder="Explain why this payroll run is being cancelled..."></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-danger"><span data-i18n="confirm_cancel_run">Confirm Cancellation</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
 </div>
 <script src="<?=asset('public/js/payroll/index.js')?>"></script>

@@ -7831,6 +7831,7 @@ CREATE TABLE `employees` (
   `marital_status` enum('single','married','divorced','widowed') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `military_status` enum('exempted','served','not_yet','na') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `id_card_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
+  `id_card_issue_date` date DEFAULT NULL,
   `id_card_expire_date` date DEFAULT NULL,
   `tax_id_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
   `passport_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
@@ -8322,7 +8323,7 @@ CREATE TABLE `company_statutory_settings` (
 CREATE TABLE `payroll_runs` (
   `id` int(11) NOT NULL,
   `comp_id` int(11) NOT NULL,
-  `cycle_id` int(11) NOT NULL,
+  `cycle_id` int(11) DEFAULT NULL COMMENT 'NULL = off-cycle/ad-hoc run not tied to any payroll_cycles config -- e.g. a one-off out-of-cycle payment',
   `run_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `period_start_date` date NOT NULL,
   `period_end_date` date NOT NULL,
@@ -10099,7 +10100,10 @@ CREATE TABLE `payroll_sync_items` (
   `pay_bank_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `pay_bank_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
   `deduct_sso` tinyint(1) DEFAULT NULL COMMENT 'tri-state: NULL = never configured on Origami side (m_employee_welfare not populated), distinct from explicit false',
-  `key_version` tinyint(3) unsigned DEFAULT NULL COMMENT 'ENCRYPTION_KEY_V{n} version used for pay_bank_no in this row',
+  `id_card_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
+  `id_card_issue_date` date DEFAULT NULL,
+  `id_card_expire_date` date DEFAULT NULL,
+  `key_version` tinyint(3) unsigned DEFAULT NULL COMMENT 'ENCRYPTION_KEY_V{n} version used for pay_bank_no/id_card_no in this row',
   `working_days` decimal(6,2) DEFAULT NULL,
   `working_mins` int(11) DEFAULT NULL,
   `absent_days` decimal(6,2) DEFAULT NULL,
@@ -10116,6 +10120,23 @@ CREATE TABLE `payroll_sync_items` (
   `leave_without_pay_days` decimal(6,2) DEFAULT NULL,
   `trip_allowance` decimal(15,2) DEFAULT NULL,
   `item_values` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw items[].item_values[] JSON array as sent -- opaque computed data at this stage, not normalized further',
+  `dept_id` bigint(20) DEFAULT NULL COMMENT 'Origami internal m_department id (2026-08-18 rev 2) -- resolved/created against structure_departments.origami_ref_id on pull',
+  `posi_id` bigint(20) DEFAULT NULL COMMENT 'Origami internal m_position id (2026-08-18 rev 2) -- resolved/created against structure_positions.origami_ref_id on pull',
+  `pass_pro` tinyint(1) DEFAULT NULL COMMENT 'tri-state: NULL = never set on Origami side, distinct from explicit false',
+  `pass_pro_date` date DEFAULT NULL,
+  `title` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw legacy value as sent (e.g. "Mr." or a numeric code) -- not normalized at ingest, see PayrollSyncModel for the whitelist used when mapping to employees.title',
+  `gender` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw legacy value as sent',
+  `date_birth` date DEFAULT NULL,
+  `nickname` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `nationality` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `religion` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `marital_status` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw legacy value as sent',
+  `military_service` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw legacy value as sent -- intentionally never mapped to employees.military_status, see PayrollSyncModel docblock',
+  `emp_pic` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Origami''s own local upload path -- informational only, never copied into employees.profile_photo_path (does not resolve to a file on this app''s own storage)',
+  `email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `emp_tel` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `spouse_data` text COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted JSON object of items[].spouse (shares key_version) -- contains PII (spouse_idcard etc), stored only, not yet mapped to employees',
+  `children_data` text COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted JSON array of items[].children (shares key_version) -- contains PII (child_idcard), stored only, not yet mapped to employee_dependents',
   PRIMARY KEY (`id`),
   KEY `idx_payroll_sync_items_process` (`process_id`),
   KEY `idx_payroll_sync_items_employee` (`employee_id`),
@@ -10173,6 +10194,77 @@ ALTER TABLE `payroll_runs`
   ADD COLUMN `cancelled_at` timestamp NULL DEFAULT NULL AFTER `reject_reason`,
   ADD COLUMN `cancelled_by` int(11) DEFAULT NULL AFTER `cancelled_at`,
   ADD COLUMN `cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `cancelled_by`;
+
+-- --------------------------------------------------------
+
+--
+-- Manually-curated employee roster for a genuine off-cycle run (cycle_id AND sync_process_id both
+-- NULL -- e.g. a one-off bonus payout not tied to any recurring cycle or Origami sync push). Per
+-- explicit request (2026-08-19), PayrollRunModel::recalculate()'s employee eligibility now
+-- branches 3 ways: a Pending-Pull run only includes employees actually present in that sync
+-- process's payload; a normal cycle-based run keeps the existing employment-date-range eligibility;
+-- and this kind of run has NO automatic eligibility at all -- only employees explicitly "Joined" via
+-- this table are included, added/removed through the Employee Detail page's Join Employees modal.
+--
+
+CREATE TABLE `payroll_run_manual_employees` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `joined_by` int(11) DEFAULT NULL,
+  `joined_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_manual_employees` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_manual_employees_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_manual_employees_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_manual_employees_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- "Incentive/Other Payment" off-cycle runs (2026-08-19, explicit request): a special-payment run
+-- (e.g. a one-off incentive) that deliberately does NOT involve base salary at all -- only whatever
+-- specific earning/deduction items the admin picks per employee. run_purpose is only ever
+-- 'incentive' for a genuine off-cycle run (cycle_id AND sync_process_id both NULL, same gate as
+-- payroll_run_manual_employees above) -- enforced in PayrollRunModel::create(), not just the UI.
+-- compute_statutory lets the admin choose, per run, whether this incentive should still go through
+-- the statutory engine (SSO/PVD/tax) or skip it entirely -- a normal 'payroll' run always computes
+-- statutory regardless of what's stored here (PayrollRunModel::recalculate() ignores this column
+-- unless run_purpose='incentive').
+--
+
+ALTER TABLE `payroll_runs`
+  ADD COLUMN `run_purpose` enum('payroll','incentive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'payroll' AFTER `sync_process_id`,
+  ADD COLUMN `compute_statutory` tinyint(1) NOT NULL DEFAULT 1 AFTER `run_purpose`;
+
+--
+-- Per-employee manual earning/deduction lines for an 'incentive' run -- picked from the same
+-- payroll_earning_deduction_types master list used for standing PED assignments, but deliberately
+-- NOT written into employee_earning_deductions (that table is for recurring/ongoing assignments;
+-- an incentive line is specific to this one run only, same reasoning that already kept the off-cycle
+-- manual employee roster above out of any date-range-driven table). Amount is entered per employee
+-- individually (no single flat amount applied to everyone), so different people can get different
+-- incentive amounts for the same item in the same run. Not soft-deleted -- this is run-scoped
+-- composition data that only exists while the run is still draft (add/remove both gated to draft in
+-- PayrollRunModel), analogous to payroll_run_manual_employees.
+--
+
+CREATE TABLE `payroll_run_manual_lines` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `ped_type_id` int(11) NOT NULL,
+  `amount` decimal(15,2) NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_payroll_run_manual_lines_run_employee` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_manual_lines_ped_type` (`ped_type_id`),
+  CONSTRAINT `fk_payroll_run_manual_lines_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_manual_lines_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_manual_lines_ped_type` FOREIGN KEY (`ped_type_id`) REFERENCES `payroll_earning_deduction_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 COMMIT;
 

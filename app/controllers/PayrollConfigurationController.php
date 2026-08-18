@@ -233,6 +233,19 @@ class PayrollConfigurationController extends Controller {
         $this->json(['status' => true, 'data' => $this->cycleModel->options((int)$compId, $search, $page, $limit)]);
     }
 
+    /** Not gated behind payroll_configuration.manage -- used by the Payroll Run create form (any
+     * user who can create a run, not just those managing cycle setup), same exposure level as
+     * cycleOptions() above which feeds the same form's cycle dropdown. */
+    public function cycleSuggestPeriod() {
+        $compId = getCompId();
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->cycleModel->suggestNextPeriod($id, (int)$compId));
+    }
+
     public function cycleList() {
         if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
@@ -354,6 +367,19 @@ class PayrollConfigurationController extends Controller {
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->pedTypeModel->save((int)$compId, $data, $userId);
         $this->json($result);
+    }
+
+    /** "Load Default Items" -- inserts the system's starter set of earning/deduction types for this company, skipping any item_code already present (active or soft-deleted). Idempotent, safe to click more than once. */
+    public function pedTypeSeedDefaults() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $res = $this->pedTypeModel->seedDefaults((int)$compId, $userId);
+        $this->json(['status' => true, 'message' => 'Loaded default items.', 'inserted' => $res['inserted'], 'skipped' => $res['skipped']]);
     }
 
     public function pedTypeDelete() {

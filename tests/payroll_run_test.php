@@ -41,6 +41,21 @@ try {
     $compId = 1;
     $adminUserId = 1; // used with isAdmin=true throughout except the dedicated permission-denial check
 
+    // recalculate() used to filter is_payroll_ready=1, which incidentally hid every leftover
+    // placeholder employee anyone had ever created against this real, shared dev-DB company (id 1)
+    // -- e.g. via interactive manual testing of the Pending Pull screen, outside any rolled-back
+    // test transaction. Per explicit request (2026-08-19), recalculate() now pulls incomplete
+    // profiles into the calculation table (flagged with calc_errors='profile_incomplete') instead
+    // of excluding them -- which means any such leftover row now legitimately shows up in every
+    // run this test creates for "this month" onward (their employment_date is in the past and
+    // employment_end_date is NULL, so they match any period from here on), breaking this test's
+    // employee_count/has_validation_errors assertions and everything downstream that depends on a
+    // clean calculation (submit onward) through no fault of the run this test is actually building.
+    // Soft-delete them for the duration of this run ONLY -- entirely inside this script's own
+    // transaction, rolled back at the very end, so nothing here is a real/permanent change.
+    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND is_payroll_ready = 0 AND deleted_at IS NULL")
+        ->execute([':comp_id' => $compId]);
+
     // ---------- Fixtures (created inside the transaction, rolled back at the end) ----------
     $today = new DateTime();
     $periodStart = (clone $today)->modify('first day of this month')->format('Y-m-d');
@@ -189,6 +204,27 @@ try {
     ], $adminUserId, true);
     check('duplicate period+cycle rejected', $dupRes['status'], false);
 
+    echo "=== Off-cycle run (no cycle_id) ===\n";
+    $offCycleStart = (clone $today)->modify('first day of +5 months')->format('Y-m-d');
+    $offCycleEnd = (clone $today)->modify('last day of +5 months')->format('Y-m-d');
+    $offCycleRes = $runModel->create($compId, [
+        'run_name' => 'OFFCYCLE_' . uniqid(),
+        'period_start_date' => $offCycleStart, 'period_end_date' => $offCycleEnd, 'payment_date' => $offCycleEnd,
+    ], $adminUserId, true);
+    checkTrue('create with no cycle_id at all succeeds' . (empty($offCycleRes['status']) ? " ({$offCycleRes['message']})" : ''), $offCycleRes['status']);
+    $offCycleRunId = $offCycleRes['id'] ?? 0;
+    $offCycleRow = $pdo->query("SELECT cycle_id FROM payroll_runs WHERE id = {$offCycleRunId}")->fetch(PDO::FETCH_ASSOC);
+    check('off-cycle run stored cycle_id as NULL', $offCycleRow['cycle_id'], null);
+
+    // Same period range as the off-cycle run above, but WITH a real cycle -- must still succeed,
+    // proving isDuplicatePeriod() correctly treats a NULL-cycle run as no collision at all (an
+    // ad-hoc payment legitimately CAN share a date range with a normal cycle's run).
+    $sameRangeCycleRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'SAME_RANGE_CYCLE_' . uniqid(),
+        'period_start_date' => $offCycleStart, 'period_end_date' => $offCycleEnd, 'payment_date' => $offCycleEnd,
+    ], $adminUserId, true);
+    checkTrue('a cycle-based run for the same date range as an off-cycle run still succeeds (no false collision)' . (empty($sameRangeCycleRes['status']) ? " ({$sameRangeCycleRes['message']})" : ''), $sameRangeCycleRes['status']);
+
     echo "=== Pending Pull (sync_process_id) ===\n";
     $insSyncProc = $pdo->prepare("INSERT INTO payroll_sync_processes
         (comp_id, origami_process_id, process_no, origami_comp_code, origami_comp_name, frequency_type, schema_version, raw_payload)
@@ -220,6 +256,205 @@ try {
         'sync_process_id' => $syncProcessId,
     ], $adminUserId, true);
     check('reusing an already-pulled sync_process_id is rejected', $reuseRes['status'], false);
+
+    $insSyncProc2 = $pdo->prepare("INSERT INTO payroll_sync_processes
+        (comp_id, origami_process_id, process_no, origami_comp_code, origami_comp_name, frequency_type, schema_version, raw_payload)
+        VALUES (:comp_id, :origami_process_id, :process_no, 'TESTCODE', 'Test Co.', 'monthly', 1, '{}')");
+    $insSyncProc2->execute([':comp_id' => $compId, ':origami_process_id' => random_int(1000000, 9999999), ':process_no' => 'SYNCTEST_' . uniqid()]);
+    $syncProcessId2 = (int)$pdo->lastInsertId();
+    $noCycleWithSyncRes = $runModel->create($compId, [
+        'run_name' => 'PULLED_NO_CYCLE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +6 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +6 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +6 months')->format('Y-m-d'),
+        'sync_process_id' => $syncProcessId2,
+    ], $adminUserId, true);
+    check('pulling from a sync process without a cycle_id is rejected (sync data is inherently cycle-based)', $noCycleWithSyncRes['status'], false);
+
+    // ---------- Eligibility branching (2026-08-19): Pending-Pull runs only include employees
+    // actually present in the sync payload -- not the broader date-range membership a cycle-based
+    // run uses. $syncProcessId currently has zero payroll_sync_items rows; give it two -- one
+    // resolved to a real fixture employee, one deliberately left unmapped -- to prove both "not in
+    // the payload at all" and "in the payload but unmapped" are excluded, while every OTHER
+    // date-range-eligible fixture employee (mid/opt-out/leaver) is excluded too despite matching
+    // dates, because they were simply never part of what this process actually sent.
+    echo "=== Eligibility: Pending-Pull run only includes sync-payload employees ===\n";
+    $insSyncItem = $pdo->prepare("INSERT INTO payroll_sync_items (process_id, employee_id, payroll_code, mapping_status)
+        VALUES (:process_id, :employee_id, :payroll_code, :mapping_status)");
+    $insSyncItem->execute([':process_id' => $syncProcessId, ':employee_id' => $employeeFullId, ':payroll_code' => 'PULL_MAPPED', ':mapping_status' => 'mapped']);
+    $insSyncItem->execute([':process_id' => $syncProcessId, ':employee_id' => null, ':payroll_code' => 'PULL_UNMAPPED', ':mapping_status' => 'unmapped']);
+
+    $pullCalcRes = $runModel->recalculate($pulledRunId, $compId, $adminUserId, true);
+    checkTrue('recalculate succeeds on the pulled run' . (empty($pullCalcRes['status']) ? " ({$pullCalcRes['message']})" : ''), $pullCalcRes['status']);
+    check('only the 1 mapped sync-payload employee is included (not the other 3 date-range-eligible fixture employees)', $pullCalcRes['employee_count'], 1);
+    $pullDetails = $runModel->getDetails($pulledRunId, $compId);
+    check('the included employee is the one the sync payload actually mapped', (int)($pullDetails[0]['employee_id'] ?? 0), $employeeFullId);
+
+    // ---------- Eligibility branching: a genuine off-cycle run (no cycle, no sync) has NO
+    // automatic membership at all -- only employees explicitly Joined are included. ----------
+    echo "=== Eligibility: off-cycle run has no employees until Joined ===\n";
+    $offCalcRes = $runModel->recalculate($offCycleRunId, $compId, $adminUserId, true);
+    checkTrue('recalculate succeeds on the off-cycle run (even with zero employees)' . (empty($offCalcRes['status']) ? " ({$offCalcRes['message']})" : ''), $offCalcRes['status']);
+    check('off-cycle run has 0 employees before anyone is Joined', $offCalcRes['employee_count'], 0);
+
+    echo "=== joinEmployees() / removeManualEmployee() guards ===\n";
+    $joinOnCycleRes = $runModel->joinEmployees($runId, $compId, [$employeeOptOutId], $adminUserId, true);
+    check('joinEmployees() rejected on a cycle-based run', $joinOnCycleRes['status'], false);
+    $joinOnPulledRes = $runModel->joinEmployees($pulledRunId, $compId, [$employeeOptOutId], $adminUserId, true);
+    check('joinEmployees() rejected on a Pending-Pull run', $joinOnPulledRes['status'], false);
+    $joinEmptyRes = $runModel->joinEmployees($offCycleRunId, $compId, [], $adminUserId, true);
+    check('joinEmployees() rejected with an empty employee list', $joinEmptyRes['status'], false);
+    $joinForeignRes = $runModel->joinEmployees($offCycleRunId, 999999, [$employeeOptOutId], $adminUserId, true);
+    check('joinEmployees() rejected for a run that does not belong to the given company', $joinForeignRes['status'], false);
+
+    echo "=== joinEmployees() / removeManualEmployee() ===\n";
+    $joinRes = $runModel->joinEmployees($offCycleRunId, $compId, [$employeeOptOutId, $employeeLeaverId, $employeeOptOutId], $adminUserId, true);
+    checkTrue('joinEmployees() succeeds and recalculates in one call' . (empty($joinRes['status']) ? " ({$joinRes['message']})" : ''), $joinRes['status']);
+    check('joined_count reports 2 (duplicate id in the request de-duplicated)', $joinRes['joined_count'] ?? null, 2);
+    check('employee_count reflects both newly-joined employees', $joinRes['employee_count'] ?? null, 2);
+
+    $joinAgainRes = $runModel->joinEmployees($offCycleRunId, $compId, [$employeeOptOutId], $adminUserId, true);
+    check('joining an already-joined employee again is a harmless no-op (INSERT IGNORE)', $joinAgainRes['employee_count'] ?? null, 2);
+
+    $removeRes = $runModel->removeManualEmployee($offCycleRunId, $compId, $employeeLeaverId, $adminUserId, true);
+    checkTrue('removeManualEmployee() succeeds' . (empty($removeRes['status']) ? " ({$removeRes['message']})" : ''), $removeRes['status']);
+    check('employee_count drops to 1 after removing one joined employee', $removeRes['employee_count'] ?? null, 1);
+    $offCycleDetailsAfterRemove = $runModel->getDetails($offCycleRunId, $compId);
+    check('the remaining detail row is the employee who was NOT removed', (int)($offCycleDetailsAfterRemove[0]['employee_id'] ?? 0), $employeeOptOutId);
+
+    $removeOnCycleRes = $runModel->removeManualEmployee($runId, $compId, $employeeFullId, $adminUserId, true);
+    check('removeManualEmployee() rejected on a cycle-based run', $removeOnCycleRes['status'], false);
+
+    echo "=== manualEmployeeOptions() (Join Employees picker) ===\n";
+    // Search-scoped rather than a blind page window -- this shared dev-DB company can have many
+    // other real employees sorted ahead of this fixture's TEST_* employee_no values, which would
+    // otherwise push it off a fixed-size page and produce a false failure unrelated to the actual
+    // exclusion logic being tested here.
+    $optOutEmployeeNo = $pdo->query("SELECT employee_no FROM employees WHERE id = {$employeeOptOutId}")->fetchColumn();
+    $fullEmployeeNo = $pdo->query("SELECT employee_no FROM employees WHERE id = {$employeeFullId}")->fetchColumn();
+    $optionsExcludedSearch = $runModel->manualEmployeeOptions($compId, $offCycleRunId, 0, 50, [], $optOutEmployeeNo, 'en');
+    checkTrue('manualEmployeeOptions() excludes the already-joined employee even when searched for by name/code', empty($optionsExcludedSearch['data']));
+    $optionsIncludedSearch = $runModel->manualEmployeeOptions($compId, $offCycleRunId, 0, 50, [], $fullEmployeeNo, 'en');
+    checkTrue('manualEmployeeOptions() still includes an employee nobody has joined yet', in_array($employeeFullId, array_map('intval', array_column($optionsIncludedSearch['data'], 'id'))));
+
+    // ---------- "Incentive/Other Payment" runs (2026-08-19): no base salary, only manually-picked
+    // earning/deduction items per employee, statutory computed only when the admin opts in. ----------
+    echo "=== Incentive/Other Payment run creation guards ===\n";
+    $incentiveOnCycleRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_purpose' => 'incentive', 'run_name' => 'INCENTIVE_BAD_CYCLE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +7 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +7 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +7 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    check('run_purpose=incentive rejected when a cycle is selected', $incentiveOnCycleRes['status'], false);
+
+    $payrollOffCycleRes = $runModel->create($compId, [
+        'run_purpose' => 'payroll', 'compute_statutory' => 0, 'run_name' => 'PAYROLL_FORCE_STAT_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +8 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +8 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +8 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('a normal payroll off-cycle run still succeeds' . (empty($payrollOffCycleRes['status']) ? " ({$payrollOffCycleRes['message']})" : ''), $payrollOffCycleRes['status']);
+    $payrollOffCycleRow = $pdo->query("SELECT run_purpose, compute_statutory FROM payroll_runs WHERE id = {$payrollOffCycleRes['id']}")->fetch(PDO::FETCH_ASSOC);
+    check('run_purpose stored as payroll (the default)', $payrollOffCycleRow['run_purpose'] ?? null, 'payroll');
+    checkTrue('compute_statutory is forced to 1 for a payroll run even when the request tried to send 0', (int)($payrollOffCycleRow['compute_statutory'] ?? 0) === 1);
+
+    echo "=== Incentive/Other Payment run: no base salary, manual lines only ===\n";
+    $incentiveRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => 0, 'run_name' => 'INCENTIVE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +9 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +9 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +9 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('creating an incentive run succeeds' . (empty($incentiveRes['status']) ? " ({$incentiveRes['message']})" : ''), $incentiveRes['status']);
+    $incentiveRunId = $incentiveRes['id'];
+    $incentiveRow = $pdo->query("SELECT run_purpose, compute_statutory FROM payroll_runs WHERE id = {$incentiveRunId}")->fetch(PDO::FETCH_ASSOC);
+    check('run_purpose stored as incentive', $incentiveRow['run_purpose'] ?? null, 'incentive');
+    check('compute_statutory stored as the requested 0 (opted out)', (int)($incentiveRow['compute_statutory'] ?? -1), 0);
+
+    $incentiveJoinRes = $runModel->joinEmployees($incentiveRunId, $compId, [$employeeOptOutId, $employeeLeaverId], $adminUserId, true);
+    checkTrue('joining employees to an incentive run succeeds' . (empty($incentiveJoinRes['status']) ? " ({$incentiveJoinRes['message']})" : ''), $incentiveJoinRes['status']);
+    check('employee_count is 2 after joining', $incentiveJoinRes['employee_count'] ?? null, 2);
+
+    $incentiveDetailsNoLines = $runModel->getDetails($incentiveRunId, $compId);
+    checkTrue('every joined employee has base_salary_amount = 0 (incentive runs never carry base salary)', array_reduce($incentiveDetailsNoLines, fn($carry, $d) => $carry && (float)$d['base_salary_amount'] === 0.0, true));
+    checkTrue('every joined employee is flagged no_manual_lines before anything is picked', array_reduce($incentiveDetailsNoLines, fn($carry, $d) => $carry && strpos((string)$d['calc_errors'], 'no_manual_lines') !== false, true));
+
+    $otPedTypeId = (int)$pdo->query("SELECT id FROM payroll_earning_deduction_types WHERE comp_id = {$compId} AND item_code = 'OT' AND deleted_at IS NULL")->fetchColumn();
+    $loanPedTypeId = (int)$pdo->query("SELECT id FROM payroll_earning_deduction_types WHERE comp_id = {$compId} AND item_code = 'LOAN_REPAY' AND deleted_at IS NULL")->fetchColumn();
+    checkTrue('fixture: OT default item exists for this company (seeded earlier)', $otPedTypeId > 0);
+    checkTrue('fixture: LOAN_REPAY default item exists for this company (seeded earlier)', $loanPedTypeId > 0);
+
+    echo "=== addManualLine() / removeManualLine() guards ===\n";
+    $addLineOnCycleRes = $runModel->addManualLine($runId, $compId, $employeeFullId, $otPedTypeId, 1000, $adminUserId, true);
+    check('addManualLine() rejected on a cycle-based run', $addLineOnCycleRes['status'], false);
+    $addLineOnPayrollOffCycleRes = $runModel->addManualLine((int)$payrollOffCycleRes['id'], $compId, $employeeFullId, $otPedTypeId, 1000, $adminUserId, true);
+    check('addManualLine() rejected on a payroll-purpose off-cycle run (not incentive)', $addLineOnPayrollOffCycleRes['status'], false);
+    $addLineZeroRes = $runModel->addManualLine($incentiveRunId, $compId, $employeeOptOutId, $otPedTypeId, 0, $adminUserId, true);
+    check('addManualLine() rejected with amount <= 0', $addLineZeroRes['status'], false);
+    $insDeletedPed = $pdo->prepare("INSERT INTO payroll_earning_deduction_types
+        (comp_id, item_code, item_name_th, item_name_en, item_type, calculation_method, tax_treatment, status, deleted_at, created_by)
+        VALUES (:comp_id, :code, 'ทดสอบลบ', 'Deleted Test', 'earning', 'manual_entry', 'taxable', 'deleted', NOW(), :created_by)");
+    $insDeletedPed->execute([':comp_id' => $compId, ':code' => 'DEL_TEST_' . rand(1000, 9999), ':created_by' => $adminUserId]);
+    $deletedPedTypeId = (int)$pdo->lastInsertId();
+    $addLineDeletedPedRes = $runModel->addManualLine($incentiveRunId, $compId, $employeeOptOutId, $deletedPedTypeId, 1000, $adminUserId, true);
+    check('addManualLine() rejected for a soft-deleted item', $addLineDeletedPedRes['status'], false);
+
+    echo "=== addManualLine() ===\n";
+    $addLine1Res = $runModel->addManualLine($incentiveRunId, $compId, $employeeOptOutId, $otPedTypeId, 5000, $adminUserId, true);
+    checkTrue('adding an earning line for employee 1 succeeds' . (empty($addLine1Res['status']) ? " ({$addLine1Res['message']})" : ''), $addLine1Res['status']);
+    $addLine2Res = $runModel->addManualLine($incentiveRunId, $compId, $employeeLeaverId, $otPedTypeId, 3000, $adminUserId, true);
+    checkTrue('adding an earning line for employee 2 succeeds' . (empty($addLine2Res['status']) ? " ({$addLine2Res['message']})" : ''), $addLine2Res['status']);
+    $addLine3Res = $runModel->addManualLine($incentiveRunId, $compId, $employeeOptOutId, $loanPedTypeId, 500, $adminUserId, true);
+    checkTrue('adding a deduction line for employee 1 succeeds' . (empty($addLine3Res['status']) ? " ({$addLine3Res['message']})" : ''), $addLine3Res['status']);
+    check('employee_count still 2 after adding lines (no employee added/removed)', $addLine3Res['employee_count'] ?? null, 2);
+
+    $incentiveDetailsWithLines = $runModel->getDetails($incentiveRunId, $compId);
+    $emp1Detail = null;
+    $emp2Detail = null;
+    foreach ($incentiveDetailsWithLines as $d) {
+        if ((int)$d['employee_id'] === $employeeOptOutId) { $emp1Detail = $d; }
+        if ((int)$d['employee_id'] === $employeeLeaverId) { $emp2Detail = $d; }
+    }
+    checkTrue('employee 1 no longer flagged no_manual_lines', strpos((string)($emp1Detail['calc_errors'] ?? ''), 'no_manual_lines') === false);
+    check('employee 1 gross = 5000 (OT earning only, no base salary)', (float)($emp1Detail['gross_amount'] ?? -1), 5000.0);
+    check('employee 1 net = 4500 (5000 earning - 500 manual deduction, statutory opted out)', (float)($emp1Detail['net_amount'] ?? -1), 4500.0);
+    check('employee 1 statutory_breakdown is empty (compute_statutory=0)', $emp1Detail['statutory_breakdown'] ?? null, []);
+    check('employee 1 calc_status is calculated (no more errors)', $emp1Detail['calc_status'] ?? null, 'calculated');
+    check('employee 2 gross = 3000 (OT earning only)', (float)($emp2Detail['gross_amount'] ?? -1), 3000.0);
+    check('employee 2 prorate_days is null (incentive runs never prorate)', $emp2Detail['prorate_days'], null);
+
+    echo "=== removeManualLine() ===\n";
+    $lines = $runModel->manualLinesForEmployee($compId, $incentiveRunId, $employeeOptOutId);
+    check('manualLinesForEmployee() returns both of employee 1\'s lines', count($lines), 2);
+    $deductionLineId = null;
+    foreach ($lines as $l) {
+        if ($l['item_type'] === 'deduction') { $deductionLineId = (int)$l['id']; }
+    }
+    checkTrue('found the deduction line id to remove', $deductionLineId !== null);
+    $removeLineRes = $runModel->removeManualLine($incentiveRunId, $compId, $deductionLineId, $adminUserId, true);
+    checkTrue('removeManualLine() succeeds' . (empty($removeLineRes['status']) ? " ({$removeLineRes['message']})" : ''), $removeLineRes['status']);
+    $emp1DetailAfterRemove = null;
+    foreach ($runModel->getDetails($incentiveRunId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeOptOutId) { $emp1DetailAfterRemove = $d; }
+    }
+    check('employee 1 net = 5000 after removing the deduction line (no more -500)', (float)($emp1DetailAfterRemove['net_amount'] ?? -1), 5000.0);
+
+    echo "=== Incentive run WITH statutory opted in ===\n";
+    $incentiveStatRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => 1, 'run_name' => 'INCENTIVE_STAT_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +10 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +10 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +10 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('creating an incentive run with compute_statutory=1 succeeds' . (empty($incentiveStatRes['status']) ? " ({$incentiveStatRes['message']})" : ''), $incentiveStatRes['status']);
+    $incentiveStatRunId = $incentiveStatRes['id'];
+    $runModel->joinEmployees($incentiveStatRunId, $compId, [$employeeFullId], $adminUserId, true);
+    $addStatLineRes = $runModel->addManualLine($incentiveStatRunId, $compId, $employeeFullId, $otPedTypeId, 20000, $adminUserId, true);
+    checkTrue('adding a large earning line succeeds' . (empty($addStatLineRes['status']) ? " ({$addStatLineRes['message']})" : ''), $addStatLineRes['status']);
+    $statDetail = $runModel->getDetails($incentiveStatRunId, $compId)[0] ?? [];
+    checkTrue('statutory_breakdown is NOT empty when compute_statutory=1 (real SSO/tax calc applied to the incentive gross)', !empty($statDetail['statutory_breakdown']));
+    checkTrue('net amount is less than gross once statutory is actually withheld', (float)($statDetail['net_amount'] ?? 0) < (float)($statDetail['gross_amount'] ?? 0));
 
     echo "=== Recalculate ===\n";
     $calcRes = $runModel->recalculate($runId, $compId, $adminUserId, true);

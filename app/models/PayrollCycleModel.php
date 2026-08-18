@@ -4,8 +4,8 @@ class PayrollCycleModel {
     private $db;
     private const DAYS_OF_WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
-    public function __construct() {
-        $this->db = Database::getInstance()->pdo;
+    public function __construct(?PDO $pdo = null) {
+        $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
     public function list(int $compId): array {
@@ -77,6 +77,171 @@ class PayrollCycleModel {
         $stmt->execute();
 
         return ['items' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'total_count' => $totalCount];
+    }
+
+    /**
+     * Suggests the next period_start_date/period_end_date/payment_date for a cycle, so the
+     * "Create Payroll Run" form can auto-fill dates once a cycle is picked instead of the user
+     * typing them by hand every time -- purely a convenience default, the fields stay editable
+     * after. "Next" means: continuing on from this cycle's most recent payroll_runs row (by
+     * period_end_date), or if none exists yet, the period that contains today.
+     *
+     * Payment date rule (confirmed explicitly, not guessed): payment always falls in the
+     * calendar month immediately AFTER the period's own cutoff/end month, on payment_day_of_month
+     * (or the last day of that month) -- standard "close the period, pay a few days into the next
+     * month" convention. Applies uniformly to monthly and semi-monthly (both halves); this is a
+     * deliberate simplification for semi-monthly specifically, since the schema only has one
+     * payment_day_of_month for the whole cycle, not one per half -- a company whose second-half
+     * payment actually falls in the SAME month needs to adjust the auto-filled date by hand.
+     *
+     * Semi-monthly's single cutoff_day_of_month is treated as the split point within each month:
+     * first half = 1st .. cutoff_day, second half = (cutoff_day+1) .. last day of month (the
+     * second half always reaches month-end regardless of cutoff_use_last_day, since it has to
+     * cover the rest of the month either way).
+     *
+     * Weekly/bi-weekly periods are 7/14 days ending on cutoff_day_of_week; payment is the next
+     * occurrence of payment_day_of_week strictly after the period ends.
+     */
+    public function suggestNextPeriod(int $cycleId, int $compId): array {
+        $cycle = $this->get($cycleId, $compId);
+        if (!$cycle) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+
+        $stmtLast = $this->db->prepare("SELECT period_end_date FROM `payroll_runs`
+            WHERE cycle_id = :cycle_id AND comp_id = :comp_id AND deleted_at IS NULL
+            ORDER BY period_end_date DESC LIMIT 1");
+        $stmtLast->execute([':cycle_id' => $cycleId, ':comp_id' => $compId]);
+        $lastEndStr = $stmtLast->fetchColumn();
+        $lastEnd = $lastEndStr !== false ? new DateTime((string)$lastEndStr) : null;
+        $today = new DateTime('today');
+
+        $frequency = (string)$cycle['payroll_frequency'];
+        try {
+            if ($frequency === 'monthly') {
+                [$start, $end] = $this->nextMonthlyPeriod($lastEnd, $today, (int)($cycle['cutoff_day_of_month'] ?? 0), (bool)$cycle['cutoff_use_last_day']);
+                $paymentMonthRef = (clone $end)->modify('first day of next month');
+                $payment = $this->resolveDayInMonth($paymentMonthRef, (int)($cycle['payment_day_of_month'] ?? 0), (bool)$cycle['payment_use_last_day']);
+            } elseif ($frequency === 'semi_monthly') {
+                [$start, $end] = $this->nextSemiMonthlyPeriod($lastEnd, $today, (int)($cycle['cutoff_day_of_month'] ?? 0));
+                $paymentMonthRef = (clone $end)->modify('first day of next month');
+                $payment = $this->resolveDayInMonth($paymentMonthRef, (int)($cycle['payment_day_of_month'] ?? 0), (bool)$cycle['payment_use_last_day']);
+            } elseif ($frequency === 'weekly' || $frequency === 'bi_weekly') {
+                $lengthDays = $frequency === 'weekly' ? 7 : 14;
+                [$start, $end] = $this->nextWeekBasedPeriod($lastEnd, $today, (string)($cycle['cutoff_day_of_week'] ?? ''), $lengthDays);
+                $payment = $this->nextOccurrenceOfWeekday((clone $end)->modify('+1 day'), (string)($cycle['payment_day_of_week'] ?? ''));
+            } else {
+                return ['status' => false, 'message' => 'Unsupported payroll_frequency.'];
+            }
+        } catch (Throwable $e) {
+            return ['status' => false, 'message' => 'This cycle is not fully configured yet -- set its cutoff/payment day first.'];
+        }
+
+        return [
+            'status' => true,
+            'period_start_date' => $start->format('Y-m-d'),
+            'period_end_date' => $end->format('Y-m-d'),
+            'payment_date' => $payment->format('Y-m-d'),
+        ];
+    }
+
+    /** @return DateTime the requested day-of-month (or last day) within $monthRef's month */
+    private function resolveDayInMonth(DateTime $monthRef, int $day, bool $useLastDay): DateTime {
+        if ($useLastDay) {
+            return (clone $monthRef)->modify('last day of this month');
+        }
+        if ($day < 1 || $day > 28) {
+            throw new InvalidArgumentException('Day of month not configured.');
+        }
+        return (clone $monthRef)->setDate((int)$monthRef->format('Y'), (int)$monthRef->format('n'), $day);
+    }
+
+    /** @return array{0: DateTime, 1: DateTime} [periodStart, periodEnd] */
+    /**
+     * PHP's DateTime::modify('+N month(s)') overflows when the starting day doesn't exist in the
+     * target month (classic pitfall: Jan 31 + 1 month = Mar 3, not Feb 28/29) -- every cutoff/
+     * payment day in this cycle can legitimately BE a month-end day (cutoff_use_last_day, or the
+     * "last day of month" half of semi-monthly), so anchoring to day 1 first before adding/
+     * subtracting months sidesteps the overflow entirely, since day 1 always exists everywhere.
+     */
+    private function addMonthsAnchored(DateTime $ref, int $months): DateTime {
+        $anchored = (clone $ref)->setDate((int)$ref->format('Y'), (int)$ref->format('n'), 1);
+        return $anchored->modify(($months >= 0 ? '+' : '') . "{$months} month");
+    }
+
+    private function nextMonthlyPeriod(?DateTime $lastEnd, DateTime $today, int $cutoffDay, bool $useLastDay): array {
+        if ($lastEnd !== null) {
+            $end = $this->resolveDayInMonth($this->addMonthsAnchored($lastEnd, 1), $cutoffDay, $useLastDay);
+        } else {
+            $thisMonthEnd = $this->resolveDayInMonth($today, $cutoffDay, $useLastDay);
+            $end = $today <= $thisMonthEnd ? $thisMonthEnd : $this->resolveDayInMonth($this->addMonthsAnchored($today, 1), $cutoffDay, $useLastDay);
+        }
+        $prevMonthEnd = $this->resolveDayInMonth($this->addMonthsAnchored($end, -1), $cutoffDay, $useLastDay);
+        $start = (clone $prevMonthEnd)->modify('+1 day');
+        return [$start, $end];
+    }
+
+    /** @return array{0: DateTime, 1: DateTime} [periodStart, periodEnd] */
+    private function nextSemiMonthlyPeriod(?DateTime $lastEnd, DateTime $today, int $cutoffDay): array {
+        if ($cutoffDay < 1 || $cutoffDay > 28) {
+            throw new InvalidArgumentException('Cutoff day not configured.');
+        }
+        $firstHalfEnd = function (DateTime $monthRef) use ($cutoffDay): DateTime {
+            return (clone $monthRef)->setDate((int)$monthRef->format('Y'), (int)$monthRef->format('n'), $cutoffDay);
+        };
+        $secondHalfEnd = function (DateTime $monthRef): DateTime {
+            return (clone $monthRef)->modify('last day of this month');
+        };
+
+        if ($lastEnd !== null) {
+            $wasFirstHalf = (int)$lastEnd->format('j') === $cutoffDay;
+            if ($wasFirstHalf) {
+                $end = $secondHalfEnd($lastEnd);
+                $start = (clone $lastEnd)->modify('+1 day');
+            } else {
+                $nextMonth = $this->addMonthsAnchored($lastEnd, 1);
+                $end = $firstHalfEnd($nextMonth);
+                $start = clone $nextMonth;
+            }
+            return [$start, $end];
+        }
+
+        $thisFirstHalfEnd = $firstHalfEnd($today);
+        if ($today <= $thisFirstHalfEnd) {
+            return [$this->addMonthsAnchored($today, 0), $thisFirstHalfEnd];
+        }
+        $thisSecondHalfEnd = $secondHalfEnd($today);
+        if ($today <= $thisSecondHalfEnd) {
+            return [(clone $thisFirstHalfEnd)->modify('+1 day'), $thisSecondHalfEnd];
+        }
+        $nextMonth = $this->addMonthsAnchored($today, 1);
+        return [clone $nextMonth, $firstHalfEnd($nextMonth)];
+    }
+
+    /** @return array{0: DateTime, 1: DateTime} [periodStart, periodEnd] */
+    private function nextWeekBasedPeriod(?DateTime $lastEnd, DateTime $today, string $dayOfWeek, int $lengthDays): array {
+        if (!in_array($dayOfWeek, self::DAYS_OF_WEEK, true)) {
+            throw new InvalidArgumentException('Day of week not configured.');
+        }
+        if ($lastEnd !== null) {
+            $end = (clone $lastEnd)->modify("+{$lengthDays} days");
+        } else {
+            $end = $this->nextOccurrenceOfWeekday($today, $dayOfWeek, true);
+        }
+        $start = (clone $end)->modify('-' . ($lengthDays - 1) . ' days');
+        return [$start, $end];
+    }
+
+    /** Next occurrence of $dayOfWeek on/after $from (or strictly after, if $inclusive is false). */
+    private function nextOccurrenceOfWeekday(DateTime $from, string $dayOfWeek, bool $inclusive = false): DateTime {
+        if (!in_array($dayOfWeek, self::DAYS_OF_WEEK, true)) {
+            throw new InvalidArgumentException('Day of week not configured.');
+        }
+        $date = clone $from;
+        if ($inclusive && strtolower($date->format('l')) === $dayOfWeek) {
+            return $date;
+        }
+        return $date->modify("next {$dayOfWeek}");
     }
 
     private function isCycleNameDuplicate(int $compId, string $name, ?int $excludeId): bool {

@@ -46,6 +46,7 @@ $dotenv->load();
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/services/OrigamiSsoJwt.php';
+require_once __DIR__ . '/../app/models/PayrollEarningDeductionTypeModel.php';
 
 function origami_sso_fail(string $message): void {
     http_response_code(401);
@@ -179,6 +180,16 @@ if (!$company) {
         );
         $insertCompany->execute([':legal_name' => $companyName, ':local_name' => $companyName, ':comp_key' => $companyKey]);
         $company = ['id' => (int)$pdo->lastInsertId()];
+        // Give every brand-new company the system's starter set of common earning/deduction
+        // items (per explicit request, 2026-08-19) so Payroll Configuration isn't a totally blank
+        // slate on day one -- still just a starting point (is_sync_only stays 0), addable to and
+        // deletable like any other row. Best-effort: a seeding failure here must never block
+        // account creation itself.
+        try {
+            (new PayrollEarningDeductionTypeModel())->seedDefaults($company['id'], null);
+        } catch (Throwable $e) {
+            // Swallowed on purpose -- see comment above.
+        }
     } catch (PDOException $e) {
         // Race: another concurrent first-login for the same company already inserted it.
         $companyStmt->execute([':comp_key' => $companyKey]);

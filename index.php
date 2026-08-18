@@ -42,6 +42,12 @@
     $router->post('api/payroll-run.save', 'PayrollController@save');
     $router->post('api/payroll-run.delete', 'PayrollController@delete');
     $router->post('api/payroll-run.recalculate', 'PayrollController@recalculate');
+    $router->post('api/payroll-run.manual-employee-options', 'PayrollController@manualEmployeeOptions');
+    $router->post('api/payroll-run.join-employees', 'PayrollController@joinEmployees');
+    $router->post('api/payroll-run.remove-employee', 'PayrollController@removeEmployee');
+    $router->get('api/payroll-run.manual-lines', 'PayrollController@manualLinesForEmployee');
+    $router->post('api/payroll-run.add-manual-line', 'PayrollController@addManualLine');
+    $router->post('api/payroll-run.remove-manual-line', 'PayrollController@removeManualLine');
     $router->post('api/payroll-run.submit', 'PayrollController@submit');
     $router->post('api/payroll-run.revert', 'PayrollController@revert');
     $router->post('api/payroll-run.approve', 'PayrollController@approve');
@@ -56,6 +62,7 @@
     $router->post('api/bank-file-format.options', 'PayrollConfigurationController@bankFileFormatOptions');
     $router->get('api/payroll-cycle.list', 'PayrollConfigurationController@cycleList');
     $router->get('api/payroll-cycle.get', 'PayrollConfigurationController@cycleGet');
+    $router->get('api/payroll-cycle.suggest-period', 'PayrollConfigurationController@cycleSuggestPeriod');
     $router->post('api/payroll-cycle.save', 'PayrollConfigurationController@cycleSave');
     $router->post('api/payroll-cycle.delete', 'PayrollConfigurationController@cycleDelete');
     $router->get('api/attendance-bonus.list', 'PayrollConfigurationController@attendanceBonusList');
@@ -73,6 +80,7 @@
     $router->get('api/ped-type.get', 'PayrollConfigurationController@pedTypeGet');
     $router->post('api/ped-type.save', 'PayrollConfigurationController@pedTypeSave');
     $router->post('api/ped-type.delete', 'PayrollConfigurationController@pedTypeDelete');
+    $router->post('api/ped-type.seed-defaults', 'PayrollConfigurationController@pedTypeSeedDefaults');
     $router->get('setup/tax-statutory', 'TaxStatutoryController@index');
     $router->get('api/statutory-item.list', 'TaxStatutoryController@itemList');
     $router->get('api/statutory-item.get', 'TaxStatutoryController@itemGet');

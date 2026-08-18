@@ -46,6 +46,18 @@ function injectAddButton(api, itemType, i18nKey, defaultLabel) {
         $searchDiv.append(btn);
     }
 }
+function injectSeedDefaultsButton(api) {
+    const $wrapper = $(api.table().container());
+    const $searchDiv = $wrapper.find('.dt-search');
+    if ($searchDiv.find('.btn-seed-ped-defaults').length === 0) {
+        const btn = `
+            <button type="button" class="btn btn-outline-secondary ms-1 btn-seed-ped-defaults">
+                <i class="fa-solid fa-download me-1"></i><span data-i18n="load_default_items">${langData['load_default_items'] || 'Load Default Items'}</span>
+            </button>
+        `;
+        $searchDiv.append(btn);
+    }
+}
 function initEarningTypeTable() {
     if ($.fn.DataTable.isDataTable('#tb_earning_type')) {
         $('#tb_earning_type').DataTable().ajax.reload(null, false);
@@ -84,6 +96,7 @@ function initEarningTypeTable() {
         language: getTableLang(),
         initComplete: function () {
             injectAddButton(this.api(), 'earning', 'earning_type', 'Earning Type');
+            injectSeedDefaultsButton(this.api());
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -124,6 +137,7 @@ function initDeductionTypeTable() {
         language: getTableLang(),
         initComplete: function () {
             injectAddButton(this.api(), 'deduction', 'deduction_type', 'Deduction Type');
+            injectSeedDefaultsButton(this.api());
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -279,6 +293,30 @@ $(document).on('click', '.btn-add-ped-type', function () {
     const itemType = $(this).data('item-type');
     resetPedTypeForm(itemType);
     new bootstrap.Modal(document.getElementById('itemModal')).show();
+});
+$(document).on('click', '.btn-seed-ped-defaults', function () {
+    const title = langData['load_default_items'] || 'Load Default Items';
+    const msg = langData['confirm_load_default_items_message'] || 'Add the system\'s starter set of common earning/deduction items? Any item code you already have is skipped -- nothing gets overwritten or duplicated.';
+    showConfirm(title, msg, function () {
+        $.ajax({
+            url: `${BASE_URL}/api/ped-type.seed-defaults`,
+            method: 'POST',
+            dataType: 'json',
+            success: function (res) {
+                if (res.status) {
+                    const tpl = langData['load_default_items_result'] || '{inserted} item(s) added, {skipped} already existed.';
+                    showSuccess(tpl.replace('{inserted}', res.inserted).replace('{skipped}', res.skipped));
+                    if (tb_earning_type) tb_earning_type.ajax.reload(null, false);
+                    if (tb_deduction_type) tb_deduction_type.ajax.reload(null, false);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () {
+                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+            }
+        });
+    });
 });
 $(document).on('click', '.btn-edit-ped-type', function () {
     const id = $(this).data('id');
