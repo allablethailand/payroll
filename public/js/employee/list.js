@@ -1,5 +1,44 @@
+// Profile completeness (2026-08-19, explicit request): color follows the same red/orange(brand)/
+// green scale used for the payroll run validation states elsewhere in this app -- red under 50%
+// (needs real attention), brand orange in the middle (getting there), green once genuinely mostly
+// filled in. Shared between the list (this file) and the Detail page's own summary card.
+function completenessColor(percent) {
+    if (percent >= 80) return '#198754';
+    if (percent >= 50) return '#FF9900';
+    return '#dc3545';
+}
+function completenessBarHtml(percent) {
+    const p = Number(percent) || 0;
+    const color = completenessColor(p);
+    return `<div class="employee-completeness-bar d-flex align-items-center gap-2">
+        <div class="progress flex-grow-1">
+            <div class="progress-bar" role="progressbar" style="width:${p}%; background-color:${color};" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <span class="small fw-semibold" style="color:${color}; min-width:2.5em;">${p}%</span>
+    </div>`;
+}
+// Reload after coming back from Employee Detail (2026-08-19, explicit request: "บันทึกหน้า Detail
+// อยากให้ Reload ตาราง Employee ด้วยครับ") -- a normal link click (sidebar nav, breadcrumb) always
+// hits the server fresh already, so the only real staleness case is the browser's own Back button:
+// it can restore this exact page from bfcache without re-running any of the script above, showing
+// whatever completeness/status/etc the table had BEFORE the edit on Detail. event.persisted is true
+// only for that bfcache-restore case, not a normal first load (where initEmployeeTable() below
+// already fetches fresh).
+window.addEventListener('pageshow', function (e) {
+    if (e.persisted && $.fn.DataTable.isDataTable('#tb_employee')) {
+        $('#tb_employee').DataTable().ajax.reload(null, false);
+    }
+});
 $(document).ready(function () {
     initEmployeeTable();
+    if (typeof initDatepicker === 'function') {
+        initDatepicker('#employee_filter_date_from');
+        initDatepicker('#employee_filter_date_to');
+    }
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#employee_filter_role, #employee_filter_department, #employee_filter_shift, #employee_filter_branch', { mode: 'ajax', allowClear: true });
+    }
+    updateClearEmployeeFilterVisibility();
 });
 let tb_employee;
 function currentStatusFilters() {
@@ -9,6 +48,53 @@ function currentStatusFilters() {
         employment_status: $active.data('filter-employment-status') || ''
     };
 }
+function currentEmployeeExtraFilters() {
+    return {
+        created_date_from: toIsoDateEmp($('#employee_filter_date_from').val()),
+        created_date_to: toIsoDateEmp($('#employee_filter_date_to').val()),
+        role_id: $('#employee_filter_role').val() || '',
+        department_id: $('#employee_filter_department').val() || '',
+        shift_id: $('#employee_filter_shift').val() || '',
+        branch_id: $('#employee_filter_branch').val() || ''
+    };
+}
+function toIsoDateEmp(displayVal) {
+    if (!displayVal) return '';
+    const parts = String(displayVal).split('/');
+    if (parts.length !== 3) return displayVal;
+    const [dd, mm, yyyy] = parts;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+}
+function updateClearEmployeeFilterVisibility() {
+    const f = currentEmployeeExtraFilters();
+    const hasFilter = !!(f.created_date_from || f.created_date_to || f.role_id || f.department_id || f.shift_id || f.branch_id);
+    $('#btnClearEmployeeFilter').toggleClass('d-none', !hasFilter);
+}
+$(document).on('click', '#employeeStationFilterToggle', function () {
+    const $filter = $('#employeeStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+// 'changeDate' alone (not the native 'change' bootstrap-datepicker also fires alongside it) --
+// same reasoning as the Payroll Process filter this is modeled on, avoids double-firing reload.
+$(document).on('changeDate', '#employee_filter_date_from, #employee_filter_date_to', function () {
+    updateClearEmployeeFilterVisibility();
+    if (tb_employee) tb_employee.ajax.reload(null, true);
+});
+$(document).on('change', '#employee_filter_role, #employee_filter_department, #employee_filter_shift, #employee_filter_branch', function () {
+    updateClearEmployeeFilterVisibility();
+    if (tb_employee) tb_employee.ajax.reload(null, true);
+});
+$(document).on('click', '#btnClearEmployeeFilter', function () {
+    // Clear every control WITHOUT letting each one's own change handler fire its own
+    // ajax.reload() -- 'change.select2' only refreshes the widget's display, and clearDates()'s
+    // 'changeDate' event is left to fire on the date fields same as the Process page's own Clear
+    // Filter (2 reloads there already, accepted) -- one explicit reload below covers the rest.
+    $('#employee_filter_role, #employee_filter_department, #employee_filter_shift, #employee_filter_branch').val(null).trigger('change.select2');
+    $('#employee_filter_date_from, #employee_filter_date_to').datepicker('clearDates');
+    updateClearEmployeeFilterVisibility();
+    if (tb_employee) tb_employee.ajax.reload(null, true);
+});
 function initEmployeeTable() {
     if ($.fn.DataTable.isDataTable('#tb_employee')) {
         $('#tb_employee').DataTable().ajax.reload(null, false);
@@ -26,6 +112,7 @@ function initEmployeeTable() {
                 const filters = currentStatusFilters();
                 d.status = filters.status;
                 d.employment_status = filters.employment_status;
+                Object.assign(d, currentEmployeeExtraFilters());
             }
         },
         columns: [
@@ -42,7 +129,7 @@ function initEmployeeTable() {
             { data: "name" },
             { data: "role" },
             { data: "department" },
-            { data: "shift", defaultContent: "-" },
+            { data: "shift", render: d => d || '-' },
             { data: "branch" },
             { data: "start_work_date" },
             {
@@ -50,6 +137,13 @@ function initEmployeeTable() {
                 render: function (data) {
                     let badge = data === 'Active' ? 'bg-success' : 'bg-danger';
                     return `<span class="badge ${badge}">${data}</span>`;
+                }
+            },
+            {
+                data: "completeness",
+                orderable: false,
+                render: function (data) {
+                    return completenessBarHtml(data);
                 }
             },
             {

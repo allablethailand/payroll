@@ -58,6 +58,12 @@ class EmployeeController extends Controller {
         $filters = [
             'status' => $_POST['status'] ?? '',
             'employment_status' => $_POST['employment_status'] ?? '',
+            'role_id' => $_POST['role_id'] ?? '',
+            'department_id' => $_POST['department_id'] ?? '',
+            'shift_id' => $_POST['shift_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+            'created_date_from' => $_POST['created_date_from'] ?? '',
+            'created_date_to' => $_POST['created_date_to'] ?? '',
         ];
         $search = (string)($_POST['search']['value'] ?? '');
         $colIndex = isset($_POST['order'][0]['column']) ? (int)$_POST['order'][0]['column'] : 0;
@@ -149,7 +155,11 @@ class EmployeeController extends Controller {
         $page = intval($_POST['page'] ?? 1);
         $limit = intval($_POST['limit'] ?? 10);
         $search = (string)($_POST['searchTerm'] ?? '');
-        $data = $this->earningDeductionModel->activeOptions((int)$compId, $search, $page, $limit);
+        // 'type' comes through automatically for a select2-remote field with data-type="earning"/
+        // "deduction" set (2026-08-19, explicit request: Add Earning/Add Deduction each pre-filter
+        // the catalog dropdown to their own item_type).
+        $itemType = (string)($_POST['type'] ?? '');
+        $data = $this->earningDeductionModel->activeOptions((int)$compId, $search, $page, $limit, $itemType !== '' ? $itemType : null);
         $this->json(['status' => true, 'data' => $data]);
     }
     public function earningDeductionList() {
@@ -160,7 +170,8 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'data' => []]);
             return;
         }
-        $data = $this->earningDeductionModel->list($employeeId, (int)$compId);
+        $itemType = isset($_GET['item_type']) ? (string)$_GET['item_type'] : '';
+        $data = $this->earningDeductionModel->list($employeeId, (int)$compId, $itemType !== '' ? $itemType : null);
         $this->json(['status' => true, 'data' => $data]);
     }
     public function earningDeductionGet() {

@@ -556,12 +556,61 @@ html, body {
 .profile-upload-circle {
     cursor: pointer;
     object-fit: cover;
+    border: 2px dashed rgba(255, 153, 0, .35) !important;
+    background: linear-gradient(135deg, #fff8ee, #fff1dc) !important;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.profile-upload-circle:hover {
+    border-color: #FF9900 !important;
+    box-shadow: 0 0 0 .2rem rgba(255, 153, 0, .15);
+}
+.profile-upload-circle #profilePlaceholder i {
+    color: #FF9900;
 }
 .profile-upload-badge {
     width: 26px;
     height: 26px;
     cursor: pointer;
     transform: translate(-6px, -6px);
+    border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
+}
+
+/* .btn-outline-brand / .bg-brand — used across Employee Detail (type/gender/payment-type toggles,
+   the profile-photo camera badge, Add Dependent/Parent buttons) but never actually defined anywhere
+   in this file, so they rendered as plain unstyled Bootstrap buttons/badge (no border, no checked
+   state, no brand color at all) -- this is the "radio ยังดูไม่มีธีม" gap. NOT the same as
+   .btn-outline-primary/.bg-primary: this codebase's Bootstrap build hardcodes #0d6efd into those
+   classes' own --bs-btn-* custom properties rather than referencing the global --bs-primary token,
+   so the :root recolor above (search "Bootstrap primary recolor") does not actually reach them --
+   defining brand-specific classes here, hardcoded to #FF9900 like the rest of this file already
+   does, sidesteps that gap rather than depending on it.  */
+.btn-outline-brand {
+    color: #FF9900;
+    border-color: #FF9900;
+    background-color: #fff;
+}
+.btn-outline-brand:hover {
+    color: #fff;
+    background-color: #FF9900;
+    border-color: #FF9900;
+}
+.btn-check:checked + .btn-outline-brand,
+.btn-check:active + .btn-outline-brand,
+.btn-outline-brand:active,
+.btn-outline-brand.active {
+    color: #fff;
+    background-color: #FF9900;
+    border-color: #FF9900;
+    box-shadow: none;
+}
+.btn-check:focus + .btn-outline-brand,
+.btn-outline-brand:focus {
+    box-shadow: 0 0 0 .25rem rgba(255, 153, 0, .25);
+}
+.bg-brand {
+    background-color: #FF9900 !important;
+    color: #fff;
 }
 .scrollable-tabs {
     display: flex;
@@ -1314,6 +1363,82 @@ html, body {
     .card-surface {
         padding: 1.5rem;
     }
+}
+
+/* ==========================================================================
+   .page-header-card -- the distinctive page-title header block (icon + title + description) that
+   sits under the breadcrumb at the top of a page. Split out of plain .card-surface (2026-08-19,
+   explicit request: "card-surface ที่เป็น head ของแต่ละหน้าช่วยหา Design ที่เป็นเอกลักษณ์") -- .card-
+   surface itself stays a neutral, content-agnostic wrapper used all over the app for unrelated
+   section cards, so it couldn't be the thing restyled here without changing dozens of other cards
+   that have nothing to do with page titles. This is deliberately its own class instead.
+   STANDING CONVENTION, not a one-off: every page's top header block should use this pattern going
+   forward (only Employee List has been migrated to it so far -- retrofitting every other page is a
+   separate, larger pass, not done in this commit). Structure:
+     <div class="page-header-card mb-4">
+       <div class="page-header-card-icon"><i class="fa-solid fa-xxx"></i></div>
+       <div class="page-header-card-body">
+         <h5 class="page-header-card-title" data-i18n="...">Title</h5>
+         <p class="page-header-card-desc" data-i18n="...">Description</p>
+       </div>
+     </div>
+   Warm gradient background + a soft radial glow in the corner (brand orange, very low opacity) reads
+   as "this app's" header rather than a generic dashboard card; the icon is a solid orange-gradient
+   badge (reuses the same 135deg #ffab26->#FF9900 gradient already used for the profile-photo upload
+   badge/other brand accents elsewhere in this file) instead of the flat tinted square every other
+   icon-in-a-box on this site already uses, so it doesn't blend into every other "icon + label" element
+   on the page. Light-mode only, matching every other color in this file -- no dark-mode variants
+   exist anywhere in this stylesheet.
+   ========================================================================== */
+.page-header-card {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: linear-gradient(135deg, #fff8ee 0%, #fff1dc 55%, #ffe8c4 100%);
+    border: 1px solid rgba(255, 153, 0, .18);
+    border-radius: 16px;
+    padding: 1.1rem 1.4rem;
+    box-shadow: 0 4px 16px rgba(255, 153, 0, .08);
+}
+.page-header-card::before {
+    content: '';
+    position: absolute;
+    top: -45%;
+    right: -8%;
+    width: 240px;
+    height: 240px;
+    background: radial-gradient(circle, rgba(255, 153, 0, .16), transparent 70%);
+    pointer-events: none;
+}
+.page-header-card-icon {
+    position: relative;
+    z-index: 1;
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    box-shadow: 0 4px 10px rgba(255, 153, 0, .35);
+}
+.page-header-card-body {
+    position: relative;
+    z-index: 1;
+}
+.page-header-card-title {
+    color: #4a3418;
+    font-weight: 700;
+    margin: 0;
+}
+.page-header-card-desc {
+    color: #8a6d47;
+    margin: .25rem 0 0;
 }
 
 /* ==========================================================================

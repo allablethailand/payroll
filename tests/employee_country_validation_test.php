@@ -124,13 +124,10 @@ try {
     $thPayload['mobile_no'] = '812345678';
     $thPayload['emergency_mobile'] = '812345679';
     $thPayload['tax_calculation_method'] = 'average';
-    // Deliberately NOT setting master_address_id_register/_contact -- must still be required for TH.
+    // master_address_id_register/_contact deliberately left unset here -- no longer required at all
+    // (2026-08-19: register/contact address dropped from EmployeeModel::requiredColumns(), see its
+    // own docblock), covered by the "hidden fields don't block a save" case below instead.
 
-    $thResultMissingAddress = $model->save($thCompId, $thPayload, $userId);
-    checkFalse('TH employee still requires master_address_id_register', $thResultMissingAddress['status']);
-
-    $thPayload['master_address_id_register'] = 999999; // won't resolve to a real row -- still should fail, just on FK not "missing field"
-    $thPayload['master_address_id_contact'] = 999999;
     $thResultBadChecksum = $model->save($thCompId, $thPayload, $userId);
     checkFalse('TH employee with invalid Thai ID checksum still rejected', $thResultBadChecksum['status']);
     check('TH rejection message is the checksum message, not a missing-field message', $thResultBadChecksum['message'], 'Invalid Thai ID card number.');
@@ -139,10 +136,26 @@ try {
     $thPayload2['mobile_no'] = '1234567'; // 7 digits -- valid under the relaxed non-TH pattern but must still fail for TH
     $thPayload2['emergency_mobile'] = '812345679';
     $thPayload2['tax_calculation_method'] = 'average';
-    $thPayload2['master_address_id_register'] = 999999;
-    $thPayload2['master_address_id_contact'] = 999999;
     $thResultBadPhone = $model->save($thCompId, $thPayload2, $userId);
     checkFalse('TH employee still enforces 9-10 digit mobile number (7 digits rejected)', $thResultBadPhone['status']);
+
+    // ---------- Hidden-fields-don't-block-a-save (2026-08-19, explicit request: trim the Employee
+    // form to Payroll-relevant fields only) -- register/contact address and emergency contact are no
+    // longer collected by the form at all, so a real save must succeed with all six left blank. ----------
+    $thPayload3 = baseEmployeePayload($thStructure, 'TH-EMP-' . uniqid());
+    $thPayload3['id_card_no'] = '1234567890121'; // valid mod-11 checksum
+    $thPayload3['mobile_no'] = '812345678';
+    $thPayload3['tax_calculation_method'] = 'average';
+    foreach (['address_line_1_register', 'address_line_1_contact', 'emergency_name', 'emergency_surname', 'emergency_relationship', 'emergency_mobile'] as $droppedField) {
+        unset($thPayload3[$droppedField]);
+    }
+    $thResultNoHiddenFields = $model->save($thCompId, $thPayload3, $userId);
+    checkTrue('TH employee saves with address/emergency-contact fields entirely absent' . (empty($thResultNoHiddenFields['status']) ? " ({$thResultNoHiddenFields['message']})" : ''), $thResultNoHiddenFields['status']);
+    if ($thResultNoHiddenFields['status']) {
+        $hiddenFieldsRow = $pdo->query("SELECT address_line_1_register, emergency_mobile FROM employees WHERE id = {$thResultNoHiddenFields['id']}")->fetch(PDO::FETCH_ASSOC);
+        check('address_line_1_register stored as NULL, not rejected', $hiddenFieldsRow['address_line_1_register'], null);
+        check('emergency_mobile stored as NULL, not rejected', $hiddenFieldsRow['emergency_mobile'], null);
+    }
 
 } finally {
     $pdo->rollBack();

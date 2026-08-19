@@ -42,6 +42,7 @@
     $router->post('api/payroll-run.save', 'PayrollController@save');
     $router->post('api/payroll-run.delete', 'PayrollController@delete');
     $router->post('api/payroll-run.recalculate', 'PayrollController@recalculate');
+    $router->post('api/payroll-run.save-ped-type-settings', 'PayrollController@savePedTypeSettings');
     $router->post('api/payroll-run.manual-employee-options', 'PayrollController@manualEmployeeOptions');
     $router->post('api/payroll-run.join-employees', 'PayrollController@joinEmployees');
     $router->post('api/payroll-run.remove-employee', 'PayrollController@removeEmployee');

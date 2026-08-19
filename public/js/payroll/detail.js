@@ -224,6 +224,93 @@ function renderSectionButtons(run) {
     }
 }
 
+/* ---------- Per-run earning/deduction item selection (section 2): two panels (Earning left /
+   Deduction right), always shown for a non-incentive run regardless of state -- an incentive run
+   already picks items explicitly per employee and has no use for this table at all, so the whole
+   section stays hidden there. Each panel shows every active item of that type, struck through when
+   currently excluded -- this IS the "Default" view (nothing configured yet = every item ticked,
+   see PayrollRunModel::getPedTypeSettings()'s docblock). The Edit button (and therefore the
+   ability to actually change anything) only shows while the run is still draft -- once it can no
+   longer be edited, the panels stay visible but are effectively View Mode. */
+let pedTypeSettingsData = null;
+let pedTypeEditingType = null;
+function pedTypeItemLabelRd(item) {
+    return (currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_name_th || item.item_name_en;
+}
+function renderPedTypePanel(itemType, data, canEdit) {
+    const panelId = itemType === 'earning' ? '#pedTypePanelEarning' : '#pedTypePanelDeduction';
+    const items = (data && data.all_items) || [];
+    const selected = new Set(((data && data.selected_ids) || []).map(Number));
+    if (!items.length) {
+        $(panelId).html(`<div class="text-muted small">-</div>`);
+    } else {
+        $(panelId).html(items.map(item => {
+            const isOn = selected.has(Number(item.id));
+            const cls = isOn ? 'bg-light text-dark border' : 'bg-light text-muted border text-decoration-line-through';
+            return `<span class="badge ${cls} me-1 mb-1"><code>${escapeHtmlRd(item.item_code)}</code> ${escapeHtmlRd(pedTypeItemLabelRd(item))}</span>`;
+        }).join(''));
+    }
+    $(`.btn-edit-ped-type-panel[data-item-type="${itemType}"]`).toggleClass('d-none', !canEdit);
+}
+function renderPedTypeSettings(run) {
+    const isIncentive = run.run_purpose === 'incentive';
+    $('#pedTypeSettingsSection').toggleClass('d-none', isIncentive);
+    if (isIncentive) return;
+    pedTypeSettingsData = run.ped_type_settings || {};
+    const canEdit = run.state === 'draft';
+    renderPedTypePanel('earning', pedTypeSettingsData.earning, canEdit);
+    renderPedTypePanel('deduction', pedTypeSettingsData.deduction, canEdit);
+}
+function openPedTypeEditModal(itemType) {
+    if (!pedTypeSettingsData || !pedTypeSettingsData[itemType]) return;
+    pedTypeEditingType = itemType;
+    const data = pedTypeSettingsData[itemType];
+    const selected = new Set((data.selected_ids || []).map(Number));
+    const titleKey = itemType === 'earning' ? 'breakdown_earnings' : 'table_deduction_amount';
+    $('#pedTypeEditModalTitle').text(langData[titleKey] || (itemType === 'earning' ? 'Earnings' : 'Deductions'));
+    const items = data.all_items || [];
+    if (!items.length) {
+        $('#pedTypeEditModalList').html(`<div class="text-muted small text-center py-3">-</div>`);
+    } else {
+        $('#pedTypeEditModalList').html(items.map(item => {
+            const checked = selected.has(Number(item.id)) ? 'checked' : '';
+            return `<div class="form-check mb-2">
+                <input class="form-check-input ped-type-edit-checkbox" type="checkbox" value="${item.id}" id="pedchk_${item.id}" ${checked}>
+                <label class="form-check-label" for="pedchk_${item.id}"><code class="fw-bold text-dark">${escapeHtmlRd(item.item_code)}</code> ${escapeHtmlRd(pedTypeItemLabelRd(item))}</label>
+            </div>`;
+        }).join(''));
+    }
+    new bootstrap.Modal(document.getElementById('pedTypeEditModal')).show();
+}
+$(document).on('click', '.btn-edit-ped-type-panel', function () {
+    openPedTypeEditModal($(this).data('item-type'));
+});
+$(document).on('click', '#btnSavePedTypeEdit', function () {
+    const pedTypeIds = $('#pedTypeEditModalList .ped-type-edit-checkbox:checked').map(function () { return Number($(this).val()); }).get();
+    const $btn = $(this).prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.save-ped-type-settings`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({ id: PAYROLL_RUN_ID, item_type: pedTypeEditingType, ped_type_ids: pedTypeIds }),
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('pedTypeEditModal')).hide();
+                loadRunDetail();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            $btn.prop('disabled', false);
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
+    });
+});
+
 function renderRunHeader(run) {
     currentRun = run;
     document.title = run.run_name;
@@ -267,26 +354,120 @@ function renderRunHeader(run) {
 
     renderProcessTimeline(run);
     renderSectionButtons(run);
+    renderPedTypeSettings(run);
 }
 
-/* Remove-from-run action, calculation table -- only for a genuine off-cycle run (no cycle, no
-   sync process) still in draft: every row there IS a manually-joined employee (see
-   PayrollRunModel::recalculate()'s off-cycle branch), so this is safe to show unconditionally for
-   that run type rather than needing a separate "is this row manually joined" flag per row. */
-function manualEmployeeRemoveButtonRd(row) {
+// "Items" (manage per-employee earning/deduction adjustment lines): available on ANY draft run
+// now (2026-08-19, explicit request) -- not just an Incentive/Other Payment run. For incentive
+// these lines are the only source of pay; for any other run they're an additive one-off adjustment
+// on top of the normal calculation (see PayrollRunModel::recalculate()'s manual-lines block, added
+// to the non-incentive branch alongside standing PED assignments/attendance bonus).
+function manageItemsButtonRd(row) {
+    if (!currentRun || currentRun.state !== 'draft') {
+        return '';
+    }
+    return `<button type="button" class="btn btn-sm btn-outline-primary btn-manage-manual-lines me-1" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>`;
+}
+// Remove-from-run action, calculation table -- only for a genuine off-cycle run (no cycle, no
+// sync process) still in draft: every row there IS a manually-joined employee (see
+// PayrollRunModel::recalculate()'s off-cycle branch), so this is safe to show unconditionally for
+// that run type rather than needing a separate "is this row manually joined" flag per row. A
+// cycle-based/Pending-Pull run's membership is derived automatically, so removing one row here
+// wouldn't make sense (it would just come right back on the next Recalculate).
+function removeEmployeeButtonRd(row) {
     if (!currentRun || currentRun.state !== 'draft' || currentRun.cycle_id || currentRun.sync_process_id) {
         return '';
     }
-    let html = '';
-    // "Items" (manage per-employee earning/deduction lines) only applies to an Incentive/Other
-    // Payment run -- a normal off-cycle 'payroll' run still uses standing PED assignments/
-    // attendance bonus/base salary automatically, nothing to manually pick here.
-    if (currentRun.run_purpose === 'incentive') {
-        html += `<button type="button" class="btn btn-sm btn-outline-primary btn-manage-manual-lines me-1" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>`;
-    }
-    html += `<button type="button" class="btn btn-sm btn-outline-danger btn-remove-manual-employee" data-employee-id="${row.employee_id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-user-minus"></i></button>`;
-    return html;
+    return `<button type="button" class="btn btn-sm btn-outline-danger btn-remove-manual-employee" data-employee-id="${row.employee_id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-user-minus"></i></button>`;
 }
+// Breakdown button always shows (any state) -- it's read-only, unlike the two buttons above which
+// only make sense while draft.
+function runDetailActionsRd(row) {
+    return `<button type="button" class="btn btn-sm btn-outline-info btn-view-breakdown me-1" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>`
+        + manageItemsButtonRd(row)
+        + removeEmployeeButtonRd(row);
+}
+
+/* ---------- Breakdown modal (section 2/3's table doesn't itemize -- it only shows totals): per-
+   employee itemized view split into clearly-labeled Earnings / Deductions (Items) / Deductions
+   (Statutory) sections, so which line is income vs. a deduction is never ambiguous. ---------- */
+function breakdownLineRowsRd(lines) {
+    return (lines || []).map(line => {
+        const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || '';
+        const commentHtml = line.note ? `<div class="small text-muted fst-italic"><i class="fa-regular fa-comment me-1"></i>${escapeHtmlRd(line.note)}</div>` : '';
+        const codeHtml = line.is_custom
+            ? `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`
+            : `<code class="fw-bold text-dark">${escapeHtmlRd(line.code || '-')}</code>`;
+        return `<tr>
+            <td>${codeHtml}</td>
+            <td>${escapeHtmlRd(name)}${commentHtml}</td>
+            <td class="text-end">${fmtNumRd(line.amount)}</td>
+        </tr>`;
+    }).join('');
+}
+function emptyRowFallbackRd(rowsHtml) {
+    return rowsHtml || `<tr><td colspan="3" class="text-center text-muted small py-2">-</td></tr>`;
+}
+function statutoryRowsRd(items) {
+    return (items || []).map(item => {
+        const note = item.note ? ` <span class="text-muted small">(${escapeHtmlRd(item.note)})</span>` : '';
+        return `<tr>
+            <td><code class="fw-bold text-dark">${escapeHtmlRd(item.code || '-')}</code>${note}</td>
+            <td>-</td>
+            <td class="text-end">${fmtNumRd(item.employee_amount)}</td>
+        </tr>`;
+    }).join('');
+}
+function breakdownSectionHtml(iconCls, colorCls, titleKey, titleFallback, rowsHtml, totalLabel, totalAmount) {
+    return `
+        <div class="mb-4">
+            <h6 class="fw-bold ${colorCls} mb-2"><i class="fa-solid ${iconCls} me-1"></i>${langData[titleKey] || titleFallback}</h6>
+            <table class="table table-sm table-border align-middle mb-0">
+                <thead class="table-light text-secondary">
+                    <tr><th data-i18n="table_code">${langData['table_code'] || 'Code'}</th><th data-i18n="table_name">${langData['table_name'] || 'Name'}</th><th class="text-end" data-i18n="modal_amount">${langData['modal_amount'] || 'Amount'}</th></tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+                <tfoot>
+                    <tr class="fw-bold border-top ${colorCls}">
+                        <td colspan="2">${escapeHtmlRd(totalLabel)}</td>
+                        <td class="text-end">${fmtNumRd(totalAmount)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    `;
+}
+function renderBreakdownModal(row) {
+    $('#breakdownEmployeeName').text(`${row.employee_no} - ${employeeDisplayNameRd(row)}`);
+
+    let earningRowsHtml = '';
+    if (Number(row.base_salary_amount) > 0) {
+        earningRowsHtml += `<tr>
+            <td><code class="fw-bold text-dark">BASE</code></td>
+            <td>${escapeHtmlRd(langData['table_base_salary'] || 'Base Salary')}</td>
+            <td class="text-end">${fmtNumRd(row.base_salary_amount)}</td>
+        </tr>`;
+    }
+    earningRowsHtml += breakdownLineRowsRd(row.earning_breakdown);
+
+    const statutoryTotal = (row.statutory_breakdown || []).reduce((sum, item) => sum + (Number(item.employee_amount) || 0), 0);
+
+    const html = breakdownSectionHtml('fa-arrow-trend-up', 'text-success', 'breakdown_earnings', 'Earnings', emptyRowFallbackRd(earningRowsHtml), langData['table_gross_amount'] || 'Gross', row.gross_amount)
+        + breakdownSectionHtml('fa-arrow-trend-down', 'text-danger', 'breakdown_deductions', 'Deductions (Items)', emptyRowFallbackRd(breakdownLineRowsRd(row.deduction_breakdown)), langData['breakdown_deductions_total'] || 'Deductions (Items) Total', (row.deduction_breakdown || []).reduce((sum, l) => sum + (Number(l.amount) || 0), 0))
+        + breakdownSectionHtml('fa-landmark', 'text-danger', 'breakdown_statutory', 'Deductions (Statutory)', emptyRowFallbackRd(statutoryRowsRd(row.statutory_breakdown)), langData['breakdown_statutory_total'] || 'Deductions (Statutory) Total', statutoryTotal)
+        + `<div class="d-flex justify-content-between align-items-center border-top pt-3">
+            <span class="fw-bold text-secondary">${langData['table_net_pay'] || 'Net Pay'}</span>
+            <span class="fw-bold fs-5">${fmtNumRd(row.net_amount)}</span>
+        </div>`;
+    $('#breakdownModalBody').html(html);
+}
+$(document).on('click', '.btn-view-breakdown', function () {
+    const employeeId = $(this).data('employee-id');
+    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(employeeId));
+    if (!rowData) return;
+    renderBreakdownModal(rowData);
+    new bootstrap.Modal(document.getElementById('runDetailBreakdownModal')).show();
+});
 
 function initRunDetailTable(details) {
     $('#noDetailsYet').toggleClass('d-none', details.length > 0);
@@ -302,12 +483,12 @@ function initRunDetailTable(details) {
             { data: 'employee_no' },
             { data: null, render: (d, t, row) => escapeHtmlRd(employeeDisplayNameRd(row)) },
             { data: 'base_salary_amount', className: 'text-end', render: d => fmtNumRd(d) },
-            { data: 'gross_amount', className: 'text-end', render: d => fmtNumRd(d) },
-            { data: 'total_deduction_amount', className: 'text-end', render: d => fmtNumRd(d) },
+            { data: 'gross_amount', className: 'text-end text-success fw-semibold', render: d => fmtNumRd(d) },
+            { data: 'total_deduction_amount', className: 'text-end text-danger fw-semibold', render: d => fmtNumRd(d) },
             { data: 'net_amount', className: 'text-end fw-bold', render: d => fmtNumRd(d) },
             { data: 'calc_status', render: d => calcStatusBadgeRd(d) },
             { data: 'calc_errors', render: d => calcErrorsRemarkRd(d) },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => manualEmployeeRemoveButtonRd(row) },
+            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => runDetailActionsRd(row) },
         ],
         paging: false,
         searching: details.length > 10,
@@ -401,18 +582,35 @@ $(document).on('click', '#btnRecalculate', function () {
         callRunAction('/api/payroll-run.recalculate', {}, langData['save_success']);
     });
 });
-/* ---------- Manage Payment Items modal (Incentive/Other Payment runs only): per-employee
-   earning/deduction lines, add one at a time, remove any individually. ---------- */
+/* ---------- Manage Payment Items modal: per-employee earning/deduction lines, add one at a time,
+   remove any individually. Split into two panels (Earnings/Deductions, same visual language as
+   section 2's item-selection panels) with running subtotals + a net-adjustment total, rather than
+   one flat mixed table -- makes it immediately obvious what's earning vs. deduction and what the
+   combined effect is, without needing to close the modal and check the outer table. ---------- */
 let manageLinesEmployeeId = null;
-function renderManualLineRowRd(line) {
+function manualLineTagHtml(line) {
+    return line.is_custom
+        ? `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`
+        : `<code class="fw-bold text-dark">${escapeHtmlRd(line.item_code)}</code>`;
+}
+function manualLineListItemHtml(line) {
     const name = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en;
     const amtCls = line.item_type === 'earning' ? 'text-success' : 'text-danger';
-    return `<tr>
-        <td><code class="fw-bold text-dark">${escapeHtmlRd(line.item_code)}</code></td>
-        <td>${escapeHtmlRd(name)}</td>
-        <td class="text-end ${amtCls}">${fmtNumRd(line.amount)}</td>
-        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-remove-manual-line" data-line-id="${line.id}"><i class="fa-solid fa-trash-alt"></i></button></td>
-    </tr>`;
+    const commentHtml = line.note ? `<div class="small text-muted fst-italic mt-1"><i class="fa-regular fa-comment me-1"></i>${escapeHtmlRd(line.note)}</div>` : '';
+    return `<li class="list-group-item d-flex justify-content-between align-items-start px-0 py-2">
+        <div>
+            ${manualLineTagHtml(line)}
+            <div class="small text-muted">${escapeHtmlRd(name)}</div>
+            ${commentHtml}
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="fw-semibold ${amtCls}">${fmtNumRd(line.amount)}</span>
+            <button type="button" class="btn btn-sm btn-outline-danger btn-remove-manual-line" data-line-id="${line.id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-trash-alt"></i></button>
+        </div>
+    </li>`;
+}
+function manualLineEmptyItemHtml(key, fallback) {
+    return `<li class="list-group-item px-0 py-2 text-center text-muted small border-0">${langData[key] || fallback}</li>`;
 }
 function loadManualLinesRd() {
     $.ajax({
@@ -423,26 +621,101 @@ function loadManualLinesRd() {
         success: function (res) {
             if (!res.status) return;
             const lines = res.data || [];
-            $('#tb_manual_lines tbody').html(lines.map(renderManualLineRowRd).join(''));
-            $('#noManualLinesYet').toggleClass('d-none', lines.length > 0);
+            const earningLines = lines.filter(l => l.item_type === 'earning');
+            const deductionLines = lines.filter(l => l.item_type === 'deduction');
+            $('#manualLinesEarningList').html(earningLines.length
+                ? earningLines.map(manualLineListItemHtml).join('')
+                : manualLineEmptyItemHtml('no_manual_earning_lines', 'No earning items added yet.'));
+            $('#manualLinesDeductionList').html(deductionLines.length
+                ? deductionLines.map(manualLineListItemHtml).join('')
+                : manualLineEmptyItemHtml('no_manual_deduction_lines', 'No deduction items added yet.'));
+            const earningTotal = earningLines.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+            const deductionTotal = deductionLines.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+            $('#manualLinesEarningTotal').text(fmtNumRd(earningTotal));
+            $('#manualLinesDeductionTotal').text(fmtNumRd(deductionTotal));
+            $('#manualLinesNetTotal').text(fmtNumRd(earningTotal - deductionTotal));
         }
     });
 }
+// Live preview under the Add form once an item is picked -- tells the admin whether it's about to
+// land in the Earnings or Deductions panel before they commit, since the dropdown mixes both types
+// together (unlike section 2's per-type panels/modal). item_type rides along on the select2 option
+// data already (see EmployeeEarningDeductionModel::activeOptions()'s SELECT).
+function updateManualLineTypePreviewRd(itemType) {
+    const $preview = $('#manualLineTypePreview');
+    if (!itemType) {
+        $preview.addClass('d-none').removeClass('text-success text-danger').text('');
+        return;
+    }
+    const isEarning = itemType === 'earning';
+    const label = langData[isEarning ? 'breakdown_earnings' : 'table_deduction_amount'] || (isEarning ? 'Earnings' : 'Deductions');
+    const icon = isEarning ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
+    $preview.removeClass('d-none text-success text-danger').addClass(isEarning ? 'text-success' : 'text-danger')
+        .html(`<i class="fa-solid ${icon} me-1"></i>${langData['manual_line_type_preview'] || 'Will be added as'}: <strong>${label}</strong>`);
+}
+$(document).on('select2:select', '#manualLineItemSelect', function (e) {
+    updateManualLineTypePreviewRd(e.params.data.item_type);
+});
+$(document).on('select2:clear', '#manualLineItemSelect', function () {
+    updateManualLineTypePreviewRd(null);
+});
+$(document).on('change', '#manualLineCustomType', function () {
+    updateManualLineTypePreviewRd($(this).val() || null);
+});
+// Toggle between picking a catalog item and typing a custom, not-in-the-catalog one (2026-08-19,
+// explicit request) -- catalog mode is the default since it's still the common case.
+let manualLineMode = 'catalog';
+function setManualLineModeRd(mode) {
+    manualLineMode = mode;
+    $('#manualLineModeToggle button').removeClass('active').filter(`[data-mode="${mode}"]`).addClass('active');
+    $('#manualLineCatalogFields').toggleClass('d-none', mode !== 'catalog');
+    $('#manualLineCustomFields').toggleClass('d-none', mode !== 'custom');
+    updateManualLineTypePreviewRd(mode === 'custom' ? ($('#manualLineCustomType').val() || null) : null);
+}
+function resetManualLineFormRd() {
+    setManualLineModeRd('catalog');
+    $('#manualLineItemSelect').val(null).trigger('change');
+    $('#manualLineCustomName').val('');
+    $('#manualLineCustomType').val('earning').trigger('change.select2');
+    $('#manualLineAmount').val('');
+    $('#manualLineComment').val('');
+    updateManualLineTypePreviewRd(null);
+}
+$(document).on('click', '#manualLineModeToggle button', function () {
+    setManualLineModeRd($(this).data('mode'));
+});
 $(document).on('click', '.btn-manage-manual-lines', function () {
     manageLinesEmployeeId = $(this).data('employee-id');
     const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(manageLinesEmployeeId));
     $('#manageLinesEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
-    $('#manualLineItemSelect').val(null).trigger('change');
-    $('#manualLineAmount').val('');
+    const isIncentive = currentRun && currentRun.run_purpose === 'incentive';
+    $('#manageLinesHint').text(isIncentive
+        ? (langData['manage_items_hint_incentive'] || 'These are the only items counted for this employee -- no base salary, no standing earning/deduction assignments.')
+        : (langData['manage_items_hint_adjustment'] || 'Added on top of this employee\'s normal calculation, for this run only.'));
+    resetManualLineFormRd();
     new bootstrap.Modal(document.getElementById('manageLinesModal')).show();
     loadManualLinesRd();
 });
 $(document).on('click', '#btnAddManualLine', function () {
-    const pedTypeId = $('#manualLineItemSelect').val();
     const amount = parseFloat($('#manualLineAmount').val());
-    if (!pedTypeId || !amount || amount <= 0) {
-        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-        return;
+    const comment = $('#manualLineComment').val().trim();
+    const payload = { id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, amount: amount, note: comment };
+    if (manualLineMode === 'custom') {
+        const customName = $('#manualLineCustomName').val().trim();
+        const customType = $('#manualLineCustomType').val();
+        if (!customName || !customType || !amount || amount <= 0) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        payload.custom_item_name = customName;
+        payload.custom_item_type = customType;
+    } else {
+        const pedTypeId = $('#manualLineItemSelect').val();
+        if (!pedTypeId || !amount || amount <= 0) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        payload.ped_type_id = pedTypeId;
     }
     const $btn = $(this).prop('disabled', true);
     $.ajax({
@@ -450,12 +723,11 @@ $(document).on('click', '#btnAddManualLine', function () {
         method: 'POST',
         contentType: 'application/json',
         dataType: 'json',
-        data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, ped_type_id: pedTypeId, amount: amount }),
+        data: JSON.stringify(payload),
         success: function (res) {
             $btn.prop('disabled', false);
             if (res.status) {
-                $('#manualLineItemSelect').val(null).trigger('change');
-                $('#manualLineAmount').val('');
+                resetManualLineFormRd();
                 loadManualLinesRd();
                 loadRunDetail();
             } else {
@@ -677,5 +949,6 @@ $(document).ready(function () {
     if (typeof initSelect2 === 'function') {
         initSelect2('#joinFilterDepartment, #joinFilterPosition', { mode: 'ajax' });
         initSelect2('#manualLineItemSelect', { mode: 'ajax' });
+        initSelect2('#manualLineCustomType', { mode: 'static', selectedValue: 'earning' });
     }
 });

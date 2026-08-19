@@ -595,7 +595,7 @@ try {
     check('date_of_birth applied directly', $profileEmp['date_of_birth'] ?? null, '1985-07-04');
     check('nickname_th applied from single-source nickname', $profileEmp['nickname_th'] ?? null, 'Nok');
     check('nickname_en applied from single-source nickname', $profileEmp['nickname_en'] ?? null, 'Nok');
-    check('nationality applied directly', $profileEmp['nationality'] ?? null, 'Thai');
+    check('nationality resolved from the sent display name ("Thai") to this app\'s own nationality_code ("TH"), not stored raw', $profileEmp['nationality'] ?? null, 'TH');
     check('religion applied directly', $profileEmp['religion'] ?? null, 'Buddhist');
     check('company_email applied from email (not personal_email)', $profileEmp['company_email'] ?? null, 'worktest@example.com');
     check('personal_email left untouched (not overwritten by email)', $profileEmp['personal_email'] ?? null, $profileTestOriginalEmail);
@@ -603,7 +603,7 @@ try {
     check('mobile_no left untouched (not overwritten by emp_tel)', $profileEmp['mobile_no'] ?? null, '0800000002');
     check('military_status intentionally left unmapped despite a plausible-looking raw value', $profileEmp['military_status'], null);
     check('profile_photo_path intentionally left unmapped (emp_pic is a foreign filesystem path)', $profileEmp['profile_photo_path'], null);
-    check('employment_status untouched by pass_pro (no auto business-rule transition)', $profileEmp['employment_status'] ?? null, 'permanent');
+    check('employment_status untouched by pass_pro here (fixture already started as permanent, not probation -- the probation->permanent auto-transition guard only fires from "probation", see the dedicated section below)', $profileEmp['employment_status'] ?? null, 'permanent');
     checkTrue('has_spouse/spouse_name/spouse_id_card_no untouched (spouse mapping deliberately deferred)', empty($profileEmp['has_spouse']));
 
     // Idempotency: re-applying against the SAME dept_id/posi_id must resolve back to the same rows,
@@ -617,12 +617,122 @@ try {
     $posiCountStmt->execute([':ref' => $profilePosiId, ':comp' => $compId]);
     check('no duplicate position created on a second pull', (int)$posiCountStmt->fetchColumn(), 1);
 
+    // An unrecognized nationality name must NOT overwrite the already-resolved code with a bogus
+    // string that would silently re-break the master_nationalities join this whole fix exists for.
+    $unknownNatProcessId = random_int(100000, 999999);
+    $unknownNatIngest = $model->ingest([
+        'schema_version' => 1, 'process_id' => $unknownNatProcessId, 'process_no' => 'ORIGAMI-TEST-NAT-' . $unknownNatProcessId,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'items' => [[
+            'report_item_id' => 41, 'payroll_code' => $profileTestEmployeeNo,
+            'nationality' => 'Definitely Not A Real Country', 'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    checkTrue('unrecognized-nationality-fixture ingest succeeds' . (empty($unknownNatIngest['status']) ? " ({$unknownNatIngest['message']})" : ''), $unknownNatIngest['status']);
+    $model->applyEmployeeMasterFields($unknownNatIngest['process_row_id'] ?? 0, $compId, 1);
+    $profileEmpStmt->execute([':id' => $profileTestEmployeeId]);
+    $profileEmpAfterUnknownNat = $profileEmpStmt->fetch(PDO::FETCH_ASSOC);
+    check('unrecognized nationality name leaves the already-resolved code untouched, not overwritten with a non-matching string', $profileEmpAfterUnknownNat['nationality'] ?? null, 'TH');
+
+    // ---------- pass_pro is the string "Y"/"N" on the wire, not a real JSON boolean (2026-08-19,
+    // explicit correction) -- a plain truthy cast used to store "N" as pass_pro=1 (every non-empty
+    // PHP string is truthy). Also covers the derived 3-state probation_status getProcessDetail()
+    // now attaches: N+no date = still on probation, N+a date = evaluated and failed, Y = passed. ----------
+    echo "=== pass_pro \"Y\"/\"N\" string parsing + derived probation_status ===\n";
+    $passProCases = [
+        ['label' => 'N with no date -> on_probation', 'pass_pro' => 'N', 'pass_pro_date' => null, 'expected_stored' => 0, 'expected_status' => 'on_probation'],
+        ['label' => 'N with a date -> failed (evaluated, did not pass)', 'pass_pro' => 'N', 'pass_pro_date' => '2026-06-01', 'expected_stored' => 0, 'expected_status' => 'failed'],
+        ['label' => 'Y -> passed', 'pass_pro' => 'Y', 'pass_pro_date' => '2026-06-01', 'expected_stored' => 1, 'expected_status' => 'passed'],
+    ];
+    foreach ($passProCases as $case) {
+        $ppProcessId = random_int(100000, 999999);
+        $ppIngest = $model->ingest([
+            'schema_version' => 1, 'process_id' => $ppProcessId, 'process_no' => 'ORIGAMI-TEST-PP-' . $ppProcessId,
+            'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+            'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+            'items' => [[
+                'report_item_id' => 50, 'payroll_code' => $profileTestEmployeeNo,
+                'pass_pro' => $case['pass_pro'], 'pass_pro_date' => $case['pass_pro_date'], 'item_values' => [],
+            ]],
+            'employee_status' => [],
+        ]);
+        checkTrue("pass_pro fixture ingest succeeds ({$case['label']})" . (empty($ppIngest['status']) ? " ({$ppIngest['message']})" : ''), $ppIngest['status']);
+        $ppRowId = $ppIngest['process_row_id'] ?? 0;
+        $ppRaw = $pdo->query("SELECT pass_pro FROM payroll_sync_items WHERE process_id = {$ppRowId} LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+        check("pass_pro=\"{$case['pass_pro']}\" stored correctly as {$case['expected_stored']} ({$case['label']})", (int)($ppRaw['pass_pro'] ?? -1), $case['expected_stored']);
+        $ppDetail = $model->getProcessDetail($ppRowId, $compId);
+        check("derived probation_status is \"{$case['expected_status']}\" ({$case['label']})", $ppDetail['items'][0]['probation_status'] ?? null, $case['expected_status']);
+    }
+
+    // ---------- Probation -> Permanent auto-transition (2026-08-19, explicit request) --
+    // applyOneEmployeeMasterFields() now flips employment_status 'probation' -> 'permanent' when
+    // this pull's derived probation_status is 'passed', but ONLY when the employee's CURRENT
+    // employment_status is still exactly 'probation' -- covers both the positive case and the guard
+    // (an employee already on contract/otherwise, or not yet actually passed, must be untouched). ----------
+    echo "=== Probation -> Permanent auto-transition ===\n";
+    $insTransitionEmp = $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+         emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+        VALUES (:comp_id, :employee_no, 'ms', 'female', 'เดิม', 'เดิม', 'Old', 'Old', '1990-01-01', 'Thai',
+         :email, '0800000003', 'Test Address', 'Test Address',
+         'Emergency', 'Contact', 'friend', '0899999996',
+         '2020-01-01', :employment_status, 'full_time', 'office', 'manual',
+         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+
+    $transitionCases = [
+        [
+            'label' => 'probation + pass_pro=Y -> transitions to permanent',
+            'starting_status' => 'probation', 'pass_pro' => 'Y', 'pass_pro_date' => '2026-06-01',
+            'expected_status' => 'permanent',
+        ],
+        [
+            'label' => 'contract + pass_pro=Y -> untouched (guard: only probation is eligible)',
+            'starting_status' => 'contract', 'pass_pro' => 'Y', 'pass_pro_date' => '2026-06-01',
+            'expected_status' => 'contract',
+        ],
+        [
+            'label' => 'probation + pass_pro=N (no date, still evaluating) -> untouched',
+            'starting_status' => 'probation', 'pass_pro' => 'N', 'pass_pro_date' => null,
+            'expected_status' => 'probation',
+        ],
+    ];
+    foreach ($transitionCases as $case) {
+        $transitionEmpNo = 'TRANSITION_TEST_' . uniqid();
+        $insTransitionEmp->execute([
+            ':comp_id' => $compId, ':employee_no' => $transitionEmpNo, ':email' => uniqid() . '@test.local',
+            ':employment_status' => $case['starting_status'],
+        ]);
+        $transitionEmpId = (int)$pdo->lastInsertId();
+
+        $tProcessId = random_int(100000, 999999);
+        $tIngest = $model->ingest([
+            'schema_version' => 1, 'process_id' => $tProcessId, 'process_no' => 'ORIGAMI-TEST-TRANS-' . $tProcessId,
+            'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+            'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+            'items' => [[
+                'report_item_id' => 60, 'payroll_code' => $transitionEmpNo,
+                'pass_pro' => $case['pass_pro'], 'pass_pro_date' => $case['pass_pro_date'], 'item_values' => [],
+            ]],
+            'employee_status' => [],
+        ]);
+        checkTrue("transition-fixture ingest succeeds ({$case['label']})" . (empty($tIngest['status']) ? " ({$tIngest['message']})" : ''), $tIngest['status']);
+        $model->applyEmployeeMasterFields($tIngest['process_row_id'] ?? 0, $compId, 1);
+        $transitionRow = $pdo->query("SELECT employment_status FROM employees WHERE id = {$transitionEmpId}")->fetch(PDO::FETCH_ASSOC);
+        check("employment_status after pull ({$case['label']})", $transitionRow['employment_status'] ?? null, $case['expected_status']);
+    }
+
     // ---------- getProcessDetail() masks the nested PII inside spouse/children ----------
     $profileDetail = $model->getProcessDetail($profileProcessRowId, $compId);
     $detailItem = $profileDetail['items'][0] ?? [];
     checkTrue('getProcessDetail never exposes raw encrypted spouse_data', !array_key_exists('spouse_data', $detailItem));
     checkTrue('getProcessDetail never exposes raw encrypted children_data', !array_key_exists('children_data', $detailItem));
     check('getProcessDetail decrypts spouse name (not PII, shown plainly)', $detailItem['spouse']['spouse_name'] ?? null, 'Malee');
+    check('original profile fixture (pass_pro=true + a date) derives to probation_status "passed"', $detailItem['probation_status'] ?? null, 'passed');
     check('getProcessDetail masks spouse_idcard to the last 4 digits', $detailItem['spouse']['spouse_idcard'] ?? null, 'xxxxxxxxx4445');
     check('getProcessDetail masks spouse_tax to the last 4 digits', $detailItem['spouse']['spouse_tax'] ?? null, 'xxxxxxxxx6665');
     check('getProcessDetail decrypts child name (not PII, shown plainly)', $detailItem['children'][0]['child_name'] ?? null, 'Nong');

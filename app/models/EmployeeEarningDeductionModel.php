@@ -12,24 +12,40 @@ class EmployeeEarningDeductionModel {
         return (bool)$stmt->fetch();
     }
 
-    public function list(int $employeeId, int $compId): array {
+    /** $itemType: optional 'earning'/'deduction' filter -- COALESCE against custom_item_type so a
+     *  custom row is filtered by its own declared type, not left out just because it has no
+     *  ped_type_id to join a catalog item_type from. */
+    public function list(int $employeeId, int $compId, ?string $itemType = null): array {
         if (!$this->employeeBelongsToComp($employeeId, $compId)) {
             return [];
         }
-        $sql = "SELECT eed.*, pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, pt.source_event_code
+        $sql = "SELECT eed.*, pt.item_code,
+                    COALESCE(pt.item_name_th, eed.custom_item_name) AS item_name_th,
+                    COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
+                    COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
+                    pt.source_event_code
                 FROM `employee_earning_deductions` eed
-                JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
-                WHERE eed.employee_id = :employee_id AND eed.deleted_at IS NULL
-                ORDER BY eed.effective_date DESC, eed.id DESC";
+                LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
+                WHERE eed.employee_id = :employee_id AND eed.deleted_at IS NULL";
+        $params = [':employee_id' => $employeeId];
+        if ($itemType !== null && $itemType !== '') {
+            $sql .= " AND COALESCE(pt.item_type, eed.custom_item_type) = :item_type";
+            $params[':item_type'] = $itemType;
+        }
+        $sql .= " ORDER BY eed.effective_date DESC, eed.id DESC";
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([':employee_id' => $employeeId]);
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function get(int $id, int $compId): ?array {
-        $sql = "SELECT eed.*, pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, pt.calculation_method AS ped_calculation_method
+        $sql = "SELECT eed.*, pt.item_code,
+                    COALESCE(pt.item_name_th, eed.custom_item_name) AS item_name_th,
+                    COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
+                    COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
+                    pt.calculation_method AS ped_calculation_method
                 FROM `employee_earning_deductions` eed
-                JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
+                LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
                 JOIN `employees` e ON eed.employee_id = e.id
                 WHERE eed.id = :id AND e.comp_id = :comp_id AND eed.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
@@ -44,10 +60,14 @@ class EmployeeEarningDeductionModel {
         return $row;
     }
 
-    public function activeOptions(int $compId, string $search, int $page, int $limit): array {
+    public function activeOptions(int $compId, string $search, int $page, int $limit, ?string $itemType = null): array {
         $offset = ($page - 1) * $limit;
         $where = "WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' AND is_sync_only = 0";
         $params = [':comp_id' => $compId];
+        if ($itemType !== null && $itemType !== '') {
+            $where .= " AND item_type = :item_type";
+            $params[':item_type'] = $itemType;
+        }
         if ($search !== '') {
             $where .= " AND (item_code LIKE :search1 OR item_name_th LIKE :search2 OR item_name_en LIKE :search3)";
             $params[':search1'] = "%{$search}%";
@@ -93,17 +113,33 @@ class EmployeeEarningDeductionModel {
 
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
-        foreach (['ped_type_id', 'total_installments', 'amount_mode', 'effective_date'] as $field) {
+        foreach (['total_installments', 'amount_mode', 'effective_date'] as $field) {
             if (empty($data[$field])) {
                 return ['status' => false, 'message' => "Missing required field: {$field}"];
             }
         }
 
-        $pedTypeId = (int)$data['ped_type_id'];
-        $stmtType = $this->db->prepare("SELECT id FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND is_sync_only = 0 AND deleted_at IS NULL");
-        $stmtType->execute([':id' => $pedTypeId, ':comp_id' => $compId]);
-        if (!$stmtType->fetch()) {
-            return ['status' => false, 'message' => 'Invalid or inactive payroll item selected.'];
+        // Either a catalog reference (ped_type_id) OR a free-text item (custom_item_name +
+        // custom_item_type) -- explicit request ("Item ให้สามารถใส่เองได้ โดยบอกว่าเป็นรายได้หรือ
+        // รายหัก"), same either/or shape as PayrollRunModel::addManualLine()'s custom items.
+        $pedTypeId = null;
+        $customItemName = null;
+        $customItemType = null;
+        if (!empty($data['ped_type_id'])) {
+            $pedTypeId = (int)$data['ped_type_id'];
+            $stmtType = $this->db->prepare("SELECT id FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND is_sync_only = 0 AND deleted_at IS NULL");
+            $stmtType->execute([':id' => $pedTypeId, ':comp_id' => $compId]);
+            if (!$stmtType->fetch()) {
+                return ['status' => false, 'message' => 'Invalid or inactive payroll item selected.'];
+            }
+        } elseif (!empty($data['custom_item_name']) && !empty($data['custom_item_type'])) {
+            if (!in_array($data['custom_item_type'], ['earning', 'deduction'], true)) {
+                return ['status' => false, 'message' => 'Invalid custom_item_type.'];
+            }
+            $customItemName = trim((string)$data['custom_item_name']);
+            $customItemType = (string)$data['custom_item_type'];
+        } else {
+            return ['status' => false, 'message' => 'Select an item from the list, or enter a custom item name and type.'];
         }
 
         $totalInstallments = (int)$data['total_installments'];
@@ -175,7 +211,8 @@ class EmployeeEarningDeductionModel {
                 }
 
                 $sql = "UPDATE `employee_earning_deductions` SET
-                            ped_type_id = :ped_type_id, total_installments = :total_installments,
+                            ped_type_id = :ped_type_id, custom_item_name = :custom_item_name, custom_item_type = :custom_item_type,
+                            total_installments = :total_installments,
                             amount_mode = :amount_mode, total_amount = :total_amount,
                             effective_date = :effective_date, notes = :notes, external_reference_no = :external_reference_no,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
@@ -183,6 +220,8 @@ class EmployeeEarningDeductionModel {
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':ped_type_id' => $pedTypeId,
+                    ':custom_item_name' => $customItemName,
+                    ':custom_item_type' => $customItemType,
                     ':total_installments' => $totalInstallments,
                     ':amount_mode' => $amountMode,
                     ':total_amount' => $totalAmount,
@@ -198,13 +237,15 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = $id;
             } else {
                 $sql = "INSERT INTO `employee_earning_deductions`
-                            (employee_id, ped_type_id, total_installments, current_installment, amount_mode, total_amount, effective_date, status, notes, external_reference_no, created_by)
+                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, total_amount, effective_date, status, notes, external_reference_no, created_by)
                         VALUES
-                            (:employee_id, :ped_type_id, :total_installments, 0, :amount_mode, :total_amount, :effective_date, 'active', :notes, :external_reference_no, :created_by)";
+                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :total_amount, :effective_date, 'active', :notes, :external_reference_no, :created_by)";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':employee_id' => $employeeId,
                     ':ped_type_id' => $pedTypeId,
+                    ':custom_item_name' => $customItemName,
+                    ':custom_item_type' => $customItemType,
                     ':total_installments' => $totalInstallments,
                     ':amount_mode' => $amountMode,
                     ':total_amount' => $totalAmount,

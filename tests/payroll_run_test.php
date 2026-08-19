@@ -51,9 +51,16 @@ try {
     // employment_end_date is NULL, so they match any period from here on), breaking this test's
     // employee_count/has_validation_errors assertions and everything downstream that depends on a
     // clean calculation (submit onward) through no fault of the run this test is actually building.
-    // Soft-delete them for the duration of this run ONLY -- entirely inside this script's own
-    // transaction, rolled back at the very end, so nothing here is a real/permanent change.
-    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND is_payroll_ready = 0 AND deleted_at IS NULL")
+    // Originally scoped to is_payroll_ready=0 only, on the assumption every OTHER leftover row was
+    // genuinely complete and therefore harmless noise -- broadened to every employee at comp_id=1
+    // (2026-08-19, found while adding independent-tab-save support to EmployeeModel::save(): a real
+    // leftover row from earlier manual testing, is_payroll_ready=1 from back when that column was
+    // hardcoded true on every successful save, still matched this test's date range and inflated
+    // employee_count) since this test creates its own complete fixture set from scratch regardless
+    // and never depends on any pre-existing employee at comp_id=1. Soft-delete them for the duration
+    // of this run ONLY -- entirely inside this script's own transaction, rolled back at the very end,
+    // so nothing here is a real/permanent change.
+    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL")
         ->execute([':comp_id' => $compId]);
 
     // ---------- Fixtures (created inside the transaction, rolled back at the end) ----------
@@ -163,6 +170,18 @@ try {
         VALUES (:assignment_id, 1, 1000, 'pending')")->execute([':assignment_id' => $assignmentId]);
     $eedRes = ['status' => true, 'id' => $assignmentId];
     checkTrue('fixture: employee PED assignment created', $eedRes['status']);
+
+    // A custom-item PED assignment (2026-08-19, explicit request: "Item ให้สามารถใส่เองได้") --
+    // ped_type_id NULL, custom_item_name/custom_item_type set instead. Proves recalculate()'s LEFT
+    // JOIN fix actually pulls this into the calculation (an INNER JOIN would silently drop it).
+    $pdo->prepare("INSERT INTO `employee_earning_deductions`
+        (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, total_amount, effective_date, status, created_by)
+        VALUES (:employee_id, NULL, 'ค่ามัดจำชุดยูนิฟอร์ม', 'deduction', 1, 0, 'even_split', 200, :effective_date, 'active', :created_by)")
+        ->execute([':employee_id' => $employeeFullId, ':effective_date' => $periodStart, ':created_by' => $adminUserId]);
+    $customAssignmentId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, status)
+        VALUES (:assignment_id, 1, 200, 'pending')")->execute([':assignment_id' => $customAssignmentId]);
+    checkTrue('fixture: custom-item PED assignment created', $customAssignmentId > 0);
 
     // An attendance bonus scheme + a passed ledger entry for this period
     $schemeModel = new AttendanceBonusSchemeModel();
@@ -481,6 +500,17 @@ try {
     checkTrue('full-period has an attendance_bonus earning line', count(array_filter($fullDetail['earning_breakdown'], fn($l) => $l['source'] === 'attendance_bonus')) === 1);
     check('both core employees calculated cleanly', $fullDetail['calc_status'] === 'calculated' && $midDetail['calc_status'] === 'calculated', true);
 
+    echo "=== Custom-item PED assignment flows into the real calculation ===\n";
+    $customDedLines = array_values(array_filter($fullDetail['deduction_breakdown'], fn($l) => $l['source'] === 'ped' && !empty($l['is_custom'])));
+    checkTrue('exactly one custom-item deduction line present (not silently dropped by the PED JOIN)', count($customDedLines) === 1);
+    if (!empty($customDedLines)) {
+        $customLine = $customDedLines[0];
+        check('custom deduction amount matches the fixture (200)', (float)$customLine['amount'], 200.0);
+        check('custom deduction code is CUSTOM:<name> (same shape as manual_line custom items)', $customLine['code'], 'CUSTOM:ค่ามัดจำชุดยูนิฟอร์ม');
+        check('custom deduction name reflects custom_item_name', $customLine['name_th'], 'ค่ามัดจำชุดยูนิฟอร์ม');
+    }
+    checkTrue('catalog PED earning line is NOT flagged is_custom', empty(array_values(array_filter($fullDetail['earning_breakdown'], fn($l) => $l['source'] === 'ped'))[0]['is_custom'] ?? false));
+
     echo "=== Per-employee SSO/PVD enrollment fix ===\n";
     $fullSso = array_values(array_filter($fullDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? null;
     $optOutSso = array_values(array_filter($optOutDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? null;
@@ -497,6 +527,157 @@ try {
 
     $runAfterCalc = $runModel->get($runId, $compId);
     checkTrue('run totals updated (gross > 0)', (float)$runAfterCalc['total_gross_amount'] > 0);
+
+    echo "=== Per-run earning/deduction item selection (two-panel, per-type) ===\n";
+    // A second earning PED type + standing assignment on the same full-period employee, so
+    // restricting to just $pedTypeId (transport allowance) has something else to visibly exclude.
+    $mealItemCode = 'TESTMEAL' . rand(100, 999);
+    $mealPedRes = $pedTypeModel->save($compId, [
+        'item_code' => $mealItemCode,
+        'item_name_th' => 'ค่าอาหารทดสอบ', 'item_name_en' => 'Test Meal Allowance',
+        'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 300,
+        'tax_treatment' => 'taxable', 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('fixture: second PED type created', $mealPedRes['status']);
+    $mealPedTypeId = $mealPedRes['id'];
+    $pdo->prepare("INSERT INTO `employee_earning_deductions`
+        (employee_id, ped_type_id, total_installments, current_installment, amount_mode, total_amount, effective_date, status, created_by)
+        VALUES (:employee_id, :ped_type_id, 1, 0, 'even_split', 300, :effective_date, 'active', :created_by)")
+        ->execute([':employee_id' => $employeeFullId, ':ped_type_id' => $mealPedTypeId, ':effective_date' => $periodStart, ':created_by' => $adminUserId]);
+    $mealAssignmentId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, status)
+        VALUES (:assignment_id, 1, 300, 'pending')")->execute([':assignment_id' => $mealAssignmentId]);
+
+    $settingsBefore = $runModel->getPedTypeSettings($runId, $compId);
+    checkTrue('getPedTypeSettings succeeds before any selection saved' . (empty($settingsBefore['status']) ? " ({$settingsBefore['message']})" : ''), $settingsBefore['status']);
+    check('earning side unrestricted by default (no rows saved yet)', $settingsBefore['earning']['is_restricted'], false);
+    check('deduction side unrestricted by default (no rows saved yet)', $settingsBefore['deduction']['is_restricted'], false);
+    checkTrue('earning default selected_ids includes both allowance types', in_array($pedTypeId, $settingsBefore['earning']['selected_ids'], true) && in_array($mealPedTypeId, $settingsBefore['earning']['selected_ids'], true));
+
+    // Recalc without restriction first -- both allowance types should show up.
+    $runModel->recalculate($runId, $compId, $adminUserId, true);
+    $unrestrictedDetail = null;
+    foreach ($runModel->getDetails($runId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeFullId) $unrestrictedDetail = $d;
+    }
+    check('unrestricted: both PED earning lines present', count(array_filter($unrestrictedDetail['earning_breakdown'], fn($l) => $l['source'] === 'ped')), 2);
+
+    $invalidTypeRes = $runModel->savePedTypeSettings($runId, $compId, 'bogus', [$pedTypeId], $adminUserId, true);
+    check('savePedTypeSettings rejects an invalid item_type', $invalidTypeRes['status'], false);
+
+    $invalidSaveRes = $runModel->savePedTypeSettings($runId, $compId, 'earning', [999999], $adminUserId, true);
+    check('savePedTypeSettings rejects an invalid/foreign ped_type_id', $invalidSaveRes['status'], false);
+
+    $crossTypeSaveRes = $runModel->savePedTypeSettings($runId, $compId, 'deduction', [$pedTypeId], $adminUserId, true);
+    check('savePedTypeSettings rejects an earning id submitted under item_type=deduction', $crossTypeSaveRes['status'], false);
+
+    $incentiveSaveRes = $runModel->savePedTypeSettings($incentiveRunId, $compId, 'earning', [$pedTypeId], $adminUserId, true);
+    check('savePedTypeSettings rejects an incentive run (items are picked per-employee there instead)', $incentiveSaveRes['status'], false);
+
+    $restrictRes = $runModel->savePedTypeSettings($runId, $compId, 'earning', [$pedTypeId], $adminUserId, true);
+    checkTrue('savePedTypeSettings succeeds restricting earning to the transport-allowance type only' . (empty($restrictRes['status']) ? " ({$restrictRes['message']})" : ''), $restrictRes['status']);
+
+    $settingsAfter = $runModel->getPedTypeSettings($runId, $compId);
+    check('earning side is now restricted', $settingsAfter['earning']['is_restricted'], true);
+    check('earning selected_ids reflects the saved selection', $settingsAfter['earning']['selected_ids'], [$pedTypeId]);
+    check('deduction side is still unrestricted (earning save did not touch it)', $settingsAfter['deduction']['is_restricted'], false);
+
+    // savePedTypeSettings() recalculates internally now (2026-08-19, explicit request) -- no
+    // separate recalculate() call needed to see the effect below.
+    $restrictedDetail = null;
+    foreach ($runModel->getDetails($runId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeFullId) $restrictedDetail = $d;
+    }
+    $restrictedPedCodes = array_column(array_filter($restrictedDetail['earning_breakdown'], fn($l) => $l['source'] === 'ped'), 'code');
+    check('restricted: only the selected item is included', $restrictedPedCodes, [$pedTypeModel->get($compId, $pedTypeId)['item_code']]);
+    checkTrue('restricted: the excluded item is really gone', !in_array($mealItemCode, $restrictedPedCodes, true));
+
+    echo "=== Per-employee ad-hoc adjustment on a normal (non-incentive) run ===\n";
+    $notMemberRes = $runModel->addManualLine($runId, $compId, 999999, $mealPedTypeId, 100, $adminUserId, true);
+    check('addManualLine rejects an employee who is not part of the calculated run', $notMemberRes['status'], false);
+
+    $midBeforeAdjust = null;
+    foreach ($runModel->getDetails($runId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeMidId) $midBeforeAdjust = $d;
+    }
+    $midGrossBefore = (float)$midBeforeAdjust['gross_amount'];
+
+    $adjustComment = 'August OT shortfall top-up';
+    $adjustEarnRes = $runModel->addManualLine($runId, $compId, $employeeMidId, $mealPedTypeId, 250, $adminUserId, true, $adjustComment);
+    checkTrue('addManualLine succeeds for a normal-run employee (ad-hoc adjustment, not an incentive run)' . (empty($adjustEarnRes['status']) ? " ({$adjustEarnRes['message']})" : ''), $adjustEarnRes['status']);
+
+    $midAfterAdjust = null;
+    foreach ($runModel->getDetails($runId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeMidId) $midAfterAdjust = $d;
+    }
+    check('ad-hoc earning adjustment increases gross by exactly 250 on top of the normal calculation', round((float)$midAfterAdjust['gross_amount'] - $midGrossBefore, 2), 250.0);
+    $adjustLines = array_values(array_filter($midAfterAdjust['earning_breakdown'], fn($l) => $l['source'] === 'manual_line'));
+    checkTrue('the added line is tagged source=manual_line', count($adjustLines) === 1);
+    check('the comment round-trips into earning_breakdown', $adjustLines[0]['note'] ?? null, $adjustComment);
+
+    $midLines = $runModel->manualLinesForEmployee($compId, $runId, $employeeMidId);
+    check('manualLinesForEmployee returns the one adjustment line', count($midLines), 1);
+    check('manualLinesForEmployee returns the comment too', $midLines[0]['note'] ?? null, $adjustComment);
+    $adjustLineId = (int)$midLines[0]['id'];
+
+    $removeAdjustRes = $runModel->removeManualLine($runId, $compId, $adjustLineId, $adminUserId, true);
+    checkTrue('removeManualLine succeeds' . (empty($removeAdjustRes['status']) ? " ({$removeAdjustRes['message']})" : ''), $removeAdjustRes['status']);
+    $midAfterRemove = null;
+    foreach ($runModel->getDetails($runId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeMidId) $midAfterRemove = $d;
+    }
+    check('gross is back to its pre-adjustment amount after removing the line', round((float)$midAfterRemove['gross_amount'], 2), round($midGrossBefore, 2));
+
+    echo "=== Custom (not-in-the-catalog) manual line item ===\n";
+    $noNameRes = $runModel->addManualLine($runId, $compId, $employeeMidId, null, 100, $adminUserId, true, null, '', 'earning');
+    check('addManualLine rejects a custom item with a blank name', $noNameRes['status'], false);
+    $badTypeRes = $runModel->addManualLine($runId, $compId, $employeeMidId, null, 100, $adminUserId, true, null, 'Test Custom Item', 'bogus');
+    check('addManualLine rejects an invalid custom_item_type', $badTypeRes['status'], false);
+
+    $customEarnName = 'Uniform Deposit Refund';
+    $customEarnRes = $runModel->addManualLine($runId, $compId, $employeeMidId, null, 400, $adminUserId, true, 'test comment', $customEarnName, 'earning');
+    checkTrue('addManualLine succeeds for a custom earning item' . (empty($customEarnRes['status']) ? " ({$customEarnRes['message']})" : ''), $customEarnRes['status']);
+    $customDeductName = 'Parking Fine Deduction';
+    $customDeductRes = $runModel->addManualLine($runId, $compId, $employeeMidId, null, 150, $adminUserId, true, null, $customDeductName, 'deduction');
+    checkTrue('addManualLine succeeds for a custom deduction item' . (empty($customDeductRes['status']) ? " ({$customDeductRes['message']})" : ''), $customDeductRes['status']);
+
+    $midAfterCustom = null;
+    foreach ($runModel->getDetails($runId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeMidId) $midAfterCustom = $d;
+    }
+    check('custom earning item increases gross by exactly 400', round((float)$midAfterCustom['gross_amount'] - $midGrossBefore, 2), 400.0);
+    $customEarnLine = array_values(array_filter($midAfterCustom['earning_breakdown'], fn($l) => $l['source'] === 'manual_line'))[0] ?? null;
+    checkTrue('custom earning line is flagged is_custom', ($customEarnLine['is_custom'] ?? null) === true);
+    check('custom earning line name is the free-text name typed in', $customEarnLine['name_th'] ?? null, $customEarnName);
+    checkTrue('custom earning line code carries the CUSTOM: prefix (internal grouping key, never shown)', str_starts_with((string)($customEarnLine['code'] ?? ''), 'CUSTOM:'));
+    $customDeductLine = array_values(array_filter($midAfterCustom['deduction_breakdown'], fn($l) => $l['source'] === 'manual_line'))[0] ?? null;
+    check('custom deduction line name is the free-text name typed in', $customDeductLine['name_th'] ?? null, $customDeductName);
+
+    $midCustomLines = $runModel->manualLinesForEmployee($compId, $runId, $employeeMidId);
+    check('manualLinesForEmployee returns both custom lines', count($midCustomLines), 2);
+    checkTrue('manualLinesForEmployee flags both as is_custom', $midCustomLines[0]['is_custom'] && $midCustomLines[1]['is_custom']);
+
+    foreach ($midCustomLines as $l) {
+        $runModel->removeManualLine($runId, $compId, (int)$l['id'], $adminUserId, true);
+    }
+    $midAfterCustomRemove = null;
+    foreach ($runModel->getDetails($runId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeMidId) $midAfterCustomRemove = $d;
+    }
+    check('gross is back to baseline after removing both custom lines', round((float)$midAfterCustomRemove['gross_amount'], 2), round($midGrossBefore, 2));
+
+    // Reset the earning restriction back to unrestricted -- both the setting AND the run must be
+    // recalculated back to the fully-included state here so the rest of this script (markPaid's
+    // installment assertions below) sees exactly what the pre-existing flow always expected.
+    $resetRes = $runModel->savePedTypeSettings($runId, $compId, 'earning', [], $adminUserId, true);
+    checkTrue('savePedTypeSettings with an empty array resets earning to unrestricted' . (empty($resetRes['status']) ? " ({$resetRes['message']})" : ''), $resetRes['status']);
+    $settingsReset = $runModel->getPedTypeSettings($runId, $compId);
+    check('earning side is unrestricted again after reset', $settingsReset['earning']['is_restricted'], false);
+    $fullAfterReset = null;
+    foreach ($runModel->getDetails($runId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $employeeFullId) $fullAfterReset = $d;
+    }
+    check('unrestricted again: both PED earning lines present for the full-period employee', count(array_filter($fullAfterReset['earning_breakdown'], fn($l) => $l['source'] === 'ped')), 2);
 
     echo "=== Permission denial (no-permission role, not admin) ===\n";
     $permDenyRes = $runModel->submit($runId, $compId, $employeeFullId, false);

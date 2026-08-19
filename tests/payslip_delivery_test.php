@@ -79,7 +79,11 @@ try {
     // every run this test creates and block submit()/approve() through no fault of this test's own
     // fixture. Soft-delete them for this run only, entirely inside this script's own transaction
     // (rolled back at the very end), so nothing here is a real/permanent change.
-    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND is_payroll_ready = 0 AND deleted_at IS NULL")
+    // Broadened from is_payroll_ready=0-only (2026-08-19, see tests/payroll_run_test.php's own
+    // comment for the full reasoning): a leftover row with is_payroll_ready=1 -- from back when that
+    // column was hardcoded true on every successful save, before EmployeeModel::save() started
+    // computing it dynamically -- would slip past a narrower filter and still be picked up.
+    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL")
         ->execute([':comp_id' => $compId]);
 
     $today = new DateTime();

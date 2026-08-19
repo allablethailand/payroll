@@ -308,10 +308,25 @@ function renderSyncItemCardPr(item) {
             <div class="sync-emp-card-footer">
                 <span class="sync-emp-card-payment">${renderPaymentSsoCellPr(item)}</span>
                 <span class="sync-emp-card-idcard">${renderIdCardCellPr(item)}</span>
+                ${renderProbationStatusCellPr(item)}
                 ${values ? `<span class="sync-emp-card-items">${values}</span>` : ''}
             </div>
         </div>
     `;
+}
+// Derived 3-state probation status (2026-08-19, explicit request) -- PayrollSyncModel::
+// getProcessDetail() attaches item.probation_status ('on_probation'/'failed'/'passed'/null, null
+// when pass_pro was never sent/not on file for this employee, nothing to show then).
+function renderProbationStatusCellPr(item) {
+    const map = {
+        on_probation: ['bg-warning-subtle text-warning', 'sync_probation_on_probation', 'On Probation'],
+        failed: ['bg-danger-subtle text-danger', 'sync_probation_failed', 'Did Not Pass Probation'],
+        passed: ['bg-success-subtle text-success', 'sync_probation_passed', 'Passed Probation'],
+    };
+    const entry = map[item.probation_status];
+    if (!entry) return '';
+    const [cls, key, fallback] = entry;
+    return `<span class="badge rounded-pill ${cls}">${langData[key] || fallback}</span>`;
 }
 function renderIdCardCellPr(item) {
     if (!item.id_card_no_masked) {

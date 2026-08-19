@@ -46,14 +46,19 @@ try {
     $adminUserId = 1;
 
     // Same isolation as tests/payroll_run_test.php: recalculate() now pulls incomplete-profile
-    // employees (is_payroll_ready=0) into the calculation table instead of excluding them (see
+    // employees into the calculation table instead of excluding them (see
     // PayrollRunModel::recalculate(), 2026-08-19), so leftover placeholder employees anyone has
     // ever created against this real, shared dev-DB company (id 1) -- e.g. via interactive manual
     // testing of the Pending Pull screen -- now legitimately show up in every run this test
-    // creates and block submit()/approve() through no fault of this test's own fixture. Soft-delete
-    // them for this run only, entirely inside this script's own transaction (rolled back at the
-    // very end), so nothing here is a real/permanent change.
-    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND is_payroll_ready = 0 AND deleted_at IS NULL")
+    // creates and block submit()/approve() through no fault of this test's own fixture. Broadened
+    // from is_payroll_ready=0-only to every employee at comp_id=1 (2026-08-19, found while adding
+    // independent-tab-save support to EmployeeModel::save(): a real leftover row, is_payroll_ready=1
+    // from back when that column was hardcoded true on every successful save, still matched every
+    // run's period and inflated employee_count/corrupted the single-employee txt-export assertions
+    // below) since this test creates its own complete fixture set from scratch regardless. Soft-
+    // delete them for this run only, entirely inside this script's own transaction (rolled back at
+    // the very end), so nothing here is a real/permanent change.
+    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL")
         ->execute([':comp_id' => $compId]);
 
     // ---------- Fixtures ----------

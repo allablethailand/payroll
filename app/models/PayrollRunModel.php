@@ -356,6 +356,21 @@ class PayrollRunModel {
         if ($syncSummary !== null) {
             $result['sync_summary'] = $syncSummary;
         }
+        // A Pending-Pull run's membership is fixed by the sync payload itself (see recalculate()'s
+        // sync_process_id branch) -- there's no "pick who's in it" step for the admin to do first,
+        // unlike a normal cycle-based run where Recalculate is a deliberate review checkpoint. Left
+        // uncalculated here, the run would sit at employee_count=0 on the list until someone opened
+        // it and clicked Recalculate manually, which reads as "the pull didn't bring employees in"
+        // rather than "an extra step is needed". Calling it right away makes the count accurate the
+        // moment the run appears in the list. Best-effort: if this fails for some reason the run
+        // still exists as a normal draft, just still at 0 until a manual Recalculate.
+        if ($syncProcessId !== null) {
+            $calcResult = $this->recalculate($runId, $compId, $userId, $isAdmin);
+            if (!empty($calcResult['status'])) {
+                $result['employee_count'] = $calcResult['employee_count'];
+                $result['has_validation_errors'] = $calcResult['has_validation_errors'];
+            }
+        }
         return $result;
     }
 
@@ -525,6 +540,56 @@ class PayrollRunModel {
         $isIncentive = ($run['run_purpose'] ?? 'payroll') === 'incentive';
         $computeStatutory = $isIncentive ? !empty($run['compute_statutory']) : true;
 
+        // Per-run item restriction (see payroll_run_ped_type_settings' own docblock in
+        // database/payroll.sql for the full reasoning): no rows saved for a given item_type =
+        // unrestricted for that type (every active standing PED assignment of that type is
+        // included, exactly as before this setting existed) -- earning and deduction are
+        // restricted/unrestricted completely independently of each other, matching the two-panel
+        // (Earning left / Deduction right) selection UI where each side saves separately. Only
+        // meaningful for the non-incentive PED-assignment branch below -- an incentive run's items
+        // are already explicitly hand-picked per employee (payroll_run_manual_lines), unrelated to
+        // this table.
+        $earningRestrictIds = [];
+        $deductionRestrictIds = [];
+        if (!$isIncentive) {
+            $stmtRestrict = $this->db->prepare("SELECT s.ped_type_id, pt.item_type FROM `payroll_run_ped_type_settings` s
+                JOIN `payroll_earning_deduction_types` pt ON pt.id = s.ped_type_id WHERE s.run_id = :run_id");
+            $stmtRestrict->execute([':run_id' => $id]);
+            foreach ($stmtRestrict->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                if ($row['item_type'] === 'earning') {
+                    $earningRestrictIds[] = (int)$row['ped_type_id'];
+                } else {
+                    $deductionRestrictIds[] = (int)$row['ped_type_id'];
+                }
+            }
+        }
+        $pedRestrictParams = [];
+        // COALESCE(pt.item_type, eed.custom_item_type) (2026-08-19, explicit request): a custom item
+        // (ped_type_id NULL, so pt is an unmatched LEFT JOIN row here -- see the query below) has no
+        // pt.item_type to compare against on its own. When this item_type is unrestricted (empty
+        // $restrictIds) a custom item of that type flows through same as any catalog one, matching
+        // the "no rows saved = unrestricted, everything of that type included" rule this table
+        // already documents. When restricted to specific catalog ids, a custom item is excluded --
+        // it was never one of the ids the admin picked, and there's no "always include custom items"
+        // concept here.
+        $buildTypeCondition = function (string $itemType, array $restrictIds) use (&$pedRestrictParams) {
+            if (empty($restrictIds)) {
+                return "COALESCE(pt.item_type, eed.custom_item_type) = '{$itemType}'";
+            }
+            $placeholders = [];
+            foreach ($restrictIds as $i => $ptid) {
+                $key = ":restrict_{$itemType}_{$i}";
+                $placeholders[] = $key;
+                $pedRestrictParams[$key] = $ptid;
+            }
+            return "(COALESCE(pt.item_type, eed.custom_item_type) = '{$itemType}' AND pt.id IN (" . implode(',', $placeholders) . "))";
+        };
+        // is_sync_only types (e.g. trip allowance) always pass through regardless of either side's
+        // restriction -- see the table's docblock; they're never offered as a selectable option.
+        $pedRestrictSql = ' AND (pt.is_sync_only = 1 OR '
+            . $buildTypeCondition('earning', $earningRestrictIds) . ' OR '
+            . $buildTypeCondition('deduction', $deductionRestrictIds) . ')';
+
         $ownTransaction = !$this->db->inTransaction();
         try {
             if ($ownTransaction) { $this->db->beginTransaction(); }
@@ -588,21 +653,25 @@ class PayrollRunModel {
                 if ($isIncentive) {
                     // Manually-picked items only (see joinEmployees()/addManualLine() docblocks) --
                     // no standing PED assignments, no attendance bonus, nothing automatic.
-                    $stmtLines = $this->db->prepare("SELECT pml.amount, pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
+                    $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type,
+                            pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
-                        JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
+                        LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
                         WHERE pml.run_id = :run_id AND pml.employee_id = :employee_id");
                     $stmtLines->execute([':run_id' => $id, ':employee_id' => $employeeId]);
                     $manualLines = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
                     foreach ($manualLines as $line) {
+                        $resolved = $this->resolveManualLineRow($line);
                         $entry = [
                             'source' => 'manual_line',
-                            'code' => $line['item_code'],
-                            'name_th' => $line['item_name_th'],
-                            'name_en' => $line['item_name_en'],
+                            'code' => $resolved['code'],
+                            'name_th' => $resolved['name_th'],
+                            'name_en' => $resolved['name_en'],
                             'amount' => (float)$line['amount'],
+                            'note' => $line['note'],
+                            'is_custom' => $resolved['is_custom'],
                         ];
-                        if ($line['item_type'] === 'earning') {
+                        if ($resolved['item_type'] === 'earning') {
                             $earningLines[] = $entry;
                         } else {
                             $deductionLines[] = $entry;
@@ -614,16 +683,22 @@ class PayrollRunModel {
                         $errors[] = 'no_manual_lines';
                     }
                 } else {
-                    // PED assignments: pick the earliest pending installment per assignment.
+                    // PED assignments: pick the earliest pending installment per assignment. LEFT JOIN
+                    // (2026-08-19, explicit request: employee_earning_deductions can now hold a custom
+                    // item, ped_type_id NULL -- an INNER JOIN here would have silently dropped every
+                    // custom-item assignment out of the actual payroll calculation, even though it
+                    // saved fine and showed up on the Employee Detail Salary tab). Resolved the same
+                    // way as payroll_run_manual_lines' own custom items, via resolveManualLineRow().
                     $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
+                            eed.ped_type_id, eed.custom_item_name, eed.custom_item_type,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `employee_earning_deductions` eed
-                        JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
+                        LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
                         JOIN `employee_earning_deduction_installments` i ON i.assignment_id = eed.id AND i.status = 'pending'
                         WHERE eed.employee_id = :employee_id AND eed.status = 'active' AND eed.deleted_at IS NULL
-                        AND eed.effective_date <= :period_end
+                        AND eed.effective_date <= :period_end{$pedRestrictSql}
                         ORDER BY eed.id ASC, i.installment_no ASC");
-                    $stmtPed->execute([':employee_id' => $employeeId, ':period_end' => $periodEnd]);
+                    $stmtPed->execute(array_merge([':employee_id' => $employeeId, ':period_end' => $periodEnd], $pedRestrictParams));
                     $pedSeen = [];
                     foreach ($stmtPed->fetchAll(PDO::FETCH_ASSOC) as $ped) {
                         $assignmentId = (int)$ped['assignment_id'];
@@ -631,16 +706,18 @@ class PayrollRunModel {
                             continue; // only the first (earliest) pending installment per assignment
                         }
                         $pedSeen[$assignmentId] = true;
+                        $resolved = $this->resolveManualLineRow($ped);
                         $line = [
                             'source' => 'ped',
                             'assignment_id' => $assignmentId,
                             'installment_id' => (int)$ped['installment_id'],
-                            'code' => $ped['item_code'],
-                            'name_th' => $ped['item_name_th'],
-                            'name_en' => $ped['item_name_en'],
+                            'code' => $resolved['code'],
+                            'name_th' => $resolved['name_th'],
+                            'name_en' => $resolved['name_en'],
                             'amount' => (float)$ped['amount'],
+                            'is_custom' => $resolved['is_custom'],
                         ];
-                        if ($ped['item_type'] === 'earning') {
+                        if ($resolved['item_type'] === 'earning') {
                             $earningLines[] = $line;
                         } else {
                             $deductionLines[] = $line;
@@ -666,6 +743,37 @@ class PayrollRunModel {
                             'name_en' => $bonus['scheme_name'],
                             'amount' => (float)$bonus['amount'],
                         ];
+                    }
+
+                    // Ad-hoc per-employee adjustments (payroll_run_manual_lines) -- additive on top
+                    // of the standing PED assignments/attendance bonus above, added via the "Items"
+                    // button on the calculation table (2026-08-19, explicit request: this used to be
+                    // incentive-run-only, now available on any draft run so an admin can add a
+                    // one-off earning/deduction for a single employee without it affecting anyone
+                    // else or needing a whole separate off-cycle run). Contrast with the $isIncentive
+                    // branch above, where manual lines are the ONLY source instead of an addition.
+                    $stmtAdj = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type,
+                            pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
+                        FROM `payroll_run_manual_lines` pml
+                        LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
+                        WHERE pml.run_id = :run_id AND pml.employee_id = :employee_id");
+                    $stmtAdj->execute([':run_id' => $id, ':employee_id' => $employeeId]);
+                    foreach ($stmtAdj->fetchAll(PDO::FETCH_ASSOC) as $adj) {
+                        $resolvedAdj = $this->resolveManualLineRow($adj);
+                        $line = [
+                            'source' => 'manual_line',
+                            'code' => $resolvedAdj['code'],
+                            'name_th' => $resolvedAdj['name_th'],
+                            'name_en' => $resolvedAdj['name_en'],
+                            'amount' => (float)$adj['amount'],
+                            'note' => $adj['note'],
+                            'is_custom' => $resolvedAdj['is_custom'],
+                        ];
+                        if ($resolvedAdj['item_type'] === 'earning') {
+                            $earningLines[] = $line;
+                        } else {
+                            $deductionLines[] = $line;
+                        }
                     }
                 }
 
@@ -750,6 +858,126 @@ class PayrollRunModel {
             if ($ownTransaction) { $this->db->rollBack(); }
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
+    }
+
+    /* ==================== PER-RUN EARNING/DEDUCTION ITEM SELECTION ==================== */
+
+    /** Every active, non-is_sync_only PED type of one item_type for a company -- the full catalog
+     *  a selection checklist picks from (is_sync_only excluded: those are never user-selectable,
+     *  see payroll_run_ped_type_settings' own docblock in database/payroll.sql). */
+    private function activePedTypesByItemType(int $compId, string $itemType): array {
+        $stmt = $this->db->prepare("SELECT id, item_code, item_name_th, item_name_en
+            FROM `payroll_earning_deduction_types`
+            WHERE comp_id = :comp_id AND item_type = :item_type AND status = 'active' AND deleted_at IS NULL AND is_sync_only = 0
+            ORDER BY item_code ASC");
+        $stmt->execute([':comp_id' => $compId, ':item_type' => $itemType]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Selection state for BOTH item types at once, shaped for the two-panel (Earning left /
+     * Deduction right) UI. Each type is independent: no rows saved for that type = unrestricted
+     * (every active item of that type included, same as before this table existed) -- displayed as
+     * every item pre-selected, since that's what's actually in effect. Any rows saved for that type
+     * = restricted to exactly those.
+     */
+    public function getPedTypeSettings(int $id, int $compId): array {
+        $run = $this->get($id, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $result = ['status' => true];
+        foreach (['earning', 'deduction'] as $itemType) {
+            $allItems = $this->activePedTypesByItemType($compId, $itemType);
+            $stmt = $this->db->prepare("SELECT s.ped_type_id FROM `payroll_run_ped_type_settings` s
+                JOIN `payroll_earning_deduction_types` pt ON pt.id = s.ped_type_id AND pt.item_type = :item_type
+                WHERE s.run_id = :run_id");
+            $stmt->execute([':run_id' => $id, ':item_type' => $itemType]);
+            $restrictedIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+            $isRestricted = !empty($restrictedIds);
+            $result[$itemType] = [
+                'all_items' => $allItems,
+                'selected_ids' => $isRestricted ? $restrictedIds : array_map(fn($row) => (int)$row['id'], $allItems),
+                'is_restricted' => $isRestricted,
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * Partial replace-all, scoped to ONE item_type at a time (earning panel's Save never touches
+     * the deduction selection and vice versa) -- deletes only this run's rows whose ped_type is of
+     * $itemType, then reinserts $pedTypeIds. Saving every currently-active item of that type is
+     * equivalent to "include all" in effect, but is stored as an explicit list (ticking every box
+     * IS the reset-to-default action from the checklist UI's point of view; there's no separate
+     * hidden "unrestricted" toggle to expose). Draft only, and only for a normal 'payroll' run --
+     * an 'incentive' run already picks items explicitly per employee (payroll_run_manual_lines) and
+     * has no use for this. Recalculates immediately after saving (2026-08-19, explicit request: the
+     * calculation table should reflect the new selection right away, not require a separate manual
+     * Recalculate click).
+     */
+    public function savePedTypeSettings(int $id, int $compId, string $itemType, array $pedTypeIds, int $userId, bool $isAdmin): array {
+        if (!in_array($itemType, ['earning', 'deduction'], true)) {
+            return ['status' => false, 'message' => 'Invalid item type.'];
+        }
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        $run = $this->get($id, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if ($run['state'] !== 'draft') {
+            return ['status' => false, 'message' => 'Only a draft payroll run can be edited.'];
+        }
+        if (($run['run_purpose'] ?? 'payroll') === 'incentive') {
+            return ['status' => false, 'message' => 'Item selection does not apply to an Incentive/Other Payment run.'];
+        }
+        $pedTypeIds = array_values(array_unique(array_map('intval', $pedTypeIds)));
+        if (!empty($pedTypeIds)) {
+            $placeholders = [];
+            $params = [':comp_id' => $compId, ':item_type' => $itemType];
+            foreach ($pedTypeIds as $i => $ptid) {
+                $key = ":ptid{$i}";
+                $placeholders[] = $key;
+                $params[$key] = $ptid;
+            }
+            $stmtCheck = $this->db->prepare("SELECT id FROM `payroll_earning_deduction_types`
+                WHERE comp_id = :comp_id AND item_type = :item_type AND status = 'active' AND deleted_at IS NULL AND id IN (" . implode(',', $placeholders) . ")");
+            $stmtCheck->execute($params);
+            $validIds = array_map('intval', $stmtCheck->fetchAll(PDO::FETCH_COLUMN));
+            if (count($validIds) !== count($pedTypeIds)) {
+                return ['status' => false, 'message' => 'One or more selected items are invalid.'];
+            }
+        }
+
+        $ownTransaction = !$this->db->inTransaction();
+        try {
+            if ($ownTransaction) { $this->db->beginTransaction(); }
+            $this->db->prepare("DELETE s FROM `payroll_run_ped_type_settings` s
+                JOIN `payroll_earning_deduction_types` pt ON pt.id = s.ped_type_id
+                WHERE s.run_id = :run_id AND pt.item_type = :item_type")
+                ->execute([':run_id' => $id, ':item_type' => $itemType]);
+            if (!empty($pedTypeIds)) {
+                $insStmt = $this->db->prepare("INSERT INTO `payroll_run_ped_type_settings` (run_id, ped_type_id, created_by) VALUES (:run_id, :ped_type_id, :created_by)");
+                foreach ($pedTypeIds as $ptid) {
+                    $insStmt->execute([':run_id' => $id, ':ped_type_id' => $ptid, ':created_by' => $userId]);
+                }
+            }
+            $this->logAudit($id, 'draft', 'draft', 'update', $userId,
+                ucfirst($itemType) . ' item selection updated (' . count($pedTypeIds) . ' item(s)).');
+            if ($ownTransaction) { $this->db->commit(); }
+        } catch (PDOException $e) {
+            if ($ownTransaction) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+        // Best-effort: the selection itself is already saved regardless of whether this succeeds.
+        $calcResult = $this->recalculate($id, $compId, $userId, $isAdmin);
+        return [
+            'status' => true, 'message' => 'Saved successfully.',
+            'employee_count' => $calcResult['employee_count'] ?? null,
+            'has_validation_errors' => $calcResult['has_validation_errors'] ?? null,
+        ];
     }
 
     /* ==================== MANUAL EMPLOYEE ROSTER (off-cycle runs only) ==================== */
@@ -896,67 +1124,147 @@ class PayrollRunModel {
     }
 
     /**
-     * Guard shared by addManualLine()/removeManualLine(): only makes sense for a run that's both
-     * a genuine off-cycle run (see assertManualRosterEditable()) AND specifically run_purpose=
-     * 'incentive' -- a normal 'payroll' off-cycle run (e.g. a final settlement run) still goes
-     * through the standard base-salary/PED/statutory pipeline in recalculate(), it has no concept
-     * of a manually-picked line to add.
-     * @return array{0:?array,1:?string}
+     * For an 'incentive' run, manual lines are the ONLY source of earnings/deductions, so they're
+     * always addable regardless of membership (joinEmployees() already put the employee in
+     * payroll_run_details via its own recalculate() call). For any other 'payroll' run
+     * (cycle-based, Pending-Pull, or off-cycle), manual lines are an ADD-ON adjustment on top of
+     * the normal calculation (2026-08-19, explicit request) -- so the employee must already be a
+     * calculated member of this run (i.e. it's been Recalculated at least once and they're
+     * eligible), otherwise the line would sit orphaned with no visible effect until membership
+     * happens to include them, which would look like a silent no-op rather than a clear error.
      */
-    private function assertManualLinesEditable(int $id, int $compId): array {
-        [$run, $err] = $this->assertManualRosterEditable($id, $compId);
-        if ($err !== null) {
-            return [null, $err];
+    private function assertManualLinesEditable(int $id, int $compId, int $employeeId): array {
+        $run = $this->get($id, $compId);
+        if (!$run) {
+            return [null, 'Record not found.'];
+        }
+        if ($run['state'] !== 'draft') {
+            return [null, 'Only a draft payroll run can have its earning/deduction items adjusted.'];
         }
         if (($run['run_purpose'] ?? 'payroll') !== 'incentive') {
-            return [null, 'Manually adding earning/deduction items is only available for an Incentive/Other Payment run.'];
+            $stmtMember = $this->db->prepare("SELECT 1 FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
+            $stmtMember->execute([':run_id' => $id, ':employee_id' => $employeeId]);
+            if (!$stmtMember->fetch()) {
+                return [null, 'This employee is not part of the calculated run yet -- Recalculate first.'];
+            }
         }
         return [$run, null];
     }
 
     /**
-     * Adds one earning/deduction line (item + amount) for one employee on an 'incentive' run, per
-     * explicit request (2026-08-19): "pick item + enter the amount separately per person" -- not
-     * one flat amount applied to everyone. Recalculates immediately after, same as joinEmployees().
+     * Resolves one payroll_run_manual_lines row (already LEFT JOINed against
+     * payroll_earning_deduction_types) into display fields, whichever of the two sources it came
+     * from. $row['ped_type_id'] === null is what tells a custom row apart from a catalog one (the
+     * LEFT JOIN then has no matching pt.* columns either way, but ped_type_id itself is the
+     * authoritative signal, not "is pt.item_code null" -- belt-and-suspenders in case a future
+     * catalog item somehow has a null item_code). The synthetic 'CUSTOM:' code prefix is never
+     * shown to a user (every consumer prefers name_th/name_en, which are always set for a custom
+     * row) -- it exists only so PayrollRegisterReport's per-code column dictionary groups repeated
+     * custom labels together (e.g. two different employees both getting a "ค่าปรับ" custom
+     * deduction land in the same report column) without ever colliding with a real catalog
+     * item_code (those never contain a colon).
      */
-    public function addManualLine(int $id, int $compId, int $employeeId, int $pedTypeId, float $amount, int $userId, bool $isAdmin): array {
+    private function resolveManualLineRow(array $row): array {
+        $isCustom = $row['ped_type_id'] === null;
+        if ($isCustom) {
+            return [
+                'code' => 'CUSTOM:' . $row['custom_item_name'],
+                'name_th' => $row['custom_item_name'],
+                'name_en' => $row['custom_item_name'],
+                'item_type' => $row['custom_item_type'],
+                'is_custom' => true,
+            ];
+        }
+        return [
+            'code' => $row['item_code'],
+            'name_th' => $row['item_name_th'],
+            'name_en' => $row['item_name_en'],
+            'item_type' => $row['item_type'],
+            'is_custom' => false,
+        ];
+    }
+
+    /**
+     * Adds one earning/deduction line for one employee on this run, then recalculates immediately
+     * (same as joinEmployees()). For an 'incentive' run this is the only source of pay per explicit
+     * request (2026-08-19: "pick item + enter the amount separately per person" -- not one flat
+     * amount applied to everyone); for any other run it's an additive one-off adjustment on top of
+     * the normal calculation.
+     *
+     * Two mutually-exclusive ways to specify the item (2026-08-19, explicit request: "ระบุ item ได้
+     * เอง ว่าจะจ่ายเพิ่มหรือหักจากอะไร" -- let the admin type their own item too):
+     *   - $pedTypeId set: a catalog payroll_earning_deduction_types item (existing behavior).
+     *   - $pedTypeId null: a free-text $customItemName + explicit $customItemType('earning'/
+     *     'deduction') -- for a genuine one-off that isn't worth creating a standing catalog entry
+     *     for. Whichever $customItemName/$customItemType are passed are IGNORED when $pedTypeId is
+     *     set (not an error -- the catalog item wins, matching how a frontend toggle between the
+     *     two modes would only ever send one side populated anyway).
+     */
+    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null): array {
         if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
-        [$run, $err] = $this->assertManualLinesEditable($id, $compId);
+        [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
         if ($err !== null) {
             return ['status' => false, 'message' => $err];
         }
         if ($amount <= 0) {
             return ['status' => false, 'message' => 'Amount must be greater than 0.'];
         }
+        $note = $note !== null ? trim($note) : '';
+        $note = $note !== '' ? $note : null;
         $stmtEmp = $this->db->prepare("SELECT id FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
         if (!$stmtEmp->fetch()) {
             return ['status' => false, 'message' => 'Employee not found.'];
         }
-        // is_sync_only items are meant to be written only by whatever automated flow owns them --
-        // not something an admin hand-picks into an ad-hoc incentive line.
-        $stmtPed = $this->db->prepare("SELECT id FROM `payroll_earning_deduction_types`
-            WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' AND is_sync_only = 0");
-        $stmtPed->execute([':id' => $pedTypeId, ':comp_id' => $compId]);
-        if (!$stmtPed->fetch()) {
-            return ['status' => false, 'message' => 'Invalid earning/deduction item.'];
+
+        if ($pedTypeId !== null) {
+            // is_sync_only items are meant to be written only by whatever automated flow owns
+            // them -- not something an admin hand-picks into an ad-hoc line.
+            $stmtPed = $this->db->prepare("SELECT id FROM `payroll_earning_deduction_types`
+                WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' AND is_sync_only = 0");
+            $stmtPed->execute([':id' => $pedTypeId, ':comp_id' => $compId]);
+            if (!$stmtPed->fetch()) {
+                return ['status' => false, 'message' => 'Invalid earning/deduction item.'];
+            }
+            $customItemName = null;
+            $customItemType = null;
+        } else {
+            $customItemName = $customItemName !== null ? trim($customItemName) : '';
+            $customItemName = $customItemName !== '' ? $customItemName : null;
+            if ($customItemName === null) {
+                return ['status' => false, 'message' => 'Item name is required.'];
+            }
+            if (!in_array($customItemType, ['earning', 'deduction'], true)) {
+                return ['status' => false, 'message' => 'Invalid item type.'];
+            }
         }
 
-        $this->db->prepare("INSERT INTO `payroll_run_manual_lines` (run_id, employee_id, ped_type_id, amount, created_by)
-            VALUES (:run_id, :employee_id, :ped_type_id, :amount, :created_by)")
-            ->execute([':run_id' => $id, ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId, ':amount' => $amount, ':created_by' => $userId]);
+        $this->db->prepare("INSERT INTO `payroll_run_manual_lines`
+                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, amount, note, created_by)
+            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :amount, :note, :created_by)")
+            ->execute([
+                ':run_id' => $id, ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId,
+                ':custom_item_name' => $customItemName, ':custom_item_type' => $customItemType,
+                ':amount' => $amount, ':note' => $note, ':created_by' => $userId,
+            ]);
 
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }
 
-    /** Removes one manually-added line, then recalculates. */
+    /** Removes one manually-added line, then recalculates. No employee-membership check needed here
+     *  (unlike addManualLine()) -- the line already exists, so its employee was already validated
+     *  when it was added; removing it is always safe once the run itself is still draft. */
     public function removeManualLine(int $id, int $compId, int $lineId, int $userId, bool $isAdmin): array {
         if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
-        [$run, $err] = $this->assertManualLinesEditable($id, $compId);
+        $run = $this->get($id, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $err = $run['state'] !== 'draft' ? 'Only a draft payroll run can have its earning/deduction items adjusted.' : null;
         if ($err !== null) {
             return ['status' => false, 'message' => $err];
         }
@@ -965,16 +1273,29 @@ class PayrollRunModel {
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }
 
-    /** Every manual line for one employee on this run (item code/name + amount + line id), for the "Manage Items" UI. */
+    /** Every manual line for one employee on this run (item code/name + amount + note + line id), for the "Manage Items" UI. */
     public function manualLinesForEmployee(int $compId, int $runId, int $employeeId): array {
-        $stmt = $this->db->prepare("SELECT pml.id, pml.amount, pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
+        $stmt = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type,
+                pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
             FROM `payroll_run_manual_lines` pml
-            JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
+            LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             JOIN `payroll_runs` r ON r.id = pml.run_id AND r.comp_id = :comp_id
             WHERE pml.run_id = :run_id AND pml.employee_id = :employee_id
             ORDER BY pml.id ASC");
         $stmt->execute([':comp_id' => $compId, ':run_id' => $runId, ':employee_id' => $employeeId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return array_map(function (array $row): array {
+            $resolved = $this->resolveManualLineRow($row);
+            return [
+                'id' => (int)$row['id'],
+                'amount' => (float)$row['amount'],
+                'note' => $row['note'],
+                'item_code' => $resolved['code'],
+                'item_name_th' => $resolved['name_th'],
+                'item_name_en' => $resolved['name_en'],
+                'item_type' => $resolved['item_type'],
+                'is_custom' => $resolved['is_custom'],
+            ];
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
 
     /* ==================== STATE TRANSITIONS ==================== */

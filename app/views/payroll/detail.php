@@ -67,10 +67,39 @@
                 </div>
             </div>
           </div>
+          <div class="detail-section d-none" id="pedTypeSettingsSection">
+            <div class="mb-3">
+                <h6 class="text-secondary fw-bold mb-1">
+                    <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
+                    <span data-i18n="ped_type_settings_title">Earning/Deduction Items Used</span>
+                </h6>
+                <div class="text-muted small" data-i18n="ped_type_settings_hint">The items currently used to calculate this run. Click "Edit" on either side to tick items in or out.</div>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="ped-type-panel border rounded-3 p-3 h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="text-success fw-bold mb-0"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Earnings</span></h6>
+                            <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-ped-type-panel d-none" data-item-type="earning"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">Edit</span></button>
+                        </div>
+                        <div id="pedTypePanelEarning" class="ped-type-chip-list"></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="ped-type-panel border rounded-3 p-3 h-100">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="text-danger fw-bold mb-0"><i class="fa-solid fa-arrow-trend-down me-1"></i><span data-i18n="table_deduction_amount">Deductions</span></h6>
+                            <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-ped-type-panel d-none" data-item-type="deduction"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">Edit</span></button>
+                        </div>
+                        <div id="pedTypePanelDeduction" class="ped-type-chip-list"></div>
+                    </div>
+                </div>
+            </div>
+          </div>
           <div class="detail-section">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <h6 class="text-secondary fw-bold mb-0">
-                    <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
+                    <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">3</label>
                     <span data-i18n="employee_breakdown">Employee Breakdown</span>
                 </h6>
                 <div id="runRecalculateButtonWrap"></div>
@@ -218,9 +247,12 @@
         </div>
     </div>
 
-    <!-- Manage Payment Items Modal: only shown for an Incentive/Other Payment run -- per-employee
-         earning/deduction lines (item + amount), picked one at a time, no base salary/standing PED/
-         attendance bonus involved (see PayrollRunModel::recalculate()'s incentive branch). -->
+    <!-- Manage Payment Items Modal: per-employee ad-hoc earning/deduction lines (item + amount),
+         picked one at a time. For an Incentive/Other Payment run these are the ONLY items counted
+         (no base salary/standing PED/attendance bonus); for any other run they're an additive
+         adjustment on top of the normal calculation (2026-08-19, explicit request) -- see
+         PayrollRunModel::recalculate()'s $isIncentive branch vs. the manual-lines block appended
+         to the normal branch. #manageLinesHint's wording switches between the two accordingly. -->
     <div class="modal fade" id="manageLinesModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manageLinesModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow">
@@ -230,42 +262,120 @@
                             <i class="fa-solid fa-list-check me-1"></i><span data-i18n="manage_items_title">Manage Payment Items</span>
                         </h5>
                         <div class="text-muted small" id="manageLinesEmployeeName"></div>
+                        <div class="text-muted small" id="manageLinesHint"></div>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <table class="table table-sm table-border align-middle" id="tb_manual_lines">
-                        <thead class="table-light text-secondary">
-                            <tr>
-                                <th data-i18n="table_code">Code</th>
-                                <th data-i18n="table_name">Name</th>
-                                <th class="text-end" data-i18n="modal_amount">Amount</th>
-                                <th class="text-center" data-i18n="table_action">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                    <div id="noManualLinesYet" class="text-center text-secondary py-3 d-none">
-                        <span data-i18n="no_manual_lines_yet">No items added yet.</span>
+                    <div class="add-manual-line-card border rounded-3 p-3 bg-light bg-opacity-50 mb-4">
+                        <div class="d-flex justify-content-end mb-2">
+                            <div class="btn-group btn-group-sm" role="group" id="manualLineModeToggle">
+                                <button type="button" class="btn btn-outline-secondary active" data-mode="catalog"><i class="fa-solid fa-list me-1"></i><span data-i18n="manual_line_mode_catalog">From List</span></button>
+                                <button type="button" class="btn btn-outline-secondary" data-mode="custom"><i class="fa-solid fa-pen me-1"></i><span data-i18n="manual_line_mode_custom">Custom Item</span></button>
+                            </div>
+                        </div>
+                        <div class="row g-2 align-items-end" id="manualLineCatalogFields">
+                            <div class="col-12">
+                                <label class="form-label mb-1 small text-muted" data-i18n="select_item_placeholder">Select an earning/deduction item</label>
+                                <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options"></select>
+                            </div>
+                        </div>
+                        <div class="row g-2 align-items-end d-none" id="manualLineCustomFields">
+                            <div class="col-sm-8">
+                                <label class="form-label mb-1 small text-muted" data-i18n="modal_custom_item_name">Item Name</label>
+                                <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
+                            </div>
+                            <div class="col-sm-4">
+                                <label class="form-label mb-1 small text-muted" data-i18n="modal_item_type">Type</label>
+                                <select class="form-select select2-static" id="manualLineCustomType" data-option-keys="breakdown_earnings,table_deduction_amount" data-option-values="earning,deduction"></select>
+                            </div>
+                        </div>
+                        <div class="row g-2 align-items-end mt-1">
+                            <div class="col-sm-6">
+                                <label class="form-label mb-1 small text-muted" data-i18n="modal_amount">Amount</label>
+                                <input type="number" class="form-control" id="manualLineAmount" min="0.01" step="0.01" placeholder="0.00">
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label mb-1 small text-muted" data-i18n="modal_comment">Comment</label>
+                                <input type="text" class="form-control" id="manualLineComment" maxlength="255" data-i18n="modal_comment_placeholder" placeholder="e.g. August OT shortfall top-up">
+                            </div>
+                        </div>
+                        <div id="manualLineTypePreview" class="small mt-2 d-none"></div>
+                        <div class="text-end mt-2">
+                            <button type="button" class="btn btn-primary" id="btnAddManualLine"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_item">Add Item</span></button>
+                        </div>
                     </div>
-                    <hr>
-                    <div class="row g-2 align-items-end">
-                        <div class="col-sm-6">
-                            <label class="form-label mb-1" data-i18n="select_item_placeholder">Select an earning/deduction item</label>
-                            <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options"></select>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="ped-type-panel border rounded-3 p-3 h-100 d-flex flex-column">
+                                <h6 class="text-success fw-bold mb-2"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Earnings</span></h6>
+                                <ul class="list-group list-group-flush flex-grow-1" id="manualLinesEarningList"></ul>
+                                <div class="d-flex justify-content-between fw-bold text-success border-top pt-2 mt-1">
+                                    <span data-i18n="manual_line_subtotal_label">Total</span><span id="manualLinesEarningTotal">0.00</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-sm-4">
-                            <label class="form-label mb-1" data-i18n="modal_amount">Amount</label>
-                            <input type="number" class="form-control" id="manualLineAmount" min="0.01" step="0.01">
+                        <div class="col-md-6">
+                            <div class="ped-type-panel border rounded-3 p-3 h-100 d-flex flex-column">
+                                <h6 class="text-danger fw-bold mb-2"><i class="fa-solid fa-arrow-trend-down me-1"></i><span data-i18n="table_deduction_amount">Deductions</span></h6>
+                                <ul class="list-group list-group-flush flex-grow-1" id="manualLinesDeductionList"></ul>
+                                <div class="d-flex justify-content-between fw-bold text-danger border-top pt-2 mt-1">
+                                    <span data-i18n="manual_line_subtotal_label">Total</span><span id="manualLinesDeductionTotal">0.00</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-sm-2">
-                            <button type="button" class="btn btn-primary w-100" id="btnAddManualLine"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_item">Add Item</span></button>
-                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-3">
+                        <span class="fw-bold text-secondary" data-i18n="manual_line_net_total">Net Adjustment</span>
+                        <span class="fw-bold fs-6" id="manualLinesNetTotal">0.00</span>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Earning/Deduction Item Selection Modal: opened from either panel's Edit button in
+         section 2 -- lists every active item of just that one item_type with a checkbox each (tick
+         in/out), scoped so saving one side never touches the other's selection. -->
+    <div class="modal fade" id="pedTypeEditModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="pedTypeEditModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="pedTypeEditModalLabel">
+                        <i class="fa-solid fa-list-check me-1"></i><span id="pedTypeEditModalTitle">-</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="pedTypeEditModalList"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnSavePedTypeEdit"><span data-i18n="save">Save</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row, split into
+         clearly-labeled Earnings / Deductions / Statutory sections so it's unambiguous which line
+         is income and which is a deduction (the main table only shows totals). -->
+    <div class="modal fade" id="runDetailBreakdownModal" tabindex="-1" aria-labelledby="runDetailBreakdownModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title text-secondary mb-0" id="runDetailBreakdownModalLabel">
+                            <i class="fa-solid fa-list-check me-1"></i><span data-i18n="breakdown_title">Calculation Breakdown</span>
+                        </h5>
+                        <div class="text-muted small" id="breakdownEmployeeName"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="breakdownModalBody"></div>
             </div>
         </div>
     </div>

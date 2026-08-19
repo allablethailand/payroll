@@ -97,8 +97,12 @@ declare(strict_types=1);
  *     (see normalizeTitle()/normalizeGender()/normalizeMaritalStatus()) -- these are documented as
  *     raw legacy values on the wire, sometimes a numeric code with no glossary given, so an
  *     unrecognized value is left unmapped rather than guessed.
- *   - date_birth/.nationality/.religion map directly to date_of_birth/nationality/religion
- *     (unambiguous, low-risk free-text/date fields).
+ *   - date_birth maps directly to date_of_birth (unambiguous date field).
+ *   - .nationality is resolved against master_nationalities (matching nationality_name_en/_th,
+ *     case-insensitively) and the matched nationality_code is written -- NOT the raw incoming
+ *     value -- see resolveNationalityCode()'s own docblock for why a raw passthrough here would be
+ *     wrong. religion is still a direct passthrough (documented risk, not yet fixed the same way --
+ *     see resolveNationalityCode()'s docblock for the reason it's out of scope this round).
  *   - nickname maps to BOTH nickname_th and nickname_en (no separate TH/EN source on the wire).
  *   - email maps to company_email (NOT personal_email, which is this app's own NOT NULL field --
  *     overwriting it from an ambiguous upstream source risked clobbering real data with a possibly-
@@ -107,10 +111,21 @@ declare(strict_types=1);
  *   - military_service is intentionally NEVER mapped to employees.military_status -- the two
  *     aren't even documented as the same concept (free text vs. a structured enum) and no example
  *     values were given to build a mapping from.
- *   - pass_pro/.pass_pro_date are intentionally NEVER mapped -- "probation passed" logically
- *     implies an employment_status transition (probation -> permanent/contract), which is a
- *     business decision (what should it become, effective when) beyond a pure field copy; stored
- *     for a human to act on, not auto-applied.
+ *   - pass_pro/.pass_pro_date: pass_pro is really the string "Y"/"N" on the wire (2026-08-19,
+ *     explicit correction), not the JSON boolean the API doc describes -- see parseYesNoFlag()'s
+ *     docblock, a plain truthy cast used to silently store a "not yet passed" employee as passed.
+ *     Combined with pass_pro_date it actually encodes three states (still on probation /
+ *     evaluated-and-failed / passed), not two -- see deriveProbationStatus()'s docblock.
+ *     getProcessDetail() attaches the derived `probation_status` to every item for the Pending Pull
+ *     view modal to render. applyOneEmployeeMasterFields() now ALSO auto-transitions
+ *     employees.employment_status from 'probation' to 'permanent' when this pull's derived status
+ *     is 'passed' (2026-08-19, explicit request -- reverses the original "human decision, never
+ *     auto-applied" stance for this one specific direction only: probation -> permanent, guarded on
+ *     the employee's CURRENT employment_status still being exactly 'probation' so an employee
+ *     already on contract/resigned/terminated is never touched by an old pass_pro=Y on file).
+ *     'probation -> contract' is NOT handled -- no signal in this payload distinguishes which
+ *     target the employee should move to, so only the permanent case is auto-applied; a contract
+ *     employee's status change is still a human decision made via the Employee Detail form.
  *   - emp_pic is intentionally NEVER copied into employees.profile_photo_path -- it's a path on
  *     Origami's own local filesystem ("not resolved to an absolute/public URL" per the doc), so
  *     copying it verbatim would just produce a broken image reference on this app's side.
@@ -122,6 +137,30 @@ declare(strict_types=1);
  *     payroll admin entered manually and Origami doesn't know about), not something to fold in as
  *     a side effect of this task. getProcessDetail() decrypts+masks the idcard-like nested fields
  *     before they'd ever reach the frontend, same policy as pay_bank_no/id_card_no above.
+ *
+ * items[].nationality switched on the sending side (PAYROLL_SYNC_API.md, 2026-08-19 revision) from
+ * a raw internal Origami ID to a resolved display name (e.g. "Thai"). This mattered here because
+ * `employees.nationality` was NEVER a free-text field despite the class docblock above previously
+ * saying so -- EmployeeModel::get() LEFT JOINs master_nationalities ON e.nationality =
+ * mn.nationality_code (a short ISO-ish code like "TH", what the manual-entry Nationality dropdown
+ * actually submits), so a raw passthrough of Origami's OLD numeric ID was already silently breaking
+ * that join for every sync-created employee (nationality showed blank in the edit form even though
+ * a value existed in the column) -- the ID→name change didn't introduce this bug, it was already
+ * there, just newly worth fixing properly instead of continuing to pass through a differently-wrong
+ * raw value. resolveNationalityCode() now matches the incoming name against
+ * master_nationalities.nationality_name_en/_th (case-insensitive) and writes the resolved
+ * nationality_code; on no match, nationality is left untouched entirely (same "don't write what
+ * isn't verified" stance as normalizeTitle()/normalizeGender()/normalizeMaritalStatus() above) --
+ * not a create-if-missing like resolveOrCreateBankId(), since this is a fixed global country list,
+ * not something a sync pull should be minting new rows into.
+ *
+ * religion has the exact same shape of bug (also a raw passthrough into a column
+ * EmployeeModel::get() joins against master_religions.religion_code the same way) but is
+ * deliberately NOT fixed here -- Origami's documented religion names ("Buddha", "Judah",
+ * "Irreligious", "Paganism") don't line up cleanly with this app's master_religions rows
+ * ("Buddhist", "Judaism", "None", "Other"; there's also no "Sikh" equivalent on Origami's side),
+ * so a correct fix needs an explicit alias table, not the same direct name-match used for
+ * nationality. Flagged for a follow-up request rather than guessed at here.
  */
 class PayrollSyncModel {
     private PDO $db;
@@ -266,12 +305,15 @@ class PayrollSyncModel {
                 $unmappedCount++;
             }
             $payType = in_array($item['pay_type'] ?? null, self::PAY_TYPES, true) ? $item['pay_type'] : null;
-            // deduct_sso / pass_pro are both tri-state on the wire (true/false/null) -- strict
-            // compare so "not sent" and "explicitly false" don't collapse into the same stored value.
+            // deduct_sso is a genuine JSON boolean on the wire (true/false/null) -- strict compare so
+            // "not sent" and "explicitly false" don't collapse into the same stored value.
             $deductSso = array_key_exists('deduct_sso', $item) && $item['deduct_sso'] !== null
                 ? ($item['deduct_sso'] ? 1 : 0) : null;
-            $passPro = array_key_exists('pass_pro', $item) && $item['pass_pro'] !== null
-                ? ($item['pass_pro'] ? 1 : 0) : null;
+            // pass_pro is NOT a real boolean on the wire despite what it looks like (and despite the
+            // API doc describing it as one) -- see parseYesNoFlag()'s own docblock for why a plain
+            // truthy cast here was silently wrong (every non-empty string, including "N", is truthy
+            // in PHP).
+            $passPro = array_key_exists('pass_pro', $item) ? $this->parseYesNoFlag($item['pass_pro']) : null;
             $bankNoEnc = isset($item['pay_bank_no']) ? EncryptionService::encrypt((string)$item['pay_bank_no']) : null;
             $idCardEnc = isset($item['idcard']) ? EncryptionService::encrypt((string)$item['idcard']) : null;
             // spouse/children (2026-08-18 rev 2) carry nested PII (spouse_idcard, child_idcard,
@@ -503,7 +545,8 @@ class PayrollSyncModel {
         $stmt = $this->db->prepare("SELECT employee_id, pay_type, pay_bank_code, pay_bank_name, pay_bank_no, deduct_sso,
                 id_card_no, id_card_issue_date, id_card_expire_date, key_version,
                 dept_id, dept_description, posi_id, position_name,
-                title, gender, date_birth, nickname, nationality, religion, marital_status, email, emp_tel
+                title, gender, date_birth, nickname, nationality, religion, marital_status, email, emp_tel,
+                pass_pro, pass_pro_date
             FROM payroll_sync_items WHERE process_id = :process_id AND mapping_status = 'mapped' AND employee_id IS NOT NULL");
         $stmt->execute([':process_id' => $processRowId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -688,6 +731,75 @@ class PayrollSyncModel {
      * stance as the DRAFT statutory exporters elsewhere in this app. military_service has no
      * equivalent normalization at all (see class docblock) -- intentionally never mapped.
      */
+    /**
+     * Resolves an incoming display name (e.g. "Thai") to this app's own master_nationalities
+     * nationality_code (e.g. "TH") -- see the class docblock's 2026-08-19-revision note for why a
+     * raw passthrough is wrong here. Matches nationality_name_en first (what Origami's payload
+     * actually sends per its own field notes), nationality_name_th as a fallback in case that ever
+     * changes, both case-insensitive. Returns null on no match -- resolve-only, never creates a new
+     * row (a fixed global country list, unlike resolveOrCreateBankId()'s per-company banks).
+     */
+    private function resolveNationalityCode(?string $raw): ?string {
+        $name = trim((string)$raw);
+        if ($name === '') {
+            return null;
+        }
+        $stmt = $this->db->prepare("SELECT nationality_code FROM master_nationalities
+            WHERE LOWER(nationality_name_en) = LOWER(:name) OR LOWER(nationality_name_th) = LOWER(:name) LIMIT 1");
+        $stmt->execute([':name' => $name]);
+        $code = $stmt->fetchColumn();
+        return $code !== false ? (string)$code : null;
+    }
+
+    /**
+     * items[].pass_pro is documented (PAYROLL_SYNC_API.md) as a genuine JSON boolean, but the real
+     * wire value is the string "Y"/"N" (2026-08-19, explicit correction from the business side) --
+     * a plain `$raw ? 1 : 0` truthy cast was silently WRONG for this: every non-empty PHP string,
+     * including "N", is truthy, so the old code stored a "not yet passed" employee as pass_pro=1
+     * (passed). Also accepts a genuine boolean or "1"/"0" so this keeps working unchanged if the
+     * sending side is ever corrected to send real JSON booleans as the doc claims. Anything else
+     * unrecognized -> null (don't guess), same "don't map what isn't verified" stance already used
+     * for normalizeTitle()/normalizeGender()/normalizeMaritalStatus() below.
+     */
+    private function parseYesNoFlag($raw): ?int {
+        if ($raw === null) {
+            return null;
+        }
+        if (is_bool($raw)) {
+            return $raw ? 1 : 0;
+        }
+        $val = strtoupper(trim((string)$raw));
+        if (in_array($val, ['Y', 'YES', 'TRUE', '1'], true)) {
+            return 1;
+        }
+        if (in_array($val, ['N', 'NO', 'FALSE', '0'], true)) {
+            return 0;
+        }
+        return null;
+    }
+
+    /**
+     * Derives the 3-state probation status a human actually cares about from the stored pass_pro +
+     * pass_pro_date pair, per explicit business rule (2026-08-19): pass_pro=N with pass_pro_date
+     * still blank means probation is still in progress (not evaluated yet); pass_pro=N WITH a
+     * pass_pro_date means it WAS evaluated and the employee did not pass -- that date is an
+     * evaluation/failure date here, not a "passed" date despite the column's name; pass_pro=Y means
+     * passed (pass_pro_date is then the pass date). Returns null when pass_pro itself is null (never
+     * sent/not on file for this employee) -- nothing to derive. Used by getProcessDetail() for
+     * display AND by applyOneEmployeeMasterFields() to drive the probation -> permanent
+     * auto-transition (2026-08-19, explicit request) -- see this class's own docblock for the full
+     * guard conditions (only probation -> permanent, never any other status).
+     */
+    private function deriveProbationStatus(?int $passPro, ?string $passProDate): ?string {
+        if ($passPro === null) {
+            return null;
+        }
+        if ($passPro === 1) {
+            return 'passed';
+        }
+        return !empty($passProDate) ? 'failed' : 'on_probation';
+    }
+
     private function normalizeTitle(?string $raw): ?string {
         $map = ['mr' => 'mr', 'mr.' => 'mr', 'mister' => 'mr', 'mrs' => 'mrs', 'mrs.' => 'mrs', 'ms' => 'ms', 'ms.' => 'ms', 'miss' => 'ms'];
         $key = strtolower(trim((string)$raw));
@@ -707,7 +819,7 @@ class PayrollSyncModel {
     }
 
     private function applyOneEmployeeMasterFields(int $compId, int $employeeId, array $row, ?int $triggeredBy): bool {
-        $stmt = $this->db->prepare("SELECT id_card_no, tax_id_no, passport_no, bank_account_no, sso_no, spouse_id_card_no, key_version
+        $stmt = $this->db->prepare("SELECT id_card_no, tax_id_no, passport_no, bank_account_no, sso_no, spouse_id_card_no, key_version, employment_status
             FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
         $current = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -810,9 +922,10 @@ class PayrollSyncModel {
             $set[] = "nickname_en = :nickname_en";
             $params[':nickname_en'] = $row['nickname'];
         }
-        if (!empty($row['nationality'])) {
+        $nationalityCode = $this->resolveNationalityCode($row['nationality'] ?? null);
+        if ($nationalityCode !== null) {
             $set[] = "nationality = :nationality";
-            $params[':nationality'] = $row['nationality'];
+            $params[':nationality'] = $nationalityCode;
         }
         if (!empty($row['religion'])) {
             $set[] = "religion = :religion";
@@ -828,6 +941,21 @@ class PayrollSyncModel {
         if (!empty($row['emp_tel'])) {
             $set[] = "office_tel = :office_tel";
             $params[':office_tel'] = $row['emp_tel'];
+        }
+
+        // Probation -> Permanent auto-transition (2026-08-19, explicit request -- reverses the
+        // earlier "never auto-applied, human decision" stance for this one specific direction only).
+        // Only fires when this pull's derived probation_status is 'passed' (see
+        // deriveProbationStatus()'s docblock for the pass_pro/pass_pro_date rule) AND the employee's
+        // CURRENT employment_status is still exactly 'probation' -- so this can only ever move
+        // probation -> permanent, never touch someone already contract/resigned/terminated (a
+        // resigned employee who happens to have an old pass_pro=Y on file must never be silently
+        // reactivated), and is naturally idempotent (a re-pull after the transition already
+        // happened finds employment_status no longer 'probation' and does nothing further).
+        $passProValue = array_key_exists('pass_pro', $row) && $row['pass_pro'] !== null ? (int)$row['pass_pro'] : null;
+        $probationStatus = $this->deriveProbationStatus($passProValue, $row['pass_pro_date'] ?? null);
+        if ($probationStatus === 'passed' && ($current['employment_status'] ?? null) === 'probation') {
+            $set[] = "employment_status = 'permanent'";
         }
 
         if ($touchedEncrypted) {
@@ -955,6 +1083,14 @@ class PayrollSyncModel {
             $childrenJson = EncryptionService::decrypt($item['children_data'] ?? null, $keyVersion);
             $children = $childrenJson !== null ? json_decode($childrenJson, true) : [];
             $item['children'] = is_array($children) ? array_map([$this, 'maskNestedIdLikeFields'], $children) : [];
+
+            // Derived 3-state probation status (2026-08-19) -- see deriveProbationStatus()'s own
+            // docblock. $item['pass_pro'] here is already the corrected 1/0/null stored at ingest
+            // time (parseYesNoFlag()), not the raw "Y"/"N" wire value.
+            $item['probation_status'] = $this->deriveProbationStatus(
+                $item['pass_pro'] !== null ? (int)$item['pass_pro'] : null,
+                $item['pass_pro_date'] ?? null
+            );
 
             unset($item['pay_bank_no'], $item['id_card_no'], $item['key_version'], $item['spouse_data'], $item['children_data']);
         }

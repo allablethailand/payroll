@@ -99,7 +99,22 @@ class PayrollController extends Controller {
         }
         $row['details'] = $this->model->getDetails($id, (int)$compId);
         $row['audit_log'] = $this->model->getAuditLog($id, (int)$compId);
+        $pedSettings = $this->model->getPedTypeSettings($id, (int)$compId);
+        $row['ped_type_settings'] = ['earning' => $pedSettings['earning'] ?? null, 'deduction' => $pedSettings['deduction'] ?? null];
         $this->json(['status' => true, 'data' => $row]);
+    }
+
+    public function savePedTypeSettings() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $itemType = (is_array($data) && isset($data['item_type'])) ? (string)$data['item_type'] : '';
+        $pedTypeIds = (is_array($data) && isset($data['ped_type_ids']) && is_array($data['ped_type_ids'])) ? $data['ped_type_ids'] : [];
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->savePedTypeSettings($id, (int)$compId, $itemType, $pedTypeIds, $this->userId(), $this->isAdmin()));
     }
 
     public function save() {
@@ -209,13 +224,20 @@ class PayrollController extends Controller {
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
         $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
-        $pedTypeId = (is_array($data) && isset($data['ped_type_id'])) ? (int)$data['ped_type_id'] : 0;
+        // ped_type_id is optional now -- omitted (or 0) means a custom, not-in-the-catalog item
+        // instead (custom_item_name + custom_item_type), see PayrollRunModel::addManualLine()'s
+        // docblock. At least one of the two forms must be present, checked below.
+        $pedTypeIdRaw = (is_array($data) && isset($data['ped_type_id'])) ? (int)$data['ped_type_id'] : 0;
+        $pedTypeId = $pedTypeIdRaw > 0 ? $pedTypeIdRaw : null;
         $amount = (is_array($data) && isset($data['amount']) && is_numeric($data['amount'])) ? (float)$data['amount'] : 0.0;
-        if (!$compId || $id <= 0 || $employeeId <= 0 || $pedTypeId <= 0) {
+        $note = (is_array($data) && isset($data['note'])) ? (string)$data['note'] : null;
+        $customItemName = (is_array($data) && isset($data['custom_item_name'])) ? (string)$data['custom_item_name'] : null;
+        $customItemType = (is_array($data) && isset($data['custom_item_type'])) ? (string)$data['custom_item_type'] : null;
+        if (!$compId || $id <= 0 || $employeeId <= 0 || ($pedTypeId === null && ($customItemName === null || trim($customItemName) === ''))) {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin()));
+        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType));
     }
 
     public function removeManualLine() {

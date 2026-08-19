@@ -10266,6 +10266,179 @@ CREATE TABLE `payroll_run_manual_lines` (
   CONSTRAINT `fk_payroll_run_manual_lines_ped_type` FOREIGN KEY (`ped_type_id`) REFERENCES `payroll_earning_deduction_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Per-run restriction on which payroll_earning_deduction_types get pulled into
+-- PayrollRunModel::recalculate()'s standing-PED-assignment lines (2026-08-19, explicit request):
+-- by default (no rows for a run) every active type is included -- same behavior as before this
+-- table existed. Saving ANY row here switches that run to "restricted" mode: only the listed
+-- ped_type_id's are included. is_sync_only types (e.g. trip allowance) always pass through
+-- regardless of this table's contents -- they're driven entirely by Origami sync data and were
+-- never offered as a selectable option here in the first place (same exclusion
+-- EmployeeEarningDeductionModel::activeOptions() already applies for the manual-line picker).
+-- Only meaningful for a normal 'payroll' run still in draft -- an 'incentive' run already has its
+-- own explicit per-employee item picker (payroll_run_manual_lines) and never reads this table.
+--
+
+CREATE TABLE `payroll_run_ped_type_settings` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `ped_type_id` int(11) NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_ped_type_settings` (`run_id`,`ped_type_id`),
+  KEY `idx_payroll_run_ped_type_settings_ped_type` (`ped_type_id`),
+  CONSTRAINT `fk_payroll_run_ped_type_settings_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_ped_type_settings_ped_type` FOREIGN KEY (`ped_type_id`) REFERENCES `payroll_earning_deduction_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Free-text comment per ad-hoc line (2026-08-19, explicit request) -- e.g. "August OT shortfall
+-- top-up" or "Deducted per HR memo #123", so a reviewer looking at the Manage Payment Items list
+-- later (including after markPaid, when the line becomes read-only history) knows WHY this specific
+-- one-off adjustment was made, not just what/how much. Optional -- amount alone is still valid.
+--
+
+ALTER TABLE `payroll_run_manual_lines`
+  ADD COLUMN `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `amount`;
+
+--
+-- Custom (not-in-the-catalog) manual line item (2026-08-19, explicit request): "ระบุ item ได้เอง
+-- ว่าจะจ่ายเพิ่มหรือหักจากอะไร" -- lets an admin type a free-text label + pick earning/deduction
+-- directly for a genuine one-off payment/deduction that isn't worth creating a standing
+-- payroll_earning_deduction_types catalog entry for. ped_type_id is now nullable: exactly one of
+-- (ped_type_id) or (custom_item_name + custom_item_type) is set per row, enforced at the
+-- application layer in PayrollRunModel::addManualLine() (same pattern as every other
+-- soft-delete/uniqueness rule in this project that isn't a DB constraint). custom_item_type only
+-- (no separate custom_item_name-is-earning-or-deduction column) because the type genuinely IS a
+-- free choice here, unlike a catalog item where item_type is fixed by the master record.
+--
+
+ALTER TABLE `payroll_run_manual_lines`
+  MODIFY COLUMN `ped_type_id` int(11) DEFAULT NULL,
+  ADD COLUMN `custom_item_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ped_type_id`,
+  ADD COLUMN `custom_item_type` enum('earning','deduction') COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `custom_item_name`;
+
+--
+-- Employee Setup form trimmed to Payroll-relevant fields (2026-08-19, explicit request): the
+-- registered/contact address and emergency contact sections are hidden in
+-- app/views/employee/detail.php (never read by any statutory calc/report/sync in this app) and
+-- dropped from EmployeeModel::requiredColumns() -- these 6 columns were NOT NULL specifically
+-- because they used to be mandatory form fields; now that the form can legitimately submit them
+-- blank, they need to accept NULL like every other optional column in this table (see e.g.
+-- nickname_th/company_email/driver_license_no, all nullable already) or every save with them left
+-- blank would fail outright (EmployeeModel::save() converts an empty string to NULL for every
+-- non-boolean/non-int column uniformly, not just the ones that happen to already allow it).
+--
+
+ALTER TABLE `employees`
+  MODIFY COLUMN `address_line_1_register` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `address_line_1_contact` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `emergency_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `emergency_surname` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `emergency_relationship` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `emergency_mobile` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+
+COMMIT;
+
+--
+-- 2026-08-19: employees.cycle_id -- explicit request ("ใน Tab เงินเดือนมีให้เลือกรอบการจ่ายได้ด้วย")
+-- to let an employee be assigned to a specific payroll_cycles row from the Employee Detail Salary
+-- tab. Nullable/optional (not added to EmployeeModel::requiredColumns()) -- same FK convention as
+-- fk_employees_shift/fk_employees_work_location (ON DELETE SET NULL ON UPDATE CASCADE) so deleting
+-- a cycle later never blocks or cascades into employee data, it just clears the assignment.
+--
+-- NOTE: PayrollRunModel::recalculate()'s cycle-based employee eligibility does NOT read this column
+-- yet -- it remains purely employment_date/employment_end_date range-based. This column is a plain
+-- data field for now (display + assignment only); wiring it into run eligibility was not requested
+-- and would be a separate, more consequential change to the payroll calculation engine.
+--
+
+ALTER TABLE `employees`
+  ADD COLUMN `cycle_id` int(11) DEFAULT NULL COMMENT 'assigned payroll cycle (payroll_cycles.id)' AFTER `shift_id`;
+
+ALTER TABLE `employees`
+  ADD KEY `idx_employees_cycle` (`cycle_id`);
+
+ALTER TABLE `employees`
+  ADD CONSTRAINT `fk_employees_cycle` FOREIGN KEY (`cycle_id`) REFERENCES `payroll_cycles` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+COMMIT;
+
+--
+-- 2026-08-19: independent tab-by-tab saving on Employee Detail (explicit request -- saving one tab
+-- used to require every OTHER tab's required fields to already be filled too, because
+-- EmployeeModel::save() rejected the whole request if ANY of requiredColumns() was empty regardless
+-- of which tab was actually being saved -- a brand-new employee couldn't even save the Info tab
+-- alone). These 16 columns were NOT NULL with no DEFAULT, which made that gate unavoidable at the DB
+-- level too; relaxed to nullable so a partially-filled record can exist mid-onboarding.
+-- department_id/role_id/position_id/branch_id/work_location_id/shift_id/cycle_id were ALREADY
+-- nullable at the DB level (only EmployeeModel::save()'s application-layer gate was blocking them) --
+-- no ALTER needed for those.
+--
+-- employee_no is deliberately NOT included here -- it stays NOT NULL, the one field EmployeeModel::
+-- save() still hard-requires on every save regardless of tab, since it's the row's business identity
+-- (used as the URL/lookup key everywhere) and has no natural default.
+--
+-- What now gates whether an employee can actually be run through payroll is the "Verify Status"
+-- (employees.is_payroll_ready, already existed, already read by PayrollRunModel::recalculate() --
+-- see its own comments) computed fresh on every save from EmployeeModel::isPayrollReady() instead of
+-- being hardcoded to 1. See EmployeeModel::save()/isPayrollReady() for the exact rule.
+--
+
+ALTER TABLE `employees`
+  MODIFY COLUMN `title` enum('mr','mrs','ms') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `name_th` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `surname_th` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `name_en` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `surname_en` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `date_of_birth` date DEFAULT NULL,
+  MODIFY COLUMN `nationality` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `personal_email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `mobile_no` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `employment_date` date DEFAULT NULL,
+  MODIFY COLUMN `employment_status` enum('probation','permanent','contract','resigned','terminated') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `employment_type` enum('full_time','part_time','daily','internship') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `workforce_type` enum('office','field','remote','hybrid') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `record_time_method` enum('fingerprint','qr_code','mobile_app','manual','none') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `salary_effective_date` date DEFAULT NULL,
+  MODIFY COLUMN `tax_calculation_method` enum('average','actual') COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+
+COMMIT;
+
+--
+-- 2026-08-19: employees.mobile_country_code -- explicit request ("เบอร์โทรศัพท์ให้ใส่ Prefix ได้") to
+-- let mobile_no carry a calling-code prefix (+66/+65/+60/+1/...). Kept as its own column rather than
+-- merged into mobile_no itself -- that column is varchar(10) and validated against a strict 9-10 (TH)
+-- / 7-15 (non-TH) digit-only regex in EmployeeModel::save(), neither of which should have to account
+-- for a prefix. Display-only pairing (input-group in the view) -- not read by any calc/report, so no
+-- format validation beyond what the static dropdown itself constrains it to.
+--
+
+ALTER TABLE `employees`
+  ADD COLUMN `mobile_country_code` varchar(5) COLLATE utf8mb4_unicode_ci DEFAULT '+66' COMMENT 'phone country calling code prefix, display-only alongside mobile_no' AFTER `mobile_no`;
+
+COMMIT;
+
+--
+-- 2026-08-19: employee_earning_deductions custom-item support -- explicit request ("ในส่วนของ Item
+-- ให้สามารถใส่เองได้ โดยบอกว่าเป็นรายได้หรือรายหัก"). Same shape as payroll_run_manual_lines' own
+-- custom_item_name/custom_item_type pair (added earlier this session for per-run ad-hoc adjustments)
+-- -- ped_type_id relaxed to nullable so a row can be EITHER a catalog reference (ped_type_id set,
+-- custom_item_name/type both NULL) OR a free-text item (ped_type_id NULL, both custom_item_* set).
+-- Enforced as an either/or at the application layer in EmployeeEarningDeductionModel::save(), not a
+-- DB CHECK constraint (same reasoning as every other app-layer invariant in this project).
+--
+
+ALTER TABLE `employee_earning_deductions`
+  MODIFY COLUMN `ped_type_id` int(11) DEFAULT NULL;
+
+ALTER TABLE `employee_earning_deductions`
+  ADD COLUMN `custom_item_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ped_type_id`,
+  ADD COLUMN `custom_item_type` enum('earning','deduction') COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `custom_item_name`;
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
