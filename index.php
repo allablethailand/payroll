@@ -226,6 +226,7 @@
     $router->post('api/employee.earning-deduction.options', 'EmployeeController@earningDeductionOptions');
     $router->get('api/employee.earning-deduction.list', 'EmployeeController@earningDeductionList');
     $router->get('api/employee.earning-deduction.get', 'EmployeeController@earningDeductionGet');
+    $router->get('api/employee.earning-deduction.preview-installments', 'EmployeeController@earningDeductionPreviewInstallments');
     $router->post('api/employee.earning-deduction.save', 'EmployeeController@earningDeductionSave');
     $router->post('api/employee.earning-deduction.status', 'EmployeeController@earningDeductionStatus');
     $router->post('api/employee.earning-deduction.delete', 'EmployeeController@earningDeductionDelete');

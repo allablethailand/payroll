@@ -5,7 +5,10 @@
     height: 56px;
     min-width: 56px;
     border-radius: 50%;
-    background: #007aff;
+    /* 2026-08-20 color-consistency pass: was a plain #007aff blue that didn't match anything
+       else in the app -- reuse the same orange gradient .page-header-card-icon/the profile-
+       photo upload badge already use, instead of a one-off color. */
+    background: linear-gradient(135deg, #ffab26, #FF9900);
     color: #fff;
     display: flex;
     align-items: center;
@@ -34,24 +37,62 @@
     color: #fff;
     vertical-align: middle;
 }
-/* Mobile prefix select2 inside a Bootstrap input-group (2026-08-19, explicit request: "ให้อยู่ติดกัน
-   เป็น input group"). This app's initSelect2()'s native-mode config always sets an inline
-   width:100% on the .select2-container it creates (100% of the immediate parent, here the
-   .input-group) -- without overriding that, the prefix dropdown would try to claim the input-group's
-   FULL width instead of sitting compactly next to the mobile number field. !important is needed to
-   beat that inline style. Border-radius flattened on the touching sides so the pair reads as one
-   connected control, same as any other input-group in this app. */
-.input-group > .select2-container {
-    width: 130px !important;
+/* Mobile No. field uses intl-tel-input (2026-08-20, replaced the old select2 country-code
+   input-group). intl-tel-input's own .iti wrapper defaults to display:inline-block sized to its
+   content, so it doesn't stretch to fill the .col-sm-4 the way every other .form-control in this
+   form does -- force it to behave like a normal block-level field instead. */
+#mobile_no_wrap .iti {
+    display: block;
+    width: 100%;
+}
+/* Dependent card icon badge (2026-08-20, "ปรับ Card ให้สวยขึ้น") -- same orange-gradient circular
+   treatment as .employee-avatar-lg/.page-header-card-icon above, reused here instead of a one-off
+   color so the new inline dependent cards read as part of the same page. */
+.dependent-card-icon {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .95rem;
+    margin-top: 1.6rem;
+}
+/* #eedModal body scroll (2026-08-21, reported still not working after adding Bootstrap's own
+   .modal-dialog-scrollable class -- that class/CSS mechanism is verified present and correct
+   (node_modules/bootstrap/dist/css/bootstrap.min.css's own .modal-dialog-scrollable rule caps
+   .modal-dialog height and sets .modal-body{overflow-y:auto}), and nothing else in this file or
+   style.css overrides modal-content/modal-body, so the exact cause couldn't be reproduced/found
+   in code review alone here. Reinforcing it explicitly and scoped to just this modal, redundant
+   with the Bootstrap class but not dependent on it working, as a robust belt-and-suspenders fix. */
+#eedModal .modal-dialog {
+    max-height: calc(100vh - 3.5rem);
+}
+#eedModal .modal-content {
+    max-height: calc(100vh - 3.5rem);
+    overflow: hidden;
+}
+/* .modal-content is display:flex;flex-direction:column (Bootstrap's own rule) -- overflow-y:auto
+   here is enough on its own, .modal-body naturally flexes to fill whatever space is left under
+   the header/footer, no hardcoded height subtraction needed. */
+#eedModal .modal-body {
+    overflow-y: auto !important;
+}
+/* Responsive tab scroll (2026-08-21, explicit request: "ตอนนี้จอเล็กมันตกบรรทัดลงมา") -- Bootstrap's
+   .nav-tabs wraps onto a second line by default once it can't fit (flex-wrap:wrap), which with 8
+   tabs pushes tab-pane content down awkwardly on narrow screens. flex-nowrap + horizontal
+   overflow scroll keeps it one line, scrollable, on any width instead. */
+#employeeTabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+#employeeTabs .nav-item {
     flex: 0 0 auto;
-}
-.input-group > .select2-container .select2-selection {
-    border-top-right-radius: 0 !important;
-    border-bottom-right-radius: 0 !important;
-}
-.input-group > .select2-container + .form-control {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
 }
 </style>
 <div class="container container-body">
@@ -416,7 +457,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
-                <button type="button" class="btn btn-warning" id="btnNextContact">
+                <button type="button" class="btn btn-primary" id="btnNextContact">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -462,22 +503,15 @@
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="mobile_no">Mobile No.</span> <span class="text-danger">*</span></label>
                 </div>
-                <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <!-- Flag emoji + code (2026-08-19, explicit request: "มีธงชาติด้วย") -- plain
-                             UTF-8 characters in the <option> text, no image assets/extra markup
-                             needed; select2-native's default templating just renders option.text
-                             as-is in both the closed state and the dropdown list. Default is the
-                             first option (+66), same as employees.mobile_country_code's own DB
-                             DEFAULT -- no explicit `selected` needed. -->
-                        <select class="form-select select2-native" name="mobile_country_code" id="mobile_country_code" style="max-width:130px;flex:0 0 130px;">
-                            <option value="+66">🇹🇭 +66</option>
-                            <option value="+65">🇸🇬 +65</option>
-                            <option value="+60">🇲🇾 +60</option>
-                            <option value="+1">🇺🇸 +1</option>
-                        </select>
-                        <input type="text" class="form-control required" name="mobile_no" id="mobile_no" maxlength="10">
-                    </div>
+                <div class="col-sm-4 mt-3" id="mobile_no_wrap">
+                    <!-- Country flag/dial-code picker via intl-tel-input (2026-08-20, replaced the
+                         old hardcoded 4-country select2 dropdown -- real flag icons + full country
+                         list + number-length validation instead of a fixed TH/SG/MY/US list).
+                         mobile_country_code stays a hidden input kept in sync by detail.js
+                         (syncMobileCountryCode()) so the submitted shape ("+66" + national digits
+                         in mobile_no) is unchanged from before -- backend validation/schema untouched. -->
+                    <input type="tel" class="form-control required" name="mobile_no" id="mobile_no" maxlength="15">
+                    <input type="hidden" name="mobile_country_code" id="mobile_country_code" value="+66">
                 </div>
                 <!-- Hidden 2026-08-19 (not needed for Payroll): preboarding-portal onboarding action, not a payroll field. -->
                 <div class="col-sm-12 mt-3 d-none">
@@ -592,7 +626,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
-                <button type="button" class="btn btn-warning" id="btnNextEmployment">
+                <button type="button" class="btn btn-primary" id="btnNextEmployment">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -696,6 +730,43 @@
                         <option value="daily" data-i18n="daily">Daily wage</option>
                         <option value="internship" data-i18n="internship">Internship</option>
                     </select>
+                </div>
+            </div>
+            <!-- Resignation/Termination fields (2026-08-21, explicit request: "ใน Tab การจ้างงาน
+                 ลาออก เลิกจ้าง อยากให้เพิ่มให้ใส่วันที่มีผล และวันที่สุดท้ายของการดึงไปทำรายงาน และใส่
+                 เหตุผลได้ด้วย") -- shown only when Employment Status is Resigned/Terminated, same
+                 show/hide-on-select convention as applyEmployeeTypeRequired()/
+                 applyMilitaryStatusVisibility() elsewhere on this page (see
+                 applyEmploymentEndFieldsVisibility() in detail.js). employment_end_date already
+                 existed and is read extensively by PayrollRunModel for final-run pro-rating/
+                 eligibility, but had no UI field until now -- effective date and this report-cutoff
+                 date are deliberately two separate fields (confirmed with the user), not the same
+                 date shown twice. None of the 3 are .required -- presence isn't save-blocking here,
+                 same philosophy as most other fields on this page; only format matters where it does. -->
+            <div class="row d-none" id="employmentEndFields">
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label"><span data-i18n="effective_date">Effective Date</span></label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control datepicker" name="employment_status_effective_date" id="employment_status_effective_date" autocomplete="off">
+                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                    </div>
+                </div>
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label"><span data-i18n="employment_last_report_date">Last Date for Reports</span></label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control datepicker" name="employment_end_date" id="employment_end_date" autocomplete="off">
+                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                    </div>
+                </div>
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label"><span data-i18n="reason">Reason</span></label>
+                </div>
+                <div class="col-sm-10 mt-3">
+                    <textarea class="form-control" name="employment_end_reason" id="employment_end_reason" maxlength="255" rows="2"></textarea>
                 </div>
             </div>
             <!-- Hidden 2026-08-19 (not needed for Payroll): none of these 4 fields are read anywhere
@@ -814,7 +885,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
-                <button type="button" class="btn btn-warning" id="btnNextSalary">
+                <button type="button" class="btn btn-primary" id="btnNextSalary">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -894,7 +965,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
-                <button type="button" class="btn btn-warning" id="btnNextSocial">
+                <button type="button" class="btn btn-primary" id="btnNextSocial">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -962,7 +1033,11 @@
                  (its detail fields are hidden, see below), leaving the right half of the row empty
                  when stacked full-width -- SSO/PVD placed as two columns of the same row instead.
                  SSO's own detail fields (sso_no/sso_start_date) only show once "Enrolled" is checked
-                 (#ssoDetailFields, toggled in detail.js) -- also explicit request. -->
+                 (#ssoDetailFields, toggled in detail.js) -- also explicit request.
+                 Wrapped in .detail-section (2026-08-20, "อยากให้ปรับให้ดูสวยขึ้น") -- same lighter
+                 bordered sub-card already used by every section on the Family tab, reused here
+                 instead of a bare <div class="row"> for a consistent look across tabs. -->
+            <div class="detail-section">
             <div class="row">
                 <div class="col-sm-6">
                     <h6 class="text-secondary fw-bold mb-3 mt-2">
@@ -1055,6 +1130,7 @@
                     </div>
                 </div>
             </div>
+            </div>
             <!-- Hidden 2026-08-19 (not needed for Payroll): group insurance/welfare tracking, unrelated
                  to payroll calculation. Entire section stays in the DOM. -->
             <div class="d-none">
@@ -1083,7 +1159,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
-                <button type="button" class="btn btn-warning" id="btnNextFamily">
+                <button type="button" class="btn btn-primary" id="btnNextFamily">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -1104,13 +1180,21 @@
                     <label class="label label-head bg-head-first rounded-2 text-white">1</label>
                     <span data-i18n="spouse">Spouse</span>
                 </h6>
-                <div class="mt-3">
-                    <label class="form-label d-block mb-1"><span data-i18n="has_dependent_spouse">Has spouse with no income (eligible for tax allowance)</span></label>
-                    <div class="btn-group btn-group-sm" role="group" id="hasSpouseToggle">
-                        <button type="button" class="btn btn-outline-brand" data-value="no"><span data-i18n="no">No</span></button>
-                        <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                <!-- Row layout matching Parents' question row (2026-08-21, explicit request: "ปุ่ม
+                     ใช่ ไม่ใช่ ของคู่สมรส และบุตร วางในตำแหน่งเดียวกับพ่อแม่") -- was a stacked
+                     label-above-toggle block, now the same col-sm-3/col-sm-9 row every Yes/No
+                     question on this tab (Father/Mother, and now Spouse/Children too) uses. -->
+                <div class="row">
+                    <div class="col-sm-3 align-self-center">
+                        <label class="form-label mb-0"><span data-i18n="has_dependent_spouse">Has spouse with no income (eligible for tax allowance)</span></label>
                     </div>
-                    <input type="checkbox" class="d-none" name="has_spouse" id="has_spouse">
+                    <div class="col-sm-9">
+                        <div class="btn-group btn-group-sm" role="group" id="hasSpouseToggle">
+                            <button type="button" class="btn btn-outline-brand" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                        </div>
+                        <input type="checkbox" class="d-none" name="has_spouse" id="has_spouse">
+                    </div>
                 </div>
                 <div id="spouseDetailFields" class="row d-none">
                     <div class="col-sm-2 mt-3">
@@ -1127,40 +1211,44 @@
                     </div>
                 </div>
             </div>
-            <!-- Card layout + has-children gate (2026-08-19, explicit request) -- table replaced with
-                 a card per dependent, edited via a shared modal (#childModal, click the card's Edit
-                 icon) rather than inline table-cell editing. "Does this employee have children?"
-                 defaults to Yes automatically once any real dependent card exists (see
-                 renderChildCards() in detail.js) -- the toggle+count are purely a client-side
-                 add-helper (not persisted as their own field): entering a count and clicking Add
-                 appends that many blank "click to fill in" cards on top of whatever's already saved,
-                 it never deletes or auto-fills anything. Selecting "No" just hides the section again;
-                 it does not delete existing dependents (an existing "Yes, has kids" employee should
-                 never lose data just from toggling this while looking at the form). -->
+            <!-- Count-driven inline cards (2026-08-20, replaces the old count+Add-button+modal flow,
+                 explicit request: "ปรับเป็นใส่จำนวน แล้วแสดง Card ลูกให้กรอก Auto 1 คน 1 แถว ไม่ต้อง
+                 กดปุ่มเพิ่ม") -- typing a number in #dependentCount directly renders that many
+                 full-width, inline-editable cards (see syncDependentCardCount()/renderDependentCards()
+                 in detail.js), no Add-button click and no modal. "Does this employee have children?"
+                 still defaults to Yes automatically once any real dependent card exists -- unchanged
+                 from before. Reducing the count below however many cards already have data prompts a
+                 SweetAlert2 confirm first (explicit request) rather than silently discarding it.
+                 Saving happens only via the Family tab's single Save button (see saveFamilyTab() --
+                 every visible card gets (re)saved together with everything else on this tab), not per
+                 card, so there's no per-card Save button either. -->
             <div class="detail-section">
                 <h6 class="text-secondary fw-bold mb-3 mt-0">
                     <label class="label label-head bg-head-first rounded-2 text-white">2</label>
                     <span data-i18n="children_dependents">Children / Dependents</span>
                 </h6>
-                <div class="mt-3">
-                    <label class="form-label d-block mb-1"><span data-i18n="has_children_question">Does this employee have children?</span></label>
-                    <div class="btn-group btn-group-sm" role="group" id="hasChildrenToggle">
-                        <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                        <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                <!-- Row layout matching Parents' question row (2026-08-21, explicit request -- see
+                     the matching comment on the Spouse question above). -->
+                <div class="row">
+                    <div class="col-sm-3 align-self-center">
+                        <label class="form-label mb-0"><span data-i18n="has_children_question">Does this employee have children?</span></label>
+                    </div>
+                    <div class="col-sm-9">
+                        <div class="btn-group btn-group-sm" role="group" id="hasChildrenToggle">
+                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                        </div>
                     </div>
                 </div>
                 <div id="childrenSection" class="d-none">
                     <div class="mt-3">
-                        <div class="input-group" style="max-width:320px;">
+                        <div class="input-group" style="max-width:280px;">
                             <span class="input-group-text" data-i18n="number_of_children">Number of Children</span>
-                            <input type="number" min="1" value="1" class="form-control" id="dependentAddCount">
-                            <button type="button" class="btn text-white" id="btnAddDependent" style="background-color:#FF9900;border-color:#FF9900;">
-                                <i class="fas fa-plus me-1"></i><span data-i18n="add">Add</span>
-                            </button>
+                            <input type="number" min="0" value="0" class="form-control" id="dependentCount">
                         </div>
                     </div>
-                    <p class="text-secondary small mb-0 mt-3 d-none" id="dependentEmptyHint" data-i18n="child_empty_hint">No dependents added yet -- enter a count above and click Add.</p>
-                    <div class="row mt-3" id="dependentCardsContainer"></div>
+                    <p class="text-secondary small mb-0 mt-3 d-none" id="dependentEmptyHint" data-i18n="child_empty_hint">Enter a number above to add dependent cards.</p>
+                    <div class="mt-3" id="dependentCardsContainer"></div>
                 </div>
             </div>
             <!-- Fixed Father/Mother slots (2026-08-19, explicit follow-up request: "มีพ่อแม่แค่ 2 คน
@@ -1179,55 +1267,75 @@
                     <label class="label label-head bg-head-first rounded-2 text-white">3</label>
                     <span data-i18n="parents">Parents (Tax Allowance)</span>
                 </h6>
+                <!-- Each parent is its own full-width row (2026-08-20, explicit request: "สิทธิ์
+                     บิดามารดา ให้เป็นแถวใครแถวมัน") -- was a cramped col-sm-6/col-sm-6 pair, now
+                     Father then Mother stacked, each using this page's own col-sm-2/col-sm-4
+                     label/input row ratio (same as e.g. the Contact tab) instead of the half-width
+                     stacked-label layout. Save button removed -- Father/Mother now save together
+                     with everything else on this tab via the one Save button (saveFamilyTab() in
+                     detail.js); only the immediate, already-confirmed Delete action remains here. -->
                 <div class="row">
-                    <div class="col-sm-6">
-                        <div class="mt-3">
-                            <label class="form-label d-block mb-1"><span data-i18n="claim_father_question">Claim father for tax allowance?</span></label>
-                            <div class="btn-group btn-group-sm" role="group" id="useFatherToggle">
-                                <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
-                            </div>
-                        </div>
-                        <div id="fatherDetailFields" class="d-none mt-3">
-                            <input type="hidden" id="parent_father_id">
-                            <div class="mb-2">
-                                <label class="form-label mb-1"><span data-i18n="name">Name</span></label>
-                                <input type="text" class="form-control form-control-sm" id="parent_father_name">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label mb-1"><span data-i18n="id_card_no">ID Card No.</span></label>
-                                <input type="text" class="form-control form-control-sm" id="parent_father_id_card_no" maxlength="13">
-                            </div>
-                            <button type="button" class="btn btn-sm btn-warning" id="btnSaveFather"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
-                            <button type="button" class="btn btn-sm btn-link text-danger d-none" id="btnDeleteFather" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
+                    <div class="col-sm-3 align-self-center">
+                        <label class="form-label mb-0"><span data-i18n="claim_father_question">Claim father for tax allowance?</span></label>
+                    </div>
+                    <div class="col-sm-9">
+                        <div class="btn-group btn-group-sm" role="group" id="useFatherToggle">
+                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                     </div>
-                    <div class="col-sm-6">
-                        <div class="mt-3">
-                            <label class="form-label d-block mb-1"><span data-i18n="claim_mother_question">Claim mother for tax allowance?</span></label>
-                            <div class="btn-group btn-group-sm" role="group" id="useMotherToggle">
-                                <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
-                            </div>
+                </div>
+                <div id="fatherDetailFields" class="row mt-3 d-none">
+                    <input type="hidden" id="parent_father_id">
+                    <div class="col-sm-2 align-self-center">
+                        <label class="form-label mb-0"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
+                    </div>
+                    <div class="col-sm-4">
+                        <input type="text" class="form-control" id="parent_father_name">
+                    </div>
+                    <div class="col-sm-2 align-self-center">
+                        <label class="form-label mb-0"><span data-i18n="id_card_no">ID Card No.</span></label>
+                    </div>
+                    <div class="col-sm-3">
+                        <input type="text" class="form-control" id="parent_father_id_card_no" maxlength="13">
+                    </div>
+                    <div class="col-sm-1 d-flex align-items-center justify-content-end">
+                        <button type="button" class="btn btn-sm btn-link text-danger d-none" id="btnDeleteFather" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                </div>
+                <hr class="my-4 text-muted opacity-25">
+                <div class="row">
+                    <div class="col-sm-3 align-self-center">
+                        <label class="form-label mb-0"><span data-i18n="claim_mother_question">Claim mother for tax allowance?</span></label>
+                    </div>
+                    <div class="col-sm-9">
+                        <div class="btn-group btn-group-sm" role="group" id="useMotherToggle">
+                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
-                        <div id="motherDetailFields" class="d-none mt-3">
-                            <input type="hidden" id="parent_mother_id">
-                            <div class="mb-2">
-                                <label class="form-label mb-1"><span data-i18n="name">Name</span></label>
-                                <input type="text" class="form-control form-control-sm" id="parent_mother_name">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label mb-1"><span data-i18n="id_card_no">ID Card No.</span></label>
-                                <input type="text" class="form-control form-control-sm" id="parent_mother_id_card_no" maxlength="13">
-                            </div>
-                            <button type="button" class="btn btn-sm btn-warning" id="btnSaveMother"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
-                            <button type="button" class="btn btn-sm btn-link text-danger d-none" id="btnDeleteMother" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
-                        </div>
+                    </div>
+                </div>
+                <div id="motherDetailFields" class="row mt-3 d-none">
+                    <input type="hidden" id="parent_mother_id">
+                    <div class="col-sm-2 align-self-center">
+                        <label class="form-label mb-0"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
+                    </div>
+                    <div class="col-sm-4">
+                        <input type="text" class="form-control" id="parent_mother_name">
+                    </div>
+                    <div class="col-sm-2 align-self-center">
+                        <label class="form-label mb-0"><span data-i18n="id_card_no">ID Card No.</span></label>
+                    </div>
+                    <div class="col-sm-3">
+                        <input type="text" class="form-control" id="parent_mother_id_card_no" maxlength="13">
+                    </div>
+                    <div class="col-sm-1 d-flex align-items-center justify-content-end">
+                        <button type="button" class="btn btn-sm btn-link text-danger d-none" id="btnDeleteMother" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
                     </div>
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-4">
-                <button type="button" class="btn btn-warning" id="btnNextDocuments">
+                <button type="button" class="btn btn-primary" id="btnNextDocuments">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>
@@ -1292,7 +1400,7 @@
     </div>
 </div>
 <div class="modal fade" id="eedModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="eedModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold text-secondary" id="eedModalLabel">
@@ -1313,8 +1421,8 @@
                          app/views/payroll/detail.php), reusing its exact lang keys for consistency. -->
                     <div class="d-flex justify-content-end mb-3">
                         <div class="btn-group btn-group-sm" role="group" id="eedModeToggle">
-                            <button type="button" class="btn btn-outline-secondary active" data-mode="catalog"><i class="fa-solid fa-list me-1"></i><span data-i18n="manual_line_mode_catalog">From List</span></button>
-                            <button type="button" class="btn btn-outline-secondary" data-mode="custom"><i class="fa-solid fa-pen me-1"></i><span data-i18n="manual_line_mode_custom">Custom Item</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-mode="catalog"><i class="fa-solid fa-list me-1"></i><span data-i18n="manual_line_mode_catalog">From List</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-mode="custom"><i class="fa-solid fa-pen me-1"></i><span data-i18n="manual_line_mode_custom">Custom Item</span></button>
                         </div>
                     </div>
                     <div class="row mb-3" id="eedCatalogFields">
@@ -1325,21 +1433,33 @@
                             <select class="form-select select2-remote" id="eed_ped_type_id" name="ped_type_id" data-api="/api/employee.earning-deduction.options" data-type=""></select>
                         </div>
                     </div>
+                    <!-- Type selector removed from here (2026-08-21, explicit request: "เลือกแล้วว่า
+                         จะเป็นเงินได้หรือเงินหัก ตอนที่เลือกแบบกรอกเอง ไม่ต้องมีให้เลือกอีก...มันดู
+                         ซ้ำซ้อน") -- which Add button opened this modal (context, see resetEedForm())
+                         already fixes earning-vs-deduction for the whole modal session (the catalog
+                         dropdown above is itself pre-filtered to that same type, so switching to/from
+                         custom mode never changes it either) -- asking again here was redundant.
+                         #eed_custom_item_type stays as a plain hidden field carrying that fixed type
+                         for the save payload + interest-section gating (see applyEedInterestVisibility()
+                         in detail.js), it's just never user-facing anymore. -->
                     <div class="row mb-3 d-none" id="eedCustomFields">
-                        <div class="col-sm-7">
-                            <label class="form-label mb-1 small text-muted"><span data-i18n="modal_custom_item_name">Item Name</span></label>
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="modal_custom_item_name">Item Name</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
                             <input type="text" class="form-control" id="eed_custom_item_name" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
                         </div>
-                        <div class="col-sm-5">
-                            <label class="form-label mb-1 small text-muted"><span data-i18n="modal_item_type">Type</span></label>
-                            <select class="form-select select2-static" id="eed_custom_item_type" data-option-keys="breakdown_earnings,table_deduction_amount" data-option-values="earning,deduction"></select>
-                        </div>
+                        <input type="hidden" id="eed_custom_item_type" name="custom_item_type">
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-9">
+                            <!-- 2026-08-21, explicit request ("Form ยังดูไม่สมดุล"): was col-sm-4, leaving
+                                 col-sm-5 of dead space to the right -- every other single-field row in
+                                 this modal (Item, Interest, Amount per Installment, Reference, Notes)
+                                 already uses col-sm-9, matched here for the same reason. -->
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker required" id="eed_effective_date" name="effective_date" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -1351,6 +1471,14 @@
                         <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
                         <span data-i18n="sec_installment_settings">Installment Settings</span>
                     </h6>
+                    <!-- Total Installments + Amount merged into one row (2026-08-21, explicit request:
+                         "Form ยังดูไม่สมดุล") -- each used to be its own col-sm-3/col-sm-3 row, leaving
+                         col-sm-6 of dead space to the right of every one of them. Pairing the two
+                         numbers that directly drive the installment schedule together (both feed
+                         computeInstallmentSchedule()) fills the row properly and reads as a more
+                         natural "how many periods, how much total" narrative than having Interest
+                         sandwiched between them like before -- Interest (which configures HOW that
+                         schedule gets computed) now follows both inputs instead of splitting them. -->
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0"><span data-i18n="total_installments">Total Installments</span> <span class="text-danger">*</span></label>
@@ -1358,35 +1486,84 @@
                         <div class="col-sm-3">
                             <input type="number" step="1" min="1" class="form-control required" id="eed_total_installments" name="total_installments" value="1">
                         </div>
-                    </div>
-                    <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="amount_mode">Amount Mode</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <div class="form-check form-check-inline mt-1">
-                                <input class="form-check-input" type="radio" name="amount_mode" id="eed_mode_even" value="even_split" checked>
-                                <label class="form-check-label" for="eed_mode_even" data-i18n="even_split">Split evenly across installments</label>
-                            </div>
-                            <div class="form-check form-check-inline mt-1">
-                                <input class="form-check-input" type="radio" name="amount_mode" id="eed_mode_custom" value="custom_per_installment">
-                                <label class="form-check-label" for="eed_mode_custom" data-i18n="custom_per_installment">Set amount per installment</label>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3" id="eed_total_amount_wrapper">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="total_amount">Total Amount</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-0" id="eed_principal_amount_label">
+                                <span data-i18n="total_amount">Total Amount</span>
+                                <span data-i18n="principal_amount_label" class="d-none">Principal Amount</span>
+                                <span class="text-danger">*</span>
+                            </label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_total_amount" name="total_amount">
+                            <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_principal_amount" name="principal_amount">
                         </div>
                     </div>
-                    <div class="row mb-3 d-none" id="eed_custom_amounts_wrapper">
+                    <!-- Interest support (2026-08-20, explicit request: "อยากให้มีการกำหนดได้ค่าคิด
+                         ดอกเบี้ยหรือไม่คิดดอกเบี้ย...ถ้ามีการคิดดอกเบี้ย ก็ต้องกำหนดต่อได้ว่าดอกเบี้ย
+                         แบบไหน คงที่ ลดต้นลดดอก"). Same btn-outline-brand toggle-group convention as
+                         every other yes/no choice on this page (type/gender/payment-type, SSO/PVD
+                         enrolled, etc). interest_rate is % PER INSTALLMENT PERIOD, not annual -- see
+                         EmployeeEarningDeductionModel::computeInstallmentSchedule()'s docblock for why.
+                         2026-08-21 follow-up (explicit request: "รายรับให้ตัดเรื่องดอกเบี้ยไปเลย มีแค่
+                         รายหักที่บอกว่าคิดหรือไม่คิดดอกเบี้ย") -- this whole section only makes sense
+                         for deductions (a loan/salary deduction can carry interest, an earning never
+                         does), so it's now hidden entirely for earning items -- see
+                         applyEedInterestVisibility() in detail.js, driven by #eed_custom_item_type
+                         (the fixed session item type, see the comment above #eedCustomFields). -->
+                    <div id="eedInterestSection">
+                        <div class="row mb-3">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0" data-i18n="interest_label">Interest</label>
+                            </div>
+                            <div class="col-sm-9">
+                                <div class="btn-group btn-group-sm" role="group" id="eedInterestToggle">
+                                    <button type="button" class="btn btn-outline-brand active" data-value="none"><span data-i18n="interest_none">No Interest</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-value="has_interest"><span data-i18n="interest_has">With Interest</span></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="eedInterestDetailWrapper">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0"><span data-i18n="interest_type">Interest Type</span> <span class="text-danger">*</span></label>
+                            </div>
+                            <div class="col-sm-9 d-flex align-items-center flex-wrap gap-2">
+                                <div class="btn-group btn-group-sm" role="group" id="eedInterestTypeToggle">
+                                    <button type="button" class="btn btn-outline-brand active" data-value="fixed"><span data-i18n="interest_fixed">Flat</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-value="reducing_balance"><span data-i18n="interest_reducing_balance">Reducing Balance</span></button>
+                                </div>
+                                <div class="input-group input-group-sm" style="max-width:180px;">
+                                    <input type="number" step="0.01" min="0.01" class="form-control" id="eed_interest_rate" name="interest_rate" placeholder="0.00">
+                                    <span class="input-group-text" data-i18n="interest_rate_suffix">% / installment</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Always-visible, always-editable installment schedule (2026-08-20, explicit
+                         request: "ให้คำนวณให้อัตโนมัติหากใส่ยอดหักทั้งหมด แต่สามารถแก้ไขได้" +
+                         "Status ของแต่ละงวดการจ่าย...จ่ายแล้วหรือรอจ่าย") -- replaces the old
+                         even_split/custom_per_installment radio pair; amounts are pre-filled by
+                         GET /api/employee.earning-deduction.preview-installments (debounced, fires on
+                         principal/installment-count/interest changes) but every cell stays a plain
+                         editable input. Status column only appears once an existing assignment's real
+                         installments (with their pending/processed/skipped status) are loaded -- a
+                         brand-new Add has no installments yet, so nothing to show there. -->
+                    <div class="row mb-3">
                         <div class="col-sm-3">
                             <label class="form-label mb-0" data-i18n="installment_amounts">Amount per Installment</label>
                         </div>
-                        <div class="col-sm-9" id="eed_custom_amounts_container"></div>
+                        <div class="col-sm-9">
+                            <div class="table-responsive eed-installment-table-wrap">
+                                <table class="table table-sm table-striped align-middle mb-0" id="eedInstallmentTable">
+                                    <thead>
+                                        <tr>
+                                            <th class="text-muted small" style="width:15%;" data-i18n="installment_no_col">#</th>
+                                            <th class="text-muted small" data-i18n="installment_amount_col">Amount</th>
+                                            <th class="text-muted small d-none" id="eedInstallmentStatusHeader" data-i18n="installment_status_col">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="eedInstallmentTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
@@ -1407,7 +1584,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" data-i18n="save_item">Save Item</button>
+                    <button type="submit" class="btn btn-primary px-4" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
         </div>
@@ -1422,67 +1599,10 @@
      parents get father/mother/spouse's father/spouse's mother), since the DB column itself is a
      plain, uncontrolled varchar never read by any calc/report (only ever displayed), so there's no
      schema reason the two entity types must share one option list. -->
-<div class="modal fade" id="childModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="childModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="childModalLabel">
-                    <span data-i18n="add_dependent">Add dependent</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="childForm" novalidate>
-                <input type="hidden" id="child_id">
-                <input type="hidden" id="child_entity">
-                <div class="modal-body">
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <input type="text" class="form-control required" id="child_name">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="id_card_no">ID Card No.</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <input type="text" class="form-control" id="child_id_card_no" maxlength="13">
-                        </div>
-                    </div>
-                    <div class="row mb-3" id="childDobRow">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="date_of_birth">Date of Birth</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="child_date_of_birth" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="relationship">Relationship</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <select class="form-select select2-static required" id="child_relationship"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3" id="childStudyingRow">
-                        <div class="col-sm-8 offset-sm-4">
-                            <input type="checkbox" class="me-2" id="child_studying"><span data-i18n="studying">Studying</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" data-i18n="save_item">Save Item</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+<!-- #childModal removed (2026-08-20) -- Dependents are now filled in directly on their inline
+     card in #dependentCardsContainer (see renderDependentCards()/dependentCardHtml() in
+     detail.js), no modal needed. This was the only remaining consumer of the modal (Parents
+     moved to inline father/mother fields back on 2026-08-19), so removing it also resolves the
+     "modal body doesn't scroll" report -- there's no modal left to have that bug. -->
 <input type="hidden" id="employee_no" value="<?= htmlspecialchars($employee_no ?? '', ENT_QUOTES, 'UTF-8') ?>">
 <script src="<?=asset('public/js/employee/detail.js')?>"></script>

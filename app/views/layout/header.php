@@ -13,6 +13,7 @@
 <link href="<?=BASE_URL?>/node_modules/select2/dist/css/select2.min.css" rel="stylesheet">
 <link href="<?=BASE_URL?>/node_modules/select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/css/bootstrap-datepicker.standalone.min.css">
+<link rel="stylesheet" href="<?=BASE_URL?>/node_modules/intl-tel-input/dist/css/intlTelInput.min.css">
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";
@@ -134,7 +135,11 @@
                 <span class="menu-text" data-i18n="reports">Reports</span>
             </a>
         </li>
-        <li class="menu-item">
+        <!-- Hidden 2026-08-21 (explicit request: "เมนูเวลาทำงานและการลา ยังไม่ได้ใช้ใน phase นี้") --
+             Setup & Rules/Manual Time Entry aren't part of this phase yet. Kept in the DOM (d-none),
+             not deleted -- both pages/routes/controllers underneath are untouched and fully working,
+             this only hides the sidebar entry point. -->
+        <li class="menu-item d-none">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
                     <img src="<?=BASE_URL?>/public/images/menu/TIME.SVG" alt="Settings">

@@ -8,9 +8,14 @@
             <span class="bc-current"><span data-i18n="company_setup">Company Setup</span></span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0"><i class="fa-solid fa-building me-1"></i><span data-i18n="company_management">Company Management</span></h5>
-        <p class="text-muted small m-0 mt-1"><span data-i18n="company_management_description">Configure and manage corporate profile, local tax identification, and primary bank accounts for payroll processing.</span></p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-building"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="company_management">Company Management</h5>
+            <p class="page-header-card-desc" data-i18n="company_management_description">Configure and manage corporate profile, local tax identification, and primary bank accounts for payroll processing.</p>
+        </div>
     </div>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">

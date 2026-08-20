@@ -8,12 +8,14 @@
             <span class="bc-current" data-i18n="payroll_cycle">Payroll Cycle</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-calendar-day me-2"></i>
-            <span data-i18n="payroll_configuration">Payroll Configuration</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="payroll_configuration_description">Set up payroll cycles, earning types, and deduction types by employee group or employment type.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="payroll_configuration">Payroll Configuration</h5>
+            <p class="page-header-card-desc" data-i18n="payroll_configuration_description">Set up payroll cycles, earning types, and deduction types by employee group or employment type.</p>
+        </div>
     </div>
     <ul class="nav nav-tabs" id="companySetupTabs" role="tablist">
         <li class="nav-item" role="presentation">

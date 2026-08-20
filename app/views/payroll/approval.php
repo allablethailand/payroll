@@ -9,12 +9,14 @@
             <span class="bc-current" data-i18n="payroll_approval">Payroll Approval</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-clipboard-check me-2"></i>
-            <span data-i18n="payroll_approval">Payroll Approval</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="payroll_approval_description">Payroll runs waiting for your approval. Click a row to review and approve, reject, or send it back for revision.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-clipboard-check"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="payroll_approval">Payroll Approval</h5>
+            <p class="page-header-card-desc" data-i18n="payroll_approval_description">Payroll runs waiting for your approval. Click a row to review and approve, reject, or send it back for revision.</p>
+        </div>
     </div>
 
     <div class="card-surface p-3 p-md-4">

@@ -8,12 +8,14 @@
             <span class="bc-current" data-i18n="tax_and_statutory">Tax & Statutory</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-scale-balanced me-2"></i>
-            <span data-i18n="tax_and_statutory">Tax & Statutory</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="tax_statutory_description">Configure statutory items (tax, social insurance, provident fund) per country, with rate history and progressive tax brackets.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="tax_and_statutory">Tax & Statutory</h5>
+            <p class="page-header-card-desc" data-i18n="tax_statutory_description">Configure statutory items (tax, social insurance, provident fund) per country, with rate history and progressive tax brackets.</p>
+        </div>
     </div>
 
     <ul class="nav nav-tabs" id="taxStatutoryTabs" role="tablist">

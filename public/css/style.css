@@ -1088,15 +1088,35 @@ html, body {
    token before now (only .btn-primary usages happened to exist without a matching
    override) -- found and fixed while building the Payroll Run Detail timeline below,
    whose whole "the ONE primary action is visually obvious" point depends on this actually
-   being orange. Root-level so .btn-primary/.text-primary/.bg-primary-subtle/etc. all
-   follow together via Bootstrap 5.3's own CSS variable system, not just buttons.
-   ========================================================================== */
+   being orange. Root-level so .text-primary/.bg-primary-subtle/etc. follow via Bootstrap
+   5.3's own CSS variable system.
+   2026-08-20 correction: the above was only ever half-true. Verified against the compiled
+   node_modules/bootstrap/dist/css/bootstrap.min.css -- .btn-primary hardcodes
+   --bs-btn-bg:#0d6efd etc. directly on the class itself instead of reading --bs-primary, so
+   this :root override never actually reached buttons (only .text-primary-style utilities,
+   which do reference var(--bs-primary-rgb), were ever affected). Exact same gap
+   .btn-outline-brand/.bg-brand below were created to work around -- found while doing a
+   color-consistency pass on Employee Detail (its "Next"/"Save" buttons were all
+   .btn-warning, some hacked orange via an inline style, because .btn-primary silently
+   wasn't orange). Fixed for real below with an explicit .btn-primary override using the
+   same per-component --bs-btn-* token technique as .btn-outline-brand. */
 :root {
     --bs-primary: #FF9900;
     --bs-primary-rgb: 255, 153, 0;
     --bs-primary-text-emphasis: #b45f00;
     --bs-primary-bg-subtle: #fff3e0;
     --bs-primary-border-subtle: #ffd699;
+}
+.btn-primary {
+    --bs-btn-bg: #FF9900;
+    --bs-btn-border-color: #FF9900;
+    --bs-btn-hover-bg: #e68a00;
+    --bs-btn-hover-border-color: #e68a00;
+    --bs-btn-active-bg: #cc7a00;
+    --bs-btn-active-border-color: #cc7a00;
+    --bs-btn-disabled-bg: #FF9900;
+    --bs-btn-disabled-border-color: #FF9900;
+    --bs-btn-focus-shadow-rgb: 255, 153, 0;
 }
 /* ==========================================================================
    Payroll Run Detail — process timeline (per-record step tracker) + next-step banner.
@@ -1487,4 +1507,13 @@ html, body {
 }
 .detail-section + .detail-section {
     margin-top: 1.75rem;
+}
+.modal-body {
+    width: 100%;
+    max-height: calc(100vh - 100px - 100px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    scrollbar-color: #f1f1f1;
+    scrollbar-width: thin;
 }

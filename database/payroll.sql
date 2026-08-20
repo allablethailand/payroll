@@ -10441,6 +10441,43 @@ ALTER TABLE `employee_earning_deductions`
 
 COMMIT;
 
+--
+-- 2026-08-20: employee_earning_deductions interest support -- explicit request ("อยากให้มีการ
+-- กำหนดได้ค่าคิดดอกเบี้ยหรือไม่คิดดอกเบี้ย...ถ้ามีการคิดดอกเบี้ย ก็ต้องกำหนดต่อได้ว่าดอกเบี้ยแบบไหน
+-- คงที่ ลดต้นลดดอก"). interest_rate is a % PER INSTALLMENT PERIOD, not annual -- nothing in this
+-- schema ties an assignment to its payroll_cycles.payroll_frequency, so there is no reliable way
+-- to convert an annual rate without guessing (see EmployeeEarningDeductionModel::
+-- computeInstallmentSchedule()). principal_amount is kept separate from total_amount:
+-- total_amount keeps its existing meaning (sum of the stored installment amounts, i.e. total
+-- repayment including any interest); principal_amount is what the user actually typed as the
+-- loan/deduction principal before interest (equals total_amount when interest_type = none).
+--
+
+ALTER TABLE `employee_earning_deductions`
+  ADD COLUMN `interest_type` enum('none','fixed','reducing_balance') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'none' AFTER `amount_mode`,
+  ADD COLUMN `interest_rate` decimal(5,2) DEFAULT NULL COMMENT 'percent per installment period, only when interest_type != none' AFTER `interest_type`,
+  ADD COLUMN `principal_amount` decimal(15,2) DEFAULT NULL COMMENT 'principal before interest; equals total_amount when interest_type = none' AFTER `total_amount`;
+
+COMMIT;
+
+--
+-- 2026-08-21: employees resignation/termination fields -- explicit request ("ใน Tab การจ้างงาน
+-- ลาออก เลิกจ้าง อยากให้เพิ่มให้ใส่วันที่มีผล และวันที่สุดท้ายของการดึงไปทำรายงาน และใส่เหตุผลได้
+-- ด้วย"). employment_end_date already existed (read extensively by PayrollRunModel for final-run
+-- pro-rating/eligibility) but had no UI field to actually set it -- these two new columns plus
+-- wiring employment_end_date into EmployeeModel::allColumns() give the Employment tab a real home
+-- for all three. employment_status_effective_date and employment_end_date are deliberately two
+-- separate dates (confirmed with the user, not the same date from two angles) -- e.g. the date HR
+-- records the change taking effect can differ from the last date payroll/reports should still
+-- count the employee (notice period, etc).
+--
+
+ALTER TABLE `employees`
+  ADD COLUMN `employment_status_effective_date` date DEFAULT NULL COMMENT 'วันที่การเปลี่ยนสถานะ (ลาออก/เลิกจ้าง) มีผล' AFTER `employment_status`,
+  ADD COLUMN `employment_end_reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลการลาออก/เลิกจ้าง' AFTER `employment_end_date`;
+
+COMMIT;
+
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

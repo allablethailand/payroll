@@ -59,9 +59,10 @@ class CompanyProfileModel {
         if (!$companyId) {
             return false;
         }
-        $stmtCheck = $this->db->prepare("SELECT id FROM companies WHERE id = :company_id");
+        $stmtCheck = $this->db->prepare("SELECT id, setup_status FROM companies WHERE id = :company_id");
         $stmtCheck->execute([':company_id' => $companyId]);
         $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+        $wasDraft = $existing && ($existing['setup_status'] ?? null) === 'draft';
         $statutoryJson = null;
         if (isset($data['statutory_data']) && is_array($data['statutory_data'])) {
             $statutoryJson = json_encode($data['statutory_data'], JSON_UNESCAPED_UNICODE);
@@ -99,7 +100,7 @@ class CompanyProfileModel {
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id";
             $stmt = $this->db->prepare($sql);
-            return $stmt->execute([
+            $ok = $stmt->execute([
                 ':id' => $companyId,
                 ':company_legal_name' => $data['company_legal_name'] ?? null,
                 ':local_name' => $data['local_name'] ?? null,
@@ -112,6 +113,18 @@ class CompanyProfileModel {
                 ':authorized_signatory_name' => $data['authorized_signatory_name'] ?? null,
                 ':setup_status' => $isComplete ? 'active' : 'draft',
             ]);
+            // Auto-seed the default earning/deduction items the moment a company actually
+            // transitions draft -> active (2026-08-21, explicit request: "กรณีเป็นการเปิดใช้งาน
+            // บริษัทใหม่ ให้ขึ้น Default ของระบบไว้ให้เลย") -- only on the real transition, not every
+            // subsequent save of an already-active company. seedDefaults() is idempotent (skips any
+            // item_code already present, active or soft-deleted) so it's safe even if this ever
+            // fires more than once for the same company. The manual "Load Default Items" button in
+            // Payroll Configuration still works independently of this -- unchanged.
+            if ($ok && $isComplete && $wasDraft) {
+                $userId = $_SESSION['user']['employee_id'] ?? null;
+                (new PayrollEarningDeductionTypeModel())->seedDefaults((int)$companyId, $userId !== null ? (int)$userId : null);
+            }
+            return $ok;
         }
     }
     public function paginateData($tableName, $compId, $searchColumns, $sortColumns, $start, $length, $search, $colIndex, $orderDir) {

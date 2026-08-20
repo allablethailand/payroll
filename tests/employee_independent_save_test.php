@@ -157,6 +157,25 @@ try {
         checkTrue('...but employment stays in missing_tabs because of the incomplete bank details', in_array('employment', $bankRow['verify_status']['missing_tabs'], true));
     }
 
+    // ---------- Resignation/termination fields round-trip (2026-08-21, explicit request) ----------
+    $resignedPayload = [
+        'employee_no' => 'IND-EMP-RESIGN-' . uniqid(), 'employee_type' => 'domestic', 'employee_status' => 'resigned',
+        'title' => 'mr', 'gender' => 'male', 'name_th' => 'ก', 'surname_th' => 'ข', 'name_en' => 'A', 'surname_en' => 'B',
+        'date_of_birth' => '1990-01-01', 'nationality' => 'Thai',
+        'employment_status' => 'resigned',
+        'employment_status_effective_date' => '2026-08-15',
+        'employment_end_date' => '2026-08-31',
+        'employment_end_reason' => 'ลาออกเพื่อไปศึกษาต่อ',
+    ];
+    $rResigned = $model->save($compId, $resignedPayload, $userId);
+    checkTrue('Save with resignation fields succeeds' . (empty($rResigned['status']) ? " ({$rResigned['message']})" : ''), $rResigned['status']);
+    if ($rResigned['status']) {
+        $resignedRow = $model->get($compId, $resignedPayload['employee_no']);
+        check('employment_status_effective_date round-trips', $resignedRow['employment_status_effective_date'], '2026-08-15');
+        check('employment_end_date round-trips (already existed, now actually settable)', $resignedRow['employment_end_date'], '2026-08-31');
+        check('employment_end_reason round-trips', $resignedRow['employment_end_reason'], 'ลาออกเพื่อไปศึกษาต่อ');
+    }
+
 } finally {
     $pdo->rollBack();
 }

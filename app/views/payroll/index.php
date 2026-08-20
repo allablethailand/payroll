@@ -9,12 +9,15 @@
             <span class="bc-current" data-i18n="payroll_process">Payroll Process</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-money-check-dollar me-2"></i>
-            <span data-i18n="payroll_process">Payroll Process</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="payroll_process_description">Manage payroll runs from draft through approval, payment, and closing. Click a row to open its management page.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request: "ช่วยปรับให้ header แต่ละ Page
+         เป็นรูปแบบเดียวกัน เฉพาะหน้าหลัก") -- same standing convention Employee List already uses,
+         per style.css's own comment on .page-header-card. -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-money-check-dollar"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="payroll_process">Payroll Process</h5>
+            <p class="page-header-card-desc" data-i18n="payroll_process_description">Manage payroll runs from draft through approval, payment, and closing. Click a row to open its management page.</p>
+        </div>
     </div>
 
         <div class="station-filter" id="stationFilter">

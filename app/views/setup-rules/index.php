@@ -8,12 +8,14 @@
             <span class="bc-current" data-i18n="setup_and_rules">Setup & Rules</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-gears"></i>
-            <span data-i18n="setup_and_rules">Setup & Rules</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="setup_and_rules_description">Define work shifts, public holidays, leave types, and overtime (OT) calculation rates for employees.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-gears"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="setup_and_rules">Setup & Rules</h5>
+            <p class="page-header-card-desc" data-i18n="setup_and_rules_description">Define work shifts, public holidays, leave types, and overtime (OT) calculation rates for employees.</p>
+        </div>
     </div>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">

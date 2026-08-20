@@ -8,12 +8,14 @@
       <span class="bc-current" data-i18n="document_and_approval">Document &amp; Approval</span>
     </h5>
   </nav>
-  <div class="mb-4">
-    <h5 class="text-secondary fw-bold m-0">
-      <i class="fa-solid fa-file-signature me-2"></i>
-      <span data-i18n="document_and_approval">Document &amp; Approval</span>
-    </h5>
-    <p class="text-muted small m-0 mt-1" data-i18n="document_and_approval_description">Configure approval workflows, payslip templates, and payslip distribution settings for payroll documents.</p>
+  <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+       app/views/payroll/index.php). -->
+  <div class="page-header-card mb-4">
+    <div class="page-header-card-icon"><i class="fa-solid fa-file-signature"></i></div>
+    <div class="page-header-card-body">
+      <h5 class="page-header-card-title" data-i18n="document_and_approval">Document &amp; Approval</h5>
+      <p class="page-header-card-desc" data-i18n="document_and_approval_description">Configure approval workflows, payslip templates, and payslip distribution settings for payroll documents.</p>
+    </div>
   </div>
 
   <ul class="nav nav-tabs mb-4">

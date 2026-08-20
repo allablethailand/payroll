@@ -189,6 +189,24 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'message' => 'Record not found.']);
         }
     }
+    /** Pure calculation preview (2026-08-20, explicit request) -- lets the modal show/auto-fill
+     *  the per-installment schedule live as principal/installments/interest settings change,
+     *  without duplicating the amortization math in JS. Mirrors POST /api/payslip-template.preview's
+     *  shape (server computes, client just renders). Not permission-gated: it touches no employee
+     *  data, just runs arithmetic on whatever numbers are passed in. */
+    public function earningDeductionPreviewInstallments() {
+        $principal = isset($_GET['principal']) && is_numeric($_GET['principal']) ? (float)$_GET['principal'] : 0.0;
+        $totalInstallments = isset($_GET['total_installments']) ? (int)$_GET['total_installments'] : 0;
+        $interestType = isset($_GET['interest_type']) ? (string)$_GET['interest_type'] : 'none';
+        $interestRate = isset($_GET['interest_rate']) && is_numeric($_GET['interest_rate']) ? (float)$_GET['interest_rate'] : null;
+        try {
+            $amounts = $this->earningDeductionModel->computeInstallmentSchedule($principal, $totalInstallments, $interestType, $interestRate);
+            $this->json(['status' => true, 'data' => ['amounts' => $amounts]]);
+        } catch (InvalidArgumentException $e) {
+            http_response_code(422);
+            $this->json(['status' => false, 'message' => $e->getMessage()]);
+        }
+    }
     public function earningDeductionSave() {
         if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();

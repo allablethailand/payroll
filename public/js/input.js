@@ -171,12 +171,6 @@ function initSelect2(selector, options = {}) {
         } else {
             const apiUrl = ($this.data('api') || options.api) ? `${BASE_URL}${$this.data('api') || options.api}` : null;
             if (!apiUrl) return;
-            const extraData = {
-                type: $this.data('type') || options.apiType || ''
-            };
-            if ($this.data('excludeId') !== undefined && $this.data('excludeId') !== '') {
-                extraData.exclude_id = $this.data('excludeId');
-            }
             config = {
                 theme: 'bootstrap-5',
                 width: '100%',
@@ -186,7 +180,28 @@ function initSelect2(selector, options = {}) {
                     type: 'POST',
                     dataType: 'json',
                     delay: 250,
+                    // 2026-08-21, real bug found/fixed: data-type/data-exclude-id read fresh from the
+                    // live DOM attribute on EVERY search, not snapshotted into a closure var at init
+                    // time (the old `extraData` object built once outside this callback, before
+                    // e.g. #eed_ped_type_id's data-type is ever set by resetEedForm()) -- and via
+                    // .attr() specifically, not $this.data(), since jQuery's .data() lazily caches a
+                    // data-* attribute's value on first read and does NOT pick up later plain
+                    // .attr('data-type', ...) changes (a caller would have to also call
+                    // .data('type', ...) to keep jQuery's cache in sync -- setup/payroll-
+                    // configuration.js:153 already works around this exact gotcha by setting both;
+                    // this fixes it at the root instead so no caller has to remember that). Together
+                    // these two bugs meant a select2-remote field whose filter type changes after
+                    // first use (the EED catalog dropdown switching between "Add Earning"/"Add
+                    // Deduction", #report_to_id's data-exclude-id set once the employee's own id is
+                    // known) silently kept using whatever value was live at page-load, forever.
                     data: function (params) {
+                        const extraData = {
+                            type: $this.attr('data-type') || options.apiType || ''
+                        };
+                        const excludeId = $this.attr('data-exclude-id');
+                        if (excludeId !== undefined && excludeId !== '') {
+                            extraData.exclude_id = excludeId;
+                        }
                         return $.extend({
                             searchTerm: params.term,
                             page: params.page || 1,
