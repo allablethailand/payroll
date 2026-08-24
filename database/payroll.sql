@@ -8293,6 +8293,35 @@ INSERT INTO `statutory_item_brackets` (`id`, `statutory_item_rate_history_id`, `
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `document_numbering_settings`
+--
+-- 2026-08-23, explicit request ("ในหน้า Document & Approval Document Numbering ยังไม่สามารถตั้งค่า
+-- ได้จริง") -- the Document Numbering tab was a static HTML mockup (hardcoded rows, edit buttons
+-- with no handler) with no schema/model/controller behind it at all. document_type_code is a
+-- fixed, code-tied enum (PAYSLIP/PAYROLL_RUN/WHT_CERT/BANK_TRANSFER) rather than a master table --
+-- each one corresponds to an actual generator elsewhere in the app (PaySlipReport, the WHT export,
+-- BankTransferFileReport), not a freely-extensible dropdown a company could add its own entries
+-- to, matching the same reasoning ot_rates.calculation_method already documents for NOT being a
+-- master table. DocumentNumberingModel::list() lazily seeds any missing row with sensible
+-- defaults on first read rather than requiring a separate seed migration per company.
+--
+
+CREATE TABLE `document_numbering_settings` (
+  `id` int(11) NOT NULL,
+  `comp_id` int(11) NOT NULL,
+  `document_type_code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `prefix_format` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `digit_count` tinyint(4) NOT NULL DEFAULT 4,
+  `current_number` int(11) NOT NULL DEFAULT 0,
+  `reset_cycle` enum('never','yearly','monthly') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'never',
+  `updated_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `company_statutory_settings`
 --
 
@@ -8336,6 +8365,7 @@ CREATE TABLE `payroll_runs` (
   `has_validation_errors` tinyint(1) NOT NULL DEFAULT 0,
   `submitted_at` timestamp NULL DEFAULT NULL,
   `submitted_by` int(11) DEFAULT NULL,
+  `approval_request_id` int(11) DEFAULT NULL COMMENT 'Links to approval_requests.id when an active PAYROLL_RUN_APPROVAL workflow is configured for this company at submit time (2026-08-23, explicit report: approval was configured via the Approval Workflow tab / approval_workflow_steps but PayrollRunModel was still only consulting the flat structure_roles.can_approve_payroll check -- see PayrollRunModel::submit()/approve()/reject() docblocks). NULL means no such workflow existed at submit time, so approve()/reject()/etc. fall back to the flat role-based check for backward compatibility.',
   `approved_at` timestamp NULL DEFAULT NULL,
   `approved_by` int(11) DEFAULT NULL,
   `rejected_at` timestamp NULL DEFAULT NULL,
@@ -8398,6 +8428,8 @@ CREATE TABLE `payroll_run_audit_logs` (
   `action` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `performed_by` int(11) NOT NULL,
+  `ip_address` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `performed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -8421,10 +8453,39 @@ CREATE TABLE `master_bank_file_formats` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `master_bank_file_formats` (`id`, `bank_id`, `code`, `name_th`, `name_en`, `file_extension`, `is_active`, `sort_order`, `created_at`, `updated_at`) VALUES
-(1, NULL, 'KBANK_SMART', 'กสิกรไทย - K-Cash Connect Smart', 'Kasikornbank - K-Cash Connect Smart', 'txt', 1, 1, '2026-07-21 17:50:24', NULL),
-(2, NULL, 'SCB', 'ไทยพาณิชย์ - SCB Business Net', 'Siam Commercial Bank - SCB Business Net', 'txt', 1, 2, '2026-07-21 17:50:24', NULL),
-(3, NULL, 'BBL', 'กรุงเทพ - Bualuang iBanking', 'Bangkok Bank - Bualuang iBanking', 'txt', 1, 3, '2026-07-21 17:50:24', NULL),
+(1, 2, 'KBANK_SMART', 'กสิกรไทย - K-Cash Connect Smart', 'Kasikornbank - K-Cash Connect Smart', 'txt', 1, 1, '2026-07-21 17:50:24', NULL),
+(2, 5, 'SCB', 'ไทยพาณิชย์ - SCB Business Net', 'Siam Commercial Bank - SCB Business Net', 'txt', 1, 2, '2026-07-21 17:50:24', NULL),
+(3, 1, 'BBL', 'กรุงเทพ - Bualuang iBanking', 'Bangkok Bank - Bualuang iBanking', 'txt', 1, 3, '2026-07-21 17:50:24', NULL),
 (4, NULL, 'DBS_IDEAL', 'DBS - IDEAL', 'DBS - IDEAL', 'csv', 1, 4, '2026-07-21 17:50:24', NULL);
+
+--
+-- 2026-08-21, explicit request ("รายชื่อธนาคารที่ให้เลือกมีน้อยมากไม่ครบตามที่จัดเก็บไว้ใน Database"):
+-- the 4 rows above only cover 3 of the 15 banks seeded in master_banks (KBank/SCB/BBL) + DBS, which
+-- isn't even a master_banks row -- so this list looked incomplete next to the real bank directory
+-- used elsewhere (e.g. Bank Accounts). Filling in the remaining 12 master_banks rows here so every
+-- seeded bank has AT LEAST an entry to pick -- but unlike the original 4 (real, publicly-documented
+-- corporate-banking product names), nobody has verified what each of these 12 banks' actual bulk-
+-- transfer file layout/portal is called, so name_th/name_en say so explicitly rather than guessing a
+-- plausible-sounding but fabricated product name (same "flag as unverified, don't invent" convention
+-- as PndOneKorExporter/Sso110Exporter). Doesn't change BankTransferFileReport's own behavior --
+-- see that class's docblock -- it still generates one generic CSV regardless of which of these is
+-- picked, this is only about the picker not looking incomplete. bank_id now links back to
+-- master_banks (was NULL on all 4 original rows despite the column existing for exactly this).
+--
+
+INSERT INTO `master_bank_file_formats` (`id`, `bank_id`, `code`, `name_th`, `name_en`, `file_extension`, `is_active`, `sort_order`, `created_at`, `updated_at`) VALUES
+(5, 3, 'KTB', 'กรุงไทย (ยังไม่ยืนยันรูปแบบไฟล์)', 'Krung Thai Bank (format not yet verified)', 'txt', 1, 5, '2026-08-21 00:00:00', NULL),
+(6, 4, 'TTB', 'ทหารไทยธนชาต (ยังไม่ยืนยันรูปแบบไฟล์)', 'TMBThanachart Bank (format not yet verified)', 'txt', 1, 6, '2026-08-21 00:00:00', NULL),
+(7, 6, 'CIMBT', 'ซีไอเอ็มบีไทย (ยังไม่ยืนยันรูปแบบไฟล์)', 'CIMB Thai Bank (format not yet verified)', 'txt', 1, 7, '2026-08-21 00:00:00', NULL),
+(8, 7, 'UOB', 'ยูโอบี (ยังไม่ยืนยันรูปแบบไฟล์)', 'United Overseas Bank Thai (format not yet verified)', 'txt', 1, 8, '2026-08-21 00:00:00', NULL),
+(9, 8, 'BAY', 'กรุงศรีอยุธยา (ยังไม่ยืนยันรูปแบบไฟล์)', 'Bank of Ayudhya - Krungsri (format not yet verified)', 'txt', 1, 9, '2026-08-21 00:00:00', NULL),
+(10, 9, 'GSB', 'ออมสิน (ยังไม่ยืนยันรูปแบบไฟล์)', 'Government Savings Bank (format not yet verified)', 'txt', 1, 10, '2026-08-21 00:00:00', NULL),
+(11, 10, 'GHB', 'อาคารสงเคราะห์ (ยังไม่ยืนยันรูปแบบไฟล์)', 'Government Housing Bank (format not yet verified)', 'txt', 1, 11, '2026-08-21 00:00:00', NULL),
+(12, 11, 'BAAC', 'ธ.ก.ส. (ยังไม่ยืนยันรูปแบบไฟล์)', 'Bank for Agriculture and Agricultural Cooperatives (format not yet verified)', 'txt', 1, 12, '2026-08-21 00:00:00', NULL),
+(13, 12, 'TISCO', 'ทิสโก้ (ยังไม่ยืนยันรูปแบบไฟล์)', 'Tisco Bank (format not yet verified)', 'txt', 1, 13, '2026-08-21 00:00:00', NULL),
+(14, 13, 'KKP', 'เกียรตินาคินภัทร (ยังไม่ยืนยันรูปแบบไฟล์)', 'Kiatnakin Phatra Bank (format not yet verified)', 'txt', 1, 14, '2026-08-21 00:00:00', NULL),
+(15, 14, 'ICBC', 'ไอซีบีซี (ไทย) (ยังไม่ยืนยันรูปแบบไฟล์)', 'ICBC Thai (format not yet verified)', 'txt', 1, 15, '2026-08-21 00:00:00', NULL),
+(16, 15, 'LHBANK', 'แลนด์ แอนด์ เฮ้าส์ (ยังไม่ยืนยันรูปแบบไฟล์)', 'Land and Houses Bank (format not yet verified)', 'txt', 1, 16, '2026-08-21 00:00:00', NULL);
 
 -- --------------------------------------------------------
 
@@ -8526,9 +8587,32 @@ CREATE TABLE `approval_workflow_document_types` (
 --
 -- Table structure for table `approval_workflow_steps`
 --
--- Ordered steps within a workflow. Whole set is replaced (delete+reinsert) on each workflow
--- save, same pattern as employee_earning_deduction_installments — this is config, not history
--- (see approval_request_logs for the history side).
+-- Ordered steps within a workflow. Each step's actual approver list lives in
+-- `approval_workflow_step_approvers` (2026-08-23: a step used to carry a single approver_type/
+-- approver_id pair directly on this row -- moved out to a child table so one step can list
+-- MULTIPLE people, per explicit request: "ในแต่ละแถวย่อยก็สามารถใส่ได้หลายคน").
+--
+-- 2026-08-23, second change the same day: ported the gating/verdict model from origami's
+-- `m_approval_master`/`getApprovalResult` (explicit request, with the AND/OR/Finish semantics
+-- spelled out verbatim by the user) --
+--   `requires_previous_step`: freely toggle PER STEP whether it must wait its turn. Steps with
+--   this =1 form an ordered queue (by step_order) -- a queued step only becomes actionable once
+--   every EARLIER queued step has been fully approved; the button stays visible but disabled
+--   until then. Steps with =0 are always immediately actionable, regardless of queue position
+--   (e.g. step 1 gates step 2, but step 3 can be approved anytime).
+--   `group_type`: how this step's own result (once decided) feeds the OVERALL request verdict,
+--   computed across every step after each action (see ApprovalRequestModel::recomputeVerdict()):
+--   'and' = every AND-group step must be approved for the request to pass, any one rejected fails
+--   it immediately; 'or' = with 2+ OR-group steps, one approval is enough to satisfy the OR side
+--   (all rejected fails it); with 0-1 OR-group steps the OR side has no effect on the outcome
+--   either way (explicit clarification: a lone OR step doesn't auto-pass, it simply doesn't
+--   count); 'finish' = the moment any Finish-group step is decided, that decision alone becomes
+--   the whole request's final result immediately, ignoring every other step's state.
+--   Whole step set is soft-deleted and replaced only when the saved config actually differs from
+--   what's stored (see ApprovalWorkflowModel::save()) -- not hard delete+reinsert every time, so
+--   that (a) already-decided approval_request_step_approvers snapshots (which don't FK to this
+--   table) stay meaningful history regardless, and (b) an unchanged save doesn't needlessly
+--   recycle ids.
 --
 
 CREATE TABLE `approval_workflow_steps` (
@@ -8536,17 +8620,39 @@ CREATE TABLE `approval_workflow_steps` (
   `workflow_id` int(11) NOT NULL,
   `step_order` int(11) NOT NULL,
   `step_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `approver_type` enum('user','role') COLLATE utf8mb4_unicode_ci NOT NULL,
-  `approver_id` int(11) NOT NULL COMMENT 'employees.id when approver_type=user, structure_roles.id when approver_type=role. Polymorphic by design, no single FK possible.',
-  `joint_approve_mode` enum('any','all') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'any' COMMENT 'Only meaningful when approver_type=role and the role has more than one active employee: all = every current holder must approve this step before it advances, any = the first action decides.',
-  `timeout_hours` int(11) DEFAULT NULL COMMENT 'Config-only in this round: no scheduled-job engine exists yet to act on this automatically.',
-  `escalation_approver_type` enum('user','role') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `escalation_approver_id` int(11) DEFAULT NULL COMMENT 'Same polymorphic shape as approver_id, config-only (see timeout_hours).',
+  `group_type` enum('and','or','finish') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'and',
+  `requires_previous_step` tinyint(1) NOT NULL DEFAULT 0,
+  `joint_approve_mode` enum('any','all') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'any' COMMENT 'Only meaningful when this step resolves to more than one eligible person (multiple approver entries, and/or a role with several holders): all = every eligible person must approve this step, any = the first action decides this step''s own result.',
+  `status` enum('active','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_workflow_step_order` (`workflow_id`,`step_order`),
+  KEY `idx_aws_workflow_step_order` (`workflow_id`,`step_order`) COMMENT 'Not unique: soft-deleted rows from a prior save keep their original step_order, so a fresh active set can legitimately reuse the same numbers -- app layer guarantees only one ACTIVE row per (workflow_id, step_order) by always inserting a whole fresh set together.',
   CONSTRAINT `fk_aws_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `approval_workflows` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `approval_workflow_step_approvers`
+--
+-- One or more approver entries per step (2026-08-23). Each entry is a specific user or a role
+-- (whose current holders all join the pool) -- a step's full eligible pool is the union of every
+-- entry's resolution. Whole set is replaced (delete+reinsert) alongside its parent step on every
+-- workflow save, same pattern as `approval_workflow_steps` itself.
+--
+
+CREATE TABLE `approval_workflow_step_approvers` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `step_id` int(11) NOT NULL,
+  `approver_type` enum('user','role') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `approver_id` int(11) NOT NULL COMMENT 'employees.id when approver_type=user, structure_roles.id when approver_type=role. Polymorphic by design, no single FK possible.',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_awsa_step` (`step_id`),
+  CONSTRAINT `fk_awsa_step` FOREIGN KEY (`step_id`) REFERENCES `approval_workflow_steps` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 -- --------------------------------------------------------
@@ -8567,7 +8673,7 @@ CREATE TABLE `approval_requests` (
   `document_type_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `reference_id` int(11) NOT NULL COMMENT 'id of the actual document row; meaning depends on document_type_code (e.g. payroll_runs.id for PAYROLL_RUN_APPROVAL). Polymorphic by design, no FK.',
   `reference_label` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Human-readable snapshot (e.g. run name/period) captured at request creation, so the monitor page does not need a different join per document_type_code.',
-  `current_step_order` int(11) NOT NULL DEFAULT 1,
+  `current_step_order` int(11) NOT NULL DEFAULT 1 COMMENT '2026-08-23: no longer a gating pointer (multiple steps can be simultaneously actionable once requires_previous_step allows it) -- informational display only, recomputed after every action as the lowest step_order among approval_request_step_approvers rows still pending, for the Monitor/PayslipRequestModel list views that show a single "current step" label.',
   `status` enum('pending','approved','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
   `requested_by` int(11) NOT NULL,
   `requested_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -8603,6 +8709,48 @@ CREATE TABLE `approval_request_logs` (
   PRIMARY KEY (`id`),
   KEY `idx_arl_request` (`request_id`),
   CONSTRAINT `fk_arl_request` FOREIGN KEY (`request_id`) REFERENCES `approval_requests` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `approval_request_step_approvers`
+--
+-- 2026-08-23: the persisted eligibility/tracking snapshot for a running request, per explicit
+-- request ("สร้างตารางเก็บรายการ Approve ของแต่ละ Process แล้วก็ดึงจากตารางนั้นว่าใครมีสิทธิ์ Approve
+-- บ้าง...ไม่ใช่ไปดึงข้อมูลใหม่ทุกรอบ") -- the eligible pool for EVERY active step is resolved from
+-- `approval_workflow_step_approvers` exactly ONCE, at request creation, and written here; every
+-- later read (who can act, who already has) comes from this table, never a fresh live
+-- role-membership query. Two columns carry the actual meaning: who is eligible
+-- (`eligible_employee_ids`) and who actually acted (`acted_by`). Storage granularity follows
+-- `joint_approve_mode` exactly as specified: when 'all', one row per eligible person (each
+-- individually tracked, `eligible_employee_ids` holding a single id); when 'any', one shared row
+-- covering the whole pool (`eligible_employee_ids` a CSV of everyone eligible), acted on by
+-- whichever one of them gets there first.
+--
+-- 2026-08-23, second change the same day: `group_type`/`requires_previous_step` are a snapshot of
+-- the same-named columns on `approval_workflow_steps` at creation time (see that table's own
+-- comment for what they mean) -- frozen here so a later edit to the workflow's config can't
+-- retroactively change the rules a request already in flight is being judged by.
+--
+
+CREATE TABLE `approval_request_step_approvers` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `request_id` int(11) NOT NULL,
+  `step_order` int(11) NOT NULL,
+  `step_name_snapshot` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `group_type` enum('and','or','finish') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'and',
+  `requires_previous_step` tinyint(1) NOT NULL DEFAULT 0,
+  `joint_approve_mode` enum('any','all') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'any',
+  `eligible_employee_ids` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'CSV of employees.id. Single id when joint_approve_mode=all (one row per eligible person). Whole resolved pool as CSV when =any (one shared row).',
+  `status` enum('pending','approved','rejected') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `acted_by` int(11) DEFAULT NULL COMMENT 'employees.id who actually acted on this row. NULL until acted.',
+  `note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `acted_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_arsa_request_step` (`request_id`,`step_order`),
+  CONSTRAINT `fk_arsa_request` FOREIGN KEY (`request_id`) REFERENCES `approval_requests` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 -- --------------------------------------------------------
@@ -9404,6 +9552,14 @@ ALTER TABLE `company_statutory_settings`
   ADD KEY `statutory_item_id` (`statutory_item_id`);
 
 --
+-- Indexes for table `document_numbering_settings`
+--
+ALTER TABLE `document_numbering_settings`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_comp_doctype` (`comp_id`,`document_type_code`),
+  ADD KEY `idx_comp_id` (`comp_id`);
+
+--
 -- Indexes for table `payroll_runs`
 --
 ALTER TABLE `payroll_runs`
@@ -9604,6 +9760,12 @@ ALTER TABLE `company_statutory_settings`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `document_numbering_settings`
+--
+ALTER TABLE `document_numbering_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `payroll_runs`
 --
 ALTER TABLE `payroll_runs`
@@ -9783,6 +9945,12 @@ ALTER TABLE `statutory_item_brackets`
 ALTER TABLE `company_statutory_settings`
   ADD CONSTRAINT `fk_company_statutory_settings_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_company_statutory_settings_item` FOREIGN KEY (`statutory_item_id`) REFERENCES `statutory_items` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+--
+-- Constraints for table `document_numbering_settings`
+--
+ALTER TABLE `document_numbering_settings`
+  ADD CONSTRAINT `fk_docnum_comp` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
 -- Constraints for table `payroll_runs`
@@ -10475,6 +10643,302 @@ COMMIT;
 ALTER TABLE `employees`
   ADD COLUMN `employment_status_effective_date` date DEFAULT NULL COMMENT 'วันที่การเปลี่ยนสถานะ (ลาออก/เลิกจ้าง) มีผล' AFTER `employment_status`,
   ADD COLUMN `employment_end_reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลการลาออก/เลิกจ้าง' AFTER `employment_end_date`;
+
+COMMIT;
+
+--
+-- 2026-08-20: Configurable Attendance Deduction Rules (Late / Absent / Unpaid Leave) -- explicit
+-- request ("การหักสาย อยากให้มีการตั้งค่าได้...ให้เป็นรายการให้เลือกและใส่เงื่อนไขเองได้", later broadened:
+-- "รองรับการ Set เงื่อนของ สาย ขาดงาน ลาไม่รับเงินด้วย...ดึงไปใช้ในการทำ Process เงินเดือนด้วย"). Replaces
+-- SyncPayResolver's previously hardcoded salary-derived formulas for these 3 events with a
+-- company-configurable rule per event, read at payroll calc time. Originally built Late-only as
+-- `late_deduction_rules` (single company-wide row); generalized the same day, before any real
+-- company had configured it, to `attendance_deduction_rules` keyed by `(comp_id, event_code)` --
+-- one row PER EVENT per company, not a single row -- so Late/Absent/Unpaid Leave are each
+-- independently configurable. `master_attendance_deduction_methods` is the usual global
+-- fixed-but-growable-set master table (same shape as `master_ot_scope_types`) -- deliberately
+-- unit-agnostic wording (no "per minute"/"per day" baked into the labels) since the same 3 methods
+-- apply to all 3 events; each rule's own `rate_unit` column (added 2026-08-21, see below) picks the
+-- unit, defaulting per-event (minute for Late, day for Absent/Unpaid Leave) but freely changeable.
+-- `attendance_deduction_rule_brackets` is only populated when method_code='tiered_bracket',
+-- delete+reinsert whole set on every save (same pattern as `holiday_assignments`/
+-- `approval_workflow_steps`). No row for a given (company, event) = default behavior =
+-- percent_of_rate @ multiplier 1.00, i.e. byte-for-byte identical to the old hardcoded
+-- formula for that event -- existing companies see zero behavior change until they explicitly
+-- configure something.
+--
+-- `rate_unit` (2026-08-21, explicit request: "การตั้งค่าเงื่อนไขการหักสาย ให้มี นาทีละ กี่บาท ชั่วโมงละกี่บาท")
+-- -- only meaningful for flat_amount (interprets rate_per_unit) and tiered_bracket (interprets
+-- min_units/max_units); ignored for percent_of_rate, which is always computed against actual
+-- minutes internally regardless of this column (see SyncPayResolver's own docblock for why: a
+-- day-based rate hides real shift-length variation within a period, e.g. a half-day Saturday vs a
+-- full weekday -- minutes never do).
+--
+
+CREATE TABLE `master_attendance_deduction_methods` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_attendance_deduction_method_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_attendance_deduction_methods` (`code`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('percent_of_rate','เปอร์เซ็นต์ของอัตราที่คำนวณจากเงินเดือน (ค่าเริ่มต้นของระบบ)','Percent of Salary-derived Rate (system default)',1,10),
+('flat_amount','อัตราคงที่ต่อหน่วย','Flat Amount per Unit',1,20),
+('tiered_bracket','ขั้นบันไดตามจำนวนหน่วย','Tiered by Units',1,30);
+
+CREATE TABLE `attendance_deduction_rules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `event_code` enum('late','absent','unpaid_leave') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `method_code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rate_unit` enum('minute','hour','day') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'minute' COMMENT 'interprets rate_per_unit (flat_amount) and min_units/max_units (tiered_bracket) -- ignored by percent_of_rate',
+  `rate_per_unit` decimal(10,2) DEFAULT NULL COMMENT 'used when method_code=flat_amount -- baht per rate_unit',
+  `multiplier_rate` decimal(6,2) DEFAULT 1.00 COMMENT 'used when method_code=percent_of_rate',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_attendance_deduction_rules_comp_event` (`comp_id`,`event_code`),
+  KEY `idx_attendance_deduction_rules_method` (`method_code`),
+  CONSTRAINT `fk_attendance_deduction_rules_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_attendance_deduction_rules_method` FOREIGN KEY (`method_code`) REFERENCES `master_attendance_deduction_methods` (`code`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `attendance_deduction_rule_brackets` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `rule_id` int(11) NOT NULL,
+  `min_units` int(11) NOT NULL COMMENT 'unit per the parent rule''s own rate_unit column (minute/hour/day)',
+  `max_units` int(11) DEFAULT NULL COMMENT 'NULL = unbounded (no upper limit)',
+  `deduction_amount` decimal(10,2) NOT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_attendance_deduction_rule_brackets_rule` (`rule_id`),
+  CONSTRAINT `fk_attendance_deduction_rule_brackets_rule` FOREIGN KEY (`rule_id`) REFERENCES `attendance_deduction_rules` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-21: OT Rate gains a "flat amount" method, alongside the existing multiplier-based one --
+-- explicit request, paralleling Attendance Deduction Rules' percent-of-rate/flat-amount/
+-- tiered-bracket choice ("เพิ่มตัวเลือก 'จำนวนเงินคงที่' ต่อชม./วัน ใน OT Rate ที่มีอยู่"). Existing rows
+-- default to `calculation_method='multiplier'` -- their only-ever behavior until now, zero change
+-- for already-configured companies. `calculation_base` (hourly/daily) keeps its existing meaning
+-- under BOTH methods (which unit the rate is expressed against), read by
+-- SyncPayResolver::otRateForScope() same as before, just with one more field.
+--
+
+ALTER TABLE `ot_rates`
+  ADD COLUMN `calculation_method` enum('multiplier','flat_amount') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'multiplier' AFTER `calculation_base`,
+  ADD COLUMN `flat_amount_rate` decimal(10,2) DEFAULT NULL COMMENT 'used when calculation_method=flat_amount -- baht/hour or baht/day per calculation_base' AFTER `calculation_method`;
+
+COMMIT;
+
+--
+-- 2026-08-21: per-run, per-employee, per-item override/exemption for a SYNC-COMPUTED deduction line
+-- (LATE_DEDUCT/ABSENT_DEDUCT/LEAVE_NO_PAY_DEDUCT etc.) -- explicit request ("ต้องการปรับค่า สาย
+-- ขาดงาน ลาไม่รับเงิน หรือยกเว้นไม่ให้หัก"). Deliberately scoped to THIS run only (confirmed choice,
+-- not a standing per-employee setting) -- same "for this run only" scope
+-- payroll_run_manual_lines already uses, applied by PayrollRunModel::recalculate() every time it
+-- (re)computes, so re-running Recalculate does not lose the adjustment. `item_code` matches the
+-- resolved code on the sync-computed deduction line (the company's own catalog item_code when
+-- mapped via source_event_code, or SyncPayResolver::RULE_DRIVEN_ITEM_DEFS's default_code otherwise)
+-- -- not a FK to any catalog table, since a default code like 'ABSENT_DEDUCT' may not correspond to
+-- any payroll_earning_deduction_types row for a company that never customized it.
+--
+
+CREATE TABLE `payroll_run_line_overrides` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `item_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `action` enum('override_amount','exclude') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `override_amount` decimal(15,2) DEFAULT NULL COMMENT 'used when action=override_amount',
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_line_overrides` (`run_id`,`employee_id`,`item_code`),
+  KEY `idx_payroll_run_line_overrides_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_line_overrides_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_line_overrides_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-21: employee-to-employee transfer deduction -- explicit request ("หักเพื่อไปจ่ายให้ใคร โดย
+-- เลือกพนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้"). `payee_employee_id` set on a DEDUCTION item (either a
+-- standing employee_earning_deductions assignment, or a one-off payroll_run_manual_lines row) makes
+-- PayrollRunModel::recalculate() automatically create a matching real earning line (code
+-- TRANSFER_IN, taxable, included in gross_amount) for the payee employee in the SAME run --
+-- confirmed choice, not just a reference/report field. Only meaningful when the item resolves to
+-- item_type='deduction' -- enforced at the application layer (same reasoning as
+-- interest_type being forced to 'none' for earning items already). ON DELETE SET NULL (not
+-- RESTRICT) so deleting the payee employee doesn't block deleting/managing the deduction item
+-- itself -- it just stops transferring anywhere (falls back to a plain deduction) on the next save.
+--
+
+ALTER TABLE `employee_earning_deductions`
+  ADD COLUMN `payee_employee_id` int(11) DEFAULT NULL AFTER `external_reference_no`,
+  ADD CONSTRAINT `fk_eed_payee_employee` FOREIGN KEY (`payee_employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `payroll_run_manual_lines`
+  ADD COLUMN `payee_employee_id` int(11) DEFAULT NULL AFTER `note`,
+  ADD CONSTRAINT `fk_prml_payee_employee` FOREIGN KEY (`payee_employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+COMMIT;
+
+--
+-- 2026-08-21: per-run, per-employee correction of the RAW attendance numbers Origami sent (not the
+-- resulting deduction amount -- see payroll_run_line_overrides above for that) -- explicit request
+-- ("ให้สามารถแก้ไข...รายการของแต่ละคนได้ เช่นปรับการลา การสาย หากขาดงาน...ต้องการแก้ตัวเลขดิบที่ Sync
+-- มา ไม่ใช่แค่ยอดเงิน"). Column names are DELIBERATELY IDENTICAL to their source payroll_sync_items
+-- columns so a fetched row can be passed straight into SyncPayResolver::resolve()'s new 4th param
+-- with zero remapping. NULL in any column = "use whatever Origami actually sent for this field"
+-- (same convention as payroll_run_line_overrides). absent_days (not absent_mins) is the one
+-- editable absence column -- matches how HR naturally thinks about an absence and avoids leaving a
+-- second, stale representation for SyncPayResolver's multi-unit dedup to get confused by; decimal
+-- allows a half-day correction (0.5). Same reasoning is why there is exactly one editable column
+-- per event throughout this table, never two competing units for the same thing.
+--
+
+CREATE TABLE `payroll_run_sync_item_overrides` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `ot_req_working_day_hrs` decimal(8,2) DEFAULT NULL,
+  `ot_req_weekend_hrs` decimal(8,2) DEFAULT NULL,
+  `ot_req_holiday_hrs` decimal(8,2) DEFAULT NULL,
+  `trip_allowance` decimal(15,2) DEFAULT NULL,
+  `late_mins` decimal(8,2) DEFAULT NULL,
+  `absent_days` decimal(6,2) DEFAULT NULL,
+  `leave_without_pay_days` decimal(6,2) DEFAULT NULL,
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_sync_item_overrides` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_sync_item_overrides_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_sync_item_overrides_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_sync_item_overrides_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-21, explicit request ("พนักงานที่อยู่ในช่วงทดลองงาน จะไม่จ่ายในวันหยุด จ่ายแค่วันทำงาน"):
+-- weekly working-day pattern per Shift, needed to make employees.salary_type='daily' actually mean
+-- "paid per real working day" -- see PayrollRunModel::recalculate()'s new daily-salary branch and
+-- SetupRulesModel::payableDaysForEmployee(). Seven plain booleans, not a master table -- days of the
+-- week are a fixed set of exactly 7, never a growable list, so CLAUDE.md's master-table convention
+-- (for open-ended option sets) doesn't apply here. Defaults (Mon-Fri on, Sat/Sun off) backfill every
+-- existing shift with the most common pattern -- leaving them all off would have silently zeroed out
+-- every daily-rate employee's pay the moment this shipped. A half-day Saturday is still "works"
+-- (boolean, not hours) -- this only needs to know whether a day counts as payable at all, not how
+-- many hours; shift length is a daily-*rate* employee's own concern, not this pattern's.
+--
+
+ALTER TABLE `shifts`
+  ADD COLUMN `works_monday` tinyint(1) NOT NULL DEFAULT 1 AFTER `break_minutes`,
+  ADD COLUMN `works_tuesday` tinyint(1) NOT NULL DEFAULT 1 AFTER `works_monday`,
+  ADD COLUMN `works_wednesday` tinyint(1) NOT NULL DEFAULT 1 AFTER `works_tuesday`,
+  ADD COLUMN `works_thursday` tinyint(1) NOT NULL DEFAULT 1 AFTER `works_wednesday`,
+  ADD COLUMN `works_friday` tinyint(1) NOT NULL DEFAULT 1 AFTER `works_thursday`,
+  ADD COLUMN `works_saturday` tinyint(1) NOT NULL DEFAULT 0 AFTER `works_friday`,
+  ADD COLUMN `works_sunday` tinyint(1) NOT NULL DEFAULT 0 AFTER `works_saturday`;
+
+COMMIT;
+
+--
+-- 2026-08-21, explicit request ("พนักงานทุกคน สามารถลบข้อมูลออกจากรอบได้ ต่อให้ Sync มาจาก Origami เอง
+-- ก็ตาม") -- lets ANY employee be removed from a run, including one whose membership is otherwise
+-- automatic (a genuinely-synced row from payroll_sync_items, or a cycle-based run's date-range
+-- membership) -- neither of which has any "roster row" to simply delete the way
+-- payroll_run_manual_employees already allows for an off-cycle/manually-joined employee.
+-- PayrollRunModel::recalculate()'s sync-branch and cycle-branch eligibility queries both gain a
+-- NOT EXISTS against this table. Undo path reuses the existing Join Employees picker (see
+-- PayrollRunModel::joinEmployees()/manualEmployeeOptions()) rather than new UI -- for a cycle-only
+-- run, "joining" an employee who's present here just clears the exclusion (re-admitting them via
+-- the date-range rule that already governs that run type); for a sync/off-cycle run it does the
+-- same on top of its existing add behavior.
+--
+
+CREATE TABLE `payroll_run_excluded_employees` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `excluded_by` int(11) DEFAULT NULL,
+  `excluded_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_excluded_employees` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_excluded_employees_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_excluded_employees_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_excluded_employees_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-21, explicit request ("จัดการได้ว่า คนนี้ไม่ต้องคำนวณภาษี ไม่นำส่งประกันสังคมในรอบนี้") --
+-- per-run, per-employee opt-out of tax (TH_PIT) and/or SSO (TH_SSO) calculation, layered on top of
+-- the employee's own permanent employees.tax_exempt/sso_enrolled columns without touching them --
+-- deliberately scoped to THIS run only, same "for this run only" convention as
+-- payroll_run_line_overrides/payroll_run_sync_item_overrides. Merged into $employeeFlags in
+-- PayrollRunModel::recalculate()'s Pass 2 right before StatutoryCalculationEngine::calculate() --
+-- reuses the engine's existing flag-driven zeroing (TAX_EXEMPT_ITEMS / sso_enrolled flag map) and
+-- the existing tax_exempt skip on the ThPitCalculator recompute, so no engine changes needed.
+-- PVD is deliberately NOT included -- only tax + SSO were asked for.
+--
+
+CREATE TABLE `payroll_run_employee_exemptions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `exempt_tax` tinyint(1) NOT NULL DEFAULT 0,
+  `exempt_sso` tinyint(1) NOT NULL DEFAULT 0,
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_employee_exemptions` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_employee_exemptions_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_employee_exemptions_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_employee_exemptions_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-22, explicit request ("Status ในหน้า Approve มี Waiting Approve Not Approve Need
+-- Information") -- confirmed with the user this must be a REAL new state, not just a label change:
+-- a third branch off pending_approval alongside the existing `rejected` branch (rejected = something
+-- is wrong; need_info = more info is needed before a decision can be made). Same column shape as
+-- rejected_at/rejected_by/reject_reason. See PayrollRunModel::requestInfo()/reviseAfterNeedInfo()/
+-- bulkRequestInfo() -- all three are exact mirrors of the existing reject()/reviseAfterReject()/
+-- bulkReject() trio.
+--
+
+ALTER TABLE `payroll_runs`
+  MODIFY COLUMN `state` enum('draft','pending_approval','approved','paid','locked','rejected','cancelled','need_info') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  ADD COLUMN `need_info_at` timestamp NULL DEFAULT NULL AFTER `cancel_reason`,
+  ADD COLUMN `need_info_by` int(11) DEFAULT NULL AFTER `need_info_at`,
+  ADD COLUMN `need_info_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `need_info_by`;
 
 COMMIT;
 

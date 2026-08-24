@@ -224,6 +224,59 @@ try {
     ], $userId);
     checkFalse('save() rejects interest_type != none on an earning item', $rInterestOnEarning['status']);
 
+    // ---------- payee_employee_id (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร โดยเลือก
+    // พนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- only meaningful on a deduction; forced null on an
+    // earning; must belong to the same company and cannot be the deducted employee themself. See
+    // tests/payroll_run_test.php for the payroll-calculation integration (transfer credited as a
+    // real earning line for the payee). ----------
+    $stmtPayee = $pdo->prepare("SELECT id FROM employees WHERE comp_id = :c AND deleted_at IS NULL AND id != :self LIMIT 1");
+    $stmtPayee->execute([':c' => $compId, ':self' => $employeeId]);
+    $payeeEmployeeId = (int)$stmtPayee->fetchColumn();
+    if ($payeeEmployeeId <= 0) {
+        echo "No second employee available for comp_id=1 -- skipping payee_employee_id tests.\n";
+    } else {
+        $rSelfPayee = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'หักโอนให้ตัวเอง', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 100,
+            'effective_date' => '2026-01-01', 'payee_employee_id' => $employeeId,
+        ], $userId);
+        checkFalse('save() rejects an employee being their own transfer payee', $rSelfPayee['status']);
+
+        $rForeignPayee = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'หักโอนให้ต่างบริษัท', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 100,
+            'effective_date' => '2026-01-01', 'payee_employee_id' => 999999,
+        ], $userId);
+        checkFalse('save() rejects a payee_employee_id that does not belong to this company', $rForeignPayee['status']);
+
+        $rEarningWithPayee = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'รายได้ไม่ควรมีผู้รับโอน', 'custom_item_type' => 'earning',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 100,
+            'effective_date' => '2026-01-01', 'payee_employee_id' => $payeeEmployeeId,
+        ], $userId);
+        checkTrue('save() still succeeds when payee_employee_id is sent on an EARNING item' . (empty($rEarningWithPayee['status']) ? " ({$rEarningWithPayee['message']})" : ''), $rEarningWithPayee['status']);
+        if (!empty($rEarningWithPayee['id'])) {
+            $gotEarningWithPayee = $eedModel->get((int)$rEarningWithPayee['id'], $compId);
+            check('payee_employee_id is silently forced null on an earning item (same as interest_type)', $gotEarningWithPayee['payee_employee_id'], null);
+        }
+
+        $rValidPayee = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'หักโอนให้เพื่อนร่วมงาน', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 100,
+            'effective_date' => '2026-01-01', 'payee_employee_id' => $payeeEmployeeId,
+        ], $userId);
+        checkTrue('save() accepts a valid same-company payee on a deduction item' . (empty($rValidPayee['status']) ? " ({$rValidPayee['message']})" : ''), $rValidPayee['status']);
+        if (!empty($rValidPayee['id'])) {
+            $gotValidPayee = $eedModel->get((int)$rValidPayee['id'], $compId);
+            check('payee_employee_id round-trips on get()', (int)($gotValidPayee['payee_employee_id'] ?? 0), $payeeEmployeeId);
+            checkTrue('payee_employee_no resolved for display on get()', !empty($gotValidPayee['payee_employee_no'] ?? null));
+
+            $listWithPayee = $eedModel->list($employeeId, $compId, 'deduction');
+            $listedRow = current(array_filter($listWithPayee, fn($r) => (int)$r['id'] === (int)$rValidPayee['id']));
+            checkTrue('list() also carries payee_employee_id/payee_employee_no', $listedRow !== false && (int)($listedRow['payee_employee_id'] ?? 0) === $payeeEmployeeId && !empty($listedRow['payee_employee_no'] ?? null));
+        }
+    }
+
 } finally {
     $pdo->rollBack();
 }

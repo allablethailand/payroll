@@ -368,6 +368,45 @@ html, body {
     display: block;
     opacity: 1;
 }
+/* 2026-08-23, explicit request ("ใน Menu อยากให้เพิ่มช่องในการค้นหา Menu ในกรณีที่ Menu เยอะๆ") --
+   filter box pinned at the top of the sidebar, above the scrolling menu list. See
+   public/js/app.js's registerSidebarMenuSearch(). */
+.sidebar-search {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 16px 4px;
+    padding: 8px 12px;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+.sidebar-search-icon {
+    color: #9aa1a9;
+    font-size: 0.8rem;
+    flex: 0 0 auto;
+}
+.sidebar-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    font-size: 0.85rem;
+    color: #4a5568;
+    outline: none;
+}
+.sidebar-search-input::placeholder {
+    color: #9aa1a9;
+}
+.sidebar-menu-no-results {
+    padding: 10px 20px;
+    font-size: 0.8rem;
+    color: #9aa1a9;
+    text-align: center;
+}
 .sidebar-menu {
     list-style: none;
     padding: 12px 0;
@@ -628,7 +667,6 @@ html, body {
     flex: 0 0 auto;
 }
 .structure-tabs-wrap .structure-tabs .nav-link {
-    border-radius: 999px;
     color: #6c757d;
     font-size: 0.9rem;
     padding: 0.4rem 1rem;
@@ -870,6 +908,14 @@ html, body {
 .station-card--cancel.active::after {
     border-left-color: #6c757d;
 }
+/* need_info (2026-08-22, explicit request: "Status ในหน้า Approve มี...Need Information") -- same
+   rotated/branch-off shape, its own blue accent (distinct from rejected's red / cancelled's grey). */
+.station-card--needinfo.active {
+    background: #0d6efd;
+}
+.station-card--needinfo.active::after {
+    border-left-color: #0d6efd;
+}
 .station-card-inner {
     display: flex;
     align-items: center;
@@ -891,8 +937,9 @@ html, body {
     /* Warning/amber tint, matching the row-level "Pull to Run" button's own color family
        (text-warning) -- same direction, not the brand-orange tint used elsewhere on this page. */
     background: rgba(255, 193, 7, 0.12);
-    border-radius: 20px;
+    border-radius: 5px;
     padding: 6px 8px 6px 16px;
+    margin-left: 10px;
 }
 .bulk-pull-bar-count {
     color: #92720c;
@@ -1172,6 +1219,13 @@ html, body {
 .process-timeline .tl-step.cancelled::before {
     background: #d6d8db;
 }
+/* need_info (2026-08-22, explicit request: "Status ในหน้า Approve มี...Need Information") -- a
+   real third branch off pending_approval, alongside rejected/cancelled above. Blue (#0d6efd)
+   deliberately distinct from done/current/rejected/cancelled's green/orange/red/grey -- reads as
+   "needs your input" rather than "wrong" or "stopped". */
+.process-timeline .tl-step.need_info::before {
+    background: #b6d4fe;
+}
 .process-timeline .tl-icon {
     display: inline-flex;
     align-items: center;
@@ -1209,6 +1263,11 @@ html, body {
     background: linear-gradient(135deg, #f1f3f5, #e2e8f0);
     color: #6c757d;
 }
+.process-timeline .tl-step.need_info .tl-icon {
+    border-color: #0d6efd;
+    background: linear-gradient(135deg, #e7f1ff, #cfe2ff);
+    color: #0d6efd;
+}
 .process-timeline .tl-label {
     display: block;
     margin-top: 8px;
@@ -1229,6 +1288,10 @@ html, body {
 }
 .process-timeline .tl-step.cancelled .tl-label {
     color: #6c757d;
+    font-weight: 600;
+}
+.process-timeline .tl-step.need_info .tl-label {
+    color: #0d6efd;
     font-weight: 600;
 }
 .process-timeline .tl-date {
@@ -1279,6 +1342,173 @@ html, body {
     }
 }
 
+/* ==========================================================================
+   Payroll Process list — Status column, merged with the mini-timeline (2026-08-23, explicit
+   request: "ถ้ามี Comment จากการอนุมัติ ให้นำมาแสดงด้วยใน Column Status แยกอาจยุบรวม Column Status
+   กับ Column Timeline เนื่องจากมีความสอดคล้องกันในการแสดงผล และในColumn นี้ เพิ่มปุ่มดำเนินการที่
+   สามารถกดได้ รวมถึงวันที่ Status เข้าไปด้วย") -- badge + mini-timeline dots + reject/need-info
+   comment + status date + quick-action button, stacked in one cell instead of 3 separate columns
+   (Status/Timeline/Last Updated). See public/js/payroll/index.js's renderStatusTimelineCell().
+   ========================================================================== */
+.status-timeline-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 190px;
+    max-width: 260px;
+    padding: 6px 0;
+}
+.status-timeline-cell .stc-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.status-timeline-cell .stc-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    color: #9aa1a9;
+    white-space: nowrap;
+}
+.status-timeline-cell .stc-timeline {
+    padding: 2px 2px 0;
+}
+.status-timeline-cell .stc-comment {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    line-height: 1.35;
+}
+.status-timeline-cell .stc-comment i {
+    margin-top: 2px;
+    flex: 0 0 auto;
+}
+.status-timeline-cell .stc-comment span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.status-timeline-cell .stc-comment-danger {
+    background: #fdecea;
+    color: #a83232;
+}
+.status-timeline-cell .stc-comment-info {
+    background: #e7f1ff;
+    color: #1a5fb4;
+}
+.status-timeline-cell .stc-action {
+    margin-top: 2px;
+}
+.status-timeline-cell .stc-action .btn {
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    line-height: 1.6;
+}
+
+/* ==========================================================================
+   Payroll Process list — compact per-row "Timeline" column (2026-08-22, explicit request:
+   "หน้า Process List อยากให้เพิ่มอีก Column เป็น Timeline ย่อๆ ว่า Process นี้ถึงขั้นตอนไหนแล้ว",
+   matching Origami's own Process List .pl-stepper dot-chain widget). Same spine/branch concept
+   and same done/current/rejected/cancelled color tokens as .process-timeline above (kept
+   identical on purpose for visual consistency across the two pages) but sized down to a bare
+   dot-and-line chain with no inline label/date -- those live in each dot's `title` tooltip
+   instead, since a table cell has nowhere near the width .process-timeline needs. See
+   public/js/payroll/index.js's own computeMiniTimelineProgress()/renderMiniTimelineDots() (a
+   deliberately separate, duplicated copy of detail.js's version -- see that file's own comment
+   for why this project keeps per-page-JS helpers self-contained rather than sharing them).
+   Sizing/spacing bumped up a notch (2026-08-23, explicit request: "Column Status ช่วยปรับ Design
+   ให้สวยขึ้นหน่อยครับ ตอนนี้แน่นไปหมด") now that the dots live inside the wider merged Status column
+   (.stc-timeline above) instead of their own narrow 14%-width column. The quick-action button now
+   sits in its own .stc-action wrapper (not .mini-timeline-wrap, retired along with the old
+   3-column layout) styled directly under .status-timeline-cell above.
+   ========================================================================== */
+/* 2026-08-22, explicit request ("Timeline กับ Status ชื่อซ้ำกัน และมีจุดสุดท้ายที่มี icon...ต่างเพื่อน
+   ถ้าเป็น icon ก็เปลี่ยนให้เป็น icon ทั้งหมด") -- dropped the current-step label/date line this
+   widget briefly had (redundant with the Status column right next to it) and gave EVERY dot a
+   consistent icon (not just done/branch ones -- not-yet-reached/current dots now show their own
+   step icon too, same set as the full-size .process-timeline uses, so no dot is ever blank next to
+   ones that do have an icon). Depth via a white "punch-through" ring, same trick noted in this
+   session's own Origami research: "circular icon markers with box-shadow: 0 0 0 4px #fff to punch
+   through the connecting line". */
+.mini-timeline {
+    display: flex;
+    align-items: center;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    min-width: 150px;
+}
+.mini-timeline .mt-step {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
+.mini-timeline .mt-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid #e2e8f0;
+    background: #fff;
+    box-shadow: 0 0 0 2px #fff;
+    flex: 0 0 auto;
+    font-size: 8px;
+    /* Default (not-yet-reached) dot stays white -- its icon must be a visible grey, not white,
+       or it would disappear against that white background. Every colored/dark state below
+       overrides this back to white for contrast against ITS OWN background. */
+    color: #c2c2c2;
+    transition: width .15s ease, height .15s ease;
+}
+.mini-timeline .mt-step.done .mt-dot {
+    border-color: #198754;
+    background: #198754;
+    color: #fff;
+}
+.mini-timeline .mt-step.current .mt-dot {
+    width: 19px;
+    height: 19px;
+    border-color: #FF9900;
+    background: #FF9900;
+    color: #fff;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(255, 153, 0, .3);
+    animation: process-tl-pulse 1.8s infinite;
+}
+.mini-timeline .mt-step.rejected .mt-dot {
+    border-color: #dc3545;
+    background: #dc3545;
+    color: #fff;
+}
+.mini-timeline .mt-step.cancelled .mt-dot {
+    border-color: #6c757d;
+    background: #6c757d;
+    color: #fff;
+}
+.mini-timeline .mt-step.need_info .mt-dot {
+    border-color: #0d6efd;
+    background: #0d6efd;
+    color: #fff;
+}
+.mini-timeline .mt-line {
+    flex: 1 1 16px;
+    width: 16px;
+    height: 2px;
+    border-radius: 1px;
+    background: #e2e8f0;
+}
+.mini-timeline .mt-line.done {
+    background: #a8d5ae;
+}
+
 .process-next-step {
     margin: 14px 0 0;
     padding: 10px 16px;
@@ -1311,6 +1541,77 @@ html, body {
     border-left-color: #6c757d;
     color: #495057;
 }
+
+/* ==========================================================================
+   Approval Flow timeline (2026-08-23, explicit request: "ปุ่มการดูFlow การอนุมัต ให้ล้อมาจาก
+   รายการอนุมัติของ C:\xampp\htdocs\origami\payroll รวมถึง Design ต่างๆ ให้แสดงผลแบบเดียวกัน") --
+   mirrors that reference app's own assets/js/approval-timeline.js (.apv-* classnames kept
+   identical on purpose): a vertical spine of "stages" connected by a line, each stage a colored
+   circular icon marker + a title/status-badge/date header + a body. Newest stage at the TOP
+   (Paid/Locked first, then Approval, then Created last) -- reading from the bottom (oldest) UP to
+   the top (latest) tracks the run's history chronologically, same "จากล่างขึ้นบน" convention this
+   app's own Timeline modal already used before this redesign. The Approval stage's body holds one
+   "substep" card per eligible approver (this app has a flat pool of any-one-can-decide approvers,
+   not Origami's literal sequential step chain -- see PayrollRunModel::approvalFlow()), each showing
+   that person's own status/date/note. No employee photo -- this app has no wired avatar upload
+   path (employees.profile_photo_path exists in the schema but nothing populates/serves it yet), so
+   people render as a plain colored initial-circle instead of Origami's real photo. Used by both
+   public/js/payroll/approval.js (Approval Queue page) and public/js/payroll/detail.js (Run Detail
+   page) -- same classnames, deliberately separate render functions per that file's own established
+   "duplicate, don't share across pages" convention (see approval.js's own comments for why). ========================================================================== */
+.apv-timeline { padding: 4px 2px; }
+.apv-stage { position: relative; display: flex; gap: 16px; padding-bottom: 30px; }
+.apv-stage-last { padding-bottom: 4px; }
+.apv-stage-marker { position: relative; flex: none; width: 38px; }
+.apv-stage-icon {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 14px; position: relative; z-index: 2;
+    box-shadow: 0 0 0 4px #fff;
+}
+.apv-stage-line {
+    position: absolute; top: 38px; bottom: -30px; left: 18px; width: 2px;
+    background: #e5e7eb; z-index: 1;
+}
+.apv-stage-content { flex: 1; min-width: 0; padding-top: 6px; }
+.apv-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.apv-stage-title { font-weight: 700; color: #1f2937; }
+.apv-badge {
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    white-space: nowrap;
+}
+.apv-stage-date { font-size: 12px; color: #9ca3af; margin-top: 3px; }
+.apv-stage-body { margin-top: 8px; }
+.apv-substep {
+    background: #f9fafb; border: 1px solid #f0f0f1; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px;
+}
+.apv-substep:last-child { margin-bottom: 0; }
+.apv-substep-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.apv-substep-label { font-weight: 600; color: #374151; display: flex; align-items: center; gap: 8px; }
+.apv-substep-date { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+.apv-substep-remark {
+    margin-top: 6px; font-size: 12px; color: #4b5563; background: #fff;
+    border-left: 3px solid #e5e7eb; padding: 6px 10px; border-radius: 4px;
+}
+.apv-people { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
+.apv-person { display: flex; align-items: center; gap: 6px; max-width: 160px; }
+.apv-person-avatar {
+    width: 26px; height: 26px; min-width: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: #eef0f2; color: #6c757d; font-size: 11px; font-weight: 700;
+    border: 1px solid #e5e7eb; flex: none;
+}
+.apv-person-name { font-size: 12px; color: #4b5563; line-height: 1.2; }
+.apv-muted-text { color: #6b7280; }
+.apv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.apv-timeline-log { margin-top: 4px; }
+.apv-timeline-log .apv-log-entry { border-left: 2px solid #e5e7eb; padding: 0 0 14px 14px; }
+.apv-timeline-log .apv-log-entry:last-child { padding-bottom: 0; }
+.apv-timeline-log .apv-log-date { font-size: 11px; color: #9ca3af; }
+.apv-timeline-log .apv-log-action { font-weight: 600; color: #374151; font-size: 13px; }
+.apv-timeline-log .apv-log-meta { font-size: 11px; color: #9ca3af; }
+.apv-timeline-log .apv-log-note { font-size: 12px; color: #4b5563; margin-top: 2px; }
 
 /* ==========================================================================
    Payroll Run Detail — colored stat cards (Employees/Gross/Deductions/Net Pay), replacing
@@ -1507,6 +1808,200 @@ html, body {
 }
 .detail-section + .detail-section {
     margin-top: 1.75rem;
+}
+/* ==========================================================================
+   Approval Workflow editor (public/js/setup/approval-workflow.js) -- redesign (2026-08-23,
+   explicit request: "ปรับ Design หน้าตั้งค่า Approval WorkFlow ให้ดูสวยขึ้น และใช้งานง่ายขึ้น").
+   Previously plain Bootstrap utility classes (border/rounded/p-2, bare btn-group) with no
+   dedicated styling at all. Basic-info fields move into a light card grid instead of the
+   label-in-col-sm-3 row pattern; each step becomes a proper connected-timeline card (numbered
+   badge in the brand orange gradient + a vertical connector line, echoing .page-header-card-icon
+   elsewhere in this file) so the step ORDER reads visually, which matters more now that gating
+   (requires_previous_step) makes order meaningful again. Approver entries render as pill "chips"
+   with a type icon instead of two bare <select> elements side by side. AND/OR/Finish is a
+   color-coded segmented toggle (blue/cyan/amber) instead of a plain btn-group with no visual
+   distinction between the three meanings.
+   ========================================================================== */
+.awf-basic-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .9rem 1.5rem;
+    background: #fafbfc;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+@media (min-width: 768px) {
+    .awf-basic-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    .awf-basic-grid .awf-field-full {
+        grid-column: 1 / -1;
+    }
+}
+.awf-field label {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #667085;
+    margin-bottom: .3rem;
+    display: block;
+}
+.awf-section-title {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: .25rem;
+}
+.awf-section-title .awf-section-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    font-size: .85rem;
+    flex: none;
+}
+.awf-section-title h6 {
+    margin: 0;
+}
+
+.awf-step-list {
+    position: relative;
+}
+.awf-step-card {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: .85rem;
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-radius: 14px;
+    padding: 1rem 1rem 1.1rem;
+    margin-bottom: .85rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+    transition: box-shadow .15s ease, border-color .15s ease;
+}
+.awf-step-card:hover {
+    border-color: rgba(255, 153, 0, .35);
+    box-shadow: 0 4px 14px rgba(16, 24, 40, .07);
+}
+.awf-step-card.sortable-ghost {
+    opacity: .4;
+}
+.awf-step-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: none;
+    padding-top: .1rem;
+}
+.awf-step-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    font-weight: 700;
+    font-size: .85rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(255, 153, 0, .35);
+}
+.awf-step-connector {
+    width: 2px;
+    flex: 1 1 auto;
+    min-height: 14px;
+    background: repeating-linear-gradient(180deg, #ffd694 0 4px, transparent 4px 8px);
+    margin-top: 4px;
+}
+.awf-step-card:last-child .awf-step-connector {
+    display: none;
+}
+.awf-step-drag {
+    color: #c4c9d1;
+    cursor: grab;
+    padding-top: .35rem;
+    flex: none;
+}
+.awf-step-drag:hover {
+    color: #98a2b3;
+}
+.awf-step-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.awf-step-name-input {
+    font-weight: 600;
+}
+.awf-approver-chip {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    background: #fafbfc;
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    padding: .35rem .5rem;
+    margin-bottom: .4rem;
+}
+.awf-approver-chip-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    background: rgba(255, 153, 0, .12);
+    color: #b45f00;
+    font-size: .75rem;
+}
+.awf-add-approver-btn {
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .82rem;
+}
+.awf-step-divider {
+    border: none;
+    border-top: 1px dashed #eef0f2;
+    margin: .75rem 0 .65rem;
+}
+.awf-step-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem 1.5rem;
+}
+.awf-group-toggle .btn {
+    font-size: .78rem;
+    font-weight: 600;
+    padding: .3rem .65rem;
+}
+.awf-group-toggle .btn[data-group-type="and"].active-group { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.awf-group-toggle .btn[data-group-type="or"].active-group { background: #06b6d4; border-color: #06b6d4; color: #fff; }
+.awf-group-toggle .btn[data-group-type="finish"].active-group { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.awf-seq-switch .form-check-label {
+    color: #667085;
+    cursor: pointer;
+}
+.awf-seq-switch .form-check-input:checked {
+    background-color: #FF9900;
+    border-color: #FF9900;
+}
+.awf-step-remove {
+    flex: none;
+    color: #d92d20;
+    background: transparent;
+    border: none;
+    padding: .25rem .4rem;
+}
+.awf-step-remove:hover {
+    background: rgba(217, 45, 32, .08);
+    border-radius: 8px;
 }
 .modal-body {
     width: 100%;

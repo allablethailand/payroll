@@ -63,10 +63,10 @@ function currentRateCellTs(row) {
     return `<span class="text-muted small">${langData['calc_method_formula'] || 'Formula-based'}</span>`;
 }
 function actionButtonsTs(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-item" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-primary btn-manage-rate" data-id="${row.id}" title="${langData['manage_rate'] || 'Manage Rate'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-item" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-item" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link text-primary border-start btn-manage-rate" data-id="${row.id}" title="${langData['manage_rate'] || 'Manage Rate'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-item" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 
@@ -178,9 +178,9 @@ function collectItemFormData() {
 
 /* ---------- Rate History (list) ---------- */
 function rateHistoryActionButtonsTs(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 function rateSummaryTs(row) {
@@ -614,8 +614,8 @@ function csAdjustableCellTs(row) {
     return adjustable ? (langData['yes'] || 'Yes') : `<span class="text-muted">${langData['no'] || 'No'}</span>`;
 }
 function csActionButtonsTs(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-cs" data-id="${row.statutory_item_id}"><i class="fas fa-edit"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-cs" data-id="${row.statutory_item_id}"><i class="fas fa-edit"></i></button>
     </div>`;
 }
 function initCompanySettingTable() {

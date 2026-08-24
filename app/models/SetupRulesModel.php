@@ -119,6 +119,13 @@ class SetupRulesModel {
         $status = in_array($data['status'] ?? '', ['active', 'inactive'], true) ? $data['status'] : 'active';
         $workLocationId = (!empty($data['work_location_id']) && is_numeric($data['work_location_id'])) ? (int)$data['work_location_id'] : null;
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
+        $worksMonday = !empty($data['works_monday']) ? 1 : 0;
+        $worksTuesday = !empty($data['works_tuesday']) ? 1 : 0;
+        $worksWednesday = !empty($data['works_wednesday']) ? 1 : 0;
+        $worksThursday = !empty($data['works_thursday']) ? 1 : 0;
+        $worksFriday = !empty($data['works_friday']) ? 1 : 0;
+        $worksSaturday = !empty($data['works_saturday']) ? 1 : 0;
+        $worksSunday = !empty($data['works_sunday']) ? 1 : 0;
 
         if ($nameTh === '' || $code === '' || $start === '' || $end === '') {
             return ['status' => false, 'message' => 'Missing required field.'];
@@ -142,26 +149,79 @@ class SetupRulesModel {
                 }
                 $stmt = $this->db->prepare("UPDATE shifts SET shift_code = :code, shift_name_th = :th, shift_name_en = :en,
                     start_time = :start, end_time = :end, break_minutes = :brk, work_location_id = :wl, description = :desc, status = :status,
+                    works_monday = :mon, works_tuesday = :tue, works_wednesday = :wed, works_thursday = :thu, works_friday = :fri,
+                    works_saturday = :sat, works_sunday = :sun,
                     updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
                 $stmt->execute([
                     ':code' => $code, ':th' => $nameTh, ':en' => $nameEn, ':start' => $start, ':end' => $end,
                     ':brk' => $breakMinutes, ':wl' => $workLocationId, ':desc' => $description !== '' ? $description : null, ':status' => $status,
+                    ':mon' => $worksMonday, ':tue' => $worksTuesday, ':wed' => $worksWednesday, ':thu' => $worksThursday,
+                    ':fri' => $worksFriday, ':sat' => $worksSaturday, ':sun' => $worksSunday,
                     ':updated_by' => $userId, ':id' => $id
                 ]);
                 return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
             }
             $stmt = $this->db->prepare("INSERT INTO shifts (comp_id, shift_code, shift_name_th, shift_name_en, start_time,
-                end_time, break_minutes, work_location_id, description, status, created_by)
-                VALUES (:comp_id, :code, :th, :en, :start, :end, :brk, :wl, :desc, :status, :created_by)");
+                end_time, break_minutes, work_location_id, description, status,
+                works_monday, works_tuesday, works_wednesday, works_thursday, works_friday, works_saturday, works_sunday, created_by)
+                VALUES (:comp_id, :code, :th, :en, :start, :end, :brk, :wl, :desc, :status,
+                :mon, :tue, :wed, :thu, :fri, :sat, :sun, :created_by)");
             $stmt->execute([
                 ':comp_id' => $compId, ':code' => $code, ':th' => $nameTh, ':en' => $nameEn, ':start' => $start,
                 ':end' => $end, ':brk' => $breakMinutes, ':wl' => $workLocationId, ':desc' => $description !== '' ? $description : null,
-                ':status' => $status, ':created_by' => $userId
+                ':status' => $status,
+                ':mon' => $worksMonday, ':tue' => $worksTuesday, ':wed' => $worksWednesday, ':thu' => $worksThursday,
+                ':fri' => $worksFriday, ':sat' => $worksSaturday, ':sun' => $worksSunday,
+                ':created_by' => $userId
             ]);
             return ['status' => true, 'message' => 'Created successfully.', 'id' => (int)$this->db->lastInsertId()];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
+    }
+
+    public function payableDaysForEmployee(int $employeeId, int $compId, string $dateFrom, string $dateTo): array {
+        $stmtE = $this->db->prepare("SELECT shift_id FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtE->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $emp = $stmtE->fetch(PDO::FETCH_ASSOC);
+        $shiftId = $emp['shift_id'] ?? null;
+
+        $workDays = null;
+        if ($shiftId !== null) {
+            $stmtS = $this->db->prepare("SELECT works_monday, works_tuesday, works_wednesday, works_thursday, works_friday, works_saturday, works_sunday
+                FROM shifts WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtS->execute([':id' => $shiftId, ':comp_id' => $compId]);
+            $shift = $stmtS->fetch(PDO::FETCH_ASSOC);
+            if ($shift) {
+                $workDays = [
+                    1 => (bool)$shift['works_monday'], 2 => (bool)$shift['works_tuesday'], 3 => (bool)$shift['works_wednesday'],
+                    4 => (bool)$shift['works_thursday'], 5 => (bool)$shift['works_friday'], 6 => (bool)$shift['works_saturday'],
+                    7 => (bool)$shift['works_sunday'],
+                ];
+            }
+        }
+
+        $holidays = $this->resolveHolidaysForEmployee($employeeId, $compId, $dateFrom, $dateTo);
+        $holidayDates = array_flip(array_column($holidays, 'date'));
+
+        $from = new DateTime($dateFrom);
+        $to = new DateTime($dateTo);
+        $totalDays = 0;
+        $payableDays = 0;
+        $cursor = clone $from;
+        while ($cursor <= $to) {
+            $totalDays++;
+            $dateStr = $cursor->format('Y-m-d');
+            $dow = (int)$cursor->format('N');
+            $isScheduledWorkDay = $workDays === null ? true : ($workDays[$dow] ?? true);
+            $isHoliday = isset($holidayDates[$dateStr]);
+            if ($isScheduledWorkDay && !$isHoliday) {
+                $payableDays++;
+            }
+            $cursor->modify('+1 day');
+        }
+
+        return ['total_days' => $totalDays, 'payable_days' => $payableDays, 'has_shift_pattern' => $workDays !== null];
     }
 
     public function shiftToggleStatus(int $id, int $compId, int $userId): array {
@@ -855,7 +915,12 @@ class SetupRulesModel {
         return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
     }
 
-    /* ==================== OT RATE ==================== */
+    /* ==================== OT RATE ====================
+     * Moved back here 2026-08-21 (explicit request: "ย้ายตัวคูณ OT ไปไว้ที่เดิมครับ") -- briefly lived
+     * in its own OtRateModel.php under Payroll Configuration earlier the same day, reverted to its
+     * original home. `calculation_method`/`flat_amount_rate` (added during that same detour, "เพิ่ม
+     * ตัวเลือก 'จำนวนเงินคงที่' ต่อชม./วัน") are kept -- only the location moved back, not the feature.
+     */
 
     public function otScopeOptions(): array {
         $stmt = $this->db->query("SELECT id, name_th AS text_th, name_en AS text_en FROM master_ot_scope_types WHERE is_active = 1 ORDER BY sort_order ASC");
@@ -886,12 +951,30 @@ class SetupRulesModel {
         $nameTh = trim((string)($data['ot_name_th'] ?? ''));
         $nameEn = trim((string)($data['ot_name_en'] ?? ''));
         $scopeId = (int)($data['ot_scope_id'] ?? 0);
-        $multiplier = (float)($data['multiplier_rate'] ?? 0);
         $calcBase = in_array($data['calculation_base'] ?? '', ['hourly', 'daily'], true) ? $data['calculation_base'] : 'hourly';
+        $calcMethod = in_array($data['calculation_method'] ?? '', ['multiplier', 'flat_amount'], true) ? $data['calculation_method'] : 'multiplier';
         $status = in_array($data['status'] ?? '', ['active', 'inactive'], true) ? $data['status'] : 'active';
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
-        if ($nameTh === '' || $scopeId <= 0 || $multiplier <= 0) {
+        // multiplier_rate is NOT NULL on ot_rates (a pre-existing column, unrelated to this feature)
+        // -- kept at a harmless placeholder default rather than null when calculation_method=
+        // flat_amount, since it's simply unused/unread in that mode (SyncPayResolver only reads it
+        // when calculation_method=multiplier), not a schema change worth making for this.
+        $multiplier = 1.00;
+        $flatAmountRate = null;
+        if ($calcMethod === 'flat_amount') {
+            $flatAmountRate = (float)($data['flat_amount_rate'] ?? 0);
+            if ($flatAmountRate <= 0) {
+                return ['status' => false, 'message' => 'flat_amount_rate must be greater than 0.'];
+            }
+        } else {
+            $multiplier = (float)($data['multiplier_rate'] ?? 0);
+            if ($multiplier <= 0) {
+                return ['status' => false, 'message' => 'Missing required field.'];
+            }
+        }
+
+        if ($nameTh === '' || $scopeId <= 0) {
             return ['status' => false, 'message' => 'Missing required field.'];
         }
         if ($nameEn === '') {
@@ -911,19 +994,23 @@ class SetupRulesModel {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 $stmt = $this->db->prepare("UPDATE ot_rates SET ot_name_th = :th, ot_name_en = :en, ot_scope_id = :scope_id,
-                    multiplier_rate = :multiplier, calculation_base = :calc_base, status = :status,
+                    multiplier_rate = :multiplier, calculation_base = :calc_base, calculation_method = :calc_method,
+                    flat_amount_rate = :flat_amount_rate, status = :status,
                     updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
                 $stmt->execute([
                     ':th' => $nameTh, ':en' => $nameEn, ':scope_id' => $scopeId, ':multiplier' => $multiplier,
-                    ':calc_base' => $calcBase, ':status' => $status, ':updated_by' => $userId, ':id' => $id,
+                    ':calc_base' => $calcBase, ':calc_method' => $calcMethod, ':flat_amount_rate' => $flatAmountRate,
+                    ':status' => $status, ':updated_by' => $userId, ':id' => $id,
                 ]);
                 return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
             }
             $stmt = $this->db->prepare("INSERT INTO ot_rates (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate,
-                calculation_base, status, created_by) VALUES (:comp_id, :th, :en, :scope_id, :multiplier, :calc_base, :status, :created_by)");
+                calculation_base, calculation_method, flat_amount_rate, status, created_by)
+                VALUES (:comp_id, :th, :en, :scope_id, :multiplier, :calc_base, :calc_method, :flat_amount_rate, :status, :created_by)");
             $stmt->execute([
                 ':comp_id' => $compId, ':th' => $nameTh, ':en' => $nameEn, ':scope_id' => $scopeId, ':multiplier' => $multiplier,
-                ':calc_base' => $calcBase, ':status' => $status, ':created_by' => $userId,
+                ':calc_base' => $calcBase, ':calc_method' => $calcMethod, ':flat_amount_rate' => $flatAmountRate,
+                ':status' => $status, ':created_by' => $userId,
             ]);
             return ['status' => true, 'message' => 'Created successfully.', 'id' => (int)$this->db->lastInsertId()];
         } catch (PDOException $e) {

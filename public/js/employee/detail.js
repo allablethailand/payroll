@@ -604,8 +604,10 @@ function addDocumentRow(doc) {
         `<td data-i18n="${labelKey}">${escapeHtml(typeLabel)}</td>` +
         `<td>${escapeHtml(doc.uploaded_at || '')}</td>` +
         '<td class="text-center">' +
-        `<a href="${BASE_URL}/api/employee.document.view?id=${encodeURIComponent(doc.id)}" target="_blank" class="btn btn-sm btn-link text-primary"><i class="fa-solid fa-eye"></i></a>` +
-        '<button type="button" class="btn btn-sm btn-link text-danger btn-delete-document"><i class="fa-solid fa-trash-can"></i></button>' +
+        '<div class="btn-group border rounded-3 bg-white">' +
+        `<a href="${BASE_URL}/api/employee.document.view?id=${encodeURIComponent(doc.id)}" target="_blank" class="btn btn-link text-info"><i class="fa-solid fa-eye"></i></a>` +
+        '<button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-document"><i class="fa-solid fa-trash-can"></i></button>' +
+        '</div>' +
         '</td>' +
         '</tr>'
     );
@@ -1018,26 +1020,30 @@ function eedStatusBadge(row) {
 function eedActionButtons(row) {
     const notStarted = Number(row.current_installment) === 0;
     const isOpen = row.status === 'active' || row.status === 'paused';
-    let html = '<div class="d-flex justify-content-center gap-1">';
+    // Button-group wrapper (2026-08-21, explicit request: "ปุ่มในตารางทั้งหมด ปรับให้เป็น button
+    // group ให้หมดเหมือนหน้า Employee") -- same idiom as public/js/employee/list.js's row actions
+    // (.btn-group.border.rounded-3.bg-white, btn-link buttons, border-start divider on every button
+    // after the first) instead of a manually-gapped flex row.
+    let html = '<div class="btn-group border rounded-3 bg-white">';
     // View is always available, Edit only while nothing has been paid yet (2026-08-20, explicit
     // request: "Status ของแต่ละงวดการจ่าย...จ่ายแล้วหรือรอจ่าย") -- once current_installment > 0
     // save() permanently blocks edits (see EmployeeEarningDeductionModel::save()), so this is the
     // only way to see the per-installment paid/pending schedule for an assignment already in
     // progress or finished. Same modal, populateEedForm(row, true) just disables everything.
-    html += `<button type="button" class="btn btn-sm btn-link text-secondary btn-view-eed" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
+    html += `<button type="button" class="btn btn-link text-info btn-view-eed" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
     if (isOpen && notStarted) {
-        html += `<button type="button" class="btn btn-sm btn-link text-secondary btn-edit-eed" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
+        html += `<button type="button" class="btn btn-link text-warning border-start btn-edit-eed" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
     }
     if (isOpen) {
         if (row.status === 'active') {
-            html += `<button type="button" class="btn btn-sm btn-link text-warning btn-eed-status" data-id="${row.id}" data-status="paused" title="${langData['pause_item'] || 'Pause'}"><i class="fa-solid fa-pause"></i></button>`;
+            html += `<button type="button" class="btn btn-link text-warning border-start btn-eed-status" data-id="${row.id}" data-status="paused" title="${langData['pause_item'] || 'Pause'}"><i class="fa-solid fa-pause"></i></button>`;
         } else {
-            html += `<button type="button" class="btn btn-sm btn-link text-success btn-eed-status" data-id="${row.id}" data-status="active" title="${langData['resume_item'] || 'Resume'}"><i class="fa-solid fa-play"></i></button>`;
+            html += `<button type="button" class="btn btn-link text-success border-start btn-eed-status" data-id="${row.id}" data-status="active" title="${langData['resume_item'] || 'Resume'}"><i class="fa-solid fa-play"></i></button>`;
         }
-        html += `<button type="button" class="btn btn-sm btn-link text-danger btn-eed-status" data-id="${row.id}" data-status="cancelled" title="${langData['cancel_item'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
+        html += `<button type="button" class="btn btn-link text-danger border-start btn-eed-status" data-id="${row.id}" data-status="cancelled" title="${langData['cancel_item'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
     }
     if (isOpen && notStarted) {
-        html += `<button type="button" class="btn btn-sm btn-link text-danger btn-delete-eed" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+        html += `<button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-eed" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
     }
     html += '</div>';
     return html;
@@ -1066,7 +1072,10 @@ function eedItemNameCell(row) {
     const label = escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '');
     const badge = row.ped_type_id ? '' : ` <span class="badge bg-secondary-subtle text-secondary">${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
     const codeLine = row.item_code ? escapeHtml(row.item_code) : '';
-    return `<div><strong>${label}</strong>${badge}</div><div class="text-muted small">${codeLine}</div>`;
+    const payeeTag = row.payee_employee_id
+        ? `<div class="text-muted small"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(row.payee_employee_no || ('#' + row.payee_employee_id))}</div>`
+        : '';
+    return `<div><strong>${label}</strong>${badge}</div><div class="text-muted small">${codeLine}</div>${payeeTag}`;
 }
 // Progress bar instead of plain "N/M" text (2026-08-20, table redesign request) -- reuses the same
 // .progress/.progress-bar component already used for the profile completeness bar elsewhere on this
@@ -1229,6 +1238,12 @@ function applyEedInterestVisibility() {
     if (!isDeduction) {
         setEedInterestOn(false);
     }
+    // Transfer-to-payee (2026-08-21) piggybacks on the same deduction-only toggle point as interest
+    // above, rather than a parallel visibility mechanism -- both only make sense on a deduction.
+    $('#eedPayeeWrapper').toggleClass('d-none', !isDeduction);
+    if (!isDeduction) {
+        $('#eed_payee_employee_id').val(null).trigger('change');
+    }
 }
 // Catalog vs custom item toggle (2026-08-19, explicit request). #eed_ped_type_id stays required only
 // in catalog mode, the custom pair only in custom mode -- validateEedForm() already skips anything
@@ -1265,7 +1280,7 @@ function setEedReadOnly(readOnly) {
 function eedModalTitle(action) {
     const type = $('#eed_custom_item_type').val() === 'deduction' ? 'deduction' : 'earning';
     const keys = {
-        add: { earning: ['add_earning_item', 'Add Earning'], deduction: ['add_deduction_item', 'Add Deduction'] },
+        add: { earning: ['add_earning_item', 'Earning'], deduction: ['add_deduction_item', 'Deduction'] },
         edit: { earning: ['edit_earning_item', 'Edit Earning'], deduction: ['edit_deduction_item', 'Edit Deduction'] },
         view: { earning: ['view_earning_item', 'View Earning'], deduction: ['view_deduction_item', 'View Deduction'] }
     };
@@ -1286,6 +1301,10 @@ function resetEedForm(context) {
     setEedInterestOn(false);
     setEedInterestType('fixed');
     $('#eed_interest_rate').val('');
+    // An employee can't be their own transfer payee -- excluded from the picker's own results the
+    // same way #report_to_id already excludes self elsewhere (data-exclude-id, read fresh on every
+    // ajax search by initSelect2's shared 'ajax' mode).
+    $('#eed_payee_employee_id').attr('data-exclude-id', currentEmployeeId || '').val(null).trigger('change');
     applyEedInterestVisibility();
     renderInstallmentTable([], null, false);
     $('#eedModalLabel').text(eedModalTitle('add'));
@@ -1310,6 +1329,12 @@ function populateEedForm(row, readOnly) {
     $('#eed_principal_amount').val(row.principal_amount != null ? row.principal_amount : row.total_amount);
     $('#eed_notes').val(row.notes || '');
     $('#eed_external_reference_no').val(row.external_reference_no || '');
+    if (row.payee_employee_id) {
+        const payeeLabel = row.payee_employee_no || `#${row.payee_employee_id}`;
+        $('#eed_payee_employee_id').empty().append(new Option(payeeLabel, row.payee_employee_id, true, true)).trigger('change');
+    } else {
+        $('#eed_payee_employee_id').val(null).trigger('change');
+    }
     const hasInterest = !!row.interest_type && row.interest_type !== 'none';
     setEedInterestOn(hasInterest);
     setEedInterestType(hasInterest ? row.interest_type : 'fixed');
@@ -1353,7 +1378,8 @@ function collectEedFormData() {
         principal_amount: $('#eed_principal_amount').val(),
         interest_type: interestType,
         notes: $('#eed_notes').val().trim(),
-        external_reference_no: $('#eed_external_reference_no').val().trim()
+        external_reference_no: $('#eed_external_reference_no').val().trim(),
+        payee_employee_id: $('#eed_payee_employee_id').val() || undefined
     };
     if (hasInterest) {
         data.interest_rate = interestRate;
@@ -1367,8 +1393,8 @@ function collectEedFormData() {
     return data;
 }
 function initEedUI() {
-    tbEarning = initEedTable('#tableEarning', 'earning', 'btn-add-earning', 'add_earning_item', 'Add Earning');
-    tbDeduction = initEedTable('#tableDeduction', 'deduction', 'btn-add-deduction', 'add_deduction_item', 'Add Deduction');
+    tbEarning = initEedTable('#tableEarning', 'earning', 'btn-add-earning', 'add_earning_item', 'Earning');
+    tbDeduction = initEedTable('#tableDeduction', 'deduction', 'btn-add-deduction', 'add_deduction_item', 'Deduction');
     // Hidden-tab-at-init width gotcha: neither is the active tab/sub-tab on page load, so both
     // tables above compute their column widths against a zero-width container -- readjust once
     // actually visible (cheap/idempotent, DataTables no-ops if nothing changed). Two triggers needed
@@ -1384,6 +1410,11 @@ function initEedUI() {
     });
     if (typeof initSelect2 === 'function') {
         initSelect2('#eed_ped_type_id', { mode: 'ajax' });
+        // Initialized once here, not per-modal-open (2026-08-21 bug fix precedent from the
+        // Attendance Deduction rate_unit dropdown: re-initializing a select2 field every time a
+        // modal opens can leave stale state/duplicate options behind -- matches #eed_ped_type_id's
+        // own established once-at-page-load pattern directly above).
+        initSelect2('#eed_payee_employee_id', { mode: 'ajax', allowClear: true });
     }
     $(document).on('click', '#eedModeToggle button', function () {
         setEedMode($(this).data('mode'));

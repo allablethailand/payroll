@@ -94,7 +94,16 @@
     </div>
 </nav>
 <aside class="origami-sidebar" id="origamiSidebar">
-    <ul class="sidebar-menu">
+    <!-- 2026-08-23, explicit request ("ใน Menu อยากให้เพิ่มช่องในการค้นหา Menu ในกรณีที่ Menu เยอะๆ") --
+         filters .menu-item/.submenu-link by their visible text as you type (public/js/app.js's
+         registerSidebarMenuSearch()). A top-level item with a matching submenu item stays visible
+         and auto-expands even if its OWN label doesn't match, so you can search by the specific
+         page name ("Payroll Configuration") without knowing which top-level group it lives under. -->
+    <div class="sidebar-search">
+        <i class="fas fa-magnifying-glass sidebar-search-icon"></i>
+        <input type="text" class="sidebar-search-input" id="sidebarMenuSearch" data-i18n="menu_search_placeholder" placeholder="Search menu...">
+    </div>
+    <ul class="sidebar-menu" id="sidebarMenuList">
         <li class="menu-item">
             <a href="<?=BASE_URL?>/dashboard" class="menu-link">
                 <span class="menu-icon">
@@ -127,6 +136,13 @@
                 <span class="menu-text" data-i18n="payroll_approval">Payroll Approval</span>
             </a>
         </li>
+        <!-- 2026-08-23, explicit request ("เมนูช่วยเรียงลำดับเมนูตามความสำคัญให้ใหม่อีกครั้ง") -- Reports
+             ranked above Payslip: statutory filings (ภ.ง.ด./สปส.) carry a hard monthly compliance
+             deadline, while Payslip Requests/Settings is mostly automatic (auto-send mode) and only
+             an on-demand convenience feature when it isn't -- higher stakes/more time-critical wins
+             the higher slot. Core payroll-run flow (Process -> Approval) still comes first since
+             that's the actual daily-driver; Time & Leave/Settings stay last as setup/admin surfaces
+             touched far less often than any of the above. -->
         <li class="menu-item">
             <a href="<?=BASE_URL?>/reports" class="menu-link">
                 <span class="menu-icon">
@@ -135,11 +151,39 @@
                 <span class="menu-text" data-i18n="reports">Reports</span>
             </a>
         </li>
-        <!-- Hidden 2026-08-21 (explicit request: "เมนูเวลาทำงานและการลา ยังไม่ได้ใช้ใน phase นี้") --
-             Setup & Rules/Manual Time Entry aren't part of this phase yet. Kept in the DOM (d-none),
-             not deleted -- both pages/routes/controllers underneath are untouched and fully working,
-             this only hides the sidebar entry point. -->
-        <li class="menu-item d-none">
+        <li class="menu-item has-submenu">
+            <a href="javascript:void(0);" class="menu-link submenu-toggle">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Payslip">
+                </span>
+                <span class="menu-text" data-i18n="payslip_menu">Payslip</span>
+                <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
+            </a>
+            <ul class="submenu">
+                <li>
+                    <a href="<?=BASE_URL?>/payslip/requests" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Requests">
+                        </span>
+                        <span class="submenu-text" data-i18n="requests">Requests</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/payslip/settings" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/SETTINGS.SVG" alt="Settings">
+                        </span>
+                        <span class="submenu-text" data-i18n="settings">Settings</span>
+                    </a>
+                </li>
+            </ul>
+        </li>
+        <!-- Re-shown 2026-08-21 (explicit request: "เปิด Menu ที่ปิดไว้ขึ้นมาหน่อยครับ") -- previously
+             hidden the same day ("เมนูเวลาทำงานและการลา ยังไม่ได้ใช้ใน phase นี้"), but its Setup & Rules
+             submenu still owns Shift/Holiday/Leave Type/Work Location (OT Rate and the attendance
+             deduction settings moved out to Payroll Configuration since then, not this menu itself)
+             plus Manual Time Entry, both fully working underneath -- just re-enabling the entry point. -->
+        <li class="menu-item">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
                     <img src="<?=BASE_URL?>/public/images/menu/TIME.SVG" alt="Settings">

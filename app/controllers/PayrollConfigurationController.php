@@ -5,6 +5,7 @@ require_once __DIR__ . '/../models/PayrollEarningDeductionTypeModel.php';
 require_once __DIR__ . '/../models/PayrollCycleModel.php';
 require_once __DIR__ . '/../models/AttendanceBonusSchemeModel.php';
 require_once __DIR__ . '/../models/AttendanceBonusLedgerModel.php';
+require_once __DIR__ . '/../models/AttendanceDeductionRuleModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 class PayrollConfigurationController extends Controller {
     private $model;
@@ -12,6 +13,7 @@ class PayrollConfigurationController extends Controller {
     private $cycleModel;
     private $attendanceBonusModel;
     private $ledgerModel;
+    private AttendanceDeductionRuleModel $attendanceDeductionRuleModel;
     private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new PayrollConfigurationModel();
@@ -19,6 +21,7 @@ class PayrollConfigurationController extends Controller {
         $this->cycleModel = new PayrollCycleModel();
         $this->attendanceBonusModel = new AttendanceBonusSchemeModel();
         $this->ledgerModel = new AttendanceBonusLedgerModel();
+        $this->attendanceDeductionRuleModel = new AttendanceDeductionRuleModel();
         $this->permissionModel = new PermissionModel();
     }
 
@@ -380,6 +383,30 @@ class PayrollConfigurationController extends Controller {
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $res = $this->pedTypeModel->seedDefaults((int)$compId, $userId);
         $this->json(['status' => true, 'message' => 'Loaded default items.', 'inserted' => $res['inserted'], 'skipped' => $res['skipped']]);
+    }
+
+    /* ==================== ATTENDANCE DEDUCTION RULES (Late / Absent / Unpaid Leave) ==================== */
+
+    public function attendanceDeductionMethodOptions() {
+        $this->json(['status' => true, 'data' => ['items' => $this->attendanceDeductionRuleModel->methodOptions(), 'total_count' => 0]]);
+    }
+
+    public function attendanceDeductionRuleGetAll() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        $this->json(['status' => true, 'data' => $this->attendanceDeductionRuleModel->ruleGetAll((int)$compId)]);
+    }
+
+    public function attendanceDeductionRuleSave() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $this->json($this->attendanceDeductionRuleModel->ruleSave($data, (int)$compId, $this->userId()));
     }
 
     public function pedTypeDelete() {

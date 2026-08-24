@@ -33,6 +33,13 @@
                 <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="deductions">Deductions</span>
             </button>
         </li>
+        <!-- 2026-08-21, explicit request: own tab right after Deductions, replacing the old button+shared-
+             modal-with-pill-switcher entry point on the Deductions tab. -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="attendance-deduction-tab" data-bs-toggle="tab" data-bs-target="#attendance-deduction-pane" type="button" role="tab" aria-controls="attendance-deduction-pane" aria-selected="false">
+                <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="attendance_deduction">Attendance Deduction</span>
+            </button>
+        </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="attendance-bonus-tab" data-bs-toggle="tab" data-bs-target="#attendance-bonus-pane" type="button" role="tab" aria-controls="attendance-bonus-pane" aria-selected="false">
                 <i class="fa-solid fa-medal me-2"></i><span data-i18n="attendance_bonus">Attendance Bonus</span>
@@ -233,6 +240,12 @@
                 </table>
             </div>
         </div>
+        <div class="tab-pane fade" id="attendance-deduction-pane" role="tabpanel" aria-labelledby="attendance-deduction-tab" tabindex="0">
+            <div class="mt-5 mb-5">
+                <p class="text-muted small mb-4" data-i18n="attendance_deduction_rule_description">Choose how each deduction is calculated, and set your own condition(s) per item. This is used automatically the next time payroll is calculated from synced attendance data.</p>
+                <div class="row g-3" id="attendanceDeductionCards"></div>
+            </div>
+        </div>
         <div class="tab-pane fade" id="attendance-bonus-pane" role="tabpanel" aria-labelledby="attendance-bonus-tab" tabindex="0">
             <div class="mt-5 mb-5">
                 <table class="table table-hover table-border align-middle w-100" id="tb_attendance_bonus">
@@ -291,7 +304,7 @@
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold text-secondary" id="ledgerEntryModalLabel">
-                    <span data-i18n="add_ledger_entry">Add Ledger Entry</span>
+                    <span data-i18n="add_ledger_entry">Ledger Entry</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -534,7 +547,7 @@
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold text-secondary" id="attendanceBonusModalLabel">
-                    <span data-i18n="add_attendance_bonus">Add Attendance Bonus Scheme</span>
+                    <span data-i18n="add_attendance_bonus">Attendance Bonus Scheme</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -657,6 +670,65 @@
                     <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" data-i18n="save_item">Save Scheme</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+<!-- Attendance Deduction Rules (2026-08-20, explicit request -- relocated here from Time & Leave >
+     Setup & Rules the same day, generalized from Late-only to also cover Absent/Unpaid Leave; moved
+     again 2026-08-21 from a button+shared-modal-with-pill-switcher on the Deductions tab to its own
+     tab -- see #attendance-deduction-pane's 3 cards above, "Configure" opens this modal already
+     scoped to that one event, so the old event switcher is gone). Late/Absent/Unpaid Leave are all
+     item_type=deduction concepts, so this still lives next to Deductions, not Earnings, where
+     เบี้ยขยัน/DILIGENCE (item_type=earning) lives.
+     rate_unit (2026-08-21, "นาทีละกี่บาท ชั่วโมงละกี่บาท") is freely choosable per rule regardless of
+     event_code (not fixed per event like before) -- only shown for flat_amount/tiered_bracket,
+     ignored by percent_of_rate (see SyncPayResolver::computeAttendanceDeductionAmount() docblock). -->
+<div class="modal fade" id="attendanceDeductionRuleModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="fa-solid fa-clock-rotate-left"></i> <span id="attendanceDeductionRuleModalEvent"></span> <span class="text-muted small ms-1" data-i18n="attendance_deduction_rule_title">Attendance Deduction Rule</span></h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" data-i18n="attendance_deduction_method">Deduction Method</label>
+                    <select class="form-select select2-remote" id="attendanceDeductionMethod" data-api="/api/attendance-deduction-rule.method-options" data-type="attendance_deduction_method"></select>
+                </div>
+                <div id="attendanceRateUnitWrapper" class="mb-3 d-none">
+                    <label class="form-label" data-i18n="attendance_deduction_rate_unit">Rate Unit</label>
+                    <select class="form-select select2-static" id="attendanceRateUnit" data-option-keys="attendance_deduction_rate_unit_minute,attendance_deduction_rate_unit_hour,attendance_deduction_rate_unit_day" data-option-values="minute,hour,day"></select>
+                </div>
+                <div id="attendanceFlatSection" class="mb-3 d-none">
+                    <label class="form-label" id="attendanceFlatLabel">Deduction Amount per Unit</label>
+                    <input type="number" step="0.01" min="0.01" class="form-control" id="attendanceRatePerUnit" placeholder="e.g., 1.00">
+                </div>
+                <div id="attendancePercentSection" class="mb-3 d-none">
+                    <label class="form-label" data-i18n="attendance_deduction_multiplier">Multiplier (x of the salary-derived rate)</label>
+                    <input type="number" step="0.01" min="0.01" class="form-control" id="attendanceMultiplierRate" value="1.00">
+                </div>
+                <div id="attendanceBracketSection" class="mb-3 d-none">
+                    <label class="form-label d-block" data-i18n="attendance_deduction_brackets">Brackets</label>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-border align-middle mb-2">
+                            <thead class="table-light text-secondary">
+                                <tr>
+                                    <th id="attendanceBracketMinLabel">From</th>
+                                    <th id="attendanceBracketMaxLabel">To</th>
+                                    <th data-i18n="attendance_deduction_bracket_amount">Deduction Amount</th>
+                                    <th class="text-end"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendanceBracketRows"></tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addAttendanceBracketRow()"><i class="fa-solid fa-plus me-1"></i><span data-i18n="attendance_deduction_bracket_add_row">Row</span></button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" onclick="saveAttendanceDeductionRule()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+            </div>
         </div>
     </div>
 </div>

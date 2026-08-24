@@ -32,6 +32,7 @@ function stateBadgePr(state) {
         locked: 'bg-dark-subtle text-dark',
         rejected: 'bg-danger-subtle text-danger',
         cancelled: 'bg-dark-subtle text-muted',
+        need_info: 'bg-primary-subtle text-primary',
     };
     const cls = map[state] || 'bg-light text-dark';
     const text = langData['state_' + state] || state;
@@ -43,6 +44,350 @@ function employeeNamePr(row) {
 function frequencyLabelPr(freq) {
     return (freq && langData['frequency_' + freq]) || freq || '-';
 }
+
+/* ---------- Compact per-row "Timeline" column (2026-08-22, explicit request: "หน้า Process List
+   อยากให้เพิ่มอีก Column เป็น Timeline ย่อๆ ว่า Process นี้ถึงขั้นตอนไหนแล้ว และมีปุ่มลัดให้กดได้ ...
+   แต่ต้องไม่กระทบกับ Function การทำงานหลัก") -- deliberately a SEPARATE, duplicated copy of
+   detail.js's RUN_TIMELINE_STEPS/computeTimelineProgress (not shared/refactored) so the
+   already-working Payroll Process Detail page's own full-size timeline is completely untouched by
+   this change, matching this codebase's existing convention of keeping each page's JS file
+   self-contained (escapeHtml.../fmtNum... etc. are already duplicated per page rather than shared).
+   Renders into the new .mini-timeline widget (public/css/style.css, right after .process-timeline)
+   instead of the full-size spine -- dots + connecting lines only, label/date moved into each dot's
+   title tooltip since a table cell has nowhere near the width the full widget needs. */
+const MINI_TIMELINE_STEPS = [
+    { key: 'draft', labelKey: 'state_draft', dateField: 'created_at', icon: 'fa-file-alt' },
+    { key: 'pending_approval', labelKey: 'state_pending_approval', dateField: 'submitted_at', icon: 'fa-paper-plane' },
+    { key: 'approved', labelKey: 'state_approved', dateField: 'approved_at', icon: 'fa-check' },
+    { key: 'paid', labelKey: 'state_paid', dateField: 'paid_at', icon: 'fa-money-check-dollar' },
+    { key: 'locked', labelKey: 'state_locked', dateField: 'locked_at', icon: 'fa-lock' },
+];
+// row.cancelled_from_state (PayrollRunModel::list()'s new subquery column) stands in for
+// detail.js's audit-log-derived cancelledFromState(run) here -- list() rows don't carry the full
+// audit log (only get() does), so this small dedicated column is what makes the cancelled branch
+// accurate without fetching each row's full history just for this compact widget.
+function computeMiniTimelineProgress(row) {
+    const state = row.state;
+    if (state === 'rejected') {
+        return { reachedIdx: 1, branch: { atIndex: 2, type: 'rejected' } };
+    }
+    // 2026-08-22, explicit request ("Status ในหน้า Approve มี...Need Information") -- a real third
+    // state, same branch slot/reasoning as 'rejected' above (also only ever reached FROM
+    // pending_approval).
+    if (state === 'need_info') {
+        return { reachedIdx: 1, branch: { atIndex: 2, type: 'need_info' } };
+    }
+    if (state === 'cancelled') {
+        const fromKey = row.cancelled_from_state || 'draft';
+        if (fromKey === 'draft') {
+            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
+        }
+        const effectiveKey = fromKey === 'rejected' ? 'pending_approval' : fromKey;
+        const idx = MINI_TIMELINE_STEPS.findIndex(s => s.key === effectiveKey);
+        if (idx < 0) {
+            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
+        }
+        return { reachedIdx: idx, branch: { atIndex: idx + 1, type: 'cancelled' } };
+    }
+    const idx = MINI_TIMELINE_STEPS.findIndex(s => s.key === state);
+    return { reachedIdx: idx - 1, branch: null };
+}
+// Quick shortcut buttons (2026-08-22) -- deliberately only for a zero-extra-input transition:
+// Submit (draft) and Lock (paid) both call the EXACT SAME existing endpoints detail.js already
+// uses, no new backend/business logic at all. pending_approval has no shortcut here on purpose --
+// approving now belongs on the rebuilt Payroll Approval page (permission-gated, captures a
+// reason); approved has no shortcut either since Mark Paid needs payment method/reference input
+// that doesn't fit safely in a compact cell -- both stay reachable via the existing Edit/View ->
+// Detail page flow, unaffected by this change.
+// 2026-08-22, bug fix (explicit report: "มันคือปุ่มดำเนินการครับ อยากให้แสดงผลเป็นปุ่มอยู่อีกบรรทัด
+// แยกออกจาก Timeline" -> follow-up: "ให้ปุ่มเป็นสีเดียวกับหน้า Detail") -- was a bare icon sitting
+// inline right next to the dot chain, which read as an extra timeline dot instead of an action. Now
+// a real labeled button (icon + text) on its own line below the dots, rendered by
+// renderStatusTimelineCell() into a separate row of the cell -- solid btn-primary (this app's
+// brand orange, see style.css's own .btn-primary override), matching the Detail page's own
+// #btnSubmitRun button exactly (`btn btn-sm btn-primary`) instead of the outline variant.
+function miniTimelineQuickActionHtml(row) {
+    if (row.state === 'draft') {
+        return `<button type="button" class="btn btn-sm btn-primary mt-quick-action-btn btn-quick-submit-run" data-id="${row.id}"><i class="fa-solid fa-paper-plane me-1"></i>${langData['action_submit'] || 'Submit for Approval'}</button>`;
+    }
+    if (row.state === 'paid') {
+        return `<button type="button" class="btn btn-sm btn-primary mt-quick-action-btn btn-quick-lock-run" data-id="${row.id}"><i class="fa-solid fa-lock me-1"></i>${langData['action_lock'] || 'Lock'}</button>`;
+    }
+    return '';
+}
+// 2026-08-22, explicit request ("Timeline กับ Status ชื่อซ้ำกัน และมีจุดสุดท้ายที่มี icon...ต่างเพื่อน
+// ถ้าเป็น icon ก็เปลี่ยนให้เป็น icon ทั้งหมด") -- two fixes on top of the previous pass: (1) dropped
+// the current-step label/date line this widget briefly had, since the Status column right next to
+// it already shows that same text -- redundant; (2) EVERY dot now shows a consistent icon (not
+// just done/branch ones) -- not-yet-reached and current dots use their own step's icon (same set
+// as the full-size .process-timeline's RUN_TIMELINE_STEPS in detail.js: file/paper-plane/check/
+// money/lock), done overrides to a plain checkmark same as the full timeline does, branch dots
+// keep their existing xmark/ban/question -- so no dot is ever blank next to ones that do have an
+// icon.
+const MINI_TIMELINE_BRANCH_ICONS = { rejected: 'fa-xmark', cancelled: 'fa-ban', need_info: 'fa-question' };
+const MINI_TIMELINE_BRANCH_LABEL_KEYS = { rejected: 'state_rejected', cancelled: 'state_cancelled', need_info: 'state_need_info' };
+function renderMiniTimelineDots(row) {
+    const { reachedIdx, branch } = computeMiniTimelineProgress(row);
+    const currentIndex = reachedIdx + 1;
+    let dotsHtml = '<ul class="mini-timeline">';
+    for (let i = 0; i < MINI_TIMELINE_STEPS.length; i++) {
+        const step = MINI_TIMELINE_STEPS[i];
+        let cls = '';
+        let label = langData[step.labelKey] || step.key;
+        let icon = step.icon;
+        const isBranchHere = branch && branch.atIndex === i;
+        if (isBranchHere) {
+            cls = branch.type;
+            label = langData[MINI_TIMELINE_BRANCH_LABEL_KEYS[branch.type]] || branch.type;
+            icon = MINI_TIMELINE_BRANCH_ICONS[branch.type] || 'fa-ban';
+        } else if (i <= reachedIdx) {
+            cls = 'done';
+            icon = 'fa-check';
+        } else if (i === currentIndex) {
+            cls = 'current';
+        }
+        const dateVal = row[step.dateField];
+        const dateText = (cls === 'done' || cls === 'current' || isBranchHere) && dateVal ? toDisplayDatePr(String(dateVal).substring(0, 10)) : '';
+        const title = escapeHtmlPr(`${label}${dateText ? ` (${dateText})` : ''}`);
+        dotsHtml += `<li class="mt-step ${cls}"><span class="mt-dot" title="${title}"><i class="fa-solid ${icon}"></i></span></li>`;
+        if (i < MINI_TIMELINE_STEPS.length - 1) {
+            dotsHtml += `<span class="mt-line ${i <= reachedIdx ? 'done' : ''}"></span>`;
+        }
+    }
+    dotsHtml += '</ul>';
+    return dotsHtml;
+}
+// 2026-08-23, explicit request ("ถ้ามี Comment จากการอนุมัติ ให้นำมาแสดงด้วยใน Column Status แยกอาจ
+// ยุบรวม Column Status กับ Column Timeline เนื่องจากมีความสอดคล้องกันในการแสดงผล และในColumn นี้ เพิ่ม
+// ปุ่มดำเนินการที่สามารถกดได้ รวมถึงวันที่ Status เข้าไปด้วย") -- Status + Timeline + Last Updated
+// collapse into this one cell: badge, mini-timeline dots, the reject/need-info comment when this
+// row actually has one, the status date (updated_at -- same "always reflects the current status's
+// own timestamp" reasoning as the Approval List's own Last Updated column), then the quick-action
+// button on its own line. reject_reason/need_info_reason come straight off payroll_runs (list()
+// already SELECTs r.*) -- an approve() note isn't shown here since it isn't a column on
+// payroll_runs itself (only payroll_run_audit_logs.note), and pulling that in would mean an extra
+// JOIN on every list() call just for this one glance-view; the full approve note is one click away
+// via the row's own Timeline.
+// 2026-08-23, explicit request ("Column Status ช่วยปรับ Design ให้สวยขึ้นหน่อยครับ ตอนนี้แน่นไปหมด") --
+// re-laid-out into distinct rows with real breathing room instead of 4 plain-text lines stacked
+// with a 4px gap: badge + date share a row (both compact facts), the dot-chain gets its own row
+// with more room to sit in, and a reject/need-info comment renders as a tinted chip (truncated to
+// one line with the full text still available via `title`, so one long reason can't blow out the
+// row's height) instead of wrapped plain text.
+function runCommentHtml(row) {
+    let tone = null;
+    let text = null;
+    if (row.state === 'rejected' && row.reject_reason) {
+        tone = 'danger';
+        text = row.reject_reason;
+    } else if (row.state === 'need_info' && row.need_info_reason) {
+        tone = 'info';
+        text = row.need_info_reason;
+    }
+    if (!text) {
+        return '';
+    }
+    return `<div class="stc-comment stc-comment-${tone}" title="${escapeHtmlPr(text)}"><i class="fa-solid fa-comment-dots"></i><span>${escapeHtmlPr(text)}</span></div>`;
+}
+// 2026-08-23, explicit request ("ในหน้า Process List ถ้าส่ง Approve ไปแล้ว ควรมีปุ่มให้กดดู Workflow
+// ของการอนุมัติด้วย") -- once a run has actually been submitted (submitted_at set -- same "must be
+// sent for approval first" gate the Detail page's own Timeline button already uses), a small
+// "Timeline" button opens the same Approval Flow modal the Approval Queue/Detail pages have,
+// right from this row -- no need to open the Detail page just to see who's approved/who's pending.
+function workflowTimelineButtonHtml(row) {
+    if (!row.submitted_at) {
+        return '';
+    }
+    return `<button type="button" class="btn btn-sm btn-outline-secondary mt-quick-action-btn btn-view-run-workflow" data-id="${row.id}"><i class="fa-solid fa-list-check me-1"></i>${langData['action_timeline'] || 'Timeline'}</button>`;
+}
+function renderStatusTimelineCell(row) {
+    const dateVal = row.updated_at;
+    const dateHtml = dateVal
+        ? `<span class="stc-date"><i class="fa-regular fa-clock"></i>${toDisplayDatePr(dateVal.substring(0, 10))} ${dateVal.substring(11, 16)}</span>`
+        : '';
+    const quickActionHtml = miniTimelineQuickActionHtml(row);
+    const workflowBtnHtml = workflowTimelineButtonHtml(row);
+    return `<div class="status-timeline-cell">
+        <div class="stc-top">${stateBadgePr(row.state)}${dateHtml}</div>
+        <div class="stc-timeline">${renderMiniTimelineDots(row)}</div>
+        ${runCommentHtml(row)}
+        ${(quickActionHtml || workflowBtnHtml) ? `<div class="stc-action d-flex flex-wrap gap-1">${quickActionHtml}${workflowBtnHtml}</div>` : ''}
+    </div>`;
+}
+
+/* ---------- Approval Flow timeline modal (2026-08-23, explicit request: "ในหน้า Process List ถ้าส่ง
+   Approve ไปแล้ว ควรมีปุ่มให้กดดู Workflow ของการอนุมัติด้วย") -- same .apv-* vertical-stage design as
+   the Approval Queue/Detail pages' own Timeline modals (public/js/payroll/approval.js and
+   public/js/payroll/detail.js -- see style.css's own comment for the full class mapping),
+   duplicated rather than shared per this codebase's established per-page-JS convention. Read-only
+   here on purpose -- no Approve/Reject/Revert buttons -- this page shows progress, acting on a run
+   stays on the Payroll Approval page/Detail page. ---------- */
+const APV_COLORS_PR = {
+    done: { icon: '#16a34a', badgeBg: '#dcfce7', badgeText: '#15803d' },
+    pending: { icon: '#f59e0b', badgeBg: '#fef3c7', badgeText: '#b45309' },
+    rejected: { icon: '#ef4444', badgeBg: '#fee2e2', badgeText: '#b91c1c' },
+    info: { icon: '#0d6efd', badgeBg: '#cfe2ff', badgeText: '#0a58ca' },
+    muted: { icon: '#cbd5e1', badgeBg: '#f1f5f9', badgeText: '#64748b' },
+};
+function apvBadgeHtmlPr(tone, label) {
+    const c = APV_COLORS_PR[tone] || APV_COLORS_PR.muted;
+    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtmlPr(label)}</span>`;
+}
+function apvIconHtmlPr(tone, icon) {
+    const c = APV_COLORS_PR[tone] || APV_COLORS_PR.muted;
+    return `<div class="apv-stage-icon" style="background:${c.icon};"><i class="fa-solid ${icon}"></i></div>`;
+}
+function apvAvatarHtmlPr(name, size) {
+    size = size || 26;
+    const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
+    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtmlPr(initial)}</span>`;
+}
+function apvPersonLineHtmlPr(name) {
+    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlPr(name, 26)}<span class="apv-person-name">${escapeHtmlPr(name || '-')}</span></div>`;
+}
+function apvApproverTonePr(status) {
+    return { approved: 'done', rejected: 'rejected', need_info: 'info', pending: 'pending', not_applicable: 'muted' }[status] || 'muted';
+}
+function apvApproverLabelPr(status) {
+    const key = { approved: 'status_approved', rejected: 'status_rejected', need_info: 'state_need_info', pending: 'status_pending' }[status];
+    return (key && langData[key]) || status;
+}
+function apvApproverSubstepHtmlPr(a) {
+    const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
+    return `<div class="apv-substep">
+        <div class="apv-substep-head">
+            <span class="apv-substep-label">${apvAvatarHtmlPr(name, 22)}${escapeHtmlPr(name)}</span>
+            ${apvBadgeHtmlPr(apvApproverTonePr(a.status), apvApproverLabelPr(a.status))}
+        </div>
+        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${escapeHtmlPr(a.acted_at)}</div>` : ''}
+        ${a.note ? `<div class="apv-substep-remark">${escapeHtmlPr(a.note)}</div>` : ''}
+    </div>`;
+}
+function apvApprovalStageInfoPr(state) {
+    switch (state) {
+        case 'pending_approval': return { tone: 'pending', icon: 'fa-hourglass-half', label: langData['state_pending_approval'] || 'Waiting for Approval' };
+        case 'need_info': return { tone: 'info', icon: 'fa-circle-info', label: langData['state_need_info'] || 'Need Information' };
+        case 'approved': case 'paid': case 'locked': return { tone: 'done', icon: 'fa-check', label: langData['state_approved'] || 'Approved' };
+        case 'rejected': return { tone: 'rejected', icon: 'fa-xmark', label: langData['state_rejected'] || 'Not Approved' };
+        default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
+    }
+}
+function apvApprovalStageHtmlPr(run) {
+    const info = apvApprovalStageInfoPr(run.state);
+    const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
+    const bodyHtml = approvers.length
+        ? approvers.map(apvApproverSubstepHtmlPr).join('')
+        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
+    return `
+        <div class="apv-stage">
+            <div class="apv-stage-marker">${apvIconHtmlPr(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${langData['approval_flow_title'] || 'Approval'}</span>
+                    ${apvBadgeHtmlPr(info.tone, info.label)}
+                </div>
+                <div class="apv-stage-body">${bodyHtml}</div>
+            </div>
+        </div>
+    `;
+}
+function apvPaidStageHtmlPr(run) {
+    const isPaidOrLocked = run.state === 'paid' || run.state === 'locked';
+    const tone = isPaidOrLocked ? 'done' : 'muted';
+    const label = run.state === 'locked' ? (langData['state_locked'] || 'Locked') : (isPaidOrLocked ? (langData['state_paid'] || 'Paid') : (langData['status_pending'] || 'Pending'));
+    return `
+        <div class="apv-stage">
+            <div class="apv-stage-marker">${apvIconHtmlPr(tone, isPaidOrLocked ? 'fa-money-check-dollar' : 'fa-flag')}<div class="apv-stage-line"></div></div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
+                    ${apvBadgeHtmlPr(tone, label)}
+                </div>
+                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${escapeHtmlPr(run.paid_at)}</div>` : ''}
+                <div class="apv-stage-body">
+                    <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+function apvCreatedStageHtmlPr(run) {
+    const creator = (currentLang === 'th' ? run.created_by_name_th : run.created_by_name_en) || run.created_by_name_th || run.created_by_name_en || '-';
+    return `
+        <div class="apv-stage apv-stage-last">
+            <div class="apv-stage-marker">${apvIconHtmlPr('done', 'fa-plus')}</div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
+                    ${apvBadgeHtmlPr('done', langData['stage_created'] || 'Created')}
+                </div>
+                <div class="apv-stage-date">${escapeHtmlPr(run.created_at || '')}</div>
+                <div class="apv-stage-body">${apvPersonLineHtmlPr(creator)}</div>
+            </div>
+        </div>
+    `;
+}
+function auditActionLabelPr(action) {
+    const map = {
+        create: 'action_create', update: 'action_edit', recalculate: 'action_recalculate',
+        submit: 'action_submit', revert: 'action_revert', approve: 'action_approve',
+        reject: 'action_reject', reviseAfterReject: 'action_revise', markPaid: 'action_mark_paid',
+        lock: 'action_lock', delete: 'action_delete', cancel: 'action_cancel',
+        request_info: 'action_request_info', reviseAfterNeedInfo: 'action_revise',
+    };
+    const key = map[action];
+    return (key && langData[key]) || action;
+}
+function renderAuditTimelinePr(logs) {
+    if (!logs || !logs.length) {
+        return `<div class="text-secondary small">${langData['no_history_yet'] || 'No action has been taken on this request yet.'}</div>`;
+    }
+    const ordered = logs.slice().reverse(); // newest first at the top, oldest at the bottom
+    return ordered.map(l => {
+        const actor = (currentLang === 'th' ? l.performed_by_name_th : l.performed_by_name_en) || l.performed_by_name_th || l.performed_by_name_en || '-';
+        const metaParts = [];
+        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtmlPr(l.ip_address)}`);
+        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtmlPr(l.user_agent)}`);
+        return `<div class="apv-log-entry">
+            <div class="apv-log-date">${escapeHtmlPr(l.performed_at)}</div>
+            <div class="apv-log-action">${escapeHtmlPr(auditActionLabelPr(l.action))} <span class="text-secondary fw-normal">(${escapeHtmlPr(actor)})</span></div>
+            ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
+            ${l.note ? `<div class="apv-log-note">${escapeHtmlPr(l.note)}</div>` : ''}
+        </div>`;
+    }).join('');
+}
+function renderRunWorkflowModal(run) {
+    $('#runWorkflowModalRunName').text(run.run_name || '');
+    $('#runWorkflowModalBody').html(`
+        <div class="apv-timeline">
+            ${apvPaidStageHtmlPr(run)}
+            ${apvApprovalStageHtmlPr(run)}
+            ${apvCreatedStageHtmlPr(run)}
+        </div>
+        <hr>
+        <h6 class="fw-bold small text-uppercase text-secondary">${langData['approval_history'] || 'History'}</h6>
+        <div class="apv-timeline-log">${renderAuditTimelinePr(run.audit_log)}</div>
+    `);
+}
+$(document).on('click', '.btn-view-run-workflow', function (e) {
+    e.stopPropagation();
+    const id = $(this).data('id');
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.approval-timeline`,
+        method: 'GET',
+        data: { id },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            renderRunWorkflowModal(res.data);
+            new bootstrap.Modal(document.getElementById('runWorkflowModal')).show();
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+});
 // Actions column for tb_payroll_run, rendered as one Bootstrap button-group (per explicit
 // request). Edit/View are now a SINGLE merged button (per explicit request) -- both just
 // navigate to the Detail page in a NEW tab using public_id (the IdCodec-encoded token, see
@@ -98,7 +443,7 @@ function updateStationCounts() {
     // this every card except the one currently selected would always tally as 0 no matter how many
     // runs actually exist in that state.
     const rows = tb_payroll_run.rows({ search: 'none' }).data().toArray();
-    const counts = { draft: 0, pending_approval: 0, approved: 0, paid: 0, locked: 0, rejected: 0, cancelled: 0 };
+    const counts = { draft: 0, pending_approval: 0, approved: 0, paid: 0, locked: 0, rejected: 0, need_info: 0, cancelled: 0 };
     rows.forEach(r => { if (Object.prototype.hasOwnProperty.call(counts, r.state)) counts[r.state]++; });
     Object.keys(counts).forEach(state => {
         $(`.station-card[data-state="${state}"] .station-count`).text(counts[state]);
@@ -125,11 +470,10 @@ function initPayrollRunTable() {
         columns: [
             { data: 'run_name', render: d => `<strong class="text-dark">${escapeHtmlPr(d)}</strong>` },
             { data: null, render: (d, t, row) => `${toDisplayDatePr(row.period_start_date)} - ${toDisplayDatePr(row.period_end_date)}` },
-            { data: 'state', render: d => stateBadgePr(d) },
+            { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
             { data: 'employee_count', className: 'text-end' },
             { data: 'total_net_amount', className: 'text-end', render: d => fmtNumPr(d) },
             { data: null, render: (d, t, row) => escapeHtmlPr(employeeNamePr(row)) },
-            { data: 'updated_at', render: d => d ? toDisplayDatePr(d.substring(0, 10)) + ' ' + d.substring(11, 16) : '-' },
             { data: null, className: 'text-center', orderable: false, render: (d, t, row) => renderRunActionsPr(row) },
         ],
         pageLength: pageLength,
@@ -148,12 +492,26 @@ function initPayrollRunTable() {
         },
         drawCallback: function () { getTableLang(); updateStationCounts(); }
     });
+    // 2026-08-21, real bug fix (explicit report: "คลิกที่ Column ไม่ได้...ไม่ขึ้น Tab ใหม่") --
+    // was window.location.href (same-tab navigation), inconsistent with the Actions column's own
+    // merged Edit/View button right next to it, which already opens in a new tab (target="_blank",
+    // see renderRunActionsPr()'s own comment: "both just navigate to the Detail page in a NEW
+    // tab" -- an explicit, already-documented design decision this row click just never matched).
+    // Clicking anywhere else in the row now opens the same way.
     $('#tb_payroll_run tbody').off('click', 'tr').on('click', 'tr', function (e) {
         if ($(e.target).closest('.btn-add-run').length) return;
         if ($(e.target).closest('.row-actions').length) return;
+        // 2026-08-23, real bug fix (explicit report: "ตรงช่อง Status กดปุ่ม แต่ดันไปเปิดหน้า Detail")
+        // -- this handler is delegated on tbody, which sits CLOSER to the click target than the
+        // quick-action button's own document-delegated handler (public/js/payroll/index.js's own
+        // .btn-quick-submit-run/.btn-quick-lock-run, both of which already call
+        // e.stopPropagation()) -- so during the native bubble phase THIS handler always runs
+        // first regardless of that stopPropagation() call, and needs its own exclusion here too or
+        // it opens the Detail tab before the button's handler ever gets a chance to stop it.
+        if ($(e.target).closest('.stc-action').length) return;
         const rowData = tb_payroll_run.row(this).data();
         if (rowData && rowData.public_id) {
-            window.location.href = `${BASE_URL}/payroll-process/${rowData.public_id}`;
+            window.open(`${BASE_URL}/payroll-process/${rowData.public_id}`, '_blank', 'noopener');
         }
     });
 }
@@ -867,6 +1225,58 @@ $(document).on('click', '.btn-delete-run', function (e) {
             error: function () {
                 showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
             }
+        });
+    });
+});
+
+/* ---------- Mini-timeline quick actions (2026-08-22) -- both call the EXACT SAME existing
+   endpoints detail.js's own Submit/Lock buttons already use, wrapped in the same showConfirm()
+   pattern as every other row action on this page. Zero new backend/business logic -- purely a
+   shortcut so a draft/paid run doesn't need a full page navigation for a zero-input transition. */
+$(document).on('click', '.btn-quick-submit-run', function (e) {
+    e.stopPropagation();
+    const id = $(this).data('id');
+    const title = langData['confirm_submit_message'] || 'Submit this payroll run for approval? You will not be able to edit amounts until it is sent back or rejected.';
+    showConfirm(langData['action_submit'] || 'Submit for Approval', title, function () {
+        $.ajax({
+            url: `${BASE_URL}/api/payroll-run.submit`,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify({ id: id }),
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    refreshAfterRunMutation();
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
+        });
+    });
+});
+$(document).on('click', '.btn-quick-lock-run', function (e) {
+    e.stopPropagation();
+    const id = $(this).data('id');
+    const title = langData['confirm_lock_title'] || 'Lock this entry?';
+    const message = langData['confirm_lock_message'] || 'Once locked, this entry can no longer be edited or deleted.';
+    showConfirm(title, message, function () {
+        $.ajax({
+            url: `${BASE_URL}/api/payroll-run.lock`,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify({ id: id }),
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    refreshAfterRunMutation();
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
         });
     });
 });

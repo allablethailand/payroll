@@ -124,7 +124,7 @@ function renderAttendance() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_attendance_yet'] || 'No attendance records have been added yet.' },
-        initComplete: addButtonInitCompleteMe('btn-add-attendance', 'fa-solid fa-plus', 'add_attendance', 'Add Attendance', 'openAttendanceModal()')
+        initComplete: addButtonInitCompleteMe('btn-add-attendance', 'fa-solid fa-plus', 'add_attendance', 'Attendance', 'openAttendanceModal()')
     });
 }
 function openAttendanceModal(id) {
@@ -222,7 +222,7 @@ function renderLeave() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_leave_yet'] || 'No leave records have been added yet.' },
-        initComplete: addButtonInitCompleteMe('btn-add-leave', 'fa-solid fa-plus', 'add_leave', 'Add Leave', 'openLeaveModal()')
+        initComplete: addButtonInitCompleteMe('btn-add-leave', 'fa-solid fa-plus', 'add_leave', 'Leave', 'openLeaveModal()')
     });
 }
 function openLeaveModal(id) {
@@ -317,7 +317,7 @@ function renderOvertime() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_overtime_yet'] || 'No overtime records have been added yet.' },
-        initComplete: addButtonInitCompleteMe('btn-add-overtime', 'fa-solid fa-plus', 'add_overtime', 'Add Overtime', 'openOvertimeModal()')
+        initComplete: addButtonInitCompleteMe('btn-add-overtime', 'fa-solid fa-plus', 'add_overtime', 'Overtime', 'openOvertimeModal()')
     });
 }
 function openOvertimeModal(id) {

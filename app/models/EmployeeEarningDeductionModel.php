@@ -23,9 +23,11 @@ class EmployeeEarningDeductionModel {
                     COALESCE(pt.item_name_th, eed.custom_item_name) AS item_name_th,
                     COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
                     COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
-                    pt.source_event_code
+                    pt.source_event_code,
+                    payee.employee_no AS payee_employee_no
                 FROM `employee_earning_deductions` eed
                 LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
+                LEFT JOIN `employees` payee ON payee.id = eed.payee_employee_id
                 WHERE eed.employee_id = :employee_id AND eed.deleted_at IS NULL";
         $params = [':employee_id' => $employeeId];
         if ($itemType !== null && $itemType !== '') {
@@ -43,9 +45,11 @@ class EmployeeEarningDeductionModel {
                     COALESCE(pt.item_name_th, eed.custom_item_name) AS item_name_th,
                     COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
                     COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
-                    pt.calculation_method AS ped_calculation_method
+                    pt.calculation_method AS ped_calculation_method,
+                    payee.employee_no AS payee_employee_no
                 FROM `employee_earning_deductions` eed
                 LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
+                LEFT JOIN `employees` payee ON payee.id = eed.payee_employee_id
                 JOIN `employees` e ON eed.employee_id = e.id
                 WHERE eed.id = :id AND e.comp_id = :comp_id AND eed.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
@@ -268,6 +272,21 @@ class EmployeeEarningDeductionModel {
         }
 
         $notes = !empty($data['notes']) ? trim((string)$data['notes']) : null;
+
+        // Transfer-to-payee (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร โดยเลือกพนักงานได้ว่า
+        // จะหักของคนนี้ไปให้คนนี้") -- only meaningful on a deduction; forced null (not an error) for
+        // an earning, same as interest_type being forced to 'none' above. Wired into
+        // PayrollRunModel::recalculate()'s transfer-credit pass -- see that method's own docblock.
+        $payeeEmployeeId = null;
+        if (!empty($data['payee_employee_id']) && $resolvedItemType === 'deduction') {
+            $payeeEmployeeId = (int)$data['payee_employee_id'];
+            if ($payeeEmployeeId === $employeeId) {
+                return ['status' => false, 'message' => 'An employee cannot be their own transfer payee.'];
+            }
+            if (!$this->employeeBelongsToComp($payeeEmployeeId, $compId)) {
+                return ['status' => false, 'message' => 'Invalid payee employee.'];
+            }
+        }
         $externalReferenceNo = !empty($data['external_reference_no']) ? trim((string)$data['external_reference_no']) : null;
 
         $installmentAmounts = $this->buildInstallmentAmounts($amountMode, $totalAmount, $totalInstallments, $customAmounts);
@@ -303,6 +322,7 @@ class EmployeeEarningDeductionModel {
                             amount_mode = :amount_mode, interest_type = :interest_type, interest_rate = :interest_rate,
                             total_amount = :total_amount, principal_amount = :principal_amount,
                             effective_date = :effective_date, notes = :notes, external_reference_no = :external_reference_no,
+                            payee_employee_id = :payee_employee_id,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $stmt = $this->db->prepare($sql);
@@ -319,6 +339,7 @@ class EmployeeEarningDeductionModel {
                     ':effective_date' => $effectiveDate,
                     ':notes' => $notes,
                     ':external_reference_no' => $externalReferenceNo,
+                    ':payee_employee_id' => $payeeEmployeeId,
                     ':updated_by' => $userId,
                     ':id' => $id,
                 ]);
@@ -328,9 +349,9 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = $id;
             } else {
                 $sql = "INSERT INTO `employee_earning_deductions`
-                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, interest_type, interest_rate, total_amount, principal_amount, effective_date, status, notes, external_reference_no, created_by)
+                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, interest_type, interest_rate, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, created_by)
                         VALUES
-                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :created_by)";
+                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :created_by)";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':employee_id' => $employeeId,
@@ -346,6 +367,7 @@ class EmployeeEarningDeductionModel {
                     ':effective_date' => $effectiveDate,
                     ':notes' => $notes,
                     ':external_reference_no' => $externalReferenceNo,
+                    ':payee_employee_id' => $payeeEmployeeId,
                     ':created_by' => $userId,
                 ]);
                 $assignmentId = (int)$this->db->lastInsertId();

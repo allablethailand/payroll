@@ -88,6 +88,16 @@
                     </div>
                 </div>
             </div>
+            <!-- 2026-08-22, explicit request ("Status ในหน้า Approve มี...Need Information") -- a
+                 real third branch off pending_approval, alongside Rejected, added here too so a
+                 need_info run isn't invisible/uncounted on the Process List's own station bar. -->
+            <div class="station-col station-col--reject">
+                <div class="station-card station-card--reject station-card--needinfo" data-state="need_info">
+                    <div class="station-card-inner">
+                        <span data-i18n="state_need_info">Need Information</span> <span class="station-count">0</span>
+                    </div>
+                </div>
+            </div>
             <div class="station-col station-col--reject">
                 <div class="station-card station-card--reject station-card--cancel" data-state="cancelled">
                     <div class="station-card-inner">
@@ -100,14 +110,20 @@
         <table class="table table-hover table-border align-middle w-100" id="tb_payroll_run">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th scope="col" style="width: 20%;" data-i18n="table_run_name">Run Name</th>
-                    <th scope="col" style="width: 15%;" data-i18n="table_period">Pay Period</th>
-                    <th scope="col" style="width: 9%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 9%;" data-i18n="table_employee_count">Employees</th>
-                    <th scope="col" style="width: 12%;" data-i18n="table_net_amount">Net Total</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_created_by">Created By</th>
-                    <th scope="col" style="width: 12%;" data-i18n="table_updated_at">Last Updated</th>
-                    <th scope="col" style="width: 10%;" class="text-center" data-i18n="col_actions">Actions</th>
+                    <th scope="col" style="width: 17%;" data-i18n="table_run_name">Run Name</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_period">Pay Period</th>
+                    <!-- 2026-08-23, explicit request ("ถ้ามี Comment จากการอนุมัติ ให้นำมาแสดงด้วยใน
+                         Column Status แยกอาจยุบรวม Column Status กับ Column Timeline...และในColumn นี้
+                         เพิ่มปุ่มดำเนินการที่สามารถกดได้ รวมถึงวันที่ Status เข้าไปด้วย"; widened + given
+                         real spacing 2026-08-23 per explicit follow-up: "ช่วยปรับ Design ให้สวยขึ้นหน่อย
+                         ครับ ตอนนี้แน่นไปหมด") -- Status, Timeline, and Last Updated collapsed into one
+                         column: badge + status date on one row, mini-timeline dots on their own row,
+                         a reject/need-info comment chip when present, then the quick-action button. -->
+                    <th scope="col" style="width: 29%;" data-i18n="col_status">Status</th>
+                    <th scope="col" style="width: 7%;" data-i18n="table_employee_count">Employees</th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_net_amount">Net Total</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_created_by">Created By</th>
+                    <th scope="col" style="width: 7%;" class="text-center" data-i18n="col_actions">Actions</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -301,6 +317,31 @@
                         <button type="submit" class="btn btn-danger"><span data-i18n="confirm_cancel_run">Confirm Cancellation</span></button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approval Flow timeline modal (2026-08-23, explicit request: "ในหน้า Process List ถ้าส่ง
+         Approve ไปแล้ว ควรมีปุ่มให้กดดู Workflow ของการอนุมัติด้วย") -- read-only here (this page shows
+         progress, not where you act -- approving stays on the Payroll Approval page/Detail page's
+         own Timeline, per this page's own existing "approving now belongs on the rebuilt Payroll
+         Approval page" convention). Same .apv-* design as those pages' own Timeline modals. -->
+    <div class="modal fade" id="runWorkflowModal" tabindex="-1" aria-labelledby="runWorkflowModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title text-secondary mb-0" id="runWorkflowModalLabel">
+                            <i class="fa-solid fa-list-check me-1"></i><span data-i18n="approval_timeline_title">Approval Timeline</span>
+                        </h5>
+                        <div class="text-muted small" id="runWorkflowModalRunName"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="runWorkflowModalBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
             </div>
         </div>
     </div>

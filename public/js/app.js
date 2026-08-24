@@ -49,7 +49,64 @@ $(document).ready(async function() {
     initSelect2Remote('.select2-remote');
     initSelect2('.select2-static', { mode: 'static' });
     initSelect2('.select2-native', { mode: 'native' });
+    registerSidebarMenuSearch();
 });
+// 2026-08-23, explicit request ("ใน Menu อยากให้เพิ่มช่องในการค้นหา Menu ในกรณีที่ Menu เยอะๆ") --
+// filters the sidebar as you type, matching against each item's CURRENT-LANGUAGE label (works in
+// both TH/EN since .menu-text/.submenu-text are already translated in place by applyLanguage()).
+// A top-level item with a matching submenu entry stays visible and force-opens even when its own
+// label doesn't match, so searching "Payroll Configuration" finds it without knowing it lives
+// under "Settings" -- non-matching sibling submenu entries are hidden too, so only the relevant
+// row(s) show once expanded. Clearing the box restores every item to its normal (collapsed) state.
+function registerSidebarMenuSearch() {
+    const $input = $('#sidebarMenuSearch');
+    const $list = $('#sidebarMenuList');
+    if (!$input.length || !$list.length) return;
+    function norm(str) {
+        return (str || '').trim().toLowerCase();
+    }
+    function resetSidebarMenu() {
+        $list.find('.sidebar-menu-no-results').remove();
+        $list.children('.menu-item').show();
+        $list.find('.submenu > li').show();
+        $list.children('.menu-item.has-submenu').removeClass('open').find('.submenu').css('display', '');
+    }
+    $input.on('input', function () {
+        const term = norm($(this).val());
+        $list.find('.sidebar-menu-no-results').remove();
+        if (!term) {
+            resetSidebarMenu();
+            return;
+        }
+        let anyVisible = false;
+        $list.children('.menu-item').each(function () {
+            const $item = $(this);
+            const $submenu = $item.find('.submenu');
+            const ownMatch = norm($item.find('.menu-text').first().text()).includes(term);
+            if ($submenu.length) {
+                let childMatch = false;
+                $submenu.children('li').each(function () {
+                    const match = norm($(this).find('.submenu-text').text()).includes(term);
+                    $(this).toggle(ownMatch || match);
+                    if (match) childMatch = true;
+                });
+                const show = ownMatch || childMatch;
+                $item.toggle(show);
+                if (show) {
+                    $item.addClass('open');
+                    $submenu.show();
+                    anyVisible = true;
+                }
+            } else {
+                $item.toggle(ownMatch);
+                if (ownMatch) anyVisible = true;
+            }
+        });
+        if (!anyVisible) {
+            $list.append(`<li class="sidebar-menu-no-results">${(typeof langData !== 'undefined' && langData['menu_no_results']) || 'No matching menu items'}</li>`);
+        }
+    });
+}
 function getTableLang() {
     return {
         search: langData.search || "Search",
@@ -95,19 +152,31 @@ function applyLanguage(lang, root = document) {
     $(root).find('select[data-option-keys]').each(function() {
         const $select = $(this);
         const keys = $select.attr('data-option-keys').split(',');
+        // 2026-08-21 bug fix: this rebuild ignored data-option-values and always used the raw i18n
+        // key as the <option> value. For any field where key !== submit value (data-option-values
+        // present -- e.g. attendanceRateUnit's attendance_deduction_rate_unit_minute -> 'minute'),
+        // this ran here (via loadLang() at page load) BEFORE initSelect2's own '.select2-static'
+        // sweep, planting options valued with the wrong (key) id. initSelect2 then built its own
+        // data array with the CORRECT id, and Select2's ArrayAdapter only replaces an existing
+        // option when its id matches -- since it didn't, it appended a second, correctly-valued
+        // option instead, leaving 6 entries (2 per choice, identical text) in the dropdown. Reading
+        // data-option-values here too, the same way initSelect2's static branch already does, makes
+        // both agree on the id so Select2 replaces in place instead of duplicating.
+        const explicitValues = ($select.attr('data-option-values') || '').split(',').filter(Boolean);
         const currentVal = $select.val(); // เก็บค่าที่เลือกไว้อยู่เดิม
 
         $select.empty(); // ล้าง option เดิมออกก่อน
 
         // วนลูปสร้าง option ใหม่ตามภาษาปัจจุบัน
-        keys.forEach(function(key) {
+        keys.forEach(function(key, idx) {
             const cleanKey = key.trim();
+            const optionValue = explicitValues[idx] !== undefined ? explicitValues[idx].trim() : cleanKey;
             // ดึงคำแปลจาก langData ถ้าไม่มีให้ใช้ cleanKey เป็นค่าเริ่มต้น
-            const translatedText = (typeof langData !== 'undefined' && langData[cleanKey]) 
-                ? langData[cleanKey] 
+            const translatedText = (typeof langData !== 'undefined' && langData[cleanKey])
+                ? langData[cleanKey]
                 : cleanKey;
 
-            const newOption = new Option(translatedText, cleanKey);
+            const newOption = new Option(translatedText, optionValue);
             $select.append(newOption);
         });
 

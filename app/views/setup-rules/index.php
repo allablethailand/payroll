@@ -53,6 +53,7 @@
                             <th data-i18n="shift_name">Shift Name</th>
                             <th data-i18n="shift_code">Shift Code</th>
                             <th data-i18n="time">Time</th>
+                            <th data-i18n="working_days">Working Days</th>
                             <th data-i18n="work_location">Work Location</th>
                             <th data-i18n="last_modified">Last Modified</th>
                             <th data-i18n="status" class="text-center">Status</th>
@@ -107,7 +108,6 @@
                             <th data-i18n="ot_name">OT Name</th>
                             <th data-i18n="applies_to">Applies To</th>
                             <th data-i18n="multiplier">Multiplier</th>
-                            <th data-i18n="calculation_base">Calculation Base</th>
                             <th data-i18n="status" class="text-center">Status</th>
                             <th class="text-end"></th>
                         </tr>
@@ -167,6 +167,24 @@
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="work_location">Work Location</label>
                         <select class="form-select select2-remote" id="shiftWorkLocation" data-api="/api/work-location.options" data-type="location"></select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" data-i18n="working_days">Working Days</label><br>
+                        <!-- 2026-08-21, explicit request: weekly working-day pattern per Shift, used by
+                             PayrollRunModel::recalculate()'s salary_type='daily' branch (via
+                             SetupRulesModel::payableDaysForEmployee()) to know which days are payable.
+                             Unlike #eedInterestToggle (single-select), each day here toggles independently
+                             -- see toggleShiftWorkDay() in setup-rules.js. Defaults to Mon-Fri active for a
+                             brand-new shift, matching the DB column defaults. -->
+                        <div class="btn-group btn-group-sm" role="group" id="shiftWorkDaysToggle">
+                            <button type="button" class="btn btn-outline-brand active" data-day="monday"><span data-i18n="day_mon_short">Mon</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-day="tuesday"><span data-i18n="day_tue_short">Tue</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-day="wednesday"><span data-i18n="day_wed_short">Wed</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-day="thursday"><span data-i18n="day_thu_short">Thu</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-day="friday"><span data-i18n="day_fri_short">Fri</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-day="saturday"><span data-i18n="day_sat_short">Sat</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-day="sunday"><span data-i18n="day_sun_short">Sun</span></button>
+                        </div>
                     </div>
                     <div class="col-12">
                         <label class="form-label" data-i18n="description">Description</label>
@@ -436,12 +454,20 @@
                         <select class="form-select select2-remote required" id="otScope" data-api="/api/ot-rate.scope-options" data-type="ot_scope"></select>
                     </div>
                     <div class="col-md-6">
+                        <label class="form-label" data-i18n="calculation_base">Calculation Base</label>
+                        <select class="form-select select2-static" id="otBase" data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" data-i18n="ot_calculation_method">Calculation Method</label>
+                        <select class="form-select select2-static" id="otCalcMethod" data-option-keys="ot_calc_method_multiplier,ot_calc_method_flat_amount" data-option-values="multiplier,flat_amount"></select>
+                    </div>
+                    <div class="col-12" id="otMultiplierWrapper">
                         <label class="form-label" data-i18n="multiplier_rate">Multiplier Rate (x)</label>
                         <input type="number" step="0.1" min="0.1" class="form-control" id="otMultiplier" value="1.5">
                     </div>
-                    <div class="col-12">
-                        <label class="form-label" data-i18n="calculation_base">Calculation Base</label>
-                        <select class="form-select select2-static" id="otBase" data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select>
+                    <div class="col-12 d-none" id="otFlatAmountWrapper">
+                        <label class="form-label" data-i18n="ot_flat_amount_rate">Flat Amount (per hour/day)</label>
+                        <input type="number" step="0.01" min="0.01" class="form-control" id="otFlatAmountRate" placeholder="e.g., 100.00">
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2 mt-1">
                         <div class="form-check form-switch m-0">

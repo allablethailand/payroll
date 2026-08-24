@@ -17,6 +17,8 @@ require_once __DIR__ . '/../app/models/PayrollEarningDeductionTypeModel.php';
 require_once __DIR__ . '/../app/models/AttendanceBonusSchemeModel.php';
 require_once __DIR__ . '/../app/models/AttendanceBonusLedgerModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunModel.php';
+require_once __DIR__ . '/../app/models/EmployeeEarningDeductionModel.php';
+require_once __DIR__ . '/../app/models/SetupRulesModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -61,6 +63,28 @@ try {
     // of this run ONLY -- entirely inside this script's own transaction, rolled back at the very end,
     // so nothing here is a real/permanent change.
     $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL")
+        ->execute([':comp_id' => $compId]);
+
+    // Same reasoning as the employees soft-delete just above (real leftover data from actual
+    // interactive testing on this shared dev DB, not a test fixture -- confirmed via created_by/
+    // created_at, see feedback_dev_db_shared_state_test_fragility in project memory): a real
+    // attendance_deduction_rules row for comp_id=1's 'late' event (flat_amount @ 1.00/minute) was
+    // found live, breaking this file's "sync late deduction = (hourlyRate/60)*minutes*1.0" fixed
+    // assumption below. Cleared for the duration of this transaction only, rolled back at the end.
+    $pdo->prepare("DELETE FROM `attendance_deduction_rules` WHERE comp_id = :comp_id")->execute([':comp_id' => $compId]);
+
+    // Same reasoning again (real dev-DB config, not a test fixture): a real ACTIVE Approval
+    // Workflow is configured for PAYROLL_RUN_APPROVAL in this shared dev DB (the exact one the
+    // 2026-08-23 bug report was about -- a single approver_type='user' step). Since submit() now
+    // routes through it whenever hasActiveWorkflow() is true (see PayrollRunModel::submit()'s own
+    // docblock), leaving it active would silently hijack every run this file submits away from
+    // the flat-role fixtures below and onto that unrelated real user. Deactivated for the duration
+    // of this transaction only, rolled back at the end -- the dedicated "Approval Workflow engine
+    // integration" section further down creates and activates its OWN throwaway workflow instead.
+    $pdo->prepare("UPDATE `approval_workflows` w
+        JOIN `approval_workflow_document_types` awdt ON awdt.workflow_id = w.id
+        SET w.status = 'inactive'
+        WHERE w.comp_id = :comp_id AND awdt.document_type_code = 'PAYROLL_RUN_APPROVAL' AND w.status = 'active'")
         ->execute([':comp_id' => $compId]);
 
     // ---------- Fixtures (created inside the transaction, rolled back at the end) ----------
@@ -308,6 +332,233 @@ try {
     check('only the 1 mapped sync-payload employee is included (not the other 3 date-range-eligible fixture employees)', $pullCalcRes['employee_count'], 1);
     $pullDetails = $runModel->getDetails($pulledRunId, $compId);
     check('the included employee is the one the sync payload actually mapped', (int)($pullDetails[0]['employee_id'] ?? 0), $employeeFullId);
+    $pullGrossBefore = (float)$pullDetails[0]['gross_amount'];
+
+    // ---------- Sync-derived earning/deduction wiring (2026-08-20): proves SyncPayResolver is
+    // actually invoked end-to-end from recalculate() for a sync-based run, not just correct in
+    // isolation (see tests/sync_pay_resolver_test.php for the resolver's own unit coverage).
+    // $employeeFullId has base_salary_amount=30000 -> dailyRate=1000, hourlyRate=125.
+    echo "=== Sync-derived lines flow into recalculate()'s earning/deduction breakdown ===\n";
+    $weekdayOtScopeId = (int)$pdo->query("SELECT id FROM master_ot_scope_types WHERE code = 'weekday'")->fetchColumn();
+    $pdo->prepare("INSERT INTO `ot_rates` (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate, calculation_base, status, created_by)
+        VALUES (?, 'OT ทดสอบ', 'Test OT', ?, 1.50, 'hourly', 'active', ?)")
+        ->execute([$compId, $weekdayOtScopeId, $adminUserId]);
+    $itemValuesJson = json_encode([
+        ['item_id' => 99, 'item_code' => 'CUSTOM_ATTENDANCE_BONUS', 'item_name' => 'Attendance Bonus', 'item_type' => 'INCOME', 'unit_type' => null, 'value' => 500, 'remark' => null],
+    ], JSON_UNESCAPED_UNICODE);
+    $pdo->prepare("UPDATE `payroll_sync_items` SET ot_req_working_day_hrs = 2, trip_allowance = 300, late_mins = 15, leave_without_pay_days = 3, item_values = :iv
+            WHERE process_id = :process_id AND employee_id = :employee_id")
+        ->execute([':iv' => $itemValuesJson, ':process_id' => $syncProcessId, ':employee_id' => $employeeFullId]);
+
+    $pullCalcRes2 = $runModel->recalculate($pulledRunId, $compId, $adminUserId, true);
+    checkTrue('recalculate still succeeds after adding sync attendance data' . (empty($pullCalcRes2['status']) ? " ({$pullCalcRes2['message']})" : ''), $pullCalcRes2['status']);
+    $pullDetails2 = $runModel->getDetails($pulledRunId, $compId);
+    $syncEarning = array_values(array_filter($pullDetails2[0]['earning_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'sync'));
+    $syncDeduction = array_values(array_filter($pullDetails2[0]['deduction_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'sync'));
+    check('3 sync-sourced earning lines (OT, trip allowance, custom bonus)', count($syncEarning), 3);
+    check('2 sync-sourced deduction lines (late, unpaid leave)', count($syncDeduction), 2);
+    $syncOtLine = current(array_filter($syncEarning, fn($l) => $l['code'] === 'OT'));
+    check('sync OT amount = hourlyRate(125) * 1.5 * 2h = 375', (float)($syncOtLine['amount'] ?? null), 375.0);
+    $syncTripLine = current(array_filter($syncEarning, fn($l) => $l['code'] === 'TRIP_ALLOW'));
+    check('sync trip allowance amount = face value 300', (float)($syncTripLine['amount'] ?? null), 300.0);
+    $syncBonusLine = current(array_filter($syncEarning, fn($l) => $l['code'] === 'CUSTOM:Attendance Bonus'));
+    checkTrue('unmatched item_values code became a custom sync earning line', $syncBonusLine !== false);
+    check('sync custom bonus amount = face value 500 (unit_type null)', (float)($syncBonusLine['amount'] ?? null), 500.0);
+    $syncLateLine = current(array_filter($syncDeduction, fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    check('sync late deduction amount = (125/60)*15 = 31.25', (float)($syncLateLine['amount'] ?? null), 31.25);
+    $syncLeaveLine = current(array_filter($syncDeduction, fn($l) => $l['code'] === 'LEAVE_NO_PAY_DEDUCT'));
+    checkTrue('sync unpaid leave deduction line present', $syncLeaveLine !== false);
+    check('sync unpaid leave deduction amount = dailyRate(1000)*3 = 3000', (float)($syncLeaveLine['amount'] ?? null), 3000.0);
+    // Diff against the pre-sync-data gross (not an absolute figure) -- this employee may also carry
+    // other, unrelated standing earning lines (PED assignments/attendance bonus) from earlier
+    // fixtures in this same test file that legitimately apply to any run of theirs; isolating the
+    // diff is what actually proves the sync lines specifically, without being fragile to those.
+    $pullGrossAfter = (float)$pullDetails2[0]['gross_amount'];
+    check('gross_amount increased by exactly the sync earning total: 375 + 300 + 500 = 1175', round($pullGrossAfter - $pullGrossBefore, 2), 1175.0);
+
+    // ---------- Sync deduction line overrides (2026-08-21, explicit request: "ปรับค่า สาย ขาดงาน
+    // ลาไม่รับเงิน หรือยกเว้นไม่ให้หัก") -- per-run, per-employee, per-item adjustment on a sync-
+    // computed deduction line. Reuses $pulledRunId/$employeeFullId's already-computed LATE_DEDUCT
+    // (31.25) and LEAVE_NO_PAY_DEDUCT (3000) lines from the section just above. ----------
+    echo "=== Line overrides: override_amount on a sync-computed deduction line ===\n";
+    $overrideRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', 10.00, 'HR waived most of it', $adminUserId, true);
+    checkTrue('lineOverrideSave() override_amount succeeds' . (empty($overrideRes['status']) ? " ({$overrideRes['message']})" : ''), $overrideRes['status']);
+    $afterOverrideDetails = $runModel->getDetails($pulledRunId, $compId);
+    $lateLineAfterOverride = current(array_filter($afterOverrideDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    check('LATE_DEDUCT amount is now the overridden 10.00, not the computed 31.25', (float)($lateLineAfterOverride['amount'] ?? null), 10.0);
+    checkTrue('overridden line note mentions the override', strpos($lateLineAfterOverride['note'] ?? '', 'override') !== false);
+
+    echo "=== Line overrides: exclude a sync-computed deduction line entirely ===\n";
+    $excludeRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LEAVE_NO_PAY_DEDUCT', 'exclude', null, null, $adminUserId, true);
+    checkTrue('lineOverrideSave() exclude succeeds' . (empty($excludeRes['status']) ? " ({$excludeRes['message']})" : ''), $excludeRes['status']);
+    $afterExcludeDetails = $runModel->getDetails($pulledRunId, $compId);
+    $leaveLineAfterExclude = current(array_filter($afterExcludeDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LEAVE_NO_PAY_DEDUCT'));
+    checkTrue('LEAVE_NO_PAY_DEDUCT line no longer present after exclude', $leaveLineAfterExclude === false);
+
+    echo "=== syncDeductionLinesForEmployee(): raw computed amount + current override state, for the UI ===\n";
+    $syncLinesForUi = $runModel->syncDeductionLinesForEmployee($compId, $pulledRunId, $employeeFullId);
+    $lateUiLine = current(array_filter($syncLinesForUi, fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    check('UI-facing computed_amount stays the RAW 31.25 even though an override is active', (float)($lateUiLine['computed_amount'] ?? null), 31.25);
+    check('UI-facing override_action reflects the active override', $lateUiLine['override_action'] ?? null, 'override_amount');
+    check('UI-facing override_amount reflects the active override', (float)($lateUiLine['override_amount'] ?? null), 10.0);
+    $leaveUiLine = current(array_filter($syncLinesForUi, fn($l) => $l['code'] === 'LEAVE_NO_PAY_DEDUCT'));
+    check('excluded line is still listed for the UI (so it can be un-excluded) with its raw computed amount', (float)($leaveUiLine['computed_amount'] ?? null), 3000.0);
+    check('excluded line reports override_action=exclude', $leaveUiLine['override_action'] ?? null, 'exclude');
+
+    echo "=== Line overrides: removing an override reverts to the computed default ===\n";
+    $removeOverrideRes = $runModel->lineOverrideRemove($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', $adminUserId, true);
+    checkTrue('lineOverrideRemove() succeeds' . (empty($removeOverrideRes['status']) ? " ({$removeOverrideRes['message']})" : ''), $removeOverrideRes['status']);
+    $afterResetDetails = $runModel->getDetails($pulledRunId, $compId);
+    $lateLineAfterReset = current(array_filter($afterResetDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    check('LATE_DEDUCT amount reverted to the computed 31.25 after removing the override', (float)($lateLineAfterReset['amount'] ?? null), 31.25);
+    // Cleanup: also remove the still-active exclude override on LEAVE_NO_PAY_DEDUCT so later
+    // sections of this file that reuse $pulledRunId/$employeeFullId see plain computed lines.
+    $runModel->lineOverrideRemove($pulledRunId, $compId, $employeeFullId, 'LEAVE_NO_PAY_DEDUCT', $adminUserId, true);
+
+    echo "=== Line overrides: guards ===\n";
+    $overrideOnNonSyncRunRes = $runModel->lineOverrideSave($runId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', 5.00, null, $adminUserId, true);
+    check('lineOverrideSave() rejected on a non-sync (cycle-based) run', $overrideOnNonSyncRunRes['status'], false);
+    $overrideBadActionRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'not_a_real_action', null, null, $adminUserId, true);
+    check('lineOverrideSave() rejected with an invalid action', $overrideBadActionRes['status'], false);
+    $overrideMissingAmountRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', null, null, $adminUserId, true);
+    check('lineOverrideSave() rejected with override_amount action but no amount', $overrideMissingAmountRes['status'], false);
+
+    echo "=== Audit log: line_override_save / line_override_remove entries ===\n";
+    $pulledAuditLogAfterOverrides = $runModel->getAuditLog($pulledRunId, $compId);
+    $overrideSaveEntries = array_values(array_filter($pulledAuditLogAfterOverrides, fn($a) => $a['action'] === 'line_override_save'));
+    $overrideRemoveEntries = array_values(array_filter($pulledAuditLogAfterOverrides, fn($a) => $a['action'] === 'line_override_remove'));
+    check('2 line_override_save entries logged (LATE_DEDUCT override + LEAVE_NO_PAY_DEDUCT exclude)', count($overrideSaveEntries), 2);
+    check('2 line_override_remove entries logged (LATE_DEDUCT reset + LEAVE_NO_PAY_DEDUCT cleanup)', count($overrideRemoveEntries), 2);
+
+    // ---------- Attendance data overrides (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบที่ Sync
+    // มา ไม่ใช่แค่ยอดเงิน") -- distinct from the $-amount line overrides just above: corrects the RAW
+    // number Origami sent so the deduction recomputes from it. Reuses $pulledRunId/$employeeFullId,
+    // whose raw late_mins=15 (see the "Sync-derived lines" fixture far above) computes to the plain
+    // 31.25 LATE_DEDUCT figure at this point in the file (both overrides from the section above were
+    // cleaned up). ----------
+    echo "=== Attendance data overrides: correcting raw late_mins recomputes the deduction ===\n";
+    $attOverrideRes = $runModel->attendanceOverrideSave($pulledRunId, $compId, $employeeFullId, ['late_mins' => 5], 'HR corrected the timesheet', $adminUserId, true);
+    checkTrue('attendanceOverrideSave() succeeds' . (empty($attOverrideRes['status']) ? " ({$attOverrideRes['message']})" : ''), $attOverrideRes['status']);
+    $afterAttOverrideDetails = $runModel->getDetails($pulledRunId, $compId);
+    $lateLineAfterAttOverride = current(array_filter($afterAttOverrideDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    check('LATE_DEDUCT recomputed from the corrected 5 minutes: (125/60)*5 = 10.42', round((float)($lateLineAfterAttOverride['amount'] ?? 0), 2), 10.42);
+
+    echo "=== Attendance data overrides: attendanceDataForEmployee() returns synced + override side by side ===\n";
+    $attData = $runModel->attendanceDataForEmployee($compId, $pulledRunId, $employeeFullId);
+    check('synced late_mins reflects the original Origami value (15), unaffected by the override', $attData['synced']['late_mins'] ?? null, 15.0);
+    check('override late_mins reflects the correction (5)', $attData['override']['late_mins'] ?? null, 5.0);
+    check('an untouched field (absent_days) has a null override', $attData['override']['absent_days'], null);
+
+    echo "=== Attendance data overrides compose with the \$-amount line override (both active on the same line at once) ===\n";
+    $attPlusLineOverrideRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', 2.00, 'extra discretionary reduction', $adminUserId, true);
+    checkTrue('$-amount override on top of an already-corrected attendance figure succeeds', $attPlusLineOverrideRes['status']);
+    $afterBothDetails = $runModel->getDetails($pulledRunId, $compId);
+    $lateLineAfterBoth = current(array_filter($afterBothDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    check('the $-amount override (2.00) wins over the attendance-corrected 10.42 -- both mechanisms compose', (float)($lateLineAfterBoth['amount'] ?? null), 2.0);
+    $runModel->lineOverrideRemove($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', $adminUserId, true);
+
+    echo "=== Attendance data overrides: full-replace semantics (omitted field clears any previous override for it) ===\n";
+    $attOverrideReplaceRes = $runModel->attendanceOverrideSave($pulledRunId, $compId, $employeeFullId, ['absent_days' => 0.5], null, $adminUserId, true);
+    checkTrue('re-saving with a different field set succeeds', $attOverrideReplaceRes['status']);
+    $attDataAfterReplace = $runModel->attendanceDataForEmployee($compId, $pulledRunId, $employeeFullId);
+    check('late_mins override cleared (full-replace, not a partial patch)', $attDataAfterReplace['override']['late_mins'], null);
+    check('absent_days override now set to 0.5', $attDataAfterReplace['override']['absent_days'] ?? null, 0.5);
+
+    echo "=== Attendance data overrides: Reset All reverts every field ===\n";
+    $attRemoveRes = $runModel->attendanceOverrideRemove($pulledRunId, $compId, $employeeFullId, $adminUserId, true);
+    checkTrue('attendanceOverrideRemove() succeeds' . (empty($attRemoveRes['status']) ? " ({$attRemoveRes['message']})" : ''), $attRemoveRes['status']);
+    $attDataAfterRemove = $runModel->attendanceDataForEmployee($compId, $pulledRunId, $employeeFullId);
+    check('every override field is null after Reset All', $attDataAfterRemove['override']['late_mins'], null);
+    check('absent_days override also cleared', $attDataAfterRemove['override']['absent_days'], null);
+    $afterAttRemoveDetails = $runModel->getDetails($pulledRunId, $compId);
+    $lateLineAfterAttRemove = current(array_filter($afterAttRemoveDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    check('LATE_DEDUCT back to the original computed 31.25 after Reset All', (float)($lateLineAfterAttRemove['amount'] ?? null), 31.25);
+
+    echo "=== Attendance data overrides: guards ===\n";
+    $attOverrideOnNonSyncRunRes = $runModel->attendanceOverrideSave($runId, $compId, $employeeFullId, ['late_mins' => 5], null, $adminUserId, true);
+    check('attendanceOverrideSave() rejected on a non-sync (cycle-based) run', $attOverrideOnNonSyncRunRes['status'], false);
+    $attOverrideNegativeRes = $runModel->attendanceOverrideSave($pulledRunId, $compId, $employeeFullId, ['late_mins' => -5], null, $adminUserId, true);
+    check('attendanceOverrideSave() rejected with a negative value', $attOverrideNegativeRes['status'], false);
+
+    echo "=== Audit log: attendance_override_save / attendance_override_remove entries ===\n";
+    $pulledAuditLogAfterAttOverrides = $runModel->getAuditLog($pulledRunId, $compId);
+    $attSaveEntries = array_values(array_filter($pulledAuditLogAfterAttOverrides, fn($a) => $a['action'] === 'attendance_override_save'));
+    $attRemoveEntries = array_values(array_filter($pulledAuditLogAfterAttOverrides, fn($a) => $a['action'] === 'attendance_override_remove'));
+    check('2 attendance_override_save entries logged (initial correction + the full-replace re-save)', count($attSaveEntries), 2);
+    check('1 attendance_override_remove entry logged (Reset All)', count($attRemoveEntries), 1);
+
+    // ---------- Employee-to-employee transfer deductions (2026-08-21, explicit request: "หักเพื่อ
+    // ไปจ่ายให้ใคร โดยเลือกพนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- a deduction line with
+    // payee_employee_id set becomes a real taxable earning line for the payee, in the SAME run. ----------
+    echo "=== Transfer deduction: payee IS part of this run -> credited as a real earning line ===\n";
+    $insSyncItem->execute([':process_id' => $syncProcessId, ':employee_id' => $employeeMidId, ':payroll_code' => 'PULL_MAPPED_PAYEE', ':mapping_status' => 'mapped']);
+    $baselineRes = $runModel->recalculate($pulledRunId, $compId, $adminUserId, true);
+    checkTrue('recalculate succeeds after mapping the payee employee into the same sync process' . (empty($baselineRes['status']) ? " ({$baselineRes['message']})" : ''), $baselineRes['status']);
+    check('run now has 2 employees (both mapped in the sync payload)', $baselineRes['employee_count'] ?? null, 2);
+    $baselineDetails = $runModel->getDetails($pulledRunId, $compId);
+    $toRowBaseline = current(array_filter($baselineDetails, fn($d) => (int)$d['employee_id'] === $employeeMidId));
+    $baselineGross = (float)$toRowBaseline['gross_amount'];
+
+    $transferManualRes = $runModel->addManualLine($pulledRunId, $compId, $employeeFullId, null, 800.00, $adminUserId, true, 'Loan repayment to colleague', 'Loan Repayment', 'deduction', $employeeMidId);
+    checkTrue('addManualLine() with a payee_employee_id succeeds' . (empty($transferManualRes['status']) ? " ({$transferManualRes['message']})" : ''), $transferManualRes['status']);
+    $afterTransferDetails = $runModel->getDetails($pulledRunId, $compId);
+    $fromRow = current(array_filter($afterTransferDetails, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    $toRow = current(array_filter($afterTransferDetails, fn($d) => (int)$d['employee_id'] === $employeeMidId));
+    $transferDeductionLine = current(array_filter($fromRow['deduction_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Loan Repayment'));
+    checkTrue('the deduction line on the FROM employee carries the payee employee_no for display', !empty($transferDeductionLine['payee_employee_no'] ?? null));
+    $transferEarningLine = current(array_filter($toRow['earning_breakdown'], fn($l) => $l['code'] === 'TRANSFER_IN'));
+    checkTrue('TRANSFER_IN earning line present on the payee', $transferEarningLine !== false);
+    check('TRANSFER_IN amount matches the deducted amount exactly', (float)($transferEarningLine['amount'] ?? null), 800.0);
+    checkTrue('TRANSFER_IN name mentions the FROM employee', strpos($transferEarningLine['name_en'] ?? '', 'Transfer from') === 0);
+    check('payee gross_amount increased by exactly the transferred amount (taxable, added to gross like any other earning)', round((float)$toRow['gross_amount'] - $baselineGross, 2), 800.0);
+    checkTrue('payee calc_status stays calculated (a valid transfer is not an error)', $toRow['calc_status'] === 'calculated');
+
+    echo "=== Transfer deduction: payee is NOT part of this run -> deduction still happens, error surfaced ===\n";
+    $transferNoPayeeInRunRes = $runModel->addManualLine($pulledRunId, $compId, $employeeFullId, null, 200.00, $adminUserId, true, null, 'Orphan Transfer', 'deduction', $employeeOptOutId);
+    checkTrue('addManualLine() still succeeds even though the payee is not part of this run (the deduction itself is still valid)', $transferNoPayeeInRunRes['status']);
+    $afterOrphanDetails = $runModel->getDetails($pulledRunId, $compId);
+    $fromRowOrphan = current(array_filter($afterOrphanDetails, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    checkTrue('the deduction line still applies to the FROM employee', current(array_filter($fromRowOrphan['deduction_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Orphan Transfer')) !== false);
+    checkTrue('calc_errors surfaces transfer_payee_not_in_run instead of silently dropping the transfer', strpos((string)($fromRowOrphan['calc_errors'] ?? ''), 'transfer_payee_not_in_run:CUSTOM:Orphan Transfer') !== false);
+
+    echo "=== EmployeeEarningDeductionModel::save() payee_employee_id guards (standing assignment) ===\n";
+    // A deduction-type catalog item, distinct from $pedTypeId (an earning) -- payee_employee_id is
+    // only meaningful on a deduction, so the validation guards below need a real deduction item to
+    // actually exercise that branch rather than being silently no-op'd by the earning short-circuit.
+    $deductionPedRes = $pedTypeModel->save($compId, [
+        'item_code' => 'TESTDEDUCT' . rand(100, 999),
+        'item_name_th' => 'หักทดสอบ', 'item_name_en' => 'Test Deduction',
+        'item_type' => 'deduction', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 100,
+        'tax_deduction_impact' => 'after_tax', 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('fixture: deduction PED type created' . (empty($deductionPedRes['status']) ? " ({$deductionPedRes['message']})" : ''), $deductionPedRes['status']);
+    $deductionPedTypeId = $deductionPedRes['id'];
+
+    $eedModelForPayee = new EmployeeEarningDeductionModel();
+    $eedSelfPayeeRes = $eedModelForPayee->save($employeeFullId, $compId, [
+        'ped_type_id' => $deductionPedTypeId, 'total_installments' => 1, 'amount_mode' => 'even_split',
+        'total_amount' => 100, 'effective_date' => $periodStart, 'payee_employee_id' => $employeeFullId,
+    ], $adminUserId);
+    check('save() rejects an employee being their own transfer payee', $eedSelfPayeeRes['status'], false);
+    $eedForeignPayeeRes = $eedModelForPayee->save($employeeFullId, $compId, [
+        'ped_type_id' => $deductionPedTypeId, 'total_installments' => 1, 'amount_mode' => 'even_split',
+        'total_amount' => 100, 'effective_date' => $periodStart, 'payee_employee_id' => 999999,
+    ], $adminUserId);
+    check('save() rejects a payee_employee_id that does not belong to this company', $eedForeignPayeeRes['status'], false);
+    $eedValidPayeeRes = $eedModelForPayee->save($employeeFullId, $compId, [
+        'ped_type_id' => $deductionPedTypeId, 'total_installments' => 1, 'amount_mode' => 'even_split',
+        'total_amount' => 100, 'effective_date' => $periodStart, 'payee_employee_id' => $employeeMidId,
+    ], $adminUserId);
+    checkTrue('save() accepts a valid same-company payee on a deduction item' . (empty($eedValidPayeeRes['status']) ? " ({$eedValidPayeeRes['message']})" : ''), $eedValidPayeeRes['status']);
+    $eedWithPayee = $eedModelForPayee->get((int)$eedValidPayeeRes['id'], $compId);
+    check('payee_employee_id round-trips on get()', (int)($eedWithPayee['payee_employee_id'] ?? 0), $employeeMidId);
+    check('payee_employee_no resolved for display', $eedWithPayee['payee_employee_no'] ?? null, $pdo->query("SELECT employee_no FROM employees WHERE id = {$employeeMidId}")->fetchColumn());
+    // Cleanup: this standing assignment would otherwise flow into every later recalculate($runId)
+    // call further down in this file (its effective_date falls inside $runId's own period, and both
+    // employeeFullId/employeeMidId are already members of $runId), silently adding an unrelated
+    // transfer deduction/credit on top of totals those later sections assert exact figures for.
+    $deleteEedWithPayeeRes = $eedModelForPayee->delete((int)$eedValidPayeeRes['id'], $compId, $employeeFullId, $adminUserId);
+    checkTrue('cleanup: standing payee assignment deleted so it does not leak into later recalculate($runId) totals', $deleteEedWithPayeeRes['status']);
 
     // ---------- Eligibility branching: a genuine off-cycle run (no cycle, no sync) has NO
     // automatic membership at all -- only employees explicitly Joined are included. ----------
@@ -317,10 +568,12 @@ try {
     check('off-cycle run has 0 employees before anyone is Joined', $offCalcRes['employee_count'], 0);
 
     echo "=== joinEmployees() / removeManualEmployee() guards ===\n";
+    // employeeOptOutId is already a normal date-range member of $runId, not currently excluded --
+    // 2026-08-21: joinEmployees() on a cycle-based run now means "re-include a removed employee",
+    // never "add someone arbitrary", so this is rejected (an empty intersection against the
+    // exclusion list), not because cycle-based joins are blocked outright anymore (see below).
     $joinOnCycleRes = $runModel->joinEmployees($runId, $compId, [$employeeOptOutId], $adminUserId, true);
-    check('joinEmployees() rejected on a cycle-based run', $joinOnCycleRes['status'], false);
-    $joinOnPulledRes = $runModel->joinEmployees($pulledRunId, $compId, [$employeeOptOutId], $adminUserId, true);
-    check('joinEmployees() rejected on a Pending-Pull run', $joinOnPulledRes['status'], false);
+    check('joinEmployees() rejected on a cycle-based run for an employee who is not currently excluded', $joinOnCycleRes['status'], false);
     $joinEmptyRes = $runModel->joinEmployees($offCycleRunId, $compId, [], $adminUserId, true);
     check('joinEmployees() rejected with an empty employee list', $joinEmptyRes['status'], false);
     $joinForeignRes = $runModel->joinEmployees($offCycleRunId, 999999, [$employeeOptOutId], $adminUserId, true);
@@ -341,9 +594,6 @@ try {
     $offCycleDetailsAfterRemove = $runModel->getDetails($offCycleRunId, $compId);
     check('the remaining detail row is the employee who was NOT removed', (int)($offCycleDetailsAfterRemove[0]['employee_id'] ?? 0), $employeeOptOutId);
 
-    $removeOnCycleRes = $runModel->removeManualEmployee($runId, $compId, $employeeFullId, $adminUserId, true);
-    check('removeManualEmployee() rejected on a cycle-based run', $removeOnCycleRes['status'], false);
-
     echo "=== manualEmployeeOptions() (Join Employees picker) ===\n";
     // Search-scoped rather than a blind page window -- this shared dev-DB company can have many
     // other real employees sorted ahead of this fixture's TEST_* employee_no values, which would
@@ -355,6 +605,113 @@ try {
     checkTrue('manualEmployeeOptions() excludes the already-joined employee even when searched for by name/code', empty($optionsExcludedSearch['data']));
     $optionsIncludedSearch = $runModel->manualEmployeeOptions($compId, $offCycleRunId, 0, 50, [], $fullEmployeeNo, 'en');
     checkTrue('manualEmployeeOptions() still includes an employee nobody has joined yet', in_array($employeeFullId, array_map('intval', array_column($optionsIncludedSearch['data'], 'id'))));
+
+    // 2026-08-22, explicit request ("ตรง Join Employee อยากให้เพิ่ม Filter รอบเงินเดือนได้ด้วย") --
+    // filters by the employee's own standing payroll cycle (employees.cycle_id), not the run's own.
+    $pdo->prepare("UPDATE `employees` SET cycle_id = :cycle_id WHERE id = :id")->execute([':cycle_id' => $cycleId, ':id' => $employeeFullId]);
+    $optionsCycleMatch = $runModel->manualEmployeeOptions($compId, $offCycleRunId, 0, 50, ['emp_cycle_id' => $cycleId], $fullEmployeeNo, 'en');
+    checkTrue('manualEmployeeOptions() emp_cycle_id filter includes an employee on that cycle', in_array($employeeFullId, array_map('intval', array_column($optionsCycleMatch['data'], 'id'))));
+    $optionsCycleMismatch = $runModel->manualEmployeeOptions($compId, $offCycleRunId, 0, 50, ['emp_cycle_id' => 999999], $fullEmployeeNo, 'en');
+    checkTrue('manualEmployeeOptions() emp_cycle_id filter excludes an employee on a different cycle', empty($optionsCycleMismatch['data']));
+    $expectedCycleName = $pdo->query("SELECT cycle_name FROM payroll_cycles WHERE id = {$cycleId}")->fetchColumn();
+    check("manualEmployeeOptions() data includes the employee's cycle_name for display", $optionsCycleMatch['data'][0]['cycle_name'] ?? null, $expectedCycleName);
+    $pdo->prepare("UPDATE `employees` SET cycle_id = NULL WHERE id = :id")->execute([':id' => $employeeFullId]);
+
+    // ---------- Manual employee add on a Sync run + Sync/Manual badge (2026-08-21, explicit
+    // request: "เพิ่มพนักงานเข้ามาในรอบได้แบบ Manual...ถ้าเป็นการ Sync...ต้องมีสัญลักษณ์ว่า ใคร Sync มา
+    // เพิ่มเข้ามาแบบ Manual") -- reuses $pulledRunId, which at this point has 2 sync-mapped employees
+    // ($employeeFullId, $employeeMidId -- see the Transfer Deductions section above). ----------
+    echo "=== manualEmployeeOptions() also excludes an already-synced employee on a sync-based run ===\n";
+    $pickerOnPulledRun = $runModel->manualEmployeeOptions($compId, $pulledRunId, 0, 50, [], $fullEmployeeNo, 'en');
+    checkTrue('the already-synced employee is excluded from the Join Employees picker on this sync-based run', empty($pickerOnPulledRun['data']));
+
+    echo "=== joinEmployees()/removeManualEmployee() now ALSO work on a sync-based run ===\n";
+    $joinOnPulledRes = $runModel->joinEmployees($pulledRunId, $compId, [$employeeOptOutId], $adminUserId, true);
+    checkTrue('joinEmployees() now succeeds on a sync-based (Pending-Pull) run' . (empty($joinOnPulledRes['status']) ? " ({$joinOnPulledRes['message']})" : ''), $joinOnPulledRes['status']);
+    $pulledDetailsAfterJoin = $runModel->getDetails($pulledRunId, $compId);
+    $manualRowOnPulled = current(array_filter($pulledDetailsAfterJoin, fn($d) => (int)$d['employee_id'] === $employeeOptOutId));
+    checkTrue('the manually-joined employee is now part of the sync-based run', $manualRowOnPulled !== false);
+    check("the manually-joined employee's data_source is 'manual'", $manualRowOnPulled['data_source'] ?? null, 'manual');
+    $syncedRowOnPulled = current(array_filter($pulledDetailsAfterJoin, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    check("the originally-synced employee's data_source stays 'sync' (not disturbed by the manual join)", $syncedRowOnPulled['data_source'] ?? null, 'sync');
+
+    echo "=== The manually-joined employee gets paid via the EXISTING Manage Items Add-Item form -- no new form needed ===\n";
+    $grossBeforeManualLine = (float)$manualRowOnPulled['gross_amount'];
+    $manualEmpLineRes = $runModel->addManualLine($pulledRunId, $compId, $employeeOptOutId, null, 1000.00, $adminUserId, true, 'Manually entered income', 'Manual Income', 'earning');
+    checkTrue('addManualLine() succeeds for the manually-added employee' . (empty($manualEmpLineRes['status']) ? " ({$manualEmpLineRes['message']})" : ''), $manualEmpLineRes['status']);
+    $pulledDetailsAfterManualLine = $runModel->getDetails($pulledRunId, $compId);
+    $manualRowAfterLine = current(array_filter($pulledDetailsAfterManualLine, fn($d) => (int)$d['employee_id'] === $employeeOptOutId));
+    checkTrue('the manual earning line appears in their own breakdown', current(array_filter($manualRowAfterLine['earning_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Manual Income')) !== false);
+    check('gross_amount increased by exactly the manually-entered income (1000)', round((float)$manualRowAfterLine['gross_amount'] - $grossBeforeManualLine, 2), 1000.0);
+
+    echo "=== rawSyncDataForEmployee(): full raw row for a synced employee, null for a manually-added one or a non-sync run ===\n";
+    $rawSyncData = $runModel->rawSyncDataForEmployee($compId, $pulledRunId, $employeeFullId);
+    checkTrue('rawSyncDataForEmployee() returns data for the genuinely-synced employee', $rawSyncData !== null);
+    check('raw payroll_code matches the fixture', $rawSyncData['payroll_code'] ?? null, 'PULL_MAPPED');
+    checkTrue('raw item_values is decoded to an array', is_array($rawSyncData['item_values'] ?? null));
+    check('rawSyncDataForEmployee() returns null for the manually-added employee (no sync row exists for them)', $runModel->rawSyncDataForEmployee($compId, $pulledRunId, $employeeOptOutId), null);
+    check('rawSyncDataForEmployee() returns null on a non-sync (cycle-based) run', $runModel->rawSyncDataForEmployee($compId, $runId, $employeeFullId), null);
+
+    echo "=== removeManualEmployee() also works on a sync-based run, only for the manually-added row ===\n";
+    $removeManualOnPulledRes = $runModel->removeManualEmployee($pulledRunId, $compId, $employeeOptOutId, $adminUserId, true);
+    checkTrue('removeManualEmployee() succeeds for the manually-added employee on the sync-based run' . (empty($removeManualOnPulledRes['status']) ? " ({$removeManualOnPulledRes['message']})" : ''), $removeManualOnPulledRes['status']);
+    $pulledDetailsAfterManualRemove = $runModel->getDetails($pulledRunId, $compId);
+    checkTrue('the manually-added employee is gone after removal', current(array_filter($pulledDetailsAfterManualRemove, fn($d) => (int)$d['employee_id'] === $employeeOptOutId)) === false);
+    checkTrue('the genuinely-synced employee is still present (removal only affects the manual roster)', current(array_filter($pulledDetailsAfterManualRemove, fn($d) => (int)$d['employee_id'] === $employeeFullId)) !== false);
+
+    echo "=== Per-run tax/SSO exemption (2026-08-21, explicit request: \"จัดการได้ว่า คนนี้ไม่ต้องคำนวณภาษี ไม่นำส่งประกันสังคมในรอบนี้\") ===\n";
+    $beforeExemptionDetail = array_values(array_filter($runModel->getDetails($pulledRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeFullId))[0] ?? [];
+    $ssoBeforeExemption = (float)((array_values(array_filter($beforeExemptionDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
+    checkTrue('before exemption: employee has a real (nonzero) SSO deduction on the sync-based run', $ssoBeforeExemption > 0);
+
+    $defaultExemption = $runModel->getEmployeeExemption($pulledRunId, $compId, $employeeFullId);
+    check('getEmployeeExemption() returns zeroed defaults before anything is saved', $defaultExemption, ['exempt_tax' => false, 'exempt_sso' => false, 'note' => null]);
+
+    $exemptionSaveRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, true, true, 'requested by employee', $adminUserId, true);
+    checkTrue('saveEmployeeExemption() succeeds' . (empty($exemptionSaveRes['status']) ? " ({$exemptionSaveRes['message']})" : ''), $exemptionSaveRes['status']);
+    $afterExemptionDetail = array_values(array_filter($runModel->getDetails($pulledRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeFullId))[0] ?? [];
+    $ssoAfterExemption = (float)((array_values(array_filter($afterExemptionDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
+    check('after exempt_sso=true: SSO deduction is zeroed', $ssoAfterExemption, 0.0);
+    $pitAfterExemption = array_values(array_filter($afterExemptionDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_PIT'))[0] ?? [];
+    check('after exempt_tax=true: TH_PIT is zeroed and flagged employee_tax_exempt (same engine note as the permanent tax_exempt flag)', [(float)($pitAfterExemption['employee_amount'] ?? -1), $pitAfterExemption['note'] ?? null], [0.0, 'employee_tax_exempt']);
+
+    $savedExemption = $runModel->getEmployeeExemption($pulledRunId, $compId, $employeeFullId);
+    check('getEmployeeExemption() reflects the saved row', $savedExemption, ['exempt_tax' => true, 'exempt_sso' => true, 'note' => 'requested by employee']);
+
+    $exemptionClearRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, false, false, null, $adminUserId, true);
+    checkTrue('saveEmployeeExemption() with both flags false clears the row (deletes rather than keeping an all-zero row)' . (empty($exemptionClearRes['status']) ? " ({$exemptionClearRes['message']})" : ''), $exemptionClearRes['status']);
+    $afterClearDetail = array_values(array_filter($runModel->getDetails($pulledRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeFullId))[0] ?? [];
+    $ssoAfterClear = (float)((array_values(array_filter($afterClearDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
+    check('after clearing the exemption: SSO deduction is back to the real computed amount', $ssoAfterClear, $ssoBeforeExemption);
+
+    echo "=== Exemption is per-run only -- a different run for the same employee is unaffected ===\n";
+    $reExemptRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, true, false, null, $adminUserId, true);
+    checkTrue('re-applying exempt_tax=true on the sync-based run succeeds' . (empty($reExemptRes['status']) ? " ({$reExemptRes['message']})" : ''), $reExemptRes['status']);
+    // $runId (the cycle-based run) is recalculated and asserted for real SSO/PIT amounts for this
+    // same $employeeFullId later in this file ("Per-employee SSO/PVD enrollment fix" section) --
+    // that assertion passing with a nonzero SSO/PIT for $employeeFullId on $runId, despite the
+    // tax exemption saved here being still active on $pulledRunId, IS the proof this is scoped
+    // per-run and never leaks onto another run for the same employee.
+
+    echo "=== removeManualEmployee() removes a genuinely-synced row too, and it does not come back (2026-08-21: universal remove) ===\n";
+    $removeSyncedRes = $runModel->removeManualEmployee($pulledRunId, $compId, $employeeFullId, $adminUserId, true);
+    checkTrue('removeManualEmployee() succeeds for a genuinely-synced row' . (empty($removeSyncedRes['status']) ? " ({$removeSyncedRes['message']})" : ''), $removeSyncedRes['status']);
+    $pulledDetailsAfterSyncedRemove = $runModel->getDetails($pulledRunId, $compId);
+    checkTrue('the synced employee is gone right after removal', current(array_filter($pulledDetailsAfterSyncedRemove, fn($d) => (int)$d['employee_id'] === $employeeFullId)) === false);
+
+    $runModel->recalculate($pulledRunId, $compId, $adminUserId, true);
+    $pulledDetailsAfterExtraRecalc = $runModel->getDetails($pulledRunId, $compId);
+    checkTrue('the removed synced employee does NOT come back on a later recalculate() (payroll_sync_items alone would otherwise re-pull them)', current(array_filter($pulledDetailsAfterExtraRecalc, fn($d) => (int)$d['employee_id'] === $employeeFullId)) === false);
+
+    $pickerAfterSyncedExclude = $runModel->manualEmployeeOptions($compId, $pulledRunId, 0, 50, [], $fullEmployeeNo, 'en');
+    checkTrue('manualEmployeeOptions() surfaces the excluded synced employee back into the Join Employees picker', in_array($employeeFullId, array_map('intval', array_column($pickerAfterSyncedExclude['data'], 'id'))));
+
+    $rejoinSyncedRes = $runModel->joinEmployees($pulledRunId, $compId, [$employeeFullId], $adminUserId, true);
+    checkTrue('joinEmployees() re-includes the previously-removed synced employee' . (empty($rejoinSyncedRes['status']) ? " ({$rejoinSyncedRes['message']})" : ''), $rejoinSyncedRes['status']);
+    $pulledDetailsAfterSyncedRejoin = $runModel->getDetails($pulledRunId, $compId);
+    $rejoinedRow = current(array_filter($pulledDetailsAfterSyncedRejoin, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    checkTrue('the re-included employee is back', $rejoinedRow !== false);
+    check("the re-included employee's data_source resolves back to 'sync' (their real sync row was never touched, only the exclusion)", $rejoinedRow['data_source'] ?? null, 'sync');
 
     // ---------- "Incentive/Other Payment" runs (2026-08-19): no base salary, only manually-picked
     // earning/deduction items per employee, statutory computed only when the admin opts in. ----------
@@ -459,6 +816,16 @@ try {
     }
     check('employee 1 net = 5000 after removing the deduction line (no more -500)', (float)($emp1DetailAfterRemove['net_amount'] ?? -1), 5000.0);
 
+    echo "=== addManualLine()/removeManualLine() write an audit log entry (2026-08-21, explicit request: \"ต้องเก็บ Log ว่าใครแก้ไขข้อมูลอะไรไปเมื่อไหร่\") ===\n";
+    $incentiveAuditLog = $runModel->getAuditLog($incentiveRunId, $compId);
+    $addLogEntries = array_values(array_filter($incentiveAuditLog, fn($a) => $a['action'] === 'add_manual_line'));
+    $removeLogEntries = array_values(array_filter($incentiveAuditLog, fn($a) => $a['action'] === 'remove_manual_line'));
+    check('3 add_manual_line entries logged (one per addManualLine() call above)', count($addLogEntries), 3);
+    check('1 remove_manual_line entry logged', count($removeLogEntries), 1);
+    checkTrue('add_manual_line note names the employee and item', strpos($addLogEntries[0]['note'] ?? '', 'Employee') === 0 && strpos($addLogEntries[0]['note'] ?? '', 'OT') !== false);
+    checkTrue('remove_manual_line note names the employee and item', strpos($removeLogEntries[0]['note'] ?? '', 'Employee') === 0);
+    check('audit log entries performed_by is the acting admin user', (int)$addLogEntries[0]['performed_by'], $adminUserId);
+
     echo "=== Incentive run WITH statutory opted in ===\n";
     $incentiveStatRes = $runModel->create($compId, [
         'run_purpose' => 'incentive', 'compute_statutory' => 1, 'run_name' => 'INCENTIVE_STAT_' . uniqid(),
@@ -474,6 +841,32 @@ try {
     $statDetail = $runModel->getDetails($incentiveStatRunId, $compId)[0] ?? [];
     checkTrue('statutory_breakdown is NOT empty when compute_statutory=1 (real SSO/tax calc applied to the incentive gross)', !empty($statDetail['statutory_breakdown']));
     checkTrue('net amount is less than gross once statutory is actually withheld', (float)($statDetail['net_amount'] ?? 0) < (float)($statDetail['gross_amount'] ?? 0));
+
+    echo "=== removeManualEmployee() now works on a cycle-based run too (2026-08-21: \"พนักงานทุกคน สามารถลบข้อมูลออกจากรอบได้ ต่อให้ Sync มาจาก Origami เองก็ตาม\") ===\n";
+    // Placed here (just before the real "=== Recalculate ===" section below, rather than right
+    // after the guards section above) so it doesn't disturb the "addManualLine() rejected on a
+    // cycle-based run" assertion's precondition just above -- that assertion relies on $runId
+    // never having been recalculated yet at that point (an employee only fails the
+    // "not part of the calculated run" check while it's genuinely uncalculated). This round trip
+    // fully restores $runId to its original 4-employee membership before the real Recalculate
+    // section runs, so nothing downstream of it is affected either.
+    $removeOnCycleRes = $runModel->removeManualEmployee($runId, $compId, $employeeFullId, $adminUserId, true);
+    checkTrue('removeManualEmployee() succeeds on a cycle-based run' . (empty($removeOnCycleRes['status']) ? " ({$removeOnCycleRes['message']})" : ''), $removeOnCycleRes['status']);
+    $cycleDetailsAfterRemove = $runModel->getDetails($runId, $compId);
+    checkTrue('the removed employee is gone from a cycle-based run right after removeManualEmployee()', current(array_filter($cycleDetailsAfterRemove, fn($d) => (int)$d['employee_id'] === $employeeFullId)) === false);
+
+    $runModel->recalculate($runId, $compId, $adminUserId, true);
+    $cycleDetailsAfterExtraRecalc = $runModel->getDetails($runId, $compId);
+    checkTrue('the removed employee does NOT come back on a later recalculate() (date range alone would otherwise re-include them)', current(array_filter($cycleDetailsAfterExtraRecalc, fn($d) => (int)$d['employee_id'] === $employeeFullId)) === false);
+
+    $joinNonExcludedRes = $runModel->joinEmployees($runId, $compId, [$employeeOptOutId], $adminUserId, true);
+    check('joinEmployees() on a cycle-based run rejects an employee who is not currently excluded from it', $joinNonExcludedRes['status'], false);
+
+    $rejoinRes = $runModel->joinEmployees($runId, $compId, [$employeeFullId], $adminUserId, true);
+    checkTrue('joinEmployees() on a cycle-based run re-includes a previously-removed employee' . (empty($rejoinRes['status']) ? " ({$rejoinRes['message']})" : ''), $rejoinRes['status']);
+    $cycleDetailsAfterRejoin = $runModel->getDetails($runId, $compId);
+    checkTrue('the re-included employee is back after joinEmployees()', current(array_filter($cycleDetailsAfterRejoin, fn($d) => (int)$d['employee_id'] === $employeeFullId)) !== false);
+    check('employee_count is back to the original 4 after the full remove -> recalculate -> re-include round trip', $rejoinRes['employee_count'] ?? null, 4);
 
     echo "=== Recalculate ===\n";
     $calcRes = $runModel->recalculate($runId, $compId, $adminUserId, true);
@@ -527,6 +920,107 @@ try {
 
     $runAfterCalc = $runModel->get($runId, $compId);
     checkTrue('run totals updated (gross > 0)', (float)$runAfterCalc['total_gross_amount'] > 0);
+
+    echo "=== salary_type wired into real calculation (2026-08-21, explicit request) ===\n";
+    // Added AFTER the baseline recalculate()/employee_count=4 assertions above (not into the
+    // original fixture set) so those assertions stay untouched -- proof this feature is additive,
+    // zero regression for 'monthly' (the default/common case already covered above).
+    $setupRulesModelForTest = new SetupRulesModel($pdo);
+    $dailyShift = $setupRulesModelForTest->shiftSave([
+        'shift_name_th' => 'กะรายวันทดสอบ', 'shift_name_en' => 'Daily Test Shift', 'shift_code' => 'PRT_DSHIFT_' . uniqid(),
+        'start_time' => '08:00', 'end_time' => '17:00', 'status' => 'active',
+        'works_monday' => 1, 'works_tuesday' => 1, 'works_wednesday' => 1, 'works_thursday' => 1, 'works_friday' => 1,
+        'works_saturday' => 0, 'works_sunday' => 0,
+    ], $compId, $adminUserId);
+    checkTrue('fixture: Mon-Fri shift for the daily-salary employee saves', $dailyShift['status']);
+    $dailyShiftId = $dailyShift['id'];
+
+    // A company-wide holiday somewhere inside the run period, on a weekday that doesn't collide
+    // with the mid-joiner/leaver dates above -- picked programmatically so this stays correct no
+    // matter which calendar month the test happens to run in.
+    $dailyHolidayDate = null;
+    $cursor = new DateTime($periodStart);
+    $periodEndDt = new DateTime($periodEnd);
+    while ($cursor <= $periodEndDt) {
+        $dateStr = $cursor->format('Y-m-d');
+        if ((int)$cursor->format('N') <= 5 && $dateStr !== $midMonthJoin && $dateStr !== $midMonthLeaveDate) {
+            $dailyHolidayDate = $dateStr;
+            break;
+        }
+        $cursor->modify('+1 day');
+    }
+    checkTrue('fixture: found a usable weekday for the test holiday', $dailyHolidayDate !== null);
+    $dailyHolidayRes = $setupRulesModelForTest->holidaySave([
+        'name_th' => 'วันหยุดทดสอบรายวัน', 'name_en' => 'Daily Salary Test Holiday', 'holiday_date' => $dailyHolidayDate,
+        'is_recurring' => 0, 'assignment_mode' => 'exclude', 'status' => 'active', 'assignments' => [],
+    ], $compId, $adminUserId);
+    checkTrue('fixture: company-wide holiday saves', $dailyHolidayRes['status']);
+
+    $dailyRate = 1200.0;
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_DAILY_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'รายวัน', ':name_en' => 'Test', ':surname_en' => 'DailySalary',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => $dailyRate, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $employeeDailyId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET salary_type = 'daily', shift_id = :shift_id WHERE id = :id")
+        ->execute([':shift_id' => $dailyShiftId, ':id' => $employeeDailyId]);
+
+    $hourlyRate = 30000.0;
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_HOURLY_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'รายชั่วโมง', ':name_en' => 'Test', ':surname_en' => 'HourlySalary',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => $hourlyRate, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $employeeHourlyId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET salary_type = 'hourly' WHERE id = :id")->execute([':id' => $employeeHourlyId]);
+
+    $noShiftRate = 1000.0;
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_DAILYNOSHIFT_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'รายวันไม่มีกะ', ':name_en' => 'Test', ':surname_en' => 'DailyNoShift',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => $noShiftRate, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $employeeDailyNoShiftId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET salary_type = 'daily' WHERE id = :id")->execute([':id' => $employeeDailyNoShiftId]);
+
+    $expectedPayableDaily = $setupRulesModelForTest->payableDaysForEmployee($employeeDailyId, $compId, $periodStart, $periodEnd);
+    $expectedPayableNoShift = $setupRulesModelForTest->payableDaysForEmployee($employeeDailyNoShiftId, $compId, $periodStart, $periodEnd);
+
+    $calcRes2 = $runModel->recalculate($runId, $compId, $adminUserId, true);
+    checkTrue('recalculate succeeds after adding daily/hourly employees', $calcRes2['status']);
+    check('employee_count is 7 after adding the 3 salary_type fixtures', $calcRes2['employee_count'], 7);
+
+    $details2 = $runModel->getDetails($runId, $compId);
+    $dailyDetail = null;
+    $hourlyDetail = null;
+    $noShiftDetail = null;
+    foreach ($details2 as $d) {
+        if ((int)$d['employee_id'] === $employeeDailyId) $dailyDetail = $d;
+        if ((int)$d['employee_id'] === $employeeHourlyId) $hourlyDetail = $d;
+        if ((int)$d['employee_id'] === $employeeDailyNoShiftId) $noShiftDetail = $d;
+    }
+
+    check('daily employee base_salary_amount = dailyRate * payable_days', (float)$dailyDetail['base_salary_amount'], round($dailyRate * $expectedPayableDaily['payable_days'], 2));
+    check('daily employee prorate_days holds payable_days (repurposed display field)', (int)$dailyDetail['prorate_days'], $expectedPayableDaily['payable_days']);
+    check('daily employee prorate_total_days holds total_days', (int)$dailyDetail['prorate_total_days'], $expectedPayableDaily['total_days']);
+    check('daily employee WITH a shift is not flagged daily_salary_no_shift_pattern', strpos((string)($dailyDetail['calc_errors'] ?? ''), 'daily_salary_no_shift_pattern'), false);
+
+    checkTrue('hourly employee flagged salary_type_hourly_not_supported', strpos((string)($hourlyDetail['calc_errors'] ?? ''), 'salary_type_hourly_not_supported') !== false);
+    check('hourly employee falls back to the unprorated monthly formula for a full period', (float)$hourlyDetail['base_salary_amount'], $hourlyRate);
+
+    checkTrue('daily employee WITHOUT a shift flagged daily_salary_no_shift_pattern', strpos((string)($noShiftDetail['calc_errors'] ?? ''), 'daily_salary_no_shift_pattern') !== false);
+    check('daily employee without a shift has_shift_pattern is false', $expectedPayableNoShift['has_shift_pattern'], false);
+    check('no-shift daily employee base_salary_amount = rate * payable_days (holiday-only exclusion)', (float)$noShiftDetail['base_salary_amount'], round($noShiftRate * $expectedPayableNoShift['payable_days'], 2));
 
     echo "=== Per-run earning/deduction item selection (two-panel, per-type) ===\n";
     // A second earning PED type + standing assignment on the same full-period employee, so
@@ -782,9 +1276,553 @@ try {
     $cancelLockedRes = $runModel->cancel($runId, $compId, $adminUserId, true, 'Trying to cancel a locked run.');
     check('cancelling a locked (already-paid) run is rejected', $cancelLockedRes['status'], false);
 
+    echo "=== list()'s cancelled_from_state column (2026-08-22, feeds the Process List mini-timeline) ===\n";
+    $listAfterDraftCancel = $runModel->list($compId, []);
+    $draftCancelRow = array_values(array_filter($listAfterDraftCancel, fn($r) => (int)$r['id'] === $cancelTargetId))[0] ?? [];
+    check('cancelled_from_state is draft for a run cancelled straight from draft', $draftCancelRow['cancelled_from_state'] ?? null, 'draft');
+
+    $cancelFromPendingRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_CANCEL_FROM_PENDING_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +6 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +6 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +6 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $cancelFromPendingId = $cancelFromPendingRes['id'];
+    $runModel->recalculate($cancelFromPendingId, $compId, $adminUserId, true);
+    $runModel->submit($cancelFromPendingId, $compId, $adminUserId, true);
+    $runModel->cancel($cancelFromPendingId, $compId, $adminUserId, true, 'Cancelling while pending approval.');
+    $listAfterPendingCancel = $runModel->list($compId, []);
+    $pendingCancelRow = array_values(array_filter($listAfterPendingCancel, fn($r) => (int)$r['id'] === $cancelFromPendingId))[0] ?? [];
+    check('cancelled_from_state is pending_approval for a run cancelled after submit', $pendingCancelRow['cancelled_from_state'] ?? null, 'pending_approval');
+    $lockedRunRow = array_values(array_filter($listAfterDraftCancel, fn($r) => (int)$r['id'] === $runId))[0] ?? ['cancelled_from_state' => 'MISSING_ROW'];
+    check('a non-cancelled run has a null cancelled_from_state', $lockedRunRow['cancelled_from_state'], null);
+
+    echo "=== bulkApprove()/bulkReject() (2026-08-22, explicit request: \"การอนุมุติให้มี checkbox เลือกอนุมุติได้หลายรายการพร้อมกัน\") ===\n";
+    $bulkRunA = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_BULK_A_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +7 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +7 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +7 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $bulkRunB = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_BULK_B_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +8 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +8 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +8 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $bulkRunAId = $bulkRunA['id'];
+    $bulkRunBId = $bulkRunB['id'];
+    foreach ([$bulkRunAId, $bulkRunBId] as $bid) {
+        $runModel->recalculate($bid, $compId, $adminUserId, true);
+        $runModel->submit($bid, $compId, $adminUserId, true);
+    }
+
+    $bulkApproveRes = $runModel->bulkApprove([$bulkRunAId, $bulkRunBId], $compId, $adminUserId, true, 'bulk-approved in test');
+    checkTrue('bulkApprove() succeeds when both ids are valid', $bulkApproveRes['status']);
+    check('bulkApprove() succeeded count is 2', $bulkApproveRes['succeeded'], 2);
+    check('bulkApprove() total count is 2', $bulkApproveRes['total'], 2);
+    check('run A is approved', $runModel->get($bulkRunAId, $compId)['state'], 'approved');
+    check('run B is approved', $runModel->get($bulkRunBId, $compId)['state'], 'approved');
+
+    // Partial success: run A is already approved (no longer pending_approval) -- bulk-approving it
+    // again alongside a genuinely still-draft run (never submitted) means BOTH fail individually,
+    // but the call itself should still report a clean partial-failure shape, not throw/error out.
+    $bulkRunC = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_BULK_C_DRAFT_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +9 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +9 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +9 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $bulkRunCId = $bulkRunC['id'];
+    $bulkApprovePartialRes = $runModel->bulkApprove([$bulkRunAId, $bulkRunCId], $compId, $adminUserId, true, null);
+    check('bulkApprove() with 2 invalid ids (already-approved + still-draft) reports 0 succeeded', $bulkApprovePartialRes['succeeded'], 0);
+    check('bulkApprove() status is false when nothing succeeded', $bulkApprovePartialRes['status'], false);
+    check('bulkApprove() still reports the correct total', $bulkApprovePartialRes['total'], 2);
+    checkTrue('bulkApprove() results carry a per-id failure message', !empty($bulkApprovePartialRes['results'][$bulkRunAId]['message'] ?? ''));
+
+    // bulkReject(): 2 fresh pending_approval runs, empty reason -- mirrors reject()'s own
+    // per-id validation (trim($reason)==='' rejected), so both fail individually here too.
+    $bulkRunD = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_BULK_D_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +10 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +10 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +10 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $bulkRunE = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_BULK_E_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +11 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +11 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +11 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $bulkRunDId = $bulkRunD['id'];
+    $bulkRunEId = $bulkRunE['id'];
+    foreach ([$bulkRunDId, $bulkRunEId] as $bid) {
+        $runModel->recalculate($bid, $compId, $adminUserId, true);
+        $runModel->submit($bid, $compId, $adminUserId, true);
+    }
+
+    $bulkRejectEmptyRes = $runModel->bulkReject([$bulkRunDId, $bulkRunEId], $compId, $adminUserId, true, '   ');
+    check('bulkReject() with an empty/whitespace reason succeeds for nobody', $bulkRejectEmptyRes['succeeded'], 0);
+    check('bulkReject() with an empty reason has status false', $bulkRejectEmptyRes['status'], false);
+    check('both runs stay pending_approval after the empty-reason bulk reject', $runModel->get($bulkRunDId, $compId)['state'], 'pending_approval');
+
+    $bulkRejectRes = $runModel->bulkReject([$bulkRunDId, $bulkRunEId], $compId, $adminUserId, true, 'Numbers look wrong, please recheck.');
+    checkTrue('bulkReject() with a real reason succeeds', $bulkRejectRes['status']);
+    check('bulkReject() succeeded count is 2', $bulkRejectRes['succeeded'], 2);
+    check('run D is rejected', $runModel->get($bulkRunDId, $compId)['state'], 'rejected');
+    check('run E is rejected', $runModel->get($bulkRunEId, $compId)['state'], 'rejected');
+    check('reject_reason stored for run D via bulkReject()', $runModel->get($bulkRunDId, $compId)['reject_reason'], 'Numbers look wrong, please recheck.');
+
+    echo "=== requestInfo()/reviseAfterNeedInfo()/bulkRequestInfo() (2026-08-22, explicit request: \"Status ในหน้า Approve มี Waiting Approve Not Approve Need Information\" -- confirmed as a REAL third state) ===\n";
+    $needInfoRunA = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_NEEDINFO_A_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +12 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +12 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +12 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $needInfoRunAId = $needInfoRunA['id'];
+    $runModel->recalculate($needInfoRunAId, $compId, $adminUserId, true);
+    $runModel->submit($needInfoRunAId, $compId, $adminUserId, true);
+
+    $requestInfoEmptyRes = $runModel->requestInfo($needInfoRunAId, $compId, $adminUserId, true, '   ');
+    check('requestInfo() with an empty/whitespace reason is rejected', $requestInfoEmptyRes['status'], false);
+
+    $requestInfoRes = $runModel->requestInfo($needInfoRunAId, $compId, $adminUserId, true, 'Please confirm the OT hours for employee X.');
+    checkTrue('requestInfo() with a real reason succeeds' . (empty($requestInfoRes['status']) ? " ({$requestInfoRes['message']})" : ''), $requestInfoRes['status']);
+    $needInfoRunAAfter = $runModel->get($needInfoRunAId, $compId);
+    check('state is need_info', $needInfoRunAAfter['state'], 'need_info');
+    check('need_info_reason stored', $needInfoRunAAfter['need_info_reason'], 'Please confirm the OT hours for employee X.');
+    check('need_info_by stored', (int)$needInfoRunAAfter['need_info_by'], $adminUserId);
+    checkTrue('need_info_at stored', $needInfoRunAAfter['need_info_at'] !== null);
+
+    $requestInfoAgainRes = $runModel->requestInfo($needInfoRunAId, $compId, $adminUserId, true, 'Second request.');
+    check('requestInfo() rejected once no longer pending_approval', $requestInfoAgainRes['status'], false);
+
+    $reviseWrongStateRes = $runModel->reviseAfterNeedInfo($bulkRunAId, $compId, $adminUserId, true);
+    check('reviseAfterNeedInfo() rejected for a run that is not need_info (it is approved)', $reviseWrongStateRes['status'], false);
+
+    $reviseNeedInfoRes = $runModel->reviseAfterNeedInfo($needInfoRunAId, $compId, $adminUserId, true);
+    checkTrue('reviseAfterNeedInfo() succeeds' . (empty($reviseNeedInfoRes['status']) ? " ({$reviseNeedInfoRes['message']})" : ''), $reviseNeedInfoRes['status']);
+    check('state is draft again after reviseAfterNeedInfo()', $runModel->get($needInfoRunAId, $compId)['state'], 'draft');
+
+    echo "=== cancel() now allowed from need_info too ===\n";
+    $needInfoRunB = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_NEEDINFO_CANCEL_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +13 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +13 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +13 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $needInfoRunBId = $needInfoRunB['id'];
+    $runModel->recalculate($needInfoRunBId, $compId, $adminUserId, true);
+    $runModel->submit($needInfoRunBId, $compId, $adminUserId, true);
+    $runModel->requestInfo($needInfoRunBId, $compId, $adminUserId, true, 'Need clarification.');
+    $cancelNeedInfoRes = $runModel->cancel($needInfoRunBId, $compId, $adminUserId, true, 'No longer needed, cancelling outright.');
+    checkTrue('cancel() succeeds from need_info' . (empty($cancelNeedInfoRes['status']) ? " ({$cancelNeedInfoRes['message']})" : ''), $cancelNeedInfoRes['status']);
+    check('state is cancelled', $runModel->get($needInfoRunBId, $compId)['state'], 'cancelled');
+
+    echo "=== bulkRequestInfo() ===\n";
+    $bulkRunF = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_BULK_F_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +14 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +14 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +14 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $bulkRunG = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_BULK_G_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +15 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +15 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +15 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $bulkRunFId = $bulkRunF['id'];
+    $bulkRunGId = $bulkRunG['id'];
+    foreach ([$bulkRunFId, $bulkRunGId] as $bid) {
+        $runModel->recalculate($bid, $compId, $adminUserId, true);
+        $runModel->submit($bid, $compId, $adminUserId, true);
+    }
+
+    $bulkRequestInfoEmptyRes = $runModel->bulkRequestInfo([$bulkRunFId, $bulkRunGId], $compId, $adminUserId, true, '   ');
+    check('bulkRequestInfo() with an empty reason succeeds for nobody', $bulkRequestInfoEmptyRes['succeeded'], 0);
+    check('bulkRequestInfo() with an empty reason has status false', $bulkRequestInfoEmptyRes['status'], false);
+
+    $bulkRequestInfoRes = $runModel->bulkRequestInfo([$bulkRunFId, $bulkRunGId], $compId, $adminUserId, true, 'Please double-check the bank details.');
+    checkTrue('bulkRequestInfo() with a real reason succeeds' . (empty($bulkRequestInfoRes['status']) ? " ({$bulkRequestInfoRes['message']})" : ''), $bulkRequestInfoRes['status']);
+    check('bulkRequestInfo() succeeded count is 2', $bulkRequestInfoRes['succeeded'], 2);
+    check('run F is need_info', $runModel->get($bulkRunFId, $compId)['state'], 'need_info');
+    check('run G is need_info', $runModel->get($bulkRunGId, $compId)['state'], 'need_info');
+
     echo "=== Audit log has one entry per action ===\n";
     $auditLog = $runModel->getAuditLog($runId, $compId);
     checkTrue('audit log recorded multiple actions', count($auditLog) >= 6);
+
+    echo "=== Generalized revert() (2026-08-23, explicit request: \"ถ้ามีการกดอะไรก็ตาม ฝั่งผู้อนุมัติ" .
+        "สามารถถอยอนุมัติได้ เช่น ถ้า Approve not approve หรือ need info สามารถถอยกลับไป Status อื่น" .
+        "ที่ไม่ใช่ Status ปัจจุบันได้\") -- approved/rejected/need_info can now all be reverted back to" .
+        " pending_approval (not just pending_approval -> draft), clearing that state's own columns" .
+        " so nothing stale is left behind, while the audit log keeps every past decision. ===\n";
+    $revertRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_REVERT_GEN_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +16 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +16 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +16 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: revert-test run created' . (empty($revertRunRes['status']) ? " ({$revertRunRes['message']})" : ''), $revertRunRes['status']);
+    $revertRunId = $revertRunRes['id'];
+    $runModel->recalculate($revertRunId, $compId, $adminUserId, true);
+
+    // approved -> pending_approval
+    $runModel->submit($revertRunId, $compId, $adminUserId, true);
+    $runModel->approve($revertRunId, $compId, $adminUserId, true, 'looks good');
+    check('state is approved before revert', $runModel->get($revertRunId, $compId)['state'], 'approved');
+    $undoApprovedRes = $runModel->revert($revertRunId, $compId, $adminUserId, true, 'undo: wrong amount');
+    checkTrue('revert from approved succeeds', $undoApprovedRes['status']);
+    $afterUndoApproved = $runModel->get($revertRunId, $compId);
+    check('state is pending_approval again after undoing approve', $afterUndoApproved['state'], 'pending_approval');
+    check('approved_by cleared after undoing approve', $afterUndoApproved['approved_by'], null);
+    check('approved_at cleared after undoing approve', $afterUndoApproved['approved_at'], null);
+
+    // rejected -> pending_approval
+    $runModel->reject($revertRunId, $compId, $adminUserId, true, 'missing overtime');
+    check('state is rejected before revert', $runModel->get($revertRunId, $compId)['state'], 'rejected');
+    $undoRejectedRes = $runModel->revert($revertRunId, $compId, $adminUserId, true);
+    checkTrue('revert from rejected succeeds', $undoRejectedRes['status']);
+    $afterUndoRejected = $runModel->get($revertRunId, $compId);
+    check('state is pending_approval again after undoing reject', $afterUndoRejected['state'], 'pending_approval');
+    check('rejected_by cleared after undoing reject', $afterUndoRejected['rejected_by'], null);
+    check('reject_reason cleared after undoing reject', $afterUndoRejected['reject_reason'], null);
+
+    // need_info -> pending_approval
+    $runModel->requestInfo($revertRunId, $compId, $adminUserId, true, 'need the OT sheet');
+    check('state is need_info before revert', $runModel->get($revertRunId, $compId)['state'], 'need_info');
+    $undoNeedInfoRes = $runModel->revert($revertRunId, $compId, $adminUserId, true);
+    checkTrue('revert from need_info succeeds', $undoNeedInfoRes['status']);
+    $afterUndoNeedInfo = $runModel->get($revertRunId, $compId);
+    check('state is pending_approval again after undoing need_info', $afterUndoNeedInfo['state'], 'pending_approval');
+    check('need_info_by cleared after undoing need_info', $afterUndoNeedInfo['need_info_by'], null);
+    check('need_info_reason cleared after undoing need_info', $afterUndoNeedInfo['need_info_reason'], null);
+
+    // pending_approval -> draft (original behavior, unchanged)
+    $undoPendingRes = $runModel->revert($revertRunId, $compId, $adminUserId, true);
+    checkTrue('revert from pending_approval still succeeds', $undoPendingRes['status']);
+    check('state is draft after reverting from pending_approval', $runModel->get($revertRunId, $compId)['state'], 'draft');
+
+    // Every decision this run ever went through is still in the audit trail (2026-08-23: "แต่ต้องเก็บ
+    // Log การอนุมัตด้วยว่าเคยอนุมัติไปแล้วกี่ครั้ง แต่ละครั้งเป็นยังไง ดูใน Log Audit").
+    $revertAuditLog = $runModel->getAuditLog($revertRunId, $compId);
+    $revertActions = array_column($revertAuditLog, 'action');
+    check('audit trail kept the approve action', in_array('approve', $revertActions, true), true);
+    check('audit trail kept the reject action', in_array('reject', $revertActions, true), true);
+    check('audit trail kept the request_info action', in_array('request_info', $revertActions, true), true);
+    check('audit trail kept 4 separate revert actions (one per undo above)', count(array_filter($revertActions, fn($a) => $a === 'revert')), 4);
+    checkTrue('every audit log row carries a client IP (or null column, but the key exists)', array_key_exists('ip_address', $revertAuditLog[0]));
+    checkTrue('every audit log row carries a user_agent column', array_key_exists('user_agent', $revertAuditLog[0]));
+
+    // draft/paid/locked/cancelled all refuse revert -- no "decision" to undo there.
+    $undoFromDraftRes = $runModel->revert($revertRunId, $compId, $adminUserId, true);
+    check('revert from draft is refused', $undoFromDraftRes['status'], false);
+    $undoFromLockedRes = $runModel->revert($runId, $compId, $adminUserId, true); // $runId is 'locked' by this point in the file
+    check('revert from a locked (already-paid) run is refused', $undoFromLockedRes['status'], false);
+
+    echo "=== revert() permission split: submitter can pull back their own still-undecided" .
+        " submission, but not an already-decided one (explicit request: \"ในกรณีที่ส่ง Approve แล้ว" .
+        "ยังไม่มีใคร Approve สามารถดึง Process กลับได้\") ===\n";
+    // Submitter-only role: can_process_payroll=1, can_approve_payroll=0.
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
+        VALUES (:comp_id, 'ทดสอบผู้ส่งอย่างเดียว', 'Test Submitter Only', 1, 0, 0)")->execute([':comp_id' => $compId]);
+    $submitterOnlyRoleId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET role_id = :role_id WHERE id = :id")->execute([':role_id' => $submitterOnlyRoleId, ':id' => $employeeFullId]);
+
+    $pullbackRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_SUBMITTER_PULLBACK_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +18 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +18 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +18 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: submitter-pullback-test run created' . (empty($pullbackRunRes['status']) ? " ({$pullbackRunRes['message']})" : ''), $pullbackRunRes['status']);
+    $pullbackRunId = $pullbackRunRes['id'];
+    $runModel->recalculate($pullbackRunId, $compId, $adminUserId, true);
+    // $employeeFullId (submitter-only role) submits it themselves.
+    $submitBySubmitterRes = $runModel->submit($pullbackRunId, $compId, $employeeFullId, false);
+    checkTrue('submitter-only role can submit', $submitBySubmitterRes['status']);
+
+    $submitterPullbackRes = $runModel->revert($pullbackRunId, $compId, $employeeFullId, false);
+    checkTrue('submitter (can_process_payroll, no can_approve_payroll) can pull back their own pending_approval run', $submitterPullbackRes['status']);
+    check('state is draft after the submitter pulls it back', $runModel->get($pullbackRunId, $compId)['state'], 'draft');
+
+    // Resubmit, approve it, then confirm the SAME submitter-only role cannot undo that decision --
+    // undoing an already-decided state stays approver-only.
+    $runModel->submit($pullbackRunId, $compId, $employeeFullId, false);
+    $runModel->approve($pullbackRunId, $compId, $adminUserId, true);
+    $submitterUndoApprovedRes = $runModel->revert($pullbackRunId, $compId, $employeeFullId, false);
+    check('submitter-only role cannot undo an already-approved decision', $submitterUndoApprovedRes['status'], false);
+
+    echo "=== approvalFlow() reflects role/approver changes live, even after resubmit (explicit" .
+        " report: \"มีการปรับ Flow Approve ไปแต่พอส่งไป Approve อีกครั้ง Flow ไม่เปลี่ยน\") ===\n";
+    // 2026-08-23, follow-up explicit report ("Approval ตอนนี้ Set ไว้แค่คนเดียว แต่ดึงมาหลายคน") --
+    // approvalFlow() is now scoped to the SUBMITTER's own department (see its own docblock), so
+    // this fixture needs a real department shared by the submitter and both candidate approvers,
+    // not just a role flag -- otherwise every approver query below would legitimately come back
+    // empty regardless of role.
+    $pdo->prepare("INSERT INTO `structure_departments` (comp_id, department_code, department_name_th, department_name_en, status)
+        VALUES (:comp_id, :code, 'ทดสอบแผนก', 'Test Department', 'active')")->execute([':comp_id' => $compId, ':code' => 'TESTDEPT_' . uniqid()]);
+    $testDepartmentId = (int)$pdo->lastInsertId();
+    // $employeeFullId already holds the submitter-only role (can_process_payroll=1) from the
+    // section just above -- reused here as the submitter so submitted_by resolves to a fully
+    // test-controlled employee instead of the shared dev-DB admin account (id 1).
+    $pdo->prepare("UPDATE `employees` SET department_id = :dept WHERE id = :id")->execute([':dept' => $testDepartmentId, ':id' => $employeeFullId]);
+
+    // Role A: the only can_approve_payroll holder at first, held by an employee in the SAME department.
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
+        VALUES (:comp_id, 'ทดสอบผู้อนุมัติ A', 'Test Approver A', 0, 1, 0)")->execute([':comp_id' => $compId]);
+    $approverRoleAId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET role_id = :role_id, department_id = :dept WHERE id = :id")
+        ->execute([':role_id' => $approverRoleAId, ':dept' => $testDepartmentId, ':id' => $employeeMidId]);
+
+    $flowRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_FLOW_CHANGE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +17 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +17 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +17 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: flow-change-test run created' . (empty($flowRunRes['status']) ? " ({$flowRunRes['message']})" : ''), $flowRunRes['status']);
+    $flowRunId = $flowRunRes['id'];
+    $runModel->recalculate($flowRunId, $compId, $adminUserId, true);
+    $runModel->submit($flowRunId, $compId, $employeeFullId, false);
+
+    $flowBefore = $runModel->approvalFlow($flowRunId, $compId);
+    $flowBeforeIds = array_map('intval', array_column($flowBefore['approvers'], 'id'));
+    checkTrue('flow before the role change includes approver A', in_array($employeeMidId, $flowBeforeIds, true));
+
+    // Reject it, then change who can approve BEFORE it gets revised/resubmitted (the exact
+    // sequence reported: adjust the flow, then send for approval again).
+    $runModel->reject($flowRunId, $compId, $adminUserId, true, 'need changes');
+    $pdo->prepare("UPDATE `structure_roles` SET can_approve_payroll = 0 WHERE id = :id")->execute([':id' => $approverRoleAId]);
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
+        VALUES (:comp_id, 'ทดสอบผู้อนุมัติ B', 'Test Approver B', 0, 1, 0)")->execute([':comp_id' => $compId]);
+    $approverRoleBId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET role_id = :role_id, department_id = :dept WHERE id = :id")
+        ->execute([':role_id' => $approverRoleBId, ':dept' => $testDepartmentId, ':id' => $employeeOptOutId]);
+
+    $runModel->reviseAfterReject($flowRunId, $compId, $employeeFullId, false);
+    $runModel->submit($flowRunId, $compId, $employeeFullId, false);
+    $flowAfter = $runModel->approvalFlow($flowRunId, $compId);
+    $flowAfterIds = array_map('intval', array_column($flowAfter['approvers'], 'id'));
+    checkTrue('flow after resubmit no longer includes the removed approver A', !in_array($employeeMidId, $flowAfterIds, true));
+    checkTrue('flow after resubmit includes the newly-added approver B', in_array($employeeOptOutId, $flowAfterIds, true));
+    checkTrue('every approver in the refreshed flow is marked pending (not stale)', count(array_filter($flowAfter['approvers'], fn($a) => $a['status'] !== 'pending')) === 0);
+
+    echo "=== canApproveThisRun() department scoping (explicit report: \"Approval ตอนนี้ Set ไว้แค่" .
+        "คนเดียว แต่ดึงมาหลายคน\") -- approver B (same department as the submitter) can act; a" .
+        " same-role approver in a DIFFERENT department cannot ===\n";
+    // Approver B (role B, can_approve_payroll=1) is in $testDepartmentId -- same as the submitter --
+    // and should be able to approve.
+    $sameDeptApproveRes = $runModel->approve($flowRunId, $compId, $employeeOptOutId, false, 'ok from same department');
+    checkTrue('same-department approver (role B) can approve', $sameDeptApproveRes['status']);
+
+    // A THIRD employee holds the exact same can_approve_payroll role (role B) but sits in a
+    // DIFFERENT department -- must be refused even though the role flag alone would have allowed it
+    // under the old company-wide check.
+    $pdo->prepare("INSERT INTO `structure_departments` (comp_id, department_code, department_name_th, department_name_en, status)
+        VALUES (:comp_id, :code, 'ทดสอบแผนกอื่น', 'Test Other Department', 'active')")->execute([':comp_id' => $compId, ':code' => 'TESTDEPT2_' . uniqid()]);
+    $otherDepartmentId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET role_id = :role_id, department_id = :dept WHERE id = :id")
+        ->execute([':role_id' => $approverRoleBId, ':dept' => $otherDepartmentId, ':id' => $employeeLeaverId]);
+
+    // Undo the approval above so there's something pending again to attempt (and to keep testing
+    // a real decision, not a no-op on an already-approved run).
+    $runModel->revert($flowRunId, $compId, $adminUserId, true);
+    $otherDeptApproveRes = $runModel->approve($flowRunId, $compId, $employeeLeaverId, false, 'should be refused');
+    check('same-role approver in a DIFFERENT department is refused', $otherDeptApproveRes['status'], false);
+    check('state is still pending_approval after the refused cross-department approve attempt', $runModel->get($flowRunId, $compId)['state'], 'pending_approval');
+
+    echo "=== list()'s per-row can_approve_payroll flag matches canApproveThisRun() (feeds the" .
+        " Approval Queue page hiding Approve/Reject/Request Info on a row the viewer can't" .
+        " actually act on) ===\n";
+    $listForSameDept = $runModel->list($compId, [], $employeeOptOutId, false);
+    $rowForSameDeptViewer = array_values(array_filter($listForSameDept, fn($r) => (int)$r['id'] === $flowRunId))[0] ?? null;
+    checkTrue('same-department approver sees can_approve_payroll=true for this run', $rowForSameDeptViewer !== null && $rowForSameDeptViewer['can_approve_payroll'] === true);
+
+    $listForOtherDept = $runModel->list($compId, [], $employeeLeaverId, false);
+    $rowForOtherDeptViewer = array_values(array_filter($listForOtherDept, fn($r) => (int)$r['id'] === $flowRunId))[0] ?? null;
+    checkTrue('different-department, same-role viewer sees can_approve_payroll=false for this run', $rowForOtherDeptViewer !== null && $rowForOtherDeptViewer['can_approve_payroll'] === false);
+
+    $listForAdmin = $runModel->list($compId, [], $adminUserId, true);
+    $rowForAdmin = array_values(array_filter($listForAdmin, fn($r) => (int)$r['id'] === $flowRunId))[0] ?? null;
+    checkTrue('admin always sees can_approve_payroll=true regardless of department', $rowForAdmin !== null && $rowForAdmin['can_approve_payroll'] === true);
+
+    $listNoActingEmployee = $runModel->list($compId, []);
+    $rowNoActingEmployee = array_values(array_filter($listNoActingEmployee, fn($r) => (int)$r['id'] === $flowRunId))[0] ?? [];
+    checkTrue('can_approve_payroll key is omitted entirely when no acting employee is passed (backward compatible)', !array_key_exists('can_approve_payroll', $rowNoActingEmployee));
+
+    echo "=== Department-scoping falls back to company-wide when the submitter has no department" .
+        " (real bug fix, explicit report: \"ตอนนี้ Set ไว้ที่ Specific User ในหน้า Approve มีรายการ" .
+        " แต่พอกดดู timeline No employee in the submitter's department currently holds approval" .
+        " permission\" -- traced to a real dev-DB submitter with department_id = NULL) ===\n";
+    // A submitter with NO department at all (default for a freshly-created test employee --
+    // mirrors the real SSO-provisioned placeholder account that triggered this report).
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
+        VALUES (:comp_id, 'ทดสอบผู้ส่งไม่มีแผนก', 'Test Submitter No Dept', 1, 0, 0)")->execute([':comp_id' => $compId]);
+    $noDeptSubmitterRoleId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET role_id = :role_id, department_id = NULL WHERE id = :id")
+        ->execute([':role_id' => $noDeptSubmitterRoleId, ':id' => $employeeOptOutId]);
+
+    $noDeptRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_NO_DEPT_SUBMITTER_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +19 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +19 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +19 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: no-department-submitter run created' . (empty($noDeptRunRes['status']) ? " ({$noDeptRunRes['message']})" : ''), $noDeptRunRes['status']);
+    $noDeptRunId = $noDeptRunRes['id'];
+    $runModel->recalculate($noDeptRunId, $compId, $adminUserId, true);
+    $noDeptSubmitRes = $runModel->submit($noDeptRunId, $compId, $employeeOptOutId, false);
+    checkTrue('no-department employee can still submit', $noDeptSubmitRes['status']);
+
+    $noDeptFlow = $runModel->approvalFlow($noDeptRunId, $compId);
+    $noDeptFlowIds = array_map('intval', array_column($noDeptFlow['approvers'], 'id'));
+    // Role A was disabled earlier in this file (can_approve_payroll set back to 0), so
+    // $employeeMidId is correctly absent either way -- $employeeLeaverId (role B, in
+    // $otherDepartmentId, unrelated to this submitter's missing department) is the one that
+    // proves the fallback: under a hard department match this would come back empty; with the
+    // fallback it must include every can_approve_payroll holder company-wide, same as before
+    // department scoping existed at all.
+    // (The real dev-DB "Department Manager" holders are soft-deleted for this test's duration --
+    // see this file's own fixture setup at the top -- so $employeeLeaverId being present at all
+    // here, despite sitting in a completely different department than this submitter, is itself
+    // the proof: a hard department match would have excluded it and left the list empty.)
+    checkTrue('flow falls back to the company-wide approver list when submitter has no department', in_array($employeeLeaverId, $noDeptFlowIds, true));
+
+    // Approver in $otherDepartmentId (role B, can_approve_payroll=1) -- would be refused under a
+    // hard department match against a real submitter department, but the submitter here has none,
+    // so this must be allowed.
+    $noDeptApproveRes = $runModel->approve($noDeptRunId, $compId, $employeeLeaverId, false, 'fallback should allow this');
+    checkTrue('any can_approve_payroll holder can approve a run whose submitter has no department', $noDeptApproveRes['status']);
+
+    $listForNoDeptRun = $runModel->list($compId, [], $employeeLeaverId, false);
+    $rowForNoDeptRun = array_values(array_filter($listForNoDeptRun, fn($r) => (int)$r['id'] === $noDeptRunId))[0] ?? null;
+    // The run above is now 'approved' (previous line), so re-fetch a fresh still-pending case
+    // isn't needed here -- just confirm list() itself didn't blow up and the flag key exists.
+    checkTrue('list() still returns the no-department-submitter run without error', $rowForNoDeptRun !== null);
+
+    echo "=== Approval Workflow engine actually wired to PayrollRunModel (explicit bug report:" .
+        " \"ใส่คน Approve ไว้แค่คนเดียวแต่ดึงอะไรมาก้ไม่รู้...ในตาราง approval_workflow_steps คุณรู้ใช่" .
+        " ไหมว่ามันมีการตั้งค่าส่วนนี้ ทำไมถึงยังดึงไม่ถูก\") -- a workflow configured via" .
+        " approval_workflow_steps (single approver_type='user' step) was being completely ignored;" .
+        " submit()/approve()/reject()/requestInfo()/revert()/approvalFlow() now all route through" .
+        " it when one is active for PAYROLL_RUN_APPROVAL. ===\n";
+    require_once __DIR__ . '/../app/models/ApprovalRequestModel.php';
+    $approvalRequestModel = new ApprovalRequestModel($pdo);
+
+    // Two dedicated, fresh employees -- the designated approver and an unrelated bystander who
+    // must NOT be able to act, to prove this is really gating on the SPECIFIC configured user, not
+    // falling back to some broader check.
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_WF_APPROVER_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'ผู้อนุมัติเจาะจง', ':name_en' => 'Test', ':surname_en' => 'WorkflowApprover',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => 30000, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $wfApproverId = (int)$pdo->lastInsertId();
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_WF_BYSTANDER_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'ไม่เกี่ยวข้อง', ':name_en' => 'Test', ':surname_en' => 'WorkflowBystander',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => 30000, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $wfBystanderId = (int)$pdo->lastInsertId();
+
+    $pdo->prepare("INSERT INTO `approval_workflows` (comp_id, workflow_name, status) VALUES (:comp_id, :workflow_name, 'active')")
+        ->execute([':comp_id' => $compId, ':workflow_name' => 'TEST_WF_' . uniqid()]);
+    $testWorkflowId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `approval_workflow_document_types` (workflow_id, document_type_code) VALUES (:workflow_id, 'PAYROLL_RUN_APPROVAL')")
+        ->execute([':workflow_id' => $testWorkflowId]);
+    $pdo->prepare("INSERT INTO `approval_workflow_steps` (workflow_id, step_order, step_name, joint_approve_mode)
+        VALUES (:workflow_id, 1, 'Approve', 'any')")
+        ->execute([':workflow_id' => $testWorkflowId]);
+    $testWfStepId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `approval_workflow_step_approvers` (step_id, approver_type, approver_id)
+        VALUES (:step_id, 'user', :approver_id)")
+        ->execute([':step_id' => $testWfStepId, ':approver_id' => $wfApproverId]);
+
+    $wfRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_WORKFLOW_ENGINE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +20 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +20 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +20 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: workflow-engine-test run created' . (empty($wfRunRes['status']) ? " ({$wfRunRes['message']})" : ''), $wfRunRes['status']);
+    $wfRunId = $wfRunRes['id'];
+    $runModel->recalculate($wfRunId, $compId, $adminUserId, true);
+    $runModel->submit($wfRunId, $compId, $adminUserId, true);
+
+    $wfRunAfterSubmit = $runModel->get($wfRunId, $compId);
+    checkTrue('submit() linked a real approval_request_id (active workflow was configured)', $wfRunAfterSubmit['approval_request_id'] !== null);
+    $wfRequest = $approvalRequestModel->get($compId, (int)$wfRunAfterSubmit['approval_request_id']);
+    checkTrue('the linked approval_requests row exists', $wfRequest !== null);
+    check('linked request is for PAYROLL_RUN_APPROVAL', $wfRequest['document_type_code'], 'PAYROLL_RUN_APPROVAL');
+    check('linked request references this run', (int)$wfRequest['reference_id'], $wfRunId);
+    check('linked request starts pending', $wfRequest['status'], 'pending');
+
+    echo "=== approvalFlow() shows exactly the ONE configured user (not a role, not a department" .
+        " query) ===\n";
+    $wfFlow = $runModel->approvalFlow($wfRunId, $compId);
+    check('exactly 1 eligible approver', count($wfFlow['approvers']), 1);
+    check('it is the specifically-configured user', (int)$wfFlow['approvers'][0]['id'], $wfApproverId);
+    check('that approver is marked pending', $wfFlow['approvers'][0]['status'], 'pending');
+
+    echo "=== only the configured user can act -- an unrelated bystander (even with no special" .
+        " permission needed, since this is a real Approval Workflow, not the flat role check) is" .
+        " refused ===\n";
+    $bystanderApproveRes = $runModel->approve($wfRunId, $compId, $wfBystanderId, false, 'should be refused');
+    check('bystander cannot approve', $bystanderApproveRes['status'], false);
+    check('run is still pending_approval after the refused attempt', $runModel->get($wfRunId, $compId)['state'], 'pending_approval');
+
+    $approverApproveRes = $runModel->approve($wfRunId, $compId, $wfApproverId, false, 'approved via the real workflow');
+    checkTrue('the configured user CAN approve' . (empty($approverApproveRes['status']) ? " ({$approverApproveRes['message']})" : ''), $approverApproveRes['status']);
+    $wfRunAfterApprove = $runModel->get($wfRunId, $compId);
+    check('run state flipped to approved', $wfRunAfterApprove['state'], 'approved');
+    check('the linked approval_requests row is now approved too', $approvalRequestModel->get($compId, (int)$wfRunAfterApprove['approval_request_id'])['status'], 'approved');
+
+    echo "=== revert() reopens the linked approval_requests row so it can be decided again ===\n";
+    $wfRevertRes = $runModel->revert($wfRunId, $compId, $wfApproverId, false);
+    checkTrue('the same configured approver can undo their own approval' . (empty($wfRevertRes['status']) ? " ({$wfRevertRes['message']})" : ''), $wfRevertRes['status']);
+    $wfRunAfterRevert = $runModel->get($wfRunId, $compId);
+    check('run state back to pending_approval', $wfRunAfterRevert['state'], 'pending_approval');
+    $reopenedRequest = $approvalRequestModel->get($compId, (int)$wfRunAfterRevert['approval_request_id']);
+    check('linked request re-opened to pending', $reopenedRequest['status'], 'pending');
+    check('linked request back at step 1', (int)$reopenedRequest['current_step_order'], 1);
+
+    echo "=== reject() also routes through the engine ===\n";
+    $wfRejectRes = $runModel->reject($wfRunId, $compId, $wfApproverId, false, 'needs changes');
+    checkTrue('the configured approver can reject via the real workflow' . (empty($wfRejectRes['status']) ? " ({$wfRejectRes['message']})" : ''), $wfRejectRes['status']);
+    check('run state flipped to rejected', $runModel->get($wfRunId, $compId)['state'], 'rejected');
+
+    echo "=== requestInfo() gates on the same engine (act() has no need_info verb of its own) ===\n";
+    // Bring it back to pending_approval to test requestInfo() specifically.
+    $runModel->revert($wfRunId, $compId, $wfApproverId, false);
+    $bystanderNeedInfoRes = $runModel->requestInfo($wfRunId, $compId, $wfBystanderId, false, 'should be refused');
+    check('bystander cannot request info', $bystanderNeedInfoRes['status'], false);
+    $approverNeedInfoRes = $runModel->requestInfo($wfRunId, $compId, $wfApproverId, false, 'need the OT sheet');
+    checkTrue('the configured approver can request info' . (empty($approverNeedInfoRes['status']) ? " ({$approverNeedInfoRes['message']})" : ''), $approverNeedInfoRes['status']);
+    check('run state flipped to need_info', $runModel->get($wfRunId, $compId)['state'], 'need_info');
+
+    echo "=== a run with NO workflow configured still falls back to the flat role check" .
+        " (backward compatibility -- confirms this integration didn't break the pre-existing" .
+        " company-wide fallback path) ===\n";
+    $pdo->prepare("UPDATE `approval_workflows` SET status = 'inactive' WHERE id = :id")->execute([':id' => $testWorkflowId]);
+    $noWfRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_NO_WORKFLOW_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +21 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +21 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +21 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $noWfRunId = $noWfRunRes['id'];
+    $runModel->recalculate($noWfRunId, $compId, $adminUserId, true);
+    $runModel->submit($noWfRunId, $compId, $adminUserId, true);
+    check('no approval_request_id linked once the workflow is inactive', $runModel->get($noWfRunId, $compId)['approval_request_id'], null);
 
 } finally {
     $pdo->rollBack();

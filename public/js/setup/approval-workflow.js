@@ -1,14 +1,26 @@
 /**
- * Approval Workflow — drag-sort step editor (phase: UI). The workflow list/CRUD/monitor
- * backend endpoints land in a later phase; this file focuses on the step editor experience:
- * add/remove steps, drag-to-sort (SortableJS), per-step approver (user/role) picking via the
- * existing employee/role Select2 endpoints, and the joint-approve/timeout/escalation fields.
- * `currentSteps` is the source of truth; the DOM is rebuilt from it on structural changes
- * (add/delete/reorder) and updated in place for simple field edits (no rebuild, to avoid
- * losing focus/flicker while typing).
+ * Approval Workflow — drag-sort step editor. Add/remove steps, drag-to-sort (SortableJS),
+ * per-step APPROVER LIST (2026-08-23: a step used to hold a single user-or-role approver;
+ * changed to a repeatable list so one step can name multiple people, per explicit request:
+ * "การอนุมัติใน 1 รายการสามารถมีได้มากกว่า 1 แถว และในแต่ละแถวย่อยก็สามารถใส่ได้หลายคน") picked via
+ * the existing employee/role Select2 endpoints, and the joint-approve field.
+ *
+ * 2026-08-23, second change the same day: added per-step GATING (`requires_previous_step` --
+ * freely toggle whether a step must wait its turn behind earlier gated steps, independent of the
+ * others: e.g. step 1 gates step 2, but step 3 can be approved anytime) and per-step GROUP TYPE
+ * (`group_type`: and/or/finish, ported from origami's AND/OR/Finish semantics -- see
+ * ApprovalRequestModel::recomputeVerdict() for exactly how these combine into the overall
+ * verdict). The old "Advanced (timeout/escalation)" section was dropped entirely at the same time
+ * (explicit request -- those fields were config-only and never actually used by any engine).
+ *
+ * `currentSteps` is the source of truth (each step carries an `approvers` array plus
+ * group_type/requires_previous_step); the DOM is rebuilt from it on structural changes (add/
+ * delete/reorder) and updated in place for simple field edits (no rebuild, to avoid losing focus/
+ * flicker while typing).
  */
 let currentSteps = [];
 let stepKeyCounter = 0;
+let approverKeyCounter = 0;
 let stepSortableInstance = null;
 let tb_approval_workflow;
 
@@ -17,23 +29,34 @@ function newStepKey() {
     return 'step_' + stepKeyCounter + '_' + Date.now();
 }
 
+function newApproverKey() {
+    approverKeyCounter += 1;
+    return 'apv_' + approverKeyCounter + '_' + Date.now();
+}
+
+function emptyApprover() {
+    return { key: newApproverKey(), approver_type: 'user', approver_id: '', approver_label: '' };
+}
+
 function emptyStep() {
     return {
         key: newStepKey(),
         step_name: '',
-        approver_type: 'user',
-        approver_id: '',
-        approver_label: '',
+        approvers: [emptyApprover()],
         joint_approve_mode: 'any',
-        timeout_hours: '',
-        escalation_approver_type: '',
-        escalation_approver_id: '',
-        escalation_approver_label: ''
+        group_type: 'and',
+        requires_previous_step: false
     };
 }
 
 function findStep(key) {
     return currentSteps.find(s => s.key === key);
+}
+
+function findApprover(stepKey, approverKey) {
+    const step = findStep(stepKey);
+    if (!step) return null;
+    return step.approvers.find(a => a.key === approverKey) || null;
 }
 
 function approverAjaxOptions(type) {
@@ -42,51 +65,68 @@ function approverAjaxOptions(type) {
         : { mode: 'ajax', api: '/api/employee.report_to.get', allowClear: true };
 }
 
-function buildStepRowHtml(step, index) {
+function buildApproverRowHtml(step, approver) {
     return `
-        <div class="step-editor-row d-flex align-items-start gap-2 border rounded p-2 mb-2" data-key="${step.key}">
-            <div class="step-drag-handle text-secondary pt-2" style="cursor:grab;"><i class="fa-solid fa-grip-vertical"></i></div>
-            <div class="step-order-badge badge bg-secondary rounded-pill mt-2" style="min-width:1.75rem;">${index + 1}</div>
-            <div class="flex-grow-1">
-                <div class="row g-2">
-                    <div class="col-sm-4">
-                        <input type="text" class="form-control form-control-sm step-name-input" name="step_name" value="${escapeHtmlAw(step.step_name)}" placeholder="${langData['step_name_placeholder'] || 'Step name (optional)'}">
+        <div class="awf-approver-chip" data-approver-key="${approver.key}">
+            <span class="awf-approver-chip-icon approver-type-icon"><i class="fa-solid ${approver.approver_type === 'role' ? 'fa-user-group' : 'fa-user'}"></i></span>
+            <select class="form-select form-select-sm approver-type-select select2-static" style="max-width:150px;" data-option-keys="approver_type_user,approver_type_role" data-option-values="user,role"></select>
+            <select class="form-select form-select-sm approver-select select2-remote required flex-grow-1"></select>
+            ${step.approvers.length > 1 ? `<button type="button" class="btn btn-sm btn-link text-danger p-0 px-1 delete-approver-btn"><i class="fa-solid fa-xmark"></i></button>` : ''}
+        </div>
+    `;
+}
+
+const GROUP_TYPE_META = {
+    and: { key: 'group_type_and', fallback: 'AND — must approve', icon: 'fa-link' },
+    or: { key: 'group_type_or', fallback: 'OR — one is enough', icon: 'fa-code-fork' },
+    finish: { key: 'group_type_finish', fallback: 'Finish — decides everything', icon: 'fa-flag-checkered' }
+};
+
+function groupTypeToggleHtml(step) {
+    return Object.keys(GROUP_TYPE_META).map(gt => {
+        const meta = GROUP_TYPE_META[gt];
+        const active = step.group_type === gt;
+        return `<button type="button" class="btn btn-outline-secondary group-type-btn ${active ? 'active-group' : ''}" data-group-type="${gt}"><i class="fa-solid ${meta.icon} me-1"></i>${langData[meta.key] || meta.fallback}</button>`;
+    }).join('');
+}
+
+function buildStepRowHtml(step, index) {
+    const approversHtml = step.approvers.map(a => buildApproverRowHtml(step, a)).join('');
+    return `
+        <div class="awf-step-card" data-key="${step.key}">
+            <div class="awf-step-marker">
+                <div class="awf-step-badge">${index + 1}</div>
+                <div class="awf-step-connector"></div>
+            </div>
+            <div class="awf-step-drag" title="${langData['drag_to_reorder'] || 'Drag to reorder'}"><i class="fa-solid fa-grip-vertical"></i></div>
+            <div class="awf-step-body">
+                <input type="text" class="form-control form-control-sm awf-step-name-input step-name-input mb-2" name="step_name" value="${escapeHtmlAw(step.step_name)}" placeholder="${langData['step_name_placeholder'] || 'Step name (optional)'}">
+
+                <div class="step-approvers-list">${approversHtml}</div>
+                <button type="button" class="btn btn-link btn-sm p-0 mb-1 awf-add-approver-btn btn-add-approver"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_approver">${langData['add_approver'] || 'Approver'}</span></button>
+
+                <div class="d-flex flex-wrap align-items-center gap-3 small mt-1">
+                    <div class="form-check form-check-inline m-0">
+                        <input type="radio" class="form-check-input joint-mode-radio" name="joint_mode_${step.key}" id="jointany_${step.key}" value="any" ${step.joint_approve_mode === 'any' ? 'checked' : ''}>
+                        <label class="form-check-label" for="jointany_${step.key}" data-i18n="joint_approve_any">${langData['joint_approve_any'] || 'Any one approver is enough'}</label>
                     </div>
-                    <div class="col-sm-3">
-                        <select class="form-select form-select-sm approver-type-select select2-static" data-option-keys="approver_type_user,approver_type_role" data-option-values="user,role"></select>
-                    </div>
-                    <div class="col-sm-5">
-                        <select class="form-select form-select-sm approver-select select2-remote required"></select>
+                    <div class="form-check form-check-inline m-0">
+                        <input type="radio" class="form-check-input joint-mode-radio" name="joint_mode_${step.key}" id="jointall_${step.key}" value="all" ${step.joint_approve_mode === 'all' ? 'checked' : ''}>
+                        <label class="form-check-label" for="jointall_${step.key}" data-i18n="joint_approve_all">${langData['joint_approve_all'] || 'Every eligible person must approve'}</label>
                     </div>
                 </div>
-                <div class="row g-2 mt-1 joint-approve-wrapper ${step.approver_type === 'role' ? '' : 'd-none'}">
-                    <div class="col-sm-12">
-                        <div class="form-check form-check-inline">
-                            <input type="radio" class="form-check-input joint-mode-radio" name="joint_mode_${step.key}" value="any" ${step.joint_approve_mode === 'any' ? 'checked' : ''}>
-                            <label class="form-check-label small" data-i18n="joint_approve_any">${langData['joint_approve_any'] || 'Any one approver is enough'}</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="radio" class="form-check-input joint-mode-radio" name="joint_mode_${step.key}" value="all" ${step.joint_approve_mode === 'all' ? 'checked' : ''}>
-                            <label class="form-check-label small" data-i18n="joint_approve_all">${langData['joint_approve_all'] || 'Every current holder must approve'}</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="mt-1">
-                    <button type="button" class="btn btn-link btn-sm p-0 toggle-advanced" data-i18n="advanced_settings">${langData['advanced_settings'] || 'Advanced (timeout/escalation)'}</button>
-                    <div class="advanced-fields d-none row g-2 mt-2">
-                        <div class="col-sm-3">
-                            <input type="number" min="1" class="form-control form-control-sm timeout-hours-input" value="${step.timeout_hours}" placeholder="${langData['timeout_hours_placeholder'] || 'Timeout (hours)'}">
-                        </div>
-                        <div class="col-sm-4">
-                            <select class="form-select form-select-sm escalation-type-select select2-static" data-option-keys="approver_type_user,approver_type_role" data-option-values="user,role"></select>
-                        </div>
-                        <div class="col-sm-5">
-                            <select class="form-select form-select-sm escalation-approver-select select2-remote"></select>
-                        </div>
+
+                <hr class="awf-step-divider">
+
+                <div class="awf-step-footer">
+                    <div class="btn-group btn-group-sm awf-group-toggle" role="group">${groupTypeToggleHtml(step)}</div>
+                    <div class="form-check form-switch m-0 awf-seq-switch">
+                        <input type="checkbox" class="form-check-input requires-previous-checkbox" id="reqprev_${step.key}" ${step.requires_previous_step ? 'checked' : ''}>
+                        <label class="form-check-label small" for="reqprev_${step.key}" data-i18n="requires_previous_step"><i class="fa-solid fa-link me-1"></i>${langData['requires_previous_step'] || 'Wait for earlier sequenced steps'}</label>
                     </div>
                 </div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-danger delete-step-btn"><i class="fa-solid fa-trash"></i></button>
+            <button type="button" class="awf-step-remove delete-step-btn" title="${langData['confirm_delete_step'] || 'Remove this step?'}"><i class="fa-solid fa-trash"></i></button>
         </div>
     `;
 }
@@ -99,24 +139,17 @@ function escapeHtmlAw(str) {
 }
 
 function initStepRowWidgets($row, step) {
-    initSelect2($row.find('.approver-type-select'), { mode: 'static', selectedValue: step.approver_type });
+    step.approvers.forEach(approver => {
+        const $approverRow = $row.find(`.awf-approver-chip[data-approver-key="${approver.key}"]`);
+        initSelect2($approverRow.find('.approver-type-select'), { mode: 'static', selectedValue: approver.approver_type });
 
-    const $approverSelect = $row.find('.approver-select');
-    initSelect2($approverSelect, approverAjaxOptions(step.approver_type));
-    if (step.approver_id) {
-        const opt = new Option(step.approver_label || step.approver_id, step.approver_id, true, true);
-        $approverSelect.empty().append(opt).trigger('change.select2');
-    }
-
-    initSelect2($row.find('.escalation-type-select'), { mode: 'static', allowClear: true, selectedValue: step.escalation_approver_type });
-
-    const $escSelect = $row.find('.escalation-approver-select');
-    initSelect2($escSelect, approverAjaxOptions(step.escalation_approver_type || 'user'));
-    if (step.escalation_approver_id) {
-        const opt = new Option(step.escalation_approver_label || step.escalation_approver_id, step.escalation_approver_id, true, true);
-        $escSelect.empty().append(opt).trigger('change.select2');
-    }
-    $row.find('.escalation-approver-select').closest('.col-sm-5').toggleClass('d-none', !step.escalation_approver_type);
+        const $approverSelect = $approverRow.find('.approver-select');
+        initSelect2($approverSelect, approverAjaxOptions(approver.approver_type));
+        if (approver.approver_id) {
+            const opt = new Option(approver.approver_label || approver.approver_id, approver.approver_id, true, true);
+            $approverSelect.empty().append(opt).trigger('change.select2');
+        }
+    });
 }
 
 function renderSteps() {
@@ -139,10 +172,10 @@ function initStepSortable() {
     }
     if (typeof Sortable === 'undefined') return;
     stepSortableInstance = Sortable.create(el, {
-        handle: '.step-drag-handle',
+        handle: '.awf-step-drag',
         animation: 150,
         onEnd: function () {
-            const newOrderKeys = $('#stepList .step-editor-row').map(function () { return $(this).data('key'); }).get();
+            const newOrderKeys = $('#stepList .awf-step-card').map(function () { return $(this).data('key'); }).get();
             currentSteps.sort((a, b) => newOrderKeys.indexOf(a.key) - newOrderKeys.indexOf(b.key));
             renderSteps();
         }
@@ -198,75 +231,81 @@ function validateWorkflowForm() {
 
 /* ---------- Field-level state sync (event delegation, no full re-render) ---------- */
 $(document).on('input', '.step-name-input', function () {
-    const key = $(this).closest('.step-editor-row').data('key');
+    const key = $(this).closest('.awf-step-card').data('key');
     const step = findStep(key);
     if (step) step.step_name = $(this).val();
 });
 $(document).on('input', '.timeout-hours-input', function () {
-    const key = $(this).closest('.step-editor-row').data('key');
+    const key = $(this).closest('.awf-step-card').data('key');
     const step = findStep(key);
     if (step) step.timeout_hours = $(this).val();
 });
 $(document).on('change', '.joint-mode-radio', function () {
-    const key = $(this).closest('.step-editor-row').data('key');
+    const key = $(this).closest('.awf-step-card').data('key');
     const step = findStep(key);
     if (step) step.joint_approve_mode = $(this).val();
 });
 $(document).on('change', '.approver-type-select', function () {
-    const $row = $(this).closest('.step-editor-row');
-    const key = $row.data('key');
-    const step = findStep(key);
-    if (!step) return;
-    step.approver_type = $(this).val();
-    step.approver_id = '';
-    step.approver_label = '';
-    $row.find('.joint-approve-wrapper').toggleClass('d-none', step.approver_type !== 'role');
-    const $approverSelect = $row.find('.approver-select');
-    initSelect2($approverSelect, approverAjaxOptions(step.approver_type));
+    const $approverRow = $(this).closest('.awf-approver-chip');
+    const stepKey = $(this).closest('.awf-step-card').data('key');
+    const approverKey = $approverRow.data('approver-key');
+    const approver = findApprover(stepKey, approverKey);
+    if (!approver) return;
+    approver.approver_type = $(this).val();
+    approver.approver_id = '';
+    approver.approver_label = '';
+    $approverRow.find('.approver-type-icon i').toggleClass('fa-user-group', approver.approver_type === 'role').toggleClass('fa-user', approver.approver_type !== 'role');
+    const $approverSelect = $approverRow.find('.approver-select');
+    initSelect2($approverSelect, approverAjaxOptions(approver.approver_type));
 });
 $(document).on('select2:select', '.approver-select', function (e) {
-    const key = $(this).closest('.step-editor-row').data('key');
-    const step = findStep(key);
-    if (step) {
-        step.approver_id = e.params.data.id;
-        step.approver_label = e.params.data.text;
+    const $approverRow = $(this).closest('.awf-approver-chip');
+    const stepKey = $(this).closest('.awf-step-card').data('key');
+    const approverKey = $approverRow.data('approver-key');
+    const approver = findApprover(stepKey, approverKey);
+    if (approver) {
+        approver.approver_id = e.params.data.id;
+        approver.approver_label = e.params.data.text;
     }
 });
 $(document).on('select2:clear', '.approver-select', function () {
-    const key = $(this).closest('.step-editor-row').data('key');
-    const step = findStep(key);
-    if (step) { step.approver_id = ''; step.approver_label = ''; }
+    const $approverRow = $(this).closest('.awf-approver-chip');
+    const stepKey = $(this).closest('.awf-step-card').data('key');
+    const approverKey = $approverRow.data('approver-key');
+    const approver = findApprover(stepKey, approverKey);
+    if (approver) { approver.approver_id = ''; approver.approver_label = ''; }
 });
-$(document).on('change', '.escalation-type-select', function () {
-    const $row = $(this).closest('.step-editor-row');
-    const key = $row.data('key');
-    const step = findStep(key);
+$(document).on('click', '.btn-add-approver', function () {
+    const $row = $(this).closest('.awf-step-card');
+    const step = findStep($row.data('key'));
     if (!step) return;
-    step.escalation_approver_type = $(this).val();
-    step.escalation_approver_id = '';
-    step.escalation_approver_label = '';
-    const $escSelect = $row.find('.escalation-approver-select');
-    $escSelect.closest('.col-sm-5').toggleClass('d-none', !step.escalation_approver_type);
-    initSelect2($escSelect, approverAjaxOptions(step.escalation_approver_type || 'user'));
+    step.approvers.push(emptyApprover());
+    renderSteps();
 });
-$(document).on('select2:select', '.escalation-approver-select', function (e) {
-    const key = $(this).closest('.step-editor-row').data('key');
-    const step = findStep(key);
-    if (step) {
-        step.escalation_approver_id = e.params.data.id;
-        step.escalation_approver_label = e.params.data.text;
-    }
+$(document).on('click', '.delete-approver-btn', function () {
+    const $row = $(this).closest('.awf-step-card');
+    const step = findStep($row.data('key'));
+    if (!step) return;
+    const approverKey = $(this).closest('.awf-approver-chip').data('approver-key');
+    step.approvers = step.approvers.filter(a => a.key !== approverKey);
+    renderSteps();
 });
-$(document).on('select2:clear', '.escalation-approver-select', function () {
-    const key = $(this).closest('.step-editor-row').data('key');
-    const step = findStep(key);
-    if (step) { step.escalation_approver_id = ''; step.escalation_approver_label = ''; }
+$(document).on('click', '.group-type-btn', function () {
+    const $row = $(this).closest('.awf-step-card');
+    const step = findStep($row.data('key'));
+    if (!step) return;
+    step.group_type = $(this).data('group-type');
+    $row.find('.group-type-btn').each(function () {
+        $(this).toggleClass('active-group', $(this).data('group-type') === step.group_type);
+    });
 });
-$(document).on('click', '.toggle-advanced', function () {
-    $(this).closest('.step-editor-row').find('.advanced-fields').toggleClass('d-none');
+$(document).on('change', '.requires-previous-checkbox', function () {
+    const $row = $(this).closest('.awf-step-card');
+    const step = findStep($row.data('key'));
+    if (step) step.requires_previous_step = $(this).is(':checked');
 });
 $(document).on('click', '.delete-step-btn', function () {
-    deleteStepRow($(this).closest('.step-editor-row').data('key'));
+    deleteStepRow($(this).closest('.awf-step-card').data('key'));
 });
 $(document).on('click', '#btnAddStep', addStepRow);
 
@@ -284,11 +323,11 @@ function workflowDocumentTypesCell(row) {
 function workflowActionButtons(row) {
     const toggleIcon = row.status === 'active' ? 'fa-toggle-on' : 'fa-toggle-off';
     const toggleTitle = row.status === 'active' ? (langData['deactivate'] || 'Deactivate') : (langData['activate'] || 'Activate');
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-workflow" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-duplicate-workflow" data-id="${row.id}" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-toggle-workflow" data-id="${row.id}" data-status="${row.status}" title="${toggleTitle}"><i class="fa-solid ${toggleIcon}"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-workflow" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-workflow" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link text-primary border-start btn-duplicate-workflow" data-id="${row.id}" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
+        <button type="button" class="btn btn-link text-primary border-start btn-toggle-workflow" data-id="${row.id}" data-status="${row.status}" title="${toggleTitle}"><i class="fa-solid ${toggleIcon}"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-workflow" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 function initApprovalWorkflowTable() {
@@ -305,7 +344,7 @@ function initApprovalWorkflowTable() {
         columns: [
             { data: 'workflow_name', render: d => `<strong class="text-dark">${escapeHtmlAw(d)}</strong>` },
             { data: null, render: (d, t, row) => workflowDocumentTypesCell(row) },
-            { data: 'step_count' },
+            { data: 'step_count', className: 'text-center', render: d => `<span class="badge rounded-pill text-bg-light border">${d}</span>` },
             { data: 'status', render: d => workflowStatusBadge(d) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => workflowActionButtons(row) }
         ],
@@ -318,7 +357,7 @@ function initApprovalWorkflowTable() {
             if ($searchDiv.find('.btn-add-workflow').length === 0) {
                 $searchDiv.append(`
                     <button type="button" class="btn btn-primary ms-1 btn-add-workflow">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_workflow">${langData['add_workflow'] || 'Add Workflow'}</span>
+                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_workflow">${langData['add_workflow'] || 'Workflow'}</span>
                     </button>
                 `);
             }
@@ -344,14 +383,15 @@ function populateWorkflowForm(row) {
     currentSteps = (row.steps || []).map(s => ({
         key: newStepKey(),
         step_name: s.step_name || '',
-        approver_type: s.approver_type,
-        approver_id: String(s.approver_id),
-        approver_label: (currentLang === 'th' ? s.approver_label_th : s.approver_label_en) || s.approver_label_th || s.approver_label_en || '',
+        approvers: (s.approvers && s.approvers.length ? s.approvers.map(a => ({
+            key: newApproverKey(),
+            approver_type: a.approver_type,
+            approver_id: String(a.approver_id),
+            approver_label: (currentLang === 'th' ? a.approver_label_th : a.approver_label_en) || a.approver_label_th || a.approver_label_en || ''
+        })) : [emptyApprover()]),
         joint_approve_mode: s.joint_approve_mode,
-        timeout_hours: s.timeout_hours || '',
-        escalation_approver_type: s.escalation_approver_type || '',
-        escalation_approver_id: s.escalation_approver_id ? String(s.escalation_approver_id) : '',
-        escalation_approver_label: (currentLang === 'th' ? s.escalation_approver_label_th : s.escalation_approver_label_en) || s.escalation_approver_label_th || s.escalation_approver_label_en || ''
+        group_type: s.group_type || 'and',
+        requires_previous_step: !!Number(s.requires_previous_step)
     }));
     renderSteps();
     $('#workflowModalLabel').html('<i class="fa-solid fa-pen-to-square me-2"></i>' + (langData['approval_workflow'] || 'Approval Workflow'));
@@ -458,12 +498,10 @@ $(document).on('submit', '#workflowForm', function (e) {
         document_type_codes: $('#workflow_document_types').val() || [],
         steps: currentSteps.map(s => ({
             step_name: s.step_name,
-            approver_type: s.approver_type,
-            approver_id: s.approver_id,
+            approvers: s.approvers.map(a => ({ approver_type: a.approver_type, approver_id: a.approver_id })),
             joint_approve_mode: s.joint_approve_mode,
-            timeout_hours: s.timeout_hours,
-            escalation_approver_type: s.escalation_approver_type,
-            escalation_approver_id: s.escalation_approver_id
+            group_type: s.group_type,
+            requires_previous_step: s.requires_previous_step
         }))
     };
     $.ajax({
@@ -485,171 +523,10 @@ $(document).on('submit', '#workflowForm', function (e) {
     });
 });
 
-/* ---------- Approval Monitor ---------- */
-let tb_approval_monitor;
-let currentDetailRequestId = null;
-
-function requestStatusBadge(status) {
-    const map = {
-        pending: { cls: 'bg-warning-subtle text-warning', key: 'status_pending', fallback: 'Pending' },
-        approved: { cls: 'bg-success-subtle text-success', key: 'status_approved', fallback: 'Approved' },
-        rejected: { cls: 'bg-danger-subtle text-danger', key: 'status_rejected', fallback: 'Rejected' },
-        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' }
-    };
-    const m = map[status] || { cls: 'bg-secondary-subtle text-secondary', key: '', fallback: status };
-    return `<span class="badge ${m.cls}">${langData[m.key] || m.fallback}</span>`;
-}
-
-function initApprovalMonitorTable() {
-    if ($.fn.DataTable.isDataTable('#tb_approval_monitor')) {
-        $('#tb_approval_monitor').DataTable().ajax.reload(null, false);
-        return;
-    }
-    tb_approval_monitor = $('#tb_approval_monitor').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/approval-request.list`,
-            dataSrc: 'data',
-            data: function (d) {
-                d.status = $('#monitor_filter_status').val() || '';
-                d.document_type_code = $('#monitor_filter_document_type').val() || '';
-            }
-        },
-        columns: [
-            { data: null, render: (d, t, row) => escapeHtmlAw((currentLang === 'th' ? row.document_type_name_th : row.document_type_name_en) || row.document_type_name_th || row.document_type_name_en || '') },
-            { data: 'reference_label', render: d => escapeHtmlAw(d || '-') },
-            { data: 'workflow_name', render: d => escapeHtmlAw(d) },
-            { data: 'current_step_name', render: d => escapeHtmlAw(d || '-') },
-            { data: 'status', render: d => requestStatusBadge(d) },
-            { data: null, render: (d, t, row) => escapeHtmlAw((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || row.requested_by_name_th || row.requested_by_name_en || '-') },
-            { data: 'requested_at' },
-            {
-                data: null, orderable: false, className: 'text-center',
-                render: (d, t, row) => `<button type="button" class="btn btn-sm btn-outline-secondary btn-view-request" data-id="${row.id}"><i class="fa-solid fa-eye"></i></button>`
-            }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        drawCallback: function () { getTableLang(); }
-    });
-}
-
-function renderRequestSummary(req) {
-    const requesterName = (currentLang === 'th' ? req.requested_by_name_th : req.requested_by_name_en) || req.requested_by_name_th || req.requested_by_name_en || '-';
-    const docTypeName = (currentLang === 'th' ? req.document_type_name_th : req.document_type_name_en) || req.document_type_name_th || req.document_type_name_en || '';
-    $('#requestDetailSummary').html(`
-        <div class="row g-2 small">
-            <div class="col-sm-6"><strong>${langData['document_types'] || 'Document Type'}:</strong> ${escapeHtmlAw(docTypeName)}</div>
-            <div class="col-sm-6"><strong>${langData['reference'] || 'Reference'}:</strong> ${escapeHtmlAw(req.reference_label || '-')}</div>
-            <div class="col-sm-6"><strong>${langData['workflow_name'] || 'Workflow'}:</strong> ${escapeHtmlAw(req.workflow_name)}</div>
-            <div class="col-sm-6"><strong>${langData['status'] || 'Status'}:</strong> ${requestStatusBadge(req.status)}</div>
-            <div class="col-sm-6"><strong>${langData['requested_by'] || 'Requested By'}:</strong> ${escapeHtmlAw(requesterName)}</div>
-            <div class="col-sm-6"><strong>${langData['requested_at'] || 'Requested At'}:</strong> ${escapeHtmlAw(req.requested_at)}</div>
-        </div>
-    `);
-}
-
-function renderRequestTimeline(logs) {
-    const $wrap = $('#requestDetailTimeline').empty();
-    if (logs.length === 0) {
-        $wrap.append(`<div class="text-secondary small">${langData['no_history_yet'] || 'No action has been taken on this request yet.'}</div>`);
-        return;
-    }
-    logs.forEach(l => {
-        const actorName = (currentLang === 'th' ? l.acted_by_name_th : l.acted_by_name_en) || l.acted_by_name_th || l.acted_by_name_en || '-';
-        const actionKey = { approve: 'approve', reject: 'reject', cancel: 'cancel_request' }[l.action] || l.action;
-        $wrap.append(`
-            <div class="border-start ps-3 pb-3" style="border-color:#dee2e6 !important;">
-                <div class="small text-secondary">${escapeHtmlAw(l.acted_at)}</div>
-                <div><strong>${escapeHtmlAw(l.step_name_snapshot || '')}</strong> — ${langData[actionKey] || l.action} (${escapeHtmlAw(actorName)})</div>
-                ${l.note ? `<div class="small text-secondary">${escapeHtmlAw(l.note)}</div>` : ''}
-            </div>
-        `);
-    });
-}
-
-function openRequestDetail(id) {
-    currentDetailRequestId = id;
-    $.ajax({
-        url: `${BASE_URL}/api/approval-request.get`,
-        method: 'GET',
-        data: { id },
-        dataType: 'json',
-        success: function (res) {
-            if (!res.status) {
-                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
-                return;
-            }
-            renderRequestSummary(res.data);
-            $('#requestActionArea').toggleClass('d-none', res.data.status !== 'pending');
-            $('#requestActionNote').val('');
-            new bootstrap.Modal(document.getElementById('requestDetailModal')).show();
-        }
-    });
-    $.ajax({
-        url: `${BASE_URL}/api/approval-request.logs`,
-        method: 'GET',
-        data: { request_id: id },
-        dataType: 'json',
-        success: function (res) {
-            if (res.status) {
-                renderRequestTimeline(res.data);
-            }
-        }
-    });
-}
-
-function actOnCurrentRequest(action) {
-    if (!currentDetailRequestId) return;
-    $.ajax({
-        url: `${BASE_URL}/api/approval-request.act`,
-        method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify({ request_id: currentDetailRequestId, action, note: $('#requestActionNote').val().trim() }),
-        dataType: 'json',
-        success: function (res) {
-            if (res.status) {
-                showSuccess(res.message || langData['save_success'] || 'Success.');
-                openRequestDetail(currentDetailRequestId);
-                if (tb_approval_monitor) tb_approval_monitor.ajax.reload(null, false);
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
-            }
-        },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred.'); }
-    });
-}
-
-$(document).on('click', '.btn-view-request', function () {
-    openRequestDetail($(this).data('id'));
-});
-$(document).on('click', '#btnApproveRequest', function () {
-    actOnCurrentRequest('approve');
-});
-$(document).on('click', '#btnRejectRequest', function () {
-    showConfirm(langData['confirm_reject_request'] || 'Reject this request?', '', function () {
-        actOnCurrentRequest('reject');
-    });
-});
-$(document).on('click', '#btnCancelRequest', function () {
-    showConfirm(langData['confirm_cancel_request'] || 'Cancel this request?', '', function () {
-        actOnCurrentRequest('cancel');
-    });
-});
-$(document).on('change', '#monitor_filter_status, #monitor_filter_document_type', function () {
-    if (tb_approval_monitor) tb_approval_monitor.ajax.reload(null, true);
-});
-
 $(document).ready(function () {
     initApprovalWorkflowTable();
     if (typeof initSelect2 === 'function') {
         initSelect2('#workflow_status', { mode: 'static' });
         initSelect2('#workflow_document_types', { mode: 'ajax', allowClear: true });
-        initSelect2('#monitor_filter_status', { mode: 'static', allowClear: true });
-        initSelect2('#monitor_filter_document_type', { mode: 'ajax', allowClear: true });
     }
-    $('#approvalMonitorTabBtn').on('shown.bs.tab', function () {
-        initApprovalMonitorTable();
-    });
 });

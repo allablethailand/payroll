@@ -306,7 +306,7 @@
                         <div id="rate_bracket_fields" class="d-none">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <h6 class="fw-bold mb-0"><span data-i18n="tax_brackets">Tax Brackets</span></h6>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddBracketRow"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket">Add Bracket</span></button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddBracketRow"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket">Bracket</span></button>
                             </div>
                             <div class="table-responsive">
                                 <table class="table pl-table mb-0">

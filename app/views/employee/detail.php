@@ -1573,6 +1573,20 @@
                             <input type="text" class="form-control" id="eed_external_reference_no" name="external_reference_no" maxlength="100">
                         </div>
                     </div>
+                    <!-- Transfer-to-payee (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร โดยเลือก
+                         พนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- only meaningful on a deduction, so
+                         toggled alongside the interest section (both deduction-only) by
+                         applyEedInterestVisibility() in detail.js. Reuses /api/employee.report_to.get
+                         (data-exclude-id set to the employee whose detail page this is, same pattern
+                         already documented in input.js for #report_to_id) rather than a new endpoint. -->
+                    <div class="row mb-3 d-none" id="eedPayeeWrapper">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-remote" id="eed_payee_employee_id" name="payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                        </div>
+                    </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0" data-i18n="notes">Notes</label>
@@ -1584,7 +1598,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-primary px-4" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
+                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
         </div>

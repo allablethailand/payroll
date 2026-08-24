@@ -193,7 +193,7 @@ try {
     $wfRes = $wfModel->save($compId, [
         'workflow_name' => 'PDV Test Workflow ' . uniqid(),
         'document_type_codes' => ['SLIP_REQUEST_APPROVAL'], 'status' => 'active',
-        'steps' => [['approver_type' => 'user', 'approver_id' => $approverEmployee]],
+        'steps' => [['approvers' => [['approver_type' => 'user', 'approver_id' => $approverEmployee]]]],
     ], $adminUserId);
     checkTrue('fixture: SLIP_REQUEST_APPROVAL workflow created', $wfRes['status']);
 

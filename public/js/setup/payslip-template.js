@@ -186,10 +186,10 @@ function payslipTemplateStatusBadge(status) {
 function payslipTemplateActionButtons(row) {
     const toggleIcon = row.status === 'active' ? 'fa-toggle-on' : 'fa-toggle-off';
     const toggleTitle = row.status === 'active' ? (langData['deactivate'] || 'Deactivate') : (langData['activate'] || 'Activate');
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-pt" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-toggle-pt" data-id="${row.id}" data-status="${row.status}" title="${toggleTitle}"><i class="fa-solid ${toggleIcon}"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-pt" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-pt" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link text-primary border-start btn-toggle-pt" data-id="${row.id}" data-status="${row.status}" title="${toggleTitle}"><i class="fa-solid ${toggleIcon}"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-pt" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 function languageModeLabel(mode) {
@@ -222,7 +222,7 @@ function initPayslipTemplateTable() {
             if ($searchDiv.find('.btn-add-pt').length === 0) {
                 $searchDiv.append(`
                     <button type="button" class="btn btn-primary ms-1 btn-add-pt">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_template">${langData['add_template'] || 'Add Template'}</span>
+                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_template">${langData['add_template'] || 'Template'}</span>
                     </button>
                 `);
             }
@@ -372,6 +372,7 @@ $(document).on('submit', '#payslipTemplateForm', function (e) {
 });
 
 $(document).ready(function () {
+    initPayslipTemplateTable();
     $('#payslipTemplateTabBtn').on('shown.bs.tab', function () {
         initPayslipTemplateTable();
     });
