@@ -368,14 +368,9 @@ HTML;
                     $buffer .= '<div class="company-line">' . htmlspecialchars($label) . ': ' . htmlspecialchars((string)($company['authorized_signatory_name'] ?? '-')) . '</div>';
                     break;
                 case 'company_logo':
-                    if (!empty($template['logo_path'])) {
-                        // Defense-in-depth beyond the regex check at the input boundaries (save()/generatePreview()):
-                        // confine the resolved path inside the uploads root regardless of how logo_path got here.
-                        $uploadsRoot = realpath(dirname(__DIR__, 4) . '/public/uploads/payslip_logos');
-                        $logoAbsPath = realpath(dirname(__DIR__, 4) . '/' . ltrim((string)$template['logo_path'], '/'));
-                        if ($uploadsRoot !== false && $logoAbsPath !== false && strpos($logoAbsPath, $uploadsRoot) === 0 && is_file($logoAbsPath)) {
-                            $buffer .= '<div class="logo-wrap"><img src="' . htmlspecialchars($logoAbsPath) . '" style="max-height:60px;"></div>';
-                        }
+                    $logoAbsPath = $this->resolveTemplateOrCompanyLogo($template['logo_path'] ?? null, $company['logo_path'] ?? null);
+                    if ($logoAbsPath !== null) {
+                        $buffer .= '<div class="logo-wrap"><img src="' . htmlspecialchars($logoAbsPath) . '" style="max-height:60px;"></div>';
                     }
                     break;
                 case 'basic_salary':
@@ -475,6 +470,30 @@ th { background: #f0f0f0; }
 </body>
 </html>
 HTML;
+    }
+
+    /** 2026-08-24, explicit request: "ในหน้า Profile บริษัท ให้สามารถใส่ Logo ได้ และดึงไปใช้กับหน้า
+     *  ตั้งค่า Slip เงินเดือน และใบรับรอง" -- prefers the TEMPLATE's own uploaded logo (unchanged
+     *  behavior); falls back to the COMPANY's logo (companies.logo_path) only when the template
+     *  has none of its own, so every existing template with its own logo keeps behaving exactly as
+     *  before. Both are independently traversal-proofed against their OWN uploads subdirectory
+     *  (payslip_logos vs company_logos) since they're different roots. */
+    private function resolveTemplateOrCompanyLogo(?string $templateLogoPath, ?string $companyLogoPath): ?string {
+        $candidates = [
+            [$templateLogoPath, 'payslip_logos'],
+            [$companyLogoPath, 'company_logos'],
+        ];
+        foreach ($candidates as [$path, $subdir]) {
+            if (empty($path)) {
+                continue;
+            }
+            $uploadsRoot = realpath(dirname(__DIR__, 4) . "/public/uploads/{$subdir}");
+            $abs = realpath(dirname(__DIR__, 4) . '/' . ltrim((string)$path, '/'));
+            if ($uploadsRoot !== false && $abs !== false && strpos($abs, $uploadsRoot) === 0 && is_file($abs)) {
+                return $abs;
+            }
+        }
+        return null;
     }
 
     private function infoRow(string $label, string $value): string {

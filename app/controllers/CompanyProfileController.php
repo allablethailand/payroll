@@ -48,6 +48,11 @@ class CompanyProfileController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing required fields.']);
             return;
         }
+        $compId = (int)($_SESSION['user']['company_id'] ?? 0);
+        if (!empty($data['logo_path']) && !CompanyProfileModel::isValidLogoPath((string)$data['logo_path'], $compId)) {
+            $this->json(['status' => false, 'message' => 'Invalid logo path.']);
+            return;
+        }
         try {
             $result = $this->model->save($data);
             if ($result) {
@@ -59,6 +64,53 @@ class CompanyProfileController extends Controller {
             $this->json(['status' => false, 'message' => 'System error: ' . $e->getMessage()]);
         }
     }
+
+    /** 2026-08-24, explicit request: "ในหน้า Profile บริษัท ให้สามารถใส่ Logo ได้ และดึงไปใช้กับหน้า
+     *  ตั้งค่า Slip เงินเดือน และใบรับรอง" -- same upload pattern as PayslipTemplateController::
+     *  uploadLogo()/EmploymentCertificateTemplateController::uploadLogo(), separate storage root.
+     *  Uploads immediately and returns the path for the client to include in save() -- same
+     *  decoupled-upload convention as those two. */
+    public function uploadLogo() {
+        if (!$this->requirePermission('company_profile.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            $this->json(['status' => false, 'message' => 'File upload failed.']);
+            return;
+        }
+        $file = $_FILES['file'];
+        $maxSize = 2 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            $this->json(['status' => false, 'message' => 'File size exceeds 2MB limit.']);
+            return;
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/svg+xml' => 'svg'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->file($file['tmp_name']);
+        if (!isset($allowedMimes[$detectedMime])) {
+            $this->json(['status' => false, 'message' => 'Unsupported file type. Use JPG, PNG, or SVG.']);
+            return;
+        }
+        $ext = $allowedMimes[$detectedMime];
+
+        $uploadDir = __DIR__ . '/../../public/uploads/company_logos/' . (int)$compId . '/';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $this->json(['status' => false, 'message' => 'Failed to prepare storage directory.']);
+            return;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $ext;
+        $destPath = $uploadDir . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            $this->json(['status' => false, 'message' => 'Failed to save file.']);
+            return;
+        }
+        $relativePath = 'public/uploads/company_logos/' . (int)$compId . '/' . $safeName;
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'logo_path' => $relativePath]);
+    }
+
     public function branch() {
         if (!$this->requirePermission('company_structure.view')) return;
         $compId = getCompId();

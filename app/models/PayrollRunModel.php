@@ -63,8 +63,22 @@ class PayrollRunModel {
      * inline against the already-JOINed submitter.department_id instead of calling
      * canApproveThisRun() per row -- that method does its own DB round-trip per call, which would
      * be an N+1 query here; list() already has the one column it needs.
+     *
+     * $approvalQueueOnly (2026-08-24, explicit bug report: a user with no eligible approval step
+     * on a run -- or eligible only on a step a joint peer had already decided, or one still locked
+     * -- was still SEEING that row in the Approval Queue, can_approve_payroll flag aside; the
+     * button being hidden wasn't enough, the row itself shouldn't be there) -- when true (the
+     * Approval Queue page only, NOT the general Process List, which must keep showing every run
+     * regardless of who can approve it), drops any `pending_approval` row whose computed
+     * can_approve_payroll came back false. Only `pending_approval` rows are filtered -- approved/
+     * rejected/need_info rows stay visible to anyone with page access same as before, both because
+     * they're shown for status-tracking/history (not "things to act on"), and because their
+     * can_approve_payroll flag intentionally means something different at that point (gates Undo
+     * Decision via the coarser "was ever eligible" check, not "actionable now" -- see
+     * canApproveThisRun()'s own docblock). Requires $actingEmployeeId (silently a no-op without one
+     * -- there's nothing to filter against).
      */
-    public function list(int $compId, array $filters = [], ?int $actingEmployeeId = null, bool $isAdmin = false): array {
+    public function list(int $compId, array $filters = [], ?int $actingEmployeeId = null, bool $isAdmin = false, bool $approvalQueueOnly = false): array {
         $where = "WHERE r.comp_id = :comp_id AND r.deleted_at IS NULL";
         $params = [':comp_id' => $compId];
         if (!empty($filters['state'])) {
@@ -106,6 +120,12 @@ class PayrollRunModel {
                 $row['can_approve_payroll'] = $this->canApproveThisRun($actingEmployeeId, $isAdmin, $row);
             }
             unset($row);
+
+            if ($approvalQueueOnly) {
+                $rows = array_values(array_filter($rows, function (array $row): bool {
+                    return $row['state'] !== 'pending_approval' || $row['can_approve_payroll'];
+                }));
+            }
         }
 
         return $rows;
@@ -370,13 +390,49 @@ class PayrollRunModel {
      */
     /** A run routed through the Approval Workflow engine (approval_request_id set) defers
      *  ENTIRELY to that engine's own live step resolution -- the flat department-scoped check
-     *  below only applies to a run that never had a workflow configured for it at submit() time. */
+     *  below only applies to a run that never had a workflow configured for it at submit() time.
+     *
+     *  2026-08-24, split by run state (explicit bug report: a user not listed as an eligible
+     *  approver on ANY currently-open step -- or eligible only on a step a joint peer had ALREADY
+     *  decided, or one still locked behind an earlier step -- was still seeing the Approve/Reject/
+     *  Request Info buttons on the Approval Queue AND the Process Detail page, and the row itself
+     *  never disappeared from their Approval Queue once a peer decided it). While pending_approval,
+     *  this must answer "can I decide RIGHT NOW" -- canActOnRequestNow() (eligible, that specific
+     *  row still 'pending', and unlocked), the exact same gate act() itself enforces, so a shown
+     *  button always actually works and a decided-by-someone-else row stops being "mine to act on".
+     *  Once the run has already been decided (approved/rejected/need_info), there is no more
+     *  'pending' row left to be "actionable now" on for ANYONE -- this instead gates the Undo
+     *  Decision button, which -- like revert() itself -- intentionally uses the coarser "was ever
+     *  eligible on this request" canActOnRequest(), unchanged from before. */
     private function canApproveThisRun(int $actingEmployeeId, bool $isAdmin, array $run): bool {
+        // 2026-08-24, second fix the same day (explicit repro from the user: logged in as a
+        // DIFFERENT employee_id than the one configured -- employee 28, session role 'admin' --
+        // still got can_approve_payroll=true and a working Approve button, even though the active
+        // PAYROLL_RUN_APPROVAL workflow names only employee 190 as the approver). The 2026-08-24
+        // fix above (canActOnRequestNow()) tightened WHICH row counts as "actionable", but this
+        // `if ($isAdmin) return true;` sat BEFORE that check and short-circuited the whole thing
+        // for any admin-role session regardless -- admin bypass is a deliberate, documented
+        // convention everywhere else in this app (RBAC, canView, canProcessPayroll, etc.), but it
+        // defeats the entire purpose of a configured Approval Workflow if it also overrides WHO is
+        // allowed to approve/reject THIS specific run. Now scoped: admin bypasses only the flat
+        // company-wide fallback below (no active workflow configured for PAYROLL_RUN_APPROVAL --
+        // there's no specific flow to violate in that case, same as before). Once a run is routed
+        // through the engine (approval_request_id set), admin is just another employee_id that
+        // must actually be a configured/eligible approver like anyone else -- see approve()/
+        // reject()/requestInfo()/revert()'s own docblocks for the matching fix on the action side
+        // (admin used to skip calling the engine's act()/canActOnRequest() entirely, which ALSO
+        // meant the linked approval_requests row was silently left stuck 'pending' forever while
+        // payroll_runs.state said 'approved' -- a real data inconsistency, not just a visibility
+        // bug).
+        if (($run['approval_request_id'] ?? null) !== null) {
+            $approvalRequestModel = new ApprovalRequestModel($this->db);
+            if ($run['state'] === 'pending_approval') {
+                return $approvalRequestModel->canActOnRequestNow((int)$run['comp_id'], (int)$run['approval_request_id'], $actingEmployeeId);
+            }
+            return $approvalRequestModel->canActOnRequest((int)$run['comp_id'], (int)$run['approval_request_id'], $actingEmployeeId);
+        }
         if ($isAdmin) {
             return true;
-        }
-        if (($run['approval_request_id'] ?? null) !== null) {
-            return (new ApprovalRequestModel($this->db))->canActOnRequest((int)$run['comp_id'], (int)$run['approval_request_id'], $actingEmployeeId);
         }
         if (!$this->userCan($actingEmployeeId, 'can_approve_payroll', $isAdmin)) {
             return false;
@@ -2528,45 +2584,57 @@ class PayrollRunModel {
         }
     }
 
+    /** Every state a DECIDED run (approved/rejected/need_info) may be reverted directly INTO --
+     *  deliberately excludes 'approved' itself (re-approving must go through the real approve()
+     *  flow/engine, not this override) and excludes paid/locked/cancelled/draft (not reachable from
+     *  a decided state at all). */
+    private const REVERT_TARGET_STATES = ['pending_approval', 'rejected', 'need_info'];
+
     /**
-     * "ถ้ามีการกดอะไรก็ตาม ฝั่งผู้อนุมัติสามารถถอยอนุมัติได้ เช่น ถ้า Approve/Not Approve/Need Info
-     * สามารถถอยกลับไป Status อื่นที่ไม่ใช่ Status ปัจจุบันได้" (2026-08-23, explicit request) --
-     * generalized from the original pending_approval-only "send back for revision": an approver
-     * can now undo their own (or another approver's) approve/reject/request-info decision too, not
-     * just pull back a still-pending submission. Every source state lands on exactly one prior
-     * state (never an arbitrary pick) to keep this safe -- approved/rejected/need_info all return
-     * to pending_approval (the natural "undo my decision, it's back up for a fresh one" state,
-     * same pool of eligible approvers as before); pending_approval alone still goes to draft
-     * (unchanged from the original behavior, submitter must revise). paid/locked/cancelled/draft
-     * are deliberately NOT revertible here -- once money has moved (paid/locked) a state flip would
-     * be misleading (same reasoning cancel() already documents), and cancelled/draft have no
-     * "decision" to undo in the first place.
+     * 2026-08-24, explicit follow-up request ("ในหน้า Approve...สามารถถอยอนุมัติได้ โดยถ้า Process
+     * นั้นอนุมัติ สามารถถอยมารออนุมัติ ไม่อนุมัติ ขอข้อมูลเพิ่มเติมได้ คือ Status ที่ถอยหรือเปลี่ยน ต้องไม่ใช่
+     * Status เดิม") -- supersedes the 2026-08-23 design this method originally shipped with, which
+     * deliberately picked ONE fixed target per source state ("never an arbitrary pick", per that
+     * day's own docblock) specifically to avoid this. The user has now explicitly asked for the
+     * opposite: from any DECIDED state (approved/rejected/need_info), the approver picks which of
+     * the other 2 decided-adjacent states to land on (self::REVERT_TARGET_STATES) -- e.g. an
+     * approved run can go back to pending_approval, OR straight to rejected, OR straight to
+     * need_info, the approver's choice -- as long as it's not the run's CURRENT status (a no-op
+     * "revert to the same status" is rejected outright). `pending_approval` itself still has
+     * exactly ONE target (`draft`) -- there is nothing to choose between, it is the submitter
+     * pulling their own still-undecided run back for edits, not an approver overriding a decision.
      *
-     * The state-defining columns for whichever state is being exited are cleared (approved_at/by,
-     * rejected_at/by/reason, or need_info_at/by/reason) so nothing stale is left claiming the run
-     * is still in that state once it's moved on -- approvalFlow() itself derives purely from the
-     * CURRENT state either way (so the "who's approved/pending" breakdown would self-correct even
-     * without this), but leaving e.g. approved_at set on a run that's actually back at
-     * pending_approval would be misleading to anything else that reads it directly.
+     * The state-defining columns for whichever state is being EXITED are cleared (approved_at/by,
+     * rejected_at/by/reason, or need_info_at/by/reason); if the NEW target is itself 'rejected' or
+     * 'need_info' (not just 'pending_approval'), that state's own columns are SET too (rejected_by/
+     * reason or need_info_by/reason, using $note as the reason, same columns reject()/requestInfo()
+     * themselves populate) -- so a run landed on 'rejected' via this override looks exactly like
+     * one rejected the normal way to every other part of the app that reads those columns.
      *
      * Nothing here touches payroll_run_audit_logs -- every past approve/reject/request-info/revert
      * action stays in that table forever (never deleted/overwritten), which is exactly the "keep a
-     * Log of how many times it was approved and what happened each time" the same request asked
-     * for -- see getAuditLog()/approvalFlow() and the Timeline modal that renders both.
+     * Log of how many times it was approved and what happened each time" the original request
+     * asked for -- see getAuditLog()/approvalFlow() and the Timeline modal that renders both.
      */
-    public function revert(int $id, int $compId, int $userId, bool $isAdmin, ?string $note = null): array {
+    public function revert(int $id, int $compId, int $userId, bool $isAdmin, ?string $note = null, ?string $toState = null): array {
         $run = $this->get($id, $compId);
         if (!$run) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $fromState = $run['state'];
-        $revertMap = [
-            'pending_approval' => 'draft',
-            'approved' => 'pending_approval',
-            'rejected' => 'pending_approval',
-            'need_info' => 'pending_approval',
-        ];
-        if (!isset($revertMap[$fromState])) {
+        if ($fromState === 'pending_approval') {
+            $toState = 'draft';
+        } elseif (in_array($fromState, ['approved', 'rejected', 'need_info'], true)) {
+            // Backward compatible: a caller that doesn't specify a target (the old single-target
+            // callers/tests) still gets the original "undo back to pending_approval" behavior.
+            $toState = $toState ?? 'pending_approval';
+            if (!in_array($toState, self::REVERT_TARGET_STATES, true)) {
+                return ['status' => false, 'message' => 'Invalid target status.'];
+            }
+            if ($toState === $fromState) {
+                return ['status' => false, 'message' => 'The new status must be different from the current status.'];
+            }
+        } else {
             return ['status' => false, 'message' => 'This payroll run is not in a state that can be reverted.'];
         }
         // 2026-08-23, explicit request ("ในกรณีที่ส่ง Approve แล้วยังไม่มีใคร Approve สามารถดึง Process
@@ -2577,14 +2645,22 @@ class PayrollRunModel {
         // (approval_request_id set) -- eligibility resolves against that request's own step
         // (canActOnRequest(), same live role-membership resolution act() itself uses) instead of
         // the flat department-scoped fallback (canApproveThisRun()).
+        // 2026-08-24, same admin-bypass fix as approve()/reject()/requestInfo() -- undoing an
+        // ALREADY-decided outcome (approved/rejected/need_info) is approver-only, and once an
+        // active workflow governs the run, admin does not get a free pass around it (must actually
+        // be a configured/eligible approver, same as everyone else). Pulling back a still-
+        // pending_approval submission to draft keeps its OTHER allowed path -- the submitter's own
+        // can_process_payroll -- untouched either way: userCan() bypasses for admin there on
+        // purpose, same as every process-side (not approval-side) permission in this class, per the
+        // user's own instruction that payroll PROCESSING is a separate concern from approval.
         $approvalRequestModel = $run['approval_request_id'] !== null ? new ApprovalRequestModel($this->db) : null;
-        if ($isAdmin) {
-            $allowed = true;
-        } elseif ($approvalRequestModel !== null) {
+        if ($approvalRequestModel !== null) {
             $allowed = $approvalRequestModel->canActOnRequest($compId, (int)$run['approval_request_id'], $userId);
             if ($fromState === 'pending_approval') {
                 $allowed = $allowed || $this->userCan($userId, 'can_process_payroll', $isAdmin);
             }
+        } elseif ($isAdmin) {
+            $allowed = true;
         } else {
             $allowed = $fromState === 'pending_approval'
                 ? ($this->canApproveThisRun($userId, $isAdmin, $run) || $this->userCan($userId, 'can_process_payroll', $isAdmin))
@@ -2593,8 +2669,6 @@ class PayrollRunModel {
         if (!$allowed) {
             return ['status' => false, 'message' => 'You do not have permission to revert this payroll run.'];
         }
-        $toState = $revertMap[$fromState];
-
         $clearSql = '';
         if ($fromState === 'approved') {
             $clearSql = ", approved_at = NULL, approved_by = NULL";
@@ -2603,13 +2677,31 @@ class PayrollRunModel {
         } elseif ($fromState === 'need_info') {
             $clearSql = ", need_info_at = NULL, need_info_by = NULL, need_info_reason = NULL";
         }
-        $stmt = $this->db->prepare("UPDATE `payroll_runs` SET state = :state, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP{$clearSql} WHERE id = :id");
-        $stmt->execute([':state' => $toState, ':updated_by' => $userId, ':id' => $id]);
-        // Undoing an already-decided outcome (not the plain pending_approval->draft pull-back)
-        // re-opens the SAME linked request at step 1 so the engine is ready for a fresh decision
-        // through the same configured chain, instead of leaving it stuck 'approved'/'rejected'
-        // while the run itself says pending_approval again.
-        if ($approvalRequestModel !== null && $fromState !== 'pending_approval') {
+        // If the NEW target is itself a decided-ish state (not just pending_approval/draft), set
+        // its own columns too -- same shape reject()/requestInfo() themselves write, so this looks
+        // identical to a normal decision to everything else that reads these columns.
+        $setSql = '';
+        $params = [':state' => $toState, ':updated_by' => $userId, ':id' => $id];
+        if ($toState === 'rejected') {
+            $setSql = ", rejected_at = CURRENT_TIMESTAMP, rejected_by = :acted_by, reject_reason = :reason";
+            $params[':acted_by'] = $userId;
+            $params[':reason'] = ($note !== null && trim($note) !== '') ? $note : 'Reverted to rejected.';
+        } elseif ($toState === 'need_info') {
+            $setSql = ", need_info_at = CURRENT_TIMESTAMP, need_info_by = :acted_by, need_info_reason = :reason";
+            $params[':acted_by'] = $userId;
+            $params[':reason'] = ($note !== null && trim($note) !== '') ? $note : 'Reverted to need_info.';
+        }
+        $stmt = $this->db->prepare("UPDATE `payroll_runs` SET state = :state, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP{$clearSql}{$setSql} WHERE id = :id");
+        $stmt->execute($params);
+        // Re-opens the SAME linked request at step 1 so the engine is ready for a fresh decision
+        // through the same configured chain -- only meaningful when the target is actually
+        // 'pending_approval' (a genuinely fresh decision is expected next). A direct override to
+        // 'rejected'/'need_info' deliberately does NOT touch the linked approval_requests row at
+        // all (same as requestInfo() itself never touching it) -- it stays whatever it last was;
+        // known, accepted limitation: the generic Document Approval Monitor page's own status for
+        // this request may look stale (e.g. still 'approved') until the run is acted on again
+        // through the normal flow. Revisit only if that page's own users actually hit this.
+        if ($approvalRequestModel !== null && $fromState !== 'pending_approval' && $toState === 'pending_approval') {
             $approvalRequestModel->reopen($compId, (int)$run['approval_request_id']);
         }
         $this->logAudit($id, $fromState, $toState, 'revert', $userId, $note);
@@ -2628,6 +2720,17 @@ class PayrollRunModel {
      * the engine flips payroll_runs.state, same as reaching the end of the flat single-step check
      * always did. No workflow was ever configured for this run (approval_request_id is NULL) --
      * falls straight back to the original flat department-scoped check, unchanged.
+     *
+     * 2026-08-24, `if (!$isAdmin)` used to wrap this ENTIRE block, so an admin session skipped
+     * calling the engine's act() outright -- can_approve_payroll's own bypass (see
+     * canApproveThisRun()'s docblock) was only the visible half of the same bug; this was the
+     * actual server-side hole it was hiding (a shown-because-of-the-bug button really did work).
+     * It also meant an admin "approving" an engine-routed run never touched
+     * approval_request_step_approvers/approval_request_logs at all -- the linked approval_requests
+     * row stayed 'pending' forever while payroll_runs.state said 'approved', a real orphaned-state
+     * bug on top of the access-control one. Now: an active workflow ALWAYS routes through act(),
+     * admin included -- admin only keeps its unconditional bypass on the flat fallback below (no
+     * workflow configured at all, nothing to violate).
      */
     public function approve(int $id, int $compId, int $userId, bool $isAdmin, ?string $note = null): array {
         $run = $this->get($id, $compId);
@@ -2642,23 +2745,21 @@ class PayrollRunModel {
             return ['status' => false, 'message' => $err];
         }
 
-        if (!$isAdmin) {
-            if ($run['approval_request_id'] !== null) {
-                $approvalRequestModel = new ApprovalRequestModel($this->db);
-                $actRes = $approvalRequestModel->act($compId, (int)$run['approval_request_id'], $userId, 'approve', $note);
-                if (!$actRes['status']) {
-                    return $actRes;
-                }
-                if (($actRes['request_status'] ?? null) !== 'approved') {
-                    // Recorded in approval_request_logs already (act() itself does that); the run
-                    // stays pending_approval, still waiting on the rest of the chain/step.
-                    $this->logAudit($id, 'pending_approval', 'pending_approval', 'approve_step', $userId, $note);
-                    return ['status' => true, 'message' => $actRes['message']];
-                }
-                // Final step reached and satisfied -- fall through to the same state flip below.
-            } elseif (!$this->canApproveThisRun($userId, $isAdmin, $run)) {
-                return ['status' => false, 'message' => 'You do not have permission to approve this payroll run.'];
+        if ($run['approval_request_id'] !== null) {
+            $approvalRequestModel = new ApprovalRequestModel($this->db);
+            $actRes = $approvalRequestModel->act($compId, (int)$run['approval_request_id'], $userId, 'approve', $note);
+            if (!$actRes['status']) {
+                return $actRes;
             }
+            if (($actRes['request_status'] ?? null) !== 'approved') {
+                // Recorded in approval_request_logs already (act() itself does that); the run
+                // stays pending_approval, still waiting on the rest of the chain/step.
+                $this->logAudit($id, 'pending_approval', 'pending_approval', 'approve_step', $userId, $note);
+                return ['status' => true, 'message' => $actRes['message']];
+            }
+            // Final step reached and satisfied -- fall through to the same state flip below.
+        } elseif (!$isAdmin && !$this->canApproveThisRun($userId, $isAdmin, $run)) {
+            return ['status' => false, 'message' => 'You do not have permission to approve this payroll run.'];
         }
 
         $stmt = $this->db->prepare("UPDATE `payroll_runs` SET state = 'approved', approved_at = CURRENT_TIMESTAMP,
@@ -2677,6 +2778,10 @@ class PayrollRunModel {
      * steps can still save it (only an AND-group or Finish-group reject is guaranteed terminal).
      * Mirrors approve()'s own non-terminal handling exactly: only flips payroll_runs.state once the
      * underlying request has actually reached 'rejected'.
+     *
+     * 2026-08-24, same admin-bypass fix as approve() (see its own docblock) -- an active workflow
+     * routes through act() unconditionally now, admin included; admin only keeps its bypass on the
+     * flat fallback (no workflow configured).
      */
     public function reject(int $id, int $compId, int $userId, bool $isAdmin, string $reason): array {
         if (trim($reason) === '') {
@@ -2689,24 +2794,22 @@ class PayrollRunModel {
         if ($run['state'] !== 'pending_approval') {
             return ['status' => false, 'message' => 'Only a payroll run pending approval can be rejected.'];
         }
-        if (!$isAdmin) {
-            if ($run['approval_request_id'] !== null) {
-                $approvalRequestModel = new ApprovalRequestModel($this->db);
-                $actRes = $approvalRequestModel->act($compId, (int)$run['approval_request_id'], $userId, 'reject', $reason);
-                if (!$actRes['status']) {
-                    return $actRes;
-                }
-                if (($actRes['request_status'] ?? null) !== 'rejected') {
-                    // Recorded in approval_request_logs already (act() itself does that); the run
-                    // stays pending_approval, still waiting on the rest of the chain/step.
-                    $this->logAudit($id, 'pending_approval', 'pending_approval', 'reject_step', $userId, $reason);
-                    return ['status' => true, 'message' => $actRes['message']];
-                }
-                // The reject was terminal (AND-group or Finish-group step, or the last remaining
-                // OR-group step) -- fall through to the same state flip below.
-            } elseif (!$this->canApproveThisRun($userId, $isAdmin, $run)) {
-                return ['status' => false, 'message' => 'You do not have permission to reject this payroll run.'];
+        if ($run['approval_request_id'] !== null) {
+            $approvalRequestModel = new ApprovalRequestModel($this->db);
+            $actRes = $approvalRequestModel->act($compId, (int)$run['approval_request_id'], $userId, 'reject', $reason);
+            if (!$actRes['status']) {
+                return $actRes;
             }
+            if (($actRes['request_status'] ?? null) !== 'rejected') {
+                // Recorded in approval_request_logs already (act() itself does that); the run
+                // stays pending_approval, still waiting on the rest of the chain/step.
+                $this->logAudit($id, 'pending_approval', 'pending_approval', 'reject_step', $userId, $reason);
+                return ['status' => true, 'message' => $actRes['message']];
+            }
+            // The reject was terminal (AND-group or Finish-group step, or the last remaining
+            // OR-group step) -- fall through to the same state flip below.
+        } elseif (!$isAdmin && !$this->canApproveThisRun($userId, $isAdmin, $run)) {
+            return ['status' => false, 'message' => 'You do not have permission to reject this payroll run.'];
         }
         $stmt = $this->db->prepare("UPDATE `payroll_runs` SET state = 'rejected', rejected_at = CURRENT_TIMESTAMP,
             rejected_by = :rejected_by, reject_reason = :reason, updated_by = :rejected_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
@@ -2758,8 +2861,17 @@ class PayrollRunModel {
      */
     /** The Approval Workflow engine's own act() vocabulary is approve/reject/cancel only -- no
      *  "need more info" concept -- so this stays a PayrollRunModel-only state, but gates on
-     *  canActOnRequest() (the same live role-membership resolution act() itself uses) when this
-     *  run went through that engine, instead of the flat department-scoped fallback. */
+     *  canActOnRequestNow() (the same "eligible, still-pending, unlocked" gate act() itself
+     *  enforces for approve/reject) when this run went through that engine, instead of the flat
+     *  department-scoped fallback.
+     *  2026-08-24, tightened from canActOnRequest() to canActOnRequestNow() -- this action only
+     *  ever fires from pending_approval (checked below), so it belongs with approve()/reject() in
+     *  the same button group and must follow the same "can I decide RIGHT NOW" rule, not the
+     *  coarser "was ever eligible" one meant for undoing an already-decided outcome. See
+     *  canApproveThisRun()'s own docblock for the full reasoning.
+     *  2026-08-24, second fix the same day: admin no longer bypasses this check when an active
+     *  workflow governs the run (same reasoning as approve()/reject()) -- only kept as a bypass on
+     *  the flat fallback below (no workflow configured), via canApproveThisRun() itself. */
     public function requestInfo(int $id, int $compId, int $userId, bool $isAdmin, string $reason): array {
         if (trim($reason) === '') {
             return ['status' => false, 'message' => 'A reason is required.'];
@@ -2768,13 +2880,11 @@ class PayrollRunModel {
         if (!$run) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
-        if (!$isAdmin) {
-            $allowed = $run['approval_request_id'] !== null
-                ? (new ApprovalRequestModel($this->db))->canActOnRequest($compId, (int)$run['approval_request_id'], $userId)
-                : $this->canApproveThisRun($userId, $isAdmin, $run);
-            if (!$allowed) {
-                return ['status' => false, 'message' => 'You do not have permission to request information on this payroll run.'];
-            }
+        $allowed = $run['approval_request_id'] !== null
+            ? (new ApprovalRequestModel($this->db))->canActOnRequestNow($compId, (int)$run['approval_request_id'], $userId)
+            : $this->canApproveThisRun($userId, $isAdmin, $run);
+        if (!$allowed) {
+            return ['status' => false, 'message' => 'You do not have permission to request information on this payroll run.'];
         }
         if ($run['state'] !== 'pending_approval') {
             return ['status' => false, 'message' => 'Only a payroll run pending approval can have information requested.'];

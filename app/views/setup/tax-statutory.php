@@ -18,14 +18,14 @@
         </div>
     </div>
 
-    <ul class="nav nav-tabs" id="taxStatutoryTabs" role="tablist">
+    <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="taxStatutoryTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="master-rate-tab" data-bs-toggle="tab" data-bs-target="#master-rate-pane" type="button" role="tab" aria-controls="master-rate-pane" aria-selected="true">
+            <button class="nav-link setup-menu active" id="master-rate-tab" data-bs-toggle="tab" data-bs-target="#master-rate-pane" type="button" role="tab" aria-controls="master-rate-pane" aria-selected="true">
                 <i class="fa-solid fa-globe me-2"></i><span data-i18n="tab_master_rate">Master Rates</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="false">
                 <i class="fa-solid fa-building me-2"></i><span data-i18n="tab_company_setting">Company Settings</span>
             </button>
         </li>

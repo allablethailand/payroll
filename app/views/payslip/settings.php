@@ -16,9 +16,16 @@
     </div>
   </div>
 
-  <ul class="nav nav-tabs mb-4">
-    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-tpl" type="button" id="payslipTemplateTabBtn"><i class="fa-solid fa-file-invoice me-1"></i> <span data-i18n="payslip_template">Payslip Template</span></button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dist" type="button" id="payslipDistributionTabBtn"><i class="fa-solid fa-paper-plane me-1"></i> <span data-i18n="payslip_distribution">Payslip Distribution</span></button></li>
+  <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
+    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-tpl" type="button" id="payslipTemplateTabBtn" role="tab"><i class="fa-solid fa-file-invoice me-1"></i> <span data-i18n="payslip_template">Payslip Template</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-dist" type="button" id="payslipDistributionTabBtn" role="tab"><i class="fa-solid fa-paper-plane me-1"></i> <span data-i18n="payslip_distribution">Payslip Distribution</span></button></li>
+    <!-- 2026-08-24, explicit request: "Menu Employment Ceritficate น่าจะนำไปรวมใน Play Slip แต่เปลี่ยน Menu
+         ส่วนของการตั้งค่าก็เอาไปไว้ด้วยกัน แต่แยก Tab มีแค่ส่วนของการ Request ที่แยก Sub menu ย่อย" -- the
+         standalone "Employment Certificate" top-level menu item is gone (see header.php); its designer
+         now lives here as a 3rd tab. Requests stays a separate submenu item under Payslip because
+         Employment Certificate has no request/issuance flow yet -- once that's built it gets its own
+         entry there, not folded into Payslip Requests' existing table. -->
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-ect" type="button" id="employmentCertificateTemplateTabBtn" role="tab"><i class="fa-solid fa-file-shield me-1"></i> <span data-i18n="employment_certificate_template">Employment Certificate Template</span></button></li>
   </ul>
 
   <div class="tab-content">
@@ -97,6 +104,11 @@
           </div>
         </form>
       </div>
+    </div>
+
+    <!-- EMPLOYMENT CERTIFICATE TEMPLATE (merged in 2026-08-24, own designer -- see the tab button comment above) -->
+    <div class="tab-pane fade p-0" id="tab-ect">
+      <?php include __DIR__ . '/../employment-certificate/_designer_partial.php'; ?>
     </div>
   </div>
 
@@ -184,3 +196,4 @@
 </div>
 <script src="<?=asset('public/js/setup/payslip-template.js')?>"></script>
 <script src="<?=asset('public/js/setup/payslip-distribution.js')?>"></script>
+<script src="<?=asset('public/js/setup/employment-certificate-template.js')?>"></script>

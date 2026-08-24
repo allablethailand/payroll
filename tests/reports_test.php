@@ -61,6 +61,20 @@ try {
     $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL")
         ->execute([':comp_id' => $compId]);
 
+    // Same isolation, same reason (2026-08-24): this real dev-DB company has a real, live
+    // PAYROLL_RUN_APPROVAL Approval Workflow configured (named approver, not a test fixture) --
+    // PayrollRunModel::approve()/reject()/requestInfo()/revert() now route through that REAL
+    // engine whenever one is active, admin included (see canApproveThisRun()'s own docblock,
+    // 2026-08-24 fix -- admin no longer bypasses a configured workflow). This test isn't testing
+    // the Approval Workflow engine itself (see tests/approval_workflow_test.php for that) -- it
+    // just needs runs to reach 'approved' quickly via the flat admin-bypass fallback, so
+    // temporarily deactivate whatever's live, entirely inside this script's own rolled-back
+    // transaction (restored the instant it rolls back, same as the employees soft-delete above).
+    $pdo->prepare("UPDATE `approval_workflows` SET status = 'inactive'
+        WHERE comp_id = :comp_id AND status = 'active'
+          AND id IN (SELECT workflow_id FROM `approval_workflow_document_types` WHERE document_type_code = 'PAYROLL_RUN_APPROVAL')")
+        ->execute([':comp_id' => $compId]);
+
     // ---------- Fixtures ----------
     $today = new DateTime();
     $periodStart = (clone $today)->modify('first day of this month')->format('Y-m-d');
@@ -293,6 +307,23 @@ try {
 
     // company_logo field with no logo_path set must not error -- it should just be skipped.
     checkTrue('generate() does not throw when company_logo field has no uploaded logo', is_string($templatedSlip['content']));
+
+    // ---------- PaySlipReport: falls back to the Company Profile logo when the template has none ----------
+    echo "=== PaySlipReport: falls back to the Company Profile logo when the template has none ===\n";
+    $tinyPng = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+    $companyLogoDir = __DIR__ . '/../public/uploads/company_logos/' . $compId;
+    @mkdir($companyLogoDir, 0777, true);
+    $companyLogoRel = 'public/uploads/company_logos/' . $compId . '/' . bin2hex(random_bytes(16)) . '.png';
+    file_put_contents(__DIR__ . '/../' . $companyLogoRel, $tinyPng);
+    try {
+        $pdo->prepare('UPDATE `companies` SET logo_path = :p WHERE id = :id')->execute([':p' => $companyLogoRel, ':id' => $compId]);
+        $slipWithCompanyLogoFallback = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
+        checkTrue('PDF still valid when falling back to the company logo', str_starts_with($slipWithCompanyLogoFallback['content'], '%PDF'));
+        checkTrue('PDF is larger than the no-logo-at-all version (company logo actually embedded)', strlen($slipWithCompanyLogoFallback['content']) > strlen($templatedSlip['content']));
+    } finally {
+        $pdo->prepare('UPDATE `companies` SET logo_path = NULL WHERE id = :id')->execute([':id' => $compId]);
+        @unlink(__DIR__ . '/../' . $companyLogoRel);
+    }
 
     $toggleOff = $payslipTemplateModel->toggleStatus((int)$templateSave['id'], $compId, $adminUserId);
     checkTrue('deactivating the template succeeds', $toggleOff['status']);

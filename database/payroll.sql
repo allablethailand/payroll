@@ -10942,6 +10942,145 @@ ALTER TABLE `payroll_runs`
 
 COMMIT;
 
+--
+-- 2026-08-24, Employment Certificate Template designer (explicit request: "เพิ่มการตั้งค่าการจัดการ
+-- รูปแบบ Employment Certificate ให้รองรับทั้งภาษาไทย และภาษาอังกฤษ รองรับการจัดตำแหน่งแบบอิสระ...เหมือน
+-- Word Photoshop") -- global master field catalog (mirrors master_payslip_field_types) + one
+-- template per (comp_id, language) with freely positioned/resized elements stored as percentages
+-- of an A4 page, so the browser editor and the dompdf renderer share the exact same coordinate
+-- space (no px/pt/mm conversion drift). Each element is either 'text' (content may embed
+-- {{field_key}} tokens resolved at generation time -- covers both a pure single-field box like
+-- "{{employee_name}}" and a hand-written paragraph with data merged inline) or 'image' (currently
+-- only company_logo). This is the template/designer piece only -- the request+approval flow
+-- (Employment Certificate document type wired into ApprovalRequestModel, a "Requests" page, the
+-- generalized Payslip-menu-becomes-a-shared-document-menu idea) is a deliberately separate,
+-- later phase per explicit agreement with the user.
+--
+
+CREATE TABLE `master_employment_certificate_field_types` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `field_group` enum('company','employee','document') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `element_type` enum('text','image') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ecft_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_employment_certificate_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('static_text','ข้อความ/ย่อหน้าอิสระ','Free Text / Paragraph','document','text',1,5),
+('company_logo','โลโก้บริษัท','Company Logo','company','image',1,10),
+('company_name','ชื่อบริษัท','Company Name','company','text',1,20),
+('company_address','ที่อยู่บริษัท','Company Address','company','text',1,30),
+('company_tax_id','เลขผู้เสียภาษีบริษัท','Company Tax ID','company','text',1,40),
+('company_signatory','ผู้มีอำนาจลงนาม','Authorized Signatory','company','text',1,50),
+('employee_no','รหัสพนักงาน','Employee No.','employee','text',1,60),
+('employee_name','ชื่อ-นามสกุลพนักงาน','Employee Name','employee','text',1,70),
+('position','ตำแหน่ง','Position','employee','text',1,80),
+('department','แผนก','Department','employee','text',1,90),
+('employment_date','วันที่เริ่มงาน','Employment Start Date','employee','text',1,100),
+('employment_status','สถานะการจ้าง','Employment Status','employee','text',1,110),
+('employment_type','ประเภทการจ้าง','Employment Type','employee','text',1,120),
+('base_salary','เงินเดือน','Base Salary','employee','text',1,130),
+('issue_date','วันที่ออกเอกสาร','Issue Date','document','text',1,140);
+
+CREATE TABLE `employment_certificate_templates` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `logo_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'public/uploads/employment_cert_logos/{comp_id}/{hash}.{ext}, validated at application layer',
+  `status` enum('active','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ect_tenant` (`comp_id`,`language`,`status`),
+  CONSTRAINT `fk_ect_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `employment_certificate_template_elements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `element_type` enum('text','image') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  `field_key` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'references master_employment_certificate_field_types.code -- required for image elements (company_logo), NULL for text (content carries the string/tokens instead)',
+  `content` text COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'text elements only -- literal text, may embed {{field_key}} tokens resolved at generation time',
+  `pos_x_pct` decimal(6,3) NOT NULL DEFAULT 0.000,
+  `pos_y_pct` decimal(6,3) NOT NULL DEFAULT 0.000,
+  `width_pct` decimal(6,3) NOT NULL DEFAULT 20.000,
+  `height_pct` decimal(6,3) NOT NULL DEFAULT 5.000,
+  `font_size` int(11) NOT NULL DEFAULT 14,
+  `text_align` enum('left','center','right') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'left',
+  `font_weight` enum('normal','bold') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'normal',
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_ecte_template` (`template_id`),
+  CONSTRAINT `fk_ecte_template` FOREIGN KEY (`template_id`) REFERENCES `employment_certificate_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `permissions` (`module_code`,`action_code`,`permission_key`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('employment_certificate_template','manage','employment_certificate_template.manage','จัดการเทมเพลตหนังสือรับรองการทำงาน','Manage Employment Certificate Templates',1,150);
+
+COMMIT;
+
+--
+-- 2026-08-24, Employment Certificate Template v2 (explicit follow-up request: multiple templates
+-- + 2-3 standard presets, page size/orientation, reusable uploaded-image library, watermark toggle
+-- in Preview, proper Thai PDF font, drag-and-drop placement, and full text formatting -- color/
+-- italic/underline/font-family "เหมือน Word"). employment_certificate_templates/
+-- employment_certificate_template_elements were both still completely empty in the real dev DB at
+-- this point (confirmed via SELECT COUNT(*) before writing this), so these ALTERs carry no data
+-- migration risk -- no backfill needed for template_name/is_default/page_size/orientation.
+--
+
+ALTER TABLE `employment_certificate_templates`
+  ADD COLUMN `template_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Untitled' AFTER `language`,
+  ADD COLUMN `is_default` tinyint(1) NOT NULL DEFAULT 0 AFTER `template_name`,
+  ADD COLUMN `page_size` enum('A4','Letter','Legal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'A4' AFTER `is_default`,
+  ADD COLUMN `orientation` enum('portrait','landscape') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'portrait' AFTER `page_size`;
+
+CREATE TABLE `employment_certificate_images` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `file_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `original_filename` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `uploaded_by` int(11) DEFAULT NULL,
+  `uploaded_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_eci_comp` (`comp_id`),
+  CONSTRAINT `fk_eci_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+ALTER TABLE `employment_certificate_template_elements`
+  ADD COLUMN `image_asset_id` int(11) DEFAULT NULL COMMENT 'references employment_certificate_images.id -- a custom uploaded image element (element_type=image, field_key NULL). field_key=company_logo elements leave this NULL and use the template''s own logo_path instead.' AFTER `field_key`,
+  ADD COLUMN `font_family` enum('th_sarabun_new','dejavu_sans') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th_sarabun_new' AFTER `font_size`,
+  ADD COLUMN `font_color` varchar(7) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '#000000' AFTER `font_family`,
+  ADD COLUMN `font_style` enum('normal','italic') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'normal' AFTER `font_weight`,
+  ADD COLUMN `text_decoration` enum('none','underline') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'none' AFTER `font_style`,
+  ADD CONSTRAINT `fk_ecte_image_asset` FOREIGN KEY (`image_asset_id`) REFERENCES `employment_certificate_images` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+COMMIT;
+
+--
+-- 2026-08-24, Company Profile logo (explicit request: "ในหน้า Profile บริษัท ให้สามารถใส่ Logo ได้
+-- และดึงไปใช้กับหน้าตั้งค่า Slip เงินเดือน และใบรับรอง") -- one logo per company, used as the
+-- fallback default whenever a Payslip/Employment Certificate template doesn't have its own
+-- uploaded logo (see PaySlipReport / EmploymentCertificateRenderer's own comments for exactly how
+-- that fallback resolves).
+--
+
+ALTER TABLE `companies`
+  ADD COLUMN `logo_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'public/uploads/company_logos/{id}/{hash}.{ext} -- reused as the default logo for Payslip/Employment Certificate templates when a template has none of its own' AFTER `authorized_signatory_name`;
+
+COMMIT;
+
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

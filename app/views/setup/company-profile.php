@@ -87,6 +87,24 @@
                 <input type="text" class="form-control required" name="local_name">
             </div>
         </div>
+        <!-- 2026-08-24, explicit request: "ในหน้า Profile บริษัท ให้สามารถใส่ Logo ได้ และดึงไปใช้กับหน้า
+             ตั้งค่า Slip เงินเดือน และใบรับรอง" -- same upload UI convention as Payslip Template's own
+             logo field (immediate upload on file select, hidden field carries the path into the
+             main form save). -->
+        <div class="row">
+            <div class="col-sm-2 mt-3">
+                <label class="form-label" data-i18n="company_logo">Company Logo</label>
+            </div>
+            <div class="col-sm-4 mt-3">
+                <div id="cpLogoPreview" class="mb-2 d-none"><img src="" alt="Logo" style="max-height:70px;" class="border rounded p-1"></div>
+                <label class="btn btn-outline-secondary btn-sm" for="cp_logo_file">
+                    <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_logo">Upload Logo</span>
+                </label>
+                <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                <input type="hidden" id="cp_logo_path" name="logo_path">
+                <p class="text-muted small mt-2 mb-0" data-i18n="company_logo_reuse_hint">Used as the default logo on Payslip and Employment Certificate templates that don't have their own.</p>
+            </div>
+        </div>
         <h6 class="text-secondary fw-bold mb-3 mt-4">
             <label class="label label-head bg-head-first rounded-2 text-white me-2">2</label>
             <span data-i18n="registered_address">Registered Address</span>

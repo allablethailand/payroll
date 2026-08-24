@@ -18,27 +18,60 @@
     </div>
   </div>
 
-  <ul class="nav nav-tabs mb-4">
-    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button"><i class="fa-solid fa-diagram-project me-1"></i> <span data-i18n="approval_workflow">Approval Workflow</span></button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-run" type="button"><i class="fa-solid fa-hashtag me-1"></i> <span data-i18n="document_running_number">Document Numbering</span></button></li>
+  <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
+    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button" role="tab"><i class="fa-solid fa-diagram-project me-1"></i> <span data-i18n="approval_workflow">Approval Workflow</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-run" type="button" role="tab"><i class="fa-solid fa-hashtag me-1"></i> <span data-i18n="document_running_number">Document Numbering</span></button></li>
   </ul>
 
   <div class="tab-content">
-    <!-- APPROVAL WORKFLOW -->
+    <!-- APPROVAL WORKFLOW (2026-08-24 redesign, explicit request: "ให้แบ่งเป็น Tab อนุมัติงวดเงินเดือน
+         และ อนุมัติ Pay Slip ไปเลยให้ตั้งค่า และในแต่ละ Tab ก็ให้จัดการได้เลย 1 Tab ต่อ 1 Flow ไม่ต้องเปิด
+         Modal เข้าไปจัดการ แต่เป็นการเปิดแก้ไข แถว by แถว มีปุ่ม Save แยกตามแถว และมีปุ่มในการบันทึก Sort" --
+         replaces the old generic DataTable-of-workflows + modal editor. Each pill below IS one
+         document type's one flow (no workflow picker, no document-type multi-select, no
+         workflow_name field -- see ApprovalWorkflowModel::getByDocumentType()'s own docblock for
+         the full reasoning); steps render as in-page rows, edited/saved/deleted one row at a time,
+         mirroring C:\xampp\htdocs\origami\controls\approval\views\approval.php's own row-level
+         save/cancel/delete + separate drag-then-explicit-save-order pattern. -->
     <div class="tab-pane fade show active p-0" id="tab-flow">
+      <!-- 2026-08-24, explicit request: "ปรับให้ tab เป็น Design เดียวกันทั้งหมด เหมือนในหน้าตั้งค่า
+           โครงสร้างบริษัท" -- reuses company-profile.php's own Organizational Structure sub-tab
+           classes (.structure-tabs-wrap/.structure-tabs/.structure-menu) verbatim instead of the
+           bespoke .awf-doctype-pills gradient style from the previous redesign, so every pill-style
+           sub-tab in the app looks identical. -->
+      <div class="bg-light rounded-3 p-2 mb-3 structure-tabs-wrap">
+        <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="approvalFlowDocTypeTabs">
+          <li class="nav-item">
+            <button type="button" class="nav-link structure-menu active" data-document-type="PAYROLL_RUN_APPROVAL">
+              <i class="fa-solid fa-money-check-dollar me-1"></i><span data-i18n="tab_payroll_run_approval">Payroll Run Approval</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button type="button" class="nav-link structure-menu" data-document-type="SLIP_REQUEST_APPROVAL">
+              <i class="fa-solid fa-file-invoice me-1"></i><span data-i18n="tab_slip_request_approval">Payslip Approval</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
       <div class="card-surface p-3 p-md-4">
-        <table class="table table-hover align-middle w-100" id="tb_approval_workflow">
-          <thead class="table-light text-secondary">
-            <tr>
-              <th data-i18n="workflow_name">Workflow Name</th>
-              <th data-i18n="document_types">Document Types</th>
-              <th data-i18n="steps">Steps</th>
-              <th data-i18n="status">Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <div class="awf-flow-status-wrap">
+            <span class="badge" id="flowStatusBadge"></span>
+            <button type="button" class="btn btn-link btn-sm p-0 ms-2 d-none" id="btnToggleFlowStatus"></button>
+            <div class="text-secondary small mt-1" id="flowStatusHint"></div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="text-warning small fw-semibold d-none" id="sortUnsavedHint"><i class="fa-solid fa-triangle-exclamation me-1"></i><span data-i18n="sort_unsaved_hint">Order changed — not saved yet</span></span>
+            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnSaveSort"><i class="fa-solid fa-arrow-down-short-wide me-1"></i><span data-i18n="save_sort">Save Order</span></button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnAddFlowStep"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_step">Step</span></button>
+          </div>
+        </div>
+        <div class="awf-step-list" id="flowStepList"></div>
+        <div class="text-center text-secondary small py-4 d-none" id="flowNoStepsMessage">
+          <i class="fa-solid fa-diagram-project fa-lg mb-2 text-secondary opacity-50"></i>
+          <span data-i18n="flow_not_configured_yet">This approval flow hasn't been set up yet — click "Step" to add the first one.</span>
+        </div>
       </div>
     </div>
 
@@ -98,63 +131,6 @@
               <select class="form-select select2-static" id="dn_reset_cycle" data-option-keys="reset_cycle_never,reset_cycle_yearly,reset_cycle_monthly" data-option-values="never,yearly,monthly"></select>
             </div>
             <div class="text-secondary small" id="documentNumberingPreview"></div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-            <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Approval Workflow editor modal -->
-  <div class="modal fade" id="workflowModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="workflowModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title fw-bold text-secondary" id="workflowModalLabel">
-            <i class="fa-solid fa-pen-to-square me-2"></i><span data-i18n="approval_workflow">Approval Workflow</span>
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <form id="workflowForm">
-          <input type="hidden" id="workflow_id" name="id">
-          <div class="modal-body">
-            <div class="awf-basic-grid">
-              <div class="awf-field awf-field-full">
-                <label for="workflow_name"><span data-i18n="workflow_name">Workflow Name</span> <span class="text-danger">*</span></label>
-                <input type="text" class="form-control required" id="workflow_name" name="workflow_name" maxlength="150">
-              </div>
-              <div class="awf-field awf-field-full">
-                <label for="workflow_description" data-i18n="description">Description</label>
-                <textarea class="form-control" id="workflow_description" name="description" rows="2" maxlength="500"></textarea>
-              </div>
-              <div class="awf-field">
-                <label for="workflow_document_types"><span data-i18n="document_types">Document Types</span> <span class="text-danger">*</span></label>
-                <select class="form-select select2-remote required" id="workflow_document_types" name="document_type_codes" multiple data-api="/api/approval-workflow.document-type-options"></select>
-              </div>
-              <div class="awf-field">
-                <label for="workflow_status" data-i18n="status">Status</label>
-                <select class="form-select select2-static" id="workflow_status" name="status" data-option-keys="active,inactive" data-option-values="active,inactive"></select>
-              </div>
-            </div>
-
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <div class="awf-section-title">
-                <span class="awf-section-icon"><i class="fa-solid fa-diagram-project"></i></span>
-                <div>
-                  <h6 class="fw-bold" data-i18n="approval_steps">Approval Steps</h6>
-                  <div class="text-secondary small" data-i18n="approval_steps_hint">Drag to reorder. Each step's approver is either one specific user or anyone holding a role.</div>
-                </div>
-              </div>
-              <button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0" id="btnAddStep"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_step">Step</span></button>
-            </div>
-            <div class="awf-step-list" id="stepList"></div>
-            <div class="text-center text-secondary small py-4 d-none" id="noStepsMessage">
-              <i class="fa-solid fa-diagram-project fa-lg mb-2 d-block text-secondary opacity-50"></i>
-              <span data-i18n="no_steps_yet">No steps yet — add at least one.</span>
-            </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>

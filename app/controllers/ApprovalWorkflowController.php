@@ -128,6 +128,64 @@ class ApprovalWorkflowController extends Controller {
         $this->json($this->model->toggleStatus((int)$compId, $id, $this->actingUserId(), $status));
     }
 
+    /** The simplified Settings UI's per-tab flow load (2026-08-24 -- see ApprovalWorkflowModel's
+     *  own docblock on getByDocumentType()/stepSave()/stepDelete()/stepsSort() for the full
+     *  redesign context). `data: null` (not an error) is the normal "never configured yet" case --
+     *  the tab renders an empty step list ready for the first "+ Step". */
+    public function flowGet() {
+        if (!$this->requirePermission('approval_workflow.view')) return;
+        $compId = getCompId();
+        $documentTypeCode = (string)($_GET['document_type_code'] ?? '');
+        if (!$compId || $documentTypeCode === '') {
+            $this->json(['status' => false, 'message' => 'Missing document_type_code.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->getByDocumentType((int)$compId, $documentTypeCode)]);
+    }
+
+    public function stepSave() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = $this->jsonBody();
+        if ($data === null) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $this->json($this->model->stepSave((int)$compId, $data, $this->actingUserId()));
+    }
+
+    public function stepDelete() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
+        $compId = getCompId();
+        $id = isset($_POST['step_id']) ? (int)$_POST['step_id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing step_id.']);
+            return;
+        }
+        $this->json($this->model->stepDelete((int)$compId, $id, $this->actingUserId()));
+    }
+
+    public function stepsSort() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
+        $compId = getCompId();
+        $data = $this->jsonBody();
+        if ($data === null) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $documentTypeCode = (string)($data['document_type_code'] ?? '');
+        $stepIds = is_array($data['step_ids'] ?? null) ? $data['step_ids'] : [];
+        if (!$compId || $documentTypeCode === '') {
+            $this->json(['status' => false, 'message' => 'Missing document_type_code.']);
+            return;
+        }
+        $this->json($this->model->stepsSort((int)$compId, $documentTypeCode, $stepIds));
+    }
+
     public function requestCreate() {
         $compId = getCompId();
         if (!$compId) {

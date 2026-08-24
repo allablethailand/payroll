@@ -16,24 +16,24 @@
         </div>
     </div>
 
-    <ul class="nav nav-tabs" id="reportsTabs" role="tablist">
+    <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="reportsTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="statutory-tab" data-bs-toggle="tab" data-bs-target="#statutory-pane" type="button" role="tab" aria-controls="statutory-pane" aria-selected="true">
+            <button class="nav-link setup-menu active" id="statutory-tab" data-bs-toggle="tab" data-bs-target="#statutory-pane" type="button" role="tab" aria-controls="statutory-pane" aria-selected="true">
                 <i class="fa-solid fa-landmark me-2"></i><span data-i18n="tab_statutory_reports">Statutory Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="payment-tab" data-bs-toggle="tab" data-bs-target="#payment-pane" type="button" role="tab" aria-controls="payment-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="payment-tab" data-bs-toggle="tab" data-bs-target="#payment-pane" type="button" role="tab" aria-controls="payment-pane" aria-selected="false">
                 <i class="fa-solid fa-money-check-dollar me-2"></i><span data-i18n="tab_payment_reports">Payment Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="internal-tab" data-bs-toggle="tab" data-bs-target="#internal-pane" type="button" role="tab" aria-controls="internal-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="internal-tab" data-bs-toggle="tab" data-bs-target="#internal-pane" type="button" role="tab" aria-controls="internal-pane" aria-selected="false">
                 <i class="fa-solid fa-building me-2"></i><span data-i18n="tab_internal_reports">Internal Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button" role="tab" aria-controls="history-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button" role="tab" aria-controls="history-pane" aria-selected="false">
                 <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="tab_export_history">Export History</span>
             </button>
         </li>

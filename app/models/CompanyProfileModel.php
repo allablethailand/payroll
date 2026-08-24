@@ -5,6 +5,18 @@ class CompanyProfileModel {
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
     }
+
+    /** logo_path must exactly match what uploadLogo() produces for THIS company -- same
+     *  traversal-proofing pattern as PayslipTemplateModel::isValidLogoPath()/
+     *  EmploymentCertificateTemplateModel::isValidLogoPath(). */
+    public static function isValidLogoPath(?string $path, int $compId): bool {
+        if ($path === null || $path === '') {
+            return true;
+        }
+        $pattern = '#^public/uploads/company_logos/' . $compId . '/[a-f0-9]{32}\.(jpg|png|svg)$#';
+        return (bool)preg_match($pattern, $path);
+    }
+
     public function get() {
         $companyId = $_SESSION['user']['company_id'] ?? null;
         if (!$companyId) {
@@ -96,6 +108,7 @@ class CompanyProfileModel {
                         master_address_id = :master_address_id,
                         statutory_data = :statutory_data,
                         authorized_signatory_name = :authorized_signatory_name,
+                        logo_path = :logo_path,
                         setup_status = :setup_status,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id";
@@ -111,6 +124,11 @@ class CompanyProfileModel {
                 ':master_address_id' => !empty($data['master_address_id']) ? (int)$data['master_address_id'] : null,
                 ':statutory_data' => $statutoryJson,
                 ':authorized_signatory_name' => $data['authorized_signatory_name'] ?? null,
+                // Uploaded via a separate endpoint (CompanyProfileController::uploadLogo(), same
+                // pattern as PayslipTemplateController's own logo upload) -- the client keeps
+                // whatever path it already had in a hidden field across saves, same as Payslip
+                // Template's modal does, so an unrelated profile save never accidentally clears it.
+                ':logo_path' => !empty($data['logo_path']) ? $data['logo_path'] : null,
                 ':setup_status' => $isComplete ? 'active' : 'draft',
             ]);
             // Auto-seed the default earning/deduction items the moment a company actually

@@ -151,6 +151,13 @@
                 <span class="menu-text" data-i18n="reports">Reports</span>
             </a>
         </li>
+        <!-- 2026-08-24, explicit request: "Menu Employment Ceritficate น่าจะนำไปรวมใน Play Slip แต่เปลี่ยน
+             Menu ส่วนของการตั้งค่าก็เอาไปไว้ด้วยกัน แต่แยก Tab มีแค่ส่วนของการ Request ที่แยก Sub menu ย่อย" --
+             the standalone Employment Certificate menu item (added earlier the same day) is now gone;
+             its designer lives inside Payslip > Settings as a 3rd tab (see payslip/settings.php). Its
+             route (/employment-certificate/settings) and every API endpoint still work unchanged --
+             only this menu entry point was removed. Requests stays separate below because Employment
+             Certificate has no request/issuance flow yet (that's still a later phase, see CLAUDE.md). -->
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">

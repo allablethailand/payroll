@@ -12,6 +12,27 @@ $(document).on('click', '.setup-tabs .setup-menu', function () {
 
     initPage(page);
 });
+$(document).on('change', '#cp_logo_file', function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    $.ajax({
+        url: `${BASE_URL}/api/company.upload-logo`,
+        method: 'POST', data: formData, processData: false, contentType: false, dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                $('input[name="logo_path"]').val(res.logo_path);
+                $('#cpLogoPreview img').attr('src', `${BASE_URL}/${res.logo_path}`);
+                $('#cpLogoPreview').removeClass('d-none');
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Upload failed.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'Upload failed.'); }
+    });
+    $(this).val('');
+});
 $(document).on('change', '#registered_country', function () {
     renderCountrySpecificForm($(this).val());
 });
@@ -137,6 +158,13 @@ function initCompanyData() {
                 $('input[name="address_line_1"]').val(data.address_line_1 || '');
                 $('input[name="address_line_2"]').val(data.address_line_2 || '');
                 $('input[name="authorized_signatory_name"]').val(data.authorized_signatory_name || '');
+                $('input[name="logo_path"]').val(data.logo_path || '');
+                if (data.logo_path) {
+                    $('#cpLogoPreview img').attr('src', `${BASE_URL}/${data.logo_path}`);
+                    $('#cpLogoPreview').removeClass('d-none');
+                } else {
+                    $('#cpLogoPreview').addClass('d-none');
+                }
                 if (data.statutory_data && typeof data.statutory_data === 'object') {
                     Object.keys(data.statutory_data).forEach(key => {
                         const $field = $(`[name="${key}"]`);
@@ -189,6 +217,7 @@ $(document).on('click', '.save-company-profile', function () {
         address_line_2: $('input[name="address_line_2"]').val()?.trim() || '',
         master_address_id: $('input[name="master_address_id"]').val() || null,
         authorized_signatory_name: $('input[name="authorized_signatory_name"]').val()?.trim() || '',
+        logo_path: $('input[name="logo_path"]').val() || null,
         statutory_data: {}
     };
     $('#dynamic_statutory_fields_container input').each(function () {

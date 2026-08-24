@@ -1522,6 +1522,51 @@ try {
     $undoFromLockedRes = $runModel->revert($runId, $compId, $adminUserId, true); // $runId is 'locked' by this point in the file
     check('revert from a locked (already-paid) run is refused', $undoFromLockedRes['status'], false);
 
+    echo "=== 2026-08-24, revert() to a CHOSEN status (explicit follow-up request: \"ถ้า Process นั้น" .
+        "อนุมัติ สามารถถอยมารออนุมัติ ไม่อนุมัติ ขอข้อมูลเพิ่มเติมได้ คือ Status ที่ถอยหรือเปลี่ยน ต้องไม่ใช่" .
+        " Status เดิม\") -- supersedes the always-goes-to-pending_approval behavior tested just above" .
+        " (which stays as the DEFAULT when no target is given, for backward compatibility) with an" .
+        " explicit \$toState the approver picks among the other 2 decided-adjacent statuses. ===\n";
+    $chooseRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_REVERT_CHOOSE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +25 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +25 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +25 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: choose-target revert-test run created', $chooseRunRes['status']);
+    $chooseRunId = $chooseRunRes['id'];
+    $runModel->recalculate($chooseRunId, $compId, $adminUserId, true);
+    $runModel->submit($chooseRunId, $compId, $adminUserId, true);
+    $runModel->approve($chooseRunId, $compId, $adminUserId, true, 'looks fine');
+    check('state is approved before the direct-to-rejected revert', $runModel->get($chooseRunId, $compId)['state'], 'approved');
+
+    $sameStatusRes = $runModel->revert($chooseRunId, $compId, $adminUserId, true, null, 'approved');
+    check('reverting to the SAME status the run is already at is refused', $sameStatusRes['status'], false);
+    $invalidTargetRes = $runModel->revert($chooseRunId, $compId, $adminUserId, true, null, 'paid');
+    check('an invalid/unreachable target status is refused', $invalidTargetRes['status'], false);
+    check('run is untouched by both refused attempts (still approved)', $runModel->get($chooseRunId, $compId)['state'], 'approved');
+
+    $toRejectedRes = $runModel->revert($chooseRunId, $compId, $adminUserId, true, 'discovered a calculation error', 'rejected');
+    checkTrue('approved -> rejected directly (skipping pending_approval) succeeds' . (empty($toRejectedRes['status']) ? " ({$toRejectedRes['message']})" : ''), $toRejectedRes['status']);
+    $afterToRejected = $runModel->get($chooseRunId, $compId);
+    check('state is now rejected', $afterToRejected['state'], 'rejected');
+    check('approved_by was cleared (exiting approved)', $afterToRejected['approved_by'], null);
+    checkTrue('rejected_by was SET (entering rejected via the override)', $afterToRejected['rejected_by'] !== null);
+    check('reject_reason carries the note passed to revert()', $afterToRejected['reject_reason'], 'discovered a calculation error');
+
+    $toNeedInfoRes = $runModel->revert($chooseRunId, $compId, $adminUserId, true, null, 'need_info');
+    checkTrue('rejected -> need_info directly succeeds' . (empty($toNeedInfoRes['status']) ? " ({$toNeedInfoRes['message']})" : ''), $toNeedInfoRes['status']);
+    $afterToNeedInfo = $runModel->get($chooseRunId, $compId);
+    check('state is now need_info', $afterToNeedInfo['state'], 'need_info');
+    check('rejected_by was cleared (exiting rejected)', $afterToNeedInfo['rejected_by'], null);
+    check('reject_reason was cleared (exiting rejected)', $afterToNeedInfo['reject_reason'], null);
+    checkTrue('need_info_by was SET (entering need_info via the override, no note given -- default reason used)', $afterToNeedInfo['need_info_by'] !== null);
+    checkTrue('need_info_reason got a sensible default when no note was passed', !empty($afterToNeedInfo['need_info_reason']));
+
+    $backToPendingRes = $runModel->revert($chooseRunId, $compId, $adminUserId, true, null, 'pending_approval');
+    checkTrue('need_info -> pending_approval (still a valid explicit choice) succeeds', $backToPendingRes['status']);
+    check('state is pending_approval', $runModel->get($chooseRunId, $compId)['state'], 'pending_approval');
+
     echo "=== revert() permission split: submitter can pull back their own still-undecided" .
         " submission, but not an already-decided one (explicit request: \"ในกรณีที่ส่ง Approve แล้ว" .
         "ยังไม่มีใคร Approve สามารถดึง Process กลับได้\") ===\n";
@@ -1808,6 +1853,161 @@ try {
     $approverNeedInfoRes = $runModel->requestInfo($wfRunId, $compId, $wfApproverId, false, 'need the OT sheet');
     checkTrue('the configured approver can request info' . (empty($approverNeedInfoRes['status']) ? " ({$approverNeedInfoRes['message']})" : ''), $approverNeedInfoRes['status']);
     check('run state flipped to need_info', $runModel->get($wfRunId, $compId)['state'], 'need_info');
+
+    echo "=== 2026-08-24 fix: a joint 'any'-mode step's visibility/button must disappear for a" .
+        " co-approver once someone ELSE in the same pool has already decided it, UNLESS that person" .
+        " is ALSO eligible on a different still-open step of the same request (explicit bug report:" .
+        " \"ถ้าเรามีสิทธิ์ แต่เป็นสิทธิ์ร่วมกับคนอื่นในแถวเดียวกัน แล้วอีกคนอนุมัติไปแล้ว รายการนั้นจะต้องไม่เห็น" .
+        " ...ยกเว้นเราจะมีสิทธิ์ในแถวอนุมัติอื่นที่ยังสามารถมองเห็นได้\" -- canActOnRequest() used to gate the" .
+        " Approve/Reject/Request Info buttons AND the Approval Queue row itself, but it only checks" .
+        " 'was this user EVER eligible on ANY row', ignoring whether that row is still 'pending';" .
+        " canActOnRequestNow() fixes that). Two AND-group steps so the request stays pending after" .
+        " step 1 alone is decided (step 2 still open) -- lets step 1's OTHER pool member's" .
+        " visibility be checked while the run is still genuinely pending_approval. ===\n";
+    foreach (['X', 'Y', 'Z', 'W'] as $label) {
+        $insEmp->execute([
+            ':comp_id' => $compId, ':employee_no' => "TEST_WF_JOINT_{$label}_" . uniqid(),
+            ':name_th' => 'ทดสอบ', ':surname_th' => "ร่วมอนุมัติ{$label}", ':name_en' => 'Test', ':surname_en' => "JointApprover{$label}",
+            ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+            ':employee_status_enum' => 'permanent',
+            ':base_salary' => 30000, ':salary_effective_date' => '2020-01-01',
+            ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+        ]);
+        $$label = (int)$pdo->lastInsertId(); // $X, $Y, $Z, $W employee ids
+    }
+    // Retire the single-approver step from the earlier test and replace it with a fresh 2-step,
+    // joint 'any' config: step 1 pool = {X, Y, W}, step 2 pool = {Z, W} -- W straddles both.
+    $pdo->prepare("UPDATE `approval_workflow_steps` SET status = 'deleted' WHERE id = :id")->execute([':id' => $testWfStepId]);
+    $pdo->prepare("INSERT INTO `approval_workflow_steps` (workflow_id, step_order, step_name, joint_approve_mode)
+        VALUES (:workflow_id, 1, 'Joint Step 1', 'any')")->execute([':workflow_id' => $testWorkflowId]);
+    $jointStep1Id = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `approval_workflow_steps` (workflow_id, step_order, step_name, joint_approve_mode)
+        VALUES (:workflow_id, 2, 'Joint Step 2', 'any')")->execute([':workflow_id' => $testWorkflowId]);
+    $jointStep2Id = (int)$pdo->lastInsertId();
+    $insStepApprover = $pdo->prepare("INSERT INTO `approval_workflow_step_approvers` (step_id, approver_type, approver_id) VALUES (:step_id, 'user', :approver_id)");
+    foreach ([$X, $Y, $W] as $empId) { $insStepApprover->execute([':step_id' => $jointStep1Id, ':approver_id' => $empId]); }
+    foreach ([$Z, $W] as $empId) { $insStepApprover->execute([':step_id' => $jointStep2Id, ':approver_id' => $empId]); }
+
+    $jointRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_JOINT_STEP_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +22 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +22 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +22 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: joint-step-test run created' . (empty($jointRunRes['status']) ? " ({$jointRunRes['message']})" : ''), $jointRunRes['status']);
+    $jointRunId = $jointRunRes['id'];
+    $runModel->recalculate($jointRunId, $compId, $adminUserId, true);
+    $runModel->submit($jointRunId, $compId, $adminUserId, true);
+
+    echo "--- before anyone acts: X, Y, W (step 1 pool) and Z, W (step 2 pool) are all currently" .
+        " actionable; someone outside every pool is not ---\n";
+    $jointRunRow = $runModel->get($jointRunId, $compId);
+    check('X can act now (eligible, step 1 pending & unlocked)', $runModel->canApprovePayroll($X, false, $jointRunRow), true);
+    check('Y can act now (same reason)', $runModel->canApprovePayroll($Y, false, $jointRunRow), true);
+    check('Z can act now (eligible, step 2 pending & unlocked)', $runModel->canApprovePayroll($Z, false, $jointRunRow), true);
+    check('W can act now (eligible on both steps)', $runModel->canApprovePayroll($W, false, $jointRunRow), true);
+    check('the unrelated bystander cannot act at all', $runModel->canApprovePayroll($wfBystanderId, false, $jointRunRow), false);
+    $listBeforeX = $runModel->list($compId, [], $X, false, true);
+    checkTrue('approval-queue list() includes the run for X before any decision', in_array((int)$jointRunId, array_map('intval', array_column($listBeforeX, 'id')), true));
+    $listBeforeBystander = $runModel->list($compId, [], $wfBystanderId, false, true);
+    checkTrue('approval-queue list() excludes the run for the bystander from the start', !in_array((int)$jointRunId, array_map('intval', array_column($listBeforeBystander, 'id')), true));
+
+    echo "--- X approves step 1 (joint 'any' -- first action decides the whole pool's row) ---\n";
+    $xApproveRes = $runModel->approve($jointRunId, $compId, $X, false, 'X decides for the pool');
+    checkTrue('X (in the pool) can approve step 1' . (empty($xApproveRes['status']) ? " ({$xApproveRes['message']})" : ''), $xApproveRes['status']);
+    check('run stays pending_approval (step 2 -- an AND-group step -- is still open)', $runModel->get($jointRunId, $compId)['state'], 'pending_approval');
+    $jointRunAfterX = $runModel->get($jointRunId, $compId);
+
+    echo "--- Y shared the SAME row with X; now that X decided it, Y must lose visibility/the" .
+        " button entirely (Y has no other open step) -- the actual bug report ---\n";
+    check('Y can no longer act (their only step was just decided by X)', $runModel->canApprovePayroll($Y, false, $jointRunAfterX), false);
+    $yApproveAttempt = $runModel->approve($jointRunId, $compId, $Y, false, 'Y tries after X already decided it');
+    check('Y is REFUSED server-side too if they try anyway (defense in depth)', $yApproveAttempt['status'], false);
+    $listAfterXForY = $runModel->list($compId, [], $Y, false, true);
+    checkTrue('approval-queue list() no longer includes the run for Y', !in_array((int)$jointRunId, array_map('intval', array_column($listAfterXForY, 'id')), true));
+
+    echo "--- W shared step 1 with X too, but is ALSO eligible on step 2 (still open) -- W must" .
+        " stay visible/actionable via that other step (the explicit exception) ---\n";
+    check('W can still act (via step 2, even though their step-1 row is decided)', $runModel->canApprovePayroll($W, false, $jointRunAfterX), true);
+    $listAfterXForW = $runModel->list($compId, [], $W, false, true);
+    checkTrue('approval-queue list() still includes the run for W', in_array((int)$jointRunId, array_map('intval', array_column($listAfterXForW, 'id')), true));
+
+    echo "--- Z's step (2) was never touched -- unaffected by step 1's decision ---\n";
+    check('Z can still act (step 2 untouched)', $runModel->canApprovePayroll($Z, false, $jointRunAfterX), true);
+    $zApproveRes = $runModel->approve($jointRunId, $compId, $Z, false, 'Z closes out step 2');
+    checkTrue('Z can approve step 2' . (empty($zApproveRes['status']) ? " ({$zApproveRes['message']})" : ''), $zApproveRes['status']);
+    check('both AND-group steps now decided -- run flips to approved', $runModel->get($jointRunId, $compId)['state'], 'approved');
+    $jointRunAfterZ = $runModel->get($jointRunId, $compId);
+    echo "--- once fully decided, Undo Decision must still be available to anyone who was EVER" .
+        " part of the flow (the coarser check on purpose -- unlike the tightened pending-side" .
+        " check above) ---\n";
+    check('Y (never actually decided anything) can still undo/revert the outcome', $runModel->canApprovePayroll($Y, false, $jointRunAfterZ), true);
+
+    echo "=== 2026-08-24 fix, round 2: admin session no longer bypasses an ACTIVE configured" .
+        " workflow (explicit repro from the user -- logged in as employee 28, session role" .
+        " 'admin', which is NOT in the configured PAYROLL_RUN_APPROVAL flow (only employee 190" .
+        " is), yet can_approve_payroll still came back true and the Approve button still worked)." .
+        " Admin keeps its bypass ONLY on the flat fallback (no workflow configured at all) --" .
+        " tested separately below. ===\n";
+    $adminOutsideFlowRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_ADMIN_NOT_IN_FLOW_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +23 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +23 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +23 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: admin-not-in-flow-test run created' . (empty($adminOutsideFlowRunRes['status']) ? " ({$adminOutsideFlowRunRes['message']})" : ''), $adminOutsideFlowRunRes['status']);
+    $adminOutsideFlowRunId = $adminOutsideFlowRunRes['id'];
+    $runModel->recalculate($adminOutsideFlowRunId, $compId, $adminUserId, true);
+    $runModel->submit($adminOutsideFlowRunId, $compId, $adminUserId, true);
+    $adminOutsideFlowRun = $runModel->get($adminOutsideFlowRunId, $compId);
+    checkTrue('setup: this run IS routed through the engine (approval_request_id set)', $adminOutsideFlowRun['approval_request_id'] !== null);
+
+    check('admin (not a configured approver on this workflow) sees can_approve_payroll=false', $runModel->canApprovePayroll($adminUserId, true, $adminOutsideFlowRun), false);
+    $listForAdminApprovalQueue = $runModel->list($compId, [], $adminUserId, true, true);
+    checkTrue('approval-queue list() excludes this run for admin too', !in_array((int)$adminOutsideFlowRunId, array_map('intval', array_column($listForAdminApprovalQueue, 'id')), true));
+    $adminApproveAttempt = $runModel->approve($adminOutsideFlowRunId, $compId, $adminUserId, true, 'admin trying to bypass the configured flow');
+    check('admin is REFUSED server-side (approve)', $adminApproveAttempt['status'], false);
+    check('run is untouched -- still pending_approval', $runModel->get($adminOutsideFlowRunId, $compId)['state'], 'pending_approval');
+    $adminRejectAttempt = $runModel->reject($adminOutsideFlowRunId, $compId, $adminUserId, true, 'admin trying to bypass the configured flow');
+    check('admin is REFUSED server-side (reject)', $adminRejectAttempt['status'], false);
+    $adminNeedInfoAttempt = $runModel->requestInfo($adminOutsideFlowRunId, $compId, $adminUserId, true, 'admin trying to bypass the configured flow');
+    check('admin is REFUSED server-side (request info)', $adminNeedInfoAttempt['status'], false);
+
+    echo "--- the actually-configured approver (X, from step 1's pool above) can still decide it" .
+        " normally -- this run's flow just happens to reuse the same 2-step AND-group config, so" .
+        " BOTH steps need a real approver before the run itself flips to approved ---\n";
+    $realApproverStep1Res = $runModel->approve($adminOutsideFlowRunId, $compId, $X, false, 'the real approver decides step 1');
+    checkTrue('the genuinely eligible approver can decide step 1' . (empty($realApproverStep1Res['status']) ? " ({$realApproverStep1Res['message']})" : ''), $realApproverStep1Res['status']);
+    check('run stays pending_approval (step 2 still open)', $runModel->get($adminOutsideFlowRunId, $compId)['state'], 'pending_approval');
+    $realApproverStep2Res = $runModel->approve($adminOutsideFlowRunId, $compId, $Z, false, 'the real approver decides step 2');
+    checkTrue('the genuinely eligible approver can decide step 2' . (empty($realApproverStep2Res['status']) ? " ({$realApproverStep2Res['message']})" : ''), $realApproverStep2Res['status']);
+    check('run is now approved (both AND-group steps decided)', $runModel->get($adminOutsideFlowRunId, $compId)['state'], 'approved');
+
+    echo "--- once approved, admin STILL cannot undo it (not a configured approver) -- Undo" .
+        " Decision is approver-only, admin included, once a workflow governs the run ---\n";
+    $adminAfterApprove = $runModel->get($adminOutsideFlowRunId, $compId);
+    check('admin cannot see/click Undo Decision either', $runModel->canApprovePayroll($adminUserId, true, $adminAfterApprove), false);
+    $adminRevertAttempt = $runModel->revert($adminOutsideFlowRunId, $compId, $adminUserId, true, 'admin trying to undo without being in the flow');
+    check('admin is REFUSED server-side (revert/undo)', $adminRevertAttempt['status'], false);
+
+    echo "--- admin STILL bypasses everything on the flat fallback (no active workflow at all) --" .
+        " confirms the fix is scoped to engine-routed runs only, not a blanket admin nerf ---\n";
+    $pdo->prepare("UPDATE `approval_workflows` SET status = 'inactive' WHERE id = :id")->execute([':id' => $testWorkflowId]);
+    $adminFlatFallbackRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_ADMIN_FLAT_FALLBACK_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +24 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +24 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +24 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $adminFlatFallbackRunId = $adminFlatFallbackRunRes['id'];
+    $runModel->recalculate($adminFlatFallbackRunId, $compId, $adminUserId, true);
+    $runModel->submit($adminFlatFallbackRunId, $compId, $adminUserId, true);
+    $adminFlatFallbackRun = $runModel->get($adminFlatFallbackRunId, $compId);
+    check('setup: this run is NOT routed through the engine (no active workflow)', $adminFlatFallbackRun['approval_request_id'], null);
+    check('admin still sees can_approve_payroll=true when no workflow is configured', $runModel->canApprovePayroll($adminUserId, true, $adminFlatFallbackRun), true);
+    $adminFlatApproveRes = $runModel->approve($adminFlatFallbackRunId, $compId, $adminUserId, true, 'admin approves via the legacy flat fallback');
+    checkTrue('admin can still approve via the flat fallback' . (empty($adminFlatApproveRes['status']) ? " ({$adminFlatApproveRes['message']})" : ''), $adminFlatApproveRes['status']);
+    $pdo->prepare("UPDATE `approval_workflows` SET status = 'active' WHERE id = :id")->execute([':id' => $testWorkflowId]);
 
     echo "=== a run with NO workflow configured still falls back to the flat role check" .
         " (backward compatibility -- confirms this integration didn't break the pre-existing" .

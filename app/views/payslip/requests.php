@@ -16,9 +16,9 @@
     </div>
   </div>
 
-  <ul class="nav nav-tabs mb-4">
-    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-req" type="button" id="payslipRequestTabBtn"><i class="fa-solid fa-inbox me-1"></i> <span data-i18n="payslip_requests">Payslip Requests</span></button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dlog" type="button" id="payslipDeliveryLogTabBtn"><i class="fa-solid fa-clock-rotate-left me-1"></i> <span data-i18n="payslip_delivery_log">Delivery Log</span></button></li>
+  <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
+    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-req" type="button" id="payslipRequestTabBtn" role="tab"><i class="fa-solid fa-inbox me-1"></i> <span data-i18n="payslip_requests">Payslip Requests</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-dlog" type="button" id="payslipDeliveryLogTabBtn" role="tab"><i class="fa-solid fa-clock-rotate-left me-1"></i> <span data-i18n="payslip_delivery_log">Delivery Log</span></button></li>
   </ul>
 
   <div class="tab-content">

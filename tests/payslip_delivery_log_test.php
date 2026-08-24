@@ -76,6 +76,17 @@ try {
     $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL")
         ->execute([':comp_id' => $compId]);
 
+    // Same isolation, same reason as reports_test.php (2026-08-24): this real dev-DB company may
+    // have a real, live PAYROLL_RUN_APPROVAL Approval Workflow configured -- PayrollRunModel::
+    // approve() below now routes through that REAL engine whenever one is active, admin included
+    // (canApproveThisRun()'s 2026-08-24 fix). This test needs runModel->approve() to succeed via
+    // the flat admin-bypass fallback, so temporarily deactivate whatever's live, entirely inside
+    // this script's own rolled-back transaction.
+    $pdo->prepare("UPDATE `approval_workflows` SET status = 'inactive'
+        WHERE comp_id = :comp_id AND status = 'active'
+          AND id IN (SELECT workflow_id FROM `approval_workflow_document_types` WHERE document_type_code = 'PAYROLL_RUN_APPROVAL')")
+        ->execute([':comp_id' => $compId]);
+
     $today = new DateTime();
     $periodStart = (clone $today)->modify('first day of this month')->format('Y-m-d');
     $periodEnd = (clone $today)->modify('last day of this month')->format('Y-m-d');

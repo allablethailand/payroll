@@ -71,7 +71,11 @@ class PayrollController extends Controller {
             'date_from' => (string)($_GET['date_from'] ?? ''),
             'date_to' => (string)($_GET['date_to'] ?? ''),
         ];
-        $rows = $this->model->list((int)$compId, $filters, $this->userId(), $this->isAdmin());
+        // approval_queue=1 (2026-08-24): sent only by the Approval Queue page (approval.js) -- the
+        // Process List page (index.js) hits this same endpoint without it and must keep seeing
+        // every run regardless of who can approve it. See PayrollRunModel::list()'s own docblock.
+        $approvalQueueOnly = (string)($_GET['approval_queue'] ?? '') === '1';
+        $rows = $this->model->list((int)$compId, $filters, $this->userId(), $this->isAdmin(), $approvalQueueOnly);
         // public_id is the IdCodec-encoded token used for the /payroll-process/{id} browser URL
         // (row-click navigation, the View action button) -- 'id' itself stays the raw numeric PK,
         // still used as-is for every internal AJAX call (api/payroll-run.get?id=, save/submit/
@@ -419,7 +423,12 @@ class PayrollController extends Controller {
             return;
         }
         $note = !empty($data['note']) ? (string)$data['note'] : null;
-        $this->json($this->model->revert($id, (int)$compId, $this->userId(), $this->isAdmin(), $note));
+        // 2026-08-24: optional explicit target status (pending_approval/rejected/need_info) for
+        // reverting a DECIDED run -- see PayrollRunModel::revert()'s own docblock. Omitted (or a
+        // run still at pending_approval, which has only one possible target anyway) falls back to
+        // the model's own default.
+        $toState = !empty($data['to_state']) ? (string)$data['to_state'] : null;
+        $this->json($this->model->revert($id, (int)$compId, $this->userId(), $this->isAdmin(), $note, $toState));
     }
 
     public function approve() {

@@ -477,6 +477,128 @@ try {
     checkTrue('the old step row has a deleted_at timestamp', $oldStepStatus['deleted_at'] !== null);
     check('get() no longer surfaces the soft-deleted step', count($wfModel->get($compId, $wfSoftDelId)['steps']), 1);
 
+    echo "=== 2026-08-24: per-row Settings UI methods (getByDocumentType/stepSave/stepDelete/" .
+        "stepsSort) -- backs the new 2-tab, no-modal, row-by-row Approval Workflow settings page" .
+        " (explicit request: \"1 Tab ต่อ 1 Flow ไม่ต้องเปิด Modal เข้าไปจัดการ แต่เป็นการเปิดแก้ไข แถว" .
+        " by แถว มีปุ่ม Save แยกตามแถว และมีปุ่มในการบันทึก Sort\"). Uses a FRESH throwaway company" .
+        " (not comp_id=1) so getByDocumentType() genuinely starts from null -- comp_id=1's own" .
+        " PAYROLL_RUN_APPROVAL/SLIP_REQUEST_APPROVAL have real, already-active workflows from" .
+        " earlier sections in this very file (getByDocumentType() falls back to the most recently" .
+        " updated INACTIVE one when none is active, by design -- see its own docblock -- so merely" .
+        " deactivating one of those would NOT produce a null starting state here). ===\n";
+    $insWfCo = $pdo->prepare("INSERT INTO `companies`
+        (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name)
+        VALUES ('AWF Row-Level Test Co.', 'AWF Row-Level Test Co.', 'TH', '0000000000001', 'Test Address', 'Test Signatory')");
+    $insWfCo->execute();
+    $wfTestCompId = (int)$pdo->lastInsertId();
+    $wfTestEmpX = makeEmployee($pdo, $wfTestCompId, 'AWF_ROW_X_' . uniqid(), null);
+    $wfTestEmpY = makeEmployee($pdo, $wfTestCompId, 'AWF_ROW_Y_' . uniqid(), null);
+    $stmtWfTestRole = $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_approve_payroll) VALUES (:comp_id, :th, :en, 1)");
+    $stmtWfTestRole->execute([':comp_id' => $wfTestCompId, ':th' => 'ทดสอบ Row', ':en' => 'Test Row Role ' . uniqid()]);
+    $wfTestRoleId = (int)$pdo->lastInsertId();
+
+    check('getByDocumentType() returns null on a brand-new company (nothing configured at all)', $wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL'), null);
+
+    echo "--- stepSave() auto-creates the flow the first time a step is saved ---\n";
+    $noApproversRes = $wfModel->stepSave($wfTestCompId, [
+        'document_type_code' => 'PAYROLL_RUN_APPROVAL', 'approvers' => [], 'joint_approve_mode' => 'any', 'group_type' => 'and',
+    ], $adminUserId);
+    check('stepSave() rejects an empty approver list', $noApproversRes['status'], false);
+    check('the rejected attempt created nothing', $wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL'), null);
+
+    $step1Res = $wfModel->stepSave($wfTestCompId, [
+        'document_type_code' => 'PAYROLL_RUN_APPROVAL', 'step_name' => 'First step',
+        'approvers' => [['approver_type' => 'user', 'approver_id' => $wfTestEmpX]],
+        'joint_approve_mode' => 'any', 'group_type' => 'and', 'requires_previous_step' => false,
+    ], $adminUserId);
+    checkTrue('stepSave() (no step_id) creates the flow + first step' . (empty($step1Res['status']) ? " ({$step1Res['message']})" : ''), $step1Res['status']);
+    $flowAfterStep1 = $wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL');
+    checkTrue('the flow now exists', $flowAfterStep1 !== null);
+    check('flow status defaults to active', $flowAfterStep1['status'], 'active');
+    checkTrue('workflow_name was auto-derived, not left blank', trim((string)$flowAfterStep1['workflow_name']) !== '');
+    check('exactly 1 step so far', count($flowAfterStep1['steps']), 1);
+    check('step 1 step_order is 1', (int)$flowAfterStep1['steps'][0]['step_order'], 1);
+    $step1Id = (int)$flowAfterStep1['steps'][0]['id'];
+
+    echo "--- a second stepSave() (still no step_id) appends at the end of the SAME flow ---\n";
+    $step2Res = $wfModel->stepSave($wfTestCompId, [
+        'document_type_code' => 'PAYROLL_RUN_APPROVAL', 'step_name' => 'Second step',
+        'approvers' => [['approver_type' => 'role', 'approver_id' => $wfTestRoleId]],
+        'joint_approve_mode' => 'all', 'group_type' => 'and', 'requires_previous_step' => true,
+    ], $adminUserId);
+    checkTrue('stepSave() appends a second step' . (empty($step2Res['status']) ? " ({$step2Res['message']})" : ''), $step2Res['status']);
+    check('workflow_id is the SAME as step 1 (same flow, not a new one)', (int)$step2Res['workflow_id'], (int)$flowAfterStep1['id']);
+    $flowAfterStep2 = $wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL');
+    check('now 2 steps', count($flowAfterStep2['steps']), 2);
+    check('step 2 step_order is 2', (int)$flowAfterStep2['steps'][1]['step_order'], 2);
+    $step2Id = (int)$flowAfterStep2['steps'][1]['id'];
+    check('step 1 id is unchanged by adding step 2', (int)$flowAfterStep2['steps'][0]['id'], $step1Id);
+
+    echo "--- stepSave() WITH step_id updates that ONE step in place -- step_order/other step untouched ---\n";
+    $step1UpdateRes = $wfModel->stepSave($wfTestCompId, [
+        'document_type_code' => 'PAYROLL_RUN_APPROVAL', 'step_id' => $step1Id, 'step_name' => 'First step (renamed)',
+        'approvers' => [['approver_type' => 'user', 'approver_id' => $wfTestEmpY]],
+        'joint_approve_mode' => 'any', 'group_type' => 'or', 'requires_previous_step' => false,
+    ], $adminUserId);
+    checkTrue('stepSave() (with step_id) updates in place' . (empty($step1UpdateRes['status']) ? " ({$step1UpdateRes['message']})" : ''), $step1UpdateRes['status']);
+    check('the step id is unchanged (in-place update, not delete+reinsert)', $step1UpdateRes['step_id'], $step1Id);
+    $flowAfterUpdate = $wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL');
+    check('still exactly 2 steps (no phantom row from the update)', count($flowAfterUpdate['steps']), 2);
+    check('step 1 name updated', $flowAfterUpdate['steps'][0]['step_name'], 'First step (renamed)');
+    check('step 1 group_type updated', $flowAfterUpdate['steps'][0]['group_type'], 'or');
+    check('step 1 approver replaced (wfTestEmpY, not wfTestEmpX anymore)', (int)$flowAfterUpdate['steps'][0]['approvers'][0]['approver_id'], $wfTestEmpY);
+    check('step 1 step_order is STILL 1 (untouched by an in-place update)', (int)$flowAfterUpdate['steps'][0]['step_order'], 1);
+    check("step 2 is untouched by step 1's update", $flowAfterUpdate['steps'][1]['step_name'], 'Second step');
+
+    echo "--- stepSave() validation rejects an unknown approver before touching the DB ---\n";
+    $badApproverRes = $wfModel->stepSave($wfTestCompId, [
+        'document_type_code' => 'PAYROLL_RUN_APPROVAL',
+        'approvers' => [['approver_type' => 'user', 'approver_id' => 999999999]],
+        'joint_approve_mode' => 'any', 'group_type' => 'and',
+    ], $adminUserId);
+    check('stepSave() rejects an approver that does not exist', $badApproverRes['status'], false);
+    check('still exactly 2 steps (the rejected attempt created nothing)', count($wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL')['steps']), 2);
+    $crossCompanyApproverRes = $wfModel->stepSave($wfTestCompId, [
+        'document_type_code' => 'PAYROLL_RUN_APPROVAL',
+        'approvers' => [['approver_type' => 'user', 'approver_id' => $employeeA]], // belongs to comp_id=1, not $wfTestCompId
+        'joint_approve_mode' => 'any', 'group_type' => 'and',
+    ], $adminUserId);
+    check('stepSave() rejects an approver that belongs to a DIFFERENT company', $crossCompanyApproverRes['status'], false);
+
+    echo "--- stepDelete() removes exactly one step and renumbers the rest to a contiguous sequence ---\n";
+    $deleteStep1Res = $wfModel->stepDelete($wfTestCompId, $step1Id, $adminUserId);
+    checkTrue('stepDelete() succeeds' . (empty($deleteStep1Res['status']) ? " ({$deleteStep1Res['message']})" : ''), $deleteStep1Res['status']);
+    $flowAfterDelete = $wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL');
+    check('exactly 1 step remains', count($flowAfterDelete['steps']), 1);
+    check('the remaining step is the former step 2', (int)$flowAfterDelete['steps'][0]['id'], $step2Id);
+    check('renumbered to step_order 1', (int)$flowAfterDelete['steps'][0]['step_order'], 1);
+    $deleteAgainRes = $wfModel->stepDelete($wfTestCompId, $step1Id, $adminUserId);
+    check('deleting an already-deleted step id is refused, not a silent no-op', $deleteAgainRes['status'], false);
+
+    echo "--- stepsSort() sets step_order = array position, and rejects a set that does not match ---\n";
+    $step3Res = $wfModel->stepSave($wfTestCompId, [
+        'document_type_code' => 'PAYROLL_RUN_APPROVAL', 'step_name' => 'Third step',
+        'approvers' => [['approver_type' => 'user', 'approver_id' => $wfTestEmpX]],
+        'joint_approve_mode' => 'any', 'group_type' => 'and',
+    ], $adminUserId);
+    checkTrue('setup: a 3rd step for the sort test', $step3Res['status']);
+    $step3Id = (int)$step3Res['step_id'];
+    $mismatchSortRes = $wfModel->stepsSort($wfTestCompId, 'PAYROLL_RUN_APPROVAL', [$step3Id]);
+    check('stepsSort() rejects a set that does not exactly match the current flow', $mismatchSortRes['status'], false);
+    $sortRes = $wfModel->stepsSort($wfTestCompId, 'PAYROLL_RUN_APPROVAL', [$step3Id, $step2Id]);
+    checkTrue('stepsSort() succeeds with the exact current id set' . (empty($sortRes['status']) ? " ({$sortRes['message']})" : ''), $sortRes['status']);
+    $flowAfterSort = $wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL');
+    check('step 3 is now first (step_order 1)', (int)$flowAfterSort['steps'][0]['id'], $step3Id);
+    check('step 2 is now second (step_order 2)', (int)$flowAfterSort['steps'][1]['id'], $step2Id);
+
+    echo "--- getByDocumentType() prefers the ACTIVE workflow, falls back to the most recently" .
+        " updated INACTIVE one if none is active (so toggling a flow off never loses its steps) ---\n";
+    $wfModel->toggleStatus($wfTestCompId, (int)$flowAfterSort['id'], $adminUserId, 'inactive');
+    $flowInactive = $wfModel->getByDocumentType($wfTestCompId, 'PAYROLL_RUN_APPROVAL');
+    checkTrue('still returns the workflow (its steps are not lost by deactivating)', $flowInactive !== null);
+    check('status reflects inactive', $flowInactive['status'], 'inactive');
+    check('still has both steps', count($flowInactive['steps']), 2);
+
 } finally {
     $pdo->rollBack();
 }

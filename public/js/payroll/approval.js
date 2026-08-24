@@ -283,6 +283,14 @@ function renderAuditTimelineAp(logs) {
         </div>`;
     }).join('');
 }
+/* Target status => {label langData key/fallback, icon, button color} for the "revert a DECIDED
+   run to a CHOSEN other status" buttons (2026-08-24, explicit request -- see
+   PayrollRunModel::revert()'s own docblock: any of these 3 except the run's CURRENT status). */
+const REVERT_TARGET_META_AP = {
+    pending_approval: { key: 'action_revert_to_pending', fallback: 'Back to Waiting for Approval', icon: 'fa-hourglass-half', cls: 'btn-outline-secondary' },
+    rejected: { key: 'action_revert_to_rejected', fallback: 'Set as Not Approved', icon: 'fa-xmark', cls: 'btn-outline-danger' },
+    need_info: { key: 'action_revert_to_need_info', fallback: 'Set as Need Info', icon: 'fa-circle-info', cls: 'btn-outline-primary' },
+};
 function renderApprovalTimelineModal(data) {
     currentTimelineRun = data;
     $('#approvalTimelineRunName').text(data.run_name || '');
@@ -294,9 +302,16 @@ function renderApprovalTimelineModal(data) {
             buttons.push(`<button type="button" class="btn btn-sm btn-success" id="btnTimelineApprove"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
             buttons.push(`<button type="button" class="btn btn-sm btn-primary" id="btnTimelineRequestInfo"><i class="fa-solid fa-circle-info me-1"></i>${langData['action_request_info'] || 'Request Info'}</button>`);
             buttons.push(`<button type="button" class="btn btn-sm btn-danger" id="btnTimelineReject"><i class="fa-solid fa-xmark me-1"></i>${langData['action_reject'] || 'Reject'}</button>`);
+            buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-timeline-revert-to" data-to-state="draft"><i class="fa-solid fa-rotate-left me-1"></i>${langData['action_revert'] || 'Send Back for Revision'}</button>`);
+        } else {
+            // A DECIDED run (approved/rejected/need_info) -- one button per OTHER valid target
+            // status, the approver's choice, never the same status it's already at.
+            Object.keys(REVERT_TARGET_META_AP).forEach(target => {
+                if (target === data.state) return;
+                const meta = REVERT_TARGET_META_AP[target];
+                buttons.push(`<button type="button" class="btn btn-sm ${meta.cls} btn-timeline-revert-to" data-to-state="${target}"><i class="fa-solid ${meta.icon} me-1"></i>${langData[meta.key] || meta.fallback}</button>`);
+            });
         }
-        const revertLabel = data.state === 'pending_approval' ? (langData['action_revert'] || 'Send Back for Revision') : (langData['action_undo_decision'] || 'Undo Decision');
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary" id="btnTimelineRevert"><i class="fa-solid fa-rotate-left me-1"></i>${revertLabel}</button>`);
         actionsHtml = buttons.join('');
     }
     // 2026-08-23, explicit request ("ในหน้า Approve Modal Approval Timeline พวกปุ่มที่กด อยากให้มาอยู่ที่
@@ -343,18 +358,26 @@ $(document).on('click', '#btnTimelineRequestInfo', function () {
     bootstrap.Modal.getInstance(document.getElementById('approvalTimelineModal')).hide();
     openRequestInfoModal([Number(currentTimelineRun.id)]);
 });
-$(document).on('click', '#btnTimelineRevert', function () {
+$(document).on('click', '.btn-timeline-revert-to', function () {
     const id = currentTimelineRun.id;
+    const toState = $(this).data('to-state');
     const isPending = currentTimelineRun.state === 'pending_approval';
-    const title = isPending ? (langData['confirm_revert_title'] || 'Send this payroll run back for revision?') : (langData['confirm_undo_decision_title'] || 'Undo this decision?');
-    const message = isPending ? (langData['confirm_revert_message'] || 'It will return to draft so the submitter can make changes.') : (langData['confirm_undo_decision_message'] || 'This payroll run will go back to Waiting for Approval.');
+    let title, message;
+    if (isPending) {
+        title = langData['confirm_revert_title'] || 'Send this payroll run back for revision?';
+        message = langData['confirm_revert_message'] || 'It will return to draft so the submitter can make changes.';
+    } else {
+        const meta = REVERT_TARGET_META_AP[toState];
+        title = langData['confirm_revert_to_title'] || 'Change this run\'s status?';
+        message = (langData['confirm_revert_to_message'] || 'This payroll run will be set to: {status}').replace('{status}', (meta && (langData[meta.key] || meta.fallback)) || toState);
+    }
     showConfirm(title, message, function () {
         $.ajax({
             url: `${BASE_URL}/api/payroll-run.revert`,
             method: 'POST',
             contentType: 'application/json',
             dataType: 'json',
-            data: JSON.stringify({ id: id }),
+            data: JSON.stringify({ id: id, to_state: isPending ? undefined : toState }),
             success: function (res) {
                 if (res.status) {
                     showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
@@ -384,10 +407,15 @@ function initPayrollApprovalTable() {
             // same as the Process List page's own table, relying on DataTables' native
             // zeroRecords/emptyTable text instead of a custom placeholder.
             dataSrc: function (res) {
+                // approval_queue=1 (below) already asks the server to drop any pending_approval row
+                // this viewer has no currently-actionable step on (see PayrollRunModel::list()'s own
+                // docblock, 2026-08-24) -- this client-side filter only narrows to the 4 states this
+                // page ever shows, it's not the access-control boundary.
                 return (res.data || []).filter(r => ['pending_approval', 'approved', 'rejected', 'need_info'].includes(r.state));
             },
             data: function (d) {
                 d.state = '';
+                d.approval_queue = 1;
                 d.date_from = toIsoDateAp($('#approval_filter_date_from').val());
                 d.date_to = toIsoDateAp($('#approval_filter_date_to').val());
             }

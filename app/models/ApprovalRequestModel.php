@@ -297,6 +297,38 @@ class ApprovalRequestModel {
         return (bool)$stmt->fetchColumn();
     }
 
+    /**
+     * True if $userId has a step they can decide RIGHT NOW on this request -- eligible AND that
+     * step's snapshot row is still 'pending' (not already decided by a joint peer on an 'any'-mode
+     * pool, and not already this same user's own past decision on an 'all'-mode row) AND unlocked
+     * (isStepUnlocked()) -- exactly actionableRowFor()'s own definition of "can act", the same one
+     * act() itself enforces before letting approve/reject through.
+     *
+     * 2026-08-24, added because canActOnRequest() above was being used to gate the Approve/Reject/
+     * Request Info BUTTONS (PayrollRunModel::canApproveThisRun()) and the Approval Queue list's
+     * per-row visibility -- but that method answers a different, coarser question ("was this user
+     * EVER eligible on ANY row of this request", ignoring status/locking) meant for revert()/
+     * requestInfo()'s "undo an already-decided outcome" use case. Using it for the buttons/list
+     * meant: (1) a user eligible on a step whose 'any'-mode pool a joint peer had ALREADY decided
+     * still saw an Approve button and a row in their queue (explicit bug report: this must
+     * disappear once someone else in the same pool has acted, unless the user is ALSO eligible on a
+     * different still-open step of the same request); (2) a user eligible only on a still-LOCKED
+     * later step (requires_previous_step gating not yet satisfied) saw the same, even though the
+     * button would just be refused by act() if clicked. canActOnRequest() itself is UNCHANGED and
+     * still used exactly where it was before (revert(), requestInfo()'s permission check before
+     * this fix, and the Undo Decision button on an already-decided run) -- undoing a decision is
+     * correctly allowed for anyone who was ever part of the flow, not just whoever currently has an
+     * open pending step. See PayrollRunModel::canApproveThisRun()'s own docblock for how the two
+     * checks are now split by run state.
+     */
+    public function canActOnRequestNow(int $compId, int $requestId, int $userId): bool {
+        $request = $this->get($compId, $requestId);
+        if (!$request) {
+            return false;
+        }
+        return $this->actionableRowFor($requestId, $userId) !== null;
+    }
+
     /** Every employee who could act RIGHT NOW -- eligible on a step that is both still pending AND
      *  currently unlocked (see isStepUnlocked()) -- from the persisted snapshot, never a live
      *  query, each flagged with whether THEY personally have already approved. Feeds

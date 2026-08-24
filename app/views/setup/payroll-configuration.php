@@ -17,36 +17,36 @@
             <p class="page-header-card-desc" data-i18n="payroll_configuration_description">Set up payroll cycles, earning types, and deduction types by employee group or employment type.</p>
         </div>
     </div>
-    <ul class="nav nav-tabs" id="companySetupTabs" role="tablist">
+    <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="companySetupTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
+            <button class="nav-link setup-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
                 <i class="fa-regular fa-calendar-days me-2"></i><span data-i18n="cycle">Cycle</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="earnings-tab" data-bs-toggle="tab" data-bs-target="#earnings-pane" type="button" role="tab" aria-controls="earnings-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="earnings-tab" data-bs-toggle="tab" data-bs-target="#earnings-pane" type="button" role="tab" aria-controls="earnings-pane" aria-selected="false">
                 <i class="fa-solid fa-calendar-day me-2"></i><span data-i18n="earnings">Earnings</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="deductions-tab" data-bs-toggle="tab" data-bs-target="#deductions-pane" type="button" role="tab" aria-controls="deductions-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="deductions-tab" data-bs-toggle="tab" data-bs-target="#deductions-pane" type="button" role="tab" aria-controls="deductions-pane" aria-selected="false">
                 <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="deductions">Deductions</span>
             </button>
         </li>
         <!-- 2026-08-21, explicit request: own tab right after Deductions, replacing the old button+shared-
              modal-with-pill-switcher entry point on the Deductions tab. -->
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="attendance-deduction-tab" data-bs-toggle="tab" data-bs-target="#attendance-deduction-pane" type="button" role="tab" aria-controls="attendance-deduction-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="attendance-deduction-tab" data-bs-toggle="tab" data-bs-target="#attendance-deduction-pane" type="button" role="tab" aria-controls="attendance-deduction-pane" aria-selected="false">
                 <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="attendance_deduction">Attendance Deduction</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="attendance-bonus-tab" data-bs-toggle="tab" data-bs-target="#attendance-bonus-pane" type="button" role="tab" aria-controls="attendance-bonus-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="attendance-bonus-tab" data-bs-toggle="tab" data-bs-target="#attendance-bonus-pane" type="button" role="tab" aria-controls="attendance-bonus-pane" aria-selected="false">
                 <i class="fa-solid fa-medal me-2"></i><span data-i18n="attendance_bonus">Attendance Bonus</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="bonus-ledger-tab" data-bs-toggle="tab" data-bs-target="#bonus-ledger-pane" type="button" role="tab" aria-controls="bonus-ledger-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="bonus-ledger-tab" data-bs-toggle="tab" data-bs-target="#bonus-ledger-pane" type="button" role="tab" aria-controls="bonus-ledger-pane" aria-selected="false">
                 <i class="fa-solid fa-list-check me-2"></i><span data-i18n="bonus_ledger">Ledger</span>
             </button>
         </li>
