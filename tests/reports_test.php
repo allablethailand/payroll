@@ -286,17 +286,29 @@ try {
     $payslipTemplateModel = new PayslipTemplateModel($pdo);
     check('no default payslip template exists yet for this fixture company', $payslipTemplateModel->getDefaultForCompany($compId), null);
 
-    $templateSave = $payslipTemplateModel->save([
-        'name_th' => 'ทดสอบสลิป', 'name_en' => 'Test Slip Template', 'language_mode' => 'both', 'is_default' => 1, 'status' => 'active',
+    $psBase = ['pos_x_pct' => 8, 'width_pct' => 40, 'height_pct' => 5, 'font_size' => 12, 'font_family' => 'th_sarabun_new',
+        'font_color' => '#000000', 'text_align' => 'left', 'font_weight' => 'normal', 'font_style' => 'normal', 'text_decoration' => 'none'];
+    $templateSave = $payslipTemplateModel->save($compId, [
+        'template_name' => 'Test Slip Template', 'language_mode' => 'both', 'is_default' => 1, 'status' => 'active',
         'header_text_th' => 'ทดสอบหัวกระดาษ', 'footer_text_en' => 'Test footer',
-        'fields' => [
-            ['field_key' => 'company_name'], ['field_key' => 'employee_no'], ['field_key' => 'employee_name'],
-            ['field_key' => 'department'], ['field_key' => 'position'], ['field_key' => 'basic_salary'],
-            ['field_key' => 'earning_lines_all'], ['field_key' => 'deduction_lines_all'], ['field_key' => 'statutory_lines_all'],
-            ['field_key' => 'gross_amount'], ['field_key' => 'total_deduction_amount'], ['field_key' => 'net_amount'],
-            ['field_key' => 'ytd_summary'], ['field_key' => 'bank_account_masked'], ['field_key' => 'company_logo'],
+        'elements' => [
+            $psBase + ['element_type' => 'text', 'content' => '{{company_name}}', 'pos_y_pct' => 2],
+            $psBase + ['element_type' => 'text', 'content' => '{{employee_no}}', 'pos_y_pct' => 10],
+            $psBase + ['element_type' => 'text', 'content' => '{{employee_name}}', 'pos_y_pct' => 16],
+            $psBase + ['element_type' => 'text', 'content' => '{{department}}', 'pos_y_pct' => 22],
+            $psBase + ['element_type' => 'text', 'content' => '{{position}}', 'pos_y_pct' => 28],
+            $psBase + ['element_type' => 'text', 'content' => '{{basic_salary}}', 'pos_y_pct' => 34],
+            $psBase + ['element_type' => 'text', 'content' => '{{earning_lines_all}}', 'pos_y_pct' => 40, 'width_pct' => 84, 'height_pct' => 12],
+            $psBase + ['element_type' => 'text', 'content' => '{{deduction_lines_all}}', 'pos_y_pct' => 53, 'width_pct' => 84, 'height_pct' => 12],
+            $psBase + ['element_type' => 'text', 'content' => '{{statutory_lines_all}}', 'pos_y_pct' => 66, 'width_pct' => 84, 'height_pct' => 12],
+            $psBase + ['element_type' => 'text', 'content' => '{{gross_amount}}', 'pos_y_pct' => 80],
+            $psBase + ['element_type' => 'text', 'content' => '{{total_deduction_amount}}', 'pos_y_pct' => 85],
+            $psBase + ['element_type' => 'text', 'content' => '{{net_amount}}', 'pos_y_pct' => 90],
+            $psBase + ['element_type' => 'text', 'content' => '{{ytd_summary}}', 'pos_y_pct' => 95, 'width_pct' => 84],
+            $psBase + ['element_type' => 'text', 'content' => '{{bank_account_masked}}', 'pos_x_pct' => 52, 'pos_y_pct' => 80],
+            $psBase + ['element_type' => 'image', 'field_key' => 'company_logo', 'content' => null, 'pos_x_pct' => 70, 'pos_y_pct' => 2, 'width_pct' => 20, 'height_pct' => 8],
         ],
-    ], $compId, $adminUserId);
+    ], $adminUserId);
     checkTrue('payslip template with a broad field mix saves', $templateSave['status']);
     checkTrue('getDefaultForCompany now finds the new default template', $payslipTemplateModel->getDefaultForCompany($compId) !== null);
 
@@ -325,7 +337,7 @@ try {
         @unlink(__DIR__ . '/../' . $companyLogoRel);
     }
 
-    $toggleOff = $payslipTemplateModel->toggleStatus((int)$templateSave['id'], $compId, $adminUserId);
+    $toggleOff = $payslipTemplateModel->toggleStatus($compId, (int)$templateSave['template_id'], $adminUserId);
     checkTrue('deactivating the template succeeds', $toggleOff['status']);
     check('deactivating clears is_default', $toggleOff['new_status'], 'inactive');
     check('no default template again after deactivation', $payslipTemplateModel->getDefaultForCompany($compId), null);

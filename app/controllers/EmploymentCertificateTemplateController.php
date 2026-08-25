@@ -35,6 +35,19 @@ class EmploymentCertificateTemplateController extends Controller {
         $this->view('employment-certificate/settings');
     }
 
+    /** Standalone editor page (2026-08-25, explicit request: "หน้าแก้ไขให้เปลี่ยนเป็นการเปิด Tab ใหม่...
+     *  โดยส่ง key ไปต่อ /key"; explicit same-day follow-up: "ไม่ต้องแสดงใน modal ครับ ให้เป็น page ปกติได้
+     *  เลย มี head ปกติเหมือนหน้า Detail ของพนักงาน" -- a real page (not the earlier "bare", no-nav
+     *  version), rendered through the normal layout like every other page in this app). `{key}` is a
+     *  template's pair_key. Permission is enforced the same way index() already relies on -- every
+     *  API call the page's JS makes (get/save/etc.) is independently gated, this page-render itself
+     *  isn't (matches index()'s own existing pattern). */
+    public function editPage(string $key) {
+        $compId = (int)getCompId();
+        $pair = $compId ? $this->model->getPairByKey($compId, $key) : null;
+        $this->view('employment-certificate/edit', ['pair' => $pair]);
+    }
+
     public function fieldTypeOptions() {
         $this->json(['status' => true, 'data' => $this->model->fieldTypeOptions()]);
     }
@@ -54,6 +67,31 @@ class EmploymentCertificateTemplateController extends Controller {
             return;
         }
         $this->json(['status' => true, 'data' => $this->model->list((int)$compId, $language)]);
+    }
+
+    /** 2026-08-25, explicit request: unified TH/EN list ("ให้มี th กับ eng ในการจัดการเลย ไม่ต้องแยกเป็น
+     *  Tab เหมือนเดิม") -- backs the new single DataTable that replaced the language-pill-tab list. */
+    public function pairedList() {
+        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->listPaired((int)$compId)]);
+    }
+
+    /** "Generate other language, Auto" (2026-08-25, explicit request). */
+    public function generateOtherLanguage() {
+        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->generateOtherLanguage((int)$compId, $id, $this->userId()));
     }
 
     public function get() {
@@ -116,7 +154,11 @@ class EmploymentCertificateTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Template name is required.']);
             return;
         }
-        $this->json($this->model->createFromPreset((int)$compId, $language, $preset, $templateName, $this->userId()));
+        // 2026-08-25, explicit request: creating the missing language of an existing pair "ทำเอง"
+        // (manually, via the New Template gallery) instead of "Generate Auto" -- if the frontend
+        // passes the counterpart's pair_key, this new row links to it instead of starting a new pair.
+        $pairKey = !empty($data['pair_key']) ? (string)$data['pair_key'] : null;
+        $this->json($this->model->createFromPreset((int)$compId, $language, $preset, $templateName, $this->userId(), $pairKey));
     }
 
     public function duplicate() {
@@ -139,6 +181,47 @@ class EmploymentCertificateTemplateController extends Controller {
             return;
         }
         $this->json($this->model->delete((int)$compId, $id, $this->userId()));
+    }
+
+    /** 2026-08-25, unified-list redesign: the list's Duplicate button now duplicates a whole PAIR
+     *  (both languages, if both exist) as one action instead of one language at a time. */
+    public function duplicatePair() {
+        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        $compId = getCompId();
+        $pairKey = trim((string)($_POST['pair_key'] ?? ''));
+        if (!$compId || $pairKey === '') {
+            $this->json(['status' => false, 'message' => 'Missing pair_key.']);
+            return;
+        }
+        $this->json($this->model->duplicatePair((int)$compId, $pairKey, $this->userId()));
+    }
+
+    /** 2026-08-25, explicit request: "เพิ่มให้สามารถเลือกเปลี่ยน Template ได้" -- lets the designer
+     *  re-apply a different preset's layout to the template CURRENTLY open in the editor, replacing
+     *  its elements client-side (nothing is persisted here; the admin still has to hit Save). Plain
+     *  JSON wrapper around the same presetPreviewElements() the PDF-preview endpoint already uses --
+     *  no new model logic needed. */
+    public function presetElements() {
+        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $language = is_array($data) ? (string)($data['language'] ?? '') : '';
+        $preset = is_array($data) ? (string)($data['preset'] ?? '') : '';
+        if (!in_array($language, ['th', 'en'], true)) {
+            $this->json(['status' => false, 'message' => 'Invalid language.']);
+            return;
+        }
+        try {
+            $elements = $this->model->presetPreviewElements($preset, $language);
+        } catch (InvalidArgumentException $e) {
+            $this->json(['status' => false, 'message' => $e->getMessage()]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $elements]);
     }
 
     public function setDefault() {
@@ -307,6 +390,63 @@ class EmploymentCertificateTemplateController extends Controller {
         }
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="employment_certificate_preview.pdf"');
+        echo $pdfContent;
+    }
+
+    /** "New Template" modal's per-preset Preview button (2026-08-24, List+Modal restructure) --
+     *  renders one of presetOptions()'s layouts against real company data + a real/mock employee,
+     *  same PDF-blob response pattern as preview() above, but sourced from a preset code instead of
+     *  a client-submitted canvas payload -- nothing is created/persisted here either. */
+    public function presetPreview() {
+        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            http_response_code(400);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data)) {
+            http_response_code(400);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $language = (string)($data['language'] ?? '');
+        if (!in_array($language, ['th', 'en'], true)) {
+            http_response_code(422);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => 'Invalid language.']);
+            return;
+        }
+        $preset = (string)($data['preset'] ?? '');
+        try {
+            $elements = $this->model->presetPreviewElements($preset, $language);
+        } catch (InvalidArgumentException $e) {
+            http_response_code(422);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => $e->getMessage()]);
+            return;
+        }
+        if (empty($elements)) {
+            http_response_code(422);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => 'The "blank" preset has nothing to preview.']);
+            return;
+        }
+        try {
+            $pdfContent = (new EmploymentCertificateRenderer())->renderPreview(
+                (int)$compId, ['page_size' => 'A4', 'orientation' => 'portrait'], $language, $elements, null, null, null
+            );
+        } catch (Throwable $e) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => $e->getMessage()]);
+            return;
+        }
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="employment_certificate_preset_preview.pdf"');
         echo $pdfContent;
     }
 }

@@ -1,9 +1,21 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../models/PayslipTemplateModel.php';
-require_once __DIR__ . '/../services/reports/payment/PaySlipReport.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
+require_once __DIR__ . '/../services/PayslipTemplateRenderer.php';
 
+/**
+ * Payslip Template canvas designer backend -- rebuilt to match Employment Certificate Template's own
+ * controller shape almost exactly (2026-08-25, explicit request: "ปรับให้การตั้งค่า Slip เงินเดือน
+ * Template เป็นเหมือนกับใบรับรอง"). See PayslipTemplateModel's own docblock for the architectural
+ * differences that were deliberately KEPT (is_default/language_mode/header-footer/status) vs. what
+ * was deliberately NOT ported (no pair_key/TH-EN-tabs -- editPage() takes a plain template `id`).
+ *
+ * Permission gate added fresh here (`payslip_template.manage`) -- the OLD PayslipTemplateController
+ * had none at all; Employment Certificate Template's own controller already gates every action this
+ * way, so this brings Payslip Template in line with that established pattern rather than leaving it
+ * as the one designer with no permission check.
+ */
 class PayslipTemplateController extends Controller {
     private PayslipTemplateModel $model;
     private PermissionModel $permissionModel;
@@ -31,13 +43,36 @@ class PayslipTemplateController extends Controller {
         return true;
     }
 
-    public function fieldTypeOptions() {
-        $this->json(['status' => true, 'data' => ['items' => $this->model->fieldTypeOptions(), 'total_count' => 0]]);
+    /** Standalone editor page, addressed by a plain template `id` (NOT a pair_key -- Payslip
+     *  Template has no TH/EN-fork concept, see PayslipTemplateModel's own docblock). Rendered
+     *  through the normal Controller::view() layout, same as every other page. */
+    public function editPage(string $id) {
+        // Router::matchRoute() always passes route params as raw strings (see its own dispatch()) --
+        // this file has declare(strict_types=1), so an `int $id` parameter here would throw a
+        // TypeError on every request. Cast inside the body instead, same as every other route param
+        // handled this way elsewhere in this app.
+        $compId = (int)getCompId();
+        $template = $compId ? $this->model->get($compId, (int)$id) : null;
+        $this->view('payslip-template/edit', ['template' => $template]);
     }
+
+    public function fieldTypeOptions() {
+        $this->json(['status' => true, 'data' => $this->model->fieldTypeOptions()]);
+    }
+
+    public function presetOptions() {
+        $this->json(['status' => true, 'data' => $this->model->presetOptions()]);
+    }
+
+    /* ==================== Templates ==================== */
 
     public function list() {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
         $this->json(['status' => true, 'data' => $this->model->list((int)$compId)]);
     }
 
@@ -45,44 +80,208 @@ class PayslipTemplateController extends Controller {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         $id = (int)($_GET['id'] ?? 0);
-        $row = $this->model->get($id, (int)$compId);
-        if (!$row) {
-            $this->json(['status' => false, 'message' => 'Record not found.']);
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json(['status' => true, 'data' => $row]);
+        $row = $this->model->get((int)$compId, $id);
+        if ($row) {
+            $this->json(['status' => true, 'data' => $row]);
+        } else {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+        }
     }
 
     public function save() {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
-        $rawInput = file_get_contents('php://input');
-        $data = json_decode($rawInput, true);
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
         if (!is_array($data)) {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
-        $this->json($this->model->save($data, (int)$compId, $this->userId()));
+        $this->json($this->model->save((int)$compId, $data, $this->userId()));
+    }
+
+    public function createFromPreset() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!$compId || !is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $preset = (string)($data['preset'] ?? 'blank');
+        $templateName = trim((string)($data['template_name'] ?? ''));
+        if ($templateName === '') {
+            $this->json(['status' => false, 'message' => 'Template name is required.']);
+            return;
+        }
+        $this->json($this->model->createFromPreset((int)$compId, $preset, $templateName, $this->userId()));
+    }
+
+    public function duplicate() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->model->duplicate((int)$compId, $id, $this->userId()));
     }
 
     public function delete() {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
-        $this->json($this->model->delete($id, (int)$compId, $this->userId()));
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->model->delete((int)$compId, $id, $this->userId()));
     }
 
     public function toggleStatus() {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
-        $this->json($this->model->toggleStatus($id, (int)$compId, $this->userId()));
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->model->toggleStatus((int)$compId, $id, $this->userId()));
     }
 
-    /**
-     * Renders the modal's current (unsaved) field selection against mock data and streams back
-     * a PDF directly -- no persistence, nothing written to payslip_templates.
-     */
+    public function setDefault() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->model->setDefault((int)$compId, $id, $this->userId()));
+    }
+
+    /** Plain-JSON wrapper around presetPreviewElements() for "Change Layout" -- re-applies a
+     *  different preset's elements to the template currently open in the editor, client-side.
+     *  Mirrors EmploymentCertificateTemplateController::presetElements(). */
+    public function presetElements() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $data = json_decode(file_get_contents('php://input'), true);
+        $preset = is_array($data) ? (string)($data['preset'] ?? '') : '';
+        try {
+            $elements = $this->model->presetPreviewElements($preset);
+        } catch (InvalidArgumentException $e) {
+            $this->json(['status' => false, 'message' => $e->getMessage()]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $elements]);
+    }
+
+    /* ==================== Logo + reusable image library uploads ==================== */
+
+    private function handleImageUpload(string $subdir): ?array {
+        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            return null;
+        }
+        $file = $_FILES['file'];
+        $maxSize = 2 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            return null;
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/svg+xml' => 'svg'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->file($file['tmp_name']);
+        if (!isset($allowedMimes[$detectedMime])) {
+            return null;
+        }
+        $ext = $allowedMimes[$detectedMime];
+        $compId = (int)getCompId();
+        $uploadDir = __DIR__ . "/../../public/uploads/{$subdir}/{$compId}/";
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            return null;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $ext;
+        $destPath = $uploadDir . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            return null;
+        }
+        return [
+            'relative_path' => "public/uploads/{$subdir}/{$compId}/{$safeName}",
+            'original_filename' => (string)($file['name'] ?? ''),
+        ];
+    }
+
+    public function uploadLogo() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $result = $this->handleImageUpload('payslip_logos');
+        if ($result === null) {
+            $this->json(['status' => false, 'message' => 'File upload failed. Use JPG, PNG, or SVG, max 2MB.']);
+            return;
+        }
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'logo_path' => $result['relative_path']]);
+    }
+
+    public function listImages() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => []]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->listImages((int)$compId)]);
+    }
+
+    public function uploadImage() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $result = $this->handleImageUpload('payslip_images');
+        if ($result === null) {
+            $this->json(['status' => false, 'message' => 'File upload failed. Use JPG, PNG, or SVG, max 2MB.']);
+            return;
+        }
+        $this->json($this->model->addImage((int)$compId, $result['relative_path'], $result['original_filename'], $this->userId()));
+    }
+
+    public function deleteImage() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $result = $this->model->deleteImage((int)$compId, $id);
+        if ($result['status'] && !empty($result['file_path'])) {
+            $abs = realpath(__DIR__ . '/../../' . ltrim($result['file_path'], '/'));
+            $uploadsRoot = realpath(__DIR__ . '/../../public/uploads/payslip_images');
+            if ($abs !== false && $uploadsRoot !== false && strpos($abs, $uploadsRoot) === 0 && is_file($abs)) {
+                @unlink($abs);
+            }
+        }
+        unset($result['file_path']);
+        $this->json($result);
+    }
+
+    /* ==================== Preview ==================== */
+
+    /** Renders the editor's CURRENT (possibly unsaved) element set as a PDF -- streamed back
+     *  directly, nothing persisted. Mirrors EmploymentCertificateTemplateController::preview(). */
     public function preview() {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
@@ -92,81 +291,89 @@ class PayslipTemplateController extends Controller {
             echo json_encode(['status' => false, 'message' => 'Missing company context.']);
             return;
         }
-        $rawInput = file_get_contents('php://input');
-        $data = json_decode($rawInput, true);
+        $data = json_decode(file_get_contents('php://input'), true);
         if (!is_array($data)) {
             http_response_code(400);
             header('Content-Type: application/json');
             echo json_encode(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
-        try {
-            $pdfContent = (new PaySlipReport())->generatePreview($data, (int)$compId);
-        } catch (InvalidArgumentException $e) {
+        $elements = is_array($data['elements'] ?? null) ? $data['elements'] : [];
+        if (empty($elements)) {
             http_response_code(422);
             header('Content-Type: application/json');
-            echo json_encode(['status' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['status' => false, 'message' => 'Add at least one element before previewing.']);
             return;
-        } catch (LocalizedException $e) {
-            $validationKeys = ['invalid_field_selection', 'select_at_least_one_field'];
-            http_response_code(in_array($e->getErrorKey(), $validationKeys, true) ? 422 : 500);
+        }
+        $logoPath = !empty($data['logo_path']) ? (string)$data['logo_path'] : null;
+        if (!PayslipTemplateModel::isValidLogoPath($logoPath, (int)$compId)) {
+            http_response_code(422);
             header('Content-Type: application/json');
-            echo json_encode(['status' => false, 'message' => $e->getMessage(), 'error_key' => $e->getErrorKey()]);
+            echo json_encode(['status' => false, 'message' => 'Invalid logo path.']);
             return;
-        } catch (RuntimeException $e) {
+        }
+        $pageSize = in_array(($data['page_size'] ?? 'A4'), ['A4', 'Letter', 'Legal'], true) ? $data['page_size'] : 'A4';
+        $orientation = in_array(($data['orientation'] ?? 'portrait'), ['portrait', 'landscape'], true) ? $data['orientation'] : 'portrait';
+        $languageMode = in_array(($data['language_mode'] ?? 'both'), ['th', 'en', 'both'], true) ? $data['language_mode'] : 'both';
+        $watermarkEnabled = !empty($data['watermark_enabled']);
+        $watermarkText = $watermarkEnabled ? trim((string)($data['watermark_text'] ?? '')) : null;
+        try {
+            $pdfContent = (new PayslipTemplateRenderer())->renderPreview(
+                (int)$compId,
+                ['page_size' => $pageSize, 'orientation' => $orientation, 'language_mode' => $languageMode],
+                $elements, $logoPath, $watermarkText
+            );
+        } catch (Throwable $e) {
             http_response_code(500);
             header('Content-Type: application/json');
             echo json_encode(['status' => false, 'message' => $e->getMessage()]);
             return;
         }
         header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="payslip_preview.pdf"');
+        header('Content-Disposition: inline; filename="payslip_template_preview.pdf"');
         echo $pdfContent;
     }
 
-    /** Uploads a logo image, returns its web-relative path for the client to include in save(). */
-    public function uploadLogo() {
+    /** New Template modal's per-preset Preview button -- renders one of presetOptions()'s layouts
+     *  against real company data + mock employee/run data. Mirrors
+     *  EmploymentCertificateTemplateController::presetPreview(). */
+    public function presetPreview() {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
         if (!$compId) {
-            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            http_response_code(400);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => 'Missing company context.']);
             return;
         }
-        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-            $this->json(['status' => false, 'message' => 'File upload failed.']);
+        $data = json_decode(file_get_contents('php://input'), true);
+        $preset = is_array($data) ? (string)($data['preset'] ?? '') : '';
+        try {
+            $elements = $this->model->presetPreviewElements($preset);
+        } catch (InvalidArgumentException $e) {
+            http_response_code(422);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => $e->getMessage()]);
             return;
         }
-        $file = $_FILES['file'];
-        $maxSize = 2 * 1024 * 1024;
-        if ($file['size'] > $maxSize) {
-            $this->json(['status' => false, 'message' => 'File size exceeds 2MB limit.']);
+        if (empty($elements)) {
+            http_response_code(422);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => 'The "blank" preset has nothing to preview.']);
             return;
         }
-        $allowedMimes = [
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/svg+xml' => 'svg',
-        ];
-        $finfo = new finfo(FILEINFO_MIME_TYPE);
-        $detectedMime = $finfo->file($file['tmp_name']);
-        if (!isset($allowedMimes[$detectedMime])) {
-            $this->json(['status' => false, 'message' => 'Unsupported file type. Use JPG, PNG, or SVG.']);
+        try {
+            $pdfContent = (new PayslipTemplateRenderer())->renderPreview(
+                (int)$compId, ['page_size' => 'A4', 'orientation' => 'portrait', 'language_mode' => 'both'], $elements, null, null
+            );
+        } catch (Throwable $e) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => $e->getMessage()]);
             return;
         }
-        $ext = $allowedMimes[$detectedMime];
-
-        $uploadDir = __DIR__ . '/../../public/uploads/payslip_logos/' . (int)$compId . '/';
-        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-            $this->json(['status' => false, 'message' => 'Failed to prepare storage directory.']);
-            return;
-        }
-        $safeName = bin2hex(random_bytes(16)) . '.' . $ext;
-        $destPath = $uploadDir . $safeName;
-        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
-            $this->json(['status' => false, 'message' => 'Failed to save file.']);
-            return;
-        }
-        $relativePath = 'public/uploads/payslip_logos/' . (int)$compId . '/' . $safeName;
-        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'logo_path' => $relativePath]);
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="payslip_template_preset_preview.pdf"');
+        echo $pdfContent;
     }
 }

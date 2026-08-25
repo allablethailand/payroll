@@ -31,13 +31,13 @@
   <div class="tab-content">
     <!-- PAYSLIP TEMPLATE -->
     <div class="tab-pane fade show active p-0" id="tab-tpl">
-      <div class="card-surface p-3 p-md-4">
         <table class="table table-hover align-middle w-100" id="tb_payslip_template">
           <thead class="table-light text-secondary">
             <tr>
               <th data-i18n="template_name">Template Name</th>
               <th data-i18n="default">Default</th>
-              <th data-i18n="language">Language</th>
+              <th class="text-center" data-i18n="template_language_th">Thai</th>
+              <th class="text-center" data-i18n="template_language_en">English</th>
               <th data-i18n="payslip_fields">Fields</th>
               <th data-i18n="status">Status</th>
               <th></th>
@@ -45,12 +45,10 @@
           </thead>
           <tbody></tbody>
         </table>
-      </div>
     </div>
 
     <!-- PAYSLIP DISTRIBUTION -->
     <div class="tab-pane fade p-0" id="tab-dist">
-      <div class="card-surface p-3 p-md-4">
         <form id="payslipDistributionForm">
           <div class="row g-3 mb-2">
             <div class="col-md-5">
@@ -103,14 +101,15 @@
             <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
           </div>
         </form>
-      </div>
     </div>
 
     <!-- EMPLOYMENT CERTIFICATE TEMPLATE (merged in 2026-08-24, own designer -- see the tab button comment above) -->
     <div class="tab-pane fade p-0" id="tab-ect">
-      <?php include __DIR__ . '/../employment-certificate/_designer_partial.php'; ?>
+      <?php include __DIR__ . '/../employment-certificate/_list_partial.php'; ?>
     </div>
   </div>
+
+  <?php include __DIR__ . '/../employment-certificate/_modals_partial.php'; ?>
 
   <!-- Payslip Template editor modal -->
   <div class="modal fade" id="payslipTemplateModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="payslipTemplateModalLabel" aria-hidden="true">

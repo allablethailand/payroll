@@ -16,7 +16,8 @@
     </div>
   </div>
 
-  <?php include __DIR__ . '/_designer_partial.php'; ?>
+  <?php include __DIR__ . '/_list_partial.php'; ?>
 </div>
 
+<?php include __DIR__ . '/_modals_partial.php'; ?>
 <script src="<?=asset('public/js/setup/employment-certificate-template.js')?>"></script>

@@ -192,10 +192,19 @@ function payslipTemplateActionButtons(row) {
         <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-pt" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
-function languageModeLabel(mode) {
-    if (mode === 'th') return langData['language_th'] || 'Thai';
-    if (mode === 'en') return langData['language_en'] || 'English';
-    return langData['language_both'] || 'Thai + English';
+// 2026-08-25, explicit follow-up (same request as the Employment Certificate TH/EN unification):
+// "แล้วในตารางแสดงผลก็ว่า template นี้ th eng พร้อมใช้งานทั้ง 2 ไหม ทั้งใบรับรองและ Slip เงินเดือน" --
+// unlike Employment Certificate (2 separate rows/layouts linked by pair_key), a payslip template is
+// already ONE row that can cover either language or both (`language_mode`) -- name_th/name_en are
+// both always required on the form regardless, so there's no "missing row" to generate/create here,
+// just which language(s) this particular template is scoped to. Replaces the old single "Language"
+// column (languageModeLabel()) with a Thai/English readiness cell each, reusing the same visual
+// language as the Employment Certificate pair table's ready/not-ready badges.
+function payslipLangReadyCell(row, lang) {
+    const covers = row.language_mode === 'both' || row.language_mode === lang;
+    return covers
+        ? `<i class="fa-solid fa-circle-check text-success"></i>`
+        : `<i class="fa-regular fa-circle text-muted" title="${langData['payslip_lang_not_applicable'] || 'This template is not set for this language'}"></i>`;
 }
 function initPayslipTemplateTable() {
     if ($.fn.DataTable.isDataTable('#tb_payslip_template')) {
@@ -208,7 +217,8 @@ function initPayslipTemplateTable() {
         columns: [
             { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtmlPt(currentLang === 'th' ? row.name_th : row.name_en)}</strong>` },
             { data: null, className: 'text-center', render: (d, t, row) => parseInt(row.is_default) === 1 ? `<i class="fa-solid fa-star text-warning"></i>` : '' },
-            { data: null, render: (d, t, row) => languageModeLabel(row.language_mode) },
+            { data: null, className: 'text-center', render: (d, t, row) => payslipLangReadyCell(row, 'th') },
+            { data: null, className: 'text-center', render: (d, t, row) => payslipLangReadyCell(row, 'en') },
             { data: 'field_count' },
             { data: 'status', render: d => payslipTemplateStatusBadge(d) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => payslipTemplateActionButtons(row) }

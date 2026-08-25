@@ -1560,6 +1560,7 @@ function initJoinEmployeesTable() {
             data: function (d) {
                 d.run_id = PAYROLL_RUN_ID;
                 d.department_id = $('#joinFilterDepartment').val() || '';
+                d.team_id = $('#joinFilterTeam').val() || '';
                 d.position_id = $('#joinFilterPosition').val() || '';
                 d.emp_cycle_id = $('#joinFilterCycle').val() || '';
             }
@@ -1574,6 +1575,7 @@ function initJoinEmployeesTable() {
             { data: 'employee_no' },
             { data: null, render: (d, t, row) => escapeHtmlRd((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '-') },
             { data: 'department', render: d => escapeHtmlRd(d || '-') },
+            { data: 'team', render: d => escapeHtmlRd(d || '-') },
             { data: 'position', render: d => escapeHtmlRd(d || '-') },
             { data: 'cycle_name', render: d => escapeHtmlRd(d || '-') },
         ],
@@ -1583,13 +1585,18 @@ function initJoinEmployeesTable() {
         drawCallback: function () {
             getTableLang();
             $('#joinSelectAll').prop('checked', false);
+            // 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่าย
+            // ที่สุด") -- recordsDisplay (post-filter, pre-pagination total) is exactly what "Select
+            // All Matching" would select, shown right next to that button so the number it acts on
+            // is never a guess.
+            $('#joinFilteredCount').text(this.api().page.info().recordsDisplay);
         }
     });
 }
 $(document).on('click', '#btnJoinEmployees', function () {
     joinSelectedEmployees = {};
     updateJoinSelectedCountRd();
-    $('#joinFilterDepartment, #joinFilterPosition, #joinFilterCycle').val(null).trigger('change');
+    $('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle').val(null).trigger('change');
     // Cycle-only run: this modal can only ever re-include a previously-removed employee (see
     // manualEmployeeOptions()'s cycle-only branch server-side) -- say so, since "Join Employees"
     // otherwise implies adding someone brand new.
@@ -1600,11 +1607,11 @@ $(document).on('click', '#btnJoinEmployees', function () {
     new bootstrap.Modal(document.getElementById('joinEmployeesModal')).show();
     initJoinEmployeesTable();
 });
-$(document).on('change', '#joinFilterDepartment, #joinFilterPosition, #joinFilterCycle', function () {
+$(document).on('change', '#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle', function () {
     if (tb_join_employees) tb_join_employees.ajax.reload(null, false);
 });
 $(document).on('click', '#btnClearJoinFilter', function () {
-    $('#joinFilterDepartment, #joinFilterPosition, #joinFilterCycle').val(null).trigger('change');
+    $('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle').val(null).trigger('change');
 });
 $(document).on('change', '.join-emp-checkbox', function () {
     const id = $(this).data('id');
@@ -1620,6 +1627,40 @@ $(document).on('change', '#joinSelectAll', function () {
     $('#tb_join_employees tbody .join-emp-checkbox').each(function () {
         if (this.checked !== checked) {
             $(this).prop('checked', checked).trigger('change');
+        }
+    });
+});
+// 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่ายที่สุด") --
+// unlike #joinSelectAll above (current DataTable page only, since this table is serverSide:true),
+// this fetches every id matching the current filter/search with no pagination and adds them all to
+// the selection in one click, then redraws so any checkboxes on the current page reflect it.
+$(document).on('click', '#btnJoinSelectAllMatching', function () {
+    const $btn = $(this).prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.manual-employee-all-ids`,
+        method: 'POST',
+        data: {
+            run_id: PAYROLL_RUN_ID,
+            department_id: $('#joinFilterDepartment').val() || '',
+            team_id: $('#joinFilterTeam').val() || '',
+            position_id: $('#joinFilterPosition').val() || '',
+            emp_cycle_id: $('#joinFilterCycle').val() || '',
+            search: tb_join_employees ? tb_join_employees.search() : ''
+        },
+        dataType: 'json',
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            (res.employee_ids || []).forEach(id => { joinSelectedEmployees[id] = true; });
+            updateJoinSelectedCountRd();
+            if (tb_join_employees) tb_join_employees.draw(false);
+        },
+        error: function () {
+            $btn.prop('disabled', false);
+            showWarning(langData['save_failed'] || 'An error occurred.');
         }
     });
 });
@@ -1716,7 +1757,7 @@ $(document).ready(function () {
         initDatepicker('#edit_payment_date');
     }
     if (typeof initSelect2 === 'function') {
-        initSelect2('#joinFilterDepartment, #joinFilterPosition, #joinFilterCycle', { mode: 'ajax' });
+        initSelect2('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle', { mode: 'ajax' });
         initSelect2('#manualLineItemSelect', { mode: 'ajax' });
         initSelect2('#manualLineCustomType', { mode: 'static', selectedValue: 'earning' });
         // Initialized once here, not per-modal-open (2026-08-21 bug fix precedent from the

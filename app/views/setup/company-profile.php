@@ -87,24 +87,6 @@
                 <input type="text" class="form-control required" name="local_name">
             </div>
         </div>
-        <!-- 2026-08-24, explicit request: "ในหน้า Profile บริษัท ให้สามารถใส่ Logo ได้ และดึงไปใช้กับหน้า
-             ตั้งค่า Slip เงินเดือน และใบรับรอง" -- same upload UI convention as Payslip Template's own
-             logo field (immediate upload on file select, hidden field carries the path into the
-             main form save). -->
-        <div class="row">
-            <div class="col-sm-2 mt-3">
-                <label class="form-label" data-i18n="company_logo">Company Logo</label>
-            </div>
-            <div class="col-sm-4 mt-3">
-                <div id="cpLogoPreview" class="mb-2 d-none"><img src="" alt="Logo" style="max-height:70px;" class="border rounded p-1"></div>
-                <label class="btn btn-outline-secondary btn-sm" for="cp_logo_file">
-                    <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_logo">Upload Logo</span>
-                </label>
-                <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
-                <input type="hidden" id="cp_logo_path" name="logo_path">
-                <p class="text-muted small mt-2 mb-0" data-i18n="company_logo_reuse_hint">Used as the default logo on Payslip and Employment Certificate templates that don't have their own.</p>
-            </div>
-        </div>
         <h6 class="text-secondary fw-bold mb-3 mt-4">
             <label class="label label-head bg-head-first rounded-2 text-white me-2">2</label>
             <span data-i18n="registered_address">Registered Address</span>
@@ -159,6 +141,39 @@
                 <input type="text" class="form-control required" name="authorized_signatory_name">
             </div>
         </div>
+        <!-- 2026-08-24, explicit request: "ปรับให้ Logo Upload อยู่ยนสุดของ Form ขอ Design สวยๆ รวมถึงมี
+             Preview ด้วย" -- moved from section 1 to its own numbered section 4 at the very bottom of
+             the form (was inline with Company Information before), redesigned as a proper upload card
+             instead of a plain button+small-preview row. Same upload endpoint/hidden-field-into-save
+             convention as before, nothing changed on the backend. -->
+        <h6 class="text-secondary fw-bold mb-3 mt-4">
+            <label class="label label-head bg-head-first rounded-2 text-white me-2">4</label>
+            <span data-i18n="company_logo">Company Logo</span>
+        </h6>
+        <div class="row">
+            <div class="col-sm-6 mt-3">
+                <div class="cp-logo-upload-card" id="cpLogoUploadCard">
+                    <div class="cp-logo-preview-box" id="cpLogoPreviewBox">
+                        <img id="cpLogoPreviewImg" src="" alt="Logo" class="d-none">
+                        <div class="cp-logo-placeholder" id="cpLogoPlaceholder">
+                            <i class="fa-solid fa-building"></i>
+                            <span data-i18n="no_logo_uploaded">No logo uploaded</span>
+                        </div>
+                    </div>
+                    <div class="cp-logo-actions">
+                        <label class="btn btn-outline-secondary btn-sm" for="cp_logo_file">
+                            <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_logo">Upload Logo</span>
+                        </label>
+                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpLogoRemoveBtn">
+                            <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                        </button>
+                        <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                        <input type="hidden" id="cp_logo_path" name="logo_path">
+                        <p class="text-muted small mt-2 mb-0" data-i18n="company_logo_reuse_hint">Used as the default logo on Payslip and Employment Certificate templates that don't have their own.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     <div class="text-end">
         <button type="button" class="btn btn-warning save-company-profile"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
@@ -210,6 +225,20 @@
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p5" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p5">
                         <i class="fa-solid fa-ranking-star me-2"></i><span data-i18n="rank">Rank</span>
+                    </button>
+                </li>
+                <!-- 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้
+                     เป็นการเพิ่มการตั้งค่าเช่นเดียวกับ Department" -- outsourcing company's own project/
+                     client team grouping, same CRUD pattern as Department/Position/Rank above (see
+                     CompanyProfileModel::structureConfig()'s 'team' entry + company-profile.js's
+                     formSchemas.team for the generic dispatcher wiring). Moved before Permissions
+                     (explicit follow-up: "ในหน้าตั้งค่าย้ายทีมมาไว้ก่อน permission") -- purely a DOM
+                     reorder, `data-page="p7"`/`id="structure-tab-p7"` untouched on purpose so
+                     company-profile.js's initStructure() switch(page) dispatch needs no change at
+                     all; only visual tab order moved. -->
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link structure-menu" id="structure-tab-p7" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p7">
+                        <i class="fa-solid fa-people-group me-2"></i><span data-i18n="team">Team</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
@@ -312,6 +341,21 @@
             </button>
         </div>
         <div id="permissionMatrixContainer" class="table-responsive"></div>
+    </div>
+</template>
+<template id="tmpl-team-pane">
+    <div class="mt-5 mb-5 table-responsive">
+        <table class="table table-striped table-hover" id="tb_team">
+            <thead>
+                <tr>
+                    <th data-i18n="team_code">Team Code</th>
+                    <th data-i18n="team_name">Team Name</th>
+                    <th data-i18n="team_client_name">Client / Project</th>
+                    <th data-i18n="status">Status</th>
+                    <th style="width: 120px;"></th>
+                </tr>
+            </thead>
+        </table>
     </div>
 </template>
 <script src="<?=asset('public/js/setup/company-profile.js')?>"></script>

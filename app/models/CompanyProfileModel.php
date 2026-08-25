@@ -224,6 +224,19 @@ class CompanyProfileModel {
                 'unique_columns' => ['rank_code'],
                 'booleans' => ['ot_eligible'],
             ],
+            // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็น
+            // การเพิ่มการตั้งค่าเช่นเดียวกับ Department" -- outsourcing company's own project/client
+            // team grouping (see structure_teams' own migration comment for the full context).
+            // client_name is intentionally NOT in `required` -- a team can exist before its client
+            // assignment is finalized, same "not every column that CAN be filled has to be" stance
+            // department's own cost_center already takes.
+            'team' => [
+                'table' => 'structure_teams',
+                'columns' => ['team_code', 'team_name_th', 'team_name_en', 'client_name', 'status'],
+                'required' => ['team_code', 'team_name_th', 'team_name_en'],
+                'unique_columns' => ['team_code'],
+                'booleans' => [],
+            ],
         ];
     }
 

@@ -52,6 +52,11 @@ class EmploymentCertificateRenderer {
         'th' => ['full_time' => 'เต็มเวลา', 'part_time' => 'บางเวลา', 'daily' => 'รายวัน', 'internship' => 'ฝึกงาน'],
         'en' => ['full_time' => 'Full-time', 'part_time' => 'Part-time', 'daily' => 'Daily', 'internship' => 'Internship'],
     ];
+    /** 2026-08-25, explicit request: "ตรง Add to Canvas สามารถเพิ่ม item อะไรเกี่ยวกับพนักงาน...ได้อีกไหม" */
+    private const GENDER_LABELS = [
+        'th' => ['male' => 'ชาย', 'female' => 'หญิง', 'other' => 'อื่นๆ'],
+        'en' => ['male' => 'Male', 'female' => 'Female', 'other' => 'Other'],
+    ];
 
     /** page_size => [width_mm, height_mm] in PORTRAIT orientation; swapped for landscape. */
     public const PAGE_SIZES_MM = [
@@ -60,10 +65,26 @@ class EmploymentCertificateRenderer {
         'Legal' => [215.9, 355.6],
     ];
 
-    /** font_family enum value => CSS font-family name registerThaiFonts() makes available. */
+    /** font_family code => CSS font-family name. 'th_sarabun_new' is registered explicitly (see
+     *  registerThaiFonts()); the other 6 are all recognized NATIVELY by dompdf without any
+     *  registerFont() call -- 'DejaVu Sans'/'DejaVu Sans Mono'/'DejaVu Serif' via its own bundled
+     *  TTFs (installed-fonts.dist.json), 'Helvetica'/'Times-Roman'/'Courier' via its built-in
+     *  non-embedded base-14 fonts (2026-08-25, explicit request: "เพิ่มตัวเลือก font สัก 10 font ครับ"
+     *  -- shipped 7, see the migration's own comment for why not 10: every option here needs a REAL,
+     *  legitimately-available font file to keep the canvas preview and the PDF from silently
+     *  drifting apart, same bug class already fixed once in this module). None of the 6 non-Sarabun
+     *  fonts have Thai glyphs at all -- confirmed for DejaVu previously by parsing cmap tables
+     *  directly, and Helvetica/Times/Courier are the same standard Latin-only base-14 set every PDF
+     *  viewer ships -- so all 6 are English-tab-only in the UI (see updateFontFamilyOptions() in the
+     *  JS), same restriction DejaVu Sans already had. */
     private const FONT_FAMILY_CSS = [
         'th_sarabun_new' => 'TH Sarabun New',
         'dejavu_sans' => 'DejaVu Sans',
+        'dejavu_sans_mono' => 'DejaVu Sans Mono',
+        'dejavu_serif' => 'DejaVu Serif',
+        'helvetica' => 'Helvetica',
+        'times_new_roman' => 'Times-Roman',
+        'courier' => 'Courier',
     ];
 
     public static function pageDimensionsMm(string $pageSize, string $orientation): array {
@@ -79,12 +100,19 @@ class EmploymentCertificateRenderer {
     }
 
     public function fetchEmployee(int $compId, int $employeeId): ?array {
+        // 2026-08-25, explicit request: "ตรง Add to Canvas สามารถเพิ่ม item อะไรเกี่ยวกับพนักงานได้อีกไหม" --
+        // branch/team joined the same way department/position already are; gender/nationality/
+        // date_of_birth are plain columns on `employees` itself, no join needed.
         $stmt = $this->db->prepare("SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
                 e.employment_date, e.employment_status, e.employment_type, e.base_salary_amount,
-                d.department_name_th, d.department_name_en, p.position_name_th, p.position_name_en
+                e.gender, e.nationality, e.date_of_birth,
+                d.department_name_th, d.department_name_en, p.position_name_th, p.position_name_en,
+                b.branch_name_th, b.branch_name_en, t.team_name_th, t.team_name_en
             FROM `employees` e
             LEFT JOIN `structure_departments` d ON e.department_id = d.id
             LEFT JOIN `structure_positions` p ON e.position_id = p.id
+            LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+            LEFT JOIN `structure_teams` t ON e.team_id = t.id
             WHERE e.id = :id AND e.comp_id = :comp_id AND e.deleted_at IS NULL");
         $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -112,6 +140,9 @@ class EmploymentCertificateRenderer {
             'position_name_th' => 'เจ้าหน้าที่อาวุโส', 'position_name_en' => 'Senior Officer',
             'employment_date' => date('Y-m-d', strtotime('-2 years')), 'employment_status' => 'permanent', 'employment_type' => 'full_time',
             'base_salary_amount' => 30000,
+            'gender' => 'male', 'nationality' => 'Thai', 'date_of_birth' => date('Y-m-d', strtotime('-30 years')),
+            'branch_name_th' => 'สำนักงานใหญ่', 'branch_name_en' => 'Head Office',
+            'team_name_th' => 'ทีมโครงการเอ', 'team_name_en' => 'Project A Team',
         ];
     }
 
@@ -132,6 +163,7 @@ class EmploymentCertificateRenderer {
         $address = trim(($company['address_line_1'] ?? '') . ' ' . ($company['address_line_2'] ?? ''));
         $statusCode = (string)($employee['employment_status'] ?? '');
         $typeCode = (string)($employee['employment_type'] ?? '');
+        $genderCode = (string)($employee['gender'] ?? '');
         return [
             'company_name' => (string)($company['local_name'] ?? $company['company_legal_name'] ?? ''),
             'company_address' => $address,
@@ -146,6 +178,11 @@ class EmploymentCertificateRenderer {
             'employment_type' => self::EMPLOYMENT_TYPE_LABELS[$lang][$typeCode] ?? $typeCode,
             'base_salary' => number_format((float)($employee['base_salary_amount'] ?? 0), 2),
             'issue_date' => $this->formatDate(date('Y-m-d')),
+            'employee_branch' => (string)($lang === 'en' ? ($employee['branch_name_en'] ?? '') : ($employee['branch_name_th'] ?? '')) ?: '-',
+            'employee_team' => (string)($lang === 'en' ? ($employee['team_name_en'] ?? '') : ($employee['team_name_th'] ?? '')) ?: '-',
+            'employee_gender' => self::GENDER_LABELS[$lang][$genderCode] ?? $genderCode,
+            'employee_nationality' => (string)($employee['nationality'] ?? '') ?: '-',
+            'employee_date_of_birth' => $this->formatDate($employee['date_of_birth'] ?? null),
         ];
     }
 
@@ -163,53 +200,143 @@ class EmploymentCertificateRenderer {
      * @param array{page_size?:string, orientation?:string} $template
      * @param array<int,string> $imageAssetPaths image_asset_id => absolute file path
      */
+    /** Renders ONE element's positioning/typography div content (text/image/shape/table) -- split
+     *  out of buildHtml() so multi-page grouping there stays readable. Returns '' for an element
+     *  that resolves to nothing visible (e.g. an image field with no resolvable path) -- callers
+     *  just concatenate, nothing special needed for the empty case. */
+    private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths): string {
+        $fontFamily = self::FONT_FAMILY_CSS[$el['font_family'] ?? 'th_sarabun_new'] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
+        // font-family value is single-quoted (not double) -- this whole style string gets embedded
+        // inside a DOUBLE-quoted HTML style="..." attribute below; double-quoting it here too would
+        // silently truncate the attribute at that exact point (real bug hit while building this:
+        // font-family/color/etc. after it just never applied, with no error anywhere -- dompdf
+        // quietly fell back to a default serif font instead).
+        $style = sprintf(
+            'position:absolute;left:%s%%;top:%s%%;width:%s%%;height:%s%%;font-size:%dpx;text-align:%s;'
+            . "font-weight:%s;font-style:%s;text-decoration:%s;color:%s;font-family:'%s',sans-serif;"
+            . 'overflow:hidden;word-wrap:break-word;',
+            $el['pos_x_pct'], $el['pos_y_pct'], $el['width_pct'], $el['height_pct'],
+            (int)$el['font_size'], htmlspecialchars((string)$el['text_align'], ENT_QUOTES, 'UTF-8'),
+            ($el['font_weight'] ?? 'normal') === 'bold' ? 'bold' : 'normal',
+            ($el['font_style'] ?? 'normal') === 'italic' ? 'italic' : 'normal',
+            ($el['text_decoration'] ?? 'none') === 'underline' ? 'underline' : 'none',
+            htmlspecialchars((string)($el['font_color'] ?? '#000000'), ENT_QUOTES, 'UTF-8'),
+            htmlspecialchars($fontFamily, ENT_QUOTES, 'UTF-8')
+        );
+        if ($el['element_type'] === 'image') {
+            $imgAbsPath = null;
+            if (!empty($el['field_key']) && $el['field_key'] === 'company_logo') {
+                $imgAbsPath = $logoAbsPath;
+            } elseif (!empty($el['image_asset_id']) && isset($imageAssetPaths[(int)$el['image_asset_id']])) {
+                $imgAbsPath = $imageAssetPaths[(int)$el['image_asset_id']];
+            }
+            if ($imgAbsPath === null || !is_file($imgAbsPath)) {
+                return '';
+            }
+            return '<div style="' . $style . '"><img src="' . htmlspecialchars($imgAbsPath, ENT_QUOTES, 'UTF-8') . '" style="max-width:100%;max-height:100%;"></div>';
+        }
+        if ($el['element_type'] === 'shape') {
+            // 2026-08-25, explicit request: "สามารถ insert shape ต่างๆ เหมือน Word" -- deliberately
+            // simple compared to Word's own shape gallery: rectangle/ellipse are a solid
+            // background+border fill (font_color doubles as both, this element type has no separate
+            // fill/border color fields), 'line' is the same box just drawn very thin (no free-angle
+            // line segments).
+            $shapeType = in_array($el['field_key'] ?? '', ['rectangle', 'ellipse', 'line'], true) ? $el['field_key'] : 'rectangle';
+            $color = htmlspecialchars((string)($el['font_color'] ?? '#000000'), ENT_QUOTES, 'UTF-8');
+            $shapeStyle = sprintf(
+                'position:absolute;left:%s%%;top:%s%%;width:%s%%;height:%s%%;background-color:%s;border:1px solid %s;box-sizing:border-box;',
+                $el['pos_x_pct'], $el['pos_y_pct'], $el['width_pct'], $el['height_pct'], $color, $color
+            );
+            if ($shapeType === 'ellipse') {
+                $shapeStyle .= 'border-radius:50%;';
+            }
+            return '<div style="' . $shapeStyle . '"></div>';
+        }
+        if ($el['element_type'] === 'table') {
+            // 2026-08-25, explicit request: "เพิ่ม option การเพิ่มตาราง ที่สามารถกำหนดเส้นสีเส้นขอบได้เหมือน
+            // word" -- content is validated/re-encoded JSON (see
+            // EmploymentCertificateTemplateModel::validateElements()), never raw/untrusted shape.
+            $tableData = json_decode((string)($el['content'] ?? ''), true);
+            $rows = is_array($tableData) ? (int)($tableData['rows'] ?? 0) : 0;
+            $cols = is_array($tableData) ? (int)($tableData['cols'] ?? 0) : 0;
+            if ($rows < 1 || $cols < 1) {
+                return '';
+            }
+            $borderColor = htmlspecialchars((string)($tableData['border_color'] ?? '#000000'), ENT_QUOTES, 'UTF-8');
+            $borderWidth = (int)($tableData['border_width'] ?? 1);
+            $cells = is_array($tableData['cells'] ?? null) ? $tableData['cells'] : [];
+            $tableHtml = '<table style="width:100%;height:100%;border-collapse:collapse;">';
+            for ($r = 0; $r < $rows; $r++) {
+                $tableHtml .= '<tr>';
+                for ($c = 0; $c < $cols; $c++) {
+                    $cellText = nl2br(htmlspecialchars((string)($cells[$r][$c] ?? ''), ENT_QUOTES, 'UTF-8'));
+                    $tableHtml .= "<td style=\"border:{$borderWidth}px solid {$borderColor};padding:2px 4px;\">{$cellText}</td>";
+                }
+                $tableHtml .= '</tr>';
+            }
+            $tableHtml .= '</table>';
+            return '<div style="' . $style . '">' . $tableHtml . '</div>';
+        }
+        return '<div style="' . $style . '">' . $this->substituteTokens((string)($el['content'] ?? ''), $tokens) . '</div>';
+    }
+
+    /** 2026-08-25, explicit request: "รองรับการมีหลายๆหน้า โดยที่มีปุ่มให้เลือกเพิ่มหรือลด" -- `$elements`
+     *  spans however many distinct `page_number`s exist (1-based); each becomes its own `.cert-page`
+     *  div, `page-break-after:always` on every one but the last so dompdf actually starts a new
+     *  physical page. Page SIZE/orientation are shared across every page (no per-page sizing) -- not
+     *  asked for, and would need its own UI/data model this request didn't call for. */
     public function buildHtml(array $template, string $language, array $elements, array $company, array $employee, ?string $logoAbsPath, array $imageAssetPaths = [], ?string $watermarkText = null): string {
         $tokens = $this->buildTokens($language, $company, $employee);
         [$pageW, $pageH] = self::pageDimensionsMm((string)($template['page_size'] ?? 'A4'), (string)($template['orientation'] ?? 'portrait'));
-        $body = '';
+
+        $byPage = [];
         foreach ($elements as $el) {
-            $fontFamily = self::FONT_FAMILY_CSS[$el['font_family'] ?? 'th_sarabun_new'] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
-            // font-family value is single-quoted (not double) -- this whole style string gets
-            // embedded inside a DOUBLE-quoted HTML style="..." attribute below; double-quoting it
-            // here too would silently truncate the attribute at that exact point (real bug hit
-            // while building this: font-family/color/etc. after it just never applied, with no
-            // error anywhere -- dompdf quietly fell back to a default serif font instead).
-            $style = sprintf(
-                'position:absolute;left:%s%%;top:%s%%;width:%s%%;height:%s%%;font-size:%dpx;text-align:%s;'
-                . "font-weight:%s;font-style:%s;text-decoration:%s;color:%s;font-family:'%s',sans-serif;"
-                . 'overflow:hidden;word-wrap:break-word;',
-                $el['pos_x_pct'], $el['pos_y_pct'], $el['width_pct'], $el['height_pct'],
-                (int)$el['font_size'], htmlspecialchars((string)$el['text_align'], ENT_QUOTES, 'UTF-8'),
-                ($el['font_weight'] ?? 'normal') === 'bold' ? 'bold' : 'normal',
-                ($el['font_style'] ?? 'normal') === 'italic' ? 'italic' : 'normal',
-                ($el['text_decoration'] ?? 'none') === 'underline' ? 'underline' : 'none',
-                htmlspecialchars((string)($el['font_color'] ?? '#000000'), ENT_QUOTES, 'UTF-8'),
-                htmlspecialchars($fontFamily, ENT_QUOTES, 'UTF-8')
-            );
-            if ($el['element_type'] === 'image') {
-                $imgAbsPath = null;
-                if (!empty($el['field_key']) && $el['field_key'] === 'company_logo') {
-                    $imgAbsPath = $logoAbsPath;
-                } elseif (!empty($el['image_asset_id']) && isset($imageAssetPaths[(int)$el['image_asset_id']])) {
-                    $imgAbsPath = $imageAssetPaths[(int)$el['image_asset_id']];
-                }
-                if ($imgAbsPath !== null && is_file($imgAbsPath)) {
-                    $body .= '<div style="' . $style . '"><img src="' . htmlspecialchars($imgAbsPath, ENT_QUOTES, 'UTF-8') . '" style="max-width:100%;max-height:100%;"></div>';
-                }
-            } else {
-                $body .= '<div style="' . $style . '">' . $this->substituteTokens((string)($el['content'] ?? ''), $tokens) . '</div>';
-            }
+            $pageNumber = max(1, (int)($el['page_number'] ?? 1));
+            $byPage[$pageNumber][] = $el;
         }
+        if (empty($byPage)) {
+            $byPage[1] = [];
+        }
+        ksort($byPage);
+
+        $watermarkHtml = '';
         if ($watermarkText !== null && trim($watermarkText) !== '') {
-            $body .= '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);'
-                . 'font-size:64px;color:rgba(150,150,150,0.35);font-family:\'TH Sarabun New\',sans-serif;'
-                . 'white-space:nowrap;font-weight:bold;">' . htmlspecialchars(trim($watermarkText), ENT_QUOTES, 'UTF-8') . '</div>';
+            // 2026-08-25, real bug found: the original single-div version chained
+            // `transform:translate(-50%,-50%) rotate(-35deg)` -- dompdf's CSS transform support is
+            // known to be inconsistent for chained/composed transform functions (confirmed by
+            // dompdf's own changelog/issue history, not just a guess), so this likely rendered
+            // incorrectly or not at all in the actual PDF despite `preview()`'s own test only ever
+            // checking the STRING contains "rotate(-35deg)", never that dompdf drew it correctly --
+            // a real gap in that test's coverage. Rewritten as two nested elements: an outer
+            // full-width div centered the ordinary way (`top:50%` + `text-align:center`, the exact
+            // same well-supported positioning every other element on this page already uses) and an
+            // inner `inline-block` that carries the ONE simple `rotate()` transform, nothing chained.
+            // Repeated on EVERY page (a multi-page draft with a watermark on page 1 only would look
+            // like an oversight, not a deliberate choice).
+            $watermarkHtml = '<div style="position:absolute;top:50%;left:0;width:100%;text-align:center;overflow:visible;">'
+                . '<div style="display:inline-block;transform:rotate(-35deg);transform-origin:center;'
+                . "font-size:64px;color:rgba(150,150,150,0.35);font-family:'TH Sarabun New',sans-serif;"
+                . 'white-space:nowrap;font-weight:bold;">' . htmlspecialchars(trim($watermarkText), ENT_QUOTES, 'UTF-8') . '</div></div>';
         }
+
+        $pageKeys = array_keys($byPage);
+        $lastPageKey = end($pageKeys);
+        $pagesHtml = '';
+        foreach ($byPage as $pageNumber => $pageElements) {
+            $body = '';
+            foreach ($pageElements as $el) {
+                $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths);
+            }
+            $body .= $watermarkHtml;
+            $breakStyle = $pageNumber === $lastPageKey ? '' : 'page-break-after:always;';
+            $pagesHtml .= '<div class="cert-page" style="' . $breakStyle . '">' . $body . '</div>';
+        }
+
         return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
             . "@page { size: {$pageW}mm {$pageH}mm; margin: 0; }"
             . 'body { margin:0; padding:0; font-family: "TH Sarabun New", sans-serif; }'
             . ".cert-page { position: relative; width: {$pageW}mm; height: {$pageH}mm; overflow: hidden; }"
-            . '</style></head><body><div class="cert-page">' . $body . '</div></body></html>';
+            . '</style></head><body>' . $pagesHtml . '</body></html>';
     }
 
     /** Resolves a value already validated as `public/uploads/{$subdir}/{comp_id}/{hash}.{ext}` to

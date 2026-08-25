@@ -60,6 +60,7 @@ class EmployeeController extends Controller {
             'employment_status' => $_POST['employment_status'] ?? '',
             'role_id' => $_POST['role_id'] ?? '',
             'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
             'shift_id' => $_POST['shift_id'] ?? '',
             'branch_id' => $_POST['branch_id'] ?? '',
             'created_date_from' => $_POST['created_date_from'] ?? '',

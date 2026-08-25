@@ -300,6 +300,41 @@ class CompanyProfileController extends Controller {
         $result['draw'] = intval($request['draw'] ?? 1);
         return $this->json($result);
     }
+    public function team() {
+        if (!$this->requirePermission('company_structure.view')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            return $this->json(['draw' => intval($_REQUEST['draw'] ?? 1), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
+        }
+        $request = $_REQUEST;
+        $start = isset($request['start']) ? (int)$request['start'] : 0;
+        $length = isset($request['length']) ? (int)$request['length'] : 10;
+        $search = isset($request['search']['value']) ? $request['search']['value'] : '';
+        $colIndex = isset($request['order'][0]['column']) ? (int)$request['order'][0]['column'] : 0;
+        $orderDir = isset($request['order'][0]['dir']) ? $request['order'][0]['dir'] : 'asc';
+        $searchColumns = ['team_code', 'team_name_th', 'team_name_en', 'client_name'];
+        $sortColumns = [
+            0 => 'id',
+            1 => 'team_code',
+            2 => 'team_name_th',
+            3 => 'team_name_en',
+            4 => 'client_name',
+            5 => 'status'
+        ];
+        $result = $this->model->paginateData(
+            'structure_teams',
+            $compId,
+            $searchColumns,
+            $sortColumns,
+            $start,
+            $length,
+            $search,
+            $colIndex,
+            $orderDir
+        );
+        $result['draw'] = intval($request['draw'] ?? 1);
+        return $this->json($result);
+    }
     public function branchSave() { $this->handleStructureSave('branch'); }
     public function branchDelete() { $this->handleStructureDelete('branch'); }
     public function roleSave() { $this->handleStructureSave('role'); }
@@ -310,6 +345,8 @@ class CompanyProfileController extends Controller {
     public function positionDelete() { $this->handleStructureDelete('position'); }
     public function rankSave() { $this->handleStructureSave('rank'); }
     public function rankDelete() { $this->handleStructureDelete('rank'); }
+    public function teamSave() { $this->handleStructureSave('team'); }
+    public function teamDelete() { $this->handleStructureDelete('team'); }
     private function handleStructureSave(string $type): void {
         if (!$this->requirePermission('company_structure.manage')) return;
         $compId = getCompId();

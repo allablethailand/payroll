@@ -94,6 +94,7 @@ class MasterModel {
             case 'shift':
             case 'leave_type':
             case 'ot_rate':
+            case 'team':
                 if ($compId === null) {
                     break;
                 }
@@ -105,6 +106,7 @@ class MasterModel {
                     'shift' => ['table' => 'shifts', 'code' => 'shift_code', 'nameTh' => 'shift_name_th', 'nameEn' => 'shift_name_en'],
                     'leave_type' => ['table' => 'leave_types', 'code' => 'code', 'nameTh' => 'name_th', 'nameEn' => 'name_en'],
                     'ot_rate' => ['table' => 'ot_rates', 'code' => null, 'nameTh' => 'ot_name_th', 'nameEn' => 'ot_name_en'],
+                    'team' => ['table' => 'structure_teams', 'code' => 'team_code', 'nameTh' => 'team_name_th', 'nameEn' => 'team_name_en'],
                 ];
                 $cfg = $tableMap[$type];
                 $where = " WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' ";

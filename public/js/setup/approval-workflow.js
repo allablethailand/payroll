@@ -4,11 +4,16 @@
  * Flow ไม่ต้องเปิด Modal เข้าไปจัดการ แต่เป็นการเปิดแก้ไข แถว by แถว มีปุ่ม Save แยกตามแถว และมีปุ่มในการ
  * บันทึก Sort ในกรณีทีมีการลากจัดตำแหน่ง ให้เหมือน [origami's own approval settings page]").
  *
- * Replaces the earlier DataTable-of-workflows + single big modal editor entirely. Two fixed pills
+ * Replaces the earlier DataTable-of-workflows + single big modal editor entirely. Fixed pills
  * (`#approvalFlowDocTypeTabs`), one per document type this page configures (PAYROLL_RUN_APPROVAL,
- * SLIP_REQUEST_APPROVAL) — each pill IS that document type's one flow (ApprovalWorkflowModel::
- * getByDocumentType(), no workflow list/picker, no document-type multi-select, no workflow_name
- * field — auto-derived server-side the first time a step is saved). Steps render as in-page
+ * SLIP_REQUEST_APPROVAL, and EMPLOYMENT_CERTIFICATE_APPROVAL added 2026-08-24 later the same day --
+ * config-only, no request/issuance flow calls ApprovalRequestModel::create() with that code yet) —
+ * each pill IS that document type's one flow (ApprovalWorkflowModel::getByDocumentType(), no
+ * workflow list/picker, no document-type multi-select, no workflow_name field — auto-derived
+ * server-side the first time a step is saved). Adding a 4th document type later needs no JS change
+ * at all -- just seed a new `approval_document_types` row and add a pill button here (this file
+ * reads `data-document-type` off whichever pill was clicked, nothing is hardcoded to "2" or "3").
+ * Steps render as in-page
  * "cards" that are either a compact VIEW row or, when being edited, the same rich editor UI the
  * old modal used (approver chips, joint-mode radios, AND/OR/Finish toggle, requires-previous-step
  * switch) — just with its own Save/Cancel footer instead of one shared form submit, and toggled

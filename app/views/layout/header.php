@@ -154,21 +154,29 @@
         <!-- 2026-08-24, explicit request: "Menu Employment Ceritficate น่าจะนำไปรวมใน Play Slip แต่เปลี่ยน
              Menu ส่วนของการตั้งค่าก็เอาไปไว้ด้วยกัน แต่แยก Tab มีแค่ส่วนของการ Request ที่แยก Sub menu ย่อย" --
              the standalone Employment Certificate menu item (added earlier the same day) is now gone;
-             its designer lives inside Payslip > Settings as a 3rd tab (see payslip/settings.php). Its
-             route (/employment-certificate/settings) and every API endpoint still work unchanged --
-             only this menu entry point was removed. Requests stays separate below because Employment
-             Certificate has no request/issuance flow yet (that's still a later phase, see CLAUDE.md). -->
+             its designer lives inside this menu's Settings as a 3rd tab (see payslip/settings.php).
+             Its own route (/employment-certificate/settings) and every API endpoint still work
+             unchanged -- only this menu entry point was removed. Requests stays separate below because
+             Employment Certificate has no request/issuance flow yet (that's still a later phase, see
+             CLAUDE.md).
+             2026-08-24, later same day, explicit follow-up: "menu Payslip น่าจะต้องเปลี่ยนชื่อและ link
+             นะครับ เพราะไม่ใช่แค่ payslip อย่างเดียว" -- label renamed to `payslip_menu` i18n value
+             "Payslip & Documents"/"สลิป & เอกสาร" (same key, just a different value -- also picked up
+             automatically by both sub-pages' own breadcrumb `bc-parent`, see payslip/requests.php and
+             payslip/settings.php), and routes renamed payslip/* -> payslip-documents/* (see index.php's
+             own comment on this same rename -- controller/view file paths are unaffected, internal
+             only). -->
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
-                    <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Payslip">
+                    <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Payslip & Documents">
                 </span>
                 <span class="menu-text" data-i18n="payslip_menu">Payslip</span>
                 <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
             </a>
             <ul class="submenu">
                 <li>
-                    <a href="<?=BASE_URL?>/payslip/requests" class="submenu-link">
+                    <a href="<?=BASE_URL?>/payslip-documents/requests" class="submenu-link">
                         <span class="submenu-icon">
                             <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Requests">
                         </span>
@@ -176,7 +184,7 @@
                     </a>
                 </li>
                 <li>
-                    <a href="<?=BASE_URL?>/payslip/settings" class="submenu-link">
+                    <a href="<?=BASE_URL?>/payslip-documents/settings" class="submenu-link">
                         <span class="submenu-icon">
                             <img src="<?=BASE_URL?>/public/images/menu/SETTINGS.SVG" alt="Settings">
                         </span>

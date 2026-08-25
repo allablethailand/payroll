@@ -17,7 +17,7 @@ class EmployeeModel {
             'address_line_1_register', 'address_line_2_register', 'master_address_id_register',
             'use_register_address', 'address_line_1_contact', 'address_line_2_contact', 'master_address_id_contact',
             'emergency_name', 'emergency_surname', 'emergency_relationship', 'emergency_mobile',
-            'department_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id', 'cycle_id',
+            'department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id', 'cycle_id',
             'employment_date', 'employment_status', 'employment_status_effective_date', 'employment_end_date', 'employment_end_reason',
             'employment_type', 'report_to_id', 'date_contract_expire',
             'holiday_calendar_id', 'driver_license_no', 'workforce_type', 'record_time_method',
@@ -36,7 +36,7 @@ class EmployeeModel {
     }
 
     private function intColumns(): array {
-        return ['department_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id', 'cycle_id',
+        return ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id', 'cycle_id',
                 'report_to_id', 'holiday_calendar_id', 'bank_id', 'sso_hospital_id', 'insurance_plan_id',
                 'master_address_id_register', 'master_address_id_contact'];
     }
@@ -275,16 +275,21 @@ class EmployeeModel {
         $deptCol = $lang === 'en' ? 'department_name_en' : 'department_name_th';
         $branchCol = $lang === 'en' ? 'branch_name_en' : 'branch_name_th';
         $shiftCol = $lang === 'en' ? 'shift_name_en' : 'shift_name_th';
+        $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
 
+        // 2026-08-24, explicit request: "เพิ่ม Filter ทีมในหน้า list พนักงานด้วย" -- Team column
+        // inserted right after Department (index 4), same list/column-index convention as every
+        // other structure entity here -- shifts shift/branch/start_work_date/status down by one.
         $sortColumns = [
             1 => '`e`.`employee_no`',
             2 => '`e`.`name_th`',
             3 => "`r`.`{$nameCol}`",
             4 => "`d`.`{$deptCol}`",
-            5 => "`sh`.`{$shiftCol}`",
-            6 => "`b`.`{$branchCol}`",
-            7 => '`e`.`employment_date`',
-            8 => '`e`.`employee_status`',
+            5 => "`tm`.`{$teamCol}`",
+            6 => "`sh`.`{$shiftCol}`",
+            7 => "`b`.`{$branchCol}`",
+            8 => '`e`.`employment_date`',
+            9 => '`e`.`employee_status`',
         ];
         $sortColumn = $sortColumns[$colIndex] ?? '`e`.`id`';
         $orderDir = strtoupper($orderDir) === 'DESC' ? 'DESC' : 'ASC';
@@ -307,6 +312,10 @@ class EmployeeModel {
         if (!empty($filters['department_id'])) {
             $baseWhere .= " AND e.department_id = :department_id";
             $params[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['team_id'])) {
+            $baseWhere .= " AND e.team_id = :team_id";
+            $params[':team_id'] = (int)$filters['team_id'];
         }
         if (!empty($filters['shift_id'])) {
             $baseWhere .= " AND e.shift_id = :shift_id";
@@ -353,6 +362,7 @@ class EmployeeModel {
                         e.mobile_no AS phone,
                         COALESCE(r.{$nameCol}, '') AS role,
                         COALESCE(d.{$deptCol}, '') AS department,
+                        COALESCE(tm.{$teamCol}, '') AS team,
                         COALESCE(sh.{$shiftCol}, '') AS shift,
                         COALESCE(b.{$branchCol}, '') AS branch,
                         e.employment_date AS start_work_date,
@@ -361,6 +371,7 @@ class EmployeeModel {
                     FROM `employees` e
                     LEFT JOIN `structure_roles` r ON e.role_id = r.id
                     LEFT JOIN `structure_departments` d ON e.department_id = d.id
+                    LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
                     LEFT JOIN `shifts` sh ON e.shift_id = sh.id
                     LEFT JOIN `structure_branches` b ON e.branch_id = b.id
                     WHERE {$whereSql}
@@ -411,6 +422,7 @@ class EmployeeModel {
     public function get(int $compId, string $employeeNo): ?array {
         $sql = "SELECT e.*,
                     d.department_name_th, d.department_name_en,
+                    tm.team_name_th, tm.team_name_en, tm.client_name AS team_client_name,
                     r.role_name_th, r.role_name_en,
                     p.position_name_th, p.position_name_en,
                     b.branch_name_th, b.branch_name_en,
@@ -428,6 +440,7 @@ class EmployeeModel {
                     mac.level_2_en AS province_en_contact, mac.level_3_en AS district_en_contact, mac.level_4_en AS sub_district_en_contact
                 FROM `employees` e
                 LEFT JOIN `structure_departments` d ON e.department_id = d.id
+                LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
                 LEFT JOIN `structure_roles` r ON e.role_id = r.id
                 LEFT JOIN `structure_positions` p ON e.position_id = p.id
                 LEFT JOIN `structure_branches` b ON e.branch_id = b.id
@@ -584,6 +597,7 @@ class EmployeeModel {
 
         $fkChecks = [
             'department_id' => 'structure_departments',
+            'team_id' => 'structure_teams',
             'role_id' => 'structure_roles',
             'position_id' => 'structure_positions',
             'branch_id' => 'structure_branches',

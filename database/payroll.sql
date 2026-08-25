@@ -11081,6 +11081,283 @@ ALTER TABLE `companies`
 
 COMMIT;
 
+--
+-- 2026-08-24, Approval Workflow — 3rd document type: Employment Certificate approval (explicit
+-- request: "ใน Approval Flow เพิ่มอีก Tab เป็น Tab การตั้งค่าการอนุมัติการขอใบรับรอง"). Just the
+-- master row + settings-page tab -- `approval_document_types` and the whole ApprovalWorkflowModel/
+-- ApprovalRequestModel engine are already fully DB-driven with no hardcoded document-type list
+-- anywhere (confirmed by reading validateDocumentTypeCodes()), so this is purely additive. NOT
+-- wired to any actual request/issuance flow yet, same as everything else Employment Certificate --
+-- there is still no request/approval flow for certificates at all (see CLAUDE.md's Employment
+-- Certificate Template section), so a workflow configured here has no consumer calling
+-- ApprovalRequestModel::create() with this code yet. Admins can configure it in advance, same
+-- pattern as Holiday's resolveHolidaysForEmployee() being built/tested with no caller yet.
+--
+
+INSERT INTO `approval_document_types` (`code`, `name_th`, `name_en`, `is_active`, `sort_order`) VALUES
+('EMPLOYMENT_CERTIFICATE_APPROVAL', 'อนุมัติคำขอใบรับรองการทำงาน', 'Employment Certificate Request Approval', 1, 3);
+
+COMMIT;
+
+--
+-- 2026-08-24, Team (explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...เป็นบริษัทที่
+-- จ้าง outsource เพื่อไปอยู่กับหลาย Project...ทีมให้เป็นการเพิ่มการตั้งค่าเช่นเดียวกับ Department แล้วดึงมาใช้
+-- และเพิ่ม Filter ทีมในหน้า list พนักงานด้วย") -- naming ("ทีม (Team)") and whether Team needs a
+-- separate client/scope field beyond code+name (yes) both confirmed via AskUserQuestion. Company-
+-- scoped structure entity, same shape as `structure_departments`/`structure_positions` (per-company,
+-- soft-deletable, plugged into CompanyProfileModel::structureConfig()'s existing generic
+-- save/delete dispatcher -- no new CRUD code needed there, just a new config entry) plus one extra
+-- free-text `client_name` column (which client/project this team is deployed to -- deliberately NOT
+-- split into _th/_en like department_name is, matching `structure_departments.cost_center`'s own
+-- single free-text-field precedent, since a client's name isn't something that gets translated).
+--
+
+CREATE TABLE `structure_teams` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL COMMENT 'ID บริษัทที่ล็อกอิน',
+  `team_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `team_name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `team_name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `client_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อลูกค้า/ขอบเขตโครงการที่ทีมนี้ไปประจำ (outsource staffing) -- free text, ไม่บังคับกรอก',
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_comp_team_code` (`comp_id`,`team_code`,`deleted_at`),
+  CONSTRAINT `fk_structure_teams_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+ALTER TABLE `employees`
+  ADD COLUMN `team_id` int(11) DEFAULT NULL AFTER `department_id`,
+  ADD CONSTRAINT `fk_employees_team` FOREIGN KEY (`team_id`) REFERENCES `structure_teams` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+COMMIT;
+
+--
+-- 2026-08-24, Employment Certificate Template designer -- Group/Ungroup (explicit request: "เลือก
+-- หลายรายการเพื่อลบ หรือ Group รวม layout ได้ และสามารถ ungroup ได้ โดยมี layer บอกเหมือน photoshop")
+-- -- `group_key` is a client-generated opaque string (e.g. "grp_<timestamp>_<rand>"), NOT a foreign
+-- key to another table -- grouping here just means "these elements move together and collapse into
+-- one row in the Layers panel", not a separate first-class entity with its own properties. Elements
+-- with the same non-null group_key within one template are a group; NULL = ungrouped.
+--
+
+ALTER TABLE `employment_certificate_template_elements`
+  ADD COLUMN `group_key` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `sort_order`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Employment Certificate Template -- TH/EN unified list (explicit request: "ตรงตาราง
+-- Template ในขั้นตอนการจัดการ ให้มี th กับ eng ในการจัดการเลย ไม่ต้องแยกเป็น Tab เหมือนเดิม...แล้วในตาราง
+-- แสดงผลก็ว่า template นี้ th eng พร้อมใช้งานทั้ง 2 ไหม"). `pair_key` links a TH row and an EN row as
+-- "the same logical template, two language designs" -- confirmed via AskUserQuestion over
+-- restructuring the schema into one row per template (that option would mean merging two fully
+-- separate element sets into one row's data model, a much bigger and riskier change for the same
+-- outcome). Every row gets a pair_key from now on (including a brand-new, not-yet-paired template --
+-- see EmploymentCertificateTemplateModel::save()'s own comment), and every pre-existing row here
+-- gets backfilled with a unique synthetic one so the "group by pair_key" list query never has to
+-- special-case NULL.
+--
+
+ALTER TABLE `employment_certificate_templates`
+  ADD COLUMN `pair_key` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `language`,
+  ADD KEY `idx_ect_pair_key` (`comp_id`, `pair_key`);
+
+UPDATE `employment_certificate_templates` SET `pair_key` = CONCAT('legacy_', `id`) WHERE `pair_key` IS NULL;
+
+COMMIT;
+
+--
+-- 2026-08-25, Employment Certificate Template -- designer ergonomics round 3 (explicit request:
+-- "เพิ่มให้ตั้งค่าขอบกระดาษได้ด้วยครับ"). `margin_mm` is a VISUAL PLACEMENT GUIDE ONLY (a dashed inset
+-- rectangle drawn on the canvas so the admin doesn't place elements right up against the paper edge)
+-- -- it is deliberately NOT sent to EmploymentCertificateRenderer/dompdf and does not clip or
+-- reposition anything in the actual PDF output. Elements keep positioning exactly like before,
+-- percentage-of-page, independent of this value -- changing it never silently moves existing
+-- elements. NOT NULL DEFAULT 15.00 backfills every pre-existing row automatically (MySQL fills
+-- existing rows with the column default on ADD COLUMN NOT NULL DEFAULT ...) so the guide has a
+-- sensible value from the start rather than "0mm/no margin" for every template that already exists.
+--
+
+ALTER TABLE `employment_certificate_templates`
+  ADD COLUMN `margin_mm` decimal(5,2) NOT NULL DEFAULT 15.00 AFTER `orientation`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Employment Certificate Template -- 5 more employee fields for the "Add to Canvas"
+-- palette (explicit request: "ตรง Add to Canvas สามารถเพิ่ม item อะไรเกี่ยวกับพนักงานและบริษัทได้อีกไหม
+-- ครับ"). Company-side had nothing more genuinely available (the `companies` table has no phone/
+-- email/website column at all to pull from) so this round is employee-only: branch/team (this app's
+-- own outsourcing-firm domain makes "which client/project team" a genuinely relevant certificate
+-- field, see structure_teams' own `client_name` column), gender, nationality, date of birth --
+-- deliberately did NOT add id_card_no/passport_no (PII that most real employment certificates in
+-- this app's context don't print, and this app has no "purpose" selector to gate that kind of
+-- disclosure on) or contact fields (mobile/personal email -- not something a certificate states).
+--
+
+INSERT INTO `master_employment_certificate_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('employee_branch','สาขา','Branch','employee','text',1,91),
+('employee_team','ทีม/โครงการ','Team/Project','employee','text',1,92),
+('employee_gender','เพศ','Gender','employee','text',1,93),
+('employee_nationality','สัญชาติ','Nationality','employee','text',1,94),
+('employee_date_of_birth','วันเกิด','Date of Birth','employee','text',1,95);
+
+COMMIT;
+
+--
+-- 2026-08-25, Employment Certificate Template -- multi-page support + Insert Table/Shape (explicit
+-- request: "รองรับการมีหลายๆหน้า โดยที่มีปุ่มให้เลือกเพิ่มหรือลด" / "เพิ่ม option การเพิ่มตาราง...และสามารถ
+-- insert shape ต่างๆ เหมือน Word"). `page_number` (1-based) lets one template's elements span
+-- multiple pages -- the admin's "add/remove page" buttons just change which page_number new
+-- elements land on and which one the canvas currently shows; nothing else about the coordinate
+-- model changes (still percentage-of-ONE-page, just repeated per page_number in the PDF, one
+-- physical page per distinct page_number found). `element_type` gained 'shape' (rectangle/ellipse/
+-- line, font_color doubles as fill/stroke color, field_key holds which shape) and 'table' (a small
+-- JSON grid -- rows/cols/border color+width/cell text -- stored in `content`, same column every
+-- other text element already uses for its own string data, no new column needed for it).
+-- `font_family` widened from a 2-value enum to a plain varchar (explicit request: "เพิ่มตัวเลือก font
+-- สัก 10 font ครับ" -- see EmploymentCertificateRenderer's own comment on why this shipped with 7
+-- real, embeddable fonts instead of 10: every option here has to have an ACTUAL font file dompdf can
+-- embed, or the canvas preview and the real PDF would silently drift apart again, the exact bug
+-- class already fixed once in this module -- there simply aren't 10 more legitimately-licensed,
+-- already-available font files in this environment to add without either breaking that guarantee or
+-- bundling something not freely redistributable, same reasoning as why Tahoma/Leelawadee were never
+-- bundled either).
+--
+
+ALTER TABLE `employment_certificate_template_elements`
+  MODIFY COLUMN `element_type` enum('text','image','shape','table') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  MODIFY COLUMN `font_family` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th_sarabun_new',
+  ADD COLUMN `page_number` int(11) NOT NULL DEFAULT 1 AFTER `sort_order`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Payslip Template -- rebuilt as a free-form canvas designer, explicit request: "ปรับให้
+-- การตั้งค่า Slip เงินเดือน Template เป็นเหมือนกับใบรับรอง" (make it like the Employment Certificate
+-- Template designer) -- confirmed via AskUserQuestion: FULL canvas designer, not just a matching
+-- List+Modal page shell. `payslip_template_fields` (the old ordered field-list) is dropped entirely
+-- and replaced by `payslip_template_elements`, the exact same shape as
+-- `employment_certificate_template_elements` (percentage-positioned text/image/shape/table elements,
+-- `group_key`/`page_number` included) -- confirmed both `payslip_templates` and
+-- `payslip_template_fields` were completely EMPTY in the real dev DB before writing this (SELECT
+-- COUNT(*) on both first), so this is a clean cutover with no data-migration risk, same as
+-- Employment Certificate Template's own v2 migration note.
+--
+-- Deliberately KEPT from the old Payslip Template, unlike Employment Certificate Template's own
+-- design (which has neither concept at all):
+--  - `is_default`/`language_mode`/`header_text_*`/`footer_text_*`/`status` (active/inactive) on
+--    `payslip_templates` -- these aren't redundant here the way Employment Certificate's per-pair
+--    default-star was (see that module's v10 removal) -- `is_default` genuinely controls which
+--    template `PaySlipReport::generate()` picks when none is specified, and `status='inactive'`
+--    already had real meaning (a template can be disabled without deleting it). `language_mode`
+--    stays a SINGLE shared canvas per template (not a fork into two independent language rows like
+--    Employment Certificate's `pair_key`) because payslip field values are almost entirely
+--    data-driven tokens that already resolve per-language at generation time (see
+--    PayslipTemplateRenderer::buildTokens()), not hand-authored free text needing two independent
+--    layouts -- forking would have added real complexity for no corresponding benefit here.
+--  - There is therefore NO pair_key/TH-EN-tabs machinery ported over at all -- the editor page is
+--    addressed by a plain template `id`, not a pair key.
+--
+-- `master_payslip_field_types` gains the same `element_type` column Employment Certificate's own
+-- master table has (text/image -- only `company_logo` is `image`) plus a new `static_text` field
+-- (free-form paragraph, mirrors Employment Certificate's own "Auto Replace" {{field_key}} embedding
+-- mechanism) and widens `field_group` to add `document` for it. `earning_lines_all`/
+-- `deduction_lines_all`/`statutory_lines_all` need NO special schema/element-type of their own --
+-- they stay ordinary `text` elements whose content is exactly the single bound token
+-- `{{earning_lines_all}}` etc. (the SAME `{{field_key}}`-token convention every other bound field
+-- already uses), and PayslipTemplateRenderer::renderElementHtml() special-cases those 3 specific
+-- token strings to expand into a real itemized table instead of doing plain string substitution --
+-- this needed zero new columns/element types, only server-side rendering logic.
+--
+
+ALTER TABLE `master_payslip_field_types`
+  MODIFY COLUMN `field_group` enum('employee_info','company_info','earning','deduction','statutory','summary','document') COLLATE utf8mb4_unicode_ci NOT NULL,
+  ADD COLUMN `element_type` enum('text','image') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text' AFTER `field_group`;
+
+UPDATE `master_payslip_field_types` SET `element_type` = 'image' WHERE `code` = 'company_logo';
+
+INSERT INTO `master_payslip_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('static_text','ข้อความ/ย่อหน้าอิสระ','Free Text / Paragraph','document','text',1,5);
+
+ALTER TABLE `payslip_templates`
+  ADD COLUMN `page_size` enum('A4','Letter','Legal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'A4' AFTER `language_mode`,
+  ADD COLUMN `orientation` enum('portrait','landscape') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'portrait' AFTER `page_size`,
+  ADD COLUMN `margin_mm` decimal(5,2) NOT NULL DEFAULT 15.00 AFTER `orientation`;
+
+CREATE TABLE `payslip_template_elements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `element_type` enum('text','image','shape','table') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  `field_key` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'references master_payslip_field_types.code for image elements (company_logo) or the shape type for shape elements -- NULL for text/table (content carries the string/tokens/JSON instead)',
+  `image_asset_id` int(11) DEFAULT NULL COMMENT 'references payslip_images.id -- a custom uploaded image element, distinct from field_key=company_logo which uses the template''s own logo_path instead',
+  `content` text COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'text elements: literal text, may embed {{field_key}} tokens. table elements: JSON grid.',
+  `pos_x_pct` decimal(6,3) NOT NULL DEFAULT 0.000,
+  `pos_y_pct` decimal(6,3) NOT NULL DEFAULT 0.000,
+  `width_pct` decimal(6,3) NOT NULL DEFAULT 20.000,
+  `height_pct` decimal(6,3) NOT NULL DEFAULT 5.000,
+  `font_size` int(11) NOT NULL DEFAULT 14,
+  `font_family` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th_sarabun_new',
+  `font_color` varchar(7) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '#000000',
+  `text_align` enum('left','center','right') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'left',
+  `font_weight` enum('normal','bold') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'normal',
+  `font_style` enum('normal','italic') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'normal',
+  `text_decoration` enum('none','underline') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'none',
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `group_key` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `page_number` int(11) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  KEY `idx_pte_template` (`template_id`),
+  CONSTRAINT `fk_pte_template` FOREIGN KEY (`template_id`) REFERENCES `payslip_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `payslip_images` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `file_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `original_filename` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `uploaded_by` int(11) DEFAULT NULL,
+  `uploaded_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pimg_comp` (`comp_id`),
+  CONSTRAINT `fk_pimg_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+ALTER TABLE `payslip_template_elements`
+  ADD CONSTRAINT `fk_pte_image_asset` FOREIGN KEY (`image_asset_id`) REFERENCES `payslip_images` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+DROP TABLE `payslip_template_fields`;
+
+INSERT INTO `permissions` (`module_code`,`action_code`,`permission_key`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('payslip_template','manage','payslip_template.manage','จัดการเทมเพลตสลิปเงินเดือน','Manage Payslip Templates',1,151)
+ON DUPLICATE KEY UPDATE `permission_key` = `permission_key`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Payslip Template canvas designer, immediate follow-up fix -- the old `name_th`/
+-- `name_en` (two required, separately-typed template names) don't fit the canvas designer's single
+-- Word-doc-title-style name field (`template_name`, matching Employment Certificate Template's own
+-- convention -- see that class's `.ect-editor-title-input`). Confirmed via grep that no other file
+-- anywhere in the app reads `payslip_templates.name_th`/`name_en` (only PayslipTemplateModel/
+-- Controller ever did, both already rewritten for this feature) -- safe to drop outright rather than
+-- keep as unused dead columns. `payslip_templates` was still completely empty at this point (same
+-- confirmed-empty state as the main migration above), so no data to carry over.
+--
+
+ALTER TABLE `payslip_templates`
+  ADD COLUMN `template_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' AFTER `country_code`,
+  DROP COLUMN `name_th`,
+  DROP COLUMN `name_en`;
+
+COMMIT;
+
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

@@ -12,6 +12,17 @@ $(document).on('click', '.setup-tabs .setup-menu', function () {
 
     initPage(page);
 });
+function showCpLogoPreview(path) {
+    if (path) {
+        $('#cpLogoPreviewImg').attr('src', `${BASE_URL}/${path}`).removeClass('d-none');
+        $('#cpLogoPlaceholder').addClass('d-none');
+        $('#cpLogoRemoveBtn').removeClass('d-none');
+    } else {
+        $('#cpLogoPreviewImg').attr('src', '').addClass('d-none');
+        $('#cpLogoPlaceholder').removeClass('d-none');
+        $('#cpLogoRemoveBtn').addClass('d-none');
+    }
+}
 $(document).on('change', '#cp_logo_file', function () {
     const file = this.files && this.files[0];
     if (!file) return;
@@ -23,8 +34,7 @@ $(document).on('change', '#cp_logo_file', function () {
         success: function (res) {
             if (res.status) {
                 $('input[name="logo_path"]').val(res.logo_path);
-                $('#cpLogoPreview img').attr('src', `${BASE_URL}/${res.logo_path}`);
-                $('#cpLogoPreview').removeClass('d-none');
+                showCpLogoPreview(res.logo_path);
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Upload failed.');
             }
@@ -32,6 +42,14 @@ $(document).on('change', '#cp_logo_file', function () {
         error: function () { showWarning(langData['save_failed'] || 'Upload failed.'); }
     });
     $(this).val('');
+});
+// Client-side only -- clears the hidden field so Save persists logo_path=null. The uploaded file
+// itself isn't deleted from disk (same convention as Payslip Template/Employment Certificate's own
+// logo fields -- re-uploading there just as silently orphans the old file too, no cleanup job exists
+// anywhere in the app yet for any of the 3).
+$(document).on('click', '#cpLogoRemoveBtn', function () {
+    $('input[name="logo_path"]').val('');
+    showCpLogoPreview(null);
 });
 $(document).on('change', '#registered_country', function () {
     renderCountrySpecificForm($(this).val());
@@ -159,12 +177,7 @@ function initCompanyData() {
                 $('input[name="address_line_2"]').val(data.address_line_2 || '');
                 $('input[name="authorized_signatory_name"]').val(data.authorized_signatory_name || '');
                 $('input[name="logo_path"]').val(data.logo_path || '');
-                if (data.logo_path) {
-                    $('#cpLogoPreview img').attr('src', `${BASE_URL}/${data.logo_path}`);
-                    $('#cpLogoPreview').removeClass('d-none');
-                } else {
-                    $('#cpLogoPreview').addClass('d-none');
-                }
+                showCpLogoPreview(data.logo_path || null);
                 if (data.statutory_data && typeof data.statutory_data === 'object') {
                     Object.keys(data.statutory_data).forEach(key => {
                         const $field = $(`[name="${key}"]`);
@@ -422,6 +435,12 @@ function initStructure(page) {
             updateText($structureContent[0]);
             if (typeof initPermissionMatrix === 'function') { initPermissionMatrix(); }
             break;
+        // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการ
+        // เพิ่มการตั้งค่าเช่นเดียวกับ Department" -- 7th Organization Structure sub-tab.
+        case 'p7':
+            $structureContent.html($('#tmpl-team-pane').html());
+            initStructureTable('team', '#tb_team');
+            break;
     }
 }
 function initStructureTable(type, tableId) {
@@ -598,11 +617,11 @@ function getStructureColumns(type) {
         case 'rank':
             return [
                 { data: "rank_code" },
-                { 
+                {
                     data: null,
                     render: (data, type, row) => getLocaleText(row, 'rank_name')
                 },
-                { 
+                {
                     data: null,
                     render: function (data, type, row) {
                         let min = row.salary_min ? parseFloat(row.salary_min).toLocaleString('th-TH') : '0';
@@ -610,7 +629,7 @@ function getStructureColumns(type) {
                         return `${min} - ${max}`;
                     }
                 },
-                { 
+                {
                     data: "ot_eligible",
                     className: "text-center",
                     render: function (data) {
@@ -618,11 +637,30 @@ function getStructureColumns(type) {
                     }
                 },
                 { data: "status", render: statusRender },
-                { 
-                    data: null, 
-                    orderable: false, 
+                {
+                    data: null,
+                    orderable: false,
                     className: "text-center",
-                    render: (data, type, row) => getActionButtons(row, 'rank') 
+                    render: (data, type, row) => getActionButtons(row, 'rank')
+                }
+            ];
+        // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็น
+        // การเพิ่มการตั้งค่าเช่นเดียวกับ Department" -- same shape as the 'department' case above,
+        // plus client_name (the client/project this team is deployed to).
+        case 'team':
+            return [
+                { data: "team_code" },
+                {
+                    data: null,
+                    render: (data, type, row) => getLocaleText(row, 'team_name')
+                },
+                { data: "client_name", defaultContent: "-" },
+                { data: "status", render: statusRender },
+                {
+                    data: null,
+                    orderable: false,
+                    className: "text-center",
+                    render: (data, type, row) => getActionButtons(row, 'team')
                 }
             ];
     }
@@ -633,6 +671,7 @@ const apiEndpointPrefix = {
     department: 'structure.department',
     position: 'structure.position',
     rank: 'structure.rank',
+    team: 'structure.team',
     bank_account: 'bank_account'
 };
 const formSchemas = {
@@ -683,6 +722,18 @@ const formSchemas = {
             { name: 'salary_min', label: 'salary_range', type: 'number', step: '0.01', legal_key: 'min' },
             { name: 'salary_max', label: 'salary_range', type: 'number', step: '0.01', legal_key: 'max' },
             { name: 'ot_eligible', label: 'ot_eligible', type: 'checkbox' },
+            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+        ]
+    },
+    // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการเพิ่ม
+    // การตั้งค่าเช่นเดียวกับ Department" -- same shape as 'department' above, plus client_name
+    // (confirmed via AskUserQuestion: Team needs a separate client/scope field, not just code+name).
+    team: {
+        fields: [
+            { name: 'team_code', label: 'team_code', type: 'text', required: true },
+            { name: 'team_name_th', label: 'team_name', type: 'text', required: true, legal_key: 'local_name' },
+            { name: 'team_name_en', label: 'team_name', type: 'text', required: true, legal_key: 'en_name' },
+            { name: 'client_name', label: 'team_client_name', type: 'text' },
             { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
         ]
     },

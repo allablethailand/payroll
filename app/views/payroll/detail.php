@@ -541,11 +541,18 @@
                 </div>
                 <div class="modal-body">
                     <div class="row g-2 mb-3">
-                        <div class="col-sm-4">
+                        <div class="col-sm-3">
                             <label class="form-label mb-1" data-i18n="department">Department</label>
                             <select class="form-select select2-remote" id="joinFilterDepartment" data-api="/api/department.get" data-type="department"></select>
                         </div>
-                        <div class="col-sm-4">
+                        <!-- 2026-08-24, explicit request ("ในการดึงพนักงานเข้ามาเพื่อคำนวณเงินเดือน ให้มี
+                             Filter ส่วนที่เพิ่มเมื่อสักครู่ด้วยครับ") -- same Team filter just added to
+                             Employee List. -->
+                        <div class="col-sm-2">
+                            <label class="form-label mb-1" data-i18n="team">Team</label>
+                            <select class="form-select select2-remote" id="joinFilterTeam" data-api="/api/team.get" data-type="team"></select>
+                        </div>
+                        <div class="col-sm-3">
                             <label class="form-label mb-1" data-i18n="position">Position</label>
                             <select class="form-select select2-remote" id="joinFilterPosition" data-api="/api/position.get" data-type="position"></select>
                         </div>
@@ -557,18 +564,30 @@
                             <select class="form-select select2-remote" id="joinFilterCycle" data-api="/api/payroll-cycle.options"></select>
                         </div>
                         <div class="col-sm-1 d-flex align-items-end">
-                            <button type="button" class="btn btn-outline-secondary w-100" id="btnClearJoinFilter">
+                            <button type="button" class="btn btn-outline-secondary w-100" id="btnClearJoinFilter" title="Clear filter">
                                 <i class="fa-solid fa-filter-circle-xmark"></i>
                             </button>
                         </div>
                     </div>
+                    <!-- 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการ
+                         ได้ง่ายที่สุด") -- the checkbox-header "select all" below only ever covers the
+                         current DataTable page (serverSide:true) -- with a filter narrowed down to
+                         (say) one Team, this makes grabbing everyone matching it one click instead of
+                         paging through and re-checking the header box on every page. -->
+                    <div class="d-flex justify-content-end mb-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="btnJoinSelectAllMatching">
+                            <i class="fa-solid fa-list-check me-1"></i><span data-i18n="select_all_matching">Select All Matching</span>
+                            (<span id="joinFilteredCount">0</span>)
+                        </button>
+                    </div>
                     <table class="table table-hover table-border align-middle w-100" id="tb_join_employees">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th><input type="checkbox" id="joinSelectAll"></th>
+                                <th><input type="checkbox" id="joinSelectAll" title="Select all on this page"></th>
                                 <th data-i18n="table_code">Code</th>
                                 <th data-i18n="table_name">Name</th>
                                 <th data-i18n="department">Department</th>
+                                <th data-i18n="team">Team</th>
                                 <th data-i18n="position">Position</th>
                                 <th data-i18n="payroll_cycle">Payroll Cycle</th>
                             </tr>

@@ -51,6 +51,19 @@
               <i class="fa-solid fa-file-invoice me-1"></i><span data-i18n="tab_slip_request_approval">Payslip Approval</span>
             </button>
           </li>
+          <!-- 2026-08-24, explicit request: "ใน Approval Flow เพิ่มอีก Tab เป็น Tab การตั้งค่าการอนุมัติการ
+               ขอใบรับรอง" -- 3rd pill, same generic engine (ApprovalWorkflowModel::getByDocumentType()/
+               stepSave() etc. are fully DB-driven off `approval_document_types`, no code change needed
+               beyond seeding the new row -- see database/payroll.sql's own comment on this migration).
+               Config-only for now: there is still no request/issuance flow for certificates at all, so
+               a workflow built here has no caller yet (same "built ahead of its consumer" situation as
+               Holiday's resolver) -- once that flow exists it'll call ApprovalRequestModel::create()
+               with this code. -->
+          <li class="nav-item">
+            <button type="button" class="nav-link structure-menu" data-document-type="EMPLOYMENT_CERTIFICATE_APPROVAL">
+              <i class="fa-solid fa-file-shield me-1"></i><span data-i18n="tab_employment_certificate_approval">Employment Certificate Approval</span>
+            </button>
+          </li>
         </ul>
       </div>
 

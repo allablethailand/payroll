@@ -201,6 +201,7 @@ class PayrollController extends Controller {
         $length = intval($_POST['length'] ?? 10);
         $filters = [
             'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
             'position_id' => $_POST['position_id'] ?? '',
             'emp_cycle_id' => $_POST['emp_cycle_id'] ?? '',
         ];
@@ -213,6 +214,30 @@ class PayrollController extends Controller {
             'recordsFiltered' => $res['filtered'],
             'data' => $res['data'],
         ]);
+    }
+
+    /** 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่ายที่สุด") --
+     *  "Select all N matching" for the Join Employees picker: every id matching the current filter/
+     *  search, not just the current DataTable page. Separate endpoint from manualEmployeeOptions()
+     *  (that one stays paginated for the table itself) so the picker's live DataTable ajax traffic
+     *  is untouched -- this is only called once, when the user clicks "Select All". */
+    public function manualEmployeeAllIds() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_POST['run_id'] ?? 0);
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid run.']);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
+            'position_id' => $_POST['position_id'] ?? '',
+            'emp_cycle_id' => $_POST['emp_cycle_id'] ?? '',
+        ];
+        $search = (string)($_POST['search'] ?? '');
+        $ids = $this->model->manualEmployeeAllIds((int)$compId, $runId, $filters, $search);
+        $this->json(['status' => true, 'employee_ids' => $ids]);
     }
 
     public function joinEmployees() {

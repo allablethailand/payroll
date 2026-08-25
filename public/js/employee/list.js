@@ -36,7 +36,7 @@ $(document).ready(function () {
         initDatepicker('#employee_filter_date_to');
     }
     if (typeof initSelect2 === 'function') {
-        initSelect2('#employee_filter_role, #employee_filter_department, #employee_filter_shift, #employee_filter_branch', { mode: 'ajax', allowClear: true });
+        initSelect2('#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch', { mode: 'ajax', allowClear: true });
     }
     updateClearEmployeeFilterVisibility();
 });
@@ -54,6 +54,7 @@ function currentEmployeeExtraFilters() {
         created_date_to: toIsoDateEmp($('#employee_filter_date_to').val()),
         role_id: $('#employee_filter_role').val() || '',
         department_id: $('#employee_filter_department').val() || '',
+        team_id: $('#employee_filter_team').val() || '',
         shift_id: $('#employee_filter_shift').val() || '',
         branch_id: $('#employee_filter_branch').val() || ''
     };
@@ -67,7 +68,7 @@ function toIsoDateEmp(displayVal) {
 }
 function updateClearEmployeeFilterVisibility() {
     const f = currentEmployeeExtraFilters();
-    const hasFilter = !!(f.created_date_from || f.created_date_to || f.role_id || f.department_id || f.shift_id || f.branch_id);
+    const hasFilter = !!(f.created_date_from || f.created_date_to || f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id);
     $('#btnClearEmployeeFilter').toggleClass('d-none', !hasFilter);
 }
 $(document).on('click', '#employeeStationFilterToggle', function () {
@@ -81,7 +82,7 @@ $(document).on('changeDate', '#employee_filter_date_from, #employee_filter_date_
     updateClearEmployeeFilterVisibility();
     if (tb_employee) tb_employee.ajax.reload(null, true);
 });
-$(document).on('change', '#employee_filter_role, #employee_filter_department, #employee_filter_shift, #employee_filter_branch', function () {
+$(document).on('change', '#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch', function () {
     updateClearEmployeeFilterVisibility();
     if (tb_employee) tb_employee.ajax.reload(null, true);
 });
@@ -90,7 +91,7 @@ $(document).on('click', '#btnClearEmployeeFilter', function () {
     // ajax.reload() -- 'change.select2' only refreshes the widget's display, and clearDates()'s
     // 'changeDate' event is left to fire on the date fields same as the Process page's own Clear
     // Filter (2 reloads there already, accepted) -- one explicit reload below covers the rest.
-    $('#employee_filter_role, #employee_filter_department, #employee_filter_shift, #employee_filter_branch').val(null).trigger('change.select2');
+    $('#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch').val(null).trigger('change.select2');
     $('#employee_filter_date_from, #employee_filter_date_to').datepicker('clearDates');
     updateClearEmployeeFilterVisibility();
     if (tb_employee) tb_employee.ajax.reload(null, true);
@@ -129,6 +130,7 @@ function initEmployeeTable() {
             { data: "name" },
             { data: "role" },
             { data: "department" },
+            { data: "team", render: d => d || '-' },
             { data: "shift", render: d => d || '-' },
             { data: "branch" },
             { data: "start_work_date" },

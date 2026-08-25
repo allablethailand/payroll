@@ -106,7 +106,7 @@ function collectEmployeeFormData() {
     return data;
 }
 function populateEmployeeForm(data) {
-    const remoteFields = ['department_id', 'role_id', 'position_id', 'branch_id', 'bank_id', 'report_to_id', 'nationality', 'religion', 'cycle_id', 'work_location_id', 'shift_id'];
+    const remoteFields = ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'bank_id', 'report_to_id', 'nationality', 'religion', 'cycle_id', 'work_location_id', 'shift_id'];
     Object.keys(data).forEach(function (key) {
         if (remoteFields.indexOf(key) !== -1) return;
         const $el = $(`#employeeTabsContent [name="${key}"]`);
@@ -145,6 +145,11 @@ function populateEmployeeForm(data) {
     populateSelect2Field('nationality', data.nationality, data.nationality_name_th, data.nationality_name_en);
     populateSelect2Field('religion', data.religion, data.religion_name_th, data.religion_name_en);
     populateSelect2Field('department_id', data.department_id, data.department_name_th, data.department_name_en);
+    // 2026-08-24, explicit request: added Team -- MUST stay in remoteFields above + get an explicit
+    // populateSelect2Field() call here, or it falls into the exact silent-nulling bug documented
+    // below for work_location_id/shift_id (a select2-remote with no <option> preloaded yet just
+    // ignores a plain .val(id), so the field reads as empty and overwrites the real value on save).
+    populateSelect2Field('team_id', data.team_id, data.team_name_th, data.team_name_en);
     populateSelect2Field('role_id', data.role_id, data.role_name_th, data.role_name_en);
     populateSelect2Field('position_id', data.position_id, data.position_name_th, data.position_name_en);
     populateSelect2Field('branch_id', data.branch_id, data.branch_name_th, data.branch_name_en);

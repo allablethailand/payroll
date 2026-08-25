@@ -652,7 +652,23 @@
                     </select>
                 </div>
             </div>
+            <!-- 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...เป็นบริษัท
+                 ที่จ้าง outsource เพื่อไปอยู่กับหลาย Project" -- optional (not .required, unlike
+                 Department/Role/Position/Branch): not every company using this app is an
+                 outsourcing/staffing firm, so this shouldn't block save or count toward profile
+                 completeness for everyone. Paired with Position (explicit follow-up request: "team
+                 อยู่รายการเดียวโดด...ย้าย select ตัวต่อไปมาไว้ให้เป็นคู่") -- every field after Position
+                 shifted up one slot to close the gap (Employee No.+Branch, Work Location+Shift),
+                 leaving Employment Date alone at the END of the section instead of Team alone in the
+                 MIDDLE -- a trailing lone field reads normally, a lone field mid-section looked broken. -->
             <div class="row">
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label"><span data-i18n="team">Team</span></label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <select class="form-select select2-remote" name="team_id" id="team_id" data-api="/api/team.get" data-type="team">
+                    </select>
+                </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="position">Position</span> <span class="text-danger">*</span></label>
                 </div>
@@ -660,14 +676,14 @@
                     <select class="form-select select2-remote required" name="position_id" id="position_id" data-api="/api/position.get" data-type="position">
                     </select>
                 </div>
+            </div>
+            <div class="row">
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="employee_no">Employee No.</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control required" name="employee_no" id="employee_no_input">
                 </div>
-            </div>
-            <div class="row">
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="branch">Branch</span> <span class="text-danger">*</span></label>
                 </div>
@@ -675,6 +691,8 @@
                     <select class="form-select select2-remote required" name="branch_id" id="branch_id" data-api="/api/branch.get" data-type="branch">
                     </select>
                 </div>
+            </div>
+            <div class="row">
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="work_location">Work Location</span> <span class="text-danger">*</span></label>
                 </div>
@@ -682,8 +700,6 @@
                     <select class="form-select select2-remote required" name="work_location_id" id="work_location_id" data-api="/api/work-location.options" data-type="location">
                     </select>
                 </div>
-            </div>
-            <div class="row">
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="shift">Shift</span> <span class="text-danger">*</span></label>
                 </div>
@@ -691,6 +707,8 @@
                     <select class="form-select select2-remote required" name="shift_id" id="shift_id" data-api="/api/shift.options" data-type="shift">
                     </select>
                 </div>
+            </div>
+            <div class="row">
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="employment_date">Employment Date</span> <span class="text-danger">*</span></label>
                 </div>

@@ -1737,10 +1737,11 @@ class PayrollRunModel {
      * than reusing EmployeeModel::list() -- "exclude whoever's already joined to run X" is
      * specific to this one picker, not a general employee-list concern.
      */
-    public function manualEmployeeOptions(int $compId, int $runId, int $start, int $length, array $filters, string $search, string $lang = 'th'): array {
-        $deptCol = $lang === 'en' ? 'department_name_en' : 'department_name_th';
-        $posiCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
-
+    /** Shared WHERE-builder for manualEmployeeOptions()/manualEmployeeAllIds() -- both need the
+     *  exact same "who's eligible to be joined onto this run" logic (pure-cycle-run re-include-only
+     *  branch, sync-run already-mapped exclusion, plus every filter), just with different
+     *  pagination/output shapes on top. @return array{0:string,1:array} [$whereSql, $params] */
+    private function buildManualEmployeeWhere(int $compId, int $runId, array $filters): array {
         $run = $this->get($runId, $compId);
         $isPureCycleRun = $run && $run['cycle_id'] !== null && $run['sync_process_id'] === null;
 
@@ -1749,11 +1750,11 @@ class PayrollRunModel {
             // cycle-based run's membership is fully automatic by employment date -- the only thing
             // this picker can ever offer here is "re-include a previously-removed employee" (see
             // joinEmployees()'s cycle-only-run branch), never an arbitrary new add.
-            $baseWhere = "e.comp_id = :comp_id AND e.deleted_at IS NULL
+            $where = "e.comp_id = :comp_id AND e.deleted_at IS NULL
                 AND EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id AND pex.employee_id = e.id)";
             $params = [':comp_id' => $compId, ':run_id' => $runId];
         } else {
-            $baseWhere = "e.comp_id = :comp_id AND e.deleted_at IS NULL
+            $where = "e.comp_id = :comp_id AND e.deleted_at IS NULL
                 AND NOT EXISTS (SELECT 1 FROM `payroll_run_manual_employees` pme WHERE pme.run_id = :run_id AND pme.employee_id = e.id)";
             $params = [':comp_id' => $compId, ':run_id' => $runId];
 
@@ -1764,18 +1765,24 @@ class PayrollRunModel {
             // place) -- UNLESS this run has excluded them, in which case surfacing them back into
             // the picker is exactly how they get re-included (the OR clause below).
             if ($run && $run['sync_process_id'] !== null) {
-                $baseWhere .= " AND (NOT EXISTS (SELECT 1 FROM `payroll_sync_items` psi WHERE psi.process_id = :sync_process_id AND psi.employee_id = e.id AND psi.mapping_status = 'mapped')
+                $where .= " AND (NOT EXISTS (SELECT 1 FROM `payroll_sync_items` psi WHERE psi.process_id = :sync_process_id AND psi.employee_id = e.id AND psi.mapping_status = 'mapped')
                     OR EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex2 WHERE pex2.run_id = :run_id2 AND pex2.employee_id = e.id))";
                 $params[':sync_process_id'] = $run['sync_process_id'];
                 $params[':run_id2'] = $runId;
             }
         }
         if (!empty($filters['department_id'])) {
-            $baseWhere .= " AND e.department_id = :department_id";
+            $where .= " AND e.department_id = :department_id";
             $params[':department_id'] = (int)$filters['department_id'];
         }
+        // 2026-08-24, explicit request ("ในการดึงพนักงานเข้ามาเพื่อคำนวณเงินเดือน ให้มี Filter ส่วนที่
+        // เพิ่มเมื่อสักครู่ด้วยครับ") -- same Team filter just added to Employee List, here too.
+        if (!empty($filters['team_id'])) {
+            $where .= " AND e.team_id = :team_id";
+            $params[':team_id'] = (int)$filters['team_id'];
+        }
         if (!empty($filters['position_id'])) {
-            $baseWhere .= " AND e.position_id = :position_id";
+            $where .= " AND e.position_id = :position_id";
             $params[':position_id'] = (int)$filters['position_id'];
         }
         // 2026-08-22, explicit request ("ตรง Join Employee อยากให้เพิ่ม Filter รอบเงินเดือนได้ด้วย")
@@ -1784,9 +1791,18 @@ class PayrollRunModel {
         // employees who normally belong to one particular cycle, same idea as filtering by
         // department/position.
         if (!empty($filters['emp_cycle_id'])) {
-            $baseWhere .= " AND e.cycle_id = :emp_cycle_id";
+            $where .= " AND e.cycle_id = :emp_cycle_id";
             $params[':emp_cycle_id'] = (int)$filters['emp_cycle_id'];
         }
+        return [$where, $params];
+    }
+
+    public function manualEmployeeOptions(int $compId, int $runId, int $start, int $length, array $filters, string $search, string $lang = 'th'): array {
+        $deptCol = $lang === 'en' ? 'department_name_en' : 'department_name_th';
+        $posiCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
+        $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
+
+        [$baseWhere, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
 
         $totalStmt = $this->db->prepare("SELECT COUNT(*) FROM `employees` e WHERE {$baseWhere}");
         $totalStmt->execute($params);
@@ -1806,11 +1822,12 @@ class PayrollRunModel {
 
         $dataSql = "SELECT e.id, e.employee_no,
                     CONCAT(e.name_th, ' ', e.surname_th) AS name_th, CONCAT(e.name_en, ' ', e.surname_en) AS name_en,
-                    COALESCE(d.{$deptCol}, '') AS department, COALESCE(p.{$posiCol}, '') AS position,
+                    COALESCE(d.{$deptCol}, '') AS department, COALESCE(tm.{$teamCol}, '') AS team, COALESCE(p.{$posiCol}, '') AS position,
                     COALESCE(c.cycle_name, '') AS cycle_name,
                     e.employment_date
                 FROM `employees` e
                 LEFT JOIN `structure_departments` d ON e.department_id = d.id
+                LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
                 LEFT JOIN `structure_positions` p ON e.position_id = p.id
                 LEFT JOIN `payroll_cycles` c ON e.cycle_id = c.id
                 WHERE {$whereSql}
@@ -1825,6 +1842,25 @@ class PayrollRunModel {
         $stmt->execute();
 
         return ['total' => $recordsTotal, 'filtered' => $recordsFiltered, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
+    }
+
+    /** 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่ายที่สุด") --
+     *  "Select All" in the Join Employees picker previously only ever meant the current DataTable
+     *  page (serverSide:true, so most matches were invisible to a page-scoped select-all). This
+     *  returns every employee id matching the current filter/search with NO pagination, so the
+     *  frontend can offer a real "select all N matching" action. Same WHERE as
+     *  manualEmployeeOptions() (including its own search clause) -- just id-only, unpaginated. */
+    public function manualEmployeeAllIds(int $compId, int $runId, array $filters, string $search): array {
+        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
+        if ($search !== '') {
+            $whereSql .= " AND (e.employee_no LIKE :search1 OR e.name_th LIKE :search2 OR e.surname_th LIKE :search3 OR e.name_en LIKE :search4 OR e.surname_en LIKE :search5)";
+            for ($i = 1; $i <= 5; $i++) {
+                $params[":search{$i}"] = "%{$search}%";
+            }
+        }
+        $stmt = $this->db->prepare("SELECT e.id FROM `employees` e WHERE {$whereSql} ORDER BY e.employee_no ASC");
+        $stmt->execute($params);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
     }
 
     /**

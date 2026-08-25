@@ -57,6 +57,11 @@
                     <label class="form-label mb-1" data-i18n="department">Department</label>
                     <select class="form-select select2-remote" id="employee_filter_department" data-api="/api/department.get" data-type="department"></select>
                 </div>
+                <!-- 2026-08-24, explicit request: "เพิ่ม Filter ทีมในหน้า list พนักงานด้วย" -->
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label mb-1" data-i18n="team">Team</label>
+                    <select class="form-select select2-remote" id="employee_filter_team" data-api="/api/team.get" data-type="team"></select>
+                </div>
                 <div class="col-6 col-md-4 col-lg-2">
                     <label class="form-label mb-1" data-i18n="shift">Shift</label>
                     <select class="form-select select2-remote" id="employee_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
@@ -99,6 +104,7 @@
                             <th scope="col" data-i18n="name">Name</th>
                             <th scope="col" data-i18n="role">Role</th>
                             <th scope="col" data-i18n="department">Department</th>
+                            <th scope="col" data-i18n="team">Team</th>
                             <th scope="col" data-i18n="shift">Shift</th>
                             <th scope="col" data-i18n="branch">Branch</th>
                             <th scope="col" data-i18n="start_work_date">Start Work Date</th>
