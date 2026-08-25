@@ -536,6 +536,112 @@ try {
     ], $userId);
     checkFalse('save() rejects an unrecognized font_family', $badFontSave['status']);
 
+    echo "=== Assign To (department/team/employee scoping, explicit request: \"สามารถ Assign ตั้งค่าให้พนักงาน เป็นรายแผนก รายทีม หรือรายคน หรือใช้งานร่วมกันทั้งหมดก็ได้\") ===\n";
+    $pdo->prepare("UPDATE `employment_certificate_templates` SET status = 'deleted' WHERE comp_id = :comp_id AND status = 'active'")
+        ->execute([':comp_id' => $compId]);
+    $pdo->prepare("INSERT INTO `structure_departments` (comp_id, department_code, department_name_th, department_name_en, status) VALUES (:c, :code, 'แผนกทดสอบ', 'Test Dept', 'active')")
+        ->execute([':c' => $compId, ':code' => 'DEPT_ECT_ASSIGN_' . uniqid()]);
+    $ectDeptId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `structure_teams` (comp_id, team_code, team_name_th, team_name_en, status) VALUES (:c, :code, 'ทีมทดสอบ', 'Test Team', 'active')")
+        ->execute([':c' => $compId, ':code' => 'TEAM_ECT_ASSIGN_' . uniqid()]);
+    $ectTeamId = (int)$pdo->lastInsertId();
+    function makeEctAssignTestEmployee(PDO $pdo, int $compId, ?int $deptId, ?int $teamId, string $tag): int {
+        // No PII encryption needed here (unlike tests/payslip_template_test.php's own fixture
+        // helper, which needs a decryptable bank_account_no for PaySlipReport's masking) --
+        // Employment Certificate Template's assignment resolver only ever reads department_id/
+        // team_id, never any encrypted field, so tax_id_no/key_version are left NULL.
+        $stmt = $pdo->prepare("INSERT INTO `employees`
+            (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+             personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+             emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+             employment_date, employment_status, employment_type, workforce_type, record_time_method,
+             payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+             sso_enrolled, pvd_enrolled, tax_exempt, department_id, team_id)
+            VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, 'ทดสอบ', :name_en, 'Test', '1990-01-01', 'Thai',
+             :email, '0800000000', 'Test Address', 'Test Address',
+             'Emergency', 'Contact', 'friend', '0899999999',
+             '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+             'bank', 'monthly', 30000, '2020-01-01', 'average', 'active',
+             1, 1, 0, :department_id, :team_id)");
+        $stmt->execute([
+            ':comp_id' => $compId, ':employee_no' => 'ECT_ASSIGN_' . $tag . '_' . uniqid(),
+            ':name_th' => $tag, ':name_en' => $tag,
+            ':email' => uniqid() . '@test.local', ':department_id' => $deptId, ':team_id' => $teamId,
+        ]);
+        return (int)$pdo->lastInsertId();
+    }
+    $ectDeptOnlyEmpId = makeEctAssignTestEmployee($pdo, $compId, $ectDeptId, null, 'DeptOnly');
+    $ectDirectEmpId = makeEctAssignTestEmployee($pdo, $compId, $ectDeptId, $ectTeamId, 'DirectAssign');
+    $ectUnmatchedEmpId = makeEctAssignTestEmployee($pdo, $compId, null, null, 'Unmatched');
+
+    $ectDefaultTpl = $model->createFromPreset($compId, 'th', 'blank', 'ECT Default', $userId);
+    checkTrue('company-default (unscoped) TH template created', $ectDefaultTpl['status']);
+    $ectDeptTpl = $model->save($compId, [
+        'language' => 'th', 'template_name' => 'ECT Dept Scoped', 'elements' => [],
+        'assignments' => [['scope_type' => 'department', 'scope_id' => $ectDeptId]],
+    ], $userId);
+    checkTrue('department-scoped TH template saves', $ectDeptTpl['status']);
+    $ectEmpTpl = $model->save($compId, [
+        'language' => 'th', 'template_name' => 'ECT Employee Scoped', 'elements' => [],
+        'assignments' => [['scope_type' => 'employee', 'scope_id' => $ectDirectEmpId]],
+    ], $userId);
+    checkTrue('employee-scoped TH template saves', $ectEmpTpl['status']);
+
+    check('unmatched employee resolves to the company default (th)', (int)($model->resolveTemplateForEmployee($compId, $ectUnmatchedEmpId, 'th')['id'] ?? 0), (int)$ectDefaultTpl['template_id']);
+    check('dept-only employee resolves to the department-scoped template (th)', (int)($model->resolveTemplateForEmployee($compId, $ectDeptOnlyEmpId, 'th')['id'] ?? 0), (int)$ectDeptTpl['template_id']);
+    check('directly-assigned employee resolves to the EMPLOYEE template, overriding department (th)', (int)($model->resolveTemplateForEmployee($compId, $ectDirectEmpId, 'th')['id'] ?? 0), (int)$ectEmpTpl['template_id']);
+    checkTrue('resolveTemplateForEmployee() returns null for an invalid language', $model->resolveTemplateForEmployee($compId, $ectDirectEmpId, 'fr') === null);
+
+    $gotEctDeptTpl = $model->get($compId, (int)$ectDeptTpl['template_id']);
+    check('1 assignment row on the department-scoped template', count($gotEctDeptTpl['assignments']), 1);
+    check('assignment label resolves the real department name', $gotEctDeptTpl['assignments'][0]['label'], 'แผนกทดสอบ');
+
+    checkFalse('save() rejects an unknown scope_type', $model->save($compId, [
+        'language' => 'th', 'template_name' => 'X', 'elements' => [], 'assignments' => [['scope_type' => 'position', 'scope_id' => $ectDeptId]],
+    ], $userId)['status']);
+    checkFalse('save() rejects a scope_id that does not exist', $model->save($compId, [
+        'language' => 'th', 'template_name' => 'X', 'elements' => [], 'assignments' => [['scope_type' => 'department', 'scope_id' => 999999]],
+    ], $userId)['status']);
+
+    $ectDupDept = $model->duplicate($compId, (int)$ectDeptTpl['template_id'], $userId);
+    checkTrue('duplicate() of a scoped template succeeds', $ectDupDept['status']);
+    check('duplicate() does NOT carry assignments forward (starts unscoped)', count($model->get($compId, (int)$ectDupDept['template_id'])['assignments']), 0);
+
+    echo "=== Assign To: duplicate-assignment rejection (explicit request: \"ถ้ามีการตั้งค่าซ้ำต้องแจ้ง Error ว่ามีการ Assign ซ้ำใคร\") ===\n";
+    // ectDeptTpl already claims $ectDeptId (th, active) -- a second TH template claiming the same
+    // department must be rejected, naming the department.
+    $ectConflictSave = $model->save($compId, [
+        'language' => 'th', 'template_name' => 'Conflicting Dept Template', 'elements' => [],
+        'assignments' => [['scope_type' => 'department', 'scope_id' => $ectDeptId]],
+    ], $userId);
+    checkFalse('a second TH template claiming the same department is rejected', $ectConflictSave['status']);
+    checkTrue('the error message names the conflicting department', strpos($ectConflictSave['message'], 'แผนกทดสอบ') !== false);
+    checkTrue('the error message names the template that already claims it', strpos($ectConflictSave['message'], 'ECT Dept Scoped') !== false);
+
+    // Same department, but the EN language -- must NOT conflict with the TH assignment (resolution
+    // is per-language, see findConflictingAssignment()'s own comment).
+    $ectEnSameDept = $model->save($compId, [
+        'language' => 'en', 'template_name' => 'EN Dept Template', 'elements' => [],
+        'assignments' => [['scope_type' => 'department', 'scope_id' => $ectDeptId]],
+    ], $userId);
+    checkTrue('the SAME department assigned to an EN template does not conflict with the TH one', $ectEnSameDept['status']);
+
+    // Re-saving ectDeptTpl itself with the assignment it already owns must not conflict with itself.
+    $ectReSaveSelf = $model->save($compId, [
+        'id' => $ectDeptTpl['template_id'], 'language' => 'th', 'template_name' => 'ECT Dept Scoped', 'elements' => [],
+        'assignments' => [['scope_type' => 'department', 'scope_id' => $ectDeptId]],
+    ], $userId);
+    checkTrue('re-saving a template with the assignment it already owns does not conflict with itself', $ectReSaveSelf['status']);
+
+    // Deleting ectDeptTpl frees the department for another TH template (ECT has no active/inactive
+    // toggle like Payslip Template -- soft-delete is the only way a template stops applying).
+    $model->delete($compId, (int)$ectDeptTpl['template_id'], $userId);
+    $ectFreedNowSave = $model->save($compId, [
+        'language' => 'th', 'template_name' => 'Now Free Dept Template', 'elements' => [],
+        'assignments' => [['scope_type' => 'department', 'scope_id' => $ectDeptId]],
+    ], $userId);
+    checkTrue('the department becomes assignable again once the original template is deleted', $ectFreedNowSave['status']);
+
 } finally {
     $pdo->rollBack();
 }

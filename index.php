@@ -161,14 +161,18 @@
     $router->post('api/leave-type.toggle-status', 'SetupRulesController@leaveTypeToggleStatus');
     $router->get('api/permission-matrix.get', 'PermissionController@matrix');
     $router->post('api/permission-matrix.save', 'PermissionController@save');
-    $router->get('payslip-template/edit/{id}', 'PayslipTemplateController@editPage');
+    $router->get('payslip-template/edit/{key}', 'PayslipTemplateController@editPage');
     $router->post('api/payslip-template.field-options', 'PayslipTemplateController@fieldTypeOptions');
+    $router->post('api/payslip-template.assignable-options', 'PayslipTemplateController@assignableOptions');
     $router->post('api/payslip-template.preset-options', 'PayslipTemplateController@presetOptions');
     $router->get('api/payslip-template.list', 'PayslipTemplateController@list');
+    $router->get('api/payslip-template.paired-list', 'PayslipTemplateController@pairedList');
+    $router->post('api/payslip-template.generate-other-language', 'PayslipTemplateController@generateOtherLanguage');
     $router->get('api/payslip-template.get', 'PayslipTemplateController@get');
     $router->post('api/payslip-template.save', 'PayslipTemplateController@save');
     $router->post('api/payslip-template.create-from-preset', 'PayslipTemplateController@createFromPreset');
     $router->post('api/payslip-template.duplicate', 'PayslipTemplateController@duplicate');
+    $router->post('api/payslip-template.duplicate-pair', 'PayslipTemplateController@duplicatePair');
     $router->post('api/payslip-template.preset-elements', 'PayslipTemplateController@presetElements');
     $router->post('api/payslip-template.delete', 'PayslipTemplateController@delete');
     $router->post('api/payslip-template.toggle-status', 'PayslipTemplateController@toggleStatus');
@@ -182,6 +186,7 @@
     $router->get('employment-certificate/settings', 'EmploymentCertificateTemplateController@index');
     $router->get('employment-certificate/edit/{key}', 'EmploymentCertificateTemplateController@editPage');
     $router->post('api/employment-certificate-template.field-options', 'EmploymentCertificateTemplateController@fieldTypeOptions');
+    $router->post('api/employment-certificate-template.assignable-options', 'EmploymentCertificateTemplateController@assignableOptions');
     $router->post('api/employment-certificate-template.preset-options', 'EmploymentCertificateTemplateController@presetOptions');
     $router->get('api/employment-certificate-template.list', 'EmploymentCertificateTemplateController@list');
     $router->get('api/employment-certificate-template.paired-list', 'EmploymentCertificateTemplateController@pairedList');

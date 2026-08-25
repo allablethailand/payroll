@@ -32,6 +32,7 @@
  * (already called after every single mutation in this file) writes `dirty` back into
  * `pairState[activeLang].dirty` as its one integration point -- see its own comment below.
  */
+(function () {
 let currentLanguage = 'th';
 let currentTemplate = null; // the template row currently open in #ectEditModal, or null
 let elements = [];
@@ -61,7 +62,7 @@ let modalMode = 'create';
 /** One language's working state inside #ectEditModal -- see the docblock above for why this exists
  *  instead of refactoring every existing global-variable call site. */
 function freshLangSlot() {
-    return { template: null, elements: [], dirty: false, logoPath: null, undoStack: [], redoStack: [], currentPageNumber: 1, pageCount: 1 };
+    return { template: null, elements: [], dirty: false, logoPath: null, undoStack: [], redoStack: [], currentPageNumber: 1, pageCount: 1, assignments: [] };
 }
 let pairState = { th: freshLangSlot(), en: freshLangSlot() };
 let activeLang = 'th'; // which language tab is currently shown/edited inside #ectEditModal
@@ -131,7 +132,9 @@ function updateSaveHint() {
     // false;` after a successful save) -- no other call site needed to change.
     if (pairState[activeLang]) pairState[activeLang].dirty = dirty;
     updateLangTabsUI();
-    $('#ectSaveHint').text(dirty ? (langData['ect_unsaved_hint'] || 'Unsaved changes — click Save.') : '');
+    // 2026-08-25 follow-up: "หน้า Design กับหน้า Assign To ต้องการให้มีปุ่ม Save แยก Tab" -- there are now
+    // TWO footers (one per tab), both using the `.ect-save-hint` CLASS (not a unique id).
+    $('.ect-save-hint').text(dirty ? (langData['ect_unsaved_hint'] || 'Unsaved changes — click Save.') : '');
 }
 
 /* ---------- Undo / Redo (explicit request: "เพิ่ม undo redo ด้วยครับ พร้อมทั้ง ctrl Z ctrl shift z") --
@@ -1696,7 +1699,8 @@ function fetchTemplateIntoSlot(id, callback) {
                 logoPath: t.logo_path || null,
                 elements: mappedElements,
                 dirty: false, undoStack: [], redoStack: [],
-                currentPageNumber: 1, pageCount: inferredPageCount
+                currentPageNumber: 1, pageCount: inferredPageCount,
+                assignments: t.assignments || []
             });
         },
         error: function () { callback(null); }
@@ -1707,6 +1711,101 @@ function fetchTemplateIntoSlot(id, callback) {
  *  not a deep clone (see the top-of-file docblock for why this was chosen over refactoring every
  *  call site). Renders either the normal canvas or the empty-state, depending on whether this
  *  language has been created for the pair yet. */
+/* ---------- Assign To (department/team/employee scoping) -- explicit follow-up request (2026-08-25):
+   "เพิ่ม Tab...เป็น checkbox ให้เลือก...เลือกได้กับทุกคน ทุกแผนก ทุกทีม แต่ถ้ามีการตั้งค่าซ้ำต้องแจ้ง Error"
+   -- replaced the round-1 select2-multi-select UI with full checkbox lists, same pattern as
+   PayslipTemplateController's own version (see that file's comment for the shared rationale).
+   `assignableOptionsData` (the raw department/team/employee lists) is company-wide, loaded ONCE per
+   editor page load -- it does NOT need to be per-language/pairState like elements/logoPath do, only
+   the CHECKED state does, so `currentAssignments` is swapped in/out of pairState on tab switch same
+   as everything else, and renderAssignChecklists() re-applies checked state against the one shared
+   options list every time. ---------- */
+const ECT_ASSIGN_SCOPES = [
+    { type: 'department', dataKey: 'departments', allId: 'ectAssignAllDepartments', filterId: 'ectAssignDepartmentsFilter', listId: 'ectAssignDepartmentsList' },
+    { type: 'team', dataKey: 'teams', allId: 'ectAssignAllTeams', filterId: 'ectAssignTeamsFilter', listId: 'ectAssignTeamsList' },
+    { type: 'employee', dataKey: 'employees', allId: 'ectAssignAllEmployees', filterId: 'ectAssignEmployeesFilter', listId: 'ectAssignEmployeesList' }
+];
+let assignableOptionsData = null; // {departments, teams, employees}, company-wide, loaded once per editor page load
+let currentAssignments = []; // active language tab's assignments -- swapped in/out of pairState[lang].assignments on tab switch
+
+function assignItemLabel(item) {
+    return (currentLang === 'en' && item.text_en) ? item.text_en : (item.text_th || item.text_en || ('#' + item.id));
+}
+function loadAssignableOptions(callback) {
+    $.ajax({
+        url: `${BASE_URL}/api/employment-certificate-template.assignable-options`,
+        method: 'POST', dataType: 'json',
+        success: function (res) {
+            assignableOptionsData = (res.status && res.data) ? res.data : { departments: [], teams: [], employees: [] };
+            renderAssignChecklists();
+            if (typeof callback === 'function') callback();
+        },
+        error: function () { if (typeof callback === 'function') callback(); }
+    });
+}
+function renderAssignChecklists() {
+    if (!assignableOptionsData) return;
+    const checkedKeys = {};
+    (currentAssignments || []).forEach(a => { checkedKeys[a.scope_type + ':' + a.scope_id] = true; });
+    ECT_ASSIGN_SCOPES.forEach(scope => {
+        const items = assignableOptionsData[scope.dataKey] || [];
+        const $list = $('#' + scope.listId).empty();
+        items.forEach(item => {
+            const label = assignItemLabel(item);
+            const checked = !!checkedKeys[scope.type + ':' + item.id];
+            const cbId = `ectAssignCb_${scope.type}_${item.id}`;
+            const $row = $('<div>').addClass('ect-assign-item form-check').attr('data-search', label.toLowerCase());
+            const $cb = $('<input>').addClass('form-check-input ect-assign-checkbox').attr({
+                type: 'checkbox', id: cbId, 'data-scope-type': scope.type, 'data-scope-id': item.id
+            }).prop('checked', checked);
+            const $label = $('<label>').addClass('form-check-label').attr('for', cbId).text(label);
+            $row.append($cb, $label);
+            $list.append($row);
+        });
+        if (!items.length) {
+            $list.append($('<div>').addClass('text-secondary small p-2').text(langData['no_results'] || 'No results found'));
+        }
+        updateAssignSelectAllState(scope);
+    });
+}
+function updateAssignSelectAllState(scope) {
+    const $boxes = $('#' + scope.listId + ' .ect-assign-checkbox');
+    const total = $boxes.length;
+    const checkedCount = $boxes.filter(':checked').length;
+    const $all = $('#' + scope.allId);
+    $all.prop('checked', total > 0 && checkedCount === total);
+    $all.prop('indeterminate', checkedCount > 0 && checkedCount < total);
+}
+function collectAssignments() {
+    const result = [];
+    $('.ect-assign-checkbox:checked').each(function () {
+        result.push({ scope_type: $(this).data('scope-type'), scope_id: Number($(this).data('scope-id')) });
+    });
+    return result;
+}
+$(document).on('change', '.ect-assign-checkbox', function () {
+    const scope = ECT_ASSIGN_SCOPES.find(s => s.type === $(this).data('scope-type'));
+    if (scope) updateAssignSelectAllState(scope);
+    if (!currentTemplate) return;
+    dirty = true;
+    updateSaveHint();
+});
+ECT_ASSIGN_SCOPES.forEach(scope => {
+    $(document).on('change', '#' + scope.allId, function () {
+        const checkAll = $(this).is(':checked');
+        $('#' + scope.listId + ' .ect-assign-checkbox').prop('checked', checkAll);
+        updateAssignSelectAllState(scope);
+        if (currentTemplate) { dirty = true; updateSaveHint(); }
+    });
+    $(document).on('input', '#' + scope.filterId, function () {
+        const term = $(this).val().toLowerCase().trim();
+        $('#' + scope.listId + ' .ect-assign-item').each(function () {
+            const match = !term || ($(this).attr('data-search') || '').indexOf(term) !== -1;
+            $(this).toggleClass('d-none', !match);
+        });
+    });
+});
+
 function switchToLangTab(lang) {
     activeLang = lang;
     currentLanguage = lang;
@@ -1723,14 +1822,16 @@ function switchToLangTab(lang) {
     updateLangTabsUI();
     updateUndoRedoUI();
     if (!currentTemplate) {
-        $('#ectEditorArea').addClass('d-none');
+        $('#ectMainTabsWrap').addClass('d-none');
         $('#ectLangEmptyState').removeClass('d-none');
-        // These live in the top bar (outside #ectEditorArea), so without clearing them they'd
+        // These live in the top bar (outside #ectMainTabsWrap), so without clearing them they'd
         // otherwise keep showing whichever OTHER language's values were loaded last -- confusing
         // since there's nothing here to actually save yet.
         $('#ectTemplateNameInput, #ectMarginInput').val('');
         $('#ectPageSizeSelect').val('A4');
         $('#ectOrientationSelect').val('portrait');
+        currentAssignments = [];
+        renderAssignChecklists();
         updateMarginDropdownLabel();
         const otherLang = lang === 'th' ? 'en' : 'th';
         const otherExists = !!pairState[otherLang].template;
@@ -1740,12 +1841,14 @@ function switchToLangTab(lang) {
         $('#ectLangEmptyTitle').text((langData['ect_lang_empty_title'] || 'The {lang} version hasn\'t been created yet.').replace('{lang}', langLabel));
         return;
     }
-    $('#ectEditorArea').removeClass('d-none');
+    $('#ectMainTabsWrap').removeClass('d-none');
     $('#ectLangEmptyState').addClass('d-none');
     $('#ectTemplateNameInput').val(currentTemplate.template_name);
     $('#ectPageSizeSelect').val(currentTemplate.page_size);
     $('#ectOrientationSelect').val(currentTemplate.orientation);
     $('#ectMarginInput').val(currentTemplate.margin_mm);
+    currentAssignments = slot.assignments || [];
+    renderAssignChecklists();
     updateMarginDropdownLabel();
     updateFontFamilyOptions();
     updateCanvasDimensions();
@@ -2188,7 +2291,7 @@ $(document).on('click', '#ectSaveBtn', function () {
     const payload = {
         id: currentTemplate.id, language: currentLanguage, template_name: templateName,
         page_size: pageSize, orientation: orientation, margin_mm: marginMm,
-        logo_path: logoPath, elements: elementsPayload()
+        logo_path: logoPath, elements: elementsPayload(), assignments: collectAssignments()
     };
     $.ajax({
         url: `${BASE_URL}/api/employment-certificate-template.save`,
@@ -2200,6 +2303,7 @@ $(document).on('click', '#ectSaveBtn', function () {
                 currentTemplate.page_size = pageSize;
                 currentTemplate.orientation = orientation;
                 currentTemplate.margin_mm = marginMm;
+                if (pairState[activeLang]) pairState[activeLang].assignments = payload.assignments;
                 dirty = false;
                 updateSaveHint();
                 // The list now lives in a DIFFERENT browser tab -- see the 'storage' event listener
@@ -2272,6 +2376,7 @@ $(document).ready(function () {
             }
         });
         updateFontFamilyOptions();
+        loadAssignableOptions();
         if (typeof ECT_PAIR_ROW !== 'undefined') {
             bootstrapEditorPage(ECT_PAIR_ROW);
         }
@@ -2303,3 +2408,4 @@ $(document).ready(function () {
         });
     }
 });
+})();

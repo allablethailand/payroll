@@ -50,7 +50,15 @@ class PaySlipReport implements ReportGeneratorInterface {
     }
 
     /**
-     * @param array $context { comp_id: int, run_id: int, employee_id: int }
+     * @param array $context { comp_id: int, run_id: int, employee_id: int, language?: 'th'|'en' }
+     *   2026-08-25 follow-up ("รูปแบบการทำเหมือนกัน") -- PayslipTemplateModel dropped `language_mode`
+     *   in favor of a real per-language `language`/`pair_key` pair like Employment Certificate
+     *   Template, so a payslip now has to pick exactly ONE language to render in. Defaults to 'th'
+     *   (matching where the one real pre-existing template landed during the migration) when the
+     *   caller doesn't specify -- same as EmploymentCertificateTemplateController's own endpoints,
+     *   which always require an explicit language rather than guessing, but this report has no admin
+     *   picking a language per-request today, so a safe default keeps every existing call site working
+     *   unchanged.
      */
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
@@ -81,8 +89,15 @@ class PaySlipReport implements ReportGeneratorInterface {
         $companyName = $company['local_name'] ?? $company['company_legal_name'] ?? '';
         $employeeName = $this->employeeDisplayName($detail, 'th');
 
+        $requestedLanguage = (string)($context['language'] ?? 'th');
+        $language = in_array($requestedLanguage, ['th', 'en'], true) ? $requestedLanguage : 'th';
         $templateModel = new PayslipTemplateModel();
-        $template = $templateModel->getDefaultForCompany($compId);
+        // 2026-08-25, explicit request: "สามารถ Assign ตั้งค่าให้พนักงาน เป็นรายแผนก รายทีม หรือรายคน
+        // หรือใช้งานร่วมกันทั้งหมดก็ได้" -- resolves the employee-specific/team/department-scoped
+        // template if one is assigned, falling back to the company's unscoped is_default template for
+        // this language (getDefault()'s own existing behavior, unchanged) when nothing more specific
+        // matches this employee.
+        $template = $templateModel->resolveTemplateForEmployee($compId, $employeeId, $language);
 
         if ($template !== null && !empty($template['elements'])) {
             $ytd = null;

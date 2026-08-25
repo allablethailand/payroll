@@ -49,6 +49,17 @@ class EmploymentCertificateTemplateModel {
     private const ORIENTATIONS = ['portrait', 'landscape'];
     private const MAX_PAGE_NUMBER = 20;
     public const PRESETS = ['blank', 'classic', 'modern', 'minimal', 'formal', 'elegant'];
+    // 2026-08-25, explicit request: "สามารถ Assign ตั้งค่าให้พนักงาน เป็นรายแผนก รายทีม หรือรายคน หรือ
+    // ใช้งานร่วมกันทั้งหมดก็ได้" -- same polymorphic scope pattern as PayslipTemplateModel's own (see
+    // that class's own docblock for the full reasoning, incl. why there's no include/exclude mode).
+    // Assignment is per LANGUAGE ROW here (not per pair) -- same granularity as logo_path/elements
+    // already are, so assigning the Thai design and English design to an audience is two separate
+    // steps, one per language tab, consistent with how everything else in this per-row architecture
+    // already works. This is config-only for now, same as Holiday's own resolver was before Holiday
+    // had a real consumer -- Employment Certificate Template still has NO request/issuance flow that
+    // would actually call resolveTemplateForEmployee() below, see this file's own top-of-class notes.
+    private const SCOPE_TYPES = ['department', 'team', 'employee'];
+    private const SCOPE_PRIORITY = ['employee' => 3, 'team' => 2, 'department' => 1];
 
     public function fieldTypeOptions(): array {
         $stmt = $this->db->query("SELECT code, name_th, name_en, field_group, element_type
@@ -226,7 +237,173 @@ class EmploymentCertificateTemplateModel {
             return null;
         }
         $template['elements'] = $this->getElements($id);
+        $template['assignments'] = $this->getAssignments($id);
         return $template;
+    }
+
+    /* ==================== Assignment (department/team/employee scoping) -- see this class's own
+       const block comment for the full reasoning; mirrors PayslipTemplateModel's own methods. ==================== */
+
+    private function validateScopeRef(string $scopeType, int $scopeId, int $compId): bool {
+        $table = match ($scopeType) {
+            'department' => 'structure_departments',
+            'team' => 'structure_teams',
+            'employee' => 'employees',
+            default => null,
+        };
+        if ($table === null) {
+            return false;
+        }
+        $stmt = $this->db->prepare("SELECT id FROM `{$table}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $scopeId, ':comp_id' => $compId]);
+        return (bool)$stmt->fetch();
+    }
+
+    public function getAssignments(int $templateId): array {
+        $stmt = $this->db->prepare("SELECT id, scope_type, scope_id FROM `employment_certificate_template_assignments` WHERE template_id = :id ORDER BY scope_type ASC, id ASC");
+        $stmt->execute([':id' => $templateId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$row) {
+            $row['label'] = $this->scopeLabel($row['scope_type'], (int)$row['scope_id']);
+        }
+        unset($row);
+        return $rows;
+    }
+
+    /** All active departments/teams/employees for this company, for the "Assign To" tab's checkbox
+     *  lists -- mirrors PayslipTemplateModel::assignableOptions() exactly, see that method's own
+     *  comment for why a full (not paginated-search) list is fetched. */
+    public function assignableOptions(int $compId): array {
+        $stmtD = $this->db->prepare("SELECT id, department_name_th AS text_th, department_name_en AS text_en
+            FROM `structure_departments` WHERE comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL ORDER BY department_name_th ASC");
+        $stmtD->execute([':comp_id' => $compId]);
+        $stmtT = $this->db->prepare("SELECT id, team_name_th AS text_th, team_name_en AS text_en
+            FROM `structure_teams` WHERE comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL ORDER BY team_name_th ASC");
+        $stmtT->execute([':comp_id' => $compId]);
+        $stmtE = $this->db->prepare("SELECT id, CONCAT(employee_no, ' - ', name_th, ' ', surname_th) AS text_th,
+                CONCAT(employee_no, ' - ', name_en, ' ', surname_en) AS text_en
+            FROM `employees` WHERE comp_id = :comp_id AND deleted_at IS NULL ORDER BY name_th ASC");
+        $stmtE->execute([':comp_id' => $compId]);
+        return [
+            'departments' => $stmtD->fetchAll(PDO::FETCH_ASSOC),
+            'teams' => $stmtT->fetchAll(PDO::FETCH_ASSOC),
+            'employees' => $stmtE->fetchAll(PDO::FETCH_ASSOC),
+        ];
+    }
+
+    private function scopeLabel(string $scopeType, int $scopeId): string {
+        if ($scopeType === 'department') {
+            $stmt = $this->db->prepare("SELECT department_name_th AS th, department_name_en AS en FROM `structure_departments` WHERE id = :id");
+        } elseif ($scopeType === 'team') {
+            $stmt = $this->db->prepare("SELECT team_name_th AS th, team_name_en AS en FROM `structure_teams` WHERE id = :id");
+        } else {
+            $stmt = $this->db->prepare("SELECT CONCAT(employee_no, ' - ', name_th, ' ', surname_th) AS th, CONCAT(employee_no, ' - ', name_en, ' ', surname_en) AS en FROM `employees` WHERE id = :id");
+        }
+        $stmt->execute([':id' => $scopeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return "(#{$scopeId})";
+        }
+        return trim((string)$row['th']) !== '' ? $row['th'] : (string)$row['en'];
+    }
+
+    /** Same conflict-detection as PayslipTemplateModel::findConflictingAssignment() but scoped to
+     *  the SAME LANGUAGE (not company-wide) -- a department assigned to the Thai design and the
+     *  SAME department assigned to the English design of a DIFFERENT template are not a conflict at
+     *  all, since resolveTemplateForEmployee() itself resolves th/en completely independently. Only
+     *  ACTIVE templates count (status='active', unrelated to the elements/is_default fields this
+     *  module has no equivalent of -- see this class's own docblock). */
+    private function findConflictingAssignment(string $scopeType, int $scopeId, int $compId, string $language, ?int $excludeTemplateId): ?array {
+        $sql = "SELECT t.id, t.template_name FROM `employment_certificate_template_assignments` a
+            JOIN `employment_certificate_templates` t ON t.id = a.template_id
+            WHERE t.comp_id = :comp_id AND t.language = :language AND t.status = 'active'
+              AND a.scope_type = :scope_type AND a.scope_id = :scope_id";
+        $params = [':comp_id' => $compId, ':language' => $language, ':scope_type' => $scopeType, ':scope_id' => $scopeId];
+        if ($excludeTemplateId !== null) {
+            $sql .= " AND t.id != :exclude_id";
+            $params[':exclude_id'] = $excludeTemplateId;
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    /**
+     * @return array{error?:string, assignments?:array}
+     * 2026-08-25, explicit request: "ถ้ามีการตั้งค่าซ้ำต้องแจ้ง Error ว่ามีการ Assign ซ้ำใคร" -- same
+     * hard-reject-on-conflict behavior as PayslipTemplateModel's own (see that class's comment),
+     * scoped per language here (see findConflictingAssignment()'s own comment for why).
+     */
+    private function validateAssignments(array $raw, int $compId, string $language, ?int $excludeTemplateId): array {
+        $seen = [];
+        $cleaned = [];
+        foreach ($raw as $i => $a) {
+            $n = $i + 1;
+            $scopeType = (string)($a['scope_type'] ?? '');
+            $scopeId = is_numeric($a['scope_id'] ?? null) ? (int)$a['scope_id'] : 0;
+            if (!in_array($scopeType, self::SCOPE_TYPES, true) || $scopeId <= 0) {
+                return ['error' => "Assignment {$n}: invalid scope."];
+            }
+            if (!$this->validateScopeRef($scopeType, $scopeId, $compId)) {
+                return ['error' => "Assignment {$n}: {$scopeType} #{$scopeId} not found."];
+            }
+            $conflict = $this->findConflictingAssignment($scopeType, $scopeId, $compId, $language, $excludeTemplateId);
+            if ($conflict !== null) {
+                $label = $this->scopeLabel($scopeType, $scopeId);
+                return ['error' => "\"{$label}\" is already assigned to another active template (\"{$conflict['template_name']}\") for this language. Remove it there first, or deactivate that template."];
+            }
+            $key = $scopeType . ':' . $scopeId;
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $cleaned[] = ['scope_type' => $scopeType, 'scope_id' => $scopeId];
+        }
+        return ['assignments' => $cleaned];
+    }
+
+    /** Resolves which template (of the given language) applies to a specific employee -- same
+     *  employee > team > department > company default priority as PayslipTemplateModel's own
+     *  resolveTemplateForEmployee(). Config-only for now -- see this class's own const block
+     *  comment for why there's still no consumer that calls this. */
+    public function resolveTemplateForEmployee(int $compId, int $employeeId, string $language): ?array {
+        if (!in_array($language, self::LANGUAGES, true)) {
+            return null;
+        }
+        $stmtEmp = $this->db->prepare("SELECT department_id, team_id FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $emp = $stmtEmp->fetch(PDO::FETCH_ASSOC);
+
+        $candidateScopes = [['scope_type' => 'employee', 'scope_id' => $employeeId]];
+        if ($emp && !empty($emp['team_id'])) {
+            $candidateScopes[] = ['scope_type' => 'team', 'scope_id' => (int)$emp['team_id']];
+        }
+        if ($emp && !empty($emp['department_id'])) {
+            $candidateScopes[] = ['scope_type' => 'department', 'scope_id' => (int)$emp['department_id']];
+        }
+
+        $stmt = $this->db->prepare("SELECT t.id, t.updated_at, a.scope_type
+            FROM `employment_certificate_template_assignments` a
+            JOIN `employment_certificate_templates` t ON t.id = a.template_id
+            WHERE t.comp_id = :comp_id AND t.language = :language AND t.status = 'active'
+              AND a.scope_type = :scope_type AND a.scope_id = :scope_id");
+        $best = null;
+        $bestPriority = -1;
+        foreach ($candidateScopes as $scope) {
+            $stmt->execute([':comp_id' => $compId, ':language' => $language, ':scope_type' => $scope['scope_type'], ':scope_id' => $scope['scope_id']]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $priority = self::SCOPE_PRIORITY[$row['scope_type']] ?? 0;
+                if ($priority > $bestPriority || ($priority === $bestPriority && $best !== null && $row['updated_at'] > $best['updated_at'])) {
+                    $bestPriority = $priority;
+                    $best = $row;
+                }
+            }
+        }
+        if ($best !== null) {
+            return $this->get($compId, (int)$best['id']);
+        }
+        return $this->getDefault($compId, $language);
     }
 
     /** The template to open by default when a language tab loads -- the flagged default if one
@@ -412,6 +589,12 @@ class EmploymentCertificateTemplateModel {
             return ['status' => false, 'message' => $result['error']];
         }
         $elements = $result['elements'];
+        $idForAssignCheck = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
+        $assignResult = $this->validateAssignments(is_array($data['assignments'] ?? null) ? $data['assignments'] : [], $compId, $language, $idForAssignCheck);
+        if (isset($assignResult['error'])) {
+            return ['status' => false, 'message' => $assignResult['error']];
+        }
+        $assignments = $assignResult['assignments'];
         if (!empty($elements)) {
             $imageAssetIds = array_values(array_filter(array_column($elements, 'image_asset_id')));
             if (!empty($imageAssetIds)) {
@@ -495,6 +678,13 @@ class EmploymentCertificateTemplateModel {
                     ':sort_order' => $el['sort_order'], ':group_key' => $el['group_key'], ':page_number' => $el['page_number'] ?? 1,
                 ]);
             }
+
+            $this->db->prepare("DELETE FROM `employment_certificate_template_assignments` WHERE template_id = :id")->execute([':id' => $templateId]);
+            $insAssign = $this->db->prepare("INSERT INTO `employment_certificate_template_assignments` (template_id, scope_type, scope_id) VALUES (:template_id, :scope_type, :scope_id)");
+            foreach ($assignments as $a) {
+                $insAssign->execute([':template_id' => $templateId, ':scope_type' => $a['scope_type'], ':scope_id' => $a['scope_id']]);
+            }
+
             if ($own) {
                 $this->db->commit();
             }

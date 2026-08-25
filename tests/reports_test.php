@@ -284,12 +284,16 @@ try {
     // ---------- Pay Slip: template-driven rendering (falls back to fixed layout above when no default template exists) ----------
     echo "=== PaySlipReport: template-driven rendering ===\n";
     $payslipTemplateModel = new PayslipTemplateModel($pdo);
-    check('no default payslip template exists yet for this fixture company', $payslipTemplateModel->getDefaultForCompany($compId), null);
+    // Isolation step -- comp_id=1 is the real dev DB and may have a genuine admin-created default
+    // template at any time (see tests/payslip_template_test.php's own comment on this same issue).
+    $pdo->prepare("UPDATE `payslip_templates` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE comp_id = :comp_id AND deleted_at IS NULL")
+        ->execute([':comp_id' => $compId]);
+    check('no default payslip template exists yet for this fixture company', $payslipTemplateModel->getDefault($compId, 'th'), null);
 
     $psBase = ['pos_x_pct' => 8, 'width_pct' => 40, 'height_pct' => 5, 'font_size' => 12, 'font_family' => 'th_sarabun_new',
         'font_color' => '#000000', 'text_align' => 'left', 'font_weight' => 'normal', 'font_style' => 'normal', 'text_decoration' => 'none'];
     $templateSave = $payslipTemplateModel->save($compId, [
-        'template_name' => 'Test Slip Template', 'language_mode' => 'both', 'is_default' => 1, 'status' => 'active',
+        'language' => 'th', 'template_name' => 'Test Slip Template', 'is_default' => 1, 'status' => 'active',
         'header_text_th' => 'ทดสอบหัวกระดาษ', 'footer_text_en' => 'Test footer',
         'elements' => [
             $psBase + ['element_type' => 'text', 'content' => '{{company_name}}', 'pos_y_pct' => 2],
@@ -310,7 +314,7 @@ try {
         ],
     ], $adminUserId);
     checkTrue('payslip template with a broad field mix saves', $templateSave['status']);
-    checkTrue('getDefaultForCompany now finds the new default template', $payslipTemplateModel->getDefaultForCompany($compId) !== null);
+    checkTrue('getDefault() now finds the new default template', $payslipTemplateModel->getDefault($compId, 'th') !== null);
 
     $templatedSlip = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
     checkTrue('templated PDF content starts with %PDF header', str_starts_with($templatedSlip['content'], '%PDF'));
@@ -340,7 +344,7 @@ try {
     $toggleOff = $payslipTemplateModel->toggleStatus($compId, (int)$templateSave['template_id'], $adminUserId);
     checkTrue('deactivating the template succeeds', $toggleOff['status']);
     check('deactivating clears is_default', $toggleOff['new_status'], 'inactive');
-    check('no default template again after deactivation', $payslipTemplateModel->getDefaultForCompany($compId), null);
+    check('no default template again after deactivation', $payslipTemplateModel->getDefault($compId, 'th'), null);
 
     $fallbackAgainSlip = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
     checkTrue('generate() falls back cleanly after the template is deactivated', str_starts_with($fallbackAgainSlip['content'], '%PDF'));

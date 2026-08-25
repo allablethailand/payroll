@@ -29,22 +29,12 @@
   </ul>
 
   <div class="tab-content">
-    <!-- PAYSLIP TEMPLATE -->
+    <!-- PAYSLIP TEMPLATE -- rebuilt as a free-form canvas designer, explicit request: "ปรับให้การ
+         ตั้งค่า Slip เงินเดือน Template เป็นเหมือนกับใบรับรอง" (matches the Employment Certificate
+         Template designer below: List+row-actions here, editing happens on its own standalone page
+         opened in a new tab -- see app/views/payslip-template/). -->
     <div class="tab-pane fade show active p-0" id="tab-tpl">
-        <table class="table table-hover align-middle w-100" id="tb_payslip_template">
-          <thead class="table-light text-secondary">
-            <tr>
-              <th data-i18n="template_name">Template Name</th>
-              <th data-i18n="default">Default</th>
-              <th class="text-center" data-i18n="template_language_th">Thai</th>
-              <th class="text-center" data-i18n="template_language_en">English</th>
-              <th data-i18n="payslip_fields">Fields</th>
-              <th data-i18n="status">Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+      <?php include __DIR__ . '/../payslip-template/_list_partial.php'; ?>
     </div>
 
     <!-- PAYSLIP DISTRIBUTION -->
@@ -110,88 +100,7 @@
   </div>
 
   <?php include __DIR__ . '/../employment-certificate/_modals_partial.php'; ?>
-
-  <!-- Payslip Template editor modal -->
-  <div class="modal fade" id="payslipTemplateModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="payslipTemplateModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title fw-bold text-secondary" id="payslipTemplateModalLabel">
-            <i class="fa-solid fa-file-invoice me-2"></i><span data-i18n="payslip_template">Payslip Template</span>
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <form id="payslipTemplateForm">
-          <input type="hidden" id="pt_id" name="id">
-          <div class="modal-body">
-            <div class="row g-3 mb-3">
-              <div class="col-md-6">
-                <label class="form-label"><span data-i18n="template_name_th">Template Name (Thai)</span> <span class="text-danger">*</span></label>
-                <input type="text" class="form-control required" id="pt_name_th" maxlength="150">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label"><span data-i18n="template_name_en">Template Name (English)</span> <span class="text-danger">*</span></label>
-                <input type="text" class="form-control required" id="pt_name_en" maxlength="150">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label" data-i18n="language">Language</label>
-                <select class="form-select select2-static" id="pt_language_mode" data-option-keys="language_th,language_en,language_both" data-option-values="th,en,both"></select>
-              </div>
-              <div class="col-md-4 d-flex align-items-end">
-                <div class="form-check form-switch mb-2">
-                  <input class="form-check-input" type="checkbox" id="pt_is_default">
-                  <label class="form-check-label" for="pt_is_default" data-i18n="set_as_default_template">Set as default template</label>
-                </div>
-              </div>
-              <div class="col-md-4 d-flex align-items-end">
-                <div class="form-check form-switch mb-2">
-                  <input class="form-check-input" type="checkbox" id="pt_status" checked>
-                  <label class="form-check-label" for="pt_status" data-i18n="enable_this_template">Enable this template</label>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" data-i18n="company_logo">Company Logo</label>
-                <input type="file" class="form-control" id="pt_logo_file" accept="image/png,image/jpeg,image/svg+xml">
-                <input type="hidden" id="pt_logo_path">
-                <div class="mt-2"><img id="pt_logo_preview" src="" alt="" style="max-height:60px;display:none;" class="border rounded p-1"></div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" data-i18n="header_text">Header Text</label>
-                <input type="text" class="form-control mb-2" id="pt_header_th" data-i18n="header_text_th_placeholder" placeholder="ข้อความหัวกระดาษ (ไทย)" maxlength="500">
-                <input type="text" class="form-control" id="pt_header_en" placeholder="Header text (English)" maxlength="500">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" data-i18n="footer_text">Footer Text</label>
-                <input type="text" class="form-control" id="pt_footer_th" data-i18n="footer_text_th_placeholder" placeholder="ข้อความท้ายกระดาษ (ไทย)" maxlength="500">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">&nbsp;</label>
-                <input type="text" class="form-control" id="pt_footer_en" placeholder="Footer text (English)" maxlength="500">
-              </div>
-            </div>
-            <hr>
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <div>
-                <h6 class="fw-bold mb-0" data-i18n="payslip_fields">Payslip Fields</h6>
-                <div class="text-secondary small" data-i18n="payslip_fields_hint">Drag to reorder. Only fields in this list appear on the payslip.</div>
-              </div>
-              <div class="d-flex gap-2">
-                <select class="form-select form-select-sm select2-remote" id="pt_add_field_select" style="min-width:260px;" data-api="/api/payslip-template.field-options" data-type="payslip_field"></select>
-                <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" id="btnAddPayslipField"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add">Add</span></button>
-              </div>
-            </div>
-            <div id="payslipFieldList"></div>
-            <div class="text-center text-secondary small py-3 d-none" id="noPayslipFieldsMessage" data-i18n="no_fields_yet">No fields yet — add at least one.</div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary px-4 me-auto" id="btnPreviewPayslip"><i class="fa-solid fa-eye me-1"></i><span data-i18n="preview">Preview</span></button>
-            <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-            <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
+  <?php include __DIR__ . '/../payslip-template/_modals_partial.php'; ?>
 </div>
 <script src="<?=asset('public/js/setup/payslip-template.js')?>"></script>
 <script src="<?=asset('public/js/setup/payslip-distribution.js')?>"></script>

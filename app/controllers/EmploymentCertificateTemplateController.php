@@ -52,6 +52,18 @@ class EmploymentCertificateTemplateController extends Controller {
         $this->json(['status' => true, 'data' => $this->model->fieldTypeOptions()]);
     }
 
+    /** Full department/team/employee lists for the "Assign To" tab's checkbox lists -- mirrors
+     *  PayslipTemplateController::assignableOptions() exactly. */
+    public function assignableOptions() {
+        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['departments' => [], 'teams' => [], 'employees' => []]]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->assignableOptions((int)$compId)]);
+    }
+
     public function presetOptions() {
         $this->json(['status' => true, 'data' => $this->model->presetOptions()]);
     }

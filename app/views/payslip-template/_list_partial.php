@@ -6,10 +6,16 @@
  * just similar page chrome). Client-side DataTable (few templates per company, same tier as
  * Employment Certificate Template's own list) -- included from settings.php's "Payslip Template" tab.
  *
- * Unlike Employment Certificate Template's list, there is no pair/TH-EN concept here at all (see
- * PayslipTemplateModel's own docblock for why) -- one row per template, plain `id`-addressed Edit
- * link, and `is_default` genuinely means something here (which template PaySlipReport::generate()
- * picks), so the star toggle Employment Certificate Template removed as redundant is KEPT.
+ * 2026-08-25, same-day follow-up ("การทำ 2 ภาษาอยากให้เป็นเหมือนหน้าของเอกสาร และรูปแบบการทำเหมือนกัน") --
+ * the original decision above to have NO pair/TH-EN concept was reversed. This table is now the exact
+ * same unified pair-list shape as Employment Certificate Template's own `_list_partial.php` (one row
+ * per pair_key, Thai/English readiness columns, a single shared Actions group with dropdown Preview/
+ * Delete) -- see that file's own docblock for the full history/reasoning this ports verbatim.
+ * `status` (active/inactive) is Payslip-only (Employment Certificate has no such toggle) so its own
+ * column stays, and `is_default` genuinely means something here (unlike Employment Certificate's own
+ * list, which dropped its star as redundant) but is now set from inside the editor's Template Info
+ * card only -- same "no list-level star" simplification Employment Certificate Template's own v10
+ * settled on, just reached for a different reason (per-language default, not "no concept at all").
  */
 ?>
 <div class="card-surface p-3 p-md-4">
@@ -17,10 +23,10 @@
     <thead class="table-light text-secondary">
       <tr>
         <th data-i18n="template_name">Template Name</th>
-        <th class="text-center" data-i18n="default">Default</th>
-        <th data-i18n="language">Language</th>
         <th data-i18n="ect_page_size">Page Size</th>
-        <th data-i18n="status">Status</th>
+        <th class="text-center" data-i18n="template_language_th">Thai</th>
+        <th class="text-center" data-i18n="template_language_en">English</th>
+        <th data-i18n="ect_last_updated">Last Updated</th>
         <th class="text-center" data-i18n="actions">Actions</th>
       </tr>
     </thead>

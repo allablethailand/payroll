@@ -1,12 +1,13 @@
 <?php
 /**
  * Payslip Template modals -- ported from Employment Certificate Template's own `_modals_partial.php`
- * (see that file's docblock for the full history). Three genuinely-modal, small, transient dialogs
+ * (see that file's docblock for the full history). Four genuinely-modal, small, transient dialogs
  * that stack on top of either the list page or the standalone editor page:
- *  - #pstNewTemplateModal: name + page size/orientation + starter preset gallery. Unlike Employment
- *    Certificate Template's version, there is NO language select here at all -- Payslip Template has
- *    no per-language row/pair concept (see PayslipTemplateModel's own docblock), so this modal is
- *    simpler than its source.
+ *  - #pstNewTemplateModal: language + name + page size/orientation + starter preset gallery. Same
+ *    `modalMode` ('create' / 'create-in-pair' / 'replace') scheme as Employment Certificate
+ *    Template's own version, added 2026-08-25 same-day follow-up ("การทำ 2 ภาษาอยากให้เป็นเหมือนหน้าของ
+ *    เอกสาร และรูปแบบการทำเหมือนกัน" -- Payslip Template gained a language/pair_key fork just like
+ *    Employment Certificate Template has, reversing the original "no per-language row" decision).
  *  - #pstTextModal / #pstImageLibraryModal / #pstTableInsertModal: opened from within the editor
  *    page's canvas.
  */
@@ -23,8 +24,22 @@
         <div class="text-secondary small mb-2" data-i18n="ect_preset_preview_hint">Click a card to choose it, or the eye icon to see the real PDF layout first.</div>
         <div id="pstPresetList" class="pst-preset-gallery"></div>
         <hr class="my-3">
+        <!-- Locked+disabled with an explanatory hint (#pstNewTemplatePairHint) when opened from a
+             pair's empty-state "start from a preset" action for its missing language --
+             #pstNewTemplatePairKey then carries that pair's pair_key so the new row joins it instead
+             of starting a fresh, unlinked pair. `modalMode==='replace'` (Change Layout) hides this
+             whole `.row.g-3` block entirely -- see #pstCreateTemplateBtn's handler in the JS. -->
+        <input type="hidden" id="pstNewTemplatePairKey" value="">
+        <div id="pstNewTemplatePairHint" class="alert alert-light border small text-secondary mb-3 d-none"></div>
         <div class="row g-3">
-          <div class="col-md-8">
+          <div class="col-md-2">
+            <label class="form-label" data-i18n="template_language">Language</label>
+            <select class="form-select" id="pstNewTemplateLanguageSelect">
+              <option value="th" data-i18n="template_language_th">Thai</option>
+              <option value="en" data-i18n="template_language_en">English</option>
+            </select>
+          </div>
+          <div class="col-md-6">
             <label class="form-label"><span data-i18n="template_name">Template Name</span> <span class="text-danger">*</span></label>
             <input type="text" class="form-control" id="pstNewTemplateNameInput" maxlength="150">
           </div>

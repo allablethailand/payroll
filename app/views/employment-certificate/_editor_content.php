@@ -32,53 +32,77 @@
     <i class="fa-solid fa-file-shield ect-editor-title-icon"></i>
     <input type="text" class="ect-editor-title-input" id="ectTemplateNameInput" placeholder="Template Name">
   </div>
-  <div class="ect-editor-topbar-fields">
-    <div class="ect-page-setup-cluster">
-      <span class="ect-page-setup-label" data-i18n="ect_page_setup">Page Setup</span>
-      <select class="form-select form-select-sm" id="ectPageSizeSelect">
-        <option value="A4">A4</option>
-        <option value="Letter">Letter</option>
-        <option value="Legal">Legal</option>
-      </select>
-      <select class="form-select form-select-sm" id="ectOrientationSelect">
-        <option value="portrait" data-i18n="ect_portrait">Portrait</option>
-        <option value="landscape" data-i18n="ect_landscape">Landscape</option>
-      </select>
-      <!-- 2026-08-25, explicit request: "การเลือกขอบกระดาษให้เป็น dropdown เลือกแบบ word ครับ เลือกจาก
-           ตัวอย่าง" -- Word's own Page Layout > Margins picker: named presets with a small visual per
-           option, plus a Custom option that reveals an exact mm field. #ectMarginInput (the real,
-           persisted value) is still what every other function in the JS reads/writes -- this
-           dropdown is just a friendlier way to SET it; picking a preset sets the input's value and
-           fires the same 'input' handler the field itself already has (applyMarginGuide()/dirty
-           tracking). -->
-      <div class="dropdown ect-margin-dropdown">
-        <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" id="ectMarginDropdownBtn">
-          <i class="fa-solid fa-ruler-combined me-1"></i><span id="ectMarginDropdownLabel">Normal</span>
-        </button>
-        <ul class="dropdown-menu ect-margin-menu" id="ectMarginMenu">
-          <li><a class="dropdown-item ect-margin-option" href="#" data-value="8"><span class="ect-margin-preview ect-margin-preview-narrow"></span><span class="ect-margin-option-text"><strong data-i18n="ect_margin_narrow">Narrow</strong><small>8 mm</small></span></a></li>
-          <li><a class="dropdown-item ect-margin-option" href="#" data-value="15"><span class="ect-margin-preview ect-margin-preview-normal"></span><span class="ect-margin-option-text"><strong data-i18n="ect_margin_normal">Normal</strong><small>15 mm</small></span></a></li>
-          <li><a class="dropdown-item ect-margin-option" href="#" data-value="20"><span class="ect-margin-preview ect-margin-preview-moderate"></span><span class="ect-margin-option-text"><strong data-i18n="ect_margin_moderate">Moderate</strong><small>20 mm</small></span></a></li>
-          <li><a class="dropdown-item ect-margin-option" href="#" data-value="30"><span class="ect-margin-preview ect-margin-preview-wide"></span><span class="ect-margin-option-text"><strong data-i18n="ect_margin_wide">Wide</strong><small>30 mm</small></span></a></li>
-          <li><hr class="dropdown-divider"></li>
-          <li>
-            <div class="px-3 py-1 d-flex align-items-center gap-2" onclick="event.stopPropagation();">
-              <span class="small text-secondary" data-i18n="ect_margin_custom">Custom</span>
-              <input type="number" id="ectMarginInput" class="form-control form-control-sm" style="width:70px;" min="0" max="50" step="1">
-              <span class="small text-secondary">mm</span>
-            </div>
-          </li>
-        </ul>
-      </div>
+</div>
+
+<!-- 2026-08-25, explicit follow-up: "อยากให้เพิ่ม Tab ในหน้า Detail ของ Slip และเอกสารแต่ละตัว" -- same
+     Design/Assign top-level tab split as Payslip Template's own editor got (see that file's own
+     comment for the full reasoning, incl. why Design stays the default active tab). Assignment here
+     is still per LANGUAGE ROW (same granularity as logo_path/elements already are) -- the Assign tab's
+     checkboxes are ONE shared set of DOM elements whose CHECKED state gets swapped in/out by
+     switchToLangTab() on tab switch, same pattern as #ectTemplateNameInput/#ectPageSizeSelect. -->
+<!-- Wrapped in one container so switchToLangTab()'s empty-state branch can hide the whole tab
+     strip+content with a single toggle, same as it already does for #ectEditorArea alone. -->
+<div id="ectMainTabsWrap">
+<ul class="nav nav-tabs setup-tabs mb-3" id="ectEditorTabs" role="tablist">
+  <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#ectTabDesign" type="button" role="tab"><i class="fa-solid fa-pen-ruler me-1"></i><span data-i18n="ect_design_tab">Design</span></button></li>
+  <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#ectTabAssign" type="button" role="tab"><i class="fa-solid fa-users-rectangle me-1"></i><span data-i18n="pst_assign_to">Assign To</span></button></li>
+</ul>
+
+<div class="tab-content">
+<div class="tab-pane fade show active" id="ectTabDesign">
+
+<!-- 2026-08-25, follow-up bug report: "Page Setup ไม่อยู่ภายใต้ tab design" -- Page Setup (page size/
+     orientation/margin) and Change Layout used to sit in the shared topbar ABOVE both tabs, so they
+     stayed visible even while looking at Assign To, where they mean nothing. Moved inside the Design
+     tab pane itself -- same markup/classes as before (`.ect-editor-topbar-fields`/
+     `.ect-page-setup-cluster` are self-contained flex rules, unaffected by the new parent), just
+     relocated + a bottom margin added since it's no longer inside the topbar's own row. -->
+<div class="ect-editor-topbar-fields justify-content-end mb-3">
+  <div class="ect-page-setup-cluster">
+    <span class="ect-page-setup-label" data-i18n="ect_page_setup">Page Setup</span>
+    <select class="form-select form-select-sm" id="ectPageSizeSelect">
+      <option value="A4">A4</option>
+      <option value="Letter">Letter</option>
+      <option value="Legal">Legal</option>
+    </select>
+    <select class="form-select form-select-sm" id="ectOrientationSelect">
+      <option value="portrait" data-i18n="ect_portrait">Portrait</option>
+      <option value="landscape" data-i18n="ect_landscape">Landscape</option>
+    </select>
+    <!-- 2026-08-25, explicit request: "การเลือกขอบกระดาษให้เป็น dropdown เลือกแบบ word ครับ เลือกจาก
+         ตัวอย่าง" -- Word's own Page Layout > Margins picker: named presets with a small visual per
+         option, plus a Custom option that reveals an exact mm field. #ectMarginInput (the real,
+         persisted value) is still what every other function in the JS reads/writes -- this
+         dropdown is just a friendlier way to SET it; picking a preset sets the input's value and
+         fires the same 'input' handler the field itself already has (applyMarginGuide()/dirty
+         tracking). -->
+    <div class="dropdown ect-margin-dropdown">
+      <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" id="ectMarginDropdownBtn">
+        <i class="fa-solid fa-ruler-combined me-1"></i><span id="ectMarginDropdownLabel">Normal</span>
+      </button>
+      <ul class="dropdown-menu ect-margin-menu" id="ectMarginMenu">
+        <li><a class="dropdown-item ect-margin-option" href="#" data-value="8"><span class="ect-margin-preview ect-margin-preview-narrow"></span><span class="ect-margin-option-text"><strong data-i18n="ect_margin_narrow">Narrow</strong><small>8 mm</small></span></a></li>
+        <li><a class="dropdown-item ect-margin-option" href="#" data-value="15"><span class="ect-margin-preview ect-margin-preview-normal"></span><span class="ect-margin-option-text"><strong data-i18n="ect_margin_normal">Normal</strong><small>15 mm</small></span></a></li>
+        <li><a class="dropdown-item ect-margin-option" href="#" data-value="20"><span class="ect-margin-preview ect-margin-preview-moderate"></span><span class="ect-margin-option-text"><strong data-i18n="ect_margin_moderate">Moderate</strong><small>20 mm</small></span></a></li>
+        <li><a class="dropdown-item ect-margin-option" href="#" data-value="30"><span class="ect-margin-preview ect-margin-preview-wide"></span><span class="ect-margin-option-text"><strong data-i18n="ect_margin_wide">Wide</strong><small>30 mm</small></span></a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <div class="px-3 py-1 d-flex align-items-center gap-2" onclick="event.stopPropagation();">
+            <span class="small text-secondary" data-i18n="ect_margin_custom">Custom</span>
+            <input type="number" id="ectMarginInput" class="form-control form-control-sm" style="width:70px;" min="0" max="50" step="1">
+            <span class="small text-secondary">mm</span>
+          </div>
+        </li>
+      </ul>
     </div>
-    <!-- 2026-08-25, explicit request (resolved via AskUserQuestion): "เปลี่ยนเป็นดีไซน์ตั้งต้นของ
-         Template ที่กำลังแก้" -- re-applies a different preset's layout to what's open RIGHT NOW
-         (destructive, confirmed before replacing), not a "switch to a different existing template"
-         picker. -->
-    <button type="button" class="btn btn-outline-primary btn-sm" id="ectChangePresetBtn">
-      <i class="fa-solid fa-shuffle me-1"></i><span data-i18n="ect_change_preset">Change Layout</span>
-    </button>
   </div>
+  <!-- 2026-08-25, explicit request (resolved via AskUserQuestion): "เปลี่ยนเป็นดีไซน์ตั้งต้นของ
+       Template ที่กำลังแก้" -- re-applies a different preset's layout to what's open RIGHT NOW
+       (destructive, confirmed before replacing), not a "switch to a different existing template"
+       picker. -->
+  <button type="button" class="btn btn-outline-primary btn-sm" id="ectChangePresetBtn">
+    <i class="fa-solid fa-shuffle me-1"></i><span data-i18n="ect_change_preset">Change Layout</span>
+  </button>
 </div>
 
 <div id="ectEditorArea">
@@ -306,6 +330,71 @@
   </div>
 </div>
 
+<!-- 2026-08-25, explicit follow-up: "หน้า Design กับหน้า Assign To ต้องการให้มีปุ่ม Save แยก Tab" --
+     each tab now has its OWN footer/Save button instead of one shared footer sitting outside both
+     tab panes -- see Payslip Template's own `_editor_content.php` comment on this same change for
+     the full reasoning (both Save buttons share `.ect-save-btn`, handled by ONE click handler that
+     always submits the full payload -- canvas elements AND assignment checkboxes together -- since
+     the backend only ever accepts one atomic save() call for both). -->
+<div class="ect-editor-footer">
+  <div class="text-secondary small me-auto ect-save-hint"></div>
+  <button type="button" class="btn btn-outline-secondary ect-footer-btn-lg" id="ectPreviewBtn"><i class="fa-solid fa-eye me-1"></i><span data-i18n="preview">Preview</span></button>
+  <button type="button" class="btn btn-primary ect-footer-btn-lg ect-save-btn" id="ectSaveBtnDesign"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
+</div>
+
+</div><!-- /#ectTabDesign -->
+
+<!-- Assign To tab -- explicit request: "อยากให้เพิ่ม Tab...เป็น checkbox ให้เลือก ว่าจะ Assign ไปที่ไหนบ้าง
+     และสามารถเลือกใช้ได้กับทุกคน ทุกแผนก ทุกทีม แต่ถ้ามีการตั้งค่าซ้ำต้องแจ้ง Error ว่ามีการ Assign ซ้ำใคร" --
+     checkbox lists replace the earlier select2-remote-search multi-selects, mirrors Payslip
+     Template's own Assign tab exactly (see that file's own comment for the full reasoning). -->
+<div class="tab-pane fade" id="ectTabAssign">
+  <div class="ect-assign-card card-surface p-3 mb-3">
+    <div class="text-secondary small ect-assign-hint mb-3" data-i18n="pst_assign_hint">Leave all empty to apply to every employee (the company default). If any are selected, this template only applies to that department/team/employee, with the most specific match winning (employee &gt; team &gt; department). Assigning a department/team/employee that's already actively assigned to another template will show an error naming the conflict.</div>
+    <div class="ect-assign-columns">
+      <div class="ect-assign-column">
+        <div class="ect-assign-column-header">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="ectAssignAllDepartments">
+            <label class="form-check-label fw-bold" for="ectAssignAllDepartments"><i class="fa-solid fa-building me-1"></i><span data-i18n="scope_departments">Departments</span></label>
+          </div>
+        </div>
+        <input type="text" class="form-control form-control-sm ect-assign-filter" id="ectAssignDepartmentsFilter" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
+        <div class="ect-assign-checklist" id="ectAssignDepartmentsList"></div>
+      </div>
+      <div class="ect-assign-column">
+        <div class="ect-assign-column-header">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="ectAssignAllTeams">
+            <label class="form-check-label fw-bold" for="ectAssignAllTeams"><i class="fa-solid fa-people-group me-1"></i><span data-i18n="pst_assign_teams">Teams</span></label>
+          </div>
+        </div>
+        <input type="text" class="form-control form-control-sm ect-assign-filter" id="ectAssignTeamsFilter" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
+        <div class="ect-assign-checklist" id="ectAssignTeamsList"></div>
+      </div>
+      <div class="ect-assign-column">
+        <div class="ect-assign-column-header">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="ectAssignAllEmployees">
+            <label class="form-check-label fw-bold" for="ectAssignAllEmployees"><i class="fa-solid fa-user me-1"></i><span data-i18n="pst_assign_employees">Employees</span></label>
+          </div>
+        </div>
+        <input type="text" class="form-control form-control-sm ect-assign-filter" id="ectAssignEmployeesFilter" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
+        <div class="ect-assign-checklist" id="ectAssignEmployeesList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- own Save button for this tab, see the Design tab's own comment on this same change -->
+  <div class="ect-editor-footer">
+    <div class="text-secondary small me-auto ect-save-hint"></div>
+    <button type="button" class="btn btn-primary ect-footer-btn-lg ect-save-btn" id="ectSaveBtnAssign"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
+  </div>
+</div>
+
+</div><!-- /.tab-content -->
+</div><!-- /#ectMainTabsWrap -->
+
 <!-- Empty state for a language tab that hasn't been created yet for this pair (2026-08-25,
      TH/EN-tabs unification) -- Generate Auto (clones the OTHER language's layout verbatim, same
      semantics as the list's old per-language action, see
@@ -322,10 +411,4 @@
       <i class="fa-solid fa-layer-group me-1"></i><span data-i18n="ect_start_from_preset">Start from a preset</span>
     </button>
   </div>
-</div>
-
-<div class="ect-editor-footer">
-  <div class="text-secondary small me-auto" id="ectSaveHint"></div>
-  <button type="button" class="btn btn-outline-secondary ect-footer-btn-lg" id="ectPreviewBtn"><i class="fa-solid fa-eye me-1"></i><span data-i18n="preview">Preview</span></button>
-  <button type="button" class="btn btn-primary ect-footer-btn-lg" id="ectSaveBtn"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
 </div>

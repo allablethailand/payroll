@@ -3897,3 +3897,201 @@ html, body {
 .modal-fullscreen .modal-body {
     max-height: 100%;
 }
+
+/* Payslip Template editor -- "Template Info" card (language_mode + header/footer text + status/
+   default toggles). 2026-08-25, explicit follow-up: "ปรับให้สวยขึ้นได้ไหมครับ และปรับจาก textbox
+   เป็น textarea" -- this section has no Employment Certificate Template equivalent to port styling
+   from (that module has no language_mode/header-footer/is_default concept at all), so it originally
+   shipped with zero dedicated CSS and rendered as a bare, unstyled card. */
+.pst-info-card {
+    overflow: hidden;
+}
+.pst-info-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .75rem;
+    padding: .7rem 1.1rem;
+    background: linear-gradient(135deg, rgba(255, 153, 0, .1), rgba(255, 153, 0, .03));
+    border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+.pst-info-card-title {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-weight: 700;
+    color: #333;
+    font-size: .95rem;
+}
+.pst-info-card-title i {
+    color: #FF9900;
+}
+.pst-info-toggles {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+}
+.pst-info-toggles .form-check {
+    margin-bottom: 0;
+}
+.pst-info-card-body {
+    padding: 1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.pst-info-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+.pst-info-row-lang {
+    align-items: center;
+}
+.pst-info-label {
+    flex: 0 0 110px;
+    font-weight: 600;
+    font-size: .82rem;
+    color: #667085;
+    padding-top: .4rem;
+    margin: 0;
+}
+.pst-info-row-lang .pst-info-label {
+    padding-top: 0;
+}
+#pstLanguageModeSelect {
+    max-width: 220px;
+}
+.pst-info-textareas {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .7rem;
+    min-width: 0;
+}
+.pst-info-textarea-group {
+    position: relative;
+}
+.pst-info-textarea-group textarea {
+    resize: vertical;
+    min-height: 52px;
+    padding-right: 34px;
+}
+.pst-info-lang-flag {
+    position: absolute;
+    top: 7px;
+    right: 9px;
+    width: 17px;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .12);
+    pointer-events: none;
+}
+@media (max-width: 768px) {
+    .pst-info-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .pst-info-label {
+        flex: none;
+        padding-top: 0;
+    }
+    .pst-info-textareas {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Payslip Template / Employment Certificate Template -- "Assign To" tab (2026-08-25 follow-up,
+   explicit request: "เพิ่ม Tab...เป็น checkbox ให้เลือก...เลือกได้กับทุกคน ทุกแผนก ทุกทีม แต่ถ้ามีการ
+   ตั้งค่าซ้ำต้องแจ้ง Error"). .pst-assign-* / .ect-assign-* are identical rules (one shared selector
+   list) -- both editors moved this into its own top-level .setup-tabs pane, so there's no longer any
+   difference in how much surrounding chrome each one gets (round 1's card-vs-inline-row distinction
+   no longer applies). Full checkbox lists (not a search-dropdown) so "every department/team" is just
+   "check every box", per the explicit request. */
+.pst-assign-card,
+.ect-assign-card {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, .07);
+    border-radius: .75rem;
+}
+.pst-assign-hint,
+.ect-assign-hint {
+    line-height: 1.5;
+}
+.pst-assign-columns,
+.ect-assign-columns {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+.pst-assign-column,
+.ect-assign-column {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: #fafbfc;
+    border: 1px solid rgba(0, 0, 0, .06);
+    border-radius: .6rem;
+    padding: .75rem;
+}
+.pst-assign-column-header,
+.ect-assign-column-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: .5rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+.pst-assign-column-header .form-check-label,
+.ect-assign-column-header .form-check-label {
+    color: #333;
+}
+.pst-assign-column-header i,
+.ect-assign-column-header i {
+    color: #FF9900;
+}
+.pst-assign-filter,
+.ect-assign-filter {
+    margin-bottom: .5rem;
+}
+.pst-assign-checklist,
+.ect-assign-checklist {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 320px;
+    min-height: 120px;
+    padding-right: .25rem;
+}
+/* 2026-08-25, real bug found and fixed (not a guess) -- "หมายถึงในแต่ละ item ไม่ checkbox" (the row
+   text showed, but no checkbox). This shorthand `padding` sets padding-LEFT too, which -- same
+   specificity as Bootstrap's own `.form-check { padding-left: 1.5em; }`, and this stylesheet loads
+   AFTER bootstrap.min.css -- overrode it down to .4rem. Bootstrap positions `.form-check-input` via
+   `float:left; margin-left:-1.5em;`, expecting that 1.5em of left padding as its landing space; with
+   only .4rem of room the checkbox got pulled outside the row's own left edge, invisible/unclickable,
+   while the label text (which doesn't depend on that padding) rendered completely normally -- hence
+   "each item has no checkbox" specifically, not "nothing renders at all". Fixed by only setting the
+   padding sides that don't collide with Bootstrap's own layout-critical padding-left. */
+.pst-assign-item,
+.ect-assign-item {
+    padding-top: .3rem;
+    padding-right: .4rem;
+    padding-bottom: .3rem;
+    border-radius: .4rem;
+}
+.pst-assign-item:hover,
+.ect-assign-item:hover {
+    background: rgba(255, 153, 0, .08);
+}
+.pst-assign-item .form-check-label,
+.ect-assign-item .form-check-label {
+    font-size: .88rem;
+    word-break: break-word;
+}
+@media (max-width: 900px) {
+    .pst-assign-columns,
+    .ect-assign-columns {
+        grid-template-columns: 1fr;
+    }
+}

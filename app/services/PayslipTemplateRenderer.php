@@ -65,19 +65,12 @@ class PayslipTemplateRenderer {
         return $orientation === 'landscape' ? [$h, $w] : [$w, $h];
     }
 
-    /** th/en pick, same convention PaySlipReport's own layout used before this class existed --
-     *  'both' concatenates "{th} / {en}" (falling back to whichever side is non-empty). Unlike
-     *  Employment Certificate (fully independent TH/EN layouts via pair_key), Payslip Template stays
-     *  ONE shared canvas across languages -- see the migration's own comment for why -- so this is
-     *  how a single bound token still resolves correctly under language_mode='both'. */
-    private function pick(string $th, string $en, string $languageMode): string {
-        if ($languageMode === 'th') return $th;
-        if ($languageMode === 'en') return $en;
-        $th = trim($th);
-        $en = trim($en);
-        if ($th === '') return $en;
-        if ($en === '') return $th;
-        return "{$th} / {$en}";
+    /** th/en pick -- 2026-08-25 follow-up ("รูปแบบการทำเหมือนกัน"): Payslip Template's `language_mode`
+     *  ('both' concatenated "{th} / {en}") is gone, replaced by `language` (strictly 'th' or 'en',
+     *  same as Employment Certificate's own `language` column) -- every template is now exactly one
+     *  language, so this is a plain either/or pick, no more concatenation branch needed. */
+    private function pick(string $th, string $en, string $language): string {
+        return $language === 'en' ? $en : $th;
     }
 
     private function statutoryLabelMap(string $countryCode): array {
@@ -93,7 +86,7 @@ class PayslipTemplateRenderer {
     /** @return array<string,string> field_key => resolved display value, for substituteTokens().
      *  $ytd is null when the template has no ytd_summary field at all (PayrollReportDataModel::
      *  getYtdTotals() is only ever queried when needed, same as the old buildTemplatedHtml() did). */
-    public function buildTokens(string $languageMode, array $company, array $run, array $detail, ?array $ytd): array {
+    public function buildTokens(string $language, array $company, array $run, array $detail, ?array $ytd): array {
         $employeeNameTh = $this->employeeDisplayName($detail, 'th');
         $employeeNameEn = $this->employeeDisplayName($detail, 'en');
         $rawBank = $this->decryptEmployeeField($detail, 'bank_account_no');
@@ -105,9 +98,9 @@ class PayslipTemplateRenderer {
         $address = trim(($company['address_line_1'] ?? '') . ' ' . ($company['address_line_2'] ?? ''));
         $tokens = [
             'employee_no' => (string)($detail['employee_no'] ?? ''),
-            'employee_name' => $this->pick($employeeNameTh, $employeeNameEn, $languageMode),
-            'department' => $this->pick((string)($detail['department_name_th'] ?? ''), (string)($detail['department_name_en'] ?? ''), $languageMode) ?: '-',
-            'position' => $this->pick((string)($detail['position_name_th'] ?? ''), (string)($detail['position_name_en'] ?? ''), $languageMode) ?: '-',
+            'employee_name' => $this->pick($employeeNameTh, $employeeNameEn, $language),
+            'department' => $this->pick((string)($detail['department_name_th'] ?? ''), (string)($detail['department_name_en'] ?? ''), $language) ?: '-',
+            'position' => $this->pick((string)($detail['position_name_th'] ?? ''), (string)($detail['position_name_en'] ?? ''), $language) ?: '-',
             'pay_period' => (string)($run['period_start_date'] ?? '') . ' - ' . (string)($run['period_end_date'] ?? ''),
             'payment_date' => (string)($run['payment_date'] ?? '-'),
             'bank_account_masked' => $bankAccountMasked,
@@ -121,9 +114,9 @@ class PayslipTemplateRenderer {
             'net_amount' => number_format((float)($detail['net_amount'] ?? 0), 2),
         ];
         if ($ytd !== null) {
-            $gLabel = $this->pick('รายได้สะสม', 'YTD Gross', $languageMode);
-            $dLabel = $this->pick('หักสะสม', 'YTD Deduction', $languageMode);
-            $nLabel = $this->pick('สุทธิสะสม', 'YTD Net', $languageMode);
+            $gLabel = $this->pick('รายได้สะสม', 'YTD Gross', $language);
+            $dLabel = $this->pick('หักสะสม', 'YTD Deduction', $language);
+            $nLabel = $this->pick('สุทธิสะสม', 'YTD Net', $language);
             $tokens['ytd_summary'] = sprintf(
                 '%s: %s   %s: %s   %s: %s',
                 $gLabel, number_format((float)$ytd['ytd_gross'], 2),
@@ -147,7 +140,7 @@ class PayslipTemplateRenderer {
     /** Renders one of the 3 BLOCK_FIELD_KEYS as a real itemized `<table>` at the bound element's own
      *  position/size/font -- this is the one piece of rendering logic Employment Certificate Template
      *  has no equivalent of at all (see this class's own docblock). */
-    private function renderBlockTable(string $fieldKey, array $detail, array $statutoryLabels, string $languageMode, string $style): string {
+    private function renderBlockTable(string $fieldKey, array $detail, array $statutoryLabels, string $language, string $style): string {
         $rows = '';
         if ($fieldKey === 'earning_lines_all') {
             foreach (($detail['earning_breakdown'] ?? []) as $line) {
@@ -163,7 +156,7 @@ class PayslipTemplateRenderer {
             foreach (($detail['statutory_breakdown'] ?? []) as $item) {
                 if ((float)($item['employee_amount'] ?? 0) <= 0) continue;
                 $names = $statutoryLabels[$item['code']] ?? ['th' => $item['code'], 'en' => $item['code']];
-                $label = htmlspecialchars($this->pick($names['th'], $names['en'], $languageMode), ENT_QUOTES, 'UTF-8');
+                $label = htmlspecialchars($this->pick($names['th'], $names['en'], $language), ENT_QUOTES, 'UTF-8');
                 $rows .= '<tr><td>' . $label . '</td><td class="amount">' . number_format((float)$item['employee_amount'], 2) . '</td></tr>';
             }
         }
@@ -174,7 +167,7 @@ class PayslipTemplateRenderer {
     }
 
     /** @param array<int,string> $imageAssetPaths image_asset_id => absolute file path */
-    private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths, array $detail, array $statutoryLabels, string $languageMode): string {
+    private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths, array $detail, array $statutoryLabels, string $language): string {
         $fontFamily = self::FONT_FAMILY_CSS[$el['font_family'] ?? 'th_sarabun_new'] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
         // font-family single-quoted -- see EmploymentCertificateRenderer's own comment for the exact
         // double-quote-nesting bug this avoids (a real, confirmed defect found once already).
@@ -241,7 +234,7 @@ class PayslipTemplateRenderer {
         $trimmed = trim((string)($el['content'] ?? ''));
         foreach (self::BLOCK_FIELD_KEYS as $blockKey) {
             if ($trimmed === '{{' . $blockKey . '}}') {
-                return $this->renderBlockTable($blockKey, $detail, $statutoryLabels, $languageMode, $style);
+                return $this->renderBlockTable($blockKey, $detail, $statutoryLabels, $language, $style);
             }
         }
         return '<div style="' . $style . '">' . $this->substituteTokens((string)($el['content'] ?? ''), $tokens) . '</div>';
@@ -249,8 +242,8 @@ class PayslipTemplateRenderer {
 
     /** @param array{page_size?:string, orientation?:string} $template */
     public function buildHtml(array $template, array $elements, array $company, array $run, array $detail, array $statutoryLabels, ?string $logoAbsPath, array $imageAssetPaths, ?array $ytd, ?string $watermarkText = null): string {
-        $languageMode = (string)($template['language_mode'] ?? 'both');
-        $tokens = $this->buildTokens($languageMode, $company, $run, $detail, $ytd);
+        $language = (string)($template['language'] ?? 'th');
+        $tokens = $this->buildTokens($language, $company, $run, $detail, $ytd);
         [$pageW, $pageH] = self::pageDimensionsMm((string)($template['page_size'] ?? 'A4'), (string)($template['orientation'] ?? 'portrait'));
 
         $byPage = [];
@@ -277,7 +270,7 @@ class PayslipTemplateRenderer {
         foreach ($byPage as $pageNumber => $pageElements) {
             $body = '';
             foreach ($pageElements as $el) {
-                $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths, $detail, $statutoryLabels, $languageMode);
+                $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths, $detail, $statutoryLabels, $language);
             }
             $body .= $watermarkHtml;
             $breakStyle = $pageNumber === $lastPageKey ? '' : 'page-break-after:always;';

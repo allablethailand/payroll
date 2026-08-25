@@ -11358,6 +11358,82 @@ ALTER TABLE `payslip_templates`
 
 COMMIT;
 
+--
+-- 2026-08-25, Payslip Template + Employment Certificate Template -- per-template ASSIGNMENT to
+-- department/team/employee (explicit request: "สามารถ Assign ตั้งค่าให้พนักงาน เป็นรายแผนก รายทีม
+-- หรือรายคน หรือใช้งานร่วมกันทั้งหมดก็ได้" -- assign a template to specific departments/teams/
+-- individual employees, any combination at once on one template). Mirrors `holidays`/
+-- `holiday_assignments`' own polymorphic scope pattern (see SetupRulesModel::resolveHolidaysForEmployee()/
+-- validateScopeRef()) but DELIBERATELY simpler -- no `assignment_mode` include/exclude toggle, since
+-- nothing in this request asked for a "blacklist everyone except" case the way Holiday genuinely
+-- needed one for "the whole company is off except department X". Semantics here: a template with
+-- ZERO assignment rows is UNSCOPED (applies as the general company default, exactly today's existing
+-- `is_default`/`getDefault()` behavior, unchanged); a template with ANY assignment rows only applies
+-- to the union of those department/team/employee scopes. Resolution priority when more than one
+-- scope type matches the same employee: employee > team > department (same "most specific wins"
+-- convention as Holiday's own employee > position > department > shift priority).
+--
+
+CREATE TABLE `payslip_template_assignments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `scope_type` enum('department','team','employee') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `scope_id` int(11) NOT NULL COMMENT 'polymorphic -- structure_departments.id / structure_teams.id / employees.id depending on scope_type, validated at application layer',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pta_template` (`template_id`),
+  KEY `idx_pta_scope` (`scope_type`, `scope_id`),
+  CONSTRAINT `fk_pta_template` FOREIGN KEY (`template_id`) REFERENCES `payslip_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `employment_certificate_template_assignments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `scope_type` enum('department','team','employee') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `scope_id` int(11) NOT NULL COMMENT 'polymorphic -- structure_departments.id / structure_teams.id / employees.id depending on scope_type, validated at application layer',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ecta_template` (`template_id`),
+  KEY `idx_ecta_scope` (`scope_type`, `scope_id`),
+  CONSTRAINT `fk_ecta_template` FOREIGN KEY (`template_id`) REFERENCES `employment_certificate_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-25, Payslip Template's 2-language handling rebuilt to match Employment Certificate
+-- Template's own pair pattern exactly (explicit request: "ในหน้าตั้งค่า Slip การทำ 2 ภาษาอยากให้เป็น
+-- เหมือนหน้าของเอกสาร และรูปแบบการทำเหมือนกัน" -- confirmed via AskUserQuestion: drop `language_mode`'s
+-- 'both' option entirely and mirror ECT's language/pair_key columns exactly, rather than keep 'both'
+-- as a 3rd option alongside a th/en pair). `language_mode` ('th'/'en'/'both', ONE shared canvas
+-- across languages) is replaced by `language` (enum('th','en'), one canvas PER language, same shape
+-- as `employment_certificate_templates.language`) + `pair_key` (same shape as that table's own
+-- `pair_key`, links a TH row and an EN row as "the same logical template"). `is_default` becomes
+-- per (comp_id, language) instead of company-wide, matching ECT's own single-default-per-language
+-- enforcement (PayslipTemplateModel::getDefault($compId, $language) replaces the old
+-- getDefaultForCompany($compId)). `status`/`deleted_at` (the active/inactive/deleted soft-delete
+-- toggle, distinct from ECT which has no 'inactive' state) and every other Payslip-only field
+-- (header/footer text, is_default itself) are UNCHANGED -- only the language mechanism is being
+-- unified, not the fields the original rebuild already deliberately kept different from ECT.
+--
+-- Real production data at migration time: exactly one template existed (id=165, "Slip เงินเดือน",
+-- language_mode='both', is_default=1) -- per the user's explicit choice, it keeps 100% of its
+-- content and becomes the TH row of a new pair; an EN version can be created afterward via
+-- "Generate Auto" or manually, same as any other pair missing one language.
+--
+
+ALTER TABLE `payslip_templates`
+  ADD COLUMN `language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th' AFTER `template_name`,
+  ADD COLUMN `pair_key` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `language`,
+  ADD KEY `idx_pst_pair_key` (`comp_id`, `pair_key`);
+
+UPDATE `payslip_templates` SET `language` = 'en' WHERE `language_mode` = 'en';
+UPDATE `payslip_templates` SET `pair_key` = CONCAT('legacy_', `id`) WHERE `pair_key` IS NULL;
+
+ALTER TABLE `payslip_templates` DROP COLUMN `language_mode`;
+
+COMMIT;
+
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

@@ -7,9 +7,11 @@ require_once __DIR__ . '/../services/PayslipTemplateRenderer.php';
 /**
  * Payslip Template canvas designer backend -- rebuilt to match Employment Certificate Template's own
  * controller shape almost exactly (2026-08-25, explicit request: "ปรับให้การตั้งค่า Slip เงินเดือน
- * Template เป็นเหมือนกับใบรับรอง"). See PayslipTemplateModel's own docblock for the architectural
- * differences that were deliberately KEPT (is_default/language_mode/header-footer/status) vs. what
- * was deliberately NOT ported (no pair_key/TH-EN-tabs -- editPage() takes a plain template `id`).
+ * Template เป็นเหมือนกับใบรับรอง"; same-day follow-up: "การทำ 2 ภาษาอยากให้เป็นเหมือนหน้าของเอกสาร และ
+ * รูปแบบการทำเหมือนกัน" -- the language mechanism now ALSO mirrors Employment Certificate Template's
+ * pair_key/TH-EN architecture, see PayslipTemplateModel's own docblock). editPage()/pairedList()/
+ * generateOtherLanguage() below are direct ports of EmploymentCertificateTemplateController's own
+ * methods of the same name.
  *
  * Permission gate added fresh here (`payslip_template.manage`) -- the OLD PayslipTemplateController
  * had none at all; Employment Certificate Template's own controller already gates every action this
@@ -43,21 +45,30 @@ class PayslipTemplateController extends Controller {
         return true;
     }
 
-    /** Standalone editor page, addressed by a plain template `id` (NOT a pair_key -- Payslip
-     *  Template has no TH/EN-fork concept, see PayslipTemplateModel's own docblock). Rendered
-     *  through the normal Controller::view() layout, same as every other page. */
-    public function editPage(string $id) {
-        // Router::matchRoute() always passes route params as raw strings (see its own dispatch()) --
-        // this file has declare(strict_types=1), so an `int $id` parameter here would throw a
-        // TypeError on every request. Cast inside the body instead, same as every other route param
-        // handled this way elsewhere in this app.
+    /** Standalone editor page (2026-08-25 follow-up, "รูปแบบการทำเหมือนกัน" -- direct port of
+     *  EmploymentCertificateTemplateController::editPage()). `{key}` is a template's pair_key.
+     *  Rendered through the normal Controller::view() layout, same as every other page. */
+    public function editPage(string $key) {
         $compId = (int)getCompId();
-        $template = $compId ? $this->model->get($compId, (int)$id) : null;
-        $this->view('payslip-template/edit', ['template' => $template]);
+        $pair = $compId ? $this->model->getPairByKey($compId, $key) : null;
+        $this->view('payslip-template/edit', ['pair' => $pair]);
     }
 
     public function fieldTypeOptions() {
         $this->json(['status' => true, 'data' => $this->model->fieldTypeOptions()]);
+    }
+
+    /** Full department/team/employee lists for the "Assign To" tab's checkbox lists (2026-08-25,
+     *  explicit request: checkboxes instead of a search dropdown -- see PayslipTemplateModel::
+     *  assignableOptions()'s own comment). */
+    public function assignableOptions() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['departments' => [], 'teams' => [], 'employees' => []]]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->assignableOptions((int)$compId)]);
     }
 
     public function presetOptions() {
@@ -69,11 +80,39 @@ class PayslipTemplateController extends Controller {
     public function list() {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $compId = getCompId();
+        $language = (string)($_GET['language'] ?? '');
+        if (!$compId || !in_array($language, ['th', 'en'], true)) {
+            $this->json(['status' => false, 'message' => 'Missing or invalid language.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->list((int)$compId, $language)]);
+    }
+
+    /** 2026-08-25 follow-up, unified TH/EN list ("รูปแบบการทำเหมือนกัน") -- backs the single
+     *  DataTable that replaced the old language_mode column, direct port of
+     *  EmploymentCertificateTemplateController::pairedList(). */
+    public function pairedList() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->list((int)$compId)]);
+        $this->json(['status' => true, 'data' => $this->model->listPaired((int)$compId)]);
+    }
+
+    /** "Generate other language, Auto" -- direct port of
+     *  EmploymentCertificateTemplateController::generateOtherLanguage(). */
+    public function generateOtherLanguage() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->generateOtherLanguage((int)$compId, $id, $this->userId()));
     }
 
     public function get() {
@@ -115,13 +154,18 @@ class PayslipTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        $language = (string)($data['language'] ?? '');
         $preset = (string)($data['preset'] ?? 'blank');
         $templateName = trim((string)($data['template_name'] ?? ''));
         if ($templateName === '') {
             $this->json(['status' => false, 'message' => 'Template name is required.']);
             return;
         }
-        $this->json($this->model->createFromPreset((int)$compId, $preset, $templateName, $this->userId()));
+        // Creating the missing language of an existing pair "ทำเอง" (manually, via the New Template
+        // gallery) instead of "Generate Auto" -- if the frontend passes the counterpart's pair_key,
+        // this new row links to it instead of starting a new pair.
+        $pairKey = !empty($data['pair_key']) ? (string)$data['pair_key'] : null;
+        $this->json($this->model->createFromPreset((int)$compId, $language, $preset, $templateName, $this->userId(), $pairKey));
     }
 
     public function duplicate() {
@@ -133,6 +177,20 @@ class PayslipTemplateController extends Controller {
             return;
         }
         $this->json($this->model->duplicate((int)$compId, $id, $this->userId()));
+    }
+
+    /** 2026-08-25 follow-up: the unified list's Duplicate button duplicates a whole PAIR (both
+     *  languages, if both exist) as one action -- direct port of
+     *  EmploymentCertificateTemplateController::duplicatePair(). */
+    public function duplicatePair() {
+        if (!$this->requirePermission('payslip_template.manage')) return;
+        $compId = getCompId();
+        $pairKey = trim((string)($_POST['pair_key'] ?? ''));
+        if (!$compId || $pairKey === '') {
+            $this->json(['status' => false, 'message' => 'Missing pair_key.']);
+            return;
+        }
+        $this->json($this->model->duplicatePair((int)$compId, $pairKey, $this->userId()));
     }
 
     public function delete() {
@@ -174,9 +232,14 @@ class PayslipTemplateController extends Controller {
     public function presetElements() {
         if (!$this->requirePermission('payslip_template.manage')) return;
         $data = json_decode(file_get_contents('php://input'), true);
+        $language = is_array($data) ? (string)($data['language'] ?? '') : '';
         $preset = is_array($data) ? (string)($data['preset'] ?? '') : '';
+        if (!in_array($language, ['th', 'en'], true)) {
+            $this->json(['status' => false, 'message' => 'Invalid language.']);
+            return;
+        }
         try {
-            $elements = $this->model->presetPreviewElements($preset);
+            $elements = $this->model->presetPreviewElements($preset, $language);
         } catch (InvalidArgumentException $e) {
             $this->json(['status' => false, 'message' => $e->getMessage()]);
             return;
@@ -314,13 +377,19 @@ class PayslipTemplateController extends Controller {
         }
         $pageSize = in_array(($data['page_size'] ?? 'A4'), ['A4', 'Letter', 'Legal'], true) ? $data['page_size'] : 'A4';
         $orientation = in_array(($data['orientation'] ?? 'portrait'), ['portrait', 'landscape'], true) ? $data['orientation'] : 'portrait';
-        $languageMode = in_array(($data['language_mode'] ?? 'both'), ['th', 'en', 'both'], true) ? $data['language_mode'] : 'both';
+        $language = (string)($data['language'] ?? '');
+        if (!in_array($language, ['th', 'en'], true)) {
+            http_response_code(422);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => 'Invalid language.']);
+            return;
+        }
         $watermarkEnabled = !empty($data['watermark_enabled']);
         $watermarkText = $watermarkEnabled ? trim((string)($data['watermark_text'] ?? '')) : null;
         try {
             $pdfContent = (new PayslipTemplateRenderer())->renderPreview(
                 (int)$compId,
-                ['page_size' => $pageSize, 'orientation' => $orientation, 'language_mode' => $languageMode],
+                ['page_size' => $pageSize, 'orientation' => $orientation, 'language' => $language],
                 $elements, $logoPath, $watermarkText
             );
         } catch (Throwable $e) {
@@ -347,9 +416,16 @@ class PayslipTemplateController extends Controller {
             return;
         }
         $data = json_decode(file_get_contents('php://input'), true);
+        $language = is_array($data) ? (string)($data['language'] ?? '') : '';
+        if (!in_array($language, ['th', 'en'], true)) {
+            http_response_code(422);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => false, 'message' => 'Invalid language.']);
+            return;
+        }
         $preset = is_array($data) ? (string)($data['preset'] ?? '') : '';
         try {
-            $elements = $this->model->presetPreviewElements($preset);
+            $elements = $this->model->presetPreviewElements($preset, $language);
         } catch (InvalidArgumentException $e) {
             http_response_code(422);
             header('Content-Type: application/json');
@@ -364,7 +440,7 @@ class PayslipTemplateController extends Controller {
         }
         try {
             $pdfContent = (new PayslipTemplateRenderer())->renderPreview(
-                (int)$compId, ['page_size' => 'A4', 'orientation' => 'portrait', 'language_mode' => 'both'], $elements, null, null
+                (int)$compId, ['page_size' => 'A4', 'orientation' => 'portrait', 'language' => $language], $elements, null, null
             );
         } catch (Throwable $e) {
             http_response_code(500);
