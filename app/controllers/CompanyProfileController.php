@@ -53,6 +53,10 @@ class CompanyProfileController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid logo path.']);
             return;
         }
+        if (!empty($data['signature_path']) && !CompanyProfileModel::isValidSignaturePath((string)$data['signature_path'], $compId)) {
+            $this->json(['status' => false, 'message' => 'Invalid signature path.']);
+            return;
+        }
         try {
             $result = $this->model->save($data);
             if ($result) {
@@ -109,6 +113,54 @@ class CompanyProfileController extends Controller {
         }
         $relativePath = 'public/uploads/company_logos/' . (int)$compId . '/' . $safeName;
         $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'logo_path' => $relativePath]);
+    }
+
+    /** 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name หรือสามารถเซ็นต์สด
+     *  ผ่านหน้าจอได้" -- identical pattern/validation to uploadLogo() above (finfo MIME check, 2MB
+     *  limit, jpg/png/svg only, random 32-hex filename), separate storage root. A live-drawn
+     *  signature reaches here the exact same way an uploaded file does -- the browser's signature-pad
+     *  canvas is exported to a PNG Blob client-side (canvas.toBlob()) and posted as a normal
+     *  multipart file under the same `file` field name, so this one endpoint serves both input
+     *  methods without needing to know which one produced the image. */
+    public function uploadSignature() {
+        if (!$this->requirePermission('company_profile.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            $this->json(['status' => false, 'message' => 'File upload failed.']);
+            return;
+        }
+        $file = $_FILES['file'];
+        $maxSize = 2 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            $this->json(['status' => false, 'message' => 'File size exceeds 2MB limit.']);
+            return;
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/svg+xml' => 'svg'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->file($file['tmp_name']);
+        if (!isset($allowedMimes[$detectedMime])) {
+            $this->json(['status' => false, 'message' => 'Unsupported file type. Use JPG, PNG, or SVG.']);
+            return;
+        }
+        $ext = $allowedMimes[$detectedMime];
+
+        $uploadDir = __DIR__ . '/../../public/uploads/company_signatures/' . (int)$compId . '/';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $this->json(['status' => false, 'message' => 'Failed to prepare storage directory.']);
+            return;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $ext;
+        $destPath = $uploadDir . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            $this->json(['status' => false, 'message' => 'Failed to save file.']);
+            return;
+        }
+        $relativePath = 'public/uploads/company_signatures/' . (int)$compId . '/' . $safeName;
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'signature_path' => $relativePath]);
     }
 
     public function branch() {

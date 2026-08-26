@@ -32,40 +32,36 @@
   <div class="tab-content">
     <!-- PAYSLIP REQUESTS (Mode B) -->
     <div class="tab-pane fade show active p-0" id="tab-req">
-      <div class="card-surface p-3 p-md-4">
-        <table class="table table-hover align-middle w-100" id="tb_payslip_request">
-          <thead class="table-light text-secondary">
-            <tr>
-              <th data-i18n="employee">Employee</th>
-              <th data-i18n="pay_period">Pay Period</th>
-              <th data-i18n="requested_by">Requested By</th>
-              <th data-i18n="status">Status</th>
-              <th data-i18n="requested_at">Requested At</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
+      <table class="table table-hover align-middle w-100" id="tb_payslip_request">
+        <thead class="table-light text-secondary">
+          <tr>
+            <th data-i18n="employee">Employee</th>
+            <th data-i18n="pay_period">Pay Period</th>
+            <th data-i18n="requested_by">Requested By</th>
+            <th data-i18n="status">Status</th>
+            <th data-i18n="requested_at">Requested At</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
 
     <!-- EMPLOYMENT CERTIFICATE REQUESTS -->
     <div class="tab-pane fade p-0" id="tab-ecr">
-      <div class="card-surface p-3 p-md-4">
-        <table class="table table-hover align-middle w-100" id="tb_ecr_request">
-          <thead class="table-light text-secondary">
-            <tr>
-              <th data-i18n="employee">Employee</th>
-              <th data-i18n="language">Language</th>
-              <th data-i18n="requested_by">Requested By</th>
-              <th data-i18n="status">Status</th>
-              <th data-i18n="requested_at">Requested At</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
+      <table class="table table-hover align-middle w-100" id="tb_ecr_request">
+        <thead class="table-light text-secondary">
+          <tr>
+            <th data-i18n="employee">Employee</th>
+            <th data-i18n="language">Language</th>
+            <th data-i18n="requested_by">Requested By</th>
+            <th data-i18n="status">Status</th>
+            <th data-i18n="requested_at">Requested At</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
 
     <!-- DOCUMENT DELIVERY / ISSUANCE LOG -- 2026-08-26, explicit request: "ปรับ Filter ให้เหมือนหน้า
@@ -75,7 +71,6 @@
          DocumentDeliveryLogModel's own docblock for why this is a UNION at the read layer, not a
          schema change to payslip_delivery_logs). -->
     <div class="tab-pane fade p-0" id="tab-dlog">
-      <div class="card-surface p-3 p-md-4">
         <div class="station-filter" id="dlogStationFilter">
           <span class="station-filter-label" data-i18n="label_filter">Filter</span>
           <button type="button" class="station-filter-toggle" id="dlogStationFilterToggle" title="Toggle filter">
@@ -124,7 +119,6 @@
           </thead>
           <tbody></tbody>
         </table>
-      </div>
     </div>
   </div>
 

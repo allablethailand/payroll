@@ -74,12 +74,14 @@ try {
     echo "=== fieldTypeOptions() / presetOptions() ===\n";
     $fieldOptions = $model->fieldTypeOptions();
     // 20 original + static_text (new, added for the canvas designer's free-text/paragraph element,
-    // mirrors Employment Certificate Template's own field of the same name/purpose).
-    check('21 field types seeded (20 original + static_text)', count($fieldOptions), 21);
+    // mirrors Employment Certificate Template's own field of the same name/purpose) + 2026-08-26's
+    // new company_signature ("เพิ่มให้แนบลายเซ็นต์...และเพิ่มใน Item ในการจัดการ Template").
+    check('22 field types seeded (20 original + static_text + company_signature)', count($fieldOptions), 22);
     checkTrue('static_text field type is present', in_array('static_text', array_column($fieldOptions, 'code'), true));
-    checkTrue('company_logo is element_type=image, everything else is text', (function () use ($fieldOptions) {
+    checkTrue('company_logo/company_signature are element_type=image, everything else is text', (function () use ($fieldOptions) {
+        $imageCodes = ['company_logo', 'company_signature'];
         foreach ($fieldOptions as $ft) {
-            $expected = $ft['code'] === 'company_logo' ? 'image' : 'text';
+            $expected = in_array($ft['code'], $imageCodes, true) ? 'image' : 'text';
             if ($ft['element_type'] !== $expected) return false;
         }
         return true;
@@ -210,6 +212,12 @@ try {
     check('duplicate name has (Copy) suffix', $dupRow['template_name'], 'Template Two (Copy)');
     check('duplicate is never itself default', (int)$dupRow['is_default'], 0);
     check('duplicate carries the same element count as the source', count($dupRow['elements']), count($richGot['elements']));
+
+    // 2026-08-26: publish_status defaults to 'draft' on every INSERT (see save()'s own comment) --
+    // getDefault()/resolveTemplateForEmployee() now also require publish_status='public', so fixtures
+    // that these two functions are expected to actually resolve need an explicit publish first.
+    checkTrue('t1 published', $model->setPublishStatus($compId, (int)$t1['template_id'], 'public', $userId)['status']);
+    checkTrue('t2 published', $model->setPublishStatus($compId, (int)$t2['template_id'], 'public', $userId)['status']);
 
     echo "=== toggleStatus() clears is_default ===\n";
     $toggle = $model->toggleStatus($compId, (int)$t1['template_id'], $userId);
@@ -356,6 +364,11 @@ try {
         'assignments' => [['scope_type' => 'employee', 'scope_id' => $directEmpId]],
     ], $userId);
     checkTrue('employee-scoped template saves', $empTpl['status']);
+    // 2026-08-26: publish_status defaults to 'draft' -- resolveTemplateForEmployee() only matches
+    // publish_status='public' templates, same reasoning as the toggleStatus() section above.
+    foreach ([$defaultTpl, $deptTpl, $teamTpl, $empTpl] as $tpl) {
+        $model->setPublishStatus($compId, (int)$tpl['template_id'], 'public', $userId);
+    }
 
     check('unmatched employee (no dept/team/employee match) resolves to the company default (th)', (int)($model->resolveTemplateForEmployee($compId, $unmatchedEmpId, 'th')['id'] ?? 0), (int)$defaultTpl['template_id']);
     check('dept-only employee resolves to the department-scoped template (th)', (int)($model->resolveTemplateForEmployee($compId, $deptOnlyEmpId, 'th')['id'] ?? 0), (int)$deptTpl['template_id']);
@@ -467,6 +480,38 @@ try {
     check('duplicatePair() clones BOTH languages', count($dupPair['template_ids']), 2);
     checkTrue('duplicatePair() uses a NEW, different pair_key', $dupPair['pair_key'] !== $pairKey);
     checkFalse('duplicatePair() on an unknown pair_key fails cleanly', $model->duplicatePair($compId, 'not_a_real_key', $userId)['status']);
+
+    echo "=== 2026-08-26: Layer visibility toggle (is_visible) -- \"เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว\" ===\n";
+    $visSave = $model->save($compId, [
+        'language' => 'th', 'template_name' => 'Visibility Test',
+        'elements' => [
+            ['element_type' => 'text', 'content' => 'VISIBLE_ONE', 'pos_x_pct' => 1, 'pos_y_pct' => 1, 'width_pct' => 30, 'height_pct' => 5, 'is_visible' => true],
+            ['element_type' => 'text', 'content' => 'HIDDEN_ONE', 'pos_x_pct' => 1, 'pos_y_pct' => 10, 'width_pct' => 30, 'height_pct' => 5, 'is_visible' => false],
+            ['element_type' => 'text', 'content' => 'DEFAULT_ONE', 'pos_x_pct' => 1, 'pos_y_pct' => 20, 'width_pct' => 30, 'height_pct' => 5],
+        ],
+    ], $userId);
+    checkTrue('save() with mixed is_visible succeeds', $visSave['status']);
+    $visRow = $model->get($compId, $visSave['template_id']);
+    $visByContent = [];
+    foreach ($visRow['elements'] as $e) { $visByContent[$e['content']] = $e; }
+    check('explicit is_visible=true round-trips as 1', (int)$visByContent['VISIBLE_ONE']['is_visible'], 1);
+    check('explicit is_visible=false round-trips as 0', (int)$visByContent['HIDDEN_ONE']['is_visible'], 0);
+    check('omitted is_visible defaults to 1 (visible) -- backward compat with pre-existing saved templates/tests', (int)$visByContent['DEFAULT_ONE']['is_visible'], 1);
+
+    $visHtml = $renderer->buildHtml(
+        ['page_size' => 'A4', 'orientation' => 'portrait', 'language' => 'th'],
+        $visRow['elements'], $fakeCompany, $fakeRun, $fakeDetail, [], null, [], null, null
+    );
+    checkTrue('a VISIBLE element is present in the rendered output', strpos($visHtml, 'VISIBLE_ONE') !== false);
+    checkFalse('a HIDDEN element is skipped from the rendered output entirely (real functional alternative to deleting it)', strpos($visHtml, 'HIDDEN_ONE') !== false);
+    checkTrue('an element with is_visible omitted (defaults visible) still renders', strpos($visHtml, 'DEFAULT_ONE') !== false);
+
+    $visDuplicate = $model->duplicate($compId, $visSave['template_id'], $userId);
+    checkTrue('duplicate() succeeds', $visDuplicate['status']);
+    $visDupRow = $model->get($compId, $visDuplicate['template_id']);
+    $visDupByContent = [];
+    foreach ($visDupRow['elements'] as $e) { $visDupByContent[$e['content']] = $e; }
+    check('duplicate() carries is_visible=false through (not silently reset to visible)', (int)$visDupByContent['HIDDEN_ONE']['is_visible'], 0);
 
 } finally {
     $pdo->rollBack();

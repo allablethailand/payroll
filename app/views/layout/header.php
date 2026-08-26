@@ -14,6 +14,10 @@
 <link href="<?=BASE_URL?>/node_modules/select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/css/bootstrap-datepicker.standalone.min.css">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/intl-tel-input/dist/css/intlTelInput.min.css">
+<!-- 2026-08-26, explicit request: "ที่อยู่ให้เพิ่มสามารถปักหมุด Location บนแผนที่ได้" -- OpenStreetMap +
+     Leaflet (chosen over Google Maps: free, no API key needed), same node_modules-served convention as
+     every other JS dependency in this project. -->
+<link rel="stylesheet" href="<?=BASE_URL?>/node_modules/leaflet/dist/leaflet.css">
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";

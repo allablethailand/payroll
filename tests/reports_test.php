@@ -314,6 +314,10 @@ try {
         ],
     ], $adminUserId);
     checkTrue('payslip template with a broad field mix saves', $templateSave['status']);
+    // 2026-08-26: publish_status defaults to 'draft' on every INSERT -- getDefault() now also
+    // requires publish_status='public' (see PayslipTemplateModel::save()'s own comment), so this
+    // fixture must be explicitly published before PaySlipReport::generate() can find it.
+    checkTrue('template published', $payslipTemplateModel->setPublishStatus($compId, (int)$templateSave['template_id'], 'public', $adminUserId)['status']);
     checkTrue('getDefault() now finds the new default template', $payslipTemplateModel->getDefault($compId, 'th') !== null);
 
     $templatedSlip = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/AttendanceBonusLedgerModel.php';
+require_once __DIR__ . '/EmployeeModel.php';
 require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
 require_once __DIR__ . '/../services/ThPitCalculator.php';
 require_once __DIR__ . '/../services/SyncPayResolver.php';
@@ -837,7 +838,7 @@ class PayrollRunModel {
             // this exact enum, just never wired to reality before now) -- 'sync' wins if somehow
             // both sides match, since that employee's real attendance data IS what's driving their
             // calculation regardless of also being manually rostered.
-            $stmtEmp = $this->db->prepare("SELECT DISTINCT e.id, e.employee_no, e.base_salary_amount, e.employment_date, e.employment_end_date,
+            $stmtEmp = $this->db->prepare("SELECT DISTINCT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
                     e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready,
                     e.has_spouse, e.tax_calculation_method, e.salary_type,
                     CASE WHEN psi.employee_id IS NOT NULL THEN 'sync' ELSE 'manual' END AS data_source
@@ -864,7 +865,7 @@ class PayrollRunModel {
             // 'calculated', so this can't reach approval half-finished -- completing the employee's
             // profile via the normal Employee edit form (which flips is_payroll_ready back to 1) and
             // recalculating is what clears it.
-            $stmtEmp = $this->db->prepare("SELECT id, employee_no, base_salary_amount, employment_date, employment_end_date,
+            $stmtEmp = $this->db->prepare("SELECT id, employee_no, base_salary_amount, key_version, employment_date, employment_end_date,
                     sso_enrolled, pvd_enrolled, tax_exempt, is_payroll_ready,
                     has_spouse, tax_calculation_method, salary_type, 'manual' AS data_source
                 FROM `employees` e
@@ -874,7 +875,7 @@ class PayrollRunModel {
                 AND NOT EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id_exclude AND pex.employee_id = e.id)");
             $stmtEmp->execute([':comp_id' => $compId, ':period_end' => $periodEnd, ':period_start' => $periodStart, ':run_id_exclude' => $id]);
         } else {
-            $stmtEmp = $this->db->prepare("SELECT e.id, e.employee_no, e.base_salary_amount, e.employment_date, e.employment_end_date,
+            $stmtEmp = $this->db->prepare("SELECT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
                     e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready,
                     e.has_spouse, e.tax_calculation_method, e.salary_type, 'manual' AS data_source
                 FROM `payroll_run_manual_employees` pme
@@ -883,6 +884,15 @@ class PayrollRunModel {
             $stmtEmp->execute([':comp_id' => $compId, ':run_id' => $id]);
         }
         $employees = $stmtEmp->fetchAll(PDO::FETCH_ASSOC);
+        // 2026-08-26, explicit request: "ตัวข้อมูลเงินเดือน...ไม่ต้องการให้เห็นตัวเลขตรงๆในฐานข้อมูล" --
+        // employees.base_salary_amount is now AES-256-GCM ciphertext (EmployeeModel::encryptedColumns()),
+        // decrypted here once for the whole batch -- same on-demand-decrypt-at-point-of-use convention
+        // this project already uses for tax_id_no/bank_account_no/sso_no elsewhere (e.g.
+        // EmployeePiiTrait::decryptEmployeeField()), not centralized inside a shared model method.
+        foreach ($employees as &$emp) {
+            $emp['base_salary_amount'] = EmployeeModel::decryptSalaryValue($emp['base_salary_amount'] ?? null, isset($emp['key_version']) ? (int)$emp['key_version'] : null);
+        }
+        unset($emp);
 
         // Sync-derived earning/deduction lines (OT/trip allowance/late/absent/item_values), keyed
         // by employee_id -- fetched once here rather than per-employee inside the loop below. Not
@@ -2246,9 +2256,12 @@ class PayrollRunModel {
         }
         $syncRow['item_values'] = $syncRow['item_values'] !== null ? json_decode((string)$syncRow['item_values'], true) : [];
 
-        $stmtBase = $this->db->prepare("SELECT base_salary_amount FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+        // 2026-08-26: base_salary_amount is now AES-256-GCM ciphertext -- see recalculate()'s own
+        // decrypt comment for the reasoning/convention this follows.
+        $stmtBase = $this->db->prepare("SELECT base_salary_amount, key_version FROM `employees` WHERE id = :id AND comp_id = :comp_id");
         $stmtBase->execute([':id' => $employeeId, ':comp_id' => $compId]);
-        $baseSalary = (float)$stmtBase->fetchColumn();
+        $baseRow = $stmtBase->fetch(PDO::FETCH_ASSOC);
+        $baseSalary = (float)EmployeeModel::decryptSalaryValue($baseRow['base_salary_amount'] ?? null, isset($baseRow['key_version']) ? (int)$baseRow['key_version'] : null);
 
         // Reflects any raw-attendance-number correction too (2026-08-21), so the "Computed" figure
         // shown alongside the $-amount override always matches what recalculate() would actually

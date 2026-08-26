@@ -107,6 +107,12 @@ try {
     checkTrue('fixture: Thai template created from preset', $thTemplate['status']);
     $enTemplate = $templateModel->createFromPreset($compId, 'en', 'classic', 'ECR Test EN ' . uniqid(), $adminUserId);
     checkTrue('fixture: English template created from preset', $enTemplate['status']);
+    // 2026-08-26: publish_status defaults to 'draft' on every INSERT -- resolveTemplateForEmployee()
+    // now also requires publish_status='public' (see EmploymentCertificateTemplateModel::save()'s
+    // own comment), so both fixture templates must be explicitly published before create() can
+    // confirm a real template resolves for this employee+language.
+    checkTrue('fixture: Thai template published', $templateModel->setPublishStatus($compId, (int)$thTemplate['template_id'], 'public', $adminUserId)['status']);
+    checkTrue('fixture: English template published', $templateModel->setPublishStatus($compId, (int)$enTemplate['template_id'], 'public', $adminUserId)['status']);
 
     // ---------- create() still fails: template exists now, but no workflow mapped yet ----------
     $noWorkflowRes = $model->create($compId, $employee, 'th', $adminUserId);

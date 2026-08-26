@@ -124,7 +124,7 @@ class PayslipTemplateModel {
      *   th:?array, en:?array}>
      */
     public function listPaired(int $compId): array {
-        $stmt = $this->db->prepare("SELECT id, language, pair_key, template_name, page_size, orientation, is_default, status, updated_at
+        $stmt = $this->db->prepare("SELECT id, language, pair_key, template_name, page_size, orientation, is_default, status, publish_status, auto_save, updated_at
             FROM `payslip_templates`
             WHERE comp_id = :comp_id AND deleted_at IS NULL
             ORDER BY updated_at DESC, id DESC");
@@ -141,7 +141,8 @@ class PayslipTemplateModel {
                     'th' => null, 'en' => null, 'latest_updated_at' => $row['updated_at'],
                 ];
             }
-            $langInfo = ['id' => (int)$row['id'], 'is_default' => (bool)$row['is_default'], 'status' => $row['status'], 'updated_at' => $row['updated_at']];
+            $langInfo = ['id' => (int)$row['id'], 'is_default' => (bool)$row['is_default'], 'status' => $row['status'],
+                'publish_status' => $row['publish_status'], 'auto_save' => (bool)$row['auto_save'], 'updated_at' => $row['updated_at']];
             if ($row['language'] === 'th') {
                 $pairs[$key]['th'] = $langInfo;
                 $pairs[$key]['template_name'] = $row['template_name'];
@@ -163,7 +164,7 @@ class PayslipTemplateModel {
      *  the standalone editor page's route (`payslip-template/edit/{key}`). Returns null if the
      *  company has no non-deleted template (either language) under this pair_key. */
     public function getPairByKey(int $compId, string $pairKey): ?array {
-        $stmt = $this->db->prepare("SELECT id, language, pair_key, template_name, page_size, orientation, is_default, status, updated_at
+        $stmt = $this->db->prepare("SELECT id, language, pair_key, template_name, page_size, orientation, is_default, status, publish_status, auto_save, updated_at
             FROM `payslip_templates`
             WHERE comp_id = :comp_id AND pair_key = :pair_key AND deleted_at IS NULL");
         $stmt->execute([':comp_id' => $compId, ':pair_key' => $pairKey]);
@@ -173,7 +174,8 @@ class PayslipTemplateModel {
         }
         $pair = ['pair_key' => $pairKey, 'template_name' => $rows[0]['template_name'], 'page_size' => $rows[0]['page_size'], 'orientation' => $rows[0]['orientation'], 'th' => null, 'en' => null];
         foreach ($rows as $row) {
-            $langInfo = ['id' => (int)$row['id'], 'is_default' => (bool)$row['is_default']];
+            $langInfo = ['id' => (int)$row['id'], 'is_default' => (bool)$row['is_default'],
+                'publish_status' => $row['publish_status'], 'auto_save' => (bool)$row['auto_save']];
             if ($row['language'] === 'th') {
                 $pair['th'] = $langInfo;
                 $pair['template_name'] = $row['template_name'];
@@ -223,7 +225,7 @@ class PayslipTemplateModel {
             'margin_mm' => $source['margin_mm'], 'logo_path' => $source['logo_path'] ?? null,
             'header_text_th' => $source['header_text_th'], 'header_text_en' => $source['header_text_en'],
             'footer_text_th' => $source['footer_text_th'], 'footer_text_en' => $source['footer_text_en'],
-            'status' => $source['status'], 'elements' => $clonedElements,
+            'status' => $source['status'], 'auto_save' => $source['auto_save'] ?? false, 'elements' => $clonedElements,
         ], $userId);
     }
 
@@ -411,10 +413,14 @@ class PayslipTemplateModel {
             $candidateScopes[] = ['scope_type' => 'department', 'scope_id' => (int)$emp['department_id']];
         }
 
+        // 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน
+        // แล้วค่อย Public" -- a draft template is a work-in-progress and must never be resolved for
+        // REAL generation, so both the assignment lookup here and getDefault() below require
+        // publish_status='public' on top of the existing status='active' gate.
         $stmt = $this->db->prepare("SELECT t.id, t.updated_at, a.scope_type
             FROM `payslip_template_assignments` a
             JOIN `payslip_templates` t ON t.id = a.template_id
-            WHERE t.comp_id = :comp_id AND t.language = :language AND t.status = 'active' AND t.deleted_at IS NULL
+            WHERE t.comp_id = :comp_id AND t.language = :language AND t.status = 'active' AND t.publish_status = 'public' AND t.deleted_at IS NULL
               AND a.scope_type = :scope_type AND a.scope_id = :scope_id");
         $best = null;
         $bestPriority = -1;
@@ -445,7 +451,7 @@ class PayslipTemplateModel {
             return null;
         }
         $stmt = $this->db->prepare("SELECT id FROM `payslip_templates`
-            WHERE comp_id = :comp_id AND language = :language AND status = 'active' AND deleted_at IS NULL
+            WHERE comp_id = :comp_id AND language = :language AND status = 'active' AND publish_status = 'public' AND deleted_at IS NULL
             ORDER BY is_default DESC, updated_at DESC, id DESC LIMIT 1");
         $stmt->execute([':comp_id' => $compId, ':language' => $language]);
         $id = $stmt->fetchColumn();
@@ -599,6 +605,14 @@ class PayslipTemplateModel {
         $marginMm = max(0.0, min(50.0, $marginMm));
         $status = in_array($data['status'] ?? '', ['active', 'inactive'], true) ? $data['status'] : 'active';
         $isDefault = !empty($data['is_default']) ? 1 : 0;
+        // 2026-08-26, explicit request: "เพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- a plain per-template
+        // preference the editor's own JS reads to decide whether to silently save on change instead of
+        // waiting for the Save button. `publish_status` (draft/public) is deliberately NOT accepted
+        // here -- it's set to 'draft' on INSERT below and otherwise only ever changed via the
+        // dedicated setPublishStatus() action (list-page toggle or the editor's own Publish switch),
+        // never as a side effect of an ordinary/auto- save, so autosave can never silently publish an
+        // unfinished design.
+        $autoSave = !empty($data['auto_save']) ? 1 : 0;
         $headerTh = trim((string)($data['header_text_th'] ?? ''));
         $headerEn = trim((string)($data['header_text_en'] ?? ''));
         $footerTh = trim((string)($data['footer_text_th'] ?? ''));
@@ -662,14 +676,14 @@ class PayslipTemplateModel {
                 $logoSql = $logoPath !== null ? ", logo_path = :logo_path" : "";
                 $stmt = $this->db->prepare("UPDATE `payslip_templates`
                     SET template_name = :template_name, is_default = :is_default, header_text_th = :header_th, header_text_en = :header_en,
-                        footer_text_th = :footer_th, footer_text_en = :footer_en, status = :status,
+                        footer_text_th = :footer_th, footer_text_en = :footer_en, status = :status, auto_save = :auto_save,
                         page_size = :page_size, orientation = :orientation, margin_mm = :margin_mm{$logoSql},
                         updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
                 $params = [
                     ':template_name' => $templateName, ':is_default' => $isDefault,
                     ':header_th' => $headerTh !== '' ? $headerTh : null, ':header_en' => $headerEn !== '' ? $headerEn : null,
                     ':footer_th' => $footerTh !== '' ? $footerTh : null, ':footer_en' => $footerEn !== '' ? $footerEn : null,
-                    ':status' => $status,
+                    ':status' => $status, ':auto_save' => $autoSave,
                     ':page_size' => $pageSize, ':orientation' => $orientation, ':margin_mm' => $marginMm,
                     ':updated_by' => $userId, ':id' => $id,
                 ];
@@ -688,10 +702,10 @@ class PayslipTemplateModel {
                 $stmt = $this->db->prepare("INSERT INTO `payslip_templates`
                     (comp_id, country_code, template_name, language, pair_key, is_default, logo_path,
                      header_text_th, header_text_en, footer_text_th, footer_text_en,
-                     page_size, orientation, margin_mm, status, created_by)
+                     page_size, orientation, margin_mm, status, publish_status, auto_save, created_by)
                     VALUES (:comp_id, :country_code, :template_name, :language, :pair_key, :is_default, :logo_path,
                      :header_th, :header_en, :footer_th, :footer_en,
-                     :page_size, :orientation, :margin_mm, :status, :created_by)");
+                     :page_size, :orientation, :margin_mm, :status, 'draft', :auto_save, :created_by)");
                 $stmt->execute([
                     ':comp_id' => $compId, ':country_code' => $countryCode, ':template_name' => $templateName,
                     ':language' => $language, ':pair_key' => $pairKey, ':is_default' => $isDefault,
@@ -699,7 +713,7 @@ class PayslipTemplateModel {
                     ':header_th' => $headerTh !== '' ? $headerTh : null, ':header_en' => $headerEn !== '' ? $headerEn : null,
                     ':footer_th' => $footerTh !== '' ? $footerTh : null, ':footer_en' => $footerEn !== '' ? $footerEn : null,
                     ':page_size' => $pageSize, ':orientation' => $orientation, ':margin_mm' => $marginMm,
-                    ':status' => $status, ':created_by' => $userId,
+                    ':status' => $status, ':auto_save' => $autoSave, ':created_by' => $userId,
                 ]);
                 $templateId = (int)$this->db->lastInsertId();
                 // The very first template ever saved for this company+language becomes the default
@@ -891,6 +905,26 @@ class PayslipTemplateModel {
             if ($own) { $this->db->rollBack(); }
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
+    }
+
+    /**
+     * 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน แล้ว
+     * ค่อย Public และในหน้า List สามารถเปิด Draft หรือ Public ได้จากหน้านั้นเลย" -- the ONE place
+     * `publish_status` is ever changed (save()/autosave never touch it, see that method's own
+     * comment), callable both from the List page's own toggle and from a switch inside the editor.
+     */
+    public function setPublishStatus(int $compId, int $id, string $status, int $userId): array {
+        if (!in_array($status, ['draft', 'public'], true)) {
+            return ['status' => false, 'message' => 'Invalid publish status.'];
+        }
+        $stmt = $this->db->prepare("SELECT id FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $id, ':comp_id' => $compId]);
+        if (!$stmt->fetch()) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $this->db->prepare("UPDATE `payslip_templates` SET publish_status = :publish_status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
+            ->execute([':publish_status' => $status, ':updated_by' => $userId, ':id' => $id]);
+        return ['status' => true, 'message' => 'Updated successfully.', 'publish_status' => $status];
     }
 
     /* ==================== Starter presets -- PHP-defined, not DB/company data (mirrors

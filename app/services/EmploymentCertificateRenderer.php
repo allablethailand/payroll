@@ -214,7 +214,7 @@ class EmploymentCertificateRenderer {
      *  out of buildHtml() so multi-page grouping there stays readable. Returns '' for an element
      *  that resolves to nothing visible (e.g. an image field with no resolvable path) -- callers
      *  just concatenate, nothing special needed for the empty case. */
-    private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths): string {
+    private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths, ?string $signatureAbsPath = null): string {
         $fontFamily = self::FONT_FAMILY_CSS[$el['font_family'] ?? 'th_sarabun_new'] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
         // font-family value is single-quoted (not double) -- this whole style string gets embedded
         // inside a DOUBLE-quoted HTML style="..." attribute below; double-quoting it here too would
@@ -237,6 +237,10 @@ class EmploymentCertificateRenderer {
             $imgAbsPath = null;
             if (!empty($el['field_key']) && $el['field_key'] === 'company_logo') {
                 $imgAbsPath = $logoAbsPath;
+            } elseif (!empty($el['field_key']) && $el['field_key'] === 'company_signature') {
+                // 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์...และเพิ่มใน Item ในการจัดการ
+                // Template" -- company-wide only, resolved straight from companies.signature_path.
+                $imgAbsPath = $signatureAbsPath;
             } elseif (!empty($el['image_asset_id']) && isset($imageAssetPaths[(int)$el['image_asset_id']])) {
                 $imgAbsPath = $imageAssetPaths[(int)$el['image_asset_id']];
             }
@@ -329,6 +333,8 @@ class EmploymentCertificateRenderer {
                 . 'white-space:nowrap;font-weight:bold;">' . htmlspecialchars(trim($watermarkText), ENT_QUOTES, 'UTF-8') . '</div></div>';
         }
 
+        $signatureAbsPath = $this->resolveUploadAbsPath($company['signature_path'] ?? null, 'company_signatures');
+
         $pageKeys = array_keys($byPage);
         $lastPageKey = end($pageKeys);
         $pagesHtml = '';
@@ -342,7 +348,7 @@ class EmploymentCertificateRenderer {
                 if (array_key_exists('is_visible', $el) && !$el['is_visible']) {
                     continue;
                 }
-                $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths);
+                $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths, $signatureAbsPath);
             }
             $body .= $watermarkHtml;
             $breakStyle = $pageNumber === $lastPageKey ? '' : 'page-break-after:always;';

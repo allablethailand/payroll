@@ -126,6 +126,53 @@ class EmployeeController extends Controller {
         $result = $this->model->save((int)$compId, $data, $userId);
         $this->json($result);
     }
+    /** 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้" --
+     *  identical pattern/validation to CompanyProfileController::uploadSignature() (finfo MIME check,
+     *  2MB limit, jpg/png/svg only, random 32-hex filename), one folder per company (not per
+     *  employee -- see EmployeeModel::isValidSignaturePath()'s own comment on why). Same dual input
+     *  method too: a live-drawn signature reaches here as a normal multipart file upload (the
+     *  browser's canvas is exported to a PNG Blob client-side), no separate endpoint needed. */
+    public function uploadSignature() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            $this->json(['status' => false, 'message' => 'File upload failed.']);
+            return;
+        }
+        $file = $_FILES['file'];
+        $maxSize = 2 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            $this->json(['status' => false, 'message' => 'File size exceeds 2MB limit.']);
+            return;
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/svg+xml' => 'svg'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->file($file['tmp_name']);
+        if (!isset($allowedMimes[$detectedMime])) {
+            $this->json(['status' => false, 'message' => 'Unsupported file type. Use JPG, PNG, or SVG.']);
+            return;
+        }
+        $ext = $allowedMimes[$detectedMime];
+
+        $uploadDir = __DIR__ . '/../../public/uploads/employee_signatures/' . (int)$compId . '/';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $this->json(['status' => false, 'message' => 'Failed to prepare storage directory.']);
+            return;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $ext;
+        $destPath = $uploadDir . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            $this->json(['status' => false, 'message' => 'Failed to save file.']);
+            return;
+        }
+        $relativePath = 'public/uploads/employee_signatures/' . (int)$compId . '/' . $safeName;
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'signature_path' => $relativePath]);
+    }
+
     public function delete() {
         if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();

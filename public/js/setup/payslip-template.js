@@ -70,6 +70,9 @@ const MARGIN_PRESETS = [
 // Company Profile's own logo, fetched once, company-wide -- same fallback priority as Employment
 // Certificate Template's own companyLogoPath (template's own logo_path first, this as fallback).
 let companyLogoPath = null;
+// 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name...และเพิ่มใน Item ในการ
+// จัดการ Template" -- company-wide only (no per-template override), fetched alongside the logo above.
+let companySignaturePath = null;
 
 // 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- MUST stay
 // byte-identical to PayslipTemplateRenderer::PAGE_SIZES_MM (the canvas and the PDF renderer share
@@ -108,6 +111,20 @@ function updateSaveHint() {
     // TWO footers (one per tab), both using the `.pst-save-hint` CLASS (not a unique id), so this
     // updates both at once -- whichever tab you're on always shows the right hint.
     $('.pst-save-hint').text(dirty ? (langData['ect_unsaved_hint'] || 'Unsaved changes — click Save.') : '');
+    scheduleAutoSaveIfEnabled();
+}
+// 2026-08-26, explicit request: "เพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- debounced (waits for a pause
+// in editing, not one save per keystroke/drag-tick) silent save, reusing the exact same save logic
+// the Save button itself calls (savePstTemplate()) so autosave can never drift out of sync with a
+// manual save. Only runs once the template already has an id (a brand-new, not-yet-created template
+// is always created explicitly via a preset/Generate Auto first, see the empty-state handlers below).
+let pstAutoSaveTimer = null;
+function scheduleAutoSaveIfEnabled() {
+    if (!currentTemplate || !currentTemplate.id) return;
+    if (!$('#pstAutoSaveSwitch').is(':checked')) return;
+    if (!dirty) return;
+    clearTimeout(pstAutoSaveTimer);
+    pstAutoSaveTimer = setTimeout(function () { savePstTemplate(true); }, 2000);
 }
 function updateLangTabsUI() {
     ['th', 'en'].forEach(lang => {
@@ -246,7 +263,7 @@ function emptyElementBase() {
     return {
         font_size: 14, font_family: 'th_sarabun_new', font_color: '#000000',
         text_align: 'left', font_weight: 'normal', font_style: 'normal', text_decoration: 'none',
-        group_key: null, page_number: currentPageNumber
+        group_key: null, page_number: currentPageNumber, is_visible: true
     };
 }
 const FONT_FAMILY_CSS_STACK = {
@@ -394,6 +411,9 @@ function resolveElementImageUrl(el) {
         const path = logoPath || companyLogoPath;
         return path ? `${BASE_URL}/${path}` : null;
     }
+    if (el.field_key === 'company_signature') {
+        return companySignaturePath ? `${BASE_URL}/${companySignaturePath}` : null;
+    }
     if (el.image_asset_id) {
         const asset = imageLibraryCache.find(a => Number(a.id) === Number(el.image_asset_id));
         return asset ? `${BASE_URL}/${asset.file_path}` : null;
@@ -537,6 +557,12 @@ function currentPageElements() {
 function renderCanvas() {
     const $page = $('#pstPage').empty();
     currentPageElements().forEach(el => {
+        // 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว"
+        // -- same as Employment Certificate Template's own fix: a hidden element is skipped from the
+        // canvas entirely (Photoshop convention) and from the generated PDF
+        // (PayslipTemplateRenderer::buildHtml()), but still listed in the Layers panel with its eye
+        // toggle -- renderLayersPanel() reads currentPageElements() directly, unfiltered.
+        if (el.is_visible === false) return;
         const $el = $(elementHtml(el));
         $page.append($el);
         applyElementStyle($el, el);
@@ -914,7 +940,9 @@ $(document).on('click', '#pstUngroupBtn', ungroupSelectedElements);
 /* ---------- Layers panel ---------- */
 function elementLabel(el) {
     if (el.element_type === 'image') {
-        return el.field_key === 'company_logo' ? (langData['company_logo'] || 'Company Logo') : (langData['ect_image_library'] || 'Image');
+        if (el.field_key === 'company_logo') return langData['company_logo'] || 'Company Logo';
+        if (el.field_key === 'company_signature') return langData['company_signature'] || 'Authorized Signature';
+        return langData['ect_image_library'] || 'Image';
     }
     const text = (el.content || '').replace(/\s+/g, ' ').trim();
     if (!text) return '(empty text)';
@@ -927,14 +955,21 @@ function layerRowHtml(el) {
     const selected = selectedKeys.includes(el.key);
     const editable = el.element_type === 'text' && !isBoundFieldElement(el);
     const editBtn = editable
-        ? `<button type="button" class="btn btn-link btn-sm p-0 ms-auto pst-layer-edit" data-key="${el.key}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`
+        ? `<button type="button" class="btn btn-link btn-sm p-0 ms-1 pst-layer-edit" data-key="${el.key}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`
         : '';
+    // 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" --
+    // same Photoshop-style eye toggle as Employment Certificate Template's own Layers panel.
+    const visible = el.is_visible !== false;
+    // 2026-08-26, explicit request: "ปุ่มปิดตา layer ให้มาอยู่หน้าสุดของแถว" -- moved from the end
+    // (ms-auto) to the very front of the row, ahead of the type icon/label.
+    const eyeBtn = `<button type="button" class="btn btn-link btn-sm p-0 me-1 pst-layer-visibility" data-key="${el.key}" title="${langData[visible ? 'ect_layer_hide' : 'ect_layer_show'] || (visible ? 'Hide' : 'Show')}"><i class="fa-solid ${visible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>`;
     return `
-        <div class="pst-layer-row ${selected ? 'pst-layer-selected' : ''}" data-key="${el.key}">
+        <div class="pst-layer-row ${selected ? 'pst-layer-selected' : ''} ${visible ? '' : 'pst-layer-hidden'}" data-key="${el.key}">
+            ${eyeBtn}
             <i class="fa-solid ${layerIcon(el)} me-1"></i>
             <span class="pst-layer-label">${escapeHtmlPst(elementLabel(el))}</span>
             ${editBtn}
-            <button type="button" class="btn btn-link btn-sm p-0 ${editable ? 'ms-1' : 'ms-auto'} text-danger pst-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+            <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger pst-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
         </div>
     `;
 }
@@ -955,12 +990,16 @@ function renderLayersPanel() {
             renderedGroups.add(el.group_key);
             const members = pageElements.filter(e => e.group_key === el.group_key);
             const groupSelected = members.length > 0 && members.every(m => selectedKeys.includes(m.key));
+            // Group-level eye: "visible" only when EVERY member is visible (select-all-checkbox
+            // convention) -- same as Employment Certificate Template's own group row.
+            const groupVisible = members.every(m => m.is_visible !== false);
             const $group = $(`
                 <div class="pst-layer-group" data-group-key="${el.group_key}">
                     <div class="pst-layer-row pst-layer-group-row ${groupSelected ? 'pst-layer-selected' : ''}">
+                        <button type="button" class="btn btn-link btn-sm p-0 me-1 pst-layer-group-visibility" data-group-key="${el.group_key}" title="${langData[groupVisible ? 'ect_layer_hide' : 'ect_layer_show'] || (groupVisible ? 'Hide' : 'Show')}"><i class="fa-solid ${groupVisible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>
                         <i class="fa-solid fa-folder me-1"></i>
                         <span class="pst-layer-label">${escapeHtmlPst(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger pst-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger pst-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="pst-layer-children"></div>
                 </div>
@@ -974,12 +1013,45 @@ function renderLayersPanel() {
     });
 }
 $(document).on('click', '.pst-layer-row[data-key]', function (e) {
-    if ($(e.target).closest('.pst-layer-edit, .pst-layer-delete').length) return;
+    if ($(e.target).closest('.pst-layer-edit, .pst-layer-delete, .pst-layer-visibility').length) return;
     selectElement($(this).data('key'), e.ctrlKey || e.metaKey);
 });
 $(document).on('click', '.pst-layer-edit', function (e) {
     e.stopPropagation();
     openTextModal($(this).data('key'));
+});
+// 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" --
+// same as Employment Certificate Template's own toggle: not a "select" click, and deselects the
+// element when hiding it (no canvas box left to interact with once hidden).
+$(document).on('click', '.pst-layer-visibility', function (e) {
+    e.stopPropagation();
+    pushUndo();
+    const key = $(this).data('key');
+    const el = findElement(key);
+    if (!el) return;
+    el.is_visible = el.is_visible === false;
+    if (el.is_visible === false) {
+        selectedKeys = selectedKeys.filter(k => k !== key);
+    }
+    renderCanvas();
+    dirty = true;
+    updateSaveHint();
+});
+$(document).on('click', '.pst-layer-group-visibility', function (e) {
+    e.stopPropagation();
+    pushUndo();
+    const groupKey = $(this).data('group-key');
+    const members = elements.filter(m => m.group_key === groupKey);
+    const groupVisible = members.every(m => m.is_visible !== false);
+    const nextVisible = !groupVisible;
+    members.forEach(m => { m.is_visible = nextVisible; });
+    if (!nextVisible) {
+        const memberKeys = members.map(m => m.key);
+        selectedKeys = selectedKeys.filter(k => !memberKeys.includes(k));
+    }
+    renderCanvas();
+    dirty = true;
+    updateSaveHint();
 });
 $(document).on('click', '.pst-layer-delete', function (e) {
     e.stopPropagation();
@@ -1003,7 +1075,7 @@ $(document).on('click', '.pst-layer-group-delete', function (e) {
     updateSaveHint();
 });
 $(document).on('click', '.pst-layer-group-row', function (e) {
-    if ($(e.target).closest('.pst-layer-group-delete').length) return;
+    if ($(e.target).closest('.pst-layer-group-delete, .pst-layer-group-visibility').length) return;
     const groupKey = $(this).closest('.pst-layer-group').data('group-key');
     const members = elements.filter(m => m.group_key === groupKey).map(m => m.key);
     if (e.ctrlKey || e.metaKey) {
@@ -1310,13 +1382,85 @@ function formatEctDateTime(str) {
     const pad = n => String(n).padStart(2, '0');
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+// 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ในหน้า List สามารถเปิด Draft หรือ
+// Public ได้จากหน้านั้นเลย" -- direct port of ectLangStatusHtml()'s own clickable badge.
 function pstLangStatusHtml(pairRow, lang) {
     const tpl = pairRow[lang];
     if (!tpl) {
         return `<i class="fa-regular fa-circle text-muted" title="${langData['ect_not_ready'] || 'Not ready'}"></i>`;
     }
-    return `<i class="fa-solid fa-circle-check text-success" title="${langData['ect_ready'] || 'Ready'}"></i>`;
+    const isPublic = tpl.publish_status === 'public';
+    const badge = `<button type="button" class="btn btn-sm ect-publish-badge ${isPublic ? 'ect-publish-public' : 'ect-publish-draft'} pst-publish-toggle" data-id="${tpl.id}" data-current="${tpl.publish_status}" title="${langData['ect_publish_toggle_hint'] || 'Click to toggle Draft/Public'}">${isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft')}</button>`;
+    return `<i class="fa-solid fa-circle-check text-success me-1" title="${langData['ect_ready'] || 'Ready'}"></i>${badge}`;
 }
+// 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน แล้วค่อย
+// Public" -- reflects currentTemplate.publish_status/auto_save into the editor's own switches
+// whenever a template loads (switchToLangTab()) -- disabled until the template has a real id (a
+// brand-new, never-saved template is always created via a preset/Generate Auto first, so this only
+// ever matters for the empty-state branch).
+function updatePstPublishUi() {
+    const hasId = !!(currentTemplate && currentTemplate.id);
+    $('#pstPublishSwitch').prop('disabled', !hasId);
+    $('#pstAutoSaveSwitch').prop('checked', hasId ? !!currentTemplate.auto_save : false);
+    const isPublic = hasId && currentTemplate.publish_status === 'public';
+    $('#pstPublishSwitch').prop('checked', isPublic);
+    $('#pstPublishSwitchLabel').text(isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft'));
+}
+$(document).on('change', '#pstPublishSwitch', function () {
+    if (!currentTemplate || !currentTemplate.id) return;
+    const $sw = $(this);
+    const target = $sw.is(':checked') ? 'public' : 'draft';
+    const revert = function () { $sw.prop('checked', target === 'draft'); };
+    const doToggle = function () {
+        $.ajax({
+            url: `${BASE_URL}/api/payslip-template.publish-toggle`,
+            method: 'POST', data: { id: currentTemplate.id, publish_status: target }, dataType: 'json',
+            success: function (res) {
+                if (res.status) {
+                    currentTemplate.publish_status = target;
+                    $('#pstPublishSwitchLabel').text(target === 'public' ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft'));
+                    try { localStorage.setItem('pst_list_dirty', String(Date.now())); } catch (e) { /* private browsing etc. */ }
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                    revert();
+                }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); revert(); }
+        });
+    };
+    if (target === 'draft') {
+        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle, revert);
+    } else {
+        doToggle();
+    }
+});
+$(document).on('click', '.pst-publish-toggle', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const $btn = $(this);
+    const id = $btn.data('id');
+    const current = $btn.data('current');
+    const target = current === 'public' ? 'draft' : 'public';
+    const doToggle = function () {
+        $.ajax({
+            url: `${BASE_URL}/api/payslip-template.publish-toggle`,
+            method: 'POST', data: { id, publish_status: target }, dataType: 'json',
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    $('#tb_pst_template').DataTable().ajax.reload(null, false);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                }
+            }
+        });
+    };
+    if (target === 'draft') {
+        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle);
+    } else {
+        doToggle();
+    }
+});
 function pstActionsGroupHtml(pairRow) {
     const readyLangs = ['th', 'en'].filter(l => pairRow[l]);
     const flagFile = { th: 'th', en: 'gb' };
@@ -1457,13 +1601,17 @@ function streamPreviewBlob(url, payload, failMessage) {
         return res.json().then(data => { showWarning(data.message || langData['save_failed'] || failMessage); });
     }).catch(() => showWarning(langData['save_failed'] || failMessage));
 }
+// 2026-08-26: is_visible added here too, per the v12-era lesson documented in Employment Certificate
+// Template's own elementsPayload() (this function has no schema-driven fallback -- every element
+// property has to be listed by hand here, easy to add a new one to emptyElementBase()/the model
+// without remembering this one central serialization point also needs updating).
 function elementsForPayload(list) {
     return (list || []).map(e => ({
         element_type: e.element_type, field_key: e.field_key, image_asset_id: e.image_asset_id, content: e.content,
         pos_x_pct: e.pos_x_pct, pos_y_pct: e.pos_y_pct, width_pct: e.width_pct, height_pct: e.height_pct,
         font_size: e.font_size, font_family: e.font_family, font_color: e.font_color,
         text_align: e.text_align, font_weight: e.font_weight, font_style: e.font_style, text_decoration: e.text_decoration,
-        group_key: e.group_key || null, page_number: e.page_number || 1
+        group_key: e.group_key || null, page_number: e.page_number || 1, is_visible: e.is_visible !== false
     }));
 }
 function previewTemplateById(id) {
@@ -1546,7 +1694,28 @@ function renderAssignChecklists() {
         }
         updateAssignSelectAllState(scope);
     });
+    updatePstAssignModeUi();
 }
+// 2026-08-26, explicit request: "ตรง Assign To ช่วยปรับให้ใช้งานง่ายขึ้นไม่ซับซ้อน" -- reflects whether
+// any checkbox is currently checked into the simple Everyone/Specific radio switch, and shows/hides
+// the 3 columns accordingly. Purely a visibility layer -- collectAssignments() is untouched.
+function updatePstAssignModeUi() {
+    const anyChecked = $('.pst-assign-checkbox:checked').length > 0;
+    $('#pstAssignModeEveryone').prop('checked', !anyChecked);
+    $('#pstAssignModeSpecific').prop('checked', anyChecked);
+    $('#pstAssignColumns, #pstAssignHint').toggleClass('d-none', !anyChecked);
+}
+$(document).on('change', 'input[name="pstAssignMode"]', function () {
+    const specific = $(this).val() === 'specific';
+    $('#pstAssignColumns, #pstAssignHint').toggleClass('d-none', !specific);
+    if (!specific) {
+        // Switching back to "Everyone" clears every checkbox -- same meaning "leave all empty"
+        // already had, just reachable with one click instead of manually unchecking each column.
+        $('.pst-assign-checkbox').prop('checked', false);
+        PST_ASSIGN_SCOPES.forEach(scope => updateAssignSelectAllState(scope));
+        if (currentTemplate) { dirty = true; updateSaveHint(); }
+    }
+});
 function updateAssignSelectAllState(scope) {
     const $boxes = $('#' + scope.listId + ' .pst-assign-checkbox');
     const total = $boxes.length;
@@ -1565,6 +1734,9 @@ function collectAssignments() {
 $(document).on('change', '.pst-assign-checkbox', function () {
     const scope = PST_ASSIGN_SCOPES.find(s => s.type === $(this).data('scope-type'));
     if (scope) updateAssignSelectAllState(scope);
+    // Keep the Everyone/Specific radio in sync if the admin unchecks the very last box directly.
+    $('#pstAssignModeEveryone').prop('checked', $('.pst-assign-checkbox:checked').length === 0);
+    $('#pstAssignModeSpecific').prop('checked', $('.pst-assign-checkbox:checked').length > 0);
     if (!currentTemplate) return;
     dirty = true;
     updateSaveHint();
@@ -1574,6 +1746,8 @@ PST_ASSIGN_SCOPES.forEach(scope => {
         const checkAll = $(this).is(':checked');
         $('#' + scope.listId + ' .pst-assign-checkbox').prop('checked', checkAll);
         updateAssignSelectAllState(scope);
+        $('#pstAssignModeEveryone').prop('checked', $('.pst-assign-checkbox:checked').length === 0);
+        $('#pstAssignModeSpecific').prop('checked', $('.pst-assign-checkbox:checked').length > 0);
         if (currentTemplate) { dirty = true; updateSaveHint(); }
     });
     $(document).on('input', '#' + scope.filterId, function () {
@@ -1602,7 +1776,11 @@ function fetchTemplateIntoSlot(id, callback) {
                 pos_x_pct: Number(e.pos_x_pct), pos_y_pct: Number(e.pos_y_pct), width_pct: Number(e.width_pct), height_pct: Number(e.height_pct),
                 font_size: Number(e.font_size), font_family: e.font_family, font_color: e.font_color,
                 text_align: e.text_align, font_weight: e.font_weight, font_style: e.font_style, text_decoration: e.text_decoration,
-                group_key: e.group_key || null, page_number: Number(e.page_number) || 1
+                group_key: e.group_key || null, page_number: Number(e.page_number) || 1,
+                // 2026-08-26, real bug caught before shipping -- same category as v12's page_number
+                // miss (see CLAUDE.md): without this, loading a SAVED template with a hidden element
+                // back into the editor would silently show it as visible again.
+                is_visible: e.is_visible !== 0 && e.is_visible !== false
             }));
             const inferredPageCount = mappedElements.reduce((max, e) => Math.max(max, e.page_number || 1), 1);
             callback({
@@ -1654,6 +1832,7 @@ function switchToLangTab(lang) {
         $('#pstHeaderThInput, #pstHeaderEnInput, #pstFooterThInput, #pstFooterEnInput').val('');
         $('#pstStatusSwitch').prop('checked', true);
         $('#pstIsDefaultSwitch').prop('checked', false);
+        updatePstPublishUi();
         currentAssignments = [];
         renderAssignChecklists();
         updateMarginDropdownLabel();
@@ -1677,6 +1856,7 @@ function switchToLangTab(lang) {
     $('#pstFooterEnInput').val(currentTemplate.footer_text_en || '');
     $('#pstStatusSwitch').prop('checked', currentTemplate.status === 'active');
     $('#pstIsDefaultSwitch').prop('checked', !!Number(currentTemplate.is_default));
+    updatePstPublishUi();
     currentAssignments = slot.assignments || [];
     renderAssignChecklists();
     updateMarginDropdownLabel();
@@ -1783,7 +1963,7 @@ $('#pstFullscreenModal').on('hidden.bs.modal', function () {
     if (typeof updateCanvasDimensions === 'function') updateCanvasDimensions();
     if (typeof applyZoom === 'function') applyZoom();
 });
-$(document).on('change', '#pstStatusSwitch, #pstIsDefaultSwitch', function () { dirty = true; updateSaveHint(); });
+$(document).on('change', '#pstStatusSwitch, #pstIsDefaultSwitch, #pstAutoSaveSwitch', function () { dirty = true; updateSaveHint(); });
 
 /* ---------- New Template modal ---------- */
 function loadPresets() {
@@ -2062,13 +2242,16 @@ $(document).on('click', '#pstChangePresetBtn', function () {
 function elementsPayload() {
     return elementsForPayload(elements);
 }
-// Both the Design tab's and the Assign To tab's own Save buttons share this one class -- see the
-// view's own comment on why this is a visual/UX change, not a split into two independent partial saves.
-$(document).on('click', '.pst-save-btn', function () {
+// 2026-08-26, explicit request: "เพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- extracted into a named
+// function so both the Save button click AND the debounced autosave (scheduleAutoSaveIfEnabled()
+// above) call the exact same logic. `silent=true` (autosave) skips the success toast (a toast every
+// couple seconds while typing would be noisy) but still surfaces a failure, since a silently-failing
+// autosave would be worse than no autosave at all.
+function savePstTemplate(silent) {
     if (!currentTemplate) return;
     const templateName = $('#pstTemplateNameInput').val().trim();
     if (!templateName) {
-        showWarning(langData['ect_select_template_name_required'] || 'Please enter a template name.');
+        if (!silent) showWarning(langData['ect_select_template_name_required'] || 'Please enter a template name.');
         return;
     }
     const pageSize = $('#pstPageSizeSelect').val();
@@ -2083,6 +2266,7 @@ $(document).on('click', '.pst-save-btn', function () {
         footer_text_th: $('#pstFooterThInput').val(), footer_text_en: $('#pstFooterEnInput').val(),
         is_default: $('#pstIsDefaultSwitch').is(':checked'),
         status: $('#pstStatusSwitch').is(':checked') ? 'active' : 'inactive',
+        auto_save: $('#pstAutoSaveSwitch').is(':checked'),
         page_size: pageSize, orientation: orientation, margin_mm: marginMm,
         logo_path: logoPath, elements: elementsPayload(), assignments: collectAssignments()
     };
@@ -2091,7 +2275,7 @@ $(document).on('click', '.pst-save-btn', function () {
         method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
             if (res.status) {
-                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                if (!silent) showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 currentTemplate.template_name = templateName;
                 currentTemplate.page_size = pageSize;
                 currentTemplate.orientation = orientation;
@@ -2106,6 +2290,11 @@ $(document).on('click', '.pst-save-btn', function () {
         },
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
     });
+}
+// Both the Design tab's and the Assign To tab's own Save buttons share this one class -- see the
+// view's own comment on why this is a visual/UX change, not a split into two independent partial saves.
+$(document).on('click', '.pst-save-btn', function () {
+    savePstTemplate(false);
 });
 
 /* ---------- Preview (live unsaved canvas state) ---------- */
@@ -2150,6 +2339,7 @@ $(document).ready(function () {
             success: function (res) {
                 if (res.status && res.data) {
                     companyLogoPath = res.data.logo_path || null;
+                    companySignaturePath = res.data.signature_path || null;
                 }
             }
         });

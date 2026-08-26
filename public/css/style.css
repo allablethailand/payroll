@@ -685,6 +685,20 @@ html, body {
 /* Company Profile — Logo upload card (2026-08-24, explicit request: "ปรับให้ Logo Upload อยู่ยนสุดของ
    Form ขอ Design สวยๆ รวมถึงมี Preview ด้วย") -- own section at the bottom of the form, replacing the
    old plain button + tiny inline preview. */
+/* 2026-08-26, explicit request: "สามารถเซ็นต์สดผ่านหน้าจอได้" -- the signature-pad canvas inside
+   #cpSignaturePadModal. */
+.cp-signature-pad-canvas {
+    width: 100%;
+    max-width: 500px;
+    height: 220px;
+    border: 1.5px dashed #dcdcdc;
+    border-radius: 10px;
+    background: #ffffff;
+    touch-action: none;
+    cursor: crosshair;
+    display: block;
+    margin: 0 auto;
+}
 .cp-logo-upload-card {
     display: flex;
     align-items: center;
@@ -4194,4 +4208,65 @@ html, body {
     .ect-assign-columns {
         grid-template-columns: 1fr;
     }
+}
+
+/* 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ในหน้า List สามารถเปิด Draft หรือ
+   Public ได้จากหน้านั้นเลย" -- small clickable badge next to each language cell's ready/not-ready icon
+   in both Payslip Template's and Employment Certificate Template's list (ect-publish-* shared, same
+   class names used by both pst-publish-toggle/ect-publish-toggle click handlers). */
+.ect-publish-badge {
+    padding: .1rem .5rem;
+    font-size: .72rem;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    line-height: 1.4;
+}
+.ect-publish-badge.ect-publish-draft {
+    background: #fff3cd;
+    color: #8a6d00;
+    border-color: #ffe69c;
+}
+.ect-publish-badge.ect-publish-public {
+    background: #d1f4e0;
+    color: #0f6b3f;
+    border-color: #a9e8c4;
+}
+.ect-publish-badge:hover {
+    filter: brightness(0.95);
+}
+
+/* 2026-08-26, explicit request: "การตั้งค่า Template ทั้ง Slip เงินเดือนและเอกสารให้มี Draft Mode และ
+   Public Mode และเพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- Draft/Public switch + Auto Save checkbox
+   inside the editor itself (Payslip Template's existing .pst-info-card, and Employment Certificate
+   Template's new equivalent .ect-info-card, see _editor_content.php for both). */
+.ect-info-card {
+    background: linear-gradient(135deg, rgba(255, 153, 0, .06), rgba(255, 153, 0, .01));
+    border: 1px solid #ffe1b3;
+    border-radius: 12px;
+    padding: .9rem 1.1rem;
+    margin-bottom: 1rem;
+}
+.pst-publish-row,
+.ect-publish-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.pst-publish-switch-label,
+.ect-publish-switch-label {
+    font-weight: 600;
+    font-size: .85rem;
+}
+
+/* 2026-08-26, explicit request: "ตรง Assign To ช่วยปรับให้ใช้งานง่ายขึ้นไม่ซับซ้อน" -- the simple
+   Everyone/Specific-selection switch that now hides the 3 checkbox columns by default. */
+.pst-assign-mode-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.5rem;
+    padding: .6rem .9rem;
+    background: #f8f9fa;
+    border-radius: 10px;
 }

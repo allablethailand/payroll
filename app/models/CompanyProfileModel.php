@@ -17,6 +17,18 @@ class CompanyProfileModel {
         return (bool)preg_match($pattern, $path);
     }
 
+    /** 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name หรือสามารถเซ็นต์สด
+     *  ผ่านหน้าจอได้" -- same traversal-proofing pattern as isValidLogoPath() above, one company-wide
+     *  signature image (uploaded file OR a live-drawn signature exported to PNG client-side -- both
+     *  go through the exact same upload endpoint/path convention, only the file content differs). */
+    public static function isValidSignaturePath(?string $path, int $compId): bool {
+        if ($path === null || $path === '') {
+            return true;
+        }
+        $pattern = '#^public/uploads/company_signatures/' . $compId . '/[a-f0-9]{32}\.(jpg|png|svg)$#';
+        return (bool)preg_match($pattern, $path);
+    }
+
     public function get() {
         $companyId = $_SESSION['user']['company_id'] ?? null;
         if (!$companyId) {
@@ -109,6 +121,7 @@ class CompanyProfileModel {
                         statutory_data = :statutory_data,
                         authorized_signatory_name = :authorized_signatory_name,
                         logo_path = :logo_path,
+                        signature_path = :signature_path,
                         setup_status = :setup_status,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id";
@@ -129,6 +142,7 @@ class CompanyProfileModel {
                 // whatever path it already had in a hidden field across saves, same as Payslip
                 // Template's modal does, so an unrelated profile save never accidentally clears it.
                 ':logo_path' => !empty($data['logo_path']) ? $data['logo_path'] : null,
+                ':signature_path' => !empty($data['signature_path']) ? $data['signature_path'] : null,
                 ':setup_status' => $isComplete ? 'active' : 'draft',
             ]);
             // Auto-seed the default earning/deduction items the moment a company actually

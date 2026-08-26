@@ -6,9 +6,49 @@ class EmployeeModel {
         $this->db = Database::getInstance()->pdo;
     }
 
+    /** Same traversal-proofing pattern as CompanyProfileModel::isValidLogoPath()/
+     *  isValidSignaturePath() -- one folder per company, not per employee (the random 32-hex filename
+     *  is already unguessable, a per-employee subfolder wasn't needed for isolation). */
+    public static function isValidSignaturePath(?string $path, int $compId): bool {
+        if ($path === null || $path === '') {
+            return true;
+        }
+        $pattern = '#^public/uploads/employee_signatures/' . $compId . '/[a-f0-9]{32}\.(jpg|png|svg)$#';
+        return (bool)preg_match($pattern, $path);
+    }
+
+    /**
+     * Decrypts employees.base_salary_amount, tolerating a row that was never actually encrypted (a
+     * raw INSERT bypassing save() -- e.g. every test fixture in tests/*.php that inserts directly
+     * into `employees` for speed, or PayrollSyncModel/EmployeeSyncer's own placeholder-employee
+     * INSERTs, though those two never set this column at all so they hit the null branch, not this
+     * fallback). EncryptionService::decrypt() already returns null (not an exception) for malformed
+     * ciphertext BY DESIGN -- this just adds one more fallback on top of that specifically for this
+     * column: if it wasn't valid ciphertext but IS a plain numeric string, treat it as an
+     * already-plaintext legacy/test value instead of silently collapsing to 0. This does NOT weaken
+     * the actual encryption guarantee -- every real write path (EmployeeModel::save(), the only place
+     * application code ever writes this column) always encrypts, so this fallback only ever fires for
+     * data that was never encrypted in the first place.
+     */
+    public static function decryptSalaryValue(?string $raw, ?int $keyVersion): string {
+        if ($raw === null || $raw === '') {
+            return '0.00';
+        }
+        $decrypted = EncryptionService::decrypt($raw, $keyVersion);
+        if ($decrypted !== null) {
+            return $decrypted;
+        }
+        return is_numeric($raw) ? $raw : '0.00';
+    }
+
     private function allColumns(): array {
         return [
             'employee_no', 'profile_photo_path',
+            // 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้"
+            // -- uploaded via a separate endpoint (EmployeeController::uploadSignature(), same
+            // upload-then-hidden-field convention as Company Profile's own signature_path), plain
+            // passthrough column here like profile_photo_path above.
+            'signature_path',
             'employee_type', 'employee_status', 'title', 'gender', 'name_th', 'surname_th', 'name_en', 'surname_en',
             'nickname_th', 'nickname_en', 'date_of_birth', 'nationality', 'religion', 'marital_status', 'military_status',
             'id_card_no', 'id_card_expire_date', 'tax_id_no', 'passport_no', 'passport_expire_date',
@@ -16,6 +56,11 @@ class EmployeeModel {
             'company_email', 'office_tel', 'send_signin_email', 'personal_email', 'mobile_no', 'mobile_country_code', 'send_preboarding_email', 'line_id',
             'address_line_1_register', 'address_line_2_register', 'master_address_id_register',
             'use_register_address', 'address_line_1_contact', 'address_line_2_contact', 'master_address_id_contact',
+            // 2026-08-26, explicit request: "ส่วนของที่อยู่ให้เพิ่มสามารถปักหมุด Location บน Map ได้" --
+            // ONE pin for the contact address specifically (where the employee can actually be
+            // reached, unlike the register address which is often a permanent household record) --
+            // OpenStreetMap/Leaflet, plain decimal columns, nullable (a pin is optional, not required).
+            'address_latitude', 'address_longitude',
             'emergency_name', 'emergency_surname', 'emergency_relationship', 'emergency_mobile',
             'department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id', 'cycle_id',
             'employment_date', 'employment_status', 'employment_status_effective_date', 'employment_end_date', 'employment_end_reason',
@@ -53,6 +98,17 @@ class EmployeeModel {
             'bank_account_no' => 'bank_account_no_hash',
             'sso_no' => 'sso_no_hash',
             'spouse_id_card_no' => null,
+            // 2026-08-26, explicit request: "ตัวข้อมูลเงินเดือนตอนนี้ เก็บเป็นตัวเลขตรงๆ ไม่ต้องการให้เห็น
+            // ตัวเลขตรงๆในฐานข้อมูลครับ" -- confirmed via AskUserQuestion to start with the single most
+            // sensitive per-employee value first (base salary), NOT every monetary column system-wide:
+            // base_salary_amount is read once per employee into PHP for payroll calculation and is
+            // NEVER used in SQL-side SUM/WHERE/ORDER BY anywhere in this codebase (verified by
+            // grepping every query referencing it before making this change), so encrypting it here
+            // carries none of the "every report/aggregation query needs rewriting" risk that the same
+            // treatment would carry for payroll_run_details/payroll amounts -- see this project's own
+            // CLAUDE.md for why THAT is deliberately a separate, not-yet-started phase. No hash column
+            // -- there's no legitimate reason to look an employee up BY their exact salary.
+            'base_salary_amount' => null,
         ];
     }
 
@@ -470,7 +526,9 @@ class EmployeeModel {
         }
         $keyVersion = isset($row['key_version']) ? (int)$row['key_version'] : null;
         foreach (array_keys($this->encryptedColumns()) as $col) {
-            $row[$col] = EncryptionService::decrypt($row[$col] ?? null, $keyVersion);
+            $row[$col] = $col === 'base_salary_amount'
+                ? self::decryptSalaryValue($row[$col] ?? null, $keyVersion)
+                : EncryptionService::decrypt($row[$col] ?? null, $keyVersion);
         }
         $row = array_merge($row, $this->buildAddressDisplay($row, 'register'), $this->buildAddressDisplay($row, 'contact'));
         $row['completeness'] = $this->calculateCompleteness($row);
@@ -602,6 +660,9 @@ class EmployeeModel {
         if (!empty($data['personal_email']) && !filter_var($data['personal_email'], FILTER_VALIDATE_EMAIL)) {
             return ['status' => false, 'message' => 'Invalid personal email address.'];
         }
+        if (!empty($data['signature_path']) && !self::isValidSignaturePath((string)$data['signature_path'], $compId)) {
+            return ['status' => false, 'message' => 'Invalid signature path.'];
+        }
 
         $fkChecks = [
             'department_id' => 'structure_departments',
@@ -654,6 +715,15 @@ class EmployeeModel {
         ];
         $values = [];
         $encryptedAny = false;
+        // 2026-08-26, explicit request: "ตัวข้อมูลเงินเดือนตอนนี้...ไม่ต้องการให้เห็นตัวเลขตรงๆในฐานข้อมูล"
+        // -- base_salary_amount joined encryptedColumns() below (same AES-256-GCM mechanism as
+        // id_card_no/tax_id_no/bank_account_no/sso_no), so by the end of this loop
+        // $values['base_salary_amount'] holds CIPHERTEXT, not the plaintext number. missingPayrollFields()
+        // needs the real numeric value (`(float)($values['base_salary_amount']) <= 0`, a threshold
+        // check, unlike the plain presence checks empty()'d elsewhere in that method which still work
+        // fine on ciphertext) -- captured here, BEFORE encryption, and substituted back in just for
+        // that one readiness check below.
+        $plainBaseSalaryForReadyCheck = null;
         foreach ($this->allColumns() as $col) {
             if (in_array($col, $booleans, true)) {
                 $values[$col] = !empty($data[$col]) ? 1 : 0;
@@ -667,6 +737,9 @@ class EmployeeModel {
             $val = ($val === '' || $val === null) ? null : $val;
             if ($val === null && array_key_exists($col, $columnDefaults)) {
                 $val = $columnDefaults[$col];
+            }
+            if ($col === 'base_salary_amount') {
+                $plainBaseSalaryForReadyCheck = $val;
             }
             if (array_key_exists($col, $encrypted)) {
                 $enc = EncryptionService::encrypt($val !== null ? (string)$val : null);
@@ -691,7 +764,11 @@ class EmployeeModel {
         // that gate was relaxed to support independent tab saving, hardcoding this would have wrongly
         // marked a part-filled employee "ready" the moment any single tab was saved). Not part of
         // allColumns(), so origami_ref_id/origami_sso_user_key are never touched by this generic form.
-        $values['is_payroll_ready'] = $this->isPayrollReady($values, $isThCompany) ? 1 : 0;
+        // base_salary_amount substituted back to its plaintext value for this ONE check -- see this
+        // loop's own comment on why $values['base_salary_amount'] itself is ciphertext by this point.
+        $readyCheckValues = $values;
+        $readyCheckValues['base_salary_amount'] = $plainBaseSalaryForReadyCheck;
+        $values['is_payroll_ready'] = $this->isPayrollReady($readyCheckValues, $isThCompany) ? 1 : 0;
 
         try {
             if ($id !== null) {

@@ -92,7 +92,7 @@
          mockup table with no backend at all; now a real per-company settings grid (fixed 4 rows,
          no add/delete -- document_type_code is code-tied, see DocumentNumberingModel's own
          docblock), matching the Permission Matrix's "fixed grid, not a DataTable" precedent. -->
-    <div class="tab-pane fade card-surface p-3 p-md-4" id="tab-run">
+    <div class="tab-pane fade" id="tab-run">
       <h6 class="fw-bold mb-3" data-i18n="document_running_number_format">Document Number Format</h6>
       <table class="table pl-table mb-0">
         <thead>

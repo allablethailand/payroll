@@ -104,6 +104,9 @@ const MARGIN_PRESETS = [
 // logo (fetched once here, company-wide, not per-template) unless an OLDER template still has its
 // own logo_path set from before this change (see resolveElementImageUrl()'s own priority comment).
 let companyLogoPath = null;
+// 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name...และเพิ่มใน Item ในการ
+// จัดการ Template" -- company-wide only (no per-template override), fetched alongside the logo above.
+let companySignaturePath = null;
 
 // 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- MUST stay
 // byte-identical to EmploymentCertificateRenderer::PAGE_SIZES_MM (the canvas and the PDF renderer
@@ -142,6 +145,18 @@ function updateSaveHint() {
     // 2026-08-25 follow-up: "หน้า Design กับหน้า Assign To ต้องการให้มีปุ่ม Save แยก Tab" -- there are now
     // TWO footers (one per tab), both using the `.ect-save-hint` CLASS (not a unique id).
     $('.ect-save-hint').text(dirty ? (langData['ect_unsaved_hint'] || 'Unsaved changes — click Save.') : '');
+    scheduleAutoSaveIfEnabled();
+}
+// 2026-08-26, explicit request: "เพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- direct port of
+// PayslipTemplateModel's own scheduleAutoSaveIfEnabled()/savePstTemplate() pairing (see that file's
+// own comment for the reasoning).
+let ectAutoSaveTimer = null;
+function scheduleAutoSaveIfEnabled() {
+    if (!currentTemplate || !currentTemplate.id) return;
+    if (!$('#ectAutoSaveSwitch').is(':checked')) return;
+    if (!dirty) return;
+    clearTimeout(ectAutoSaveTimer);
+    ectAutoSaveTimer = setTimeout(function () { saveEctTemplate(true); }, 2000);
 }
 
 /* ---------- Undo / Redo (explicit request: "เพิ่ม undo redo ด้วยครับ พร้อมทั้ง ctrl Z ctrl shift z") --
@@ -468,6 +483,9 @@ function resolveElementImageUrl(el) {
         // falls back to the Company Profile logo.
         const path = logoPath || companyLogoPath;
         return path ? `${BASE_URL}/${path}` : null;
+    }
+    if (el.field_key === 'company_signature') {
+        return companySignaturePath ? `${BASE_URL}/${companySignaturePath}` : null;
     }
     if (el.image_asset_id) {
         const asset = imageLibraryCache.find(a => Number(a.id) === Number(el.image_asset_id));
@@ -1041,7 +1059,9 @@ $(document).on('click', '#ectUngroupBtn', ungroupSelectedElements);
    top for any overlapping area), so the panel shows elements[] reversed. ---------- */
 function elementLabel(el) {
     if (el.element_type === 'image') {
-        return el.field_key === 'company_logo' ? (langData['company_logo'] || 'Company Logo') : (langData['ect_image_library'] || 'Image');
+        if (el.field_key === 'company_logo') return langData['company_logo'] || 'Company Logo';
+        if (el.field_key === 'company_signature') return langData['company_signature'] || 'Authorized Signature';
+        return langData['ect_image_library'] || 'Image';
     }
     const text = (el.content || '').replace(/\s+/g, ' ').trim();
     if (!text) return '(empty text)';
@@ -1065,12 +1085,14 @@ function layerRowHtml(el) {
     // AND the generated PDF -- see renderCanvas()/EmploymentCertificateRenderer::buildHtml() -- while
     // keeping their position/content/formatting intact for whenever they're shown again).
     const visible = el.is_visible !== false;
-    const eyeBtn = `<button type="button" class="btn btn-link btn-sm p-0 ms-auto ect-layer-visibility" data-key="${el.key}" title="${langData[visible ? 'ect_layer_hide' : 'ect_layer_show'] || (visible ? 'Hide' : 'Show')}"><i class="fa-solid ${visible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>`;
+    // 2026-08-26, explicit request: "ปุ่มปิดตา layer ให้มาอยู่หน้าสุดของแถว" -- moved from the end
+    // (ms-auto) to the very front of the row, ahead of the type icon/label.
+    const eyeBtn = `<button type="button" class="btn btn-link btn-sm p-0 me-1 ect-layer-visibility" data-key="${el.key}" title="${langData[visible ? 'ect_layer_hide' : 'ect_layer_show'] || (visible ? 'Hide' : 'Show')}"><i class="fa-solid ${visible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>`;
     return `
         <div class="ect-layer-row ${selected ? 'ect-layer-selected' : ''} ${visible ? '' : 'ect-layer-hidden'}" data-key="${el.key}">
+            ${eyeBtn}
             <i class="fa-solid ${layerIcon(el)} me-1"></i>
             <span class="ect-layer-label">${escapeHtmlEct(elementLabel(el))}</span>
-            ${eyeBtn}
             ${editBtn}
             <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger ect-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
         </div>
@@ -1104,9 +1126,9 @@ function renderLayersPanel() {
             const $group = $(`
                 <div class="ect-layer-group" data-group-key="${el.group_key}">
                     <div class="ect-layer-row ect-layer-group-row ${groupSelected ? 'ect-layer-selected' : ''}">
+                        <button type="button" class="btn btn-link btn-sm p-0 me-1 ect-layer-group-visibility" data-group-key="${el.group_key}" title="${langData[groupVisible ? 'ect_layer_hide' : 'ect_layer_show'] || (groupVisible ? 'Hide' : 'Show')}"><i class="fa-solid ${groupVisible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>
                         <i class="fa-solid fa-folder me-1"></i>
                         <span class="ect-layer-label">${escapeHtmlEct(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto ect-layer-group-visibility" data-group-key="${el.group_key}" title="${langData[groupVisible ? 'ect_layer_hide' : 'ect_layer_show'] || (groupVisible ? 'Hide' : 'Show')}"><i class="fa-solid ${groupVisible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>
                         <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger ect-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="ect-layer-children"></div>
@@ -1518,13 +1540,47 @@ function pageSizeLabel(row) {
 // untouched -- nothing consumes "which template is default" yet in this phase, see CLAUDE.md, so
 // there's no UI anywhere that still needs to set it; removing the column here is purely "don't show
 // something with no purpose right now", not a sign the concept is gone for good).
+// 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ในหน้า List สามารถเปิด Draft หรือ
+// Public ได้จากหน้านั้นเลย" -- a small clickable badge next to the existing ready/not-ready icon;
+// clicking calls the toggle endpoint directly (no need to open the editor at all).
 function ectLangStatusHtml(pairRow, lang) {
     const tpl = pairRow[lang];
     if (!tpl) {
         return `<i class="fa-regular fa-circle text-muted" title="${langData['ect_not_ready'] || 'Not ready'}"></i>`;
     }
-    return `<i class="fa-solid fa-circle-check text-success" title="${langData['ect_ready'] || 'Ready'}"></i>`;
+    const isPublic = tpl.publish_status === 'public';
+    const badge = `<button type="button" class="btn btn-sm ect-publish-badge ${isPublic ? 'ect-publish-public' : 'ect-publish-draft'} ect-publish-toggle" data-id="${tpl.id}" data-current="${tpl.publish_status}" title="${langData['ect_publish_toggle_hint'] || 'Click to toggle Draft/Public'}">${isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft')}</button>`;
+    return `<i class="fa-solid fa-circle-check text-success me-1" title="${langData['ect_ready'] || 'Ready'}"></i>${badge}`;
 }
+$(document).on('click', '.ect-publish-toggle', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const $btn = $(this);
+    const id = $btn.data('id');
+    const current = $btn.data('current');
+    const target = current === 'public' ? 'draft' : 'public';
+    const doToggle = function () {
+        $.ajax({
+            url: `${BASE_URL}/api/employment-certificate-template.publish-toggle`,
+            method: 'POST', data: { id, publish_status: target }, dataType: 'json',
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    $('#tb_ect_template').DataTable().ajax.reload(null, false);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                }
+            }
+        });
+    };
+    // Going Public -> Draft immediately stops real generation from picking it up -- confirm first.
+    // Draft -> Public is safe/reversible, no confirm needed.
+    if (target === 'draft') {
+        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle);
+    } else {
+        doToggle();
+    }
+});
 // 2026-08-25, explicit design ask: "การลบแค่ยาวภาษาตรงนี้คิดไม่ออกช่วย Design ให้หน่อยครับ" -- resolved as
 // a Delete DROPDOWN listing only the language(s) that actually exist for this pair ("Delete both"
 // only appears when both do), so deleting a single language never needs its own separate button
@@ -1709,7 +1765,11 @@ function previewTemplateById(id) {
                     element_type: e.element_type, field_key: e.field_key, image_asset_id: e.image_asset_id, content: e.content,
                     pos_x_pct: e.pos_x_pct, pos_y_pct: e.pos_y_pct, width_pct: e.width_pct, height_pct: e.height_pct,
                     font_size: e.font_size, font_family: e.font_family, font_color: e.font_color,
-                    text_align: e.text_align, font_weight: e.font_weight, font_style: e.font_style, text_decoration: e.text_decoration
+                    text_align: e.text_align, font_weight: e.font_weight, font_style: e.font_style, text_decoration: e.text_decoration,
+                    // 2026-08-26: without this, a hidden element would render in THIS preview path
+                    // (View from the list) since the renderer's own skip check only fires when the
+                    // key is present and falsy -- an absent key defaults to visible.
+                    is_visible: e.is_visible
                 })),
                 watermark_enabled: false, watermark_text: ''
             }, 'Preview failed.');
@@ -1747,7 +1807,14 @@ function fetchTemplateIntoSlot(id, callback) {
                 pos_x_pct: Number(e.pos_x_pct), pos_y_pct: Number(e.pos_y_pct), width_pct: Number(e.width_pct), height_pct: Number(e.height_pct),
                 font_size: Number(e.font_size), font_family: e.font_family, font_color: e.font_color,
                 text_align: e.text_align, font_weight: e.font_weight, font_style: e.font_style, text_decoration: e.text_decoration,
-                group_key: e.group_key || null, page_number: Number(e.page_number) || 1
+                group_key: e.group_key || null, page_number: Number(e.page_number) || 1,
+                // 2026-08-26, real bug caught before shipping (same category as v12's page_number
+                // miss): without this, loading a SAVED template that has a hidden element back into
+                // the editor would silently show it as visible again (e.is_visible is undefined here
+                // -> the canvas/Layers "visible unless === false" checks both read that as visible),
+                // even though the DB still correctly has it saved as hidden -- only a re-save would
+                // have then overwritten the DB's own hidden flag back to visible too.
+                is_visible: e.is_visible !== 0 && e.is_visible !== false
             }));
             // 2026-08-25, explicit request: "รองรับการมีหลายๆหน้า" -- pageCount is inferred from the
             // highest page_number actually found (never persisted as its own value -- see the
@@ -1826,7 +1893,25 @@ function renderAssignChecklists() {
         }
         updateAssignSelectAllState(scope);
     });
+    updateEctAssignModeUi();
 }
+// 2026-08-26, explicit request: "ตรง Assign To ช่วยปรับให้ใช้งานง่ายขึ้นไม่ซับซ้อน" -- direct port of
+// PayslipTemplateModel's own updatePstAssignModeUi() pairing (see that file's own comment).
+function updateEctAssignModeUi() {
+    const anyChecked = $('.ect-assign-checkbox:checked').length > 0;
+    $('#ectAssignModeEveryone').prop('checked', !anyChecked);
+    $('#ectAssignModeSpecific').prop('checked', anyChecked);
+    $('#ectAssignColumns, #ectAssignHint').toggleClass('d-none', !anyChecked);
+}
+$(document).on('change', 'input[name="ectAssignMode"]', function () {
+    const specific = $(this).val() === 'specific';
+    $('#ectAssignColumns, #ectAssignHint').toggleClass('d-none', !specific);
+    if (!specific) {
+        $('.ect-assign-checkbox').prop('checked', false);
+        ECT_ASSIGN_SCOPES.forEach(scope => updateAssignSelectAllState(scope));
+        if (currentTemplate) { dirty = true; updateSaveHint(); }
+    }
+});
 function updateAssignSelectAllState(scope) {
     const $boxes = $('#' + scope.listId + ' .ect-assign-checkbox');
     const total = $boxes.length;
@@ -1845,6 +1930,8 @@ function collectAssignments() {
 $(document).on('change', '.ect-assign-checkbox', function () {
     const scope = ECT_ASSIGN_SCOPES.find(s => s.type === $(this).data('scope-type'));
     if (scope) updateAssignSelectAllState(scope);
+    $('#ectAssignModeEveryone').prop('checked', $('.ect-assign-checkbox:checked').length === 0);
+    $('#ectAssignModeSpecific').prop('checked', $('.ect-assign-checkbox:checked').length > 0);
     if (!currentTemplate) return;
     dirty = true;
     updateSaveHint();
@@ -1854,6 +1941,8 @@ ECT_ASSIGN_SCOPES.forEach(scope => {
         const checkAll = $(this).is(':checked');
         $('#' + scope.listId + ' .ect-assign-checkbox').prop('checked', checkAll);
         updateAssignSelectAllState(scope);
+        $('#ectAssignModeEveryone').prop('checked', $('.ect-assign-checkbox:checked').length === 0);
+        $('#ectAssignModeSpecific').prop('checked', $('.ect-assign-checkbox:checked').length > 0);
         if (currentTemplate) { dirty = true; updateSaveHint(); }
     });
     $(document).on('input', '#' + scope.filterId, function () {
@@ -1889,6 +1978,7 @@ function switchToLangTab(lang) {
         $('#ectTemplateNameInput, #ectMarginInput').val('');
         $('#ectPageSizeSelect').val('A4');
         $('#ectOrientationSelect').val('portrait');
+        updateEctPublishUi();
         currentAssignments = [];
         renderAssignChecklists();
         updateMarginDropdownLabel();
@@ -1906,6 +1996,7 @@ function switchToLangTab(lang) {
     $('#ectPageSizeSelect').val(currentTemplate.page_size);
     $('#ectOrientationSelect').val(currentTemplate.orientation);
     $('#ectMarginInput').val(currentTemplate.margin_mm);
+    updateEctPublishUi();
     currentAssignments = slot.assignments || [];
     renderAssignChecklists();
     updateMarginDropdownLabel();
@@ -2279,7 +2370,8 @@ $(document).on('click', '#ectCreateTemplateBtn', function () {
                                     element_type: e.element_type, field_key: e.field_key, image_asset_id: e.image_asset_id, content: e.content,
                                     pos_x_pct: e.pos_x_pct, pos_y_pct: e.pos_y_pct, width_pct: e.width_pct, height_pct: e.height_pct,
                                     font_size: e.font_size, font_family: e.font_family, font_color: e.font_color,
-                                    text_align: e.text_align, font_weight: e.font_weight, font_style: e.font_style, text_decoration: e.text_decoration
+                                    text_align: e.text_align, font_weight: e.font_weight, font_style: e.font_style, text_decoration: e.text_decoration,
+                                    group_key: e.group_key || null, page_number: e.page_number || 1, is_visible: e.is_visible
                                 }))
                             }),
                             dataType: 'json',
@@ -2375,13 +2467,13 @@ function elementsPayload() {
 // whole "switch tabs without losing work" point). The admin closes the modal explicitly (X button)
 // once both tabs (or however many they're using) are saved, at which point the "any unsaved changes
 // on either language" close-guard (pairHasAnyUnsavedChanges()) protects them either way.
-// Both the Design tab's and the Assign To tab's own Save buttons share this one class -- see the
-// view's own comment on why this is a visual/UX change, not a split into two independent partial saves.
-$(document).on('click', '.ect-save-btn', function () {
+// 2026-08-26, explicit request: "เพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- extracted into a named
+// function so both the Save button click AND the debounced autosave call the exact same logic.
+function saveEctTemplate(silent) {
     if (!currentTemplate) return;
     const templateName = $('#ectTemplateNameInput').val().trim();
     if (!templateName) {
-        showWarning(langData['ect_select_template_name_required'] || 'Please enter a template name.');
+        if (!silent) showWarning(langData['ect_select_template_name_required'] || 'Please enter a template name.');
         return;
     }
     const pageSize = $('#ectPageSizeSelect').val();
@@ -2390,6 +2482,7 @@ $(document).on('click', '.ect-save-btn', function () {
     const payload = {
         id: currentTemplate.id, language: currentLanguage, template_name: templateName,
         page_size: pageSize, orientation: orientation, margin_mm: marginMm,
+        auto_save: $('#ectAutoSaveSwitch').is(':checked'),
         logo_path: logoPath, elements: elementsPayload(), assignments: collectAssignments()
     };
     $.ajax({
@@ -2397,7 +2490,7 @@ $(document).on('click', '.ect-save-btn', function () {
         method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
             if (res.status) {
-                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                if (!silent) showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 currentTemplate.template_name = templateName;
                 currentTemplate.page_size = pageSize;
                 currentTemplate.orientation = orientation;
@@ -2414,6 +2507,50 @@ $(document).on('click', '.ect-save-btn', function () {
         },
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
     });
+}
+// Both the Design tab's and the Assign To tab's own Save buttons share this one class -- see the
+// view's own comment on why this is a visual/UX change, not a split into two independent partial saves.
+$(document).on('click', '.ect-save-btn', function () {
+    saveEctTemplate(false);
+});
+$(document).on('change', '#ectAutoSaveSwitch', function () { dirty = true; updateSaveHint(); });
+// 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน แล้วค่อย
+// Public" -- direct port of PayslipTemplateModel's own updatePstPublishUi()/#pstPublishSwitch pairing.
+function updateEctPublishUi() {
+    const hasId = !!(currentTemplate && currentTemplate.id);
+    $('#ectPublishSwitch').prop('disabled', !hasId);
+    $('#ectAutoSaveSwitch').prop('checked', hasId ? !!currentTemplate.auto_save : false);
+    const isPublic = hasId && currentTemplate.publish_status === 'public';
+    $('#ectPublishSwitch').prop('checked', isPublic);
+    $('#ectPublishSwitchLabel').text(isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft'));
+}
+$(document).on('change', '#ectPublishSwitch', function () {
+    if (!currentTemplate || !currentTemplate.id) return;
+    const $sw = $(this);
+    const target = $sw.is(':checked') ? 'public' : 'draft';
+    const revert = function () { $sw.prop('checked', target === 'draft'); };
+    const doToggle = function () {
+        $.ajax({
+            url: `${BASE_URL}/api/employment-certificate-template.publish-toggle`,
+            method: 'POST', data: { id: currentTemplate.id, publish_status: target }, dataType: 'json',
+            success: function (res) {
+                if (res.status) {
+                    currentTemplate.publish_status = target;
+                    $('#ectPublishSwitchLabel').text(target === 'public' ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft'));
+                    try { localStorage.setItem('ect_list_dirty', String(Date.now())); } catch (e) { /* private browsing etc. */ }
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                    revert();
+                }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); revert(); }
+        });
+    };
+    if (target === 'draft') {
+        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle, revert);
+    } else {
+        doToggle();
+    }
 });
 
 /* ---------- Preview (streams a PDF back -- fetch + Content-Type sniffing, since jQuery ajax can't
@@ -2471,6 +2608,7 @@ $(document).ready(function () {
             success: function (res) {
                 if (res.status && res.data) {
                     companyLogoPath = res.data.logo_path || null;
+                    companySignaturePath = res.data.signature_path || null;
                 }
             }
         });

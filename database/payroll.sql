@@ -11540,6 +11540,75 @@ ALTER TABLE `employment_certificate_template_elements`
 ALTER TABLE `payslip_template_elements`
   ADD COLUMN `is_visible` tinyint(1) NOT NULL DEFAULT 1 AFTER `sort_order`;
 
+-- 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode และเพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save
+-- โดยตั้งต้นเป็น Draft mode ก่อน แล้วค่อย Public และในหน้า List สามารถเปิด Draft หรือ Public ได้จากหน้านั้นเลย"
+-- -- `publish_status` is a workflow-stage gate LAYERED ON TOP of the existing `status`/`deleted_at`
+-- soft-delete convention, not a replacement for it: only publish_status='public' rows are ever
+-- eligible for real generation (getDefault()/resolveTemplateForEmployee(), see both models' own
+-- comments) -- a draft is a work-in-progress that must never silently reach a real payslip/
+-- certificate. Every NEW template starts 'draft' (enforced in save()'s own INSERT branch, hardcoded,
+-- never accepted from client input) and is only ever flipped via the dedicated setPublishStatus()
+-- action (List page toggle or the editor's own switch) -- never as a side effect of an ordinary or
+-- auto- save, so autosave can never silently publish an unfinished design. Existing rows are
+-- backfilled to 'public' immediately below so no currently-working template (including the one real
+-- production template, id=165/legacy_165) silently stops generating the moment this ships -- only
+-- templates created AFTER this migration start as draft.
+ALTER TABLE `payslip_templates`
+  ADD COLUMN `publish_status` enum('draft','public') NOT NULL DEFAULT 'draft' AFTER `status`,
+  ADD COLUMN `auto_save` tinyint(1) NOT NULL DEFAULT 0 AFTER `publish_status`;
+UPDATE `payslip_templates` SET `publish_status` = 'public';
+ALTER TABLE `employment_certificate_templates`
+  ADD COLUMN `publish_status` enum('draft','public') NOT NULL DEFAULT 'draft' AFTER `status`,
+  ADD COLUMN `auto_save` tinyint(1) NOT NULL DEFAULT 0 AFTER `publish_status`;
+UPDATE `employment_certificate_templates` SET `publish_status` = 'public';
+
+-- 2026-08-26, explicit request: "ตรงส่วนของการตั้งค่าบริษัท เพิ่มให้แนบลายเซ็นต์ Authorized Signatory
+-- Name หรือสามารถเซ็นต์สดผ่านหน้าจอได้ และเพิ่มใน Item ในการจัดการ Template Slip เงินเดือนและเอกสาร" --
+-- one company-wide signature image (uploaded file OR a live-drawn signature exported to PNG
+-- client-side, both via CompanyProfileController::uploadSignature(), same convention as `logo_path`
+-- just above it) -- new `company_signature` field type lets both canvas designers place it, resolved
+-- the same way `company_logo` already is (see PayslipTemplateRenderer/EmploymentCertificateRenderer).
+ALTER TABLE `companies`
+  ADD COLUMN `signature_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'public/uploads/company_signatures/{id}/{hash}.{ext} -- the Authorized Signatory''s signature (uploaded image or live-drawn), reused as the "Authorized Signature" item on Payslip/Employment Certificate templates' AFTER `logo_path`;
+INSERT INTO `master_payslip_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('company_signature','ลายเซ็นผู้มีอำนาจลงนาม','Authorized Signature','company_info','image',1,125);
+INSERT INTO `master_employment_certificate_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('company_signature','ลายเซ็นผู้มีอำนาจลงนาม','Authorized Signature','company','image',1,15);
+
+-- 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้ และส่วนของ
+-- ที่อยู่ให้เพิ่มสามารถปักหมุด Location บน Map ได้" -- signature_path is a plain passthrough column, same
+-- convention as the pre-existing (previously unwired) profile_photo_path column, uploaded via
+-- EmployeeController::uploadSignature(). address_latitude/longitude are nullable and scoped to the
+-- CONTACT address specifically (where the employee can actually be reached, unlike the register
+-- address, which is often a permanent household record) -- OpenStreetMap/Leaflet, no API key needed.
+ALTER TABLE `employees`
+  ADD COLUMN `signature_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `profile_photo_path`,
+  ADD COLUMN `address_latitude` decimal(10,7) DEFAULT NULL AFTER `master_address_id_contact`,
+  ADD COLUMN `address_longitude` decimal(10,7) DEFAULT NULL AFTER `address_latitude`;
+
+-- 2026-08-26, explicit request: "ตัวข้อมูลเงินเดือนตอนนี้ เก็บเป็นตัวเลขตรงๆ ไม่ต้องการให้เห็นตัวเลขตรงๆใน
+-- ฐานข้อมูลครับ รวมถึงเงินได้ส่วนอื่นๆ หรือตัวเงินของทั้งระบบเลย" -- scoped (confirmed via AskUserQuestion)
+-- to the SINGLE most sensitive per-employee value first, `employees.base_salary_amount`, not every
+-- monetary column system-wide -- see EmployeeModel::encryptedColumns()'s own comment for why this one
+-- column was safe to do without touching any SQL-side SUM/WHERE/ORDER BY (verified by grep across the
+-- whole codebase before making this change: nothing aggregates/filters/sorts on it in SQL, it's read
+-- once per employee into PHP). `payroll_run_details.base_salary_amount` (the per-run snapshot, used
+-- extensively in report/statutory SUM queries) and every other monetary column are DELIBERATELY left
+-- untouched -- that would need a much larger redesign (decrypt-then-aggregate-in-PHP everywhere) and
+-- is a separate, not-yet-started phase, not part of this change.
+--
+-- Same AES-256-GCM mechanism as bank_account_no/sso_no/tax_id_no just above (application-layer only,
+-- via EncryptionService, keyed by the row's own shared `key_version` column -- never a DB-level
+-- feature). On a genuinely FRESH install this ALTER is a no-op data-wise (empty table, nothing to
+-- migrate). On an EXISTING database with real employee data (this project's own dev DB, at the time
+-- this was written), plain SQL cannot perform the actual encryption -- that required a one-time PHP
+-- script (loop every employee row, EncryptionService::encrypt() the existing plaintext value, verify
+-- every row round-trips through decrypt() before dropping the old column) run once, out-of-band, not
+-- part of this file. Do the same before applying this ALTER to any other database that already has
+-- real salary data in it.
+ALTER TABLE `employees`
+  MODIFY COLUMN `base_salary_amount` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted';
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

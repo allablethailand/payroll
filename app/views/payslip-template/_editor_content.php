@@ -33,9 +33,17 @@
      handler in payslip-template.js is bound via `$(document).on(...)` delegation, so none of them
      care which DOM parent the content is currently sitting under. -->
 <div id="pstEditorContentAnchor"></div>
+<!-- 2026-08-26, real bug fixed: this was missing the `.modal-content` wrapper entirely -- Bootstrap's
+     own CSS puts the opaque background/border/flex-column layout on `.modal-content`, NOT on
+     `.modal-dialog`/`.modal-body` directly, so skipping it left the whole fullscreen surface
+     see-through (page content behind it visible through it) and broke the flex sizing the canvas'
+     own height/scroll math depends on -- which is what made the fullscreen mode "not actually
+     usable" even though the DOM-relocation JS itself was correct. -->
 <div class="modal fade" id="pstFullscreenModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-fullscreen m-0">
-    <div class="modal-body p-3" id="pstFullscreenModalBody"></div>
+    <div class="modal-content">
+      <div class="modal-body p-3" id="pstFullscreenModalBody"></div>
+    </div>
   </div>
 </div>
 <div id="pstEditorContent">
@@ -92,6 +100,18 @@
       <div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" id="pstIsDefaultSwitch">
         <label class="form-check-label small" for="pstIsDefaultSwitch" data-i18n="set_as_default_template">Set as default template</label>
+      </div>
+      <!-- 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน
+           แล้วค่อย Public" -- toggling calls api/payslip-template.publish-toggle IMMEDIATELY (not
+           gated behind the Save button), same as the List page's own badge -- a brand-new,
+           not-yet-saved template has no id yet so the switch stays disabled until the first Save. -->
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="pstPublishSwitch" disabled>
+        <label class="form-check-label small pst-publish-switch-label" for="pstPublishSwitch"><span id="pstPublishSwitchLabel" data-i18n="ect_publish_draft">Draft</span></label>
+      </div>
+      <div class="form-check form-switch" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
+        <input class="form-check-input" type="checkbox" id="pstAutoSaveSwitch">
+        <label class="form-check-label small" for="pstAutoSaveSwitch" data-i18n="ect_auto_save">Auto Save</label>
       </div>
     </div>
   </div>
@@ -385,8 +405,26 @@
      a filter to stay usable even though every row is fetched once up front, no server-side paging. -->
 <div class="tab-pane fade" id="pstTabAssign">
   <div class="pst-assign-card card-surface p-3 mb-3">
-    <div class="text-secondary small pst-assign-hint mb-3" data-i18n="pst_assign_hint">Leave all empty to apply to every employee (the company default). If any are selected, this template only applies to that department/team/employee, with the most specific match winning (employee &gt; team &gt; department). Assigning a department/team/employee that's already actively assigned to another template will show an error naming the conflict.</div>
-    <div class="pst-assign-columns">
+    <!-- 2026-08-26, explicit request: "ตรง Assign To ช่วยปรับให้ใช้งานง่ายขึ้นไม่ซับซ้อน" -- the 3
+         always-visible checkbox columns (Departments/Teams/Employees, each with its own search box
+         and Select-All) stayed exactly as-is UNDERNEATH, but are now hidden by default behind a
+         simple 2-choice switch: "Everyone" (the common case -- no scoping at all) vs "Specific
+         selection" (reveals the same 3 columns as before). Purely a visibility/UX layer -- the
+         underlying checkboxes/collectAssignments()/validateAssignments() are all unchanged; choosing
+         "Everyone" just clears every checkbox first so the saved payload is genuinely unscoped
+         (assignments: []), the exact same meaning "leave all empty" already had. -->
+    <div class="pst-assign-mode-switch mb-3">
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="pstAssignMode" id="pstAssignModeEveryone" value="everyone" checked>
+        <label class="form-check-label" for="pstAssignModeEveryone"><i class="fa-solid fa-globe me-1"></i><span data-i18n="pst_assign_mode_everyone">Everyone (company default)</span></label>
+      </div>
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="pstAssignMode" id="pstAssignModeSpecific" value="specific">
+        <label class="form-check-label" for="pstAssignModeSpecific"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="pst_assign_mode_specific">Specific departments/teams/employees</span></label>
+      </div>
+    </div>
+    <div class="text-secondary small pst-assign-hint mb-3 d-none" id="pstAssignHint" data-i18n="pst_assign_hint">If any are selected, this template only applies to that department/team/employee, with the most specific match winning (employee &gt; team &gt; department). Assigning a department/team/employee that's already actively assigned to another template will show an error naming the conflict.</div>
+    <div class="pst-assign-columns d-none" id="pstAssignColumns">
       <div class="pst-assign-column">
         <div class="pst-assign-column-header">
           <div class="form-check">

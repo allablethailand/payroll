@@ -127,7 +127,7 @@ class EmploymentCertificateTemplateModel {
      *   th:?array, en:?array}>
      */
     public function listPaired(int $compId): array {
-        $stmt = $this->db->prepare("SELECT id, language, pair_key, template_name, page_size, orientation, is_default, updated_at
+        $stmt = $this->db->prepare("SELECT id, language, pair_key, template_name, page_size, orientation, is_default, publish_status, auto_save, updated_at
             FROM `employment_certificate_templates`
             WHERE comp_id = :comp_id AND status = 'active'
             ORDER BY updated_at DESC, id DESC");
@@ -144,7 +144,8 @@ class EmploymentCertificateTemplateModel {
                     'th' => null, 'en' => null, 'latest_updated_at' => $row['updated_at'],
                 ];
             }
-            $langInfo = ['id' => (int)$row['id'], 'is_default' => (bool)$row['is_default'], 'updated_at' => $row['updated_at']];
+            $langInfo = ['id' => (int)$row['id'], 'is_default' => (bool)$row['is_default'],
+                'publish_status' => $row['publish_status'], 'auto_save' => (bool)$row['auto_save'], 'updated_at' => $row['updated_at']];
             if ($row['language'] === 'th') {
                 $pairs[$key]['th'] = $langInfo;
                 $pairs[$key]['template_name'] = $row['template_name']; // TH preferred as the display name when both exist
@@ -167,7 +168,7 @@ class EmploymentCertificateTemplateModel {
      *  explicit request: "หน้าแก้ไขให้เปลี่ยนเป็นการเปิด Tab ใหม่...โดยส่ง key ไปต่อ /key"). Returns null
      *  if the company has no active template (either language) under this pair_key. */
     public function getPairByKey(int $compId, string $pairKey): ?array {
-        $stmt = $this->db->prepare("SELECT id, language, pair_key, template_name, page_size, orientation, is_default, updated_at
+        $stmt = $this->db->prepare("SELECT id, language, pair_key, template_name, page_size, orientation, is_default, publish_status, auto_save, updated_at
             FROM `employment_certificate_templates`
             WHERE comp_id = :comp_id AND pair_key = :pair_key AND status = 'active'");
         $stmt->execute([':comp_id' => $compId, ':pair_key' => $pairKey]);
@@ -177,7 +178,8 @@ class EmploymentCertificateTemplateModel {
         }
         $pair = ['pair_key' => $pairKey, 'template_name' => $rows[0]['template_name'], 'page_size' => $rows[0]['page_size'], 'orientation' => $rows[0]['orientation'], 'th' => null, 'en' => null];
         foreach ($rows as $row) {
-            $langInfo = ['id' => (int)$row['id'], 'is_default' => (bool)$row['is_default']];
+            $langInfo = ['id' => (int)$row['id'], 'is_default' => (bool)$row['is_default'],
+                'publish_status' => $row['publish_status'], 'auto_save' => (bool)$row['auto_save']];
             if ($row['language'] === 'th') {
                 $pair['th'] = $langInfo;
                 $pair['template_name'] = $row['template_name'];
@@ -387,10 +389,13 @@ class EmploymentCertificateTemplateModel {
             $candidateScopes[] = ['scope_type' => 'department', 'scope_id' => (int)$emp['department_id']];
         }
 
+        // 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน
+        // แล้วค่อย Public" -- a draft must never be resolved for real issuance, same gate added to
+        // PayslipTemplateModel's own equivalent methods.
         $stmt = $this->db->prepare("SELECT t.id, t.updated_at, a.scope_type
             FROM `employment_certificate_template_assignments` a
             JOIN `employment_certificate_templates` t ON t.id = a.template_id
-            WHERE t.comp_id = :comp_id AND t.language = :language AND t.status = 'active'
+            WHERE t.comp_id = :comp_id AND t.language = :language AND t.status = 'active' AND t.publish_status = 'public'
               AND a.scope_type = :scope_type AND a.scope_id = :scope_id");
         $best = null;
         $bestPriority = -1;
@@ -417,7 +422,7 @@ class EmploymentCertificateTemplateModel {
             return null;
         }
         $stmt = $this->db->prepare("SELECT id FROM `employment_certificate_templates`
-            WHERE comp_id = :comp_id AND language = :language AND status = 'active'
+            WHERE comp_id = :comp_id AND language = :language AND status = 'active' AND publish_status = 'public'
             ORDER BY is_default DESC, updated_at DESC, id DESC LIMIT 1");
         $stmt->execute([':comp_id' => $compId, ':language' => $language]);
         $id = $stmt->fetchColumn();
@@ -588,6 +593,10 @@ class EmploymentCertificateTemplateModel {
         // the guide rectangle off the page entirely.
         $marginMm = array_key_exists('margin_mm', $data) ? (float)$data['margin_mm'] : 15.0;
         $marginMm = max(0.0, min(50.0, $marginMm));
+        // 2026-08-26, explicit request: "เพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save...ตั้งต้นเป็น Draft mode
+        // ก่อน แล้วค่อย Public" -- same as PayslipTemplateModel::save()'s own comment: publish_status
+        // is deliberately NOT accepted here, only ever changed via setPublishStatus().
+        $autoSave = !empty($data['auto_save']) ? 1 : 0;
         $logoPath = array_key_exists('logo_path', $data) ? (string)$data['logo_path'] : null;
         if ($logoPath !== null && $logoPath !== '' && !self::isValidLogoPath($logoPath, $compId)) {
             return ['status' => false, 'message' => 'Invalid logo path.'];
@@ -632,11 +641,11 @@ class EmploymentCertificateTemplateModel {
                 }
                 $logoSql = $logoPath !== null ? ", logo_path = :logo_path" : "";
                 $stmt = $this->db->prepare("UPDATE `employment_certificate_templates`
-                    SET template_name = :template_name, page_size = :page_size, orientation = :orientation, margin_mm = :margin_mm{$logoSql},
+                    SET template_name = :template_name, page_size = :page_size, orientation = :orientation, margin_mm = :margin_mm, auto_save = :auto_save{$logoSql},
                         updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
                 $params = [
                     ':template_name' => $templateName, ':page_size' => $pageSize, ':orientation' => $orientation, ':margin_mm' => $marginMm,
-                    ':updated_by' => $userId, ':id' => $id,
+                    ':auto_save' => $autoSave, ':updated_by' => $userId, ':id' => $id,
                 ];
                 if ($logoPath !== null) {
                     $params[':logo_path'] = $logoPath !== '' ? $logoPath : null;
@@ -651,13 +660,13 @@ class EmploymentCertificateTemplateModel {
                 // not-yet-paired template. See the migration's own comment for why this is never null.
                 $pairKey = !empty($data['pair_key']) ? substr((string)$data['pair_key'], 0, 64) : bin2hex(random_bytes(16));
                 $stmt = $this->db->prepare("INSERT INTO `employment_certificate_templates`
-                    (comp_id, language, pair_key, template_name, page_size, orientation, margin_mm, logo_path, status, created_by)
-                    VALUES (:comp_id, :language, :pair_key, :template_name, :page_size, :orientation, :margin_mm, :logo_path, 'active', :created_by)");
+                    (comp_id, language, pair_key, template_name, page_size, orientation, margin_mm, logo_path, status, publish_status, auto_save, created_by)
+                    VALUES (:comp_id, :language, :pair_key, :template_name, :page_size, :orientation, :margin_mm, :logo_path, 'active', 'draft', :auto_save, :created_by)");
                 $stmt->execute([
                     ':comp_id' => $compId, ':language' => $language, ':pair_key' => $pairKey, ':template_name' => $templateName,
                     ':page_size' => $pageSize, ':orientation' => $orientation, ':margin_mm' => $marginMm,
                     ':logo_path' => ($logoPath !== null && $logoPath !== '') ? $logoPath : null,
-                    ':created_by' => $userId,
+                    ':auto_save' => $autoSave, ':created_by' => $userId,
                 ]);
                 $templateId = (int)$this->db->lastInsertId();
                 // The very first template ever saved for this company+language becomes the default
@@ -819,6 +828,23 @@ class EmploymentCertificateTemplateModel {
             if ($own) { $this->db->rollBack(); }
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
+    }
+
+    /** 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ในหน้า List สามารถเปิด Draft
+     *  หรือ Public ได้จากหน้านั้นเลย" -- direct port of PayslipTemplateModel::setPublishStatus() (see
+     *  that method's own docblock: never touched by save()/autosave, only this dedicated action). */
+    public function setPublishStatus(int $compId, int $id, string $status, int $userId): array {
+        if (!in_array($status, ['draft', 'public'], true)) {
+            return ['status' => false, 'message' => 'Invalid publish status.'];
+        }
+        $stmt = $this->db->prepare("SELECT id FROM `employment_certificate_templates` WHERE id = :id AND comp_id = :comp_id AND status = 'active'");
+        $stmt->execute([':id' => $id, ':comp_id' => $compId]);
+        if (!$stmt->fetch()) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $this->db->prepare("UPDATE `employment_certificate_templates` SET publish_status = :publish_status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
+            ->execute([':publish_status' => $status, ':updated_by' => $userId, ':id' => $id]);
+        return ['status' => true, 'message' => 'Updated successfully.', 'publish_status' => $status];
     }
 
     /* ==================== Starter presets (2026-08-24, explicit request: "มี Template มาตรฐาน

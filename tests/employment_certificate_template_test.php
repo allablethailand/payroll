@@ -58,7 +58,9 @@ try {
     $fieldOptions = $model->fieldTypeOptions();
     // 2026-08-25, explicit follow-up: "ตรง Add to Canvas สามารถเพิ่ม item อะไรเกี่ยวกับพนักงาน...ได้อีกไหม"
     // -- 15 original + 5 new employee fields (branch/team/gender/nationality/date_of_birth) = 20.
-    check('20 field types seeded (15 original + 5 new employee fields)', count($fieldOptions), 20);
+    // 2026-08-26: +1 for the new company_signature field type ("เพิ่มให้แนบลายเซ็นต์...และเพิ่มใน Item
+    // ในการจัดการ Template Slip เงินเดือนและเอกสาร").
+    check('21 field types seeded (15 original + 5 new employee fields + company_signature)', count($fieldOptions), 21);
     foreach (['employee_branch', 'employee_team', 'employee_gender', 'employee_nationality', 'employee_date_of_birth'] as $code) {
         checkTrue("field type '{$code}' is present in fieldTypeOptions()", in_array($code, array_column($fieldOptions, 'code'), true));
     }
@@ -119,6 +121,11 @@ try {
     $blankTemplate = $model->get($compId, (int)$blankRes['template_id']);
     check('blank template starts with zero elements', count($blankTemplate['elements']), 0);
     check('the SECOND template does NOT become default automatically', (bool)$blankTemplate['is_default'], false);
+    // 2026-08-26: publish_status defaults to 'draft' on every INSERT -- getDefault()/
+    // resolveTemplateForEmployee() now also require publish_status='public', so fixtures these two
+    // functions are expected to actually resolve need an explicit publish first.
+    checkTrue('classic template published', $model->setPublishStatus($compId, (int)$classicTemplate['id'], 'public', $userId)['status']);
+    checkTrue('blank template published', $model->setPublishStatus($compId, (int)$blankTemplate['id'], 'public', $userId)['status']);
 
     echo "=== group_key (2026-08-24, explicit request: Group/Ungroup + Layers panel) round-trips through save()/get() ===\n";
     $groupRes = $model->save($compId, [
@@ -589,6 +596,11 @@ try {
         'assignments' => [['scope_type' => 'employee', 'scope_id' => $ectDirectEmpId]],
     ], $userId);
     checkTrue('employee-scoped TH template saves', $ectEmpTpl['status']);
+    // 2026-08-26: publish_status defaults to 'draft' -- resolveTemplateForEmployee() only matches
+    // publish_status='public' templates, same reasoning as the getDefault() section above.
+    foreach ([$ectDefaultTpl, $ectDeptTpl, $ectEmpTpl] as $tpl) {
+        $model->setPublishStatus($compId, (int)$tpl['template_id'], 'public', $userId);
+    }
 
     check('unmatched employee resolves to the company default (th)', (int)($model->resolveTemplateForEmployee($compId, $ectUnmatchedEmpId, 'th')['id'] ?? 0), (int)$ectDefaultTpl['template_id']);
     check('dept-only employee resolves to the department-scoped template (th)', (int)($model->resolveTemplateForEmployee($compId, $ectDeptOnlyEmpId, 'th')['id'] ?? 0), (int)$ectDeptTpl['template_id']);
@@ -644,6 +656,46 @@ try {
         'assignments' => [['scope_type' => 'department', 'scope_id' => $ectDeptId]],
     ], $userId);
     checkTrue('the department becomes assignable again once the original template is deleted', $ectFreedNowSave['status']);
+
+    echo "=== 2026-08-26: Layer visibility toggle (is_visible) -- \"เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว\" ===\n";
+    $visSave = $model->save($compId, [
+        'language' => 'th', 'template_name' => 'Visibility Test',
+        'elements' => [
+            ['element_type' => 'text', 'content' => 'VISIBLE_ONE', 'pos_x_pct' => 1, 'pos_y_pct' => 1, 'width_pct' => 30, 'height_pct' => 5, 'is_visible' => true],
+            ['element_type' => 'text', 'content' => 'HIDDEN_ONE', 'pos_x_pct' => 1, 'pos_y_pct' => 10, 'width_pct' => 30, 'height_pct' => 5, 'is_visible' => false],
+            ['element_type' => 'text', 'content' => 'DEFAULT_ONE', 'pos_x_pct' => 1, 'pos_y_pct' => 20, 'width_pct' => 30, 'height_pct' => 5],
+        ],
+    ], $userId);
+    checkTrue('save() with mixed is_visible succeeds', $visSave['status']);
+    $visRow = $model->get($compId, $visSave['template_id']);
+    $visByContent = [];
+    foreach ($visRow['elements'] as $e) { $visByContent[$e['content']] = $e; }
+    check('explicit is_visible=true round-trips as 1', (int)$visByContent['VISIBLE_ONE']['is_visible'], 1);
+    check('explicit is_visible=false round-trips as 0', (int)$visByContent['HIDDEN_ONE']['is_visible'], 0);
+    check('omitted is_visible defaults to 1 (visible) -- backward compat with pre-existing saved templates/tests', (int)$visByContent['DEFAULT_ONE']['is_visible'], 1);
+
+    $visHtml = $renderer->buildHtml(
+        ['page_size' => 'A4', 'orientation' => 'portrait'], 'th', $visRow['elements'],
+        ['local_name' => 'x', 'address_line_1' => '', 'address_line_2' => '', 'global_tax_id' => '', 'authorized_signatory_name' => ''],
+        ['name_th' => 'x', 'employment_status' => 'permanent', 'employment_type' => 'full_time'], null
+    );
+    checkTrue('a VISIBLE element is present in the rendered output', strpos($visHtml, 'VISIBLE_ONE') !== false);
+    checkFalse('a HIDDEN element is skipped from the rendered output entirely (real functional alternative to deleting it)', strpos($visHtml, 'HIDDEN_ONE') !== false);
+    checkTrue('an element with is_visible omitted (defaults visible) still renders', strpos($visHtml, 'DEFAULT_ONE') !== false);
+
+    $visDuplicate = $model->duplicate($compId, $visSave['template_id'], $userId);
+    checkTrue('duplicate() succeeds', $visDuplicate['status']);
+    $visDupRow = $model->get($compId, $visDuplicate['template_id']);
+    $visDupByContent = [];
+    foreach ($visDupRow['elements'] as $e) { $visDupByContent[$e['content']] = $e; }
+    check('duplicate() carries is_visible=false through (not silently reset to visible)', (int)$visDupByContent['HIDDEN_ONE']['is_visible'], 0);
+
+    $visGenOther = $model->generateOtherLanguage($compId, $visSave['template_id'], $userId);
+    checkTrue('generateOtherLanguage() succeeds', $visGenOther['status']);
+    $visEnRow = $model->get($compId, $visGenOther['template_id']);
+    $visEnByContent = [];
+    foreach ($visEnRow['elements'] as $e) { $visEnByContent[$e['content']] = $e; }
+    check('generateOtherLanguage() carries is_visible=false through (verbatim clone, not just content)', (int)$visEnByContent['HIDDEN_ONE']['is_visible'], 0);
 
 } finally {
     $pdo->rollBack();

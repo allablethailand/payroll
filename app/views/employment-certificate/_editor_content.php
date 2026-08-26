@@ -28,9 +28,15 @@
      back -- every handler in employment-certificate-template.js is `$(document).on(...)` delegated,
      so none of them care which parent the content currently sits under. -->
 <div id="ectEditorContentAnchor"></div>
+<!-- 2026-08-26, real bug fixed: this was missing the `.modal-content` wrapper entirely -- Bootstrap's
+     own CSS puts the opaque background/border/flex-column layout on `.modal-content`, NOT on
+     `.modal-dialog`/`.modal-body` directly, so skipping it left the whole fullscreen surface
+     see-through and broke the flex sizing the canvas' own height/scroll math depends on. -->
 <div class="modal fade" id="ectFullscreenModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-fullscreen m-0">
-    <div class="modal-body p-3" id="ectFullscreenModalBody"></div>
+    <div class="modal-content">
+      <div class="modal-body p-3" id="ectFullscreenModalBody"></div>
+    </div>
   </div>
 </div>
 <div id="ectEditorContent">
@@ -59,6 +65,25 @@
   <button type="button" class="btn btn-outline-secondary btn-sm" id="ectFullscreenBtn" title="Fullscreen">
     <i class="fa-solid fa-expand"></i>
   </button>
+</div>
+
+<!-- 2026-08-26, explicit request: "การตั้งค่า Template ทั้ง Slip เงินเดือนและเอกสารให้มี Draft Mode และ
+     Public Mode และเพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- Employment Certificate Template has no
+     equivalent of Payslip Template's own "Template Info" card (no header/footer text, no is_default
+     UI here previously), so this compact card is new here specifically for these 2 controls, styled
+     as .ect-info-card (see style.css) rather than reusing .pst-info-card's fuller layout, which has
+     fields this module doesn't have. -->
+<div class="ect-info-card">
+  <div class="ect-publish-row">
+    <div class="form-check form-switch mb-0">
+      <input class="form-check-input" type="checkbox" id="ectPublishSwitch" disabled>
+      <label class="form-check-label small ect-publish-switch-label" for="ectPublishSwitch"><span id="ectPublishSwitchLabel" data-i18n="ect_publish_draft">Draft</span></label>
+    </div>
+    <div class="form-check form-switch mb-0" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
+      <input class="form-check-input" type="checkbox" id="ectAutoSaveSwitch">
+      <label class="form-check-label small" for="ectAutoSaveSwitch" data-i18n="ect_auto_save">Auto Save</label>
+    </div>
+  </div>
 </div>
 
 <!-- 2026-08-25, explicit follow-up: "อยากให้เพิ่ม Tab ในหน้า Detail ของ Slip และเอกสารแต่ละตัว" -- same
@@ -387,8 +412,22 @@
      Template's own Assign tab exactly (see that file's own comment for the full reasoning). -->
 <div class="tab-pane fade" id="ectTabAssign">
   <div class="ect-assign-card card-surface p-3 mb-3">
-    <div class="text-secondary small ect-assign-hint mb-3" data-i18n="pst_assign_hint">Leave all empty to apply to every employee (the company default). If any are selected, this template only applies to that department/team/employee, with the most specific match winning (employee &gt; team &gt; department). Assigning a department/team/employee that's already actively assigned to another template will show an error naming the conflict.</div>
-    <div class="ect-assign-columns">
+    <!-- 2026-08-26, explicit request: "ตรง Assign To ช่วยปรับให้ใช้งานง่ายขึ้นไม่ซับซ้อน" -- direct port
+         of Payslip Template's own "Everyone" vs "Specific selection" switch (see that file's own
+         comment for the full reasoning) -- the 3 checkbox columns are unchanged, just hidden by
+         default behind this simpler top-level choice. -->
+    <div class="pst-assign-mode-switch mb-3">
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="ectAssignMode" id="ectAssignModeEveryone" value="everyone" checked>
+        <label class="form-check-label" for="ectAssignModeEveryone"><i class="fa-solid fa-globe me-1"></i><span data-i18n="pst_assign_mode_everyone">Everyone (company default)</span></label>
+      </div>
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="ectAssignMode" id="ectAssignModeSpecific" value="specific">
+        <label class="form-check-label" for="ectAssignModeSpecific"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="pst_assign_mode_specific">Specific departments/teams/employees</span></label>
+      </div>
+    </div>
+    <div class="text-secondary small ect-assign-hint mb-3 d-none" id="ectAssignHint" data-i18n="pst_assign_hint">If any are selected, this template only applies to that department/team/employee, with the most specific match winning (employee &gt; team &gt; department). Assigning a department/team/employee that's already actively assigned to another template will show an error naming the conflict.</div>
+    <div class="ect-assign-columns d-none" id="ectAssignColumns">
       <div class="ect-assign-column">
         <div class="ect-assign-column-header">
           <div class="form-check">

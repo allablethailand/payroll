@@ -598,6 +598,25 @@
                         <input type="hidden" name="master_address_id_contact" class="master-address-id-field" id="master_address_id_contact">
                     </div>
                 </div>
+                <!-- 2026-08-26, explicit request: "ส่วนของที่อยู่ให้เพิ่มสามารถปักหมุด Location บน Map ได้"
+                     -- one pin for the CONTACT address (where the employee can actually be reached),
+                     OpenStreetMap/Leaflet (see #empMapPinModal near the end of this file for the map
+                     itself -- a <template> tab-pane's content is inert until cloned, so the modal with
+                     the live Leaflet map lives outside every tab-pane, same reasoning Company Profile's
+                     own signature-pad modal already established). -->
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="map_location">Map Location</span></label>
+                    </div>
+                    <div class="col-sm-6 mt-3">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPinMapLocation">
+                            <i class="fa-solid fa-map-location-dot me-1"></i><span data-i18n="pin_location_on_map">Pin Location on Map</span>
+                        </button>
+                        <span class="text-muted small ms-2" id="mapLocationSummary"></span>
+                        <input type="hidden" name="address_latitude" id="address_latitude">
+                        <input type="hidden" name="address_longitude" id="address_longitude">
+                    </div>
+                </div>
             </div>
             <!-- Hidden 2026-08-19 (not needed for Payroll): emergency contact is an HR-record field,
                  never read by any statutory calc/report/sync in this app -- stays hidden on its own
@@ -633,6 +652,40 @@
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="emergency_mobile" id="emergency_mobile" maxlength="10">
+                    </div>
+                </div>
+            </div>
+            <!-- 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้"
+                 -- same upload-or-draw card as Company Profile's own Authorized Signature section (see
+                 that page's own comment); this one is per-employee and reused as the "Employee
+                 Signature" item on Payslip/Employment Certificate templates. -->
+            <h6 class="text-secondary fw-bold mb-3 mt-5">
+                <label class="label label-head bg-head-first rounded-2 text-white">5</label>
+                <span data-i18n="employee_signature">Signature</span>
+            </h6>
+            <div class="row">
+                <div class="col-sm-6 mt-3">
+                    <div class="cp-logo-upload-card" id="empSignatureUploadCard">
+                        <div class="cp-logo-preview-box" id="empSignaturePreviewBox">
+                            <img id="empSignaturePreviewImg" src="" alt="Signature" class="d-none">
+                            <div class="cp-logo-placeholder" id="empSignaturePlaceholder">
+                                <i class="fa-solid fa-signature"></i>
+                                <span data-i18n="no_signature_uploaded">No signature yet</span>
+                            </div>
+                        </div>
+                        <div class="cp-logo-actions">
+                            <label class="btn btn-outline-secondary btn-sm" for="emp_signature_file">
+                                <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_signature">Upload Image</span>
+                            </label>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="empDrawSignatureBtn">
+                                <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm d-none" id="empSignatureRemoveBtn">
+                                <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                            </button>
+                            <input type="file" id="emp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                            <input type="hidden" name="signature_path" id="emp_signature_path">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1762,5 +1815,54 @@
      detail.js), no modal needed. This was the only remaining consumer of the modal (Parents
      moved to inline father/mother fields back on 2026-08-19), so removing it also resolves the
      "modal body doesn't scroll" report -- there's no modal left to have that bug. -->
+<!-- 2026-08-26, explicit request: "เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้" -- signature-pad modal,
+     direct port of Company Profile's own #cpSignaturePadModal (plain mouse/touch canvas drawing, no
+     new dependency). -->
+<div class="modal fade" id="empSignaturePadModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <canvas id="empSignaturePadCanvas" class="cp-signature-pad-canvas" width="500" height="220"></canvas>
+                <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" id="empSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="empSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- 2026-08-26, explicit request: "ส่วนของที่อยู่ให้เพิ่มสามารถปักหมุด Location บน Map ได้" -- OpenStreetMap
+     + Leaflet map-pin modal. A Nominatim (OSM's own free geocoder) search box jumps the map to an
+     address; clicking anywhere on the map (or dragging the marker) drops/moves the pin. Leaflet needs
+     a real visible, correctly-sized container to compute its tile grid against -- initialized on
+     `shown.bs.modal` (after the modal has finished sizing), with `invalidateSize()` called right after
+     in case the container was already created once before (same "recompute after the modal is
+     actually visible" precedent as the Payslip/Employment Certificate Template editors' own
+     fullscreen-modal canvas resize). -->
+<div class="modal fade" id="empMapPinModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-map-location-dot me-2"></i><span data-i18n="pin_location_on_map">Pin Location on Map</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="form-control mb-2" id="empMapSearchInput" data-i18n="map_search_placeholder" placeholder="Search for an address...">
+                <div id="empMapPinContainer" style="width:100%;height:360px;border-radius:8px;overflow:hidden;"></div>
+                <p class="text-muted small mt-2 mb-0" data-i18n="map_pin_hint">Click anywhere on the map, or drag the marker, to set the location.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="empMapPinSaveBtn"><span data-i18n="save">Save</span></button>
+            </div>
+        </div>
+    </div>
+</div>
 <input type="hidden" id="employee_no" value="<?= htmlspecialchars($employee_no ?? '', ENT_QUOTES, 'UTF-8') ?>">
 <script src="<?=asset('public/js/employee/detail.js')?>"></script>

@@ -174,6 +174,43 @@
                 </div>
             </div>
         </div>
+        <!-- 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name หรือสามารถเซ็นต์สด
+             ผ่านหน้าจอได้" -- same upload-card layout as Company Logo just above, plus a second input
+             method (a live signature-pad drawn on a canvas, opened in a modal -- see
+             #cpSignaturePadModal below this template). Both paths end up producing the exact same kind
+             of file through the exact same upload endpoint (uploadSignature()), so this card doesn't
+             need to know or care which one was used. -->
+        <h6 class="text-secondary fw-bold mb-3 mt-4">
+            <label class="label label-head bg-head-first rounded-2 text-white me-2">5</label>
+            <span data-i18n="company_signature">Authorized Signature</span>
+        </h6>
+        <div class="row">
+            <div class="col-sm-6 mt-3">
+                <div class="cp-logo-upload-card" id="cpSignatureUploadCard">
+                    <div class="cp-logo-preview-box" id="cpSignaturePreviewBox">
+                        <img id="cpSignaturePreviewImg" src="" alt="Signature" class="d-none">
+                        <div class="cp-logo-placeholder" id="cpSignaturePlaceholder">
+                            <i class="fa-solid fa-signature"></i>
+                            <span data-i18n="no_signature_uploaded">No signature yet</span>
+                        </div>
+                    </div>
+                    <div class="cp-logo-actions">
+                        <label class="btn btn-outline-secondary btn-sm" for="cp_signature_file">
+                            <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_signature">Upload Image</span>
+                        </label>
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="cpDrawSignatureBtn">
+                            <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpSignatureRemoveBtn">
+                            <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                        </button>
+                        <input type="file" id="cp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                        <input type="hidden" id="cp_signature_path" name="signature_path">
+                        <p class="text-muted small mt-2 mb-0" data-i18n="company_signature_reuse_hint">Available as the "Authorized Signature" item when designing Payslip and Employment Certificate templates.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     <div class="text-end">
         <button type="button" class="btn btn-warning save-company-profile"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
@@ -358,5 +395,29 @@
         </table>
     </div>
 </template>
+<!-- 2026-08-26, explicit request: "สามารถเซ็นต์สดผ่านหน้าจอได้" -- signature-pad modal. Lives OUTSIDE
+     every <template> above (a <template>'s content is inert until cloned by JS, so a live
+     bootstrap.Modal needs to sit in real page DOM instead) -- plain mouse/touch canvas drawing, no new
+     dependency (same "no reason to add a library for basic bounding-box interaction" precedent
+     Employment Certificate Template's own canvas designer already established). -->
+<div class="modal fade" id="cpSignaturePadModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <canvas id="cpSignaturePadCanvas" class="cp-signature-pad-canvas" width="500" height="220"></canvas>
+                <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" id="cpSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="cpSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
+            </div>
+        </div>
+    </div>
+</div>
 <script src="<?=asset('public/js/setup/company-profile.js')?>"></script>
 <script src="<?=asset('public/js/setup/permission-matrix.js')?>"></script>

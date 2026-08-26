@@ -247,6 +247,20 @@ class EmploymentCertificateTemplateController extends Controller {
         $this->json($this->model->setDefault((int)$compId, $id, $this->userId()));
     }
 
+    /** 2026-08-26, explicit request: "ในหน้า List สามารถเปิด Draft หรือ Public ได้จากหน้านั้นเลย" --
+     *  direct port of PayslipTemplateController::publishToggle(). */
+    public function publishToggle() {
+        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        $compId = getCompId();
+        $id = (int)($_POST['id'] ?? 0);
+        $status = (string)($_POST['publish_status'] ?? '');
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->model->setPublishStatus((int)$compId, $id, $status, $this->userId()));
+    }
+
     /* ==================== Logo + reusable image library uploads ==================== */
 
     /** Shared MIME/size validation for both the per-template logo upload and the image-library

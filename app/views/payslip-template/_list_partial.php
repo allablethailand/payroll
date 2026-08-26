@@ -18,18 +18,16 @@
  * settled on, just reached for a different reason (per-language default, not "no concept at all").
  */
 ?>
-<div class="card-surface p-3 p-md-4">
-  <table class="table table-hover align-middle w-100" id="tb_pst_template">
-    <thead class="table-light text-secondary">
-      <tr>
-        <th data-i18n="template_name">Template Name</th>
-        <th data-i18n="ect_page_size">Page Size</th>
-        <th class="text-center" data-i18n="template_language_th">Thai</th>
-        <th class="text-center" data-i18n="template_language_en">English</th>
-        <th data-i18n="ect_last_updated">Last Updated</th>
-        <th class="text-center" data-i18n="actions">Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-</div>
+<table class="table table-hover align-middle w-100" id="tb_pst_template">
+  <thead class="table-light text-secondary">
+    <tr>
+      <th data-i18n="template_name">Template Name</th>
+      <th data-i18n="ect_page_size">Page Size</th>
+      <th class="text-center" data-i18n="template_language_th">Thai</th>
+      <th class="text-center" data-i18n="template_language_en">English</th>
+      <th data-i18n="ect_last_updated">Last Updated</th>
+      <th class="text-center" data-i18n="actions">Actions</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>

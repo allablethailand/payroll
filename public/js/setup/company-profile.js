@@ -51,6 +51,118 @@ $(document).on('click', '#cpLogoRemoveBtn', function () {
     $('input[name="logo_path"]').val('');
     showCpLogoPreview(null);
 });
+
+/* ---------- Authorized Signature (2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized
+   Signatory Name หรือสามารถเซ็นต์สดผ่านหน้าจอได้") -- upload-file path mirrors Company Logo above
+   exactly; the live signature pad is a plain <canvas> with hand-written mouse/touch drawing (no new
+   dependency, same precedent as Employment Certificate Template's own hand-rolled canvas
+   interactions) that exports to a PNG Blob and posts through the SAME uploadSignature() endpoint a
+   file-picker upload would, so the rest of this file (preview/hidden-field/remove) doesn't need to
+   know which input method produced the image. ---------- */
+function showCpSignaturePreview(path) {
+    if (path) {
+        $('#cpSignaturePreviewImg').attr('src', `${BASE_URL}/${path}`).removeClass('d-none');
+        $('#cpSignaturePlaceholder').addClass('d-none');
+        $('#cpSignatureRemoveBtn').removeClass('d-none');
+    } else {
+        $('#cpSignaturePreviewImg').attr('src', '').addClass('d-none');
+        $('#cpSignaturePlaceholder').removeClass('d-none');
+        $('#cpSignatureRemoveBtn').addClass('d-none');
+    }
+}
+function uploadCpSignatureBlob(blob) {
+    const formData = new FormData();
+    formData.append('file', blob, 'signature.png');
+    $.ajax({
+        url: `${BASE_URL}/api/company.upload-signature`,
+        method: 'POST', data: formData, processData: false, contentType: false, dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                $('input[name="signature_path"]').val(res.signature_path);
+                showCpSignaturePreview(res.signature_path);
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Upload failed.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'Upload failed.'); }
+    });
+}
+$(document).on('change', '#cp_signature_file', function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    uploadCpSignatureBlob(file);
+    $(this).val('');
+});
+// Client-side only -- clears the hidden field so Save persists signature_path=null, same
+// no-disk-cleanup convention as #cpLogoRemoveBtn above.
+$(document).on('click', '#cpSignatureRemoveBtn', function () {
+    $('input[name="signature_path"]').val('');
+    showCpSignaturePreview(null);
+});
+
+let cpSignaturePadCtx = null;
+let cpSignaturePadDrawing = false;
+let cpSignaturePadHasStrokes = false;
+function cpSignaturePadPos(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const point = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    return {
+        x: (point.clientX - rect.left) * (canvas.width / rect.width),
+        y: (point.clientY - rect.top) * (canvas.height / rect.height)
+    };
+}
+function initCpSignaturePad() {
+    const canvas = document.getElementById('cpSignaturePadCanvas');
+    if (!canvas) return;
+    cpSignaturePadCtx = canvas.getContext('2d');
+    cpSignaturePadCtx.fillStyle = '#ffffff';
+    cpSignaturePadCtx.fillRect(0, 0, canvas.width, canvas.height);
+    cpSignaturePadCtx.lineWidth = 2.5;
+    cpSignaturePadCtx.lineCap = 'round';
+    cpSignaturePadCtx.strokeStyle = '#1a1a1a';
+    cpSignaturePadHasStrokes = false;
+    const startDraw = function (e) {
+        e.preventDefault();
+        cpSignaturePadDrawing = true;
+        const p = cpSignaturePadPos(canvas, e);
+        cpSignaturePadCtx.beginPath();
+        cpSignaturePadCtx.moveTo(p.x, p.y);
+    };
+    const moveDraw = function (e) {
+        if (!cpSignaturePadDrawing) return;
+        e.preventDefault();
+        const p = cpSignaturePadPos(canvas, e);
+        cpSignaturePadCtx.lineTo(p.x, p.y);
+        cpSignaturePadCtx.stroke();
+        cpSignaturePadHasStrokes = true;
+    };
+    const endDraw = function () { cpSignaturePadDrawing = false; };
+    canvas.onmousedown = startDraw;
+    canvas.onmousemove = moveDraw;
+    canvas.onmouseup = endDraw;
+    canvas.onmouseleave = endDraw;
+    canvas.ontouchstart = startDraw;
+    canvas.ontouchmove = moveDraw;
+    canvas.ontouchend = endDraw;
+}
+$(document).on('click', '#cpDrawSignatureBtn', function () {
+    new bootstrap.Modal(document.getElementById('cpSignaturePadModal')).show();
+});
+$('#cpSignaturePadModal').on('shown.bs.modal', function () { initCpSignaturePad(); });
+$(document).on('click', '#cpSignaturePadClearBtn', function () { initCpSignaturePad(); });
+$(document).on('click', '#cpSignaturePadSaveBtn', function () {
+    const canvas = document.getElementById('cpSignaturePadCanvas');
+    if (!canvas) return;
+    if (!cpSignaturePadHasStrokes) {
+        showWarning(langData['draw_signature_hint'] || 'Draw with your mouse or finger, then click Save.');
+        return;
+    }
+    canvas.toBlob(function (blob) {
+        if (!blob) return;
+        uploadCpSignatureBlob(blob);
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('cpSignaturePadModal')).hide();
+    }, 'image/png');
+});
 $(document).on('change', '#registered_country', function () {
     renderCountrySpecificForm($(this).val());
 });
@@ -178,6 +290,8 @@ function initCompanyData() {
                 $('input[name="authorized_signatory_name"]').val(data.authorized_signatory_name || '');
                 $('input[name="logo_path"]').val(data.logo_path || '');
                 showCpLogoPreview(data.logo_path || null);
+                $('input[name="signature_path"]').val(data.signature_path || '');
+                showCpSignaturePreview(data.signature_path || null);
                 if (data.statutory_data && typeof data.statutory_data === 'object') {
                     Object.keys(data.statutory_data).forEach(key => {
                         const $field = $(`[name="${key}"]`);
@@ -231,6 +345,7 @@ $(document).on('click', '.save-company-profile', function () {
         master_address_id: $('input[name="master_address_id"]').val() || null,
         authorized_signatory_name: $('input[name="authorized_signatory_name"]').val()?.trim() || '',
         logo_path: $('input[name="logo_path"]').val() || null,
+        signature_path: $('input[name="signature_path"]').val() || null,
         statutory_data: {}
     };
     $('#dynamic_statutory_fields_container input').each(function () {

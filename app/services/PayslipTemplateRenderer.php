@@ -191,7 +191,7 @@ class PayslipTemplateRenderer {
     }
 
     /** @param array<int,string> $imageAssetPaths image_asset_id => absolute file path */
-    private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths, array $detail, array $statutoryLabels, string $language): string {
+    private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths, array $detail, array $statutoryLabels, string $language, ?string $signatureAbsPath = null): string {
         $fontFamily = self::FONT_FAMILY_CSS[$el['font_family'] ?? 'th_sarabun_new'] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
         // font-family single-quoted -- see EmploymentCertificateRenderer's own comment for the exact
         // double-quote-nesting bug this avoids (a real, confirmed defect found once already).
@@ -211,6 +211,11 @@ class PayslipTemplateRenderer {
             $imgAbsPath = null;
             if (!empty($el['field_key']) && $el['field_key'] === 'company_logo') {
                 $imgAbsPath = $logoAbsPath;
+            } elseif (!empty($el['field_key']) && $el['field_key'] === 'company_signature') {
+                // 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์...และเพิ่มใน Item ในการจัดการ
+                // Template" -- company-wide only (no per-template override the way logo_path has),
+                // resolved straight from companies.signature_path.
+                $imgAbsPath = $signatureAbsPath;
             } elseif (!empty($el['image_asset_id']) && isset($imageAssetPaths[(int)$el['image_asset_id']])) {
                 $imgAbsPath = $imageAssetPaths[(int)$el['image_asset_id']];
             }
@@ -288,6 +293,8 @@ class PayslipTemplateRenderer {
                 . 'white-space:nowrap;font-weight:bold;">' . htmlspecialchars(trim($watermarkText), ENT_QUOTES, 'UTF-8') . '</div></div>';
         }
 
+        $signatureAbsPath = $this->resolveUploadAbsPath($company['signature_path'] ?? null, 'company_signatures');
+
         $pageKeys = array_keys($byPage);
         $lastPageKey = end($pageKeys);
         $pagesHtml = '';
@@ -301,7 +308,7 @@ class PayslipTemplateRenderer {
                 if (array_key_exists('is_visible', $el) && !$el['is_visible']) {
                     continue;
                 }
-                $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths, $detail, $statutoryLabels, $language);
+                $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths, $detail, $statutoryLabels, $language, $signatureAbsPath);
             }
             $body .= $watermarkHtml;
             $breakStyle = $pageNumber === $lastPageKey ? '' : 'page-break-after:always;';

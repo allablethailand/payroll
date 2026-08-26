@@ -1787,3 +1787,216 @@ function validateRecurringEarningForm() {
     });
     return firstInvalid;
 }
+
+/* ============================================================================================
+   2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้" --
+   upload-or-draw signature card, direct port of Company Profile's own #cpSignaturePreviewImg/
+   #cpSignaturePadModal handling (see company-profile.js's own comment block for the reasoning this
+   mirrors) -- `emp` prefix, posts to api/employee.upload-signature instead of
+   api/company.upload-signature, everything else identical.
+   ============================================================================================ */
+function showEmpSignaturePreview(path) {
+    if (path) {
+        $('#empSignaturePreviewImg').attr('src', `${BASE_URL}/${path}`).removeClass('d-none');
+        $('#empSignaturePlaceholder').addClass('d-none');
+        $('#empSignatureRemoveBtn').removeClass('d-none');
+    } else {
+        $('#empSignaturePreviewImg').attr('src', '').addClass('d-none');
+        $('#empSignaturePlaceholder').removeClass('d-none');
+        $('#empSignatureRemoveBtn').addClass('d-none');
+    }
+}
+// The hidden field is set generically by populateEmployeeForm() (a plain [name] field, no special
+// handling needed there) -- this just keeps the VISUAL preview in sync whenever that happens, since
+// populateEmployeeForm() already .trigger('change')s every field it sets.
+$(document).on('change', '#emp_signature_path', function () {
+    showEmpSignaturePreview($(this).val() || null);
+});
+function uploadEmpSignatureBlob(blob) {
+    const formData = new FormData();
+    formData.append('file', blob, 'signature.png');
+    $.ajax({
+        url: `${BASE_URL}/api/employee.upload-signature`,
+        method: 'POST', data: formData, processData: false, contentType: false, dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                $('#emp_signature_path').val(res.signature_path);
+                showEmpSignaturePreview(res.signature_path);
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Upload failed.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'Upload failed.'); }
+    });
+}
+$(document).on('change', '#emp_signature_file', function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    uploadEmpSignatureBlob(file);
+    $(this).val('');
+});
+$(document).on('click', '#empSignatureRemoveBtn', function () {
+    $('#emp_signature_path').val('');
+    showEmpSignaturePreview(null);
+});
+
+let empSignaturePadCtx = null;
+let empSignaturePadDrawing = false;
+let empSignaturePadHasStrokes = false;
+function empSignaturePadPos(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const point = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    return {
+        x: (point.clientX - rect.left) * (canvas.width / rect.width),
+        y: (point.clientY - rect.top) * (canvas.height / rect.height)
+    };
+}
+function initEmpSignaturePad() {
+    const canvas = document.getElementById('empSignaturePadCanvas');
+    if (!canvas) return;
+    empSignaturePadCtx = canvas.getContext('2d');
+    empSignaturePadCtx.fillStyle = '#ffffff';
+    empSignaturePadCtx.fillRect(0, 0, canvas.width, canvas.height);
+    empSignaturePadCtx.lineWidth = 2.5;
+    empSignaturePadCtx.lineCap = 'round';
+    empSignaturePadCtx.strokeStyle = '#1a1a1a';
+    empSignaturePadHasStrokes = false;
+    const startDraw = function (e) {
+        e.preventDefault();
+        empSignaturePadDrawing = true;
+        const p = empSignaturePadPos(canvas, e);
+        empSignaturePadCtx.beginPath();
+        empSignaturePadCtx.moveTo(p.x, p.y);
+    };
+    const moveDraw = function (e) {
+        if (!empSignaturePadDrawing) return;
+        e.preventDefault();
+        const p = empSignaturePadPos(canvas, e);
+        empSignaturePadCtx.lineTo(p.x, p.y);
+        empSignaturePadCtx.stroke();
+        empSignaturePadHasStrokes = true;
+    };
+    const endDraw = function () { empSignaturePadDrawing = false; };
+    canvas.onmousedown = startDraw;
+    canvas.onmousemove = moveDraw;
+    canvas.onmouseup = endDraw;
+    canvas.onmouseleave = endDraw;
+    canvas.ontouchstart = startDraw;
+    canvas.ontouchmove = moveDraw;
+    canvas.ontouchend = endDraw;
+}
+$(document).on('click', '#empDrawSignatureBtn', function () {
+    new bootstrap.Modal(document.getElementById('empSignaturePadModal')).show();
+});
+$('#empSignaturePadModal').on('shown.bs.modal', function () { initEmpSignaturePad(); });
+$(document).on('click', '#empSignaturePadClearBtn', function () { initEmpSignaturePad(); });
+$(document).on('click', '#empSignaturePadSaveBtn', function () {
+    const canvas = document.getElementById('empSignaturePadCanvas');
+    if (!canvas) return;
+    if (!empSignaturePadHasStrokes) {
+        showWarning(langData['draw_signature_hint'] || 'Draw with your mouse or finger, then click Save.');
+        return;
+    }
+    canvas.toBlob(function (blob) {
+        if (!blob) return;
+        uploadEmpSignatureBlob(blob);
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('empSignaturePadModal')).hide();
+    }, 'image/png');
+});
+
+/* ============================================================================================
+   2026-08-26, explicit request: "ส่วนของที่อยู่ให้เพิ่มสามารถปักหมุด Location บน Map ได้" -- OpenStreetMap
+   + Leaflet pin picker for the CONTACT address. Nominatim (OSM's own free geocoder, no API key) backs
+   the search box; clicking the map or dragging the marker sets the pin. Bangkok is just a reasonable
+   starting view when no pin exists yet, not a default value that gets saved on its own -- Save only
+   ever persists a pin the admin actually placed/moved.
+   ============================================================================================ */
+let empMapPinInstance = null;
+let empMapPinMarker = null;
+let empMapPinLatLng = null;
+function empMapSetMarker(lat, lng) {
+    empMapPinLatLng = { lat, lng };
+    if (empMapPinMarker) {
+        empMapPinMarker.setLatLng([lat, lng]);
+    } else {
+        empMapPinMarker = L.marker([lat, lng], { draggable: true }).addTo(empMapPinInstance);
+        empMapPinMarker.on('dragend', function () {
+            const pos = empMapPinMarker.getLatLng();
+            empMapPinLatLng = { lat: pos.lat, lng: pos.lng };
+        });
+    }
+}
+function initEmpMapPin() {
+    const container = document.getElementById('empMapPinContainer');
+    if (!container || typeof L === 'undefined') return;
+    const existingLat = parseFloat($('#address_latitude').val());
+    const existingLng = parseFloat($('#address_longitude').val());
+    const hasExisting = !isNaN(existingLat) && !isNaN(existingLng);
+    const startLat = hasExisting ? existingLat : 13.7563;
+    const startLng = hasExisting ? existingLng : 100.5018;
+    if (!empMapPinInstance) {
+        empMapPinInstance = L.map('empMapPinContainer').setView([startLat, startLng], hasExisting ? 16 : 11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(empMapPinInstance);
+        empMapPinInstance.on('click', function (e) {
+            empMapSetMarker(e.latlng.lat, e.latlng.lng);
+        });
+    } else {
+        empMapPinInstance.setView([startLat, startLng], hasExisting ? 16 : 11);
+    }
+    empMapPinMarker = null;
+    empMapPinLatLng = null;
+    if (hasExisting) {
+        empMapSetMarker(startLat, startLng);
+    }
+    // Leaflet computes its tile grid against the container's size at init time -- inside a
+    // just-shown Bootstrap modal that size wasn't final yet the very first time this ever runs, so
+    // recompute once the modal's own show animation has actually finished.
+    setTimeout(function () { if (empMapPinInstance) empMapPinInstance.invalidateSize(); }, 200);
+}
+$(document).on('click', '#btnPinMapLocation', function () {
+    new bootstrap.Modal(document.getElementById('empMapPinModal')).show();
+});
+$('#empMapPinModal').on('shown.bs.modal', function () { initEmpMapPin(); });
+$(document).on('click', '#empMapPinSaveBtn', function () {
+    if (!empMapPinLatLng) {
+        showWarning(langData['map_pin_hint'] || 'Click anywhere on the map, or drag the marker, to set the location.');
+        return;
+    }
+    $('#address_latitude').val(empMapPinLatLng.lat.toFixed(7)).trigger('change');
+    $('#address_longitude').val(empMapPinLatLng.lng.toFixed(7)).trigger('change');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('empMapPinModal')).hide();
+});
+$(document).on('change', '#address_latitude, #address_longitude', function () {
+    const lat = parseFloat($('#address_latitude').val());
+    const lng = parseFloat($('#address_longitude').val());
+    if (!isNaN(lat) && !isNaN(lng)) {
+        $('#mapLocationSummary').text(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    } else {
+        $('#mapLocationSummary').text('');
+    }
+});
+// Debounced Nominatim search -- free OSM geocoder, no API key. Shows the first match's own bounding
+// box zoom level rather than a fixed one, so a country-level search doesn't zoom in absurdly close.
+let empMapSearchTimer = null;
+$(document).on('input', '#empMapSearchInput', function () {
+    const query = $(this).val().trim();
+    clearTimeout(empMapSearchTimer);
+    if (query.length < 3) return;
+    empMapSearchTimer = setTimeout(function () {
+        $.ajax({
+            url: 'https://nominatim.openstreetmap.org/search',
+            method: 'GET', dataType: 'json',
+            data: { q: query, format: 'json', limit: 1 },
+            success: function (results) {
+                if (!Array.isArray(results) || !results.length || !empMapPinInstance) return;
+                const lat = parseFloat(results[0].lat);
+                const lng = parseFloat(results[0].lon);
+                empMapPinInstance.setView([lat, lng], 16);
+                empMapSetMarker(lat, lng);
+            }
+        });
+    }, 600);
+});

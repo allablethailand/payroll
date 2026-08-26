@@ -177,6 +177,7 @@
     $router->post('api/payslip-template.delete', 'PayslipTemplateController@delete');
     $router->post('api/payslip-template.toggle-status', 'PayslipTemplateController@toggleStatus');
     $router->post('api/payslip-template.set-default', 'PayslipTemplateController@setDefault');
+    $router->post('api/payslip-template.publish-toggle', 'PayslipTemplateController@publishToggle');
     $router->post('api/payslip-template.upload-logo', 'PayslipTemplateController@uploadLogo');
     $router->get('api/payslip-template.list-images', 'PayslipTemplateController@listImages');
     $router->post('api/payslip-template.upload-image', 'PayslipTemplateController@uploadImage');
@@ -200,6 +201,7 @@
     $router->post('api/employment-certificate-template.preset-elements', 'EmploymentCertificateTemplateController@presetElements');
     $router->post('api/employment-certificate-template.delete', 'EmploymentCertificateTemplateController@delete');
     $router->post('api/employment-certificate-template.set-default', 'EmploymentCertificateTemplateController@setDefault');
+    $router->post('api/employment-certificate-template.publish-toggle', 'EmploymentCertificateTemplateController@publishToggle');
     $router->post('api/employment-certificate-template.upload-logo', 'EmploymentCertificateTemplateController@uploadLogo');
     $router->get('api/employment-certificate-template.list-images', 'EmploymentCertificateTemplateController@listImages');
     $router->post('api/employment-certificate-template.upload-image', 'EmploymentCertificateTemplateController@uploadImage');
@@ -268,6 +270,7 @@
     $router->post('api/company.get', 'CompanyProfileController@get');
     $router->post('api/company.save', 'CompanyProfileController@save');
     $router->post('api/company.upload-logo', 'CompanyProfileController@uploadLogo');
+    $router->post('api/company.upload-signature', 'CompanyProfileController@uploadSignature');
     $router->post('api/country.get', 'MasterController@getMaster');
     $router->post('api/nationality.get', 'MasterController@getMaster');
     $router->post('api/religion.get', 'MasterController@getMaster');
@@ -303,6 +306,7 @@
     $router->post('api/bank_account.delete', 'BankAccountController@delete');
     $router->get('api/employee.get', 'EmployeeController@get');
     $router->post('api/employee.save', 'EmployeeController@save');
+    $router->post('api/employee.upload-signature', 'EmployeeController@uploadSignature');
     $router->post('api/employee.delete', 'EmployeeController@delete');
     $router->get('api/employee.dependent.list', 'EmployeeController@dependentList');
     $router->post('api/employee.dependent.save', 'EmployeeController@dependentSave');

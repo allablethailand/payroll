@@ -29,18 +29,16 @@
  * a "Last Updated" column since the table "ดูโล่งๆ" (looked sparse) with just 4 columns.
  */
 ?>
-<div class="card-surface p-3 p-md-4">
-  <table class="table table-hover align-middle w-100" id="tb_ect_template">
-    <thead class="table-light text-secondary">
-      <tr>
-        <th data-i18n="template_name">Template Name</th>
-        <th data-i18n="ect_page_size">Page Size</th>
-        <th class="text-center" data-i18n="template_language_th">Thai</th>
-        <th class="text-center" data-i18n="template_language_en">English</th>
-        <th data-i18n="ect_last_updated">Last Updated</th>
-        <th class="text-center" data-i18n="actions">Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-</div>
+<table class="table table-hover align-middle w-100" id="tb_ect_template">
+  <thead class="table-light text-secondary">
+    <tr>
+      <th data-i18n="template_name">Template Name</th>
+      <th data-i18n="ect_page_size">Page Size</th>
+      <th class="text-center" data-i18n="template_language_th">Thai</th>
+      <th class="text-center" data-i18n="template_language_en">English</th>
+      <th data-i18n="ect_last_updated">Last Updated</th>
+      <th class="text-center" data-i18n="actions">Actions</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
