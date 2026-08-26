@@ -123,6 +123,40 @@ function getTableLang() {
         }
     };
 }
+// 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" (make every date
+// display in the system dd/mm/yyyy). Several pages already had their OWN local helper doing exactly
+// this (employee/detail.js's own toDisplayDate(), payroll/approval.js's toDisplayDateAp(), payroll/
+// index.js's toDisplayDatePr()) -- those are left alone, they already produce dd/mm/yyyy correctly
+// and touching working code for no behavioral gain isn't worth the risk. These two are for the
+// GENUINELY unformatted spots found during the audit (DataTables columns that rendered a raw ISO
+// string straight from the API with no render() at all: reports/index.js's generated_at, payslip-
+// delivery-log.js's sent_at, payslip-request.js/employment-certificate-request.js's created_at,
+// payroll/detail.js's performed_at, employee/list.js's start_work_date, tax-statutory.js's
+// effective_date, approval-request-detail.js's requested_at/acted_at) and for any FUTURE page that
+// needs one and doesn't already have a local copy -- named distinctly from every existing
+// toDisplayDate*() so loading this file's declaration doesn't jam any of those (a global `function`
+// redeclaration is legal but load-order-fragile, same risk class as this project's own documented
+// duplicate-top-level-declaration bug in payslip-template.js/employment-certificate-template.js).
+//
+// formatDisplayDate: a DATE-ONLY value ('YYYY-MM-DD', or the date part of a full timestamp) -> 'DD/MM/YYYY'.
+function formatDisplayDate(value) {
+    if (!value) return '';
+    const datePart = String(value).substring(0, 10);
+    const parts = datePart.split('-');
+    if (parts.length !== 3) return value;
+    const [yyyy, mm, dd] = parts;
+    return `${dd}/${mm}/${yyyy}`;
+}
+// formatDisplayDateTime: a full timestamp ('YYYY-MM-DD HH:mm:ss' or 'YYYY-MM-DDTHH:mm:ss') ->
+// 'DD/MM/YYYY HH:mm' (seconds dropped -- matches the existing toDisplayDateAp()/toDisplayDatePr()
+// precedent of showing HH:mm only, not HH:mm:ss).
+function formatDisplayDateTime(value) {
+    if (!value) return '';
+    const str = String(value);
+    const datePart = formatDisplayDate(str.substring(0, 10));
+    const timePart = str.substring(11, 16);
+    return timePart ? `${datePart} ${timePart}` : datePart;
+}
 async function changeLanguage(lang) {
     if (currentLang === lang) return;
     currentLang = lang;

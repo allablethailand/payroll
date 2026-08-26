@@ -1389,6 +1389,8 @@
     "ect_layers": "Layers",
     "ect_layers_empty": "No elements yet.",
     "ect_layer_group_label": "Group",
+    "ect_layer_hide": "Hide",
+    "ect_layer_show": "Show",
     "ect_multiselect_howto": "Tip: Ctrl+Click to select multiple elements — drag to move them together, or use Group/Ungroup and Delete above. Click a layer on the right to select it too.",
     "ect_group_company": "Company Info",
     "ect_group_employee": "Employee Info",

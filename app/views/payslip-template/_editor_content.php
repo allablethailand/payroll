@@ -18,6 +18,27 @@
  * Template's own `language` column, not an editable field inside the template body.
  */
 ?>
+<!-- 2026-08-26, follow-up correction: "Mode Fullscreen หมายถึงให้การตั้งค่าแสดงใน modal fullscreen ครับ"
+     -- the first attempt at this (toggling the browser's native Fullscreen API) was wrong: this page
+     can be embedded inside Origami's own shell (an iframe), and browsers block requestFullscreen()
+     entirely when the parent frame hasn't granted the `allow="fullscreen"` permission -- so the button
+     could silently do nothing depending on how the page is reached. Confirmed via AskUserQuestion:
+     wrap the ENTIRE editor content (topbar/tabs/Page Setup/Template Info/ribbon/canvas/layers --
+     everything below this comment) in a genuine Bootstrap `.modal-fullscreen`, which is pure CSS/DOM
+     and works identically regardless of iframe embedding. `#pstEditorContentAnchor` is a stable,
+     always-in-place placeholder marking where `#pstEditorContent` normally lives on the page --
+     toggling fullscreen moves the WHOLE `#pstEditorContent` node into the modal body (jQuery
+     `.appendTo()`) and shows the modal; closing the modal (`hidden.bs.modal`, fired the same way
+     whether closed via the button, Esc, or the backdrop) moves it back with `.insertAfter()`. Every
+     handler in payslip-template.js is bound via `$(document).on(...)` delegation, so none of them
+     care which DOM parent the content is currently sitting under. -->
+<div id="pstEditorContentAnchor"></div>
+<div class="modal fade" id="pstFullscreenModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen m-0">
+    <div class="modal-body p-3" id="pstFullscreenModalBody"></div>
+  </div>
+</div>
+<div id="pstEditorContent">
 <div class="pst-editor-topbar">
   <div class="pst-editor-title-group">
     <i class="fa-solid fa-file-invoice pst-editor-title-icon"></i>
@@ -27,6 +48,11 @@
          file's own comment for the full reasoning. -->
     <button type="button" class="pst-editor-title-edit-btn" id="pstTemplateNameEditBtn" title="Rename"><i class="fa-solid fa-pen"></i></button>
   </div>
+  <!-- Fullscreen toggle -- see this file's own top-of-file comment for why this is a Bootstrap
+       modal-fullscreen rather than the browser's native Fullscreen API. -->
+  <button type="button" class="btn btn-outline-secondary btn-sm" id="pstFullscreenBtn" title="Fullscreen">
+    <i class="fa-solid fa-expand"></i>
+  </button>
 </div>
 
 <!-- 2026-08-25, explicit follow-up: "อยากให้เพิ่ม Tab ในหน้า Detail ของ Slip และเอกสารแต่ละตัว" -- the
@@ -49,47 +75,6 @@
 
 <div class="tab-content">
 <div class="tab-pane fade show active" id="pstTabDesign">
-
-<!-- 2026-08-25, follow-up bug report: "Page Setup ไม่อยู่ภายใต้ tab design" -- Page Setup (page size/
-     orientation/margin) and Change Layout used to sit in the shared topbar ABOVE both tabs, so they
-     stayed visible even while looking at Assign To, where they mean nothing. Moved inside the Design
-     tab pane itself, same fix applied to Employment Certificate Template's own editor. -->
-<div class="pst-editor-topbar-fields justify-content-end mb-3">
-  <div class="pst-page-setup-cluster">
-    <span class="pst-page-setup-label" data-i18n="ect_page_setup">Page Setup</span>
-    <select class="form-select form-select-sm" id="pstPageSizeSelect">
-      <option value="A4">A4</option>
-      <option value="Letter">Letter</option>
-      <option value="Legal">Legal</option>
-    </select>
-    <select class="form-select form-select-sm" id="pstOrientationSelect">
-      <option value="portrait" data-i18n="ect_portrait">Portrait</option>
-      <option value="landscape" data-i18n="ect_landscape">Landscape</option>
-    </select>
-    <div class="dropdown pst-margin-dropdown">
-      <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" id="pstMarginDropdownBtn">
-        <i class="fa-solid fa-ruler-combined me-1"></i><span id="pstMarginDropdownLabel">Normal</span>
-      </button>
-      <ul class="dropdown-menu pst-margin-menu" id="pstMarginMenu">
-        <li><a class="dropdown-item pst-margin-option" href="#" data-value="8"><span class="pst-margin-preview pst-margin-preview-narrow"></span><span class="pst-margin-option-text"><strong data-i18n="ect_margin_narrow">Narrow</strong><small>8 mm</small></span></a></li>
-        <li><a class="dropdown-item pst-margin-option" href="#" data-value="15"><span class="pst-margin-preview pst-margin-preview-normal"></span><span class="pst-margin-option-text"><strong data-i18n="ect_margin_normal">Normal</strong><small>15 mm</small></span></a></li>
-        <li><a class="dropdown-item pst-margin-option" href="#" data-value="20"><span class="pst-margin-preview pst-margin-preview-moderate"></span><span class="pst-margin-option-text"><strong data-i18n="ect_margin_moderate">Moderate</strong><small>20 mm</small></span></a></li>
-        <li><a class="dropdown-item pst-margin-option" href="#" data-value="30"><span class="pst-margin-preview pst-margin-preview-wide"></span><span class="pst-margin-option-text"><strong data-i18n="ect_margin_wide">Wide</strong><small>30 mm</small></span></a></li>
-        <li><hr class="dropdown-divider"></li>
-        <li>
-          <div class="px-3 py-1 d-flex align-items-center gap-2" onclick="event.stopPropagation();">
-            <span class="small text-secondary" data-i18n="ect_margin_custom">Custom</span>
-            <input type="number" id="pstMarginInput" class="form-control form-control-sm" style="width:70px;" min="0" max="50" step="1">
-            <span class="small text-secondary">mm</span>
-          </div>
-        </li>
-      </ul>
-    </div>
-  </div>
-  <button type="button" class="btn btn-outline-primary btn-sm" id="pstChangePresetBtn">
-    <i class="fa-solid fa-shuffle me-1"></i><span data-i18n="ect_change_preset">Change Layout</span>
-  </button>
-</div>
 
 <!-- Template Info -- header/footer text + status/is_default: fields the old field-list editor
      already had that Employment Certificate Template's designer has no equivalent of (it has no
@@ -138,6 +123,55 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- 2026-08-26, explicit request: "ในหน้า Slip Template ให้ย้าย Page Setup ลงมาไว้ใต้ Template Info" --
+     moved from ABOVE Template Info (where it sat since the 2026-08-25 "Page Setup ไม่อยู่ภายใต้ tab
+     design" fix) to below it. Purely a markup reorder -- .pst-editor-topbar-fields's own CSS is a
+     self-contained flex layout unaffected by its new position (same "confirmed before moving, not
+     assumed" precedent as that earlier fix), and no JS reads DOM order for any of these controls. -->
+<div class="pst-editor-topbar-fields justify-content-end mb-3">
+  <div class="pst-page-setup-cluster">
+    <span class="pst-page-setup-label" data-i18n="ect_page_setup">Page Setup</span>
+    <select class="form-select form-select-sm" id="pstPageSizeSelect">
+      <option value="A3">A3</option>
+      <option value="A4">A4</option>
+      <option value="A5">A5</option>
+      <option value="B4">B4</option>
+      <option value="B5">B5</option>
+      <option value="Letter">Letter</option>
+      <option value="Legal">Legal</option>
+      <option value="Tabloid">Tabloid</option>
+      <option value="Executive">Executive</option>
+      <option value="Statement">Statement</option>
+    </select>
+    <select class="form-select form-select-sm" id="pstOrientationSelect">
+      <option value="portrait" data-i18n="ect_portrait">Portrait</option>
+      <option value="landscape" data-i18n="ect_landscape">Landscape</option>
+    </select>
+    <div class="dropdown pst-margin-dropdown">
+      <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" id="pstMarginDropdownBtn">
+        <i class="fa-solid fa-ruler-combined me-1"></i><span id="pstMarginDropdownLabel">Normal</span>
+      </button>
+      <ul class="dropdown-menu pst-margin-menu" id="pstMarginMenu">
+        <li><a class="dropdown-item pst-margin-option" href="#" data-value="8"><span class="pst-margin-preview pst-margin-preview-narrow"></span><span class="pst-margin-option-text"><strong data-i18n="ect_margin_narrow">Narrow</strong><small>8 mm</small></span></a></li>
+        <li><a class="dropdown-item pst-margin-option" href="#" data-value="15"><span class="pst-margin-preview pst-margin-preview-normal"></span><span class="pst-margin-option-text"><strong data-i18n="ect_margin_normal">Normal</strong><small>15 mm</small></span></a></li>
+        <li><a class="dropdown-item pst-margin-option" href="#" data-value="20"><span class="pst-margin-preview pst-margin-preview-moderate"></span><span class="pst-margin-option-text"><strong data-i18n="ect_margin_moderate">Moderate</strong><small>20 mm</small></span></a></li>
+        <li><a class="dropdown-item pst-margin-option" href="#" data-value="30"><span class="pst-margin-preview pst-margin-preview-wide"></span><span class="pst-margin-option-text"><strong data-i18n="ect_margin_wide">Wide</strong><small>30 mm</small></span></a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <div class="px-3 py-1 d-flex align-items-center gap-2" onclick="event.stopPropagation();">
+            <span class="small text-secondary" data-i18n="ect_margin_custom">Custom</span>
+            <input type="number" id="pstMarginInput" class="form-control form-control-sm" style="width:70px;" min="0" max="50" step="1">
+            <span class="small text-secondary">mm</span>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+  <button type="button" class="btn btn-outline-primary btn-sm" id="pstChangePresetBtn">
+    <i class="fa-solid fa-shuffle me-1"></i><span data-i18n="ect_change_preset">Change Layout</span>
+  </button>
 </div>
 
 <div id="pstEditorArea">
@@ -310,7 +344,8 @@
           <input type="checkbox" class="form-check-input" id="pstWatermarkToggle">
           <label class="form-check-label small" for="pstWatermarkToggle" data-i18n="ect_watermark_enable">Enable</label>
         </div>
-        <input type="text" class="form-control form-control-sm mt-2 d-none" id="pstWatermarkText" placeholder="SAMPLE">
+        <!-- 2026-08-26, explicit request: "ช่องที่ใส่คำลายน้ำให้ปรับจาก textbox เป็น textarea" -->
+        <textarea class="form-control form-control-sm mt-2 d-none" id="pstWatermarkText" rows="2" placeholder="SAMPLE"></textarea>
       </div>
       <div class="pst-layers card-surface p-3">
         <h6 class="fw-bold mb-2" data-i18n="ect_layers">Layers</h6>
@@ -412,3 +447,5 @@
     </button>
   </div>
 </div>
+
+</div><!-- /#pstEditorContent -->

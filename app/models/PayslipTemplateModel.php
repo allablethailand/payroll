@@ -51,7 +51,11 @@ class PayslipTemplateModel {
     private const FONT_STYLES = ['normal', 'italic'];
     private const TEXT_DECORATIONS = ['none', 'underline'];
     private const FONT_FAMILIES = ['th_sarabun_new', 'dejavu_sans', 'dejavu_sans_mono', 'dejavu_serif', 'helvetica', 'times_new_roman', 'courier'];
-    private const PAGE_SIZES = ['A4', 'Letter', 'Legal'];
+    // 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- same
+    // practical Word-style paper-size set (minus envelopes, irrelevant for a payslip/certificate)
+    // added identically to Employment Certificate Template's own PAGE_SIZES, see this class's own
+    // renderer counterpart (PayslipTemplateRenderer::PAGE_SIZES_MM) for the actual mm dimensions.
+    private const PAGE_SIZES = ['A3', 'A4', 'A5', 'B4', 'B5', 'Letter', 'Legal', 'Tabloid', 'Executive', 'Statement'];
     private const ORIENTATIONS = ['portrait', 'landscape'];
     private const LANGUAGES = ['th', 'en'];
     private const MAX_PAGE_NUMBER = 20;
@@ -91,7 +95,7 @@ class PayslipTemplateModel {
     private function getElements(int $templateId): array {
         $stmt = $this->db->prepare("SELECT id, element_type, field_key, image_asset_id, content,
                 pos_x_pct, pos_y_pct, width_pct, height_pct, font_size, font_family, font_color,
-                text_align, font_weight, font_style, text_decoration, sort_order, group_key, page_number
+                text_align, font_weight, font_style, text_decoration, sort_order, group_key, page_number, is_visible
             FROM `payslip_template_elements` WHERE template_id = :id ORDER BY sort_order ASC, id ASC");
         $stmt->execute([':id' => $templateId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -210,7 +214,7 @@ class PayslipTemplateModel {
                 'font_size' => $el['font_size'], 'font_family' => $el['font_family'], 'font_color' => $el['font_color'],
                 'text_align' => $el['text_align'], 'font_weight' => $el['font_weight'], 'font_style' => $el['font_style'],
                 'text_decoration' => $el['text_decoration'], 'group_key' => $el['group_key'],
-                'page_number' => $el['page_number'] ?? 1,
+                'page_number' => $el['page_number'] ?? 1, 'is_visible' => $el['is_visible'] ?? 1,
             ];
         }, $source['elements']);
         return $this->save($compId, [
@@ -554,12 +558,15 @@ class PayslipTemplateModel {
             $groupKey = !empty($raw['group_key']) ? substr((string)$raw['group_key'], 0, 64) : null;
             $pageNumber = is_numeric($raw['page_number'] ?? null) ? (int)$raw['page_number'] : 1;
             $pageNumber = max(1, min(self::MAX_PAGE_NUMBER, $pageNumber));
+            // 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว"
+            // -- same as EmploymentCertificateTemplateModel's own, defaults to visible=true when absent.
+            $isVisible = !array_key_exists('is_visible', $raw) || !empty($raw['is_visible']) ? 1 : 0;
             $cleaned[] = [
                 'element_type' => $elementType, 'field_key' => $fieldKey, 'image_asset_id' => $imageAssetId, 'content' => $content,
                 'pos_x_pct' => $posX, 'pos_y_pct' => $posY, 'width_pct' => $width, 'height_pct' => $height,
                 'font_size' => $fontSize, 'font_family' => $fontFamily, 'font_color' => $fontColor,
                 'text_align' => $textAlign, 'font_weight' => $fontWeight, 'font_style' => $fontStyle, 'text_decoration' => $textDecoration,
-                'sort_order' => $n, 'group_key' => $groupKey, 'page_number' => $pageNumber,
+                'sort_order' => $n, 'group_key' => $groupKey, 'page_number' => $pageNumber, 'is_visible' => $isVisible,
             ];
         }
         return ['elements' => $cleaned];
@@ -714,9 +721,9 @@ class PayslipTemplateModel {
             $this->db->prepare("DELETE FROM `payslip_template_elements` WHERE template_id = :id")->execute([':id' => $templateId]);
             $insEl = $this->db->prepare("INSERT INTO `payslip_template_elements`
                 (template_id, element_type, field_key, image_asset_id, content, pos_x_pct, pos_y_pct, width_pct, height_pct,
-                 font_size, font_family, font_color, text_align, font_weight, font_style, text_decoration, sort_order, group_key, page_number)
+                 font_size, font_family, font_color, text_align, font_weight, font_style, text_decoration, sort_order, group_key, page_number, is_visible)
                 VALUES (:template_id, :element_type, :field_key, :image_asset_id, :content, :pos_x_pct, :pos_y_pct, :width_pct, :height_pct,
-                        :font_size, :font_family, :font_color, :text_align, :font_weight, :font_style, :text_decoration, :sort_order, :group_key, :page_number)");
+                        :font_size, :font_family, :font_color, :text_align, :font_weight, :font_style, :text_decoration, :sort_order, :group_key, :page_number, :is_visible)");
             foreach ($elements as $el) {
                 $insEl->execute([
                     ':template_id' => $templateId,
@@ -725,6 +732,7 @@ class PayslipTemplateModel {
                     ':font_size' => $el['font_size'], ':font_family' => $el['font_family'], ':font_color' => $el['font_color'],
                     ':text_align' => $el['text_align'], ':font_weight' => $el['font_weight'], ':font_style' => $el['font_style'], ':text_decoration' => $el['text_decoration'],
                     ':sort_order' => $el['sort_order'], ':group_key' => $el['group_key'], ':page_number' => $el['page_number'] ?? 1,
+                    ':is_visible' => $el['is_visible'] ?? 1,
                 ]);
             }
 
@@ -776,7 +784,7 @@ class PayslipTemplateModel {
                 'pos_x_pct' => $e['pos_x_pct'], 'pos_y_pct' => $e['pos_y_pct'], 'width_pct' => $e['width_pct'], 'height_pct' => $e['height_pct'],
                 'font_size' => $e['font_size'], 'font_family' => $e['font_family'], 'font_color' => $e['font_color'],
                 'text_align' => $e['text_align'], 'font_weight' => $e['font_weight'], 'font_style' => $e['font_style'], 'text_decoration' => $e['text_decoration'],
-                'group_key' => $e['group_key'] ?? null, 'page_number' => $e['page_number'] ?? 1,
+                'group_key' => $e['group_key'] ?? null, 'page_number' => $e['page_number'] ?? 1, 'is_visible' => $e['is_visible'] ?? 1,
             ], $source['elements']),
         ], $userId);
     }
@@ -813,7 +821,7 @@ class PayslipTemplateModel {
                         'pos_x_pct' => $e['pos_x_pct'], 'pos_y_pct' => $e['pos_y_pct'], 'width_pct' => $e['width_pct'], 'height_pct' => $e['height_pct'],
                         'font_size' => $e['font_size'], 'font_family' => $e['font_family'], 'font_color' => $e['font_color'],
                         'text_align' => $e['text_align'], 'font_weight' => $e['font_weight'], 'font_style' => $e['font_style'], 'text_decoration' => $e['text_decoration'],
-                        'group_key' => $e['group_key'] ?? null, 'page_number' => $e['page_number'] ?? 1,
+                        'group_key' => $e['group_key'] ?? null, 'page_number' => $e['page_number'] ?? 1, 'is_visible' => $e['is_visible'] ?? 1,
                     ], $source['elements']),
                 ], $userId);
                 if (!$result['status']) {

@@ -47,7 +47,10 @@ function initEcrRequestTable() {
             { data: null, render: (d, t, row) => ecrLanguageLabel(row.language) },
             { data: null, render: (d, t, row) => escapeHtmlEcr((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || '-') },
             { data: 'status', render: d => ecrRequestStatusBadge(d) },
-            { data: 'created_at' },
+            // object-form render (display only) -- client-side table, defaults to sorting by this
+            // exact column (order: [[4,'desc']] below), see reports/index.js's own comment for why
+            // 'sort'/'filter' must stay on the raw ISO string.
+            { data: 'created_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
             {
                 data: null, orderable: false, className: 'text-center',
                 render: (d, t, row) => {

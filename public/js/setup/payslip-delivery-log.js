@@ -45,7 +45,7 @@ function formatReferenceDlog(row) {
         return `<span class="text-secondary small">${docLanguageLabelDlog(row.language)}</span>`;
     }
     if (!row.period_start_date || !row.period_end_date) return escapeHtmlDlog(row.reference_label);
-    return `${escapeHtmlDlog(row.reference_label)} <span class="text-secondary small">(${row.period_start_date} - ${row.period_end_date})</span>`;
+    return `${escapeHtmlDlog(row.reference_label)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
 }
 
 function initPayslipDeliveryLogTable() {
@@ -73,7 +73,11 @@ function initPayslipDeliveryLogTable() {
             { data: 'channel_code', render: d => d ? escapeHtmlDlog(d.toUpperCase()) : '-' },
             { data: 'recipient', render: d => escapeHtmlDlog(d || '-') },
             { data: 'status', render: d => deliveryStatusBadge(d) },
-            { data: 'sent_at' },
+            // object-form render (display only, see reports/index.js's own comment on why) -- this
+            // table has no serverSide:true, and defaults to sorting by this exact column
+            // (order: [[7, 'desc']] below), so a plain string-render here would have silently
+            // flipped the default view into lexicographic (wrong) order.
+            { data: 'sent_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
             { data: null, render: (d, t, row) => escapeHtmlDlog((currentLang === 'th' ? row.sent_by_name_th : row.sent_by_name_en) || '-') },
             {
                 data: null, orderable: false, className: 'text-center',

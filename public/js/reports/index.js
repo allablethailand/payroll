@@ -180,7 +180,11 @@ function initExportHistoryTable() {
             }
         },
         columns: [
-            { data: 'generated_at' },
+            // object-form render: only 'display' gets the dd/mm/yyyy formatting -- 'sort'/'filter'
+            // stay on the raw ISO string, since this is a CLIENT-side table (no serverSide) and
+            // sorting/filtering on the dd/mm/yyyy display string would sort lexicographically
+            // ("05/09" before "26/08") instead of chronologically.
+            { data: 'generated_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
             { data: 'report_code', render: d => reportNameByCode(d) },
             { data: 'format', render: d => formatLabel(d) },
             { data: 'file_name' },

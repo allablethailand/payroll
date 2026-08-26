@@ -93,7 +93,10 @@ try {
     echo "=== save() validation ===\n";
     $noName = $model->save($compId, ['language' => 'th', 'template_name' => '', 'elements' => [['element_type' => 'text', 'content' => 'x', 'pos_x_pct' => 1, 'pos_y_pct' => 1, 'width_pct' => 10, 'height_pct' => 5]]], $userId);
     check('rejects a blank template_name', $noName['status'], false);
-    $badPageSize = $model->save($compId, ['language' => 'th', 'template_name' => 'X', 'page_size' => 'Tabloid', 'elements' => []], $userId);
+    // 2026-08-26: 'Tabloid' used to be the invalid example here -- it's a real, valid page_size now
+    // (see PAGE_SIZES' own 2026-08-26 comment for the Word-style size list this was widened to), so
+    // switched to a value that's genuinely never going to be valid.
+    $badPageSize = $model->save($compId, ['language' => 'th', 'template_name' => 'X', 'page_size' => 'NotARealSize', 'elements' => []], $userId);
     check('rejects an invalid page_size', $badPageSize['status'], false);
     $badColor = $model->save($compId, ['language' => 'th', 'template_name' => 'X', 'elements' => [
         ['element_type' => 'text', 'content' => 'x', 'pos_x_pct' => 1, 'pos_y_pct' => 1, 'width_pct' => 10, 'height_pct' => 5, 'font_color' => 'red'],

@@ -524,14 +524,20 @@
                     <input type="text" class="form-control" name="line_id" id="line_id">
                 </div>
             </div>
-            <!-- Hidden 2026-08-19 (not needed for Payroll): registered/contact address and emergency
-                 contact are HR-record fields, never read by any statutory calc/report/sync in this app.
-                 required class removed from every field below AND from EmployeeModel::requiredColumns()
-                 in the same commit -- otherwise hidden-but-still-required fields would silently block
-                 every employee save (validateEmployeeForm() checks .required regardless of visibility). -->
-            <div class="d-none">
+            <!-- 2026-08-26, explicit request: "เพิ่มให้ใส่ที่อยู่ของพนักงาน" -- re-shown (was hidden
+                 2026-08-19 as part of a combined "registered/contact address and emergency contact"
+                 decision, see CLAUDE.md/memory). Only ADDRESS is un-hidden here -- Emergency Contacts
+                 (below) was not part of this request, so it stays in its own `d-none` wrapper.
+                 Renumbered 2/3 (was 3/4) to fill the gap left by "Contact Information" above being "1"
+                 -- these fields were never `.required` even before being hidden (made nullable in the
+                 DB per the earlier trim), so re-showing them doesn't affect save validation or profile
+                 completeness. The `.autocomplete-address`/`master-address-id-field` widget itself
+                 (`public/js/input.js`) is delegated/page-agnostic -- the exact same mechanism Company
+                 Profile's own address field already uses -- so it works immediately with zero JS
+                 changes, matching this request's "ให้ล้อมาจากการตั้งค่าบริษัท". -->
+            <div>
                 <h6 class="text-secondary fw-bold mb-3 mt-5">
-                    <label class="label label-head bg-head-first rounded-2 text-white">3</label>
+                    <label class="label label-head bg-head-first rounded-2 text-white">2</label>
                     <span data-i18n="register_address">Register Address</span>
                 </h6>
                 <div class="row">
@@ -560,7 +566,7 @@
                 </div>
                 <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
                 <h6 class="text-secondary fw-bold mb-3 mt-5">
-                    <label class="label label-head bg-head-first rounded-2 text-white">4</label>
+                    <label class="label label-head bg-head-first rounded-2 text-white">3</label>
                     <span data-i18n="contact_address">Contact Address</span>
                 </h6>
                 <div class="row">
@@ -592,8 +598,13 @@
                         <input type="hidden" name="master_address_id_contact" class="master-address-id-field" id="master_address_id_contact">
                     </div>
                 </div>
+            </div>
+            <!-- Hidden 2026-08-19 (not needed for Payroll): emergency contact is an HR-record field,
+                 never read by any statutory calc/report/sync in this app -- stays hidden on its own
+                 (2026-08-26: only Address above was un-hidden, this was not part of that request). -->
+            <div class="d-none">
                 <h6 class="text-secondary fw-bold mb-3 mt-5">
-                    <label class="label label-head bg-head-first rounded-2 text-white">5</label>
+                    <label class="label label-head bg-head-first rounded-2 text-white">4</label>
                     <span data-i18n="emergency_contacts">Emergency Contacts</span>
                 </h6>
                 <div class="row">

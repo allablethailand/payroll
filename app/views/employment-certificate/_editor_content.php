@@ -19,6 +19,21 @@
  * just no longer directly visible unless "Custom" is picked).
  */
 ?>
+<!-- 2026-08-26, follow-up correction: "Mode Fullscreen หมายถึงให้การตั้งค่าแสดงใน modal fullscreen ครับ"
+     -- see Payslip Template's own `_editor_content.php` top-of-file comment for the full reasoning
+     (the first attempt, the browser's native Fullscreen API, silently does nothing if this page is
+     ever embedded inside Origami's own shell without `allow="fullscreen"`). Same mechanism here:
+     `#ectEditorContentAnchor` marks where `#ectEditorContent` normally lives; toggling fullscreen
+     moves the WHOLE node into `#ectFullscreenModal`'s body and shows it, closing the modal moves it
+     back -- every handler in employment-certificate-template.js is `$(document).on(...)` delegated,
+     so none of them care which parent the content currently sits under. -->
+<div id="ectEditorContentAnchor"></div>
+<div class="modal fade" id="ectFullscreenModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen m-0">
+    <div class="modal-body p-3" id="ectFullscreenModalBody"></div>
+  </div>
+</div>
+<div id="ectEditorContent">
 <!-- 2026-08-25, explicit follow-up: "ปรับส่วนของ card template name ให้สวยขึ้น" -- Template Name
      reads as a document TITLE (icon + large borderless-until-focus input, Google Docs/Word-title
      convention) instead of a plain labeled form field; Page Size/Orientation/Margin grouped into
@@ -39,6 +54,11 @@
          focuses+selects the input, same as clicking a Google Docs title's pencil. -->
     <button type="button" class="ect-editor-title-edit-btn" id="ectTemplateNameEditBtn" title="Rename"><i class="fa-solid fa-pen"></i></button>
   </div>
+  <!-- Fullscreen toggle -- see this file's own top-of-file comment for why this is a Bootstrap
+       modal-fullscreen rather than the browser's native Fullscreen API. -->
+  <button type="button" class="btn btn-outline-secondary btn-sm" id="ectFullscreenBtn" title="Fullscreen">
+    <i class="fa-solid fa-expand"></i>
+  </button>
 </div>
 
 <!-- 2026-08-25, explicit follow-up: "อยากให้เพิ่ม Tab ในหน้า Detail ของ Slip และเอกสารแต่ละตัว" -- same
@@ -67,10 +87,19 @@
 <div class="ect-editor-topbar-fields justify-content-end mb-3">
   <div class="ect-page-setup-cluster">
     <span class="ect-page-setup-label" data-i18n="ect_page_setup">Page Setup</span>
+    <!-- 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- same
+         paper-size set added identically to Payslip Template's own dropdown. -->
     <select class="form-select form-select-sm" id="ectPageSizeSelect">
+      <option value="A3">A3</option>
       <option value="A4">A4</option>
+      <option value="A5">A5</option>
+      <option value="B4">B4</option>
+      <option value="B5">B5</option>
       <option value="Letter">Letter</option>
       <option value="Legal">Legal</option>
+      <option value="Tabloid">Tabloid</option>
+      <option value="Executive">Executive</option>
+      <option value="Statement">Statement</option>
     </select>
     <select class="form-select form-select-sm" id="ectOrientationSelect">
       <option value="portrait" data-i18n="ect_portrait">Portrait</option>
@@ -326,7 +355,8 @@
           <input type="checkbox" class="form-check-input" id="ectWatermarkToggle">
           <label class="form-check-label small" for="ectWatermarkToggle" data-i18n="ect_watermark_enable">Enable</label>
         </div>
-        <input type="text" class="form-control form-control-sm mt-2 d-none" id="ectWatermarkText" placeholder="SAMPLE">
+        <!-- 2026-08-26, explicit request: "ช่องที่ใส่คำลายน้ำให้ปรับจาก textbox เป็น textarea" -->
+        <textarea class="form-control form-control-sm mt-2 d-none" id="ectWatermarkText" rows="2" placeholder="SAMPLE"></textarea>
       </div>
       <!-- Layers panel (explicit request: "โดยมี layer บอกเหมือน photoshop") -->
       <div class="ect-layers card-surface p-3">
@@ -419,3 +449,5 @@
     </button>
   </div>
 </div>
+
+</div><!-- /#ectEditorContent -->

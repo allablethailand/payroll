@@ -58,11 +58,21 @@ class EmploymentCertificateRenderer {
         'en' => ['male' => 'Male', 'female' => 'Female', 'other' => 'Other'],
     ];
 
-    /** page_size => [width_mm, height_mm] in PORTRAIT orientation; swapped for landscape. */
+    /** page_size => [width_mm, height_mm] in PORTRAIT orientation; swapped for landscape.
+     *  2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- standard
+     *  ISO 216 (A3/A5/B4/B5) and ANSI (Tabloid/Executive/Statement) dimensions, same list/values as
+     *  PayslipTemplateRenderer::PAGE_SIZES_MM. */
     public const PAGE_SIZES_MM = [
+        'A3' => [297.0, 420.0],
         'A4' => [210.0, 297.0],
+        'A5' => [148.0, 210.0],
+        'B4' => [250.0, 353.0],
+        'B5' => [176.0, 250.0],
         'Letter' => [215.9, 279.4],
         'Legal' => [215.9, 355.6],
+        'Tabloid' => [279.4, 431.8],
+        'Executive' => [184.15, 266.7],
+        'Statement' => [139.7, 215.9],
     ];
 
     /** font_family code => CSS font-family name. 'th_sarabun_new' is registered explicitly (see
@@ -325,6 +335,13 @@ class EmploymentCertificateRenderer {
         foreach ($byPage as $pageNumber => $pageElements) {
             $body = '';
             foreach ($pageElements as $el) {
+                // 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบ
+                // อย่างเดียว" -- a hidden element is skipped from the actual generated document too
+                // (not just the canvas), the real functional alternative to deleting it. Defaults to
+                // visible when absent (old rows/tests saved before this column existed).
+                if (array_key_exists('is_visible', $el) && !$el['is_visible']) {
+                    continue;
+                }
                 $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths);
             }
             $body .= $watermarkHtml;

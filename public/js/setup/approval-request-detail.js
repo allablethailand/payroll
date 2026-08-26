@@ -52,7 +52,7 @@ function renderRequestSummary(req) {
             <div class="col-sm-6"><strong>${langData['workflow_name'] || 'Workflow'}:</strong> ${escapeHtmlArd(req.workflow_name)}</div>
             <div class="col-sm-6"><strong>${langData['status'] || 'Status'}:</strong> ${approvalStatusBadge(req.status)}</div>
             <div class="col-sm-6"><strong>${langData['requested_by'] || 'Requested By'}:</strong> ${escapeHtmlArd(requesterName)}</div>
-            <div class="col-sm-6"><strong>${langData['requested_at'] || 'Requested At'}:</strong> ${escapeHtmlArd(req.requested_at)}</div>
+            <div class="col-sm-6"><strong>${langData['requested_at'] || 'Requested At'}:</strong> ${escapeHtmlArd(formatDisplayDateTime(req.requested_at))}</div>
         </div>
     `);
 }
@@ -82,7 +82,7 @@ function renderRequestTimeline(logs, request) {
     $wrap.append(artStageHtml(
         'requested', 'fa-paper-plane',
         `<span class="art-stage-title">${langData['request_submitted'] || 'Request Submitted'}</span>`,
-        `${escapeHtmlArd(requesterName)} — ${escapeHtmlArd(request.requested_at)}`
+        `${escapeHtmlArd(requesterName)} — ${escapeHtmlArd(formatDisplayDateTime(request.requested_at))}`
     ));
 
     const actionMeta = {
@@ -96,7 +96,7 @@ function renderRequestTimeline(logs, request) {
         $wrap.append(artStageHtml(
             meta.variant, meta.icon,
             `<span class="art-stage-title">${escapeHtmlArd(l.step_name_snapshot || '')}</span><span class="art-badge ${meta.badgeCls}">${langData[meta.key] || meta.fallback}</span>`,
-            `${escapeHtmlArd(actorName)} — ${escapeHtmlArd(l.acted_at)}` + (l.note ? `<div class="art-stage-note">${escapeHtmlArd(l.note)}</div>` : '')
+            `${escapeHtmlArd(actorName)} — ${escapeHtmlArd(formatDisplayDateTime(l.acted_at))}` + (l.note ? `<div class="art-stage-note">${escapeHtmlArd(l.note)}</div>` : '')
         ));
     });
 

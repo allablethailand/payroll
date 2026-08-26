@@ -218,8 +218,11 @@ function initRateHistoryTable() {
             data: function (d) { d.item_id = currentItemCtx ? currentItemCtx.id : 0; }
         },
         columns: [
-            { data: 'effective_date' },
-            { data: 'end_date', render: d => d || `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>` },
+            // object-form render (display only) -- client-side table with no explicit `order` set,
+            // so DataTables defaults to sorting by column 0 (this one) ascending; 'sort'/'filter'
+            // must stay on the raw ISO string, see reports/index.js's own comment for why.
+            { data: 'effective_date', render: { display: d => formatDisplayDate(d), sort: d => d, filter: d => d } },
+            { data: 'end_date', render: { display: d => d ? formatDisplayDate(d) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`, sort: d => d || '', filter: d => d || '' } },
             { data: null, render: (d, t, row) => rateSummaryTs(row) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => rateHistoryActionButtonsTs(row) }
         ],

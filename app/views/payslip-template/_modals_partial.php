@@ -45,10 +45,19 @@
           </div>
           <div class="col-md-2">
             <label class="form-label" data-i18n="ect_page_size">Page Size</label>
+            <!-- 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" --
+                 same paper-size set as the editor's own #pstPageSizeSelect. -->
             <select class="form-select" id="pstNewPageSizeSelect">
+              <option value="A3">A3</option>
               <option value="A4">A4</option>
+              <option value="A5">A5</option>
+              <option value="B4">B4</option>
+              <option value="B5">B5</option>
               <option value="Letter">Letter</option>
               <option value="Legal">Legal</option>
+              <option value="Tabloid">Tabloid</option>
+              <option value="Executive">Executive</option>
+              <option value="Statement">Statement</option>
             </select>
           </div>
           <div class="col-md-2">

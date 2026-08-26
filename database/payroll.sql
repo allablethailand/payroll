@@ -11529,6 +11529,17 @@ CREATE TABLE `employee_recurring_earnings` (
   CONSTRAINT `fk_ere_ped_type` FOREIGN KEY (`ped_type_id`) REFERENCES `payroll_earning_deduction_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
+-- 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" (add a
+-- Photoshop-style show/hide "eye" toggle per layer, instead of only being able to delete). A hidden
+-- element is excluded from BOTH the on-canvas render AND the generated PDF (a real functional
+-- alternative to deleting, not just an editor-only view filter) while keeping its position/size/
+-- content/formatting intact so it can be shown again later. Defaults to 1 (visible) so every
+-- existing saved template renders exactly as it always has.
+ALTER TABLE `employment_certificate_template_elements`
+  ADD COLUMN `is_visible` tinyint(1) NOT NULL DEFAULT 1 AFTER `sort_order`;
+ALTER TABLE `payslip_template_elements`
+  ADD COLUMN `is_visible` tinyint(1) NOT NULL DEFAULT 1 AFTER `sort_order`;
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

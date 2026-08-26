@@ -2457,6 +2457,13 @@ html, body {
     color: #b45f00;
     font-weight: 600;
 }
+/* 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" -- a
+   hidden layer's row reads visually muted (Photoshop's own convention for a hidden layer's name),
+   same .pst-layer-hidden rule mirrored in Payslip Template. */
+.ect-layer-row.ect-layer-hidden .ect-layer-label {
+    color: #adb5bd;
+    font-style: italic;
+}
 .ect-layer-label {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3340,6 +3347,12 @@ html, body {
     background: rgba(255, 153, 0, .18);
     color: #b45f00;
     font-weight: 600;
+}
+/* 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" -- same
+   as Employment Certificate Template's own .ect-layer-hidden rule. */
+.pst-layer-row.pst-layer-hidden .pst-layer-label {
+    color: #adb5bd;
+    font-style: italic;
 }
 .pst-layer-label {
     overflow: hidden;

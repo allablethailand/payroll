@@ -137,11 +137,26 @@ class PaySlipReport implements ReportGeneratorInterface {
 
     /* ==================== Original fixed layout (fallback when no template is set) ==================== */
 
+    // Same 3-line helper as EmploymentCertificateRenderer::formatDate()/PayslipTemplateRenderer::
+    // formatDate() -- not worth extracting into a shared trait for something this small with no
+    // state dependency.
+    private function formatDate(?string $ymd): string {
+        if (empty($ymd)) {
+            return '-';
+        }
+        $ts = strtotime($ymd);
+        return $ts !== false ? date('d/m/Y', $ts) : $ymd;
+    }
+
     private function buildHtml(string $companyName, array $run, array $detail, string $employeeName, string $earningRows, string $deductionRows): string {
         $gross = number_format((float)$detail['gross_amount'], 2);
         $deduct = number_format((float)$detail['total_deduction_amount'], 2);
         $net = number_format((float)$detail['net_amount'], 2);
-        $period = htmlspecialchars($run['period_start_date'] . ' - ' . $run['period_end_date']);
+        // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" -- this
+        // was embedding the raw ISO ('YYYY-MM-DD') pay period straight into the fallback payslip PDF
+        // (the layout used whenever a company hasn't set up a canvas template yet -- see this class's
+        // own generate() docblock, the common case).
+        $period = htmlspecialchars($this->formatDate($run['period_start_date']) . ' - ' . $this->formatDate($run['period_end_date']));
         $employeeNo = htmlspecialchars($detail['employee_no']);
         $empNameEsc = htmlspecialchars($employeeName);
         $companyEsc = htmlspecialchars($companyName);

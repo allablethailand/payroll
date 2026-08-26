@@ -1053,7 +1053,10 @@ function initAuditLogTable(auditLog) {
         data: auditLog,
         order: [[0, 'desc']],
         columns: [
-            { data: 'performed_at' },
+            // object-form render (display only) -- this table defaults to sorting by this exact
+            // column (order: [[0,'desc']] above), see reports/index.js's own comment for why
+            // 'sort'/'filter' must stay on the raw ISO string, not the dd/mm/yyyy display string.
+            { data: 'performed_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
             { data: 'action', render: d => escapeHtmlRd(auditActionLabel(d)) },
             { data: null, render: (d, t, row) => row.from_state ? `${stateBadgeRd(row.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(row.to_state)}` : stateBadgeRd(row.to_state) },
             { data: null, render: (d, t, row) => escapeHtmlRd(personDisplayNameRd(row, 'performed_by')) },

@@ -135,7 +135,10 @@ function initEmployeeTable() {
             { data: "team", render: d => d || '-' },
             { data: "shift", render: d => d || '-' },
             { data: "branch" },
-            { data: "start_work_date" },
+            // Plain render is safe here (unlike the client-side tables elsewhere in this pass) --
+            // this table is serverSide:true, so sorting is done server-side via ORDER BY on the
+            // real DB column, entirely unaffected by how the client renders it for display.
+            { data: "start_work_date", render: d => formatDisplayDate(d) },
             {
                 data: "status",
                 render: function (data) {

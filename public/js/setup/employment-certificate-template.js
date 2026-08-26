@@ -105,7 +105,14 @@ const MARGIN_PRESETS = [
 // own logo_path set from before this change (see resolveElementImageUrl()'s own priority comment).
 let companyLogoPath = null;
 
-const PAGE_SIZES_MM = { A4: [210, 297], Letter: [215.9, 279.4], Legal: [215.9, 355.6] };
+// 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- MUST stay
+// byte-identical to EmploymentCertificateRenderer::PAGE_SIZES_MM (the canvas and the PDF renderer
+// share this exact coordinate space for true WYSIWYG, no unit conversion anywhere).
+const PAGE_SIZES_MM = {
+    A3: [297, 420], A4: [210, 297], A5: [148, 210], B4: [250, 353], B5: [176, 250],
+    Letter: [215.9, 279.4], Legal: [215.9, 355.6], Tabloid: [279.4, 431.8],
+    Executive: [184.15, 266.7], Statement: [139.7, 215.9],
+};
 function pageDimensionsMm(pageSize, orientation) {
     const dims = PAGE_SIZES_MM[pageSize] || PAGE_SIZES_MM.A4;
     return orientation === 'landscape' ? [dims[1], dims[0]] : [dims[0], dims[1]];
@@ -289,7 +296,7 @@ function emptyElementBase() {
     return {
         font_size: 14, font_family: 'th_sarabun_new', font_color: '#000000',
         text_align: 'left', font_weight: 'normal', font_style: 'normal', text_decoration: 'none',
-        group_key: null, page_number: currentPageNumber
+        group_key: null, page_number: currentPageNumber, is_visible: true
     };
 }
 // 2026-08-25, explicit request: "เพิ่มตัวเลือก font สัก 10 font ครับ" -- CSS stacks for all 7 font
@@ -614,6 +621,13 @@ $(document).on('click', '#ectPageRemoveBtn', removeCurrentPage);
 function renderCanvas() {
     const $page = $('#ectPage').empty();
     currentPageElements().forEach(el => {
+        // 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว"
+        // -- a hidden element is skipped from the canvas entirely (same Photoshop convention: a
+        // hidden layer disappears from the canvas, not just dimmed), same as it's skipped from the
+        // generated PDF (EmploymentCertificateRenderer::buildHtml()). Still fully listed in the
+        // Layers panel below with its eye toggle -- renderLayersPanel() reads currentPageElements()
+        // directly, unfiltered, so hiding it here never removes it from that list.
+        if (el.is_visible === false) return;
         const $el = $(elementHtml(el));
         $page.append($el);
         applyElementStyle($el, el);
@@ -1044,14 +1058,21 @@ function layerRowHtml(el) {
     const selected = selectedKeys.includes(el.key);
     const editable = el.element_type === 'text' && !isBoundFieldElement(el);
     const editBtn = editable
-        ? `<button type="button" class="btn btn-link btn-sm p-0 ms-auto ect-layer-edit" data-key="${el.key}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`
+        ? `<button type="button" class="btn btn-link btn-sm p-0 ms-1 ect-layer-edit" data-key="${el.key}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`
         : '';
+    // 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" --
+    // Photoshop-style eye toggle, a real alternative to Delete (hidden elements skip BOTH the canvas
+    // AND the generated PDF -- see renderCanvas()/EmploymentCertificateRenderer::buildHtml() -- while
+    // keeping their position/content/formatting intact for whenever they're shown again).
+    const visible = el.is_visible !== false;
+    const eyeBtn = `<button type="button" class="btn btn-link btn-sm p-0 ms-auto ect-layer-visibility" data-key="${el.key}" title="${langData[visible ? 'ect_layer_hide' : 'ect_layer_show'] || (visible ? 'Hide' : 'Show')}"><i class="fa-solid ${visible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>`;
     return `
-        <div class="ect-layer-row ${selected ? 'ect-layer-selected' : ''}" data-key="${el.key}">
+        <div class="ect-layer-row ${selected ? 'ect-layer-selected' : ''} ${visible ? '' : 'ect-layer-hidden'}" data-key="${el.key}">
             <i class="fa-solid ${layerIcon(el)} me-1"></i>
             <span class="ect-layer-label">${escapeHtmlEct(elementLabel(el))}</span>
+            ${eyeBtn}
             ${editBtn}
-            <button type="button" class="btn btn-link btn-sm p-0 ${editable ? 'ms-1' : 'ms-auto'} text-danger ect-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+            <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger ect-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
         </div>
     `;
 }
@@ -1077,12 +1098,16 @@ function renderLayersPanel() {
             renderedGroups.add(el.group_key);
             const members = pageElements.filter(e => e.group_key === el.group_key);
             const groupSelected = members.length > 0 && members.every(m => selectedKeys.includes(m.key));
+            // Group-level eye: "visible" only when EVERY member is visible (matches a "select all"
+            // checkbox convention) -- clicking it shows all members if any are hidden, else hides all.
+            const groupVisible = members.every(m => m.is_visible !== false);
             const $group = $(`
                 <div class="ect-layer-group" data-group-key="${el.group_key}">
                     <div class="ect-layer-row ect-layer-group-row ${groupSelected ? 'ect-layer-selected' : ''}">
                         <i class="fa-solid fa-folder me-1"></i>
                         <span class="ect-layer-label">${escapeHtmlEct(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger ect-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto ect-layer-group-visibility" data-group-key="${el.group_key}" title="${langData[groupVisible ? 'ect_layer_hide' : 'ect_layer_show'] || (groupVisible ? 'Hide' : 'Show')}"><i class="fa-solid ${groupVisible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger ect-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="ect-layer-children"></div>
                 </div>
@@ -1096,12 +1121,46 @@ function renderLayersPanel() {
     });
 }
 $(document).on('click', '.ect-layer-row[data-key]', function (e) {
-    if ($(e.target).closest('.ect-layer-edit, .ect-layer-delete').length) return;
+    if ($(e.target).closest('.ect-layer-edit, .ect-layer-delete, .ect-layer-visibility').length) return;
     selectElement($(this).data('key'), e.ctrlKey || e.metaKey);
 });
 $(document).on('click', '.ect-layer-edit', function (e) {
     e.stopPropagation();
     openTextModal($(this).data('key'));
+});
+// 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" --
+// toggling visibility does NOT count as a "select" click (stopPropagation, same as Edit/Delete), and
+// deselects the element if it's being hidden (a hidden element has no canvas box to interact with,
+// same reasoning selectElement()'s own guards use elsewhere).
+$(document).on('click', '.ect-layer-visibility', function (e) {
+    e.stopPropagation();
+    pushUndo();
+    const key = $(this).data('key');
+    const el = findElement(key);
+    if (!el) return;
+    el.is_visible = el.is_visible === false;
+    if (el.is_visible === false) {
+        selectedKeys = selectedKeys.filter(k => k !== key);
+    }
+    renderCanvas();
+    dirty = true;
+    updateSaveHint();
+});
+$(document).on('click', '.ect-layer-group-visibility', function (e) {
+    e.stopPropagation();
+    pushUndo();
+    const groupKey = $(this).data('group-key');
+    const members = elements.filter(m => m.group_key === groupKey);
+    const groupVisible = members.every(m => m.is_visible !== false);
+    const nextVisible = !groupVisible;
+    members.forEach(m => { m.is_visible = nextVisible; });
+    if (!nextVisible) {
+        const memberKeys = members.map(m => m.key);
+        selectedKeys = selectedKeys.filter(k => !memberKeys.includes(k));
+    }
+    renderCanvas();
+    dirty = true;
+    updateSaveHint();
 });
 $(document).on('click', '.ect-layer-delete', function (e) {
     e.stopPropagation();
@@ -1934,6 +1993,37 @@ $(document).on('input', '#ectTemplateNameInput', function () { dirty = true; upd
 $(document).on('click', '#ectTemplateNameEditBtn', function () {
     $('#ectTemplateNameInput').trigger('focus').select();
 });
+// 2026-08-26, follow-up correction: "Mode Fullscreen หมายถึงให้การตั้งค่าแสดงใน modal fullscreen ครับ" --
+// same mechanism as Payslip Template's own editor, see that file's own top-of-file comment for the
+// full reasoning (moved away from the browser's native Fullscreen API, silently blocked when
+// embedded in an iframe without allow="fullscreen"). #ectEditorContent relocates into
+// #ectFullscreenModal's body (anchored by #ectEditorContentAnchor for the return trip) -- every
+// handler in this file is $(document).on(...) delegated, unaffected by the DOM move.
+$(document).on('click', '#ectFullscreenBtn', function () {
+    // The button itself moves INTO the modal once shown (it's part of #ectEditorContent), so
+    // clicking it a 2nd time must CLOSE the modal, not show() it again.
+    const modalEl = document.getElementById('ectFullscreenModal');
+    const instance = bootstrap.Modal.getOrCreateInstance(modalEl);
+    if (modalEl.classList.contains('show')) {
+        instance.hide();
+    } else {
+        instance.show();
+    }
+});
+$('#ectFullscreenModal').on('show.bs.modal', function () {
+    $('#ectEditorContent').appendTo('#ectFullscreenModalBody');
+    $('#ectFullscreenBtn i').removeClass('fa-expand').addClass('fa-compress');
+});
+$('#ectFullscreenModal').on('shown.bs.modal', function () {
+    if (typeof updateCanvasDimensions === 'function') updateCanvasDimensions();
+    if (typeof applyZoom === 'function') applyZoom();
+});
+$('#ectFullscreenModal').on('hidden.bs.modal', function () {
+    $('#ectEditorContent').insertAfter('#ectEditorContentAnchor');
+    $('#ectFullscreenBtn i').removeClass('fa-compress').addClass('fa-expand');
+    if (typeof updateCanvasDimensions === 'function') updateCanvasDimensions();
+    if (typeof applyZoom === 'function') applyZoom();
+});
 
 /* ---------- New Template modal (name + page size/orientation + starter preset) ---------- */
 function loadPresets() {
@@ -2267,12 +2357,16 @@ function elementsPayload() {
     // absent). Placing something on page 2/3 and then hitting Preview looked exactly like "the new
     // pages don't show up" -- they weren't missing, everything was just silently collapsing back
     // onto page 1 before it ever reached the server. Fixed by forwarding the in-memory value.
+    // 2026-08-26: is_visible added here too, per v12's own lesson above (this function has no
+    // schema-driven fallback -- every element property has to be listed by hand, easy to add a new
+    // one to emptyElementBase()/the model without remembering this one central serialization point
+    // also needs updating).
     return elements.map(e => ({
         element_type: e.element_type, field_key: e.field_key, image_asset_id: e.image_asset_id, content: e.content,
         pos_x_pct: e.pos_x_pct, pos_y_pct: e.pos_y_pct, width_pct: e.width_pct, height_pct: e.height_pct,
         font_size: e.font_size, font_family: e.font_family, font_color: e.font_color,
         text_align: e.text_align, font_weight: e.font_weight, font_style: e.font_style, text_decoration: e.text_decoration,
-        group_key: e.group_key || null, page_number: e.page_number || 1
+        group_key: e.group_key || null, page_number: e.page_number || 1, is_visible: e.is_visible !== false
     }));
 }
 // 2026-08-25, TH/EN-tabs unification: Save now saves ONLY the currently active language tab and

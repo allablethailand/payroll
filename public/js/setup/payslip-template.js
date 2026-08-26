@@ -71,7 +71,14 @@ const MARGIN_PRESETS = [
 // Certificate Template's own companyLogoPath (template's own logo_path first, this as fallback).
 let companyLogoPath = null;
 
-const PAGE_SIZES_MM = { A4: [210, 297], Letter: [215.9, 279.4], Legal: [215.9, 355.6] };
+// 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- MUST stay
+// byte-identical to PayslipTemplateRenderer::PAGE_SIZES_MM (the canvas and the PDF renderer share
+// this exact coordinate space for true WYSIWYG, no unit conversion anywhere).
+const PAGE_SIZES_MM = {
+    A3: [297, 420], A4: [210, 297], A5: [148, 210], B4: [250, 353], B5: [176, 250],
+    Letter: [215.9, 279.4], Legal: [215.9, 355.6], Tabloid: [279.4, 431.8],
+    Executive: [184.15, 266.7], Statement: [139.7, 215.9],
+};
 function pageDimensionsMm(pageSize, orientation) {
     const dims = PAGE_SIZES_MM[pageSize] || PAGE_SIZES_MM.A4;
     return orientation === 'landscape' ? [dims[1], dims[0]] : [dims[0], dims[1]];
@@ -1737,6 +1744,44 @@ $(document).on('change', '#pstPageSizeSelect, #pstOrientationSelect', function (
 $(document).on('input', '#pstTemplateNameInput, #pstHeaderThInput, #pstHeaderEnInput, #pstFooterThInput, #pstFooterEnInput', function () { dirty = true; updateSaveHint(); });
 $(document).on('click', '#pstTemplateNameEditBtn', function () {
     $('#pstTemplateNameInput').trigger('focus').select();
+});
+// 2026-08-26, follow-up correction: "Mode Fullscreen หมายถึงให้การตั้งค่าแสดงใน modal fullscreen ครับ" --
+// see _editor_content.php's own top-of-file comment for why this moved away from the browser's native
+// Fullscreen API (silently blocked when embedded in an iframe without allow="fullscreen", e.g.
+// Origami's own shell). #pstEditorContent is the ENTIRE editor (topbar/tabs/Page Setup/Template
+// Info/ribbon/canvas/layers) -- toggling this button relocates that whole node into the fullscreen
+// modal's body (or back to its normal spot, anchored by #pstEditorContentAnchor) via jQuery
+// .appendTo()/.insertAfter(), then shows/relies on Bootstrap's own modal hide to restore it. Every
+// click/change handler in this file is $(document).on(...) delegated, so relocating the DOM node
+// doesn't break any of them.
+$(document).on('click', '#pstFullscreenBtn', function () {
+    // The button itself moves INTO the modal once shown (it's part of #pstEditorContent), so
+    // clicking it a 2nd time must CLOSE the modal, not show() it again -- toggle based on the
+    // modal's actual current state rather than assuming "click = open".
+    const modalEl = document.getElementById('pstFullscreenModal');
+    const instance = bootstrap.Modal.getOrCreateInstance(modalEl);
+    if (modalEl.classList.contains('show')) {
+        instance.hide();
+    } else {
+        instance.show();
+    }
+});
+$('#pstFullscreenModal').on('show.bs.modal', function () {
+    $('#pstEditorContent').appendTo('#pstFullscreenModalBody');
+    $('#pstFullscreenBtn i').removeClass('fa-expand').addClass('fa-compress');
+});
+$('#pstFullscreenModal').on('shown.bs.modal', function () {
+    // The canvas/zoom math reads live offsetWidth/offsetHeight against whatever container it's
+    // CURRENTLY inside -- re-run once the modal has actually finished animating open (not on
+    // show.bs.modal, which fires before the modal is done sizing itself).
+    if (typeof updateCanvasDimensions === 'function') updateCanvasDimensions();
+    if (typeof applyZoom === 'function') applyZoom();
+});
+$('#pstFullscreenModal').on('hidden.bs.modal', function () {
+    $('#pstEditorContent').insertAfter('#pstEditorContentAnchor');
+    $('#pstFullscreenBtn i').removeClass('fa-compress').addClass('fa-expand');
+    if (typeof updateCanvasDimensions === 'function') updateCanvasDimensions();
+    if (typeof applyZoom === 'function') applyZoom();
 });
 $(document).on('change', '#pstStatusSwitch, #pstIsDefaultSwitch', function () { dirty = true; updateSaveHint(); });
 

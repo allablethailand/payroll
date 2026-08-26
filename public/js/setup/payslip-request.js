@@ -30,7 +30,7 @@ function payslipRequestStatusBadge(status) {
 
 function formatPayPeriod(row) {
     if (!row.period_start_date || !row.period_end_date) return escapeHtmlPr(row.run_name);
-    return `${escapeHtmlPr(row.run_name)} <span class="text-secondary small">(${row.period_start_date} - ${row.period_end_date})</span>`;
+    return `${escapeHtmlPr(row.run_name)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
 }
 
 function initPayslipRequestTable() {
@@ -46,7 +46,10 @@ function initPayslipRequestTable() {
             { data: null, render: (d, t, row) => formatPayPeriod(row) },
             { data: null, render: (d, t, row) => escapeHtmlPr((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || '-') },
             { data: 'status', render: d => payslipRequestStatusBadge(d) },
-            { data: 'created_at' },
+            // object-form render (display only) -- client-side table, defaults to sorting by this
+            // exact column (order: [[4,'desc']] below), see reports/index.js's own comment for why
+            // 'sort'/'filter' must stay on the raw ISO string.
+            { data: 'created_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
             {
                 data: null, orderable: false, className: 'text-center',
                 render: (d, t, row) => row.approval_request_id

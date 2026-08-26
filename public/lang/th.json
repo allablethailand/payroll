@@ -1390,6 +1390,8 @@
     "ect_layers": "เลเยอร์",
     "ect_layers_empty": "ยังไม่มีรายการ",
     "ect_layer_group_label": "กลุ่ม",
+    "ect_layer_hide": "ซ่อน",
+    "ect_layer_show": "แสดง",
     "ect_multiselect_howto": "เคล็ดลับ: กด Ctrl ค้างแล้วคลิกเพื่อเลือกหลายรายการ — ลากเพื่อย้ายพร้อมกัน หรือใช้ปุ่ม Group/Ungroup และ Delete ด้านบน หรือคลิกที่เลเยอร์ทางขวาเพื่อเลือกก็ได้",
     "ect_group_company": "ข้อมูลบริษัท",
     "ect_group_employee": "ข้อมูลพนักงาน",

@@ -54,10 +54,21 @@ class PayslipTemplateRenderer {
      *  substituted value -- see this class's own docblock for why these need no special schema. */
     private const BLOCK_FIELD_KEYS = ['earning_lines_all', 'deduction_lines_all', 'statutory_lines_all'];
 
+    // 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- standard
+    // ISO 216 (A3/A5/B4/B5) and ANSI (Tabloid/Executive/Statement) dimensions, portrait orientation
+    // (pageDimensionsMm() below swaps width/height for landscape) -- same list, same values as
+    // EmploymentCertificateRenderer::PAGE_SIZES_MM.
     public const PAGE_SIZES_MM = [
+        'A3' => [297.0, 420.0],
         'A4' => [210.0, 297.0],
+        'A5' => [148.0, 210.0],
+        'B4' => [250.0, 353.0],
+        'B5' => [176.0, 250.0],
         'Letter' => [215.9, 279.4],
         'Legal' => [215.9, 355.6],
+        'Tabloid' => [279.4, 431.8],
+        'Executive' => [184.15, 266.7],
+        'Statement' => [139.7, 215.9],
     ];
 
     public static function pageDimensionsMm(string $pageSize, string $orientation): array {
@@ -71,6 +82,19 @@ class PayslipTemplateRenderer {
      *  language, so this is a plain either/or pick, no more concatenation branch needed. */
     private function pick(string $th, string $en, string $language): string {
         return $language === 'en' ? $en : $th;
+    }
+
+    // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" -- the
+    // `pay_period`/`payment_date` tokens were embedding raw ISO ('YYYY-MM-DD') dates straight into
+    // the generated payslip PDF. Same helper/behavior as EmploymentCertificateRenderer::formatDate()
+    // (not shared via a trait since it's a 3-line, no-state-dependency helper -- not worth extracting
+    // for a second private copy of this size).
+    private function formatDate(?string $ymd): string {
+        if (empty($ymd)) {
+            return '-';
+        }
+        $ts = strtotime($ymd);
+        return $ts !== false ? date('d/m/Y', $ts) : $ymd;
     }
 
     private function statutoryLabelMap(string $countryCode): array {
@@ -101,8 +125,8 @@ class PayslipTemplateRenderer {
             'employee_name' => $this->pick($employeeNameTh, $employeeNameEn, $language),
             'department' => $this->pick((string)($detail['department_name_th'] ?? ''), (string)($detail['department_name_en'] ?? ''), $language) ?: '-',
             'position' => $this->pick((string)($detail['position_name_th'] ?? ''), (string)($detail['position_name_en'] ?? ''), $language) ?: '-',
-            'pay_period' => (string)($run['period_start_date'] ?? '') . ' - ' . (string)($run['period_end_date'] ?? ''),
-            'payment_date' => (string)($run['payment_date'] ?? '-'),
+            'pay_period' => $this->formatDate($run['period_start_date'] ?? null) . ' - ' . $this->formatDate($run['period_end_date'] ?? null),
+            'payment_date' => $this->formatDate($run['payment_date'] ?? null),
             'bank_account_masked' => $bankAccountMasked,
             'company_name' => (string)($company['local_name'] ?? $company['company_legal_name'] ?? ''),
             'company_address' => $address,
@@ -270,6 +294,13 @@ class PayslipTemplateRenderer {
         foreach ($byPage as $pageNumber => $pageElements) {
             $body = '';
             foreach ($pageElements as $el) {
+                // 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบ
+                // อย่างเดียว" -- same as EmploymentCertificateRenderer's own fix: a hidden element is
+                // skipped from the actual generated payslip too, not just the canvas. Defaults to
+                // visible when absent (old rows/tests saved before this column existed).
+                if (array_key_exists('is_visible', $el) && !$el['is_visible']) {
+                    continue;
+                }
                 $body .= $this->renderElementHtml($el, $tokens, $logoAbsPath, $imageAssetPaths, $detail, $statutoryLabels, $language);
             }
             $body .= $watermarkHtml;
