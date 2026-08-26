@@ -32,12 +32,15 @@
 <table class="table table-hover align-middle w-100" id="tb_ect_template">
   <thead class="table-light text-secondary">
     <tr>
+      <!-- 2026-08-26, explicit follow-up: "ในหน้า List ปุ่ม Draft กับ Public ให้เป็น Switch ปิดเปิด
+           แล้วแยกมาเป็น Column แรกสุด โดยเปิดคือ Public" -->
+      <th class="text-center" data-i18n="status">Status</th>
       <th data-i18n="template_name">Template Name</th>
       <th data-i18n="ect_page_size">Page Size</th>
       <th class="text-center" data-i18n="template_language_th">Thai</th>
       <th class="text-center" data-i18n="template_language_en">English</th>
       <th data-i18n="ect_last_updated">Last Updated</th>
-      <th class="text-center" data-i18n="actions">Actions</th>
+      <th class="text-center"></th>
     </tr>
   </thead>
   <tbody></tbody>

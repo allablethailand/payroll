@@ -32,10 +32,21 @@
      own CSS puts the opaque background/border/flex-column layout on `.modal-content`, NOT on
      `.modal-dialog`/`.modal-body` directly, so skipping it left the whole fullscreen surface
      see-through and broke the flex sizing the canvas' own height/scroll math depends on. -->
+<!-- 2026-08-26, same-day follow-up: "ปุ่ม Save และ Preview อยากให้มาอยู่ที่ modal footer" +
+     "การเปิดการตั้งค่าใน fullscreen ปรับให้รองรับเฉพาะหน้า Design" -- direct port of Payslip Template's
+     own fullscreen-footer/Design-only restructure, see that file's own comment for the reasoning. -->
+<!-- 2026-08-26, same-day follow-up: direct port of Payslip Template's own modal-header addition (see
+     that file's own comment for the full reasoning) -- a real `.modal-header` + `.btn-close` replaces
+     "click Fullscreen again to close" as the primary close affordance, and is the relocation target
+     for `.ect-editor-topbar` (Template Name title group), anchored by `#ectEditorTopbarAnchor` below. -->
 <div class="modal fade" id="ectFullscreenModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-fullscreen m-0">
     <div class="modal-content">
+      <div class="modal-header" id="ectFullscreenModalHeader">
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
       <div class="modal-body p-3" id="ectFullscreenModalBody"></div>
+      <div class="modal-footer" id="ectFullscreenModalFooter"></div>
     </div>
   </div>
 </div>
@@ -48,7 +59,8 @@
      breadcrumb/navbar shell (see edit.php), which already covers navigating away.
      window.beforeunload (still wired in the JS) still warns on unsaved changes regardless of how
      the admin actually leaves the page. -->
-<div class="ect-editor-topbar">
+<div id="ectEditorTopbarAnchor"></div>
+<div class="ect-editor-topbar" id="ectEditorTopbar">
   <div class="ect-editor-title-group">
     <i class="fa-solid fa-file-shield ect-editor-title-icon"></i>
     <input type="text" class="ect-editor-title-input" id="ectTemplateNameInput" placeholder="Template Name">
@@ -59,30 +71,6 @@
          hover-only doesn't help a user who never thinks to hover) fixes that; clicking it just
          focuses+selects the input, same as clicking a Google Docs title's pencil. -->
     <button type="button" class="ect-editor-title-edit-btn" id="ectTemplateNameEditBtn" title="Rename"><i class="fa-solid fa-pen"></i></button>
-  </div>
-  <!-- Fullscreen toggle -- see this file's own top-of-file comment for why this is a Bootstrap
-       modal-fullscreen rather than the browser's native Fullscreen API. -->
-  <button type="button" class="btn btn-outline-secondary btn-sm" id="ectFullscreenBtn" title="Fullscreen">
-    <i class="fa-solid fa-expand"></i>
-  </button>
-</div>
-
-<!-- 2026-08-26, explicit request: "การตั้งค่า Template ทั้ง Slip เงินเดือนและเอกสารให้มี Draft Mode และ
-     Public Mode และเพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- Employment Certificate Template has no
-     equivalent of Payslip Template's own "Template Info" card (no header/footer text, no is_default
-     UI here previously), so this compact card is new here specifically for these 2 controls, styled
-     as .ect-info-card (see style.css) rather than reusing .pst-info-card's fuller layout, which has
-     fields this module doesn't have. -->
-<div class="ect-info-card">
-  <div class="ect-publish-row">
-    <div class="form-check form-switch mb-0">
-      <input class="form-check-input" type="checkbox" id="ectPublishSwitch" disabled>
-      <label class="form-check-label small ect-publish-switch-label" for="ectPublishSwitch"><span id="ectPublishSwitchLabel" data-i18n="ect_publish_draft">Draft</span></label>
-    </div>
-    <div class="form-check form-switch mb-0" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
-      <input class="form-check-input" type="checkbox" id="ectAutoSaveSwitch">
-      <label class="form-check-label small" for="ectAutoSaveSwitch" data-i18n="ect_auto_save">Auto Save</label>
-    </div>
   </div>
 </div>
 
@@ -103,14 +91,44 @@
 <div class="tab-content">
 <div class="tab-pane fade show active" id="ectTabDesign">
 
-<!-- 2026-08-25, follow-up bug report: "Page Setup ไม่อยู่ภายใต้ tab design" -- Page Setup (page size/
-     orientation/margin) and Change Layout used to sit in the shared topbar ABOVE both tabs, so they
-     stayed visible even while looking at Assign To, where they mean nothing. Moved inside the Design
-     tab pane itself -- same markup/classes as before (`.ect-editor-topbar-fields`/
-     `.ect-page-setup-cluster` are self-contained flex rules, unaffected by the new parent), just
-     relocated + a bottom margin added since it's no longer inside the topbar's own row. -->
-<div class="ect-editor-topbar-fields justify-content-end mb-3">
-  <div class="ect-page-setup-cluster">
+<!-- 2026-08-26, explicit request: "การตั้งค่า Template ทั้ง Slip เงินเดือนและเอกสารให้มี Draft Mode และ
+     Public Mode และเพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" + later same-day follow-up: "ส่วนของ Page Setup
+     และการ toggle design ใหม่ให้สวยทั้ง Pay Slip และ Document ให้ Design ไปในแนวเดียวกัน" -- this card now
+     reuses Payslip Template's own `.pst-info-card`/`.pst-info-card-header` classes directly (dropped
+     the bespoke `.ect-info-card`/`.ect-publish-row` classes this used to have) so both editors render
+     from the exact same CSS instead of two similar-but-not-identical hand-tuned versions.
+     2026-08-26: "ตรง public auto save ควรย้ายตำแหน่งมาอยู่ใน Tab Design" -- this card originally sat
+     OUTSIDE #ectMainTabsWrap (visible regardless of which tab was active); moved here, inside the
+     Design tab pane, matching Payslip Template's own placement.
+     Draft/Public converted from a single checkbox switch to a 2-button segmented control (explicit
+     follow-up: "ให้มี switch ปิดเปิด Draft Public เหมือนกัน หรือทำเป็น radio switch ให้กดว่า Draft หรือ
+     Public") -- "Draft"/"Public" are two distinct named states, not an on/off concept.
+     2026-08-26: "เพิ่ม Set as default template ใน เอกสารด้วย" -- Employment Certificate Template's model
+     already had is_default/setDefault() (used by getDefault()'s own fallback), just no editor-page
+     toggle for it before now -- added here, submitted the same way Payslip Template's own
+     #pstIsDefaultSwitch is (part of the regular Save payload, not a separate endpoint call).
+     "ส่วนของ page setup สามารถไปอยู่รวมกับ ปุ่ม Draft/Public และ auto save ได้ไหม จะได้แสดงแค่แถวเดียว
+     รวมถึง change layout และ fullscreen ด้วย" -- Page Setup/Change Layout/Fullscreen (formerly their own
+     separate `.ect-editor-topbar-fields` row below this card) are now direct children of this SAME
+     `.pst-info-card-header`, which is already `display:flex;flex-wrap:wrap`, so everything shows as
+     one row that wraps gracefully instead of two stacked rows. -->
+<div class="pst-info-card card-surface mb-3">
+  <div class="pst-info-card-header">
+    <div class="pst-info-toggles">
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="ectIsDefaultSwitch">
+        <label class="form-check-label small" for="ectIsDefaultSwitch" data-i18n="set_as_default_template">Set as default template</label>
+      </div>
+      <div class="btn-group btn-group-sm pst-publish-toggle-group" role="group" id="ectPublishToggleGroup">
+        <button type="button" class="btn btn-outline-warning pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
+        <button type="button" class="btn btn-outline-success pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
+      </div>
+      <div class="form-check form-switch mb-0" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
+        <input class="form-check-input" type="checkbox" id="ectAutoSaveSwitch">
+        <label class="form-check-label small" for="ectAutoSaveSwitch" data-i18n="ect_auto_save">Auto Save</label>
+      </div>
+    </div>
+    <div class="ect-page-setup-cluster">
     <span class="ect-page-setup-label" data-i18n="ect_page_setup">Page Setup</span>
     <!-- 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- same
          paper-size set added identically to Payslip Template's own dropdown. -->
@@ -164,6 +182,13 @@
   <button type="button" class="btn btn-outline-primary btn-sm" id="ectChangePresetBtn">
     <i class="fa-solid fa-shuffle me-1"></i><span data-i18n="ect_change_preset">Change Layout</span>
   </button>
+  <!-- 2026-08-26, explicit follow-up: "การเปิดการตั้งค่าใน fullscreen...ย้ายตำแหน่งมาไว้ใต้ Tab Design" --
+       moved out of the shared topbar into the Design tab's own controls row, matching the new
+       "fullscreen only covers Design" scope. -->
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="ectFullscreenBtn" title="Fullscreen">
+      <i class="fa-solid fa-expand me-1"></i><span data-i18n="ect_fullscreen">Fullscreen</span>
+    </button>
+  </div>
 </div>
 
 <div id="ectEditorArea">
@@ -398,7 +423,10 @@
      the full reasoning (both Save buttons share `.ect-save-btn`, handled by ONE click handler that
      always submits the full payload -- canvas elements AND assignment checkboxes together -- since
      the backend only ever accepts one atomic save() call for both). -->
-<div class="ect-editor-footer">
+<!-- 2026-08-26: #ectDesignFooterAnchor marks where this footer normally sits -- entering fullscreen
+     relocates it (by its `#ectDesignFooter` id) into `#ectFullscreenModalFooter`, restored on exit. -->
+<div id="ectDesignFooterAnchor"></div>
+<div class="ect-editor-footer" id="ectDesignFooter">
   <div class="text-secondary small me-auto ect-save-hint"></div>
   <button type="button" class="btn btn-outline-secondary ect-footer-btn-lg" id="ectPreviewBtn"><i class="fa-solid fa-eye me-1"></i><span data-i18n="preview">Preview</span></button>
   <button type="button" class="btn btn-primary ect-footer-btn-lg ect-save-btn" id="ectSaveBtnDesign"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>

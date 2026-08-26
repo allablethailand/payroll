@@ -3400,6 +3400,15 @@ html, body {
     padding: 2rem;
     border-radius: 10px;
 }
+/* 2026-08-26, explicit request: "อยากให้กระดาษอยู่ตรงกลางเป็น Default ของกรอบสีดำ" -- real bug, not a
+   guess: .pst-page already has `margin:0 auto`, but that centers it within its DIRECT parent
+   (#pstZoomStage/#ectZoomStage), which applyZoom() resizes via inline JS to EXACTLY match the page's
+   own scaled footprint -- so there's never any extra space inside that wrapper to center within. The
+   wrapper itself is what needs centering, within the much wider dark canvas-scroll area around it. */
+#pstZoomStage,
+#ectZoomStage {
+    margin: 0 auto;
+}
 .pst-page {
     position: relative;
     width: 210mm;
@@ -4235,6 +4244,65 @@ html, body {
 .ect-publish-badge:hover {
     filter: brightness(0.95);
 }
+/* 2026-08-26, explicit follow-up: "ปุ่ม Draft กับ Public ให้เป็น Switch ปิดเปิด แล้วแยกมาเป็น Column
+   แรกสุด" -- a pair with both languages stacks 2 switches (one per language) in this one cell.
+   2026-08-26, same-day follow-up: "Design ตรง Switch...ใน Column ยังแสดงผลไม่สวย" -- redesigned from a
+   bare Bootstrap form-switch + label into a small colored pill (amber = draft, green = public,
+   matching .ect-publish-badge's own palette) so the column reads as a clear status chip rather than a
+   plain, cramped checkbox row -- no HTML/JS change needed, this is a pure CSS restyle of the exact
+   same .form-check.form-switch markup pstPublishSwitchesHtml()/ectPublishSwitchesHtml() already emit. */
+/* 2026-08-26, same-day follow-up: "ตรงตารางใน column status ไม่ต้องมีคำว่า Draft หรือ Public ให้มี
+   Switch และรูปธง design ให้แสดงผลในแถวเดียว" -- the "Draft"/"Public" text label is dropped from the
+   pill entirely (label kept in the markup as .visually-hidden so the <label for="..."> association --
+   and its click-to-toggle target area -- isn't lost for assistive tech, it's just not painted), and a
+   pair's TH+EN pills now sit side-by-side in ONE row via .pst-publish-switch-group instead of stacking
+   with a margin-top hack (removed below, flex `gap` on the group does that job instead). Because the
+   pill no longer needs room for a text label, it also shrinks from a fixed min-width pill down to a
+   compact icon-sized chip. */
+.pst-publish-switch-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
+.pst-publish-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .3rem;
+    white-space: nowrap;
+    background: #fff3cd;
+    border: 1px solid #ffe69c;
+    border-radius: 999px;
+    padding: .3rem .5rem;
+    transition: background .15s ease, border-color .15s ease;
+}
+.pst-publish-switch-row:has(.pst-publish-switch:checked),
+.pst-publish-switch-row:has(.ect-publish-switch:checked) {
+    background: #d1f4e0;
+    border-color: #a9e8c4;
+}
+.pst-publish-switch-flag {
+    flex: none;
+    border-radius: 2px;
+}
+/* Deliberately NOT touching .form-check's own display/padding-left/float layout at all -- it stays
+   exactly the normal Bootstrap block component internally (its .form-check-input/.form-check-label
+   float-based positioning depends on that), just sitting as one flex ITEM of the outer row alongside
+   the flag image -- flex only affects how .form-check is placed relative to its siblings here, not how
+   its own children behave inside it, so this is safe (same bug category already found once this
+   session -- see the JS's own comment on why the outer wrapper carries the flex/pill styling instead). */
+.pst-publish-switch-row .form-check {
+    min-height: 0;
+}
+.pst-publish-switch-row .form-check-input {
+    cursor: pointer;
+    margin-top: 0;
+}
+.pst-publish-switch-row .form-check-label {
+    cursor: pointer;
+}
 
 /* 2026-08-26, explicit request: "การตั้งค่า Template ทั้ง Slip เงินเดือนและเอกสารให้มี Draft Mode และ
    Public Mode และเพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- Draft/Public switch + Auto Save checkbox
@@ -4262,6 +4330,100 @@ html, body {
 
 /* 2026-08-26, explicit request: "ตรง Assign To ช่วยปรับให้ใช้งานง่ายขึ้นไม่ซับซ้อน" -- the simple
    Everyone/Specific-selection switch that now hides the 3 checkbox columns by default. */
+/* 2026-08-26, explicit follow-up: "การเปิดการตั้งค่าใน fullscreen ปรับให้รองรับเฉพาะหน้า Design" --
+   hides the Design/Assign To tab nav + the Assign To pane while fullscreen is active, leaving only
+   Design's own content visible (matches both templates' shared .pst-fullscreen-active toggle). */
+/* 2026-08-26, explicit request: "ปรับปรุงหน้า No Permission และหน้า 404 ให้ใหม่ให้เข้ากับธีมของระบบ" --
+   shared by app/views/permission.php (403) and app/views/error404.php (404), rendered through the
+   normal header/footer layout (same nav/sidebar as every other page) so navigating away is easy. */
+.error-page-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    padding: 2rem 1rem;
+}
+.error-page-card {
+    background: rgba(255, 255, 255, .7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 153, 0, .18);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(16, 24, 40, .08);
+    padding: 3rem 2.5rem;
+    text-align: center;
+    max-width: 480px;
+    width: 100%;
+}
+.error-page-icon {
+    width: 84px;
+    height: 84px;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: #fff;
+    background: linear-gradient(135deg, #FF9900, #ffb84d);
+    box-shadow: 0 6px 18px rgba(255, 153, 0, .35);
+}
+.error-page-code {
+    font-weight: 800;
+    font-size: 3rem;
+    background: linear-gradient(135deg, #FF9900, #b45f00);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: .25rem;
+}
+.error-page-title {
+    font-weight: 700;
+    color: #344054;
+    margin-bottom: .5rem;
+}
+.error-page-desc {
+    color: #667085;
+    margin-bottom: 1.75rem;
+}
+.error-page-btn {
+    padding: .6rem 1.75rem;
+}
+.pst-fullscreen-active #pstEditorTabs,
+.pst-fullscreen-active #pstTabAssign,
+.pst-fullscreen-active #ectEditorTabs,
+.pst-fullscreen-active #ectTabAssign {
+    display: none !important;
+}
+/* 2026-08-26, same-day follow-up: "fullscreen mode ตัด pst-editor-footer ออกให้ปุ่มแสดงใน footer เลย
+   จะได้ไม่เปลืองพื้นที่" -- .pst-editor-footer/.ect-editor-footer (shares the same rule, one class)
+   keeps its own box styling for its NORMAL in-page position, but once relocated into the fullscreen
+   modal's real Bootstrap `.modal-footer` (see the JS's own show.bs.modal handler), its background/
+   shadow/padding/sticky-positioning are neutralized here so the Save/Preview buttons read as sitting
+   directly IN the modal's own footer, not as a smaller styled box double-boxed inside it. */
+.modal-footer .pst-editor-footer,
+.modal-footer .ect-editor-footer {
+    background: none;
+    box-shadow: none;
+    padding: 0;
+    margin-top: 0;
+    position: static;
+    width: 100%;
+}
+/* "ปุ่มปิด fullscreen อยากให้ design ให้ชัดๆ หรือให้แสดง modal-header ด้วย นำ header กับการแก้ชื่อไปใส่ใน
+   modal header" -- same treatment for .pst-editor-topbar/.ect-editor-topbar once relocated into the
+   fullscreen modal's real `.modal-header` (which already supplies its own padding/border/background,
+   plus the always-present .btn-close) -- the title group renders as the header's own title instead of
+   a separate styled card nested inside it. */
+.modal-header .pst-editor-topbar,
+.modal-header .ect-editor-topbar {
+    background: none;
+    box-shadow: none;
+    padding: 0;
+    margin-bottom: 0;
+    border-radius: 0;
+    flex: 1 1 auto;
+}
 .pst-assign-mode-switch {
     display: flex;
     flex-wrap: wrap;

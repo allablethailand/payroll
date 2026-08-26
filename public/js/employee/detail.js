@@ -1969,14 +1969,22 @@ $(document).on('click', '#empMapPinSaveBtn', function () {
     $('#address_longitude').val(empMapPinLatLng.lng.toFixed(7)).trigger('change');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('empMapPinModal')).hide();
 });
-$(document).on('change', '#address_latitude, #address_longitude', function () {
+// 2026-08-26, explicit request: "ถ้ามี Pin Location แล้วให้สามารถลบ Pin ได้ด้วยมีสัญลักษร์บอกว่า Pin
+// หรือยังไม่ Pin" -- toggles the pinned/not-pinned icon pair and the Remove button, alongside the
+// existing coordinate summary text.
+function updateMapPinStatusUi() {
     const lat = parseFloat($('#address_latitude').val());
     const lng = parseFloat($('#address_longitude').val());
-    if (!isNaN(lat) && !isNaN(lng)) {
-        $('#mapLocationSummary').text(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-    } else {
-        $('#mapLocationSummary').text('');
-    }
+    const pinned = !isNaN(lat) && !isNaN(lng);
+    $('#mapLocationSummary').text(pinned ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '');
+    $('#mapPinStatusIconPinned').toggleClass('d-none', !pinned);
+    $('#mapPinStatusIconUnpinned').toggleClass('d-none', pinned);
+    $('#btnRemoveMapPin').toggleClass('d-none', !pinned);
+}
+$(document).on('change', '#address_latitude, #address_longitude', updateMapPinStatusUi);
+$(document).on('click', '#btnRemoveMapPin', function () {
+    $('#address_latitude').val('').trigger('change');
+    $('#address_longitude').val('').trigger('change');
 });
 // Debounced Nominatim search -- free OSM geocoder, no API key. Shows the first match's own bounding
 // box zoom level rather than a fixed one, so a country-level search doesn't zoom in absurdly close.

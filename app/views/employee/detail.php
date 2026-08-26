@@ -456,6 +456,39 @@
                     </div>
                 </div>
             </div>
+            <!-- 2026-08-26, explicit request: "ย้าย Tab Signature มาไว้ใน Info" -- moved here from the
+                 Contact tab (where it sat since it was first built), same upload-or-draw card as
+                 Company Profile's own Authorized Signature section. -->
+            <h6 class="text-secondary fw-bold mb-3 mt-5">
+                <label class="label label-head bg-head-first rounded-2 text-white">3</label>
+                <span data-i18n="employee_signature">Signature</span>
+            </h6>
+            <div class="row">
+                <div class="col-sm-6 mt-3">
+                    <div class="cp-logo-upload-card" id="empSignatureUploadCard">
+                        <div class="cp-logo-preview-box" id="empSignaturePreviewBox">
+                            <img id="empSignaturePreviewImg" src="" alt="Signature" class="d-none">
+                            <div class="cp-logo-placeholder" id="empSignaturePlaceholder">
+                                <i class="fa-solid fa-signature"></i>
+                                <span data-i18n="no_signature_uploaded">No signature yet</span>
+                            </div>
+                        </div>
+                        <div class="cp-logo-actions">
+                            <label class="btn btn-outline-secondary btn-sm" for="emp_signature_file">
+                                <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_signature">Upload Image</span>
+                            </label>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="empDrawSignatureBtn">
+                                <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm d-none" id="empSignatureRemoveBtn">
+                                <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                            </button>
+                            <input type="file" id="emp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                            <input type="hidden" name="signature_path" id="emp_signature_path">
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="d-flex justify-content-end mt-5">
                 <button type="button" class="btn btn-primary" id="btnNextContact">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
@@ -567,7 +600,7 @@
                 <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
                 <h6 class="text-secondary fw-bold mb-3 mt-5">
                     <label class="label label-head bg-head-first rounded-2 text-white">3</label>
-                    <span data-i18n="contact_address">Contact Address</span>
+                    <span data-i18n="contact_address">Current Address</span>
                 </h6>
                 <div class="row">
                     <div class="col-sm-12 mt-3">
@@ -608,11 +641,20 @@
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="map_location">Map Location</span></label>
                     </div>
-                    <div class="col-sm-6 mt-3">
+                    <div class="col-sm-8 mt-3 d-flex align-items-center flex-wrap gap-2">
+                        <!-- 2026-08-26, explicit request: "ถ้ามี Pin Location แล้วให้สามารถลบ Pin ได้ด้วยมี
+                             สัญลักษร์บอกว่า Pin หรือยังไม่ Pin" -- status icon toggles red-pin/muted-circle
+                             via #updateMapPinStatusUi() in detail.js, same show/hide convention as the
+                             Signature card's own preview/placeholder pair above. -->
+                        <i class="fa-solid fa-location-dot text-danger d-none" id="mapPinStatusIconPinned" title="Pinned"></i>
+                        <i class="fa-regular fa-circle text-muted" id="mapPinStatusIconUnpinned" title="Not pinned"></i>
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPinMapLocation">
                             <i class="fa-solid fa-map-location-dot me-1"></i><span data-i18n="pin_location_on_map">Pin Location on Map</span>
                         </button>
-                        <span class="text-muted small ms-2" id="mapLocationSummary"></span>
+                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="btnRemoveMapPin">
+                            <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                        </button>
+                        <span class="text-muted small" id="mapLocationSummary"></span>
                         <input type="hidden" name="address_latitude" id="address_latitude">
                         <input type="hidden" name="address_longitude" id="address_longitude">
                     </div>
@@ -652,40 +694,6 @@
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="emergency_mobile" id="emergency_mobile" maxlength="10">
-                    </div>
-                </div>
-            </div>
-            <!-- 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้"
-                 -- same upload-or-draw card as Company Profile's own Authorized Signature section (see
-                 that page's own comment); this one is per-employee and reused as the "Employee
-                 Signature" item on Payslip/Employment Certificate templates. -->
-            <h6 class="text-secondary fw-bold mb-3 mt-5">
-                <label class="label label-head bg-head-first rounded-2 text-white">5</label>
-                <span data-i18n="employee_signature">Signature</span>
-            </h6>
-            <div class="row">
-                <div class="col-sm-6 mt-3">
-                    <div class="cp-logo-upload-card" id="empSignatureUploadCard">
-                        <div class="cp-logo-preview-box" id="empSignaturePreviewBox">
-                            <img id="empSignaturePreviewImg" src="" alt="Signature" class="d-none">
-                            <div class="cp-logo-placeholder" id="empSignaturePlaceholder">
-                                <i class="fa-solid fa-signature"></i>
-                                <span data-i18n="no_signature_uploaded">No signature yet</span>
-                            </div>
-                        </div>
-                        <div class="cp-logo-actions">
-                            <label class="btn btn-outline-secondary btn-sm" for="emp_signature_file">
-                                <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_signature">Upload Image</span>
-                            </label>
-                            <button type="button" class="btn btn-outline-primary btn-sm" id="empDrawSignatureBtn">
-                                <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
-                            </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm d-none" id="empSignatureRemoveBtn">
-                                <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
-                            </button>
-                            <input type="file" id="emp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
-                            <input type="hidden" name="signature_path" id="emp_signature_path">
-                        </div>
                     </div>
                 </div>
             </div>

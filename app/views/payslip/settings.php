@@ -38,55 +38,82 @@
     </div>
 
     <!-- PAYSLIP DISTRIBUTION -->
+    <!-- 2026-08-26, explicit follow-up: "ช่วยวางโครงสร้างการตั้งค่าการส่ง Payslip ให้ใหม่หน่อยครับ ให้ตอบโจทย์
+         การใช้งานจริง" -- confirmed via AskUserQuestion the pain point was purely visual ("หน้าตาดูรก
+         ไม่แยกหมวดชัดเจน", the page looked cluttered with no clear sections), NOT the underlying
+         fields/logic. Every field id, the show/hide-on-mode behavior (#pd_auto_settings_block), and
+         the single submit handler in payslip-distribution.js are all UNCHANGED -- this is purely a
+         markup reorganization into 3 clearly separated cards (General / Auto-send Rule / Scope),
+         mirroring the .pst-info-card-header icon+title convention already used elsewhere in this app's
+         settings pages instead of one long undifferentiated form. -->
     <div class="tab-pane fade p-0" id="tab-dist">
         <form id="payslipDistributionForm">
-          <div class="row g-3 mb-2">
-            <div class="col-md-5">
-              <label class="form-label" data-i18n="distribution_mode">Distribution Mode</label>
-              <select class="form-select select2-static" id="pd_mode"
-                data-option-keys="mode_auto,mode_request_only,mode_both" data-option-values="auto,request_only,both"></select>
-              <div class="text-secondary small mt-1" data-i18n="distribution_mode_hint">Auto = sent automatically when a run reaches Paid. Request-only = employee/HR must request each time. Both = either can happen.</div>
+          <div class="pst-info-card card-surface mb-3">
+            <div class="pst-info-card-header">
+              <div class="pst-info-card-title"><i class="fa-solid fa-sliders"></i><span data-i18n="pd_section_general">General</span></div>
             </div>
-            <div class="col-md-4 d-flex align-items-end">
-              <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="pd_is_active" checked>
-                <label class="form-check-label" for="pd_is_active" data-i18n="enable_distribution">Enable payslip distribution</label>
+            <div class="pst-info-card-body">
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label" data-i18n="distribution_mode">Distribution Mode</label>
+                  <select class="form-select select2-static" id="pd_mode"
+                    data-option-keys="mode_auto,mode_request_only,mode_both" data-option-values="auto,request_only,both"></select>
+                  <div class="text-secondary small mt-1" data-i18n="distribution_mode_hint">Auto = sent automatically when a run reaches Paid. Request-only = employee/HR must request each time. Both = either can happen.</div>
+                </div>
+                <div class="col-md-6 d-flex align-items-center">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="pd_is_active" checked>
+                    <label class="form-check-label" for="pd_is_active" data-i18n="enable_distribution">Enable payslip distribution</label>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
           <div id="pd_auto_settings_block">
-            <hr>
-            <h6 class="fw-bold mb-1" data-i18n="auto_send_settings">Auto-send Settings</h6>
-            <div class="row g-3 mb-2">
-              <div class="col-md-6">
-                <label class="form-label" data-i18n="delivery_channels">Delivery Channels &amp; Fallback Order</label>
-                <select class="form-select select2-remote" id="pd_channels" multiple data-api="/api/payslip-distribution.channel-options"></select>
-                <div class="text-secondary small mt-1" data-i18n="delivery_channels_hint">Order you pick them in = attempt order (first = primary, rest = fallback if it fails).</div>
+            <div class="pst-info-card card-surface mb-3">
+              <div class="pst-info-card-header">
+                <div class="pst-info-card-title"><i class="fa-solid fa-paper-plane"></i><span data-i18n="pd_section_auto_send">Auto-send Rule</span></div>
               </div>
-              <div class="col-md-3">
-                <label class="form-label" data-i18n="send_delay_hours">Send Delay (Hours)</label>
-                <input type="number" class="form-control" id="pd_delay_hours" min="0" step="1" value="0">
-                <div class="text-secondary small mt-1" data-i18n="send_delay_hours_hint">0 = send immediately when the run becomes Paid.</div>
+              <div class="pst-info-card-body">
+                <div class="row g-3">
+                  <div class="col-md-8">
+                    <label class="form-label" data-i18n="delivery_channels">Delivery Channels &amp; Fallback Order</label>
+                    <select class="form-select select2-remote" id="pd_channels" multiple data-api="/api/payslip-distribution.channel-options"></select>
+                    <div class="text-secondary small mt-1" data-i18n="delivery_channels_hint">Order you pick them in = attempt order (first = primary, rest = fallback if it fails).</div>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label" data-i18n="send_delay_hours">Send Delay (Hours)</label>
+                    <input type="number" class="form-control" id="pd_delay_hours" min="0" step="1" value="0">
+                    <div class="text-secondary small mt-1" data-i18n="send_delay_hours_hint">0 = send immediately when the run becomes Paid.</div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="row g-3 mb-2">
-              <div class="col-md-6">
-                <label class="form-label" data-i18n="scope_departments">Departments</label>
-                <select class="form-select select2-remote" id="pd_scope_departments" multiple data-api="/api/department.get" data-type="department"></select>
-                <div class="text-secondary small mt-1" data-i18n="scope_leave_empty_hint">Leave empty = no restriction (applies to all).</div>
+
+            <div class="pst-info-card card-surface mb-3">
+              <div class="pst-info-card-header">
+                <div class="pst-info-card-title"><i class="fa-solid fa-filter"></i><span data-i18n="pd_section_scope">Scope</span></div>
               </div>
-              <div class="col-md-6">
-                <label class="form-label" data-i18n="scope_employment_statuses">Employment Statuses</label>
-                <select class="form-select select2-static" id="pd_scope_statuses" multiple
-                  data-option-keys="employment_status_probation,employment_status_permanent,employment_status_contract,employment_status_resigned,employment_status_terminated"
-                  data-option-values="probation,permanent,contract,resigned,terminated"></select>
-                <div class="text-secondary small mt-1" data-i18n="scope_leave_empty_hint">Leave empty = no restriction (applies to all).</div>
+              <div class="pst-info-card-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label" data-i18n="scope_departments">Departments</label>
+                    <select class="form-select select2-remote" id="pd_scope_departments" multiple data-api="/api/department.get" data-type="department"></select>
+                    <div class="text-secondary small mt-1" data-i18n="scope_leave_empty_hint">Leave empty = no restriction (applies to all).</div>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label" data-i18n="scope_employment_statuses">Employment Statuses</label>
+                    <select class="form-select select2-static" id="pd_scope_statuses" multiple
+                      data-option-keys="employment_status_probation,employment_status_permanent,employment_status_contract,employment_status_resigned,employment_status_terminated"
+                      data-option-values="probation,permanent,contract,resigned,terminated"></select>
+                    <div class="text-secondary small mt-1" data-i18n="scope_leave_empty_hint">Leave empty = no restriction (applies to all).</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <hr>
           <div class="text-end">
             <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
           </div>

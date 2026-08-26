@@ -97,6 +97,26 @@ class EmploymentCertificateRenderer {
         'courier' => 'Courier',
     ];
 
+    /** 2026-08-26, real bug found and fixed, not a guess: "ใน PDF ไม่แสดง Symbol" -- direct port of
+     *  PayslipTemplateRenderer's own SYMBOL_CODEPOINTS_MISSING_IN_SARABUN (see that class's own
+     *  docblock for the cmap-table verification this is based on). */
+    private const SYMBOL_CODEPOINTS_MISSING_IN_SARABUN = [
+        0x2605, 0x2606, 0x2713, 0x2714, 0x2717, 0x27A4, 0x2192, 0x2190, 0x2191, 0x2193,
+        0x2665, 0x2666, 0x2663, 0x2660, 0x260E, 0x2709, 0x2691, 0x2600, 0x2601, 0x2602,
+        0x266A, 0x266B,
+    ];
+    private function needsSymbolFontFallback(string $content): bool {
+        if (function_exists('mb_str_split')) {
+            foreach (mb_str_split($content, 1, 'UTF-8') as $char) {
+                $cp = mb_ord($char, 'UTF-8');
+                if ($cp !== false && in_array($cp, self::SYMBOL_CODEPOINTS_MISSING_IN_SARABUN, true)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     public static function pageDimensionsMm(string $pageSize, string $orientation): array {
         [$w, $h] = self::PAGE_SIZES_MM[$pageSize] ?? self::PAGE_SIZES_MM['A4'];
         return $orientation === 'landscape' ? [$h, $w] : [$w, $h];
@@ -215,7 +235,12 @@ class EmploymentCertificateRenderer {
      *  that resolves to nothing visible (e.g. an image field with no resolvable path) -- callers
      *  just concatenate, nothing special needed for the empty case. */
     private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths, ?string $signatureAbsPath = null): string {
-        $fontFamily = self::FONT_FAMILY_CSS[$el['font_family'] ?? 'th_sarabun_new'] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
+        $effectiveFontFamily = $el['font_family'] ?? 'th_sarabun_new';
+        if ($effectiveFontFamily === 'th_sarabun_new' && $el['element_type'] === 'text'
+            && $this->needsSymbolFontFallback((string)($el['content'] ?? ''))) {
+            $effectiveFontFamily = 'dejavu_sans';
+        }
+        $fontFamily = self::FONT_FAMILY_CSS[$effectiveFontFamily] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
         // font-family value is single-quoted (not double) -- this whole style string gets embedded
         // inside a DOUBLE-quoted HTML style="..." attribute below; double-quoting it here too would
         // silently truncate the attribute at that exact point (real bug hit while building this:

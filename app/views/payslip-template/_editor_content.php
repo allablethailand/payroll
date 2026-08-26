@@ -39,15 +39,39 @@
      see-through (page content behind it visible through it) and broke the flex sizing the canvas'
      own height/scroll math depends on -- which is what made the fullscreen mode "not actually
      usable" even though the DOM-relocation JS itself was correct. -->
+<!-- 2026-08-26, same-day follow-up: "ปุ่ม Save และ Preview อยากให้มาอยู่ที่ modal footer" +
+     "การเปิดการตั้งค่าใน fullscreen ปรับให้รองรับเฉพาะหน้า Design" -- a real Bootstrap `.modal-footer`
+     (was just empty space at the bottom of `.modal-body` before) is the relocation target for the
+     Design tab's own `.pst-editor-footer` (Save+Preview) -- see `#pstDesignFooterAnchor` below marking
+     where it normally lives. Fullscreen no longer relocates the WHOLE editor -- only Design's own
+     content is shown (the tab nav + Assign To pane are hidden via the `.pst-fullscreen-active` class
+     toggled on `#pstEditorContent`, see style.css), matching the "fullscreen supports Design only" ask
+     without needing to restructure which DOM node gets moved into the modal. -->
+<!-- 2026-08-26, same-day follow-up: "ปุ่มปิด fullscreen อยากให้ design ให้ชัดๆ หรือให้แสดง modal-header
+     ด้วย นำ header กับการแก้ชื่อไปใส่ใน modal header" -- a real `.modal-header` replaces the old
+     "click the same Fullscreen button again to close" as the primary, unambiguous close affordance
+     (a plain Bootstrap `.btn-close`, always in the same top-right spot every other modal in this app
+     uses). `#pstEditorTopbarAnchor` marks where `.pst-editor-topbar` (the Template Name title group)
+     normally sits, right below this modal, so it can relocate INTO the header on show and back out on
+     hide -- same anchor-relocation pattern `#pstEditorContentAnchor`/`#pstDesignFooterAnchor` already
+     use. "ตัด pst-editor-footer ออกให้ปุ่มแสดงใน footer เลยจะได้ไม่เปลืองพื้นที่" -- .pst-editor-footer's
+     own box styling (background/shadow/padding) is neutralized via a `.modal-footer .pst-editor-footer`
+     CSS override (see style.css) once it's relocated in here, so the Save/Preview buttons read as
+     sitting directly in the modal's own footer instead of a smaller styled box nested inside it. -->
 <div class="modal fade" id="pstFullscreenModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-fullscreen m-0">
     <div class="modal-content">
+      <div class="modal-header" id="pstFullscreenModalHeader">
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
       <div class="modal-body p-3" id="pstFullscreenModalBody"></div>
+      <div class="modal-footer" id="pstFullscreenModalFooter"></div>
     </div>
   </div>
 </div>
 <div id="pstEditorContent">
-<div class="pst-editor-topbar">
+<div id="pstEditorTopbarAnchor"></div>
+<div class="pst-editor-topbar" id="pstEditorTopbar">
   <div class="pst-editor-title-group">
     <i class="fa-solid fa-file-invoice pst-editor-title-icon"></i>
     <input type="text" class="pst-editor-title-input" id="pstTemplateNameInput" placeholder="Template Name">
@@ -56,11 +80,6 @@
          file's own comment for the full reasoning. -->
     <button type="button" class="pst-editor-title-edit-btn" id="pstTemplateNameEditBtn" title="Rename"><i class="fa-solid fa-pen"></i></button>
   </div>
-  <!-- Fullscreen toggle -- see this file's own top-of-file comment for why this is a Bootstrap
-       modal-fullscreen rather than the browser's native Fullscreen API. -->
-  <button type="button" class="btn btn-outline-secondary btn-sm" id="pstFullscreenBtn" title="Fullscreen">
-    <i class="fa-solid fa-expand"></i>
-  </button>
 </div>
 
 <!-- 2026-08-25, explicit follow-up: "อยากให้เพิ่ม Tab ในหน้า Detail ของ Slip และเอกสารแต่ละตัว" -- the
@@ -84,74 +103,39 @@
 <div class="tab-content">
 <div class="tab-pane fade show active" id="pstTabDesign">
 
-<!-- Template Info -- header/footer text + status/is_default: fields the old field-list editor
-     already had that Employment Certificate Template's designer has no equivalent of (it has no
-     company-wide "default template" or header/footer text concept at all). The `language` select
-     that used to live here is GONE (2026-08-25 follow-up) -- language is fixed per canvas now, set
-     via the language tabs / New Template modal, not editable inside an existing template's body. -->
+<!-- 2026-08-26, same-day follow-up: "Enable This Template ซ้ำกับ Draft/Public น่าจะต้องตัดออก" --
+     removed entirely (status is now hardcoded 'active' in the Save payload, see payslip-template.js's
+     own comment -- Draft/Public already gates real-generation eligibility, a second active/inactive
+     toggle was genuinely redundant). "ตั้งค่า Template Info คำนี้ให้ตัดทิ้งเลย" -- the card's own title
+     label/icon are gone too, it's just a controls strip now, no heading needed.
+     "ทั้ง payslip และ เอกสาร ส่วนของ page setup สามารถไปอยู่รวมกับ ปุ่ม Draft/Public และ auto save ได้ไหม
+     จะได้แสดงแค่แถวเดียว รวมถึง change layout และ fullscreen ด้วย" -- Page Setup/Change Layout/Fullscreen
+     (formerly their own separate `.pst-editor-topbar-fields` row below this card) are now direct
+     children of this SAME `.pst-info-card-header`, which is already `display:flex;flex-wrap:wrap`, so
+     everything shows as one row that wraps gracefully instead of two stacked rows. -->
 <div class="pst-info-card card-surface mb-3">
   <div class="pst-info-card-header">
-    <div class="pst-info-card-title"><i class="fa-solid fa-sliders"></i><span data-i18n="pst_template_info">Template Info</span></div>
     <div class="pst-info-toggles">
-      <div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" id="pstStatusSwitch" checked>
-        <label class="form-check-label small" for="pstStatusSwitch" data-i18n="enable_this_template">Enable this template</label>
-      </div>
       <div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" id="pstIsDefaultSwitch">
         <label class="form-check-label small" for="pstIsDefaultSwitch" data-i18n="set_as_default_template">Set as default template</label>
       </div>
-      <!-- 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน
-           แล้วค่อย Public" -- toggling calls api/payslip-template.publish-toggle IMMEDIATELY (not
-           gated behind the Save button), same as the List page's own badge -- a brand-new,
-           not-yet-saved template has no id yet so the switch stays disabled until the first Save. -->
-      <div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" id="pstPublishSwitch" disabled>
-        <label class="form-check-label small pst-publish-switch-label" for="pstPublishSwitch"><span id="pstPublishSwitchLabel" data-i18n="ect_publish_draft">Draft</span></label>
+      <!-- 2026-08-26, explicit follow-up: "ให้มี switch ปิดเปิด Draft Public เหมือนกัน หรือทำเป็น radio
+           switch ให้กดว่า Draft หรือ Public" -- replaced the single checkbox switch with a 2-button
+           segmented control (chosen over a plain switch since "Draft"/"Public" are two distinct named
+           states, not an on/off concept) -- clicking either button calls
+           api/payslip-template.publish-toggle IMMEDIATELY (not gated behind Save), same as the List
+           page's own badge. Disabled until the template has a real id (see updatePstPublishUi()). -->
+      <div class="btn-group btn-group-sm pst-publish-toggle-group" role="group" id="pstPublishToggleGroup">
+        <button type="button" class="btn btn-outline-warning pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
+        <button type="button" class="btn btn-outline-success pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
       </div>
       <div class="form-check form-switch" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
         <input class="form-check-input" type="checkbox" id="pstAutoSaveSwitch">
         <label class="form-check-label small" for="pstAutoSaveSwitch" data-i18n="ect_auto_save">Auto Save</label>
       </div>
     </div>
-  </div>
-  <div class="pst-info-card-body">
-    <div class="pst-info-row">
-      <label class="pst-info-label" data-i18n="header_text">Header Text</label>
-      <div class="pst-info-textareas">
-        <div class="pst-info-textarea-group">
-          <img src="<?=BASE_URL?>/public/flags/th.png" class="pst-info-lang-flag" alt="TH">
-          <textarea class="form-control form-control-sm" id="pstHeaderThInput" rows="2" data-i18n="header_text_th_placeholder" placeholder="ข้อความหัวกระดาษ (ไทย)" maxlength="500"></textarea>
-        </div>
-        <div class="pst-info-textarea-group">
-          <img src="<?=BASE_URL?>/public/flags/gb.png" class="pst-info-lang-flag" alt="EN">
-          <textarea class="form-control form-control-sm" id="pstHeaderEnInput" rows="2" placeholder="Header text (English)" maxlength="500"></textarea>
-        </div>
-      </div>
-    </div>
-    <div class="pst-info-row">
-      <label class="pst-info-label" data-i18n="footer_text">Footer Text</label>
-      <div class="pst-info-textareas">
-        <div class="pst-info-textarea-group">
-          <img src="<?=BASE_URL?>/public/flags/th.png" class="pst-info-lang-flag" alt="TH">
-          <textarea class="form-control form-control-sm" id="pstFooterThInput" rows="2" data-i18n="footer_text_th_placeholder" placeholder="ข้อความท้ายกระดาษ (ไทย)" maxlength="500"></textarea>
-        </div>
-        <div class="pst-info-textarea-group">
-          <img src="<?=BASE_URL?>/public/flags/gb.png" class="pst-info-lang-flag" alt="EN">
-          <textarea class="form-control form-control-sm" id="pstFooterEnInput" rows="2" placeholder="Footer text (English)" maxlength="500"></textarea>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- 2026-08-26, explicit request: "ในหน้า Slip Template ให้ย้าย Page Setup ลงมาไว้ใต้ Template Info" --
-     moved from ABOVE Template Info (where it sat since the 2026-08-25 "Page Setup ไม่อยู่ภายใต้ tab
-     design" fix) to below it. Purely a markup reorder -- .pst-editor-topbar-fields's own CSS is a
-     self-contained flex layout unaffected by its new position (same "confirmed before moving, not
-     assumed" precedent as that earlier fix), and no JS reads DOM order for any of these controls. -->
-<div class="pst-editor-topbar-fields justify-content-end mb-3">
-  <div class="pst-page-setup-cluster">
+    <div class="pst-page-setup-cluster">
     <span class="pst-page-setup-label" data-i18n="ect_page_setup">Page Setup</span>
     <select class="form-select form-select-sm" id="pstPageSizeSelect">
       <option value="A3">A3</option>
@@ -192,6 +176,14 @@
   <button type="button" class="btn btn-outline-primary btn-sm" id="pstChangePresetBtn">
     <i class="fa-solid fa-shuffle me-1"></i><span data-i18n="ect_change_preset">Change Layout</span>
   </button>
+  <!-- 2026-08-26, explicit follow-up: "การเปิดการตั้งค่าใน fullscreen...ย้ายตำแหน่งมาไว้ใต้ Tab Design" --
+       moved out of the shared topbar (where it sat above both Design/Assign To tabs) into the Design
+       tab's own controls row, alongside Page Setup/Change Layout -- matches the new "fullscreen only
+       covers Design" scope, since the button itself now only ever belongs to this one tab. -->
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="pstFullscreenBtn" title="Fullscreen">
+      <i class="fa-solid fa-expand me-1"></i><span data-i18n="ect_fullscreen">Fullscreen</span>
+    </button>
+  </div>
 </div>
 
 <div id="pstEditorArea">
@@ -384,8 +376,13 @@
      currently are), not a split into two independent partial saves that could let one half go stale
      while the other is edited. Preview stays Design-only (previewing "the design" doesn't apply to
      the Assign To tab). `.pst-save-hint`/`.pst-editor-footer` are classes (not ids) so they're reused
-     verbatim on both footers -- no new CSS needed. -->
-<div class="pst-editor-footer">
+     verbatim on both footers -- no new CSS needed.
+     2026-08-26, same-day follow-up: "ปุ่ม Save และ Preview อยากให้มาอยู่ที่ modal footer" --
+     `#pstDesignFooterAnchor` marks where this footer normally sits; entering fullscreen relocates THIS
+     footer (by its new `#pstDesignFooter` id) into `#pstFullscreenModalFooter`, leaving it back here on
+     exit -- same anchor-based relocation pattern `#pstEditorContentAnchor` already uses. -->
+<div id="pstDesignFooterAnchor"></div>
+<div class="pst-editor-footer" id="pstDesignFooter">
   <div class="text-secondary small me-auto pst-save-hint"></div>
   <button type="button" class="btn btn-outline-secondary pst-footer-btn-lg" id="pstPreviewBtn"><i class="fa-solid fa-eye me-1"></i><span data-i18n="preview">Preview</span></button>
   <button type="button" class="btn btn-primary pst-footer-btn-lg pst-save-btn" id="pstSaveBtnDesign"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>

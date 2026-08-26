@@ -1093,8 +1093,10 @@ function layerRowHtml(el) {
             ${eyeBtn}
             <i class="fa-solid ${layerIcon(el)} me-1"></i>
             <span class="ect-layer-label">${escapeHtmlEct(elementLabel(el))}</span>
-            ${editBtn}
-            <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger ect-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+            <div class="ect-layer-actions ms-auto d-flex align-items-center">
+                ${editBtn}
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger ect-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+            </div>
         </div>
     `;
 }
@@ -1129,7 +1131,7 @@ function renderLayersPanel() {
                         <button type="button" class="btn btn-link btn-sm p-0 me-1 ect-layer-group-visibility" data-group-key="${el.group_key}" title="${langData[groupVisible ? 'ect_layer_hide' : 'ect_layer_show'] || (groupVisible ? 'Hide' : 'Show')}"><i class="fa-solid ${groupVisible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>
                         <i class="fa-solid fa-folder me-1"></i>
                         <span class="ect-layer-label">${escapeHtmlEct(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger ect-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger ect-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="ect-layer-children"></div>
                 </div>
@@ -1541,24 +1543,43 @@ function pageSizeLabel(row) {
 // there's no UI anywhere that still needs to set it; removing the column here is purely "don't show
 // something with no purpose right now", not a sign the concept is gone for good).
 // 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ในหน้า List สามารถเปิด Draft หรือ
-// Public ได้จากหน้านั้นเลย" -- a small clickable badge next to the existing ready/not-ready icon;
-// clicking calls the toggle endpoint directly (no need to open the editor at all).
+// Public ได้จากหน้านั้นเลย" -- ready/not-ready icon only; the Draft/Public control moved into its own
+// dedicated first column, see ectPublishSwitchesHtml() below (explicit follow-up: "ปุ่ม Draft กับ
+// Public ให้เป็น Switch ปิดเปิด แล้วแยกมาเป็น Column แรกสุด").
 function ectLangStatusHtml(pairRow, lang) {
     const tpl = pairRow[lang];
     if (!tpl) {
         return `<i class="fa-regular fa-circle text-muted" title="${langData['ect_not_ready'] || 'Not ready'}"></i>`;
     }
-    const isPublic = tpl.publish_status === 'public';
-    const badge = `<button type="button" class="btn btn-sm ect-publish-badge ${isPublic ? 'ect-publish-public' : 'ect-publish-draft'} ect-publish-toggle" data-id="${tpl.id}" data-current="${tpl.publish_status}" title="${langData['ect_publish_toggle_hint'] || 'Click to toggle Draft/Public'}">${isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft')}</button>`;
-    return `<i class="fa-solid fa-circle-check text-success me-1" title="${langData['ect_ready'] || 'Ready'}"></i>${badge}`;
+    return `<i class="fa-solid fa-circle-check text-success" title="${langData['ect_ready'] || 'Ready'}"></i>`;
 }
-$(document).on('click', '.ect-publish-toggle', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const $btn = $(this);
-    const id = $btn.data('id');
-    const current = $btn.data('current');
-    const target = current === 'public' ? 'draft' : 'public';
+// 2026-08-26, explicit follow-up: direct port of PayslipTemplateModel's own pstPublishSwitchesHtml().
+function ectPublishSwitchesHtml(pairRow) {
+    const flagFile = { th: 'th', en: 'gb' };
+    // 2026-08-26: direct port of PayslipTemplateModel's own pstPublishSwitchesHtml() same-day follow-up
+    // (text label dropped to .visually-hidden, both languages' pills wrapped in one flex row).
+    const rows = ['th', 'en'].filter(l => pairRow[l]).map(l => {
+        const tpl = pairRow[l];
+        const isPublic = tpl.publish_status === 'public';
+        const cbId = `ectPublishSwitch_${tpl.id}`;
+        // 2026-08-26: direct port of PayslipTemplateModel's own pstPublishSwitchesHtml() markup fix
+        // (see that file's own comment on why .form-check stays on its own inner wrapper).
+        return `<div class="pst-publish-switch-row">
+            <img src="${BASE_URL}/public/flags/${flagFile[l]}.png" width="14" class="pst-publish-switch-flag">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input ect-publish-switch" type="checkbox" role="switch" id="${cbId}" data-id="${tpl.id}" data-current="${tpl.publish_status}" ${isPublic ? 'checked' : ''}>
+                <label class="form-check-label small visually-hidden" for="${cbId}">${isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft')}</label>
+            </div>
+        </div>`;
+    }).join('');
+    return `<div class="pst-publish-switch-group">${rows}</div>`;
+}
+$(document).on('change', '.ect-publish-switch', function (e) {
+    const $cb = $(this);
+    const id = $cb.data('id');
+    const current = $cb.data('current');
+    const target = $cb.is(':checked') ? 'public' : 'draft';
+    const revert = function () { $cb.prop('checked', current === 'public'); };
     const doToggle = function () {
         $.ajax({
             url: `${BASE_URL}/api/employment-certificate-template.publish-toggle`,
@@ -1569,14 +1590,16 @@ $(document).on('click', '.ect-publish-toggle', function (e) {
                     $('#tb_ect_template').DataTable().ajax.reload(null, false);
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                    revert();
                 }
-            }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); revert(); }
         });
     };
     // Going Public -> Draft immediately stops real generation from picking it up -- confirm first.
     // Draft -> Public is safe/reversible, no confirm needed.
     if (target === 'draft') {
-        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle);
+        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle, revert);
     } else {
         doToggle();
     }
@@ -1649,11 +1672,14 @@ function initEctTemplateTable() {
             dataSrc: 'data'
         },
         columns: [
+            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => ectPublishSwitchesHtml(row) },
             { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtmlEct(row.template_name)}</strong>` },
             { data: null, render: (d, t, row) => pageSizeLabel(row) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => ectLangStatusHtml(row, 'th') },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => ectLangStatusHtml(row, 'en') },
-            { data: null, render: (d, t, row) => formatEctDateTime(row.latest_updated_at) },
+            // 2026-08-26, explicit follow-up: direct port of Payslip Template's own object-form
+            // render fix for this exact column -- see that file's own comment.
+            { data: 'latest_updated_at', render: { display: d => formatEctDateTime(d), sort: d => d, filter: d => d } },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => ectActionsGroupHtml(row) }
         ],
         // Edit/Duplicate/Preview/Delete all need the FULL pair row (both languages' ids, pair_key,
@@ -1978,6 +2004,7 @@ function switchToLangTab(lang) {
         $('#ectTemplateNameInput, #ectMarginInput').val('');
         $('#ectPageSizeSelect').val('A4');
         $('#ectOrientationSelect').val('portrait');
+        $('#ectIsDefaultSwitch').prop('checked', false);
         updateEctPublishUi();
         currentAssignments = [];
         renderAssignChecklists();
@@ -1996,6 +2023,7 @@ function switchToLangTab(lang) {
     $('#ectPageSizeSelect').val(currentTemplate.page_size);
     $('#ectOrientationSelect').val(currentTemplate.orientation);
     $('#ectMarginInput').val(currentTemplate.margin_mm);
+    $('#ectIsDefaultSwitch').prop('checked', !!Number(currentTemplate.is_default));
     updateEctPublishUi();
     currentAssignments = slot.assignments || [];
     renderAssignChecklists();
@@ -2101,8 +2129,14 @@ $(document).on('click', '#ectFullscreenBtn', function () {
         instance.show();
     }
 });
+// 2026-08-26, same-day follow-up: "ปุ่ม Save และ Preview อยากให้มาอยู่ที่ modal footer" +
+// "การเปิดการตั้งค่าใน fullscreen ปรับให้รองรับเฉพาะหน้า Design" -- direct port of Payslip Template's
+// own fullscreen-footer/Design-only restructure, see that file's own comment for the reasoning.
 $('#ectFullscreenModal').on('show.bs.modal', function () {
-    $('#ectEditorContent').appendTo('#ectFullscreenModalBody');
+    $('#ectEditorContent').appendTo('#ectFullscreenModalBody').addClass('pst-fullscreen-active');
+    $('#ectDesignFooter').appendTo('#ectFullscreenModalFooter');
+    // 2026-08-26: direct port of Payslip Template's own title-group-into-modal-header relocation.
+    $('#ectEditorTopbar').prependTo('#ectFullscreenModalHeader');
     $('#ectFullscreenBtn i').removeClass('fa-expand').addClass('fa-compress');
 });
 $('#ectFullscreenModal').on('shown.bs.modal', function () {
@@ -2110,7 +2144,9 @@ $('#ectFullscreenModal').on('shown.bs.modal', function () {
     if (typeof applyZoom === 'function') applyZoom();
 });
 $('#ectFullscreenModal').on('hidden.bs.modal', function () {
-    $('#ectEditorContent').insertAfter('#ectEditorContentAnchor');
+    $('#ectEditorContent').insertAfter('#ectEditorContentAnchor').removeClass('pst-fullscreen-active');
+    $('#ectDesignFooter').insertAfter('#ectDesignFooterAnchor');
+    $('#ectEditorTopbar').insertAfter('#ectEditorTopbarAnchor');
     $('#ectFullscreenBtn i').removeClass('fa-compress').addClass('fa-expand');
     if (typeof updateCanvasDimensions === 'function') updateCanvasDimensions();
     if (typeof applyZoom === 'function') applyZoom();
@@ -2483,6 +2519,10 @@ function saveEctTemplate(silent) {
         id: currentTemplate.id, language: currentLanguage, template_name: templateName,
         page_size: pageSize, orientation: orientation, margin_mm: marginMm,
         auto_save: $('#ectAutoSaveSwitch').is(':checked'),
+        // 2026-08-26, explicit request: "เพิ่ม Set as default template ใน เอกสารด้วย" -- must be sent
+        // explicitly on every save (see EmploymentCertificateTemplateModel::save()'s own comment on
+        // this being a real, bidirectional field now, not something that survives being omitted).
+        is_default: $('#ectIsDefaultSwitch').is(':checked'),
         logo_path: logoPath, elements: elementsPayload(), assignments: collectAssignments()
     };
     $.ajax({
@@ -2495,6 +2535,7 @@ function saveEctTemplate(silent) {
                 currentTemplate.page_size = pageSize;
                 currentTemplate.orientation = orientation;
                 currentTemplate.margin_mm = marginMm;
+                currentTemplate.is_default = payload.is_default;
                 if (pairState[activeLang]) pairState[activeLang].assignments = payload.assignments;
                 dirty = false;
                 updateSaveHint();
@@ -2513,22 +2554,25 @@ function saveEctTemplate(silent) {
 $(document).on('click', '.ect-save-btn', function () {
     saveEctTemplate(false);
 });
-$(document).on('change', '#ectAutoSaveSwitch', function () { dirty = true; updateSaveHint(); });
-// 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน แล้วค่อย
-// Public" -- direct port of PayslipTemplateModel's own updatePstPublishUi()/#pstPublishSwitch pairing.
+$(document).on('change', '#ectAutoSaveSwitch, #ectIsDefaultSwitch', function () { dirty = true; updateSaveHint(); });
+// 2026-08-26, explicit follow-up: "ให้มี switch ปิดเปิด Draft Public เหมือนกัน หรือทำเป็น radio switch
+// ให้กดว่า Draft หรือ Public" -- 2-button segmented control, direct port of PayslipTemplateModel's
+// own updatePstPublishUi()/#pstPublishToggleGroup pairing.
 function updateEctPublishUi() {
     const hasId = !!(currentTemplate && currentTemplate.id);
-    $('#ectPublishSwitch').prop('disabled', !hasId);
+    $('#ectPublishToggleGroup .pst-publish-option').prop('disabled', !hasId);
     $('#ectAutoSaveSwitch').prop('checked', hasId ? !!currentTemplate.auto_save : false);
-    const isPublic = hasId && currentTemplate.publish_status === 'public';
-    $('#ectPublishSwitch').prop('checked', isPublic);
-    $('#ectPublishSwitchLabel').text(isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft'));
+    const status = hasId ? (currentTemplate.publish_status || 'draft') : 'draft';
+    $('#ectPublishToggleGroup .pst-publish-option').each(function () {
+        $(this).toggleClass('active', $(this).data('value') === status);
+    });
 }
-$(document).on('change', '#ectPublishSwitch', function () {
+$(document).on('click', '#ectPublishToggleGroup .pst-publish-option', function () {
     if (!currentTemplate || !currentTemplate.id) return;
-    const $sw = $(this);
-    const target = $sw.is(':checked') ? 'public' : 'draft';
-    const revert = function () { $sw.prop('checked', target === 'draft'); };
+    const $btn = $(this);
+    const target = $btn.data('value');
+    const current = currentTemplate.publish_status || 'draft';
+    if (target === current) return;
     const doToggle = function () {
         $.ajax({
             url: `${BASE_URL}/api/employment-certificate-template.publish-toggle`,
@@ -2536,18 +2580,17 @@ $(document).on('change', '#ectPublishSwitch', function () {
             success: function (res) {
                 if (res.status) {
                     currentTemplate.publish_status = target;
-                    $('#ectPublishSwitchLabel').text(target === 'public' ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft'));
+                    updateEctPublishUi();
                     try { localStorage.setItem('ect_list_dirty', String(Date.now())); } catch (e) { /* private browsing etc. */ }
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'An error occurred.');
-                    revert();
                 }
             },
-            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); revert(); }
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
         });
     };
     if (target === 'draft') {
-        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle, revert);
+        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle);
     } else {
         doToggle();
     }
@@ -2641,6 +2684,14 @@ $(document).ready(function () {
         // refresh itself instead of showing stale data until manually reloaded.
         window.addEventListener('storage', function (e) {
             if (e.key === 'ect_list_dirty' && $.fn.DataTable.isDataTable('#tb_ect_template')) {
+                $('#tb_ect_template').DataTable().ajax.reload(null, false);
+            }
+        });
+        // 2026-08-26, explicit follow-up: "การจัดการถ้ามีการเปิด Tab ใหม่ จะต้อง Reload ตารางหลังจาก
+        // Save" -- direct port of Payslip Template's own visibilitychange fallback (see that file's
+        // own comment), a second, more robust path that doesn't depend on the storage event alone.
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible' && $.fn.DataTable.isDataTable('#tb_ect_template')) {
                 $('#tb_ect_template').DataTable().ajax.reload(null, false);
             }
         });

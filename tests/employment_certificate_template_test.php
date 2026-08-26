@@ -170,9 +170,13 @@ try {
     check('getDefault() now returns blank', (int)$model->getDefault($compId, 'th')['id'], (int)$blankTemplate['id']);
 
     echo "=== save() with an id updates that template in place (whole element set replaced) ===\n";
+    // 2026-08-26: is_default is now an explicit, bidirectional field on every save() call (added
+    // alongside the editor's own new "Set as default template" toggle, same as
+    // PayslipTemplateModel::save() already required) -- must be passed explicitly on every update
+    // from now on to preserve it, same as every other field here already has to be.
     $updateRes = $model->save($compId, [
         'id' => $blankTemplate['id'], 'language' => 'th', 'template_name' => 'ทดสอบว่างเปล่า (แก้ไข)',
-        'page_size' => 'Letter', 'orientation' => 'landscape',
+        'page_size' => 'Letter', 'orientation' => 'landscape', 'is_default' => true,
         'elements' => [['element_type' => 'text', 'content' => '{{employee_no}}', 'pos_x_pct' => 5, 'pos_y_pct' => 5, 'width_pct' => 20, 'height_pct' => 5]],
     ], $userId);
     checkTrue('update-by-id succeeds' . (empty($updateRes['status']) ? " ({$updateRes['message']})" : ''), $updateRes['status']);

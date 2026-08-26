@@ -50,6 +50,40 @@ class PayslipTemplateRenderer {
         'courier' => 'Courier',
     ];
 
+    /** 2026-08-26, real bug found and fixed, not a guess: "ใน PDF ไม่แสดง Symbol" -- confirmed by
+     *  parsing storage/fonts/thsarabun/THSarabun.ttf's own `cmap` table directly (same verification
+     *  method already established in this project for font-coverage claims, see
+     *  EmploymentCertificateRenderer's own v2 docblock) that TH Sarabun New has NO glyph for any of
+     *  these 22 codepoints from the ribbon's own Symbol picker (stars/checkmarks/arrows/card-suits/
+     *  phone-mail-flag dingbats/weather/music notes) -- DejaVu Sans (this project's other bundled
+     *  font) covers all 40 of the picker's symbols, confirmed the same way. A Thai-language template
+     *  is locked to TH Sarabun New (the only bundled font with Thai glyphs, see
+     *  updateFontFamilyOptions()), so dropping one of these symbols onto it looked fine in the browser
+     *  canvas (which silently falls back to whatever system font actually has the glyph) but rendered
+     *  as nothing at all in the real PDF, since dompdf embeds only the ONE font specified with no
+     *  automatic per-glyph fallback the way browsers do. Fixed by detecting this exact situation at
+     *  render time and swapping just that one element's PDF font to DejaVu Sans -- the stored
+     *  font_family/the canvas UI are both untouched, only the generated PDF's font choice changes. */
+    private const SYMBOL_CODEPOINTS_MISSING_IN_SARABUN = [
+        0x2605, 0x2606, 0x2713, 0x2714, 0x2717, 0x27A4, 0x2192, 0x2190, 0x2191, 0x2193,
+        0x2665, 0x2666, 0x2663, 0x2660, 0x260E, 0x2709, 0x2691, 0x2600, 0x2601, 0x2602,
+        0x266A, 0x266B,
+    ];
+
+    /** True if $content contains any codepoint TH Sarabun New has no glyph for (see the constant's
+     *  own docblock) -- used to force a PDF-only font fallback for exactly those elements. */
+    private function needsSymbolFontFallback(string $content): bool {
+        if (function_exists('mb_str_split')) {
+            foreach (mb_str_split($content, 1, 'UTF-8') as $char) {
+                $cp = mb_ord($char, 'UTF-8');
+                if ($cp !== false && in_array($cp, self::SYMBOL_CODEPOINTS_MISSING_IN_SARABUN, true)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /** The 3 "block" field_keys that expand into a real itemized table instead of a single
      *  substituted value -- see this class's own docblock for why these need no special schema. */
     private const BLOCK_FIELD_KEYS = ['earning_lines_all', 'deduction_lines_all', 'statutory_lines_all'];
@@ -192,7 +226,12 @@ class PayslipTemplateRenderer {
 
     /** @param array<int,string> $imageAssetPaths image_asset_id => absolute file path */
     private function renderElementHtml(array $el, array $tokens, ?string $logoAbsPath, array $imageAssetPaths, array $detail, array $statutoryLabels, string $language, ?string $signatureAbsPath = null): string {
-        $fontFamily = self::FONT_FAMILY_CSS[$el['font_family'] ?? 'th_sarabun_new'] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
+        $effectiveFontFamily = $el['font_family'] ?? 'th_sarabun_new';
+        if ($effectiveFontFamily === 'th_sarabun_new' && $el['element_type'] === 'text'
+            && $this->needsSymbolFontFallback((string)($el['content'] ?? ''))) {
+            $effectiveFontFamily = 'dejavu_sans';
+        }
+        $fontFamily = self::FONT_FAMILY_CSS[$effectiveFontFamily] ?? self::FONT_FAMILY_CSS['th_sarabun_new'];
         // font-family single-quoted -- see EmploymentCertificateRenderer's own comment for the exact
         // double-quote-nesting bug this avoids (a real, confirmed defect found once already).
         $style = sprintf(

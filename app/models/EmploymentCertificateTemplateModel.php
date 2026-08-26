@@ -597,6 +597,12 @@ class EmploymentCertificateTemplateModel {
         // ก่อน แล้วค่อย Public" -- same as PayslipTemplateModel::save()'s own comment: publish_status
         // is deliberately NOT accepted here, only ever changed via setPublishStatus().
         $autoSave = !empty($data['auto_save']) ? 1 : 0;
+        // 2026-08-26, explicit request: "เพิ่ม Set as default template ใน เอกสารด้วย" -- is_default
+        // already existed in the schema/getDefault()'s own fallback, just had no editor-page toggle
+        // before now; wired the same bidirectional way PayslipTemplateModel::save() already does
+        // (part of the regular Save payload, both true AND false explicitly persisted -- see the
+        // "clear other defaults" block below).
+        $isDefault = !empty($data['is_default']) ? 1 : 0;
         $logoPath = array_key_exists('logo_path', $data) ? (string)$data['logo_path'] : null;
         if ($logoPath !== null && $logoPath !== '' && !self::isValidLogoPath($logoPath, $compId)) {
             return ['status' => false, 'message' => 'Invalid logo path.'];
@@ -641,11 +647,11 @@ class EmploymentCertificateTemplateModel {
                 }
                 $logoSql = $logoPath !== null ? ", logo_path = :logo_path" : "";
                 $stmt = $this->db->prepare("UPDATE `employment_certificate_templates`
-                    SET template_name = :template_name, page_size = :page_size, orientation = :orientation, margin_mm = :margin_mm, auto_save = :auto_save{$logoSql},
+                    SET template_name = :template_name, page_size = :page_size, orientation = :orientation, margin_mm = :margin_mm, auto_save = :auto_save, is_default = :is_default{$logoSql},
                         updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
                 $params = [
                     ':template_name' => $templateName, ':page_size' => $pageSize, ':orientation' => $orientation, ':margin_mm' => $marginMm,
-                    ':auto_save' => $autoSave, ':updated_by' => $userId, ':id' => $id,
+                    ':auto_save' => $autoSave, ':is_default' => $isDefault, ':updated_by' => $userId, ':id' => $id,
                 ];
                 if ($logoPath !== null) {
                     $params[':logo_path'] = $logoPath !== '' ? $logoPath : null;
@@ -676,7 +682,13 @@ class EmploymentCertificateTemplateModel {
                 $stmtCount->execute([':comp_id' => $compId, ':language' => $language]);
                 if ((int)$stmtCount->fetchColumn() === 1) {
                     $this->db->prepare("UPDATE `employment_certificate_templates` SET is_default = 1 WHERE id = :id")->execute([':id' => $templateId]);
+                    $isDefault = 1;
                 }
+            }
+
+            if ($isDefault) {
+                $this->db->prepare("UPDATE `employment_certificate_templates` SET is_default = 0 WHERE comp_id = :comp_id AND language = :language AND id != :id AND status = 'active'")
+                    ->execute([':comp_id' => $compId, ':language' => $language, ':id' => $templateId]);
             }
 
             $this->db->prepare("DELETE FROM `employment_certificate_template_elements` WHERE template_id = :id")->execute([':id' => $templateId]);

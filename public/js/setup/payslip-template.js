@@ -968,8 +968,10 @@ function layerRowHtml(el) {
             ${eyeBtn}
             <i class="fa-solid ${layerIcon(el)} me-1"></i>
             <span class="pst-layer-label">${escapeHtmlPst(elementLabel(el))}</span>
-            ${editBtn}
-            <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger pst-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+            <div class="pst-layer-actions ms-auto d-flex align-items-center">
+                ${editBtn}
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger pst-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+            </div>
         </div>
     `;
 }
@@ -999,7 +1001,7 @@ function renderLayersPanel() {
                         <button type="button" class="btn btn-link btn-sm p-0 me-1 pst-layer-group-visibility" data-group-key="${el.group_key}" title="${langData[groupVisible ? 'ect_layer_hide' : 'ect_layer_show'] || (groupVisible ? 'Hide' : 'Show')}"><i class="fa-solid ${groupVisible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>
                         <i class="fa-solid fa-folder me-1"></i>
                         <span class="pst-layer-label">${escapeHtmlPst(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger pst-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger pst-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="pst-layer-children"></div>
                 </div>
@@ -1383,34 +1385,68 @@ function formatEctDateTime(str) {
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 // 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ในหน้า List สามารถเปิด Draft หรือ
-// Public ได้จากหน้านั้นเลย" -- direct port of ectLangStatusHtml()'s own clickable badge.
+// Public ได้จากหน้านั้นเลย" -- ready/not-ready icon only; the Draft/Public control itself moved out
+// into its own dedicated first column, see pstPublishSwitchesHtml() below (explicit follow-up: "ปุ่ม
+// Draft กับ Public ให้เป็น Switch ปิดเปิด แล้วแยกมาเป็น Column แรกสุด").
 function pstLangStatusHtml(pairRow, lang) {
     const tpl = pairRow[lang];
     if (!tpl) {
         return `<i class="fa-regular fa-circle text-muted" title="${langData['ect_not_ready'] || 'Not ready'}"></i>`;
     }
-    const isPublic = tpl.publish_status === 'public';
-    const badge = `<button type="button" class="btn btn-sm ect-publish-badge ${isPublic ? 'ect-publish-public' : 'ect-publish-draft'} pst-publish-toggle" data-id="${tpl.id}" data-current="${tpl.publish_status}" title="${langData['ect_publish_toggle_hint'] || 'Click to toggle Draft/Public'}">${isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft')}</button>`;
-    return `<i class="fa-solid fa-circle-check text-success me-1" title="${langData['ect_ready'] || 'Ready'}"></i>${badge}`;
+    return `<i class="fa-solid fa-circle-check text-success" title="${langData['ect_ready'] || 'Ready'}"></i>`;
+}
+// 2026-08-26, explicit follow-up: "ในหน้า List ปุ่ม Draft กับ Public ให้เป็น Switch ปิดเปิด แล้วแยกมาเป็น
+// Column แรกสุด โดยเปิดคือ Public" -- publish_status is genuinely PER LANGUAGE, so a pair with both
+// languages shows 2 small flag-labeled switches stacked in this one column; a language that doesn't
+// exist yet for the pair shows nothing (there's no row to publish). ON = Public, OFF = Draft.
+function pstPublishSwitchesHtml(pairRow) {
+    const flagFile = { th: 'th', en: 'gb' };
+    // 2026-08-26, same-day follow-up: "column status ไม่ต้องมีคำว่า Draft หรือ Public ให้มี Switch และ
+    // รูปธง...แสดงผลในแถวเดียว" -- text label dropped (kept as .visually-hidden so the <label for> a11y
+    // association isn't lost, just not painted), both languages' pills now wrapped in one flex row
+    // (.pst-publish-switch-group) instead of stacking via a margin-top hack.
+    const rows = ['th', 'en'].filter(l => pairRow[l]).map(l => {
+        const tpl = pairRow[l];
+        const isPublic = tpl.publish_status === 'public';
+        const cbId = `pstPublishSwitch_${tpl.id}`;
+        // 2026-08-26, real bug avoided (not a guess): the pill/flex layout lives on THIS outer div,
+        // deliberately kept SEPARATE from the inner .form-check.form-switch -- Bootstrap positions
+        // .form-check-input via float+negative-margin relative to .form-check's own padding-left,
+        // which breaks unpredictably if display:flex is applied to that SAME element (same bug
+        // category already found once this session: a custom class overriding a Bootstrap structural
+        // class's box model). Keeping .form-check on its own inner wrapper avoids that entirely.
+        return `<div class="pst-publish-switch-row">
+            <img src="${BASE_URL}/public/flags/${flagFile[l]}.png" width="14" class="pst-publish-switch-flag">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input pst-publish-switch" type="checkbox" role="switch" id="${cbId}" data-id="${tpl.id}" data-current="${tpl.publish_status}" ${isPublic ? 'checked' : ''}>
+                <label class="form-check-label small visually-hidden" for="${cbId}">${isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft')}</label>
+            </div>
+        </div>`;
+    }).join('');
+    return `<div class="pst-publish-switch-group">${rows}</div>`;
 }
 // 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ตั้งต้นเป็น Draft mode ก่อน แล้วค่อย
 // Public" -- reflects currentTemplate.publish_status/auto_save into the editor's own switches
 // whenever a template loads (switchToLangTab()) -- disabled until the template has a real id (a
 // brand-new, never-saved template is always created via a preset/Generate Auto first, so this only
 // ever matters for the empty-state branch).
+// 2026-08-26, explicit follow-up: "ให้มี switch ปิดเปิด Draft Public เหมือนกัน หรือทำเป็น radio switch
+// ให้กดว่า Draft หรือ Public" -- 2-button segmented control replacing the single checkbox switch.
 function updatePstPublishUi() {
     const hasId = !!(currentTemplate && currentTemplate.id);
-    $('#pstPublishSwitch').prop('disabled', !hasId);
+    $('#pstPublishToggleGroup .pst-publish-option').prop('disabled', !hasId);
     $('#pstAutoSaveSwitch').prop('checked', hasId ? !!currentTemplate.auto_save : false);
-    const isPublic = hasId && currentTemplate.publish_status === 'public';
-    $('#pstPublishSwitch').prop('checked', isPublic);
-    $('#pstPublishSwitchLabel').text(isPublic ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft'));
+    const status = hasId ? (currentTemplate.publish_status || 'draft') : 'draft';
+    $('#pstPublishToggleGroup .pst-publish-option').each(function () {
+        $(this).toggleClass('active', $(this).data('value') === status);
+    });
 }
-$(document).on('change', '#pstPublishSwitch', function () {
+$(document).on('click', '#pstPublishToggleGroup .pst-publish-option', function () {
     if (!currentTemplate || !currentTemplate.id) return;
-    const $sw = $(this);
-    const target = $sw.is(':checked') ? 'public' : 'draft';
-    const revert = function () { $sw.prop('checked', target === 'draft'); };
+    const $btn = $(this);
+    const target = $btn.data('value');
+    const current = currentTemplate.publish_status || 'draft';
+    if (target === current) return;
     const doToggle = function () {
         $.ajax({
             url: `${BASE_URL}/api/payslip-template.publish-toggle`,
@@ -1418,29 +1454,27 @@ $(document).on('change', '#pstPublishSwitch', function () {
             success: function (res) {
                 if (res.status) {
                     currentTemplate.publish_status = target;
-                    $('#pstPublishSwitchLabel').text(target === 'public' ? (langData['ect_publish_public'] || 'Public') : (langData['ect_publish_draft'] || 'Draft'));
+                    updatePstPublishUi();
                     try { localStorage.setItem('pst_list_dirty', String(Date.now())); } catch (e) { /* private browsing etc. */ }
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'An error occurred.');
-                    revert();
                 }
             },
-            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); revert(); }
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
         });
     };
     if (target === 'draft') {
-        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle, revert);
+        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle);
     } else {
         doToggle();
     }
 });
-$(document).on('click', '.pst-publish-toggle', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const $btn = $(this);
-    const id = $btn.data('id');
-    const current = $btn.data('current');
-    const target = current === 'public' ? 'draft' : 'public';
+$(document).on('change', '.pst-publish-switch', function (e) {
+    const $cb = $(this);
+    const id = $cb.data('id');
+    const current = $cb.data('current');
+    const target = $cb.is(':checked') ? 'public' : 'draft';
+    const revert = function () { $cb.prop('checked', current === 'public'); };
     const doToggle = function () {
         $.ajax({
             url: `${BASE_URL}/api/payslip-template.publish-toggle`,
@@ -1451,12 +1485,14 @@ $(document).on('click', '.pst-publish-toggle', function (e) {
                     $('#tb_pst_template').DataTable().ajax.reload(null, false);
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                    revert();
                 }
-            }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); revert(); }
         });
     };
     if (target === 'draft') {
-        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle);
+        showConfirm(langData['ect_confirm_unpublish'] || 'Switch this template back to Draft? It will stop being used for real generation immediately.', '', doToggle, revert);
     } else {
         doToggle();
     }
@@ -1503,11 +1539,19 @@ function initPstTemplateTable() {
             dataSrc: 'data'
         },
         columns: [
+            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => pstPublishSwitchesHtml(row) },
             { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtmlPst(row.template_name)}</strong>` },
             { data: null, render: (d, t, row) => pageSizeLabel(row) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => pstLangStatusHtml(row, 'th') },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => pstLangStatusHtml(row, 'en') },
-            { data: null, render: (d, t, row) => formatEctDateTime(row.latest_updated_at) },
+            // 2026-08-26, explicit follow-up: "ในหน้า List Payslip หัวตารางไม่มี Sort" -- this client-side
+            // DataTable's own "Last Updated" column was using a plain function-form render, so
+            // DataTables sorted by the FORMATTED "dd/mm/yyyy hh:mm" STRING lexicographically instead of
+            // chronologically ("05/09" sorting before "26/08") -- same object-form render: {display,
+            // sort, filter} fix already applied to every other date column in this project (see
+            // formatDisplayDate()'s own history in app.js) so sort/filter use the raw ISO value while
+            // the cell still visually shows the formatted date.
+            { data: 'latest_updated_at', render: { display: d => formatEctDateTime(d), sort: d => d, filter: d => d } },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => pstActionsGroupHtml(row) }
         ],
         // Edit/Duplicate/Preview/Delete all need the FULL pair row (both languages' ids, pair_key,
@@ -1829,8 +1873,6 @@ function switchToLangTab(lang) {
         $('#pstTemplateNameInput, #pstMarginInput').val('');
         $('#pstPageSizeSelect').val('A4');
         $('#pstOrientationSelect').val('portrait');
-        $('#pstHeaderThInput, #pstHeaderEnInput, #pstFooterThInput, #pstFooterEnInput').val('');
-        $('#pstStatusSwitch').prop('checked', true);
         $('#pstIsDefaultSwitch').prop('checked', false);
         updatePstPublishUi();
         currentAssignments = [];
@@ -1850,11 +1892,6 @@ function switchToLangTab(lang) {
     $('#pstPageSizeSelect').val(currentTemplate.page_size);
     $('#pstOrientationSelect').val(currentTemplate.orientation);
     $('#pstMarginInput').val(currentTemplate.margin_mm);
-    $('#pstHeaderThInput').val(currentTemplate.header_text_th || '');
-    $('#pstHeaderEnInput').val(currentTemplate.header_text_en || '');
-    $('#pstFooterThInput').val(currentTemplate.footer_text_th || '');
-    $('#pstFooterEnInput').val(currentTemplate.footer_text_en || '');
-    $('#pstStatusSwitch').prop('checked', currentTemplate.status === 'active');
     $('#pstIsDefaultSwitch').prop('checked', !!Number(currentTemplate.is_default));
     updatePstPublishUi();
     currentAssignments = slot.assignments || [];
@@ -1921,7 +1958,7 @@ $(document).on('change', '#pstPageSizeSelect, #pstOrientationSelect', function (
     dirty = true;
     updateSaveHint();
 });
-$(document).on('input', '#pstTemplateNameInput, #pstHeaderThInput, #pstHeaderEnInput, #pstFooterThInput, #pstFooterEnInput', function () { dirty = true; updateSaveHint(); });
+$(document).on('input', '#pstTemplateNameInput', function () { dirty = true; updateSaveHint(); });
 $(document).on('click', '#pstTemplateNameEditBtn', function () {
     $('#pstTemplateNameInput').trigger('focus').select();
 });
@@ -1946,8 +1983,20 @@ $(document).on('click', '#pstFullscreenBtn', function () {
         instance.show();
     }
 });
+// 2026-08-26, same-day follow-up: "ปุ่ม Save และ Preview อยากให้มาอยู่ที่ modal footer" +
+// "การเปิดการตั้งค่าใน fullscreen ปรับให้รองรับเฉพาะหน้า Design" -- entering fullscreen ALSO relocates
+// #pstDesignFooter (Save+Preview) into the modal's own real .modal-footer, and adds
+// .pst-fullscreen-active on #pstEditorContent, which style.css uses to hide the Design/Assign To tab
+// nav + the Assign To pane -- Design's own content is always shown regardless of Bootstrap's own
+// tab-pane state, since it's the only thing left visible. #pstTabDesign's "active"/"show" classes are
+// left completely alone (don't need to change) -- purely a visibility layer on top.
 $('#pstFullscreenModal').on('show.bs.modal', function () {
-    $('#pstEditorContent').appendTo('#pstFullscreenModalBody');
+    $('#pstEditorContent').appendTo('#pstFullscreenModalBody').addClass('pst-fullscreen-active');
+    $('#pstDesignFooter').appendTo('#pstFullscreenModalFooter');
+    // 2026-08-26, same-day follow-up: "นำ header กับการแก้ชื่อไปใส่ใน modal header" -- the Template
+    // Name title group relocates into the real .modal-header (prepended so it sits to the LEFT of the
+    // always-present .btn-close, matching every other modal's title-left/close-right convention).
+    $('#pstEditorTopbar').prependTo('#pstFullscreenModalHeader');
     $('#pstFullscreenBtn i').removeClass('fa-expand').addClass('fa-compress');
 });
 $('#pstFullscreenModal').on('shown.bs.modal', function () {
@@ -1958,12 +2007,14 @@ $('#pstFullscreenModal').on('shown.bs.modal', function () {
     if (typeof applyZoom === 'function') applyZoom();
 });
 $('#pstFullscreenModal').on('hidden.bs.modal', function () {
-    $('#pstEditorContent').insertAfter('#pstEditorContentAnchor');
+    $('#pstEditorContent').insertAfter('#pstEditorContentAnchor').removeClass('pst-fullscreen-active');
+    $('#pstDesignFooter').insertAfter('#pstDesignFooterAnchor');
+    $('#pstEditorTopbar').insertAfter('#pstEditorTopbarAnchor');
     $('#pstFullscreenBtn i').removeClass('fa-compress').addClass('fa-expand');
     if (typeof updateCanvasDimensions === 'function') updateCanvasDimensions();
     if (typeof applyZoom === 'function') applyZoom();
 });
-$(document).on('change', '#pstStatusSwitch, #pstIsDefaultSwitch, #pstAutoSaveSwitch', function () { dirty = true; updateSaveHint(); });
+$(document).on('change', '#pstIsDefaultSwitch, #pstAutoSaveSwitch', function () { dirty = true; updateSaveHint(); });
 
 /* ---------- New Template modal ---------- */
 function loadPresets() {
@@ -2260,12 +2311,19 @@ function savePstTemplate(silent) {
     // 2026-08-25 follow-up ("รูปแบบการทำเหมือนกัน") -- Save now saves ONLY the currently active
     // language tab, same as Employment Certificate Template's own #ectSaveBtn: `language` identifies
     // WHICH row this is (immutable after creation), not an editable field on the payload anymore.
+    // 2026-08-26, same-day follow-up: "Enable This Template ซ้ำกับ Draft/Public น่าจะต้องตัดออก" -- the
+    // status switch is gone from the UI, so `status` is now always sent as 'active' (Draft/Public
+    // already gates real-generation eligibility on its own, a second active/inactive toggle was
+    // redundant). Header/Footer Text inputs are ALSO gone from the UI (canvas text boxes cover the
+    // same need) -- their CURRENT saved values are passed through unchanged here rather than omitted,
+    // so a company that already set one before this change doesn't have it silently cleared to null
+    // just because the fields no longer have a UI to edit them.
     const payload = {
         id: currentTemplate.id, language: currentLanguage, template_name: templateName,
-        header_text_th: $('#pstHeaderThInput').val(), header_text_en: $('#pstHeaderEnInput').val(),
-        footer_text_th: $('#pstFooterThInput').val(), footer_text_en: $('#pstFooterEnInput').val(),
+        header_text_th: currentTemplate.header_text_th || '', header_text_en: currentTemplate.header_text_en || '',
+        footer_text_th: currentTemplate.footer_text_th || '', footer_text_en: currentTemplate.footer_text_en || '',
         is_default: $('#pstIsDefaultSwitch').is(':checked'),
-        status: $('#pstStatusSwitch').is(':checked') ? 'active' : 'inactive',
+        status: 'active',
         auto_save: $('#pstAutoSaveSwitch').is(':checked'),
         page_size: pageSize, orientation: orientation, margin_mm: marginMm,
         logo_path: logoPath, elements: elementsPayload(), assignments: collectAssignments()
@@ -2353,6 +2411,16 @@ $(document).ready(function () {
         initPstTemplateTable();
         window.addEventListener('storage', function (e) {
             if (e.key === 'pst_list_dirty' && $.fn.DataTable.isDataTable('#tb_pst_template')) {
+                $('#tb_pst_template').DataTable().ajax.reload(null, false);
+            }
+        });
+        // 2026-08-26, explicit follow-up: "การจัดการถ้ามีการเปิด Tab ใหม่ จะต้อง Reload ตารางหลังจาก
+        // Save" -- the 'storage' event above already covers this in every mainstream browser, but adds
+        // a second, more robust path on top: reloading whenever the admin switches BACK to this list
+        // tab (e.g. after saving in the editor tab and returning here), which doesn't depend on the
+        // storage event firing reliably at all.
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible' && $.fn.DataTable.isDataTable('#tb_pst_template')) {
                 $('#tb_pst_template').DataTable().ajax.reload(null, false);
             }
         });
