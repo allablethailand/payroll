@@ -22,6 +22,10 @@
   <div class="pst-editor-title-group">
     <i class="fa-solid fa-file-invoice pst-editor-title-icon"></i>
     <input type="text" class="pst-editor-title-input" id="pstTemplateNameInput" placeholder="Template Name">
+    <!-- 2026-08-26, explicit request: "ในการตั้งชื่อในหน้าตั้งค่า ให้มีปุ่มดินสอด้วยจะได้รู้ว่าแก้ไขได้" --
+         same pencil affordance added to Employment Certificate Template's own title input, see that
+         file's own comment for the full reasoning. -->
+    <button type="button" class="pst-editor-title-edit-btn" id="pstTemplateNameEditBtn" title="Rename"><i class="fa-solid fa-pen"></i></button>
   </div>
 </div>
 
@@ -144,14 +148,18 @@
     </div>
     <div class="pst-ribbon-group">
       <label class="pst-ribbon-label" data-i18n="ect_font_family">Font</label>
+      <!-- 2026-08-26, explicit request: lock this the same way Employment Certificate Template's own
+           font dropdown already does -- only TH Sarabun New has Thai glyphs (see that file's own
+           comment), the other 6 all carry data-en-only so updateFontFamilyOptions() (this file's
+           own port of that same function) can hide them while editing the Thai-language template. -->
       <select class="form-select form-select-sm" id="pstPropFontFamily" disabled>
         <option value="th_sarabun_new">TH Sarabun New</option>
-        <option value="dejavu_sans">DejaVu Sans</option>
-        <option value="dejavu_sans_mono">DejaVu Sans Mono</option>
-        <option value="dejavu_serif">DejaVu Serif</option>
-        <option value="helvetica">Helvetica</option>
-        <option value="times_new_roman">Times New Roman</option>
-        <option value="courier">Courier</option>
+        <option value="dejavu_sans" data-en-only="1">DejaVu Sans</option>
+        <option value="dejavu_sans_mono" data-en-only="1">DejaVu Sans Mono</option>
+        <option value="dejavu_serif" data-en-only="1">DejaVu Serif</option>
+        <option value="helvetica" data-en-only="1">Helvetica</option>
+        <option value="times_new_roman" data-en-only="1">Times New Roman</option>
+        <option value="courier" data-en-only="1">Courier</option>
       </select>
     </div>
     <div class="pst-ribbon-group">

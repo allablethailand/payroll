@@ -11434,6 +11434,103 @@ ALTER TABLE `payslip_templates` DROP COLUMN `language_mode`;
 
 COMMIT;
 
+--
+-- 2026-08-26, Employment Certificate REQUEST/ISSUANCE flow (explicit request: "ในส่วนของ Request
+-- เพิ่ม Tab สำหรับการ Request ใบรับรองขึ้นมาด้วยคู่กับ Pay slip และการอนุมัติให้เป็นรูปแบบเดียวกับ Approve
+-- Process ครับมี timeline ให้กดดู") -- this is the request/issuance flow CLAUDE.md's Employment
+-- Certificate Template section has been explicitly deferring since phase 1 ("ยังไม่มี request/
+-- issuance flow หรือการออกเอกสารจริงให้พนักงานเลยในรอบนี้"). `EMPLOYMENT_CERTIFICATE_APPROVAL` was
+-- already seeded into `approval_document_types` back then (config-only, no consumer) -- this table
+-- is the first real consumer of it. Mirrors `payslip_requests`' own shape/FK style exactly (see that
+-- table's own comment) -- `requested_by` is HR submitting on behalf of the employee, same "no
+-- self-service portal yet" precedent. `language` picks which language design
+-- (EmploymentCertificateTemplateModel::resolveTemplateForEmployee()) to issue against -- confirmed
+-- upfront at request-creation time (not deferred to issuance) that a template actually exists for
+-- that employee+language, so a request can never be approved into a dead end. `status` mirrors
+-- `payslip_requests`' own two-phase pattern (engine verdict first, then a document-specific
+-- follow-on outcome) -- 'approved' is the generic engine's terminal verdict; 'issued'/'issue_failed'
+-- is EmploymentCertificateRequestModel's own best-effort PDF generation immediately after, same
+-- separation Payslip's own 'approved' -> 'sent'/'send_failed' already established.
+--
+
+CREATE TABLE `employment_certificate_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL COMMENT 'พนักงานเจ้าของใบรับรองที่ขอ',
+  `language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th',
+  `requested_by` int(11) NOT NULL COMMENT 'employees.id ของผู้กดขอจริง (ตอนนี้คือ HR กดแทน, อนาคตอาจเป็นตัวพนักงานเองผ่าน portal)',
+  `approval_request_id` int(11) DEFAULT NULL,
+  `status` enum('pending','approved','rejected','cancelled','issued','issue_failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `file_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'public/uploads/employment_certificate_files/{comp_id}/{hash}.pdf once issued -- generated ONCE at approval time and never re-rendered, so a later change to the employee''s data or the template does not retroactively alter an already-issued document',
+  `issue_error` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'set when status=issue_failed, so an admin can see why without digging through logs',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ecr_approval_request` (`approval_request_id`),
+  KEY `idx_ecr_lookup` (`comp_id`,`employee_id`,`status`),
+  CONSTRAINT `fk_ecr_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ecr_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ecr_approval_request` FOREIGN KEY (`approval_request_id`) REFERENCES `approval_requests` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `employee_recurring_earnings`
+--
+-- 2026-08-26, explicit request: "ส่วนของเงินเดือนในหน้าจัดการข้อมูลพนักงาน จะมีรายรับที่ได้ทุกเดือนเช่นพวก
+-- ค่าตำแหน่ง ค่ารถ ค่าน้ำมัน และอื่นๆ ให้เพิ่มส่วนนี้เข้าไปด้วย และระงับการจ่ายได้ รวมถึงการตั้งค่าส่วนนี้เพิ่มเติมให้นำไป
+-- คำนวณในรอบการจ่ายด้วย" -- deliberately a NEW table, not a new mode of `employee_earning_deductions`,
+-- which is inherently installment-based (total_installments/current_installment NOT NULL, a fixed
+-- total split across a finite schedule) and genuinely doesn't fit an allowance that recurs
+-- indefinitely with no end date. Confirmed via AskUserQuestion: lives as its OWN new section on the
+-- Employee Detail Salary tab (not folded into the Earning-Deduction tab, which stays loan/
+-- installment-only) -- see EmployeeRecurringEarningModel's own docblock for the full reasoning.
+--
+-- `ped_type_id` reuses the EXISTING `payroll_earning_deduction_types` catalog (Payroll
+-- Configuration > Earning-Deduction Types) rather than a new master table or free text --
+-- application layer restricts selection to item_type='earning' AND calculation_method='fixed_amount'
+-- (this feature is specifically "enter THIS employee's own flat monthly amount", not a percentage or
+-- a manual-entry-per-run item).
+--
+-- "Suspend" (confirmed via AskUserQuestion: a date RANGE, not a plain on/off toggle) is
+-- `suspended_from`/`suspended_to` -- both columns set together or neither (enforced at the
+-- application layer, not a DB CHECK constraint, same convention as every other cross-field
+-- validation in this project). PayrollRunModel::recalculate() excludes a row from a run whenever
+-- that run's pay period overlaps the suspend window at all, and automatically resumes once the
+-- run's period moves past `suspended_to` -- no separate re-activation step needed.
+--
+-- `status` is deliberately just enum('active','deleted') (not the usual active/inactive/deleted
+-- triple) -- there is no independent on/off toggle here, suspension is entirely date-range-driven,
+-- so a third "inactive" state would have no distinct meaning from "suspended right now" or
+-- "deleted".
+--
+
+CREATE TABLE `employee_recurring_earnings` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `employee_id` int(11) NOT NULL,
+  `ped_type_id` int(11) NOT NULL COMMENT 'payroll_earning_deduction_types.id, restricted at the application layer to item_type=earning AND calculation_method=fixed_amount',
+  `amount` decimal(15,2) NOT NULL COMMENT 'this employee''s own flat monthly amount -- independent of payroll_earning_deduction_types.fixed_amount, which is only a company-wide default/reference',
+  `effective_date` date NOT NULL,
+  `suspended_from` date DEFAULT NULL COMMENT 'both suspended_from/suspended_to set together or neither -- see table comment',
+  `suspended_to` date DEFAULT NULL,
+  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('active','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ere_employee` (`employee_id`),
+  KEY `idx_ere_ped_type` (`ped_type_id`),
+  CONSTRAINT `fk_ere_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ere_ped_type` FOREIGN KEY (`ped_type_id`) REFERENCES `payroll_earning_deduction_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

@@ -1931,6 +1931,9 @@ $(document).on('change', '#ectPageSizeSelect, #ectOrientationSelect', function (
     updateSaveHint();
 });
 $(document).on('input', '#ectTemplateNameInput', function () { dirty = true; updateSaveHint(); });
+$(document).on('click', '#ectTemplateNameEditBtn', function () {
+    $('#ectTemplateNameInput').trigger('focus').select();
+});
 
 /* ---------- New Template modal (name + page size/orientation + starter preset) ---------- */
 function loadPresets() {
@@ -2278,7 +2281,9 @@ function elementsPayload() {
 // whole "switch tabs without losing work" point). The admin closes the modal explicitly (X button)
 // once both tabs (or however many they're using) are saved, at which point the "any unsaved changes
 // on either language" close-guard (pairHasAnyUnsavedChanges()) protects them either way.
-$(document).on('click', '#ectSaveBtn', function () {
+// Both the Design tab's and the Assign To tab's own Save buttons share this one class -- see the
+// view's own comment on why this is a visual/UX change, not a split into two independent partial saves.
+$(document).on('click', '.ect-save-btn', function () {
     if (!currentTemplate) return;
     const templateName = $('#ectTemplateNameInput').val().trim();
     if (!templateName) {
@@ -2397,7 +2402,8 @@ $(document).ready(function () {
             initEctTemplateTable();
         }
         // 2026-08-25: editing now happens in a SEPARATE browser tab, so this list tab has no direct
-        // way to know when a save happens over there -- #ectSaveBtn's success handler writes a
+        // way to know when a save happens over there -- the `.ect-save-btn` click handler's success
+        // callback writes a
         // localStorage key on every successful save, which fires a native 'storage' event in every
         // OTHER tab of the same origin (never in the tab that wrote it), letting this list quietly
         // refresh itself instead of showing stale data until manually reloaded.

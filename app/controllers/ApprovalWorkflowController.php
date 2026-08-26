@@ -4,6 +4,7 @@ require_once __DIR__ . '/../models/ApprovalWorkflowModel.php';
 require_once __DIR__ . '/../models/ApprovalRequestModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 require_once __DIR__ . '/../models/PayslipRequestModel.php';
+require_once __DIR__ . '/../models/EmploymentCertificateRequestModel.php';
 
 class ApprovalWorkflowController extends Controller {
     private $model;
@@ -207,8 +208,9 @@ class ApprovalWorkflowController extends Controller {
      * After the generic engine acts, a thin per-document-type sync hook runs for any document
      * type that needs one -- keeps ApprovalRequestModel itself document-type-agnostic (per its
      * own docblock) while still letting a terminal outcome (approved/rejected/cancelled) update
-     * the document's own table. Currently only SLIP_REQUEST_APPROVAL has one; add more `case`s
-     * here as other document types get wired to this engine.
+     * the document's own table. `EMPLOYMENT_CERTIFICATE_APPROVAL` added 2026-08-26 -- see
+     * EmploymentCertificateRequestModel's own docblock for the first real consumer of that
+     * document type (seeded config-only back in Employment Certificate Template's own v4).
      */
     private function syncDocumentAfterAct(int $compId, int $requestId, string $requestStatus, array $data): void {
         $request = $this->requestModel->get($compId, $requestId);
@@ -219,6 +221,9 @@ class ApprovalWorkflowController extends Controller {
             case 'SLIP_REQUEST_APPROVAL':
                 $selectedChannel = isset($data['selected_channel']) ? (string)$data['selected_channel'] : null;
                 (new PayslipRequestModel())->syncFromApprovalStatus((int)$request['reference_id'], $requestStatus, $selectedChannel);
+                break;
+            case 'EMPLOYMENT_CERTIFICATE_APPROVAL':
+                (new EmploymentCertificateRequestModel())->syncFromApprovalStatus((int)$request['reference_id'], $requestStatus);
                 break;
         }
     }

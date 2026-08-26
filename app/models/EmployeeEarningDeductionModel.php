@@ -64,13 +64,21 @@ class EmployeeEarningDeductionModel {
         return $row;
     }
 
-    public function activeOptions(int $compId, string $search, int $page, int $limit, ?string $itemType = null): array {
+    public function activeOptions(int $compId, string $search, int $page, int $limit, ?string $itemType = null, ?string $calculationMethod = null): array {
         $offset = ($page - 1) * $limit;
         $where = "WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' AND is_sync_only = 0";
         $params = [':comp_id' => $compId];
         if ($itemType !== null && $itemType !== '') {
             $where .= " AND item_type = :item_type";
             $params[':item_type'] = $itemType;
+        }
+        // 2026-08-26: added for EmployeeRecurringEarningModel's own type-options endpoint (only
+        // fixed_amount earning types make sense for "enter this employee's own flat monthly
+        // amount") -- optional, so the Earning-Deduction tab's own existing calls (no 4th arg) are
+        // completely unaffected.
+        if ($calculationMethod !== null && $calculationMethod !== '') {
+            $where .= " AND calculation_method = :calculation_method";
+            $params[':calculation_method'] = $calculationMethod;
         }
         if ($search !== '') {
             $where .= " AND (item_code LIKE :search1 OR item_name_th LIKE :search2 OR item_name_en LIKE :search3)";

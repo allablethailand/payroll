@@ -276,20 +276,26 @@ class EmployeeModel {
         $branchCol = $lang === 'en' ? 'branch_name_en' : 'branch_name_th';
         $shiftCol = $lang === 'en' ? 'shift_name_en' : 'shift_name_th';
         $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
+        $positionCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
 
-        // 2026-08-24, explicit request: "เพิ่ม Filter ทีมในหน้า list พนักงานด้วย" -- Team column
-        // inserted right after Department (index 4), same list/column-index convention as every
-        // other structure entity here -- shifts shift/branch/start_work_date/status down by one.
+        // 2026-08-26, explicit request: "เิ่ม position กับเบอร์โทรเข้าตาราง" -- Phone inserted right
+        // after Name (contact info clustered with identity), Position inserted right after Role (org
+        // placement clustered together) -- same "inserting a column mid-list shifts every later
+        // index by one" convention Team's own addition already established (see CLAUDE.md's Team
+        // section). employee_no/name/role/department/team/shift/branch/start_work_date/status/
+        // completeness column indices all shift accordingly.
         $sortColumns = [
             1 => '`e`.`employee_no`',
             2 => '`e`.`name_th`',
-            3 => "`r`.`{$nameCol}`",
-            4 => "`d`.`{$deptCol}`",
-            5 => "`tm`.`{$teamCol}`",
-            6 => "`sh`.`{$shiftCol}`",
-            7 => "`b`.`{$branchCol}`",
-            8 => '`e`.`employment_date`',
-            9 => '`e`.`employee_status`',
+            3 => '`e`.`mobile_no`',
+            4 => "`r`.`{$nameCol}`",
+            5 => "`p`.`{$positionCol}`",
+            6 => "`d`.`{$deptCol}`",
+            7 => "`tm`.`{$teamCol}`",
+            8 => "`sh`.`{$shiftCol}`",
+            9 => "`b`.`{$branchCol}`",
+            10 => '`e`.`employment_date`',
+            11 => '`e`.`employee_status`',
         ];
         $sortColumn = $sortColumns[$colIndex] ?? '`e`.`id`';
         $orderDir = strtoupper($orderDir) === 'DESC' ? 'DESC' : 'ASC';
@@ -361,6 +367,7 @@ class EmployeeModel {
                         e.personal_email AS email,
                         e.mobile_no AS phone,
                         COALESCE(r.{$nameCol}, '') AS role,
+                        COALESCE(p.{$positionCol}, '') AS position,
                         COALESCE(d.{$deptCol}, '') AS department,
                         COALESCE(tm.{$teamCol}, '') AS team,
                         COALESCE(sh.{$shiftCol}, '') AS shift,
@@ -370,6 +377,7 @@ class EmployeeModel {
                         {$completenessSelect}
                     FROM `employees` e
                     LEFT JOIN `structure_roles` r ON e.role_id = r.id
+                    LEFT JOIN `structure_positions` p ON e.position_id = p.id
                     LEFT JOIN `structure_departments` d ON e.department_id = d.id
                     LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
                     LEFT JOIN `shifts` sh ON e.shift_id = sh.id

@@ -960,8 +960,32 @@
                     </select>
                 </div>
             </div>
+            <!-- 2026-08-26, explicit request: "ส่วนของเงินเดือน...จะมีรายรับที่ได้ทุกเดือนเช่นพวกค่าตำแหน่ง
+                 ค่ารถ ค่าน้ำมัน และอื่นๆ ให้เพิ่มส่วนนี้เข้าไปด้วย และระงับการจ่ายได้ รวมถึงการตั้งค่าส่วนนี้
+                 เพิ่มเติมให้นำไปคำนวณในรอบการจ่ายด้วย" -- confirmed via AskUserQuestion: its own new
+                 section here on the Salary tab (NOT folded into the Earning-Deduction tab below,
+                 which stays loan/installment-only -- see EmployeeRecurringEarningModel's own
+                 docblock). Small embedded DataTable, same "list uses DataTables, Add injected into
+                 .dt-search" convention as tableEarning/tableDeduction below. -->
             <h6 class="text-secondary fw-bold mb-3 mt-5">
                 <label class="label label-head bg-head-first rounded-2 text-white">2</label>
+                <span data-i18n="recurring_earnings">Recurring Allowances</span>
+            </h6>
+            <p class="text-secondary small mb-3" data-i18n="recurring_earnings_hint">*Fixed monthly allowances (position/car/fuel allowance, etc.) that recur every payroll run until suspended or removed.</p>
+            <table class="table table-bordered table-sm align-middle" id="tableRecurringEarning" style="width:100%">
+                <thead>
+                    <tr>
+                        <th data-i18n="item_name">Item</th>
+                        <th data-i18n="amount" style="width:130px;">Amount</th>
+                        <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
+                        <th data-i18n="suspend_period" style="width:170px;">Suspend Period</th>
+                        <th data-i18n="col_status" style="width:100px;">Status</th>
+                        <th style="width:90px;"></th>
+                    </tr>
+                </thead>
+            </table>
+            <h6 class="text-secondary fw-bold mb-3 mt-5">
+                <label class="label label-head bg-head-first rounded-2 text-white">3</label>
                 <span data-i18n="tax_information">Tax Information</span>
             </h6>
             <div class="row">
@@ -1617,6 +1641,97 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<!-- Recurring Allowance modal -- 2026-08-26, explicit request, see EmployeeRecurringEarningModel's
+     own docblock. Catalog-only (no free-text/custom item, unlike #eedModal above) since this
+     feature is specifically "assign one of the company's own fixed-amount earning types to this
+     employee at their own flat monthly amount". -->
+<div class="modal fade" id="recurringEarningModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="recurringEarningModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary" id="recurringEarningModalLabel">
+                    <span data-i18n="add_recurring_earning">Add Recurring Allowance</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="recurringEarningForm" novalidate>
+                <input type="hidden" id="ere_id" name="id">
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <select class="form-select select2-remote required" id="ere_ped_type_id" name="ped_type_id" data-api="/api/employee.recurring-earning.type-options"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="amount">Amount</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="input-group">
+                                <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="ere_amount" name="amount">
+                                <span class="input-group-text" data-i18n="thb">THB</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker required" id="ere_effective_date" name="effective_date" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="my-4 text-muted opacity-25">
+                    <h6 class="text-secondary fw-bold mb-2"><span data-i18n="suspend_period">Suspend Period</span></h6>
+                    <!-- Confirmed via AskUserQuestion: "suspend" is a date RANGE, not a plain on/off
+                         toggle -- both fields set together or neither, enforced server-side too
+                         (EmployeeRecurringEarningModel::save()). -->
+                    <p class="text-secondary small mb-3" data-i18n="suspend_period_hint">*Optional. While set, this allowance is skipped in any payroll run whose pay period overlaps this range, then resumes automatically afterward.</p>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="suspend_from">Suspend From</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="ere_suspended_from" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="suspend_to">Suspend To</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="ere_suspended_to" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0" data-i18n="notes">Notes</label>
+                        </div>
+                        <div class="col-sm-8">
+                            <textarea class="form-control" id="ere_notes" rows="2" maxlength="255"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="ereSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
         </div>

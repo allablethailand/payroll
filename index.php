@@ -214,8 +214,21 @@
     $router->post('api/payslip-request.run-options', 'PayslipRequestController@runOptions');
     $router->post('api/payslip-request.employee-options', 'PayslipRequestController@employeeOptions');
     $router->post('api/payslip-request.create', 'PayslipRequestController@create');
+
+    // Employment Certificate Requests (2026-08-26, explicit request: paired with Payslip Requests
+    // on the same page/menu -- see requests.php's new tab). No dedicated employee-options route --
+    // the "which employee" picker reuses the existing generic `api/employee.report_to.get`.
+    $router->get('api/employment-certificate-request.list', 'EmploymentCertificateRequestController@list');
+    $router->get('api/employment-certificate-request.get', 'EmploymentCertificateRequestController@get');
+    $router->post('api/employment-certificate-request.create', 'EmploymentCertificateRequestController@create');
+    $router->get('api/employment-certificate-request.download', 'EmploymentCertificateRequestController@download');
     $router->get('api/payslip-delivery-log.list', 'PayslipDeliveryLogController@list');
     $router->post('api/payslip-delivery-log.resend', 'PayslipDeliveryLogController@resend');
+    // 2026-08-26: unified Payslip + Employment Certificate delivery/issuance log -- see
+    // DocumentDeliveryLogModel's own docblock. Replaces api/payslip-delivery-log.list as the
+    // Delivery Log tab's own data source; the payslip-only endpoint above stays for its own resend
+    // action's sake and isn't removed.
+    $router->get('api/document-delivery-log.list', 'DocumentDeliveryLogController@list');
     $router->get('manual-entry', 'ManualEntryController@index');
     $router->get('api/manual-attendance.list', 'ManualEntryController@attendanceList');
     $router->get('api/manual-attendance.get', 'ManualEntryController@attendanceGet');
@@ -304,6 +317,13 @@
     $router->post('api/employee.earning-deduction.save', 'EmployeeController@earningDeductionSave');
     $router->post('api/employee.earning-deduction.status', 'EmployeeController@earningDeductionStatus');
     $router->post('api/employee.earning-deduction.delete', 'EmployeeController@earningDeductionDelete');
+    // 2026-08-26: Recurring Earnings (Salary tab's own new section) -- see
+    // EmployeeRecurringEarningModel's own docblock.
+    $router->post('api/employee.recurring-earning.type-options', 'EmployeeController@recurringEarningTypeOptions');
+    $router->get('api/employee.recurring-earning.list', 'EmployeeController@recurringEarningList');
+    $router->get('api/employee.recurring-earning.get', 'EmployeeController@recurringEarningGet');
+    $router->post('api/employee.recurring-earning.save', 'EmployeeController@recurringEarningSave');
+    $router->post('api/employee.recurring-earning.delete', 'EmployeeController@recurringEarningDelete');
     $router->get('api/employee.document.list', 'EmployeeController@documentList');
     $router->post('api/employee.document.upload', 'EmployeeController@documentUpload');
     $router->get('api/employee.document.view', 'EmployeeController@documentView');

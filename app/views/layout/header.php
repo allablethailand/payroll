@@ -52,7 +52,14 @@
                     <?php else: ?>
                         <?php foreach ($origamiApps as $app): ?>
                             <li class="nav-hub-tile">
-                                <a href="<?=htmlspecialchars(rtrim(ORIGAMI_BASE_URL, '/'), ENT_QUOTES, 'UTF-8')?>/api/oauth/v2/switch?token=<?=urlencode($switchToken)?>&app=<?=urlencode((string)($app['app_key'] ?? ''))?>">
+                                <!-- 2026-08-26, explicit bug report: "Switch App กลับไปใช้งาน Origami
+                                     ... Session ไม่ตัด" -- this used to link straight to Origami's own
+                                     switch URL, so Payroll's OWN session never got torn down when
+                                     leaving via the hub. Routes through auth/switch.php first now,
+                                     which destroys this session THEN redirects on to Origami (see
+                                     that file's own docblock) -- also keeps the raw switch token out
+                                     of this page's own rendered HTML, unlike the old direct link. -->
+                                <a href="<?=BASE_URL?>/auth/switch?app=<?=urlencode((string)($app['app_key'] ?? ''))?>">
                                     <span class="nav-hub-tile-icon">
                                         <img src="<?=htmlspecialchars((string)($app['app_logo'] ?? ''), ENT_QUOTES, 'UTF-8')?>" alt="" onerror="this.onerror=null;this.src='<?=BASE_URL?>/public/images/origami_logo.png';">
                                     </span>

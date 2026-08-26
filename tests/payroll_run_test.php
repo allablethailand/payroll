@@ -2024,6 +2024,100 @@ try {
     $runModel->submit($noWfRunId, $compId, $adminUserId, true);
     check('no approval_request_id linked once the workflow is inactive', $runModel->get($noWfRunId, $compId)['approval_request_id'], null);
 
+    echo "=== 2026-08-26: recalculate() includes/excludes Recurring Earnings (EmployeeRecurringEarningModel) ===\n";
+    // See tests/employee_recurring_earning_test.php for the model's own validation/activeForPeriod()
+    // unit coverage -- this section only confirms recalculate() actually wires it into a real run's
+    // earning_breakdown, and that a date-range suspend actually excludes it for the overlapping run.
+    require_once __DIR__ . '/../app/models/EmployeeRecurringEarningModel.php';
+    $recEmpStmt = $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+         emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         sso_enrolled, pvd_enrolled, tax_exempt)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
+         :email, '0800000000', 'Test Address', 'Test Address',
+         'Emergency', 'Contact', 'friend', '0899999999',
+         '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         1, 1, 0)");
+    $recEmpStmt->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_RECEARN_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'รายรับประจำ', ':name_en' => 'Test', ':surname_en' => 'RecurringEarning',
+        ':email' => uniqid() . '@test.local',
+    ]);
+    $recEmployeeId = (int)$pdo->lastInsertId();
+
+    $recTypeModel = new PayrollEarningDeductionTypeModel($pdo);
+    $recTypeRes = $recTypeModel->save($compId, [
+        'item_code' => 'RECTEST1', 'item_name_th' => 'ค่าตำแหน่งทดสอบ', 'item_name_en' => 'Test Position Allowance',
+        'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 2000, 'tax_treatment' => 'taxable',
+    ], $adminUserId);
+    checkTrue('fixture: recurring-earning catalog type created', $recTypeRes['status']);
+    $recTypeId = $recTypeRes['id'];
+
+    $recEarningModel = new EmployeeRecurringEarningModel($pdo);
+    $recAssignRes = $recEarningModel->save($recEmployeeId, $compId, [
+        'ped_type_id' => $recTypeId, 'amount' => 1200, 'effective_date' => '2020-01-01',
+    ], $adminUserId);
+    checkTrue('fixture: recurring earning assigned to the employee', $recAssignRes['status']);
+    $recAssignmentId = $recAssignRes['id'];
+
+    // Run 1 (+30 months, no suspend window yet) -- the recurring earning should be included.
+    $recRun1PeriodStart = (clone $today)->modify('first day of +30 months')->format('Y-m-d');
+    $recRun1PeriodEnd = (clone $today)->modify('last day of +30 months')->format('Y-m-d');
+    $recRun1Res = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_RECEARN_ACTIVE_' . uniqid(),
+        'period_start_date' => $recRun1PeriodStart, 'period_end_date' => $recRun1PeriodEnd, 'payment_date' => $recRun1PeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: run 1 created', $recRun1Res['status']);
+    $recRun1Id = $recRun1Res['id'];
+    $runModel->recalculate($recRun1Id, $compId, $adminUserId, true);
+    $recRun1Detail = current(array_filter($runModel->getDetails($recRun1Id, $compId), fn($d) => (int)$d['employee_id'] === $recEmployeeId));
+    checkTrue('run 1: the employee has a calculated row', $recRun1Detail !== false);
+    $recRun1Line = current(array_filter($recRun1Detail['earning_breakdown'], fn($l) => ($l['source'] ?? null) === 'recurring_earning'));
+    checkTrue('run 1: a recurring_earning line is present (no suspend window yet)', $recRun1Line !== false);
+    check('run 1: the line carries the right amount', (float)$recRun1Line['amount'], 1200.0);
+    check('run 1: the line carries the catalog item_code', $recRun1Line['code'], 'RECTEST1');
+    check('run 1: gross = base(30000) + recurring earning(1200)', (float)$recRun1Detail['gross_amount'], 31200.0);
+
+    // Suspend the allowance for a window overlapping Run 2's period (+31 months) but NOT Run 1's.
+    $recRun2PeriodStart = (clone $today)->modify('first day of +31 months')->format('Y-m-d');
+    $recRun2PeriodEnd = (clone $today)->modify('last day of +31 months')->format('Y-m-d');
+    $recSuspendRes = $recEarningModel->save($recEmployeeId, $compId, [
+        'id' => $recAssignmentId, 'ped_type_id' => $recTypeId, 'amount' => 1200, 'effective_date' => '2020-01-01',
+        'suspended_from' => $recRun2PeriodStart, 'suspended_to' => $recRun2PeriodEnd,
+    ], $adminUserId);
+    checkTrue('fixture: allowance suspended for run 2\'s exact period', $recSuspendRes['status']);
+
+    $recRun2Res = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_RECEARN_SUSPENDED_' . uniqid(),
+        'period_start_date' => $recRun2PeriodStart, 'period_end_date' => $recRun2PeriodEnd, 'payment_date' => $recRun2PeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: run 2 created', $recRun2Res['status']);
+    $recRun2Id = $recRun2Res['id'];
+    $runModel->recalculate($recRun2Id, $compId, $adminUserId, true);
+    $recRun2Detail = current(array_filter($runModel->getDetails($recRun2Id, $compId), fn($d) => (int)$d['employee_id'] === $recEmployeeId));
+    $recRun2Line = current(array_filter($recRun2Detail['earning_breakdown'], fn($l) => ($l['source'] ?? null) === 'recurring_earning'));
+    check('run 2: the recurring_earning line is EXCLUDED (suspend window covers this run\'s period)', $recRun2Line !== false, false);
+    check('run 2: gross = base(30000) only, allowance suspended', (float)$recRun2Detail['gross_amount'], 30000.0);
+
+    // Run 3 (+32 months, after the suspend window ends) -- resumes automatically, no re-activation step.
+    $recRun3PeriodStart = (clone $today)->modify('first day of +32 months')->format('Y-m-d');
+    $recRun3PeriodEnd = (clone $today)->modify('last day of +32 months')->format('Y-m-d');
+    $recRun3Res = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_RECEARN_RESUMED_' . uniqid(),
+        'period_start_date' => $recRun3PeriodStart, 'period_end_date' => $recRun3PeriodEnd, 'payment_date' => $recRun3PeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: run 3 created', $recRun3Res['status']);
+    $recRun3Id = $recRun3Res['id'];
+    $runModel->recalculate($recRun3Id, $compId, $adminUserId, true);
+    $recRun3Detail = current(array_filter($runModel->getDetails($recRun3Id, $compId), fn($d) => (int)$d['employee_id'] === $recEmployeeId));
+    $recRun3Line = current(array_filter($recRun3Detail['earning_breakdown'], fn($l) => ($l['source'] ?? null) === 'recurring_earning'));
+    checkTrue('run 3: the recurring_earning line resumes automatically after the suspend window ends', $recRun3Line !== false);
+    check('run 3: gross = base(30000) + recurring earning(1200) again', (float)$recRun3Detail['gross_amount'], 31200.0);
+
 } finally {
     $pdo->rollBack();
 }

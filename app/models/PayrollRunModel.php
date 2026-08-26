@@ -9,6 +9,7 @@ require_once __DIR__ . '/../services/sync/MasterDataSyncOrchestrator.php';
 require_once __DIR__ . '/PayrollSyncModel.php';
 require_once __DIR__ . '/SetupRulesModel.php';
 require_once __DIR__ . '/ApprovalRequestModel.php';
+require_once __DIR__ . '/EmployeeRecurringEarningModel.php';
 
 /**
  * Payroll Run state machine + calculation.
@@ -30,6 +31,7 @@ class PayrollRunModel {
     private ThPitCalculator $thPitCalculator;
     private SyncPayResolver $syncPayResolver;
     private SetupRulesModel $setupRulesModel;
+    private EmployeeRecurringEarningModel $recurringEarningModel;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
@@ -38,6 +40,7 @@ class PayrollRunModel {
         $this->thPitCalculator = new ThPitCalculator($this->db, $this->engine);
         $this->syncPayResolver = new SyncPayResolver($this->db);
         $this->setupRulesModel = new SetupRulesModel($this->db);
+        $this->recurringEarningModel = new EmployeeRecurringEarningModel($this->db);
     }
 
     /* ==================== READ ==================== */
@@ -1174,6 +1177,24 @@ class PayrollRunModel {
                         } else {
                             $deductionLines[] = $line;
                         }
+                    }
+
+                    // Recurring earnings (position/car/fuel allowance, etc.) -- 2026-08-26, explicit
+                    // request: "รายรับที่ได้ทุกเดือน...ให้เพิ่มส่วนนี้เข้าไปด้วย และระงับการจ่ายได้ รวมถึงการ
+                    // ตั้งค่าส่วนนี้เพิ่มเติมให้นำไปคำนวณในรอบการจ่ายด้วย". Same placement as the PED
+                    // assignments block above (skipped entirely for an incentive/off-cycle run, which
+                    // is manually-picked items only) -- see EmployeeRecurringEarningModel's own
+                    // docblock for why this is a separate table/query, not a mode of PED assignments.
+                    foreach ($this->recurringEarningModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                        $earningLines[] = [
+                            'source' => 'recurring_earning',
+                            'recurring_id' => (int)$rec['recurring_id'],
+                            'code' => $rec['item_code'],
+                            'name_th' => $rec['item_name_th'],
+                            'name_en' => $rec['item_name_en'],
+                            'amount' => (float)$rec['amount'],
+                            'is_custom' => false,
+                        ];
                     }
 
                     // Attendance bonus (only passed/locked entries for this period).

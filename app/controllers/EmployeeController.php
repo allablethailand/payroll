@@ -2,14 +2,17 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/EmployeeModel.php';
 require_once __DIR__ . '/../models/EmployeeEarningDeductionModel.php';
+require_once __DIR__ . '/../models/EmployeeRecurringEarningModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 class EmployeeController extends Controller {
     private $model;
     private $earningDeductionModel;
+    private EmployeeRecurringEarningModel $recurringEarningModel;
     private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new EmployeeModel();
         $this->earningDeductionModel = new EmployeeEarningDeductionModel();
+        $this->recurringEarningModel = new EmployeeRecurringEarningModel();
         $this->permissionModel = new PermissionModel();
     }
 
@@ -269,6 +272,91 @@ class EmployeeController extends Controller {
         $result = $this->earningDeductionModel->delete($id, (int)$compId, $employeeId, $userId);
         $this->json($result);
     }
+
+    /* ==================== Recurring Earnings (Salary tab's own new section) --
+       2026-08-26, explicit request: "รายรับที่ได้ทุกเดือนเช่นพวกค่าตำแหน่ง ค่ารถ ค่าน้ำมัน...ให้เพิ่มส่วนนี้
+       เข้าไปด้วย และระงับการจ่ายได้" -- see EmployeeRecurringEarningModel's own docblock for why this is
+       a separate table/section from Earning-Deduction (loans/installments). ==================== */
+
+    /** Dropdown options for the allowance-type picker -- a dedicated, pre-filtered wrapper around
+     *  the SAME catalog query the Earning-Deduction tab's own #eed_ped_type_id already uses, fixed
+     *  to item_type=earning + calculation_method=fixed_amount server-side (no client-passed filter
+     *  needed, so initSelect2's generic ajax data-builder didn't need touching for a 3rd filter). */
+    public function recurringEarningTypeOptions() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['items' => [], 'total_count' => 0]]);
+            return;
+        }
+        $page = intval($_POST['page'] ?? 1);
+        $limit = intval($_POST['limit'] ?? 10);
+        $search = (string)($_POST['searchTerm'] ?? '');
+        $data = $this->earningDeductionModel->activeOptions((int)$compId, $search, $page, $limit, 'earning', 'fixed_amount');
+        $this->json(['status' => true, 'data' => $data]);
+    }
+    public function recurringEarningList() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'data' => []]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->recurringEarningModel->list($employeeId, (int)$compId)]);
+    }
+    public function recurringEarningGet() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $row = $this->recurringEarningModel->get($id, (int)$compId);
+        if ($row) {
+            $this->json(['status' => true, 'data' => $row]);
+        } else {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+        }
+    }
+    public function recurringEarningSave() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
+        if ($employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing employee_id.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->recurringEarningModel->save($employeeId, (int)$compId, $data, $userId));
+    }
+    public function recurringEarningDelete() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($employeeId <= 0 || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid request.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->recurringEarningModel->delete($id, (int)$compId, $employeeId, $userId));
+    }
+
     private function handleChildList(string $type): void {
         if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();

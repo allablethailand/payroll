@@ -116,7 +116,15 @@ function populateEmployeeForm(data) {
             return;
         }
         if ($el.hasClass('datepicker')) {
+            // Setting .val() alone leaves bootstrap-datepicker's own internal `dates` array
+            // (populated once, at initDatepicker() time on an EMPTY field, before this employee's
+            // data has even loaded) out of sync with what's now visibly in the input. Clicking the
+            // field afterward without picking a new date, then clicking away, calls the widget's
+            // own hide()->setValue(), which writes `dates` (still empty) back into the input --
+            // silently blanking a field the user never touched. .datepicker('update') re-parses
+            // the input's current text into `dates` so that round-trip is a no-op instead.
             $el.val(toDisplayDate(data[key]));
+            $el.datepicker('update');
             return;
         }
         $el.val(data[key] !== null && data[key] !== undefined ? data[key] : '').trigger('change');
@@ -573,6 +581,7 @@ $(function () {
     initChildTables();
     initDocumentUpload();
     initEedUI();
+    initRecurringEarningUI();
 });
 
 function escapeHtml(str) {
@@ -1329,7 +1338,11 @@ function populateEedForm(row, readOnly) {
         setEedMode('custom');
         $('#eed_custom_item_name').val(row.item_name_th || row.item_name_en || '');
     }
+    // Same datepicker-state-desync bug/fix as populateEmployeeForm() above -- this modal's date
+    // field is initialized once (empty) on page load, so a plain .val() here would leave the
+    // widget's internal `dates` empty until re-synced.
     $('#eed_effective_date').val(toDisplayDate(row.effective_date));
+    $('#eed_effective_date').datepicker('update');
     $('#eed_total_installments').val(row.total_installments);
     $('#eed_principal_amount').val(row.principal_amount != null ? row.principal_amount : row.total_amount);
     $('#eed_notes').val(row.notes || '');
@@ -1567,4 +1580,210 @@ function initEedUI() {
             });
         });
     });
+}
+
+/* ==================== Recurring Allowances (Salary tab's own new section) -- 2026-08-26, explicit
+   request: "รายรับที่ได้ทุกเดือนเช่นพวกค่าตำแหน่ง ค่ารถ ค่าน้ำมัน...ให้เพิ่มส่วนนี้เข้าไปด้วย และระงับการจ่ายได้"
+   -- see EmployeeRecurringEarningModel's own docblock for why this is a separate table/section from
+   Earning-Deduction (loans/installments) above. Mirrors initEedUI()'s own DataTable-list-+-modal
+   shape, simplified: no catalog/custom toggle (catalog-only), no installment schedule, no interest. ==================== */
+let tbRecurringEarning;
+function recurringEarningStatusBadge(row) {
+    if (row.is_suspended_now) {
+        return `<span class="badge bg-warning-subtle text-warning">${langData['status_suspended'] || 'Suspended'}</span>`;
+    }
+    return `<span class="badge bg-success-subtle text-success">${langData['status_active'] || 'Active'}</span>`;
+}
+function recurringEarningSuspendPeriodCell(row) {
+    if (!row.suspended_from || !row.suspended_to) return '-';
+    return `${toDisplayDate(row.suspended_from)} - ${toDisplayDate(row.suspended_to)}`;
+}
+function initRecurringEarningUI() {
+    tbRecurringEarning = $('#tableRecurringEarning').DataTable({
+        ajax: {
+            url: `${BASE_URL}/api/employee.recurring-earning.list`,
+            data: function (d) { d.employee_id = currentEmployeeId; },
+            dataSrc: 'data'
+        },
+        columns: [
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '') },
+            { data: 'amount', render: d => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+            { data: 'effective_date', render: d => toDisplayDate(d) },
+            { data: null, render: (d, t, row) => recurringEarningSuspendPeriodCell(row) },
+            { data: null, render: (d, t, row) => recurringEarningStatusBadge(row) },
+            {
+                data: null, orderable: false, className: 'text-center',
+                render: (d, t, row) => `
+                    <button type="button" class="btn btn-sm btn-link text-primary btn-edit-recurring-earning" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                    <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-earning" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
+                `
+            }
+        ],
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang(),
+        initComplete: function () {
+            const $wrapper = $(this.api().table().container());
+            const $searchDiv = $wrapper.find('.dt-search');
+            if ($searchDiv.find('.btn-add-recurring-earning').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-primary btn-sm ms-1 btn-add-recurring-earning">
+                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_recurring_earning">${langData['add_recurring_earning'] || 'Add Recurring Allowance'}</span>
+                    </button>
+                `);
+            }
+        }
+    });
+    // Same hidden-tab-at-init width gotcha as tableEarning/tableDeduction above -- this table lives
+    // on the Salary tab, which also isn't the default-active tab on page load.
+    document.getElementById('salary-tab').addEventListener('shown.bs.tab', function () {
+        if (tbRecurringEarning) tbRecurringEarning.columns.adjust();
+    });
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#ere_ped_type_id', { mode: 'ajax' });
+    }
+    $(document).on('click', '.btn-add-recurring-earning', function () {
+        if (!currentEmployeeId) {
+            showWarning(langData['save_basic_info_first'] || "Please save the employee's basic info first.");
+            return;
+        }
+        resetRecurringEarningForm();
+        new bootstrap.Modal(document.getElementById('recurringEarningModal')).show();
+    });
+    $(document).on('click', '.btn-edit-recurring-earning', function () {
+        const id = $(this).data('id');
+        // Fetched fresh from the API, not read off the clicked row's cached DOM data -- same
+        // reasoning as openEedModalForId() above (DataTables may have re-rendered the row by now).
+        $.ajax({
+            url: `${BASE_URL}/api/employee.recurring-earning.get`,
+            method: 'GET',
+            data: { id: id },
+            dataType: 'json',
+            success: function (res) {
+                if (res.status && res.data) {
+                    resetRecurringEarningForm();
+                    populateRecurringEarningForm(res.data);
+                    new bootstrap.Modal(document.getElementById('recurringEarningModal')).show();
+                } else {
+                    showWarning(res.message || langData['load_employee_failed'] || 'Failed to load data.');
+                }
+            },
+            error: function () {
+                showWarning(langData['load_employee_failed'] || 'Failed to load data.');
+            }
+        });
+    });
+    $(document).on('submit', '#recurringEarningForm', function (e) {
+        e.preventDefault();
+        const invalidEl = validateRecurringEarningForm();
+        if (invalidEl) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        const suspendedFrom = toIsoDate($('#ere_suspended_from').val());
+        const suspendedTo = toIsoDate($('#ere_suspended_to').val());
+        if (!!suspendedFrom !== !!suspendedTo) {
+            showWarning(langData['suspend_period_both_required'] || 'Enter both a suspend start date and end date, or leave both blank.');
+            return;
+        }
+        const payload = {
+            id: $('#ere_id').val() || undefined,
+            employee_id: currentEmployeeId,
+            ped_type_id: $('#ere_ped_type_id').val(),
+            amount: $('#ere_amount').val(),
+            effective_date: toIsoDate($('#ere_effective_date').val()),
+            suspended_from: suspendedFrom || undefined,
+            suspended_to: suspendedTo || undefined,
+            notes: $('#ere_notes').val().trim()
+        };
+        const $btn = $('#ereSaveBtn');
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
+        $.ajax({
+            url: `${BASE_URL}/api/employee.recurring-earning.save`,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    bootstrap.Modal.getInstance(document.getElementById('recurringEarningModal')).hide();
+                    if (tbRecurringEarning) tbRecurringEarning.ajax.reload(null, false);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+            }
+        });
+    });
+    $(document).on('click', '.btn-delete-recurring-earning', function () {
+        const id = $(this).data('id');
+        const title = langData['confirm_delete_title'] || 'Confirm Delete';
+        const message = langData['confirm_delete_message'] || 'Are you sure you want to delete this item?';
+        showConfirm(title, message, function () {
+            $.ajax({
+                url: `${BASE_URL}/api/employee.recurring-earning.delete`,
+                method: 'POST',
+                contentType: 'application/json',
+                dataType: 'json',
+                data: JSON.stringify({ id: id, employee_id: currentEmployeeId }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(langData['delete_success'] || 'Deleted successfully.');
+                        if (tbRecurringEarning) tbRecurringEarning.ajax.reload(null, false);
+                    } else {
+                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
+                    }
+                },
+                error: function () {
+                    showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
+                }
+            });
+        });
+    });
+}
+function resetRecurringEarningForm() {
+    $('#recurringEarningForm')[0].reset();
+    $('#ere_id').val('');
+    $('#ere_ped_type_id').val(null).trigger('change');
+    $('.is-invalid', '#recurringEarningModal').removeClass('is-invalid');
+    $('#recurringEarningModalLabel span').text(langData['add_recurring_earning'] || 'Add Recurring Allowance');
+}
+function populateRecurringEarningForm(row) {
+    $('#ere_id').val(row.id);
+    const label = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || '';
+    const opt = new Option(`[${row.item_code}] ${label}`, row.ped_type_id, true, true);
+    $('#ere_ped_type_id').empty().append(opt).trigger('change');
+    $('#ere_amount').val(row.amount);
+    // Same datepicker-state-desync bug/fix as populateEmployeeForm() -- see that function's own
+    // comment: a plain .val() leaves bootstrap-datepicker's internal `dates` empty until re-synced.
+    $('#ere_effective_date').val(toDisplayDate(row.effective_date));
+    $('#ere_effective_date').datepicker('update');
+    $('#ere_suspended_from').val(row.suspended_from ? toDisplayDate(row.suspended_from) : '');
+    $('#ere_suspended_from').datepicker('update');
+    $('#ere_suspended_to').val(row.suspended_to ? toDisplayDate(row.suspended_to) : '');
+    $('#ere_suspended_to').datepicker('update');
+    $('#ere_notes').val(row.notes || '');
+    $('#recurringEarningModalLabel span').text(langData['edit_recurring_earning'] || 'Edit Recurring Allowance');
+}
+function validateRecurringEarningForm() {
+    let firstInvalid = null;
+    $('#recurringEarningModal .required').each(function () {
+        const $el = $(this);
+        const value = ($el.val() || '').toString().trim();
+        if (!value) {
+            $el.addClass('is-invalid');
+            if (!firstInvalid) firstInvalid = $el;
+        } else {
+            $el.removeClass('is-invalid');
+        }
+    });
+    return firstInvalid;
 }

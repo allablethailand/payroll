@@ -1795,6 +1795,54 @@ html, body {
 .apv-timeline-log .apv-log-note { font-size: 12px; color: #4b5563; margin-top: 2px; }
 
 /* ==========================================================================
+   Generic Approval Request timeline (`#requestDetailModal`, public/js/setup/approval-request-
+   detail.js) -- 2026-08-26, explicit request: "การอนุมัติให้เป็นรูปแบบเดียวกับ Approve Process ครับมี
+   timeline ให้กดดู". Same visual language as the Payroll Approve Process timeline above (.apv-*) --
+   colored circular marker + connecting line + title/badge/body -- but deliberately a SEPARATE
+   classname set (.art-*) and simpler shape, since this one is document-type-agnostic (driven only by
+   an approval_request_id, shared by both the Payslip Requests and Employment Certificate Requests
+   tabs) and has no per-approver "substep" concept the way PayrollRunModel::approvalFlow() does.
+   Oldest stage FIRST here (Requested at the top, reading downward) -- unlike .apv-* above, since this
+   timeline is built by simply appending each `approval_request_logs` row in the order the API already
+   returns them, not reversed for a "newest first" reading. ========================================================================== */
+.art-timeline { padding: 4px 2px; }
+.art-stage { position: relative; display: flex; gap: 16px; padding-bottom: 26px; }
+.art-stage:last-child { padding-bottom: 4px; }
+.art-stage-rail { position: relative; flex: none; width: 34px; }
+.art-stage-marker {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 13px; position: relative; z-index: 2;
+    box-shadow: 0 0 0 4px #fff; background: #9ca3af;
+}
+.art-stage-requested .art-stage-marker { background: #6c757d; }
+.art-stage-approve .art-stage-marker { background: #16a34a; }
+.art-stage-reject .art-stage-marker { background: #dc3545; }
+.art-stage-cancel .art-stage-marker { background: #9ca3af; }
+.art-stage-pending .art-stage-marker { background: #FF9900; }
+.art-stage-line {
+    position: absolute; top: 34px; bottom: -26px; left: 16px; width: 2px;
+    background: #e5e7eb; z-index: 1;
+}
+.art-stage:last-child .art-stage-line { display: none; }
+.art-stage-content { flex: 1; min-width: 0; padding-top: 5px; }
+.art-stage-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.art-stage-title { font-weight: 700; color: #1f2937; font-size: 13.5px; }
+.art-stage-body { margin-top: 4px; font-size: 12.5px; color: #6b7280; }
+.art-stage-note {
+    margin-top: 6px; font-size: 12px; color: #4b5563; background: #f9fafb;
+    border-left: 3px solid #e5e7eb; padding: 6px 10px; border-radius: 4px;
+}
+.art-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+    white-space: nowrap; color: #fff;
+}
+.art-badge-approved { background: #16a34a; }
+.art-badge-rejected { background: #dc3545; }
+.art-badge-cancelled { background: #9ca3af; }
+.art-badge-pending { background: #FF9900; }
+
+/* ==========================================================================
    Payroll Run Detail — colored stat cards (Employees/Gross/Deductions/Net Pay), replacing
    the single shared-frame summary row per explicit request ("แบ่ง Card เป็นสีๆ ตอนนี้เป็น
    กรอบเดียวกันไม่สวย" -- split into colored cards, one shared frame doesn't look good).
@@ -2726,6 +2774,26 @@ html, body {
     border-color: #FF9900;
     box-shadow: 0 0 0 3px rgba(255, 153, 0, .15);
 }
+/* 2026-08-26: persistently-visible pencil affordance next to the borderless title input above --
+   see the markup's own comment for why (the title looked like static text, not an editable field). */
+.ect-editor-title-edit-btn {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    font-size: .8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s ease, color .15s ease;
+}
+.ect-editor-title-edit-btn:hover {
+    background: #fff1de;
+    color: #FF9900;
+}
 .ect-editor-topbar-fields {
     display: flex;
     align-items: center;
@@ -3536,6 +3604,25 @@ html, body {
     background: #fff;
     border-color: #FF9900;
     box-shadow: 0 0 0 3px rgba(255, 153, 0, .15);
+}
+/* 2026-08-26: same pencil affordance as .ect-editor-title-edit-btn -- see that rule's own comment. */
+.pst-editor-title-edit-btn {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    font-size: .8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s ease, color .15s ease;
+}
+.pst-editor-title-edit-btn:hover {
+    background: #fff1de;
+    color: #FF9900;
 }
 .pst-editor-topbar-fields {
     display: flex;

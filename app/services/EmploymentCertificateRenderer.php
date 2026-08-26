@@ -466,4 +466,27 @@ class EmploymentCertificateRenderer {
         $html = $this->buildHtml($template, $language, $elements, $company, $employee, $logoAbsPath, $imageAssetPaths, $watermarkText);
         return $this->renderPdf($template, $html);
     }
+
+    /**
+     * Renders the REAL, final PDF for an approved Employment Certificate Request
+     * (EmploymentCertificateRequestModel::issuePdf(), 2026-08-26) -- unlike renderPreview(), this
+     * NEVER falls back to mock/any-other-employee data. A genuine issuance must fail loudly (throw)
+     * if the company or employee can't be resolved, not silently produce a document for the wrong
+     * person or with placeholder data. No watermark -- an issued document is the real thing.
+     */
+    public function renderForIssuance(int $compId, array $template, string $language, array $elements, int $employeeId): string {
+        $company = $this->fetchCompany($compId);
+        if ($company === null) {
+            throw new RuntimeException('Company not found.');
+        }
+        $employee = $this->fetchEmployee($compId, $employeeId);
+        if ($employee === null) {
+            throw new RuntimeException('Employee not found.');
+        }
+        $imageAssetIds = array_map(fn($el) => (int)($el['image_asset_id'] ?? 0), $elements);
+        $imageAssetPaths = $this->resolveImageAssetPaths($compId, $imageAssetIds);
+        $logoAbsPath = $this->resolveTemplateOrCompanyLogo($template['logo_path'] ?? null, $company['logo_path'] ?? null);
+        $html = $this->buildHtml($template, $language, $elements, $company, $employee, $logoAbsPath, $imageAssetPaths, null);
+        return $this->renderPdf($template, $html);
+    }
 }

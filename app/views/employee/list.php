@@ -102,7 +102,9 @@
                             <th></th>
                             <th scope="col" data-i18n="employee_no">Employee No.</th>
                             <th scope="col" data-i18n="name">Name</th>
+                            <th scope="col" data-i18n="mobile_no">Mobile No.</th>
                             <th scope="col" data-i18n="role">Role</th>
+                            <th scope="col" data-i18n="position">Position</th>
                             <th scope="col" data-i18n="department">Department</th>
                             <th scope="col" data-i18n="team">Team</th>
                             <th scope="col" data-i18n="shift">Shift</th>

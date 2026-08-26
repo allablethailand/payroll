@@ -1,7 +1,17 @@
 /**
- * Payslip Delivery Log — Document & Approval > "Delivery Log" tab. Read-only audit trail
- * (payslip_delivery_logs) with a Resend action on failed attempts. Resend retries the FULL
- * fallback chain again, not just the one channel that failed (see PayslipDeliveryService::resend()).
+ * Document Delivery / Issuance Log — Payslip & Documents > "Delivery Log" tab. Read-only audit
+ * trail, UNIFIED across Payslip sends (payslip_delivery_logs) AND Employment Certificate
+ * issuances (employment_certificate_requests) via DocumentDeliveryLogModel -- 2026-08-26, explicit
+ * request: "ปรับ Filter ให้เหมือนหน้าพนักงาน และมีเพิ่มประเภทเอกสารที่ส่งด้วยครับ" (make the filter look
+ * like the Employee page's, and add a document-type filter). The filter box itself is a direct port
+ * of Employee List's own collapsible `.station-filter` (see public/js/employee/list.js) instead of
+ * the old plain row of 3 dropdowns.
+ *
+ * A row's own `id` belongs to a DIFFERENT source table depending on `document_type` -- a payslip
+ * row's `id` is a payslip_delivery_logs.id (Resend uses it against api/payslip-delivery-log.resend,
+ * unchanged), an employment_certificate row's `id` is an employment_certificate_requests.id
+ * (Download reuses api/employment-certificate-request.download?id=, same endpoint the Requests tab
+ * already uses). Never assume both branches share one id space.
  */
 let tb_payslip_delivery_log;
 
@@ -20,9 +30,22 @@ function sourceLabel(source) {
     return source === 'auto' ? (langData['source_auto'] || 'Auto-send') : (langData['source_request'] || 'Request');
 }
 
-function formatPayPeriodDlog(row) {
-    if (!row.period_start_date || !row.period_end_date) return escapeHtmlDlog(row.run_name);
-    return `${escapeHtmlDlog(row.run_name)} <span class="text-secondary small">(${row.period_start_date} - ${row.period_end_date})</span>`;
+function docTypeLabelDlog(documentType) {
+    return documentType === 'employment_certificate'
+        ? (langData['doc_type_employment_certificate'] || 'Employment Certificate')
+        : (langData['doc_type_payslip'] || 'Payslip');
+}
+
+function docLanguageLabelDlog(lang) {
+    return lang === 'en' ? (langData['template_language_en'] || 'English') : (langData['template_language_th'] || 'Thai');
+}
+
+function formatReferenceDlog(row) {
+    if (row.document_type === 'employment_certificate') {
+        return `<span class="text-secondary small">${docLanguageLabelDlog(row.language)}</span>`;
+    }
+    if (!row.period_start_date || !row.period_end_date) return escapeHtmlDlog(row.reference_label);
+    return `${escapeHtmlDlog(row.reference_label)} <span class="text-secondary small">(${row.period_start_date} - ${row.period_end_date})</span>`;
 }
 
 function initPayslipDeliveryLogTable() {
@@ -33,9 +56,10 @@ function initPayslipDeliveryLogTable() {
     tb_payslip_delivery_log = $('#tb_payslip_delivery_log').DataTable({
         responsive: true,
         ajax: {
-            url: `${BASE_URL}/api/payslip-delivery-log.list`,
+            url: `${BASE_URL}/api/document-delivery-log.list`,
             dataSrc: 'data',
             data: function (d) {
+                d.document_type = $('#dlog_filter_document_type').val() || '';
                 d.status = $('#dlog_filter_status').val() || '';
                 d.channel_code = $('#dlog_filter_channel').val() || '';
                 d.source = $('#dlog_filter_source').val() || '';
@@ -43,28 +67,54 @@ function initPayslipDeliveryLogTable() {
         },
         columns: [
             { data: null, render: (d, t, row) => `${escapeHtmlDlog(row.employee_no)} - ${escapeHtmlDlog(currentLang === 'th' ? row.employee_name_th : row.employee_name_en)}` },
-            { data: null, render: (d, t, row) => formatPayPeriodDlog(row) },
+            { data: 'document_type', render: d => docTypeLabelDlog(d) },
+            { data: null, render: (d, t, row) => formatReferenceDlog(row) },
             { data: 'source', render: d => sourceLabel(d) },
-            { data: 'channel_code', render: d => escapeHtmlDlog((d || '').toUpperCase()) },
+            { data: 'channel_code', render: d => d ? escapeHtmlDlog(d.toUpperCase()) : '-' },
             { data: 'recipient', render: d => escapeHtmlDlog(d || '-') },
             { data: 'status', render: d => deliveryStatusBadge(d) },
             { data: 'sent_at' },
             { data: null, render: (d, t, row) => escapeHtmlDlog((currentLang === 'th' ? row.sent_by_name_th : row.sent_by_name_en) || '-') },
             {
                 data: null, orderable: false, className: 'text-center',
-                render: (d, t, row) => row.status === 'failed'
-                    ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-resend-dlog" data-id="${row.id}"><i class="fa-solid fa-rotate-right"></i></button>`
-                    : ''
+                render: (d, t, row) => {
+                    if (row.document_type === 'employment_certificate') {
+                        return row.status === 'success'
+                            ? `<a class="btn btn-sm btn-outline-success" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`
+                            : '';
+                    }
+                    return row.status === 'failed'
+                        ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-resend-dlog" data-id="${row.id}"><i class="fa-solid fa-rotate-right"></i></button>`
+                        : '';
+                }
             }
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         language: getTableLang(),
-        order: [[6, 'desc']]
+        order: [[7, 'desc']]
     });
 }
 
-$(document).on('change', '#dlog_filter_status, #dlog_filter_channel, #dlog_filter_source', function () {
+function updateClearDlogFilterVisibility() {
+    const hasFilter = !!($('#dlog_filter_document_type').val() || $('#dlog_filter_status').val() || $('#dlog_filter_channel').val() || $('#dlog_filter_source').val());
+    $('#btnClearDlogFilter').toggleClass('d-none', !hasFilter);
+}
+
+$(document).on('click', '#dlogStationFilterToggle', function () {
+    const $filter = $('#dlogStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+
+$(document).on('change', '#dlog_filter_document_type, #dlog_filter_status, #dlog_filter_channel, #dlog_filter_source', function () {
+    updateClearDlogFilterVisibility();
+    if (tb_payslip_delivery_log) tb_payslip_delivery_log.ajax.reload(null, true);
+});
+
+$(document).on('click', '#btnClearDlogFilter', function () {
+    $('#dlog_filter_document_type, #dlog_filter_status, #dlog_filter_channel, #dlog_filter_source').val(null).trigger('change.select2');
+    updateClearDlogFilterVisibility();
     if (tb_payslip_delivery_log) tb_payslip_delivery_log.ajax.reload(null, true);
 });
 

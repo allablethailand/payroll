@@ -1614,6 +1614,13 @@ function fetchTemplateIntoSlot(id, callback) {
  *  writes (currentTemplate/elements/logoPath/dirty/undoStack/redoStack) -- a shallow reference swap.
  *  Renders either the normal canvas or the empty-state, depending on whether this language has been
  *  created for the pair yet. Direct port of Employment Certificate Template's own switchToLangTab(). */
+// 2026-08-26, explicit request: lock this Font dropdown the same way Employment Certificate
+// Template's own already does -- direct port of that file's updateFontFamilyOptions(). Only TH
+// Sarabun New has Thai glyphs (see storage/fonts/thsarabun/NOTICE.md); the other 6 are only offered
+// while editing the English-language template, where they're a genuine stylistic alternative.
+function updateFontFamilyOptions() {
+    $('#pstPropFontFamily option[data-en-only]').toggle(currentLanguage === 'en');
+}
 function switchToLangTab(lang) {
     activeLang = lang;
     currentLanguage = lang;
@@ -1666,6 +1673,7 @@ function switchToLangTab(lang) {
     currentAssignments = slot.assignments || [];
     renderAssignChecklists();
     updateMarginDropdownLabel();
+    updateFontFamilyOptions();
     updateCanvasDimensions();
     $('#pstPage').toggleClass('pst-grid-on', gridOn);
     $('#pstGridToggle').toggleClass('active', gridOn);
@@ -1727,6 +1735,9 @@ $(document).on('change', '#pstPageSizeSelect, #pstOrientationSelect', function (
     updateSaveHint();
 });
 $(document).on('input', '#pstTemplateNameInput, #pstHeaderThInput, #pstHeaderEnInput, #pstFooterThInput, #pstFooterEnInput', function () { dirty = true; updateSaveHint(); });
+$(document).on('click', '#pstTemplateNameEditBtn', function () {
+    $('#pstTemplateNameInput').trigger('focus').select();
+});
 $(document).on('change', '#pstStatusSwitch, #pstIsDefaultSwitch', function () { dirty = true; updateSaveHint(); });
 
 /* ---------- New Template modal ---------- */
@@ -2097,6 +2108,7 @@ $(document).ready(function () {
                 }
             }
         });
+        updateFontFamilyOptions();
         loadAssignableOptions();
         if (typeof PST_PAIR_ROW !== 'undefined') {
             bootstrapEditorPage(PST_PAIR_ROW);

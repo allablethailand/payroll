@@ -31,6 +31,13 @@
   <div class="ect-editor-title-group">
     <i class="fa-solid fa-file-shield ect-editor-title-icon"></i>
     <input type="text" class="ect-editor-title-input" id="ectTemplateNameInput" placeholder="Template Name">
+    <!-- 2026-08-26, explicit request: "ในการตั้งชื่อในหน้าตั้งค่า ให้มีปุ่มดินสอด้วยจะได้รู้ว่าแก้ไขได้" --
+         the title input above is intentionally borderless/blends into the background until
+         hover/focus (Google Docs title convention), which is exactly what made it non-obvious that
+         it's editable at all. A persistently-visible pencil affordance (not hover-only, since
+         hover-only doesn't help a user who never thinks to hover) fixes that; clicking it just
+         focuses+selects the input, same as clicking a Google Docs title's pencil. -->
+    <button type="button" class="ect-editor-title-edit-btn" id="ectTemplateNameEditBtn" title="Rename"><i class="fa-solid fa-pen"></i></button>
   </div>
 </div>
 
