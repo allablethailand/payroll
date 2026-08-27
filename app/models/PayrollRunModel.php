@@ -1772,6 +1772,52 @@ class PayrollRunModel {
      *  exact same "who's eligible to be joined onto this run" logic (pure-cycle-run re-include-only
      *  branch, sync-run already-mapped exclusion, plus every filter), just with different
      *  pagination/output shapes on top. @return array{0:string,1:array} [$whereSql, $params] */
+    private const MANUAL_EMPLOYEE_JOINS = "FROM `employees` e
+                LEFT JOIN `structure_departments` d ON e.department_id = d.id
+                LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
+                LEFT JOIN `structure_positions` p ON e.position_id = p.id
+                LEFT JOIN `payroll_cycles` c ON e.cycle_id = c.id";
+
+    /** Frontend column KEY -> real SQL expression for the Join Employees picker's Excel-style
+     *  column filter (2026-08-27 rollout) -- mirrors EmployeeModel::listColumnExprMap()'s own
+     *  $lang-resolution for name/department/team/position. No actions/checkbox column here (this
+     *  picker has neither) -- every listed column is filterable. */
+    private function manualEmployeeFilterExprMap(string $lang): array {
+        $deptCol = $lang === 'en' ? 'department_name_en' : 'department_name_th';
+        $posiCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
+        $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
+        return [
+            'employee_no' => 'e.employee_no',
+            'name' => $lang === 'en' ? "CONCAT(e.name_en, ' ', e.surname_en)" : "CONCAT(e.name_th, ' ', e.surname_th)",
+            'department' => "d.{$deptCol}",
+            'team' => "tm.{$teamCol}",
+            'position' => "p.{$posiCol}",
+            'cycle_name' => 'c.cycle_name',
+        ];
+    }
+
+    private function applyManualEmployeeColumnFilters(string $whereSql, array &$params, array $columnFilters, array $exprMap, ?string $excludeColumn = null): string {
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if ($col === $excludeColumn || !isset($exprMap[$col]) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $whereSql .= " AND {$exprMap[$col]} IN (" . implode(', ', $placeholders) . ")";
+        }
+        return $whereSql;
+    }
+
     private function buildManualEmployeeWhere(int $compId, int $runId, array $filters): array {
         $run = $this->get($runId, $compId);
         $isPureCycleRun = $run && $run['cycle_id'] !== null && $run['sync_process_id'] === null;
@@ -1828,14 +1874,20 @@ class PayrollRunModel {
         return [$where, $params];
     }
 
-    public function manualEmployeeOptions(int $compId, int $runId, int $start, int $length, array $filters, string $search, string $lang = 'th'): array {
+    public function manualEmployeeOptions(int $compId, int $runId, int $start, int $length, array $filters, string $search, string $lang = 'th', array $columnFilters = []): array {
         $deptCol = $lang === 'en' ? 'department_name_en' : 'department_name_th';
         $posiCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
         $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
+        $filterExprMap = $this->manualEmployeeFilterExprMap($lang);
 
         [$baseWhere, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
 
-        $totalStmt = $this->db->prepare("SELECT COUNT(*) FROM `employees` e WHERE {$baseWhere}");
+        // Both COUNT queries need the same JOINs as the main data query below -- column_filters
+        // (2026-08-27) can filter on a JOINed display-name column (e.g. d.department_name_th), not
+        // just e.*'s own FK id columns like the pre-existing department_id/team_id/etc. filters, so
+        // a bare `FROM employees e` here would 42S22 the moment any column_filters entry is active
+        // (same real bug already found and fixed once for EmployeeModel::list() during this rollout).
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) " . self::MANUAL_EMPLOYEE_JOINS . " WHERE {$baseWhere}");
         $totalStmt->execute($params);
         $recordsTotal = (int)$totalStmt->fetchColumn();
 
@@ -1846,8 +1898,10 @@ class PayrollRunModel {
                 $params[":search{$i}"] = "%{$search}%";
             }
         }
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout.
+        $whereSql = $this->applyManualEmployeeColumnFilters($whereSql, $params, $columnFilters, $filterExprMap);
 
-        $countStmt = $this->db->prepare("SELECT COUNT(*) FROM `employees` e WHERE {$whereSql}");
+        $countStmt = $this->db->prepare("SELECT COUNT(*) " . self::MANUAL_EMPLOYEE_JOINS . " WHERE {$whereSql}");
         $countStmt->execute($params);
         $recordsFiltered = (int)$countStmt->fetchColumn();
 
@@ -1856,11 +1910,7 @@ class PayrollRunModel {
                     COALESCE(d.{$deptCol}, '') AS department, COALESCE(tm.{$teamCol}, '') AS team, COALESCE(p.{$posiCol}, '') AS position,
                     COALESCE(c.cycle_name, '') AS cycle_name,
                     e.employment_date
-                FROM `employees` e
-                LEFT JOIN `structure_departments` d ON e.department_id = d.id
-                LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
-                LEFT JOIN `structure_positions` p ON e.position_id = p.id
-                LEFT JOIN `payroll_cycles` c ON e.cycle_id = c.id
+                " . self::MANUAL_EMPLOYEE_JOINS . "
                 WHERE {$whereSql}
                 ORDER BY e.employee_no ASC
                 LIMIT :start, :length";
@@ -1880,8 +1930,11 @@ class PayrollRunModel {
      *  page (serverSide:true, so most matches were invisible to a page-scoped select-all). This
      *  returns every employee id matching the current filter/search with NO pagination, so the
      *  frontend can offer a real "select all N matching" action. Same WHERE as
-     *  manualEmployeeOptions() (including its own search clause) -- just id-only, unpaginated. */
-    public function manualEmployeeAllIds(int $compId, int $runId, array $filters, string $search): array {
+     *  manualEmployeeOptions() (including its own search clause, and now its own column_filters too
+     *  -- 2026-08-27 -- so "select all matching" also honors whatever Excel-style filters are
+     *  currently checked, not just the pre-existing department/team/position/cycle dropdowns)
+     *  -- just id-only, unpaginated. */
+    public function manualEmployeeAllIds(int $compId, int $runId, array $filters, string $search, string $lang = 'th', array $columnFilters = []): array {
         [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
         if ($search !== '') {
             $whereSql .= " AND (e.employee_no LIKE :search1 OR e.name_th LIKE :search2 OR e.surname_th LIKE :search3 OR e.name_en LIKE :search4 OR e.surname_en LIKE :search5)";
@@ -1889,9 +1942,31 @@ class PayrollRunModel {
                 $params[":search{$i}"] = "%{$search}%";
             }
         }
-        $stmt = $this->db->prepare("SELECT e.id FROM `employees` e WHERE {$whereSql} ORDER BY e.employee_no ASC");
+        $whereSql = $this->applyManualEmployeeColumnFilters($whereSql, $params, $columnFilters, $this->manualEmployeeFilterExprMap($lang));
+        $stmt = $this->db->prepare("SELECT e.id " . self::MANUAL_EMPLOYEE_JOINS . " WHERE {$whereSql} ORDER BY e.employee_no ASC");
         $stmt->execute($params);
         return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /** Distinct values for ONE column of the Join Employees picker, respecting every OTHER active
+     *  Excel-style column filter but not this column's own selection -- see
+     *  EmployeeModel::listColumnValues()'s own docblock for why. Also respects this run's own
+     *  membership WHERE (buildManualEmployeeWhere()) -- the dropdown only ever offers values that
+     *  could actually appear in the picker's own rows, same as every other table in this rollout. */
+    public function manualEmployeeColumnValues(int $compId, int $runId, array $filters, string $column, string $lang, array $columnFilters): array {
+        $exprMap = $this->manualEmployeeFilterExprMap($lang);
+        if (!isset($exprMap[$column])) {
+            return [];
+        }
+        $expr = $exprMap[$column];
+        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
+        $whereSql = $this->applyManualEmployeeColumnFilters($whereSql, $params, $columnFilters, $exprMap, $column);
+        $sql = "SELECT DISTINCT {$expr} AS value " . self::MANUAL_EMPLOYEE_JOINS . "
+                WHERE {$whereSql} AND {$expr} IS NOT NULL AND {$expr} != ''
+                ORDER BY value ASC LIMIT 500";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'value');
     }
 
     /**
@@ -2746,6 +2821,17 @@ class PayrollRunModel {
             $clearSql = ", rejected_at = NULL, rejected_by = NULL, reject_reason = NULL";
         } elseif ($fromState === 'need_info') {
             $clearSql = ", need_info_at = NULL, need_info_by = NULL, need_info_reason = NULL";
+        } elseif ($fromState === 'pending_approval') {
+            // 2026-08-27, explicit bug report ("ในหน้า Process List ถ้ายังไม่ส่งไป Approve ปุ่ม Timeline
+            // ยังไม่ควรขึ้นมาให้กดดูได้ครับ") -- pulling a still-pending_approval submission back to
+            // draft (nobody has decided on it yet) left `submitted_at` populated, so a run that's
+            // genuinely draft again (editable, nothing pending) still satisfied
+            // workflowTimelineButtonHtml()'s/the Detail page's own `!row.submitted_at` gate and kept
+            // showing the Timeline button/mini-timeline "submitted" dot as done. Clearing it here
+            // matches the same "revert clears the column(s) that state's own transition set" pattern
+            // already used for approved_at/rejected_at/need_info_at above -- submit() sets a fresh
+            // submitted_at the next time this run is actually resubmitted.
+            $clearSql = ", submitted_at = NULL";
         }
         // If the NEW target is itself a decided-ish state (not just pending_approval/draft), set
         // its own columns too -- same shape reject()/requestInfo() themselves write, so this looks

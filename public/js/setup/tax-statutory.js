@@ -98,7 +98,8 @@ function initStatutoryItemTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-item').length === 0) {
                 $searchDiv.append(`
@@ -107,6 +108,20 @@ function initStatutoryItemTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes actions (7).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'country_code' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'item_name' },
+                    { index: 3, key: 'category' },
+                    { index: 4, key: 'calc_method' },
+                    { index: 5, key: 'current_rate' },
+                    { index: 6, key: 'status' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -209,7 +224,6 @@ function initRateHistoryTable() {
     }
     tb_rate_history = $('#tb_rate_history').DataTable({
         responsive: true,
-        searching: false,
         paging: false,
         info: false,
         ajax: {
@@ -227,7 +241,29 @@ function initRateHistoryTable() {
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => rateHistoryActionButtonsTs(row) }
         ],
         language: getTableLang(),
-        drawCallback: function () { getTableLang(); }
+        drawCallback: function () { getTableLang(); },
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+        // rollout. Real gotcha found while wiring this up: `searching:false` (this table's own
+        // original setting, kept the native search box out of this small modal table on purpose)
+        // doesn't just hide the search INPUT -- per DataTables' own core (_fnReDraw()), it skips
+        // `_fnFilterComplete()` ENTIRELY when the filter FEATURE is off, which is also what invokes
+        // every `$.fn.dataTable.ext.search` predicate (what this filter component itself uses) --
+        // so the checkbox UI would have looked like it worked while silently filtering nothing.
+        // Flipped to `searching:true` to keep the underlying feature/pipeline alive, then the
+        // rendered search box itself is hidden right below (same net visual result as before, still
+        // functionally filterable via the header icons now).
+        searching: true,
+        initComplete: function () {
+            const self = this.api();
+            $(self.table().container()).find('.dt-search').hide();
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'effective_date' },
+                    { index: 1, key: 'end_date' },
+                ]
+            });
+        }
     });
 }
 function openRateHistoryModal(row) {
@@ -628,7 +664,6 @@ function initCompanySettingTable() {
     }
     tb_company_setting = $('#tb_company_setting').DataTable({
         responsive: true,
-        searching: false,
         paging: false,
         info: false,
         ajax: {
@@ -645,7 +680,27 @@ function initCompanySettingTable() {
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => csActionButtonsTs(row) }
         ],
         language: getTableLang(),
-        drawCallback: function () { getTableLang(); }
+        drawCallback: function () { getTableLang(); },
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+        // rollout. Same `searching:false` gotcha as `tb_rate_history` above (see that table's own
+        // comment) -- flipped to `searching:true` to keep the filter pipeline alive, native search
+        // box hidden right below to preserve the original look. Excludes actions (6).
+        searching: true,
+        initComplete: function () {
+            const self = this.api();
+            $(self.table().container()).find('.dt-search').hide();
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'code' },
+                    { index: 1, key: 'item_name' },
+                    { index: 2, key: 'category' },
+                    { index: 3, key: 'rate_in_use' },
+                    { index: 4, key: 'effective_status' },
+                    { index: 5, key: 'adjustable' },
+                ]
+            });
+        }
     });
 }
 function masterRateDisplayTs(row) {

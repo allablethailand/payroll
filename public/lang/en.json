@@ -838,6 +838,7 @@
     "filter_date_from": "From",
     "filter_date_to": "To",
     "clear_filter": "Clear Filter",
+    "select_all": "Select All",
     "state_draft": "In Progress",
     "state_pending_approval": "Pending Approval",
     "state_approved": "Approved",

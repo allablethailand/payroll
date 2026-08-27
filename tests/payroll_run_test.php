@@ -1187,9 +1187,15 @@ try {
     check('recalculate blocked outside draft', $illegalRecalc['status'], false);
 
     echo "=== Revert (pending_approval -> draft) ===\n";
+    checkTrue('submitted_at is set before reverting (sanity check on the fixture)', !empty($runModel->get($runId, $compId)['submitted_at']));
     $revertRes = $runModel->revert($runId, $compId, $adminUserId, true, 'test revert');
     checkTrue('revert succeeds', $revertRes['status']);
     check('state is draft again', $runModel->get($runId, $compId)['state'], 'draft');
+    // 2026-08-27, explicit bug report ("ในหน้า Process List ถ้ายังไม่ส่งไป Approve ปุ่ม Timeline ยังไม่
+    // ควรขึ้นมาให้กดดูได้") -- pulling back to draft must clear submitted_at, otherwise the Process
+    // List's workflowTimelineButtonHtml()/mini-timeline still treated this run as "already submitted"
+    // even though it's editable draft again.
+    check('submitted_at is cleared after reverting to draft (Timeline button must not show again)', $runModel->get($runId, $compId)['submitted_at'], null);
 
     echo "=== Re-submit then Reject (pending_approval -> rejected) ===\n";
     $runModel->submit($runId, $compId, $adminUserId, true);

@@ -454,9 +454,9 @@ function elementHtml(el) {
     } else {
         body = escapeHtmlPst(el.content).replace(/\n/g, '<br>');
     }
-    const lockBadge = isBoundFieldElement(el)
-        ? `<div class="pst-el-lock" title="${langData['ect_field_locked_hint'] || 'Bound to data — position/size only, double-click to edit is disabled.'}"><i class="fa-solid fa-lock"></i></div>`
-        : '';
+    // 2026-08-27, explicit request: the lock badge icon on bound-field elements was unnecessary
+    // clutter -- removed. isBoundFieldElement() itself still gates double-click-to-edit (unchanged),
+    // this only drops the visual badge.
     let typeClass = 'pst-el-text';
     if (isImage) typeClass = 'pst-el-image';
     else if (isShape) typeClass = `pst-el-shape pst-el-shape-${el.field_key || 'rectangle'}`;
@@ -464,7 +464,6 @@ function elementHtml(el) {
     return `
         <div class="pst-el ${typeClass}" data-key="${el.key}">
             <div class="pst-el-body">${body}</div>
-            ${lockBadge}
             <div class="pst-quick-delete" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></div>
             <div class="pst-resize-handle"></div>
         </div>
@@ -1561,7 +1560,8 @@ function initPstTemplateTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-pst').length === 0) {
                 $searchDiv.append(`
@@ -1570,6 +1570,17 @@ function initPstTemplateTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the publish-switch column (0), the icon-only TH/EN
+            // language-status columns (3, 4, no single filterable value), and actions (6).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 1, key: 'template_name' },
+                    { index: 2, key: 'page_size' },
+                    { index: 5, key: 'updated_at' },
+                ]
+            });
         }
     });
 }

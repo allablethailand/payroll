@@ -1,5 +1,4 @@
 let tb_run_detail;
-let tb_audit_log;
 let currentRun = null;
 
 function toIsoDateRd(displayVal) {
@@ -1024,7 +1023,25 @@ function initRunDetailTable(details) {
         searching: details.length > 10,
         info: false,
         language: getTableLang(),
-        drawCallback: function () { getTableLang(); }
+        drawCallback: function () { getTableLang(); },
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+        // rollout, client mode (plain `data:` array, no ajax at all). Excludes the actions column (9).
+        initComplete: function () {
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee_no' },
+                    { index: 1, key: 'name' },
+                    { index: 2, key: 'data_source' },
+                    { index: 3, key: 'base_salary_amount' },
+                    { index: 4, key: 'gross_amount' },
+                    { index: 5, key: 'total_deduction_amount' },
+                    { index: 6, key: 'net_amount' },
+                    { index: 7, key: 'calc_status' },
+                    { index: 8, key: 'calc_errors' },
+                ]
+            });
+        }
     });
 }
 
@@ -1043,31 +1060,64 @@ function auditActionLabel(action) {
     const key = map[action];
     return (key && langData[key]) || action;
 }
-function initAuditLogTable(auditLog) {
-    if ($.fn.DataTable.isDataTable('#tb_audit_log')) {
-        $('#tb_audit_log').DataTable().clear().rows.add(auditLog).draw();
+// 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น Timeline
+// สวยๆ" -- reuses the SAME `.apv-stage` circular-marker/connector-line component this page's own
+// Timeline modal/status card already builds with (apvIconHtmlRd()/apvBadgeHtmlRd(), see
+// apvCreatedStageHtmlRd() etc. above) instead of inventing a second timeline design on the same
+// page. Distinct from the plainer `renderAuditTimelineRd()` (left-border list, `.apv-log-entry`)
+// already used inside the Timeline modal's own condensed "History" section further down -- that one
+// stays untouched (it's a summary inside a modal, not this tab), this is the full, richer rendering
+// for the tab's own dedicated space. Newest first, matching renderAuditTimelineRd()'s own ordering
+// convention on this same page.
+const AUDIT_TIMELINE_META_RD = {
+    create: { tone: 'done', icon: 'fa-plus' },
+    submit: { tone: 'info', icon: 'fa-paper-plane' },
+    approve: { tone: 'done', icon: 'fa-check' },
+    reject: { tone: 'rejected', icon: 'fa-xmark' },
+    request_info: { tone: 'info', icon: 'fa-circle-info' },
+    revert: { tone: 'pending', icon: 'fa-rotate-left' },
+    reviseAfterReject: { tone: 'pending', icon: 'fa-pen' },
+    reviseAfterNeedInfo: { tone: 'pending', icon: 'fa-pen' },
+    markPaid: { tone: 'done', icon: 'fa-money-check-dollar' },
+    lock: { tone: 'muted', icon: 'fa-lock' },
+    delete: { tone: 'rejected', icon: 'fa-trash' },
+    cancel: { tone: 'muted', icon: 'fa-ban' },
+};
+function auditTimelineMetaRd(action) {
+    return AUDIT_TIMELINE_META_RD[action] || { tone: 'muted', icon: 'fa-pen' };
+}
+function auditHistoryStageHtmlRd(entry, isLast) {
+    const meta = auditTimelineMetaRd(entry.action);
+    const stateChangeHtml = entry.from_state
+        ? `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`
+        : (entry.to_state ? stateBadgeRd(entry.to_state) : '');
+    return `
+        <div class="apv-stage${isLast ? ' apv-stage-last' : ''}">
+            <div class="apv-stage-marker">${apvIconHtmlRd(meta.tone, meta.icon)}${isLast ? '' : '<div class="apv-stage-line"></div>'}</div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${escapeHtmlRd(auditActionLabel(entry.action))}</span>
+                </div>
+                <div class="apv-stage-date">${escapeHtmlRd(formatDisplayDateTime(entry.performed_at))}</div>
+                <div class="apv-stage-body">
+                    ${apvPersonLineHtmlRd(personDisplayNameRd(entry, 'performed_by'))}
+                    ${stateChangeHtml ? `<div class="mt-2">${stateChangeHtml}</div>` : ''}
+                    ${entry.note ? `<div class="apv-substep-remark">${escapeHtmlRd(entry.note)}</div>` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
+function renderAuditHistoryTimelineRd(auditLog) {
+    const logs = auditLog || [];
+    $('#noAuditYet').toggleClass('d-none', logs.length > 0);
+    $('#run_audit_timeline').toggleClass('d-none', logs.length === 0);
+    if (!logs.length) {
+        $('#run_audit_timeline').empty();
         return;
     }
-    tb_audit_log = $('#tb_audit_log').DataTable({
-        responsive: true,
-        data: auditLog,
-        order: [[0, 'desc']],
-        columns: [
-            // object-form render (display only) -- this table defaults to sorting by this exact
-            // column (order: [[0,'desc']] above), see reports/index.js's own comment for why
-            // 'sort'/'filter' must stay on the raw ISO string, not the dd/mm/yyyy display string.
-            { data: 'performed_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
-            { data: 'action', render: d => escapeHtmlRd(auditActionLabel(d)) },
-            { data: null, render: (d, t, row) => row.from_state ? `${stateBadgeRd(row.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(row.to_state)}` : stateBadgeRd(row.to_state) },
-            { data: null, render: (d, t, row) => escapeHtmlRd(personDisplayNameRd(row, 'performed_by')) },
-            { data: 'note', render: d => escapeHtmlRd(d || '-') },
-        ],
-        paging: false,
-        searching: false,
-        info: false,
-        language: getTableLang(),
-        drawCallback: function () { getTableLang(); }
-    });
+    const ordered = logs.slice().reverse(); // newest first at the top, oldest at the bottom
+    $('#run_audit_timeline').html(ordered.map((entry, i) => auditHistoryStageHtmlRd(entry, i === ordered.length - 1)).join(''));
 }
 
 function loadRunDetail() {
@@ -1080,7 +1130,7 @@ function loadRunDetail() {
             if (res.status) {
                 renderRunHeader(res.data);
                 initRunDetailTable(res.data.details || []);
-                initAuditLogTable(res.data.audit_log || []);
+                renderAuditHistoryTimelineRd(res.data.audit_log || []);
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
             }
@@ -1555,17 +1605,21 @@ function initJoinEmployeesTable() {
         return;
     }
     tb_join_employees = $('#tb_join_employees').DataTable({
+        responsive: true,
         serverSide: true,
         processing: true,
         ajax: {
             url: `${BASE_URL}/api/payroll-run.manual-employee-options`,
             type: 'POST',
-            data: function (d) {
+            data: function (d, settings) {
                 d.run_id = PAYROLL_RUN_ID;
                 d.department_id = $('#joinFilterDepartment').val() || '';
                 d.team_id = $('#joinFilterTeam').val() || '';
                 d.position_id = $('#joinFilterPosition').val() || '';
                 d.emp_cycle_id = $('#joinFilterCycle').val() || '';
+                // Built from `settings` (not the outer `tb_join_employees` variable) -- see
+                // table-column-filter.js's getColumnFilterValues() docblock for why.
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
         columns: [
@@ -1585,6 +1639,44 @@ function initJoinEmployeesTable() {
         order: [],
         searching: false,
         language: getTableLang(),
+        initComplete: function () {
+            const self = this.api();
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, server mode. Excludes the row-select checkbox (0) -- no actions column on
+            // this picker.
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: [
+                    { index: 1, key: 'employee_no' },
+                    { index: 2, key: 'name' },
+                    { index: 3, key: 'department' },
+                    { index: 4, key: 'team' },
+                    { index: 5, key: 'position' },
+                    { index: 6, key: 'cycle_name' },
+                ],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/payroll-run.manual-employee-column-values`,
+                        method: 'POST',
+                        data: {
+                            run_id: PAYROLL_RUN_ID,
+                            department_id: $('#joinFilterDepartment').val() || '',
+                            team_id: $('#joinFilterTeam').val() || '',
+                            position_id: $('#joinFilterPosition').val() || '',
+                            emp_cycle_id: $('#joinFilterCycle').val() || '',
+                            column: key,
+                            column_filters: getColumnFilterValues(self)
+                        },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
+        },
         drawCallback: function () {
             getTableLang();
             $('#joinSelectAll').prop('checked', false);
@@ -1648,7 +1740,11 @@ $(document).on('click', '#btnJoinSelectAllMatching', function () {
             team_id: $('#joinFilterTeam').val() || '',
             position_id: $('#joinFilterPosition').val() || '',
             emp_cycle_id: $('#joinFilterCycle').val() || '',
-            search: tb_join_employees ? tb_join_employees.search() : ''
+            search: tb_join_employees ? tb_join_employees.search() : '',
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- "Select All Matching" now
+            // also honors whatever Excel-style column filters are currently checked, not just the
+            // pre-existing department/team/position/cycle dropdowns.
+            column_filters: tb_join_employees ? getColumnFilterValues(tb_join_employees) : {}
         },
         dataType: 'json',
         success: function (res) {

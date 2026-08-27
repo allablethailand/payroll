@@ -2955,25 +2955,6 @@ html, body {
     object-fit: contain;
     pointer-events: none;
 }
-/* Lock badge for data-bound fields (explicit request: double-click-to-edit is disabled for these --
-   see isBoundFieldElement() in the JS). Small enough to not obscure a typical field box, top-left so
-   it doesn't collide with .ect-quick-delete (top-right) or .ect-resize-handle (bottom-right). */
-.ect-el-lock {
-    position: absolute;
-    top: -8px;
-    left: -8px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #667085;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: .6rem;
-    box-shadow: 0 1px 3px rgba(16, 24, 40, .25);
-    z-index: 4;
-}
 .ect-resize-handle {
     position: absolute;
     right: -5px;
@@ -3796,22 +3777,6 @@ html, body {
     pointer-events: none;
 }
 
-.pst-el-lock {
-    position: absolute;
-    top: -8px;
-    left: -8px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #667085;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: .6rem;
-    box-shadow: 0 1px 3px rgba(16, 24, 40, .25);
-    z-index: 4;
-}
 .pst-resize-handle {
     position: absolute;
     right: -5px;
@@ -4049,6 +4014,14 @@ html, body {
 }
 .pst-info-card-title i {
     color: #FF9900;
+}
+/* 2026-08-27, explicit request: "ปรับให้ Change Layout กับ Fullscreen ไปอยู่ติดกันที่มุมขวา" -- one flex
+   item (instead of two separately-distributed ones) so .pst-info-card-header's own
+   justify-content:space-between carries the pair together to the row's right edge. */
+.pst-editor-actions-right {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
 }
 .pst-info-toggles {
     display: flex;
@@ -4395,6 +4368,15 @@ html, body {
 .pst-fullscreen-active #ectTabAssign {
     display: none !important;
 }
+/* 2026-08-27, explicit request: "ตอน Fullscreen มีปุ่มปิดอยู่แล้ว ไม่ต้องแสดงปุ่ม Fullscreen ซ้ำ" -- the
+   Fullscreen button relocates INTO the modal along with the rest of #pstEditorContent/#ectEditorContent
+   (see the JS's own show.bs.modal handler), so once `.pst-fullscreen-active` is applied there's already
+   a real Bootstrap `.btn-close` in the modal header -- hide the now-redundant toggle button rather than
+   showing two different ways to close the same modal. */
+.pst-fullscreen-active #pstFullscreenBtn,
+.pst-fullscreen-active #ectFullscreenBtn {
+    display: none !important;
+}
 /* 2026-08-26, same-day follow-up: "fullscreen mode ตัด pst-editor-footer ออกให้ปุ่มแสดงใน footer เลย
    จะได้ไม่เปลืองพื้นที่" -- .pst-editor-footer/.ect-editor-footer (shares the same rule, one class)
    keeps its own box styling for its NORMAL in-page position, but once relocated into the fullscreen
@@ -4431,4 +4413,171 @@ html, body {
     padding: .6rem .9rem;
     background: #f8f9fa;
     border-radius: 10px;
+}
+
+/* ==========================================================================
+   Excel-style per-column header filter (public/js/table-column-filter.js) -- 2026-08-27, explicit
+   request: "ในตารางทุกตาราง ใน thead ของแต่ละ Column เพิ่มให้สามารถ Filter ได้...เหมือนกับ Excel".
+   Proof-of-concept wired into Employee List first -- see that JS file's own docblock.
+   ========================================================================== */
+/* 2026-08-27, explicit follow-up round 2: "อยากให้ thead แสดงแถวเดียว แล้ว item filter ไปอยู่ฝั่งขวา
+   คู่กันกับ sort" -- co-opting DataTables' own internal header wrapper markup turned out unreliable
+   (see initExcelColumnFilters()'s own comment), so this is now a fully self-built row:
+   `.tcf-header-row` (flex, space-between) > `.tcf-header-title` (flex-grow, ellipsis-truncated -- full
+   text still reachable via its own `title` tooltip) + `.tcf-header-right` (flex:none -- the sort-arrow
+   span + filter button, paired together, never fighting the title for space). */
+.tcf-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+}
+.tcf-header-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+/* 2026-08-27, explicit follow-up round 3: "ขีดควรมาอยู่หลัง icon filter จะได้รู้ว่าเป็นของ column ไหน" --
+   the divider previously sat BETWEEN the sort arrow and the filter icon (see .tcf-filter-btn's own
+   history below); moved to trail the WHOLE right-hand group instead, so it reads as "this is where
+   THIS column's controls end" (a column boundary marker) rather than a separator between two icons
+   that both belong to the same column. */
+.tcf-header-right {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: 2px;
+    padding-right: 9px;
+}
+.tcf-header-right::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1px;
+    height: 13px;
+    background: rgba(0, 0, 0, .15);
+}
+/* 2026-08-27, explicit follow-up: "ตอนนี้กดทั้ง th แล้ว sort ไม่ต้องการให้กดที่ icon sort ค่อย sort" --
+   only the sort-arrow icon is a real click target now (see initExcelColumnFilters()'s own comment on
+   `data-dt-order="icon-only"` + `order.listener()`), so the whole-cell `cursor:pointer`/hover outline
+   dataTables.bootstrap5.css puts on every `.dt-orderable-asc`/`.dt-orderable-desc` th would be
+   actively misleading here -- overridden back to a normal cursor on the cell, moved onto just the
+   icon instead. Full selector chain repeated (not just `.tcf-th.dt-orderable-asc`) to match/exceed
+   that stylesheet's own specificity rather than relying on load order -- same "always match Bootstrap's
+   own selector specificity, don't rely on a tie-break" convention already established elsewhere in
+   this project's CSS (see the Employment Certificate Template Symbol-dropdown fix). */
+table.dataTable thead > tr > th.tcf-th.dt-orderable-asc,
+table.dataTable thead > tr > th.tcf-th.dt-orderable-desc {
+    cursor: default;
+}
+table.dataTable thead > tr > th.tcf-th.dt-orderable-asc:hover,
+table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
+    outline: none;
+}
+.tcf-header-right .dt-column-order {
+    cursor: pointer;
+}
+/* 2026-08-27, explicit follow-up: "อยากให้ปรับ Design การจัดวาง icon filter ให้ใหม่" -- confirmed via
+   AskUserQuestion: keep it always visible (not hover-reveal). Round 3 moved the actual divider line
+   off this button and onto `.tcf-header-right::after` instead (see that rule's own comment) -- this
+   button itself just needs its own hover/active highlight box now. */
+.tcf-filter-btn {
+    position: relative;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    margin: 0;
+    color: #adb5bd;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 4px;
+    flex: none;
+}
+.tcf-filter-btn:hover {
+    color: #FF9900;
+    background: rgba(255, 153, 0, .1);
+}
+.tcf-filter-btn.tcf-filter-active {
+    color: #FF9900;
+    background: rgba(255, 153, 0, .15);
+}
+.tcf-panel {
+    position: absolute;
+    z-index: 2000;
+    width: 260px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, .08);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(16, 24, 40, .18);
+    padding: .6rem;
+    font-size: 13px;
+}
+.tcf-search-wrap {
+    position: relative;
+    margin-bottom: .5rem;
+}
+.tcf-search-wrap i {
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 11px;
+}
+.tcf-search-wrap input {
+    width: 100%;
+    padding: .3rem .5rem .3rem 1.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 12.5px;
+}
+.tcf-search-wrap input:focus {
+    outline: none;
+    border-color: #FF9900;
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .15);
+}
+.tcf-select-all-row {
+    border-bottom: 1px solid #f0f0f1;
+    padding-bottom: .35rem;
+    margin-bottom: .35rem;
+}
+.tcf-item {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .25rem .2rem;
+    margin: 0;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 400;
+    color: #374151;
+}
+.tcf-item:hover {
+    background: #f9fafb;
+}
+.tcf-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.tcf-select-all-label {
+    font-weight: 600;
+}
+.tcf-list {
+    max-height: 220px;
+    overflow-y: auto;
+}
+.tcf-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: .5rem;
+    padding-top: .5rem;
+    border-top: 1px solid #f0f0f1;
 }

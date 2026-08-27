@@ -48,29 +48,52 @@ require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/services/OrigamiSsoJwt.php';
 require_once __DIR__ . '/../app/models/PayrollEarningDeductionTypeModel.php';
 
+/**
+ * 2026-08-27, explicit request: "/payroll/auth/ ปรับหน้านี้ให้เป็นธีมเดียวกันด้วยครับ" -- this used to be a
+ * bespoke one-off page (dark navy background, its own inline <style>) that never matched the app's
+ * real glassmorphism/orange theme at all -- reuses the SAME `.error-page-wrap`/`.error-page-card`/
+ * `.error-page-icon`/`.error-page-code`/`.error-page-title`/`.error-page-desc`/`.error-page-btn`
+ * classes app/views/error404.php and app/views/permission.php already share (public/css/style.css),
+ * rather than inventing a 4th copy of the same visual pattern. This file runs standalone (no
+ * router/layout, no guaranteed session -- see the class docblock above on why `auth/` is served
+ * directly by Apache) so it can't include the normal navbar/sidebar layout the way those two pages
+ * do; it links the same CSS/font assets `layout/header.php` does and reuses BASE_URL (already
+ * defined by config.php, required above) directly instead of the `asset()`/session-aware helpers
+ * those pages rely on. `min-height:100vh` overrides `.error-page-wrap`'s own 60vh (written for
+ * sitting inside an app content area) since there's no sidebar/navbar height to share the viewport
+ * with here.
+ */
 function origami_sso_fail(string $message): void {
     http_response_code(401);
     $originHref = htmlspecialchars(ORIGAMI_BASE_URL !== '' ? ORIGAMI_BASE_URL : '/', ENT_QUOTES, 'UTF-8');
     $safeMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+    $baseUrl = htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8');
     echo <<<HTML
     <!doctype html>
     <html lang="th">
     <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>เข้าสู่ระบบไม่สำเร็จ</title>
+    <link rel="icon" type="image/png" href="{$baseUrl}/public/images/logo_vertical.png">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&display=swap" rel="stylesheet">
+    <link href="{$baseUrl}/node_modules/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{$baseUrl}/node_modules/@fortawesome/fontawesome-free/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{$baseUrl}/public/css/style.css">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #1a1a2e; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-        .box { background: rgba(255,255,255,.08); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.15); border-radius: 16px; padding: 40px; max-width: 420px; text-align: center; }
-        h1 { color: #FF9900; font-size: 1.4em; margin: 0 0 12px; }
-        p { opacity: .85; line-height: 1.6; margin: 0; }
-        a { display: inline-block; margin-top: 20px; background: #FF9900; color: #1a1a2e; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: 600; }
+        body { background: linear-gradient(135deg, #fff7ec, #fdfdfd 55%, #fff2df); }
     </style>
     </head>
     <body>
-        <div class="box">
-            <h1>เข้าสู่ระบบไม่สำเร็จ</h1>
-            <p>{$safeMessage}</p>
-            <a href="{$originHref}">กลับไปหน้า Origami</a>
+        <div class="container">
+            <div class="error-page-wrap" style="min-height: 100vh;">
+                <div class="error-page-card">
+                    <div class="error-page-icon"><i class="fa-solid fa-right-to-bracket"></i></div>
+                    <h5 class="error-page-title">เข้าสู่ระบบไม่สำเร็จ</h5>
+                    <p class="error-page-desc">{$safeMessage}</p>
+                    <a href="{$originHref}" class="btn btn-primary error-page-btn"><i class="fa-solid fa-arrow-left me-1"></i>กลับไปหน้า Origami</a>
+                </div>
+            </div>
         </div>
     </body>
     </html>

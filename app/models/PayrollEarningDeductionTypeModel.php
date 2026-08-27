@@ -6,7 +6,46 @@ class PayrollEarningDeductionTypeModel {
         $this->db = Database::getInstance()->pdo;
     }
 
-    public function list(int $compId, int $start, int $length, string $itemType, string $search, int $colIndex, string $orderDir): array {
+    /** Frontend column KEY -> real SQL column for the Excel-style column filter (2026-08-27
+     *  rollout) -- shared across both Earning and Deduction tabs (same underlying table, just
+     *  scoped by item_type), each requesting only the keys relevant to it. `item_name` is
+     *  `$lang`-resolved the same way EmployeeModel::listColumnExprMap() does. Excludes the
+     *  composite item-name+tags cell (no single real column), the boolean calc_sso/calc_pf icons,
+     *  and the actions column -- same exclusion policy as every other table in this rollout. */
+    private function columnFilterExprMap(string $lang): array {
+        return [
+            'item_code' => 'item_code',
+            'item_name' => $lang === 'en' ? 'item_name_en' : 'item_name_th',
+            'calculation_method' => 'calculation_method',
+            'tax_treatment' => 'tax_treatment',
+            'tax_deduction_impact' => 'tax_deduction_impact',
+            'status' => 'status',
+        ];
+    }
+
+    private function applyColumnFilters(string $whereSql, array &$params, array $columnFilters, array $exprMap, ?string $excludeColumn = null): string {
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if ($col === $excludeColumn || !isset($exprMap[$col]) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $whereSql .= " AND `{$exprMap[$col]}` IN (" . implode(', ', $placeholders) . ")";
+        }
+        return $whereSql;
+    }
+
+    public function list(int $compId, int $start, int $length, string $itemType, string $search, int $colIndex, string $orderDir, string $lang = 'th', array $columnFilters = []): array {
         $sortColumns = [
             0 => '`item_code`',
             1 => '`item_name_th`',
@@ -30,6 +69,8 @@ class PayrollEarningDeductionTypeModel {
             $params[':search2'] = "%{$search}%";
             $params[':search3'] = "%{$search}%";
         }
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout.
+        $whereSql = $this->applyColumnFilters($whereSql, $params, $columnFilters, $this->columnFilterExprMap($lang));
 
         $countStmt = $this->db->prepare("SELECT COUNT(*) FROM `payroll_earning_deduction_types` WHERE {$whereSql}");
         $countStmt->execute($params);
@@ -52,6 +93,28 @@ class PayrollEarningDeductionTypeModel {
             'recordsFiltered' => $recordsFiltered,
             'data' => $dataStmt->fetchAll(PDO::FETCH_ASSOC),
         ];
+    }
+
+    /** Distinct values for ONE column of the Earning/Deduction Type list, scoped to the SAME
+     *  item_type as the tab it's opened from (a distinct value only valid for Earning rows has no
+     *  business appearing in Deduction's own filter dropdown), respecting every OTHER active
+     *  Excel-style column filter but not this column's own selection -- see
+     *  EmployeeModel::listColumnValues()'s own docblock for why. */
+    public function columnDistinctValues(int $compId, string $itemType, string $column, string $lang, array $columnFilters, ?string $excludeColumn): array {
+        $exprMap = $this->columnFilterExprMap($lang);
+        if (!isset($exprMap[$column])) {
+            return [];
+        }
+        $expr = $exprMap[$column];
+        $where = "comp_id = :comp_id AND deleted_at IS NULL AND item_type = :item_type";
+        $params = [':comp_id' => $compId, ':item_type' => $itemType];
+        $where = $this->applyColumnFilters($where, $params, $columnFilters, $exprMap, $excludeColumn);
+        $sql = "SELECT DISTINCT `{$expr}` AS value FROM `payroll_earning_deduction_types`
+                WHERE {$where} AND `{$expr}` IS NOT NULL AND `{$expr}` != ''
+                ORDER BY value ASC LIMIT 500";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'value');
     }
 
     public function get(int $compId, int $id): ?array {

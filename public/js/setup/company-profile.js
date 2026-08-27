@@ -427,7 +427,12 @@ function initBankAccountTable() {
         order: [[0, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/bank_account.list`,
-            type: 'POST'
+            type: 'POST',
+            data: function (d, settings) {
+                // Built from `settings` (not the outer `structureTables['bank_account']` variable) --
+                // see table-column-filter.js's getColumnFilterValues() docblock for why.
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            }
         },
         columns: [
             {
@@ -499,6 +504,32 @@ function initBankAccountTable() {
                 $searchDiv.append(btn);
             }
             updateText($wrapper[0]);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, server mode. Excludes the masked account_no (1, not the raw filterable
+            // value), the boolean is_default icon (5), and actions (6).
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: [
+                    { index: 0, key: 'bank_name' },
+                    { index: 2, key: 'account_name' },
+                    { index: 3, key: 'branch_name' },
+                    { index: 4, key: 'account_type' },
+                    { index: 6, key: 'status' },
+                ],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/bank_account.column-values`,
+                        method: 'POST',
+                        data: { column: key, column_filters: getColumnFilterValues(self) },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
         },
         drawCallback: function () {
             getTableLang();
@@ -558,6 +589,35 @@ function initStructure(page) {
             break;
     }
 }
+// 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout,
+// server mode (see table-column-filter.js's own docblock). Frontend column KEY -> DataTable column
+// INDEX per structure type -- must stay in sync with getStructureColumns()'s own per-type array
+// below, and with CompanyProfileController::structureFilterMap()'s matching KEY set on the backend
+// (the KEY strings are what travel over the wire in `column_filters`, matched on both sides).
+// Excludes boolean-icon columns (is_default/lock_stamp/salary_access/ot_eligible) and
+// computed/composite columns (rank's own salary_min-salary_max range) -- same exclusion policy as
+// every other table in this rollout -- plus the actions column, always last.
+const STRUCTURE_FILTER_COLUMNS = {
+    branch: [
+        { index: 0, key: 'branch_code' }, { index: 1, key: 'name' }, { index: 2, key: 'tax_branch_id' },
+        { index: 3, key: 'sso_branch_code' }, { index: 5, key: 'location' }, { index: 7, key: 'status' },
+    ],
+    role: [
+        { index: 0, key: 'name' }, { index: 2, key: 'status' },
+    ],
+    department: [
+        { index: 0, key: 'department_code' }, { index: 1, key: 'name' }, { index: 2, key: 'cost_center' }, { index: 3, key: 'status' },
+    ],
+    position: [
+        { index: 0, key: 'position_code' }, { index: 1, key: 'name' }, { index: 2, key: 'position_allowance' }, { index: 3, key: 'status' },
+    ],
+    rank: [
+        { index: 0, key: 'rank_code' }, { index: 1, key: 'name' }, { index: 4, key: 'status' },
+    ],
+    team: [
+        { index: 0, key: 'team_code' }, { index: 1, key: 'name' }, { index: 2, key: 'client_name' }, { index: 3, key: 'status' },
+    ],
+};
 function initStructureTable(type, tableId) {
     if ($.fn.DataTable.isDataTable(tableId)) {
         $(tableId).DataTable().ajax.reload(null, false);
@@ -571,11 +631,16 @@ function initStructureTable(type, tableId) {
         ajax: {
             url: `${BASE_URL}/api/structure.${type}`,
             type: "POST",
-            data: function (d) {
-                d.status = $('#filter_status').val() || 'Active'; 
+            data: function (d, settings) {
+                d.status = $('#filter_status').val() || 'Active';
+                // Built from `settings` (DataTables' own 2nd arg to ajax.data), NOT the outer
+                // `structureTables[type]` variable -- same "first request runs synchronously during
+                // construction, before that assignment completes" reasoning as Employee List's own
+                // fix, see table-column-filter.js's getColumnFilterValues() docblock.
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
-        columns: getStructureColumns(type), 
+        columns: getStructureColumns(type),
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         language: getTableLang(),
@@ -602,6 +667,23 @@ function initStructureTable(type, tableId) {
                 }
             });
             updateText($wrapper[0]);
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: STRUCTURE_FILTER_COLUMNS[type] || [],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/structure.column-values`,
+                        method: 'POST',
+                        data: { type: type, column: key, column_filters: getColumnFilterValues(self) },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
         },
         drawCallback: function () {
             getTableLang(); 

@@ -126,7 +126,9 @@
                          Approve/Reject/Request Info (the actual decision, pending_approval rows
                          only) now sit in their own columns instead of one shared button group. -->
                     <th scope="col" style="width: 6%;" class="text-center" data-i18n="view">View</th>
-                    <th scope="col" style="width: 8%;" class="text-center" data-i18n="col_actions">Actions</th>
+                    <!-- 2026-08-27, explicit request: blank out any "Action(s)" header, matches the
+                         empty-header convention every other Actions column in this app already uses. -->
+                    <th scope="col" style="width: 8%;" class="text-center"></th>
                 </tr>
             </thead>
             <tbody></tbody>

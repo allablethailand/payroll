@@ -96,7 +96,25 @@ function initPayslipDeliveryLogTable() {
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         language: getTableLang(),
-        order: [[7, 'desc']]
+        order: [[7, 'desc']],
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+        // rollout, client mode.
+        initComplete: function () {
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee' },
+                    { index: 1, key: 'document_type' },
+                    { index: 2, key: 'reference' },
+                    { index: 3, key: 'source' },
+                    { index: 4, key: 'channel_code' },
+                    { index: 5, key: 'recipient' },
+                    { index: 6, key: 'status' },
+                    { index: 7, key: 'sent_at' },
+                    { index: 8, key: 'sent_by' },
+                ]
+            });
+        }
     });
 }
 

@@ -480,7 +480,8 @@ function initPayrollRunTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-run').length === 0) {
                 $searchDiv.append(`
@@ -489,6 +490,19 @@ function initPayrollRunTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the status-timeline widget (2, a visual component with
+            // no single filterable value) and the actions column (6).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'run_name' },
+                    { index: 1, key: 'period' },
+                    { index: 3, key: 'employee_count' },
+                    { index: 4, key: 'total_net_amount' },
+                    { index: 5, key: 'employee_name' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); updateStationCounts(); }
     });
@@ -579,11 +593,25 @@ function initPendingSyncTable() {
             // length control row so the selection count/button sit next to "Show N entries"
             // instead of on their own line -- the bar keeps its d-none/d-inline-flex toggling
             // untouched since this only moves the existing DOM node, not a copy.
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $lengthDiv = $wrapper.find('.dt-length');
             if ($lengthDiv.length && $('#bulkPullBar').closest('.dt-length').length === 0) {
                 $lengthDiv.append($('#bulkPullBar'));
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the row-select checkbox (0) and actions column (7).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 1, key: 'process_no' },
+                    { index: 2, key: 'period_name' },
+                    { index: 3, key: 'frequency_type' },
+                    { index: 4, key: 'item_count' },
+                    { index: 5, key: 'unmapped_item_count' },
+                    { index: 6, key: 'received_at' },
+                ]
+            });
         },
         drawCallback: function () {
             getTableLang();

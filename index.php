@@ -46,6 +46,7 @@
     $router->post('api/payroll-run.save-ped-type-settings', 'PayrollController@savePedTypeSettings');
     $router->post('api/payroll-run.manual-employee-options', 'PayrollController@manualEmployeeOptions');
     $router->post('api/payroll-run.manual-employee-all-ids', 'PayrollController@manualEmployeeAllIds');
+    $router->post('api/payroll-run.manual-employee-column-values', 'PayrollController@manualEmployeeColumnValues');
     $router->post('api/payroll-run.join-employees', 'PayrollController@joinEmployees');
     $router->post('api/payroll-run.remove-employee', 'PayrollController@removeEmployee');
     $router->get('api/payroll-run.manual-lines', 'PayrollController@manualLinesForEmployee');
@@ -93,6 +94,7 @@
     $router->post('api/attendance-bonus.ledger.delete', 'PayrollConfigurationController@bonusLedgerDelete');
     $router->post('api/ped-type.source-event-options', 'PayrollConfigurationController@pedSourceEventOptions');
     $router->post('api/ped-type.list', 'PayrollConfigurationController@pedTypeList');
+    $router->post('api/ped-type.column-values', 'PayrollConfigurationController@pedTypeColumnValues');
     $router->get('api/ped-type.get', 'PayrollConfigurationController@pedTypeGet');
     $router->post('api/ped-type.save', 'PayrollConfigurationController@pedTypeSave');
     $router->post('api/ped-type.delete', 'PayrollConfigurationController@pedTypeDelete');
@@ -264,6 +266,7 @@
     $router->get('api/report.export-logs', 'ReportsController@exportLogs');
     $router->get('submission', 'SubmissionController@index');
     $router->post('api/employee.list', 'EmployeeController@list');
+    $router->post('api/employee.list-column-values', 'EmployeeController@listColumnValues');
     $router->get('/employees/create', 'EmployeeController@create');
     $router->get('/employees/{id}', 'EmployeeController@detail');
     $router->get('api/address/search', 'AddressController@getMetadata');
@@ -282,6 +285,7 @@
     // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการเพิ่ม
     // การตั้งค่าเช่นเดียวกับ Department" -- same route shape as department/position/rank above.
     $router->post('api/structure.team', 'CompanyProfileController@team');
+    $router->post('api/structure.column-values', 'CompanyProfileController@structureColumnValues');
     $router->post('api/structure.branch.save', 'CompanyProfileController@branchSave');
     $router->post('api/structure.branch.delete', 'CompanyProfileController@branchDelete');
     $router->post('api/structure.role.save', 'CompanyProfileController@roleSave');
@@ -302,6 +306,7 @@
     $router->post('api/branch.get', 'MasterController@getMaster');
     $router->post('api/employee.report_to.get', 'EmployeeController@reportToOptions');
     $router->post('api/bank_account.list', 'BankAccountController@list');
+    $router->post('api/bank_account.column-values', 'BankAccountController@columnValues');
     $router->post('api/bank_account.save', 'BankAccountController@save');
     $router->post('api/bank_account.delete', 'BankAccountController@delete');
     $router->get('api/employee.get', 'EmployeeController@get');

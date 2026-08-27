@@ -70,7 +70,8 @@ function initEcrRequestTable() {
         language: getTableLang(),
         order: [[4, 'desc']],
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-ecr').length === 0) {
                 $searchDiv.append(`
@@ -79,6 +80,18 @@ function initEcrRequestTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode.
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee' },
+                    { index: 1, key: 'language' },
+                    { index: 2, key: 'requested_by' },
+                    { index: 3, key: 'status' },
+                    { index: 4, key: 'created_at' },
+                ]
+            });
         }
     });
 }

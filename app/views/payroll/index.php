@@ -123,7 +123,10 @@
                     <th scope="col" style="width: 7%;" data-i18n="table_employee_count">Employees</th>
                     <th scope="col" style="width: 10%;" data-i18n="table_net_amount">Net Total</th>
                     <th scope="col" style="width: 11%;" data-i18n="table_created_by">Created By</th>
-                    <th scope="col" style="width: 7%;" class="text-center" data-i18n="col_actions">Actions</th>
+                    <!-- 2026-08-27, explicit request: "th ของทุกตาราง ถ้ามีคำว่า Action ให้ตัดออกให้เป็น
+                         th เปล่าๆ" -- matches the empty-header convention every other Actions column in
+                         this app already uses (e.g. Company Setup's structure tables). -->
+                    <th scope="col" style="width: 7%;" class="text-center"></th>
                 </tr>
             </thead>
             <tbody></tbody>

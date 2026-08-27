@@ -839,6 +839,7 @@
     "filter_date_from": "ตั้งแต่",
     "filter_date_to": "ถึง",
     "clear_filter": "ล้างตัวกรอง",
+    "select_all": "เลือกทั้งหมด",
     "state_draft": "กำลังทำรอบ",
     "state_pending_approval": "รออนุมัติ",
     "state_approved": "อนุมัติแล้ว",

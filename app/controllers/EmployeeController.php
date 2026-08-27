@@ -68,6 +68,11 @@ class EmployeeController extends Controller {
             'branch_id' => $_POST['branch_id'] ?? '',
             'created_date_from' => $_POST['created_date_from'] ?? '',
             'created_date_to' => $_POST['created_date_to'] ?? '',
+            // 2026-08-27, explicit request: Excel-style per-column header filter (proof-of-concept
+            // on this table first) -- see EmployeeModel::buildListWhere()'s own docblock. Sent by
+            // jQuery as nested `column_filters[colKey][]=value` form fields, which PHP already
+            // parses into this exact shape.
+            'column_filters' => is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [],
         ];
         $search = (string)($_POST['search']['value'] ?? '');
         $colIndex = isset($_POST['order'][0]['column']) ? (int)$_POST['order'][0]['column'] : 0;
@@ -80,6 +85,36 @@ class EmployeeController extends Controller {
             "recordsFiltered" => $res['filtered'],
             "data" => $res['data']
         ]);
+    }
+    /** 2026-08-27, explicit request: "ในตารางทุกตาราง...เพิ่มให้สามารถ Filter ได้...เหมือนกับ Excel" --
+     *  proof-of-concept on this table first (server-side, so the checkbox list can't be computed
+     *  from the browser's own already-loaded rows the way a client-side table's filter can). Powers
+     *  one column's filter dropdown -- excludes that column's OWN current selection from the WHERE
+     *  clause (see EmployeeModel::buildListWhere()) so opening it shows every value it could hold,
+     *  not just the ones already checked. */
+    public function listColumnValues() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'values' => []]);
+            return;
+        }
+        $column = (string)($_POST['column'] ?? '');
+        $filters = [
+            'status' => $_POST['status'] ?? '',
+            'employment_status' => $_POST['employment_status'] ?? '',
+            'role_id' => $_POST['role_id'] ?? '',
+            'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
+            'shift_id' => $_POST['shift_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+            'created_date_from' => $_POST['created_date_from'] ?? '',
+            'created_date_to' => $_POST['created_date_to'] ?? '',
+            'column_filters' => is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [],
+        ];
+        $search = (string)($_POST['search'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $values = $this->model->listColumnValues((int)$compId, $column, $filters, $search, (string)$lang);
+        $this->json(['status' => true, 'values' => $values]);
     }
     public function get() {
         if (!$this->requirePermission('employee.view')) return;

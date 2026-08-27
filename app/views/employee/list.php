@@ -99,6 +99,14 @@
                 <table class="table table-striped table-hover" id="tb_employee">
                     <thead class="table-light text-secondary">
                         <tr>
+                            <!-- 2026-08-27, explicit request: "ปุ่มที่ expand ตารางเพื่อดูข้อมูลของ
+                                 column ที่ซ่อน ควรแยกมาเป็น column แรก" -- a dedicated Responsive
+                                 "control" column (the +/- expand toggle) instead of it sharing space
+                                 with the avatar column. Inserting a column shifts every later index
+                                 by one, same convention already established for Team's own column
+                                 addition (see CLAUDE.md's Team section) -- EmployeeModel::list()'s
+                                 own `sortColumns` map and list.js's column defs were updated to match. -->
+                            <th></th>
                             <th></th>
                             <th scope="col" data-i18n="employee_no">Employee No.</th>
                             <th scope="col" data-i18n="name">Name</th>

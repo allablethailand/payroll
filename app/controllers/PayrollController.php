@@ -207,13 +207,35 @@ class PayrollController extends Controller {
         ];
         $search = (string)($_POST['search']['value'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
-        $res = $this->model->manualEmployeeOptions((int)$compId, $runId, $start, $length, $filters, $search, (string)$lang);
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $res = $this->model->manualEmployeeOptions((int)$compId, $runId, $start, $length, $filters, $search, (string)$lang, $columnFilters);
         $this->json([
             'draw' => intval($_POST['draw'] ?? 1),
             'recordsTotal' => $res['total'],
             'recordsFiltered' => $res['filtered'],
             'data' => $res['data'],
         ]);
+    }
+    /** 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout. */
+    public function manualEmployeeColumnValues() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_POST['run_id'] ?? 0);
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => false, 'values' => []]);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
+            'position_id' => $_POST['position_id'] ?? '',
+            'emp_cycle_id' => $_POST['emp_cycle_id'] ?? '',
+        ];
+        $column = (string)($_POST['column'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $values = $this->model->manualEmployeeColumnValues((int)$compId, $runId, $filters, $column, (string)$lang, $columnFilters);
+        $this->json(['status' => true, 'values' => $values]);
     }
 
     /** 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่ายที่สุด") --
@@ -236,7 +258,9 @@ class PayrollController extends Controller {
             'emp_cycle_id' => $_POST['emp_cycle_id'] ?? '',
         ];
         $search = (string)($_POST['search'] ?? '');
-        $ids = $this->model->manualEmployeeAllIds((int)$compId, $runId, $filters, $search);
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $ids = $this->model->manualEmployeeAllIds((int)$compId, $runId, $filters, $search, (string)$lang, $columnFilters);
         $this->json(['status' => true, 'employee_ids' => $ids]);
     }
 

@@ -530,9 +530,9 @@ function elementHtml(el) {
     } else {
         body = escapeHtmlEct(el.content).replace(/\n/g, '<br>');
     }
-    const lockBadge = isBoundFieldElement(el)
-        ? `<div class="ect-el-lock" title="${langData['ect_field_locked_hint'] || 'Bound to data — position/size only, double-click to edit is disabled.'}"><i class="fa-solid fa-lock"></i></div>`
-        : '';
+    // 2026-08-27, explicit request: the lock badge icon on bound-field elements was unnecessary
+    // clutter -- removed. isBoundFieldElement() itself still gates double-click-to-edit (unchanged),
+    // this only drops the visual badge.
     let typeClass = 'ect-el-text';
     if (isImage) typeClass = 'ect-el-image';
     else if (isShape) typeClass = `ect-el-shape ect-el-shape-${el.field_key || 'rectangle'}`;
@@ -540,7 +540,6 @@ function elementHtml(el) {
     return `
         <div class="ect-el ${typeClass}" data-key="${el.key}">
             <div class="ect-el-body">${body}</div>
-            ${lockBadge}
             <div class="ect-quick-delete" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></div>
             <div class="ect-resize-handle"></div>
         </div>
@@ -1690,7 +1689,8 @@ function initEctTemplateTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-ect').length === 0) {
                 $searchDiv.append(`
@@ -1699,6 +1699,17 @@ function initEctTemplateTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the publish-switch column (0), the icon-only TH/EN
+            // language-status columns (3, 4, no single filterable value), and actions (6).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 1, key: 'template_name' },
+                    { index: 2, key: 'page_size' },
+                    { index: 5, key: 'updated_at' },
+                ]
+            });
         }
     });
 }

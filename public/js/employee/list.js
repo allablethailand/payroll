@@ -104,43 +104,75 @@ function initEmployeeTable() {
     tb_employee = $('#tb_employee').DataTable({
         processing: true,
         serverSide: true,
-        responsive: true,
-        order: [[1, 'asc']],
+        // 2026-08-27, explicit request: "ปุ่มที่ expand ตารางเพื่อดูข้อมูลของ column ที่ซ่อน ควรแยกมาเป็น
+        // column แรก" -- `details.type:'column'` + `target:0` makes the responsive expand toggle its
+        // OWN dedicated column (column 0 below) instead of DataTables' default of embedding it into
+        // whichever column happens to be first (our avatar column, which then made clicking the
+        // avatar ambiguous between "view" and "expand"). Every real data column shifted by +1 to make
+        // room -- same "inserting a column shifts every later index" convention as Team's own column
+        // addition (see CLAUDE.md's Team section); EmployeeModel::list()'s `sortColumns` map updated
+        // to match, and this table's `order`/Excel-filter column indices below too.
+        responsive: { details: { type: 'column', target: 0 } },
+        order: [[2, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/employee.list`,
             type: "POST",
-            data: function (d) {
+            data: function (d, settings) {
                 const filters = currentStatusFilters();
                 d.status = filters.status;
                 d.employment_status = filters.employment_status;
                 Object.assign(d, currentEmployeeExtraFilters());
+                // 2026-08-27, explicit request: Excel-style per-column header filter (server mode --
+                // see table-column-filter.js's own docblock for why a server-side table needs this
+                // sent to the backend rather than filtered in the browser). Built from `settings`
+                // (DataTables' own 2nd arg to ajax.data), NOT the outer `tb_employee` variable --
+                // DataTables calls this synchronously to build the FIRST request while
+                // `tb_employee = $(...).DataTable({...})` is still constructing, so `tb_employee`
+                // itself is still undefined at that exact moment (see getColumnFilterValues()'s own
+                // comment on why this isn't just defensive paranoia).
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
+        // 2026-08-27, explicit follow-up: "column ขวาสุดอยากให้แสดงปุ่มดำเนินการ และตอนนี้พอเป็น
+        // responsive table แล้ว การดำเนินการดูยากขึ้น" -- now that `responsive:true` genuinely works
+        // (the extension itself was only just installed, see the git history around 2026-08-27), its
+        // DEFAULT behavior hides columns starting from the HIGHEST index first when a row doesn't
+        // fit the viewport -- which is exactly backwards for this table, since Actions (the rightmost
+        // column) is the one column that must never disappear into the collapsed "+" child row.
+        // `responsivePriority` (lower number = kept visible longer) overrides that default -- Actions
+        // pinned to the same top priority as Name/Employee No. (the row's own identity), everything
+        // else ranked by how useful it is to see at a glance without expanding the row.
         columns: [
+            // Dedicated Responsive expand/collapse control column (see the `responsive:{details:...}`
+            // option above) -- `dtr-control` is the class DataTables Responsive itself looks for to
+            // render the +/- toggle into; empty otherwise (no data, no title).
+            { data: null, orderable: false, className: 'dtr-control', defaultContent: '' },
             {
                 data: null,
                 orderable: false,
                 className: 'text-center',
+                responsivePriority: 8,
                 render: function (data, type, row) {
                     const letter = (row.name || '').trim().charAt(0).toUpperCase() || '?';
                     return `<div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px; min-width: 38px; background-color: #007aff;">${letter}</div>`;
                 }
             },
-            { data: "employee_no" },
-            { data: "name" },
-            { data: "phone", render: d => d || '-' },
-            { data: "role" },
-            { data: "position", render: d => d || '-' },
-            { data: "department" },
-            { data: "team", render: d => d || '-' },
-            { data: "shift", render: d => d || '-' },
-            { data: "branch" },
+            { data: "employee_no", responsivePriority: 2 },
+            { data: "name", responsivePriority: 1 },
+            { data: "phone", render: d => d || '-', responsivePriority: 9 },
+            { data: "role", responsivePriority: 6 },
+            { data: "position", render: d => d || '-', responsivePriority: 7 },
+            { data: "department", responsivePriority: 5 },
+            { data: "team", render: d => d || '-', responsivePriority: 10 },
+            { data: "shift", render: d => d || '-', responsivePriority: 10 },
+            { data: "branch", responsivePriority: 7 },
             // Plain render is safe here (unlike the client-side tables elsewhere in this pass) --
             // this table is serverSide:true, so sorting is done server-side via ORDER BY on the
             // real DB column, entirely unaffected by how the client renders it for display.
-            { data: "start_work_date", render: d => formatDisplayDate(d) },
+            { data: "start_work_date", render: d => formatDisplayDate(d), responsivePriority: 6 },
             {
                 data: "status",
+                responsivePriority: 4,
                 render: function (data) {
                     let badge = data === 'Active' ? 'bg-success' : 'bg-danger';
                     return `<span class="badge ${badge}">${data}</span>`;
@@ -149,6 +181,7 @@ function initEmployeeTable() {
             {
                 data: "completeness",
                 orderable: false,
+                responsivePriority: 5,
                 render: function (data) {
                     return completenessBarHtml(data);
                 }
@@ -156,6 +189,16 @@ function initEmployeeTable() {
             {
                 data: null,
                 orderable: false,
+                // 2026-08-27, real bug found and fixed (explicit report: "ปุ่มแก้ไขปุ่มลบ หายไปครับ
+                // column ท้าย") -- had this backwards: DataTables Responsive's `className: 'never'`
+                // does NOT mean "never hidden" -- per its own source (`_classLogic()`), `never` is
+                // treated exactly like `className: 'none'`: "never show this column in the table at
+                // all, only reachable via the expand row" -- i.e. the OPPOSITE of what was wanted,
+                // which is why the buttons vanished outright instead of just staying put. The correct
+                // class for "always visible, never collapse into the expand row" is `all`/`dtr-all`
+                // (confirmed directly against the extension's own source, not guessed a second time).
+                className: 'all',
+                responsivePriority: 1,
                 render: function (data, type, row) {
                     return `<div class="btn-group border rounded-3 bg-white">
                         <button class="btn btn-link text-warning manage-employee" data-id="${row.employee_no}" data-i18n-tooltip="edit"><i class="fa-solid fa-pen-to-square"></i></button>
@@ -187,6 +230,42 @@ function initEmployeeTable() {
                 if(e.value === "") {
                     self.search(this.value).draw();
                 }
+            });
+            // 2026-08-27, explicit request: Excel-style per-column header filter (proof-of-concept,
+            // server mode -- see table-column-filter.js's own docblock). Excludes the avatar/
+            // completeness/actions columns (not meaningfully filterable), same "only columns
+            // explicitly opted in get a filter" convention that component documents.
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: [
+                    { index: 2, key: 'employee_no' },
+                    { index: 3, key: 'name' },
+                    { index: 4, key: 'phone' },
+                    { index: 5, key: 'role' },
+                    { index: 6, key: 'position' },
+                    { index: 7, key: 'department' },
+                    { index: 8, key: 'team' },
+                    { index: 9, key: 'shift' },
+                    { index: 10, key: 'branch' },
+                    { index: 11, key: 'start_work_date' },
+                    { index: 12, key: 'status' },
+                ],
+                fetchValues: function (key, done) {
+                    const filters = currentStatusFilters();
+                    const payload = Object.assign({ column: key, status: filters.status, employment_status: filters.employment_status }, currentEmployeeExtraFilters());
+                    payload.column_filters = getColumnFilterValues(tb_employee);
+                    $.ajax({
+                        url: `${BASE_URL}/api/employee.list-column-values`,
+                        method: 'POST',
+                        data: payload,
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { tb_employee.ajax.reload(null, false); }
             });
         },
         drawCallback: function () {

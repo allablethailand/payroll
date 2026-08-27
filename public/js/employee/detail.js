@@ -1124,6 +1124,7 @@ let tbEarning, tbDeduction;
 // DataTable in this app. Filtered server-side by item_type (EmployeeEarningDeductionModel::list()).
 function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangFallback) {
     return $(tableSelector).DataTable({
+        responsive: true,
         ajax: {
             url: `${BASE_URL}/api/employee.earning-deduction.list`,
             data: function (d) { d.employee_id = currentEmployeeId; d.item_type = itemType; },
@@ -1134,7 +1135,8 @@ function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangF
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find(`.${addBtnClass}`).length === 0) {
                 $searchDiv.append(`
@@ -1143,6 +1145,18 @@ function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangF
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the installment progress bar (2, no single filterable
+            // value) and the actions column (5).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'item_name' },
+                    { index: 1, key: 'amount' },
+                    { index: 3, key: 'effective_date' },
+                    { index: 4, key: 'status' },
+                ]
+            });
         }
     });
 }
@@ -1600,6 +1614,7 @@ function recurringEarningSuspendPeriodCell(row) {
 }
 function initRecurringEarningUI() {
     tbRecurringEarning = $('#tableRecurringEarning').DataTable({
+        responsive: true,
         ajax: {
             url: `${BASE_URL}/api/employee.recurring-earning.list`,
             data: function (d) { d.employee_id = currentEmployeeId; },
@@ -1623,7 +1638,8 @@ function initRecurringEarningUI() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-recurring-earning').length === 0) {
                 $searchDiv.append(`
@@ -1632,6 +1648,18 @@ function initRecurringEarningUI() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the actions column (5).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'item_name' },
+                    { index: 1, key: 'amount' },
+                    { index: 2, key: 'effective_date' },
+                    { index: 3, key: 'suspend_period' },
+                    { index: 4, key: 'status' },
+                ]
+            });
         }
     });
     // Same hidden-tab-at-init width gotcha as tableEarning/tableDeduction above -- this table lives

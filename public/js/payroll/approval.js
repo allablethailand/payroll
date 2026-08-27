@@ -449,11 +449,28 @@ function initPayrollApprovalTable() {
             // length control row so it sits right after "Show N entries" instead of on its own
             // line -- same idiom as index.js's #bulkPullBar. Only moves the existing DOM node
             // (keeps its d-none/d-inline-flex toggling untouched), not a copy.
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $lengthDiv = $wrapper.find('.dt-length');
             if ($lengthDiv.length && $('#approvalBulkBar').closest('.dt-length').length === 0) {
                 $lengthDiv.append($('#approvalBulkBar'));
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the row-select checkbox (0) and the two action-button
+            // columns (9, 10).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 1, key: 'run_name' },
+                    { index: 2, key: 'period' },
+                    { index: 3, key: 'state' },
+                    { index: 4, key: 'employee_count' },
+                    { index: 5, key: 'total_net_amount' },
+                    { index: 6, key: 'submitter' },
+                    { index: 7, key: 'submitted_at' },
+                    { index: 8, key: 'updated_at' },
+                ]
+            });
         },
         drawCallback: function () {
             getTableLang();

@@ -329,13 +329,37 @@ class PayrollConfigurationController extends Controller {
         $search = (string)($_POST['search']['value'] ?? '');
         $colIndex = isset($_POST['order'][0]['column']) ? (int)$_POST['order'][0]['column'] : 0;
         $orderDir = isset($_POST['order'][0]['dir']) && $_POST['order'][0]['dir'] === 'desc' ? 'desc' : 'asc';
-        $res = $this->pedTypeModel->list((int)$compId, $start, $length, $itemType, $search, $colIndex, $orderDir);
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $res = $this->pedTypeModel->list((int)$compId, $start, $length, $itemType, $search, $colIndex, $orderDir, (string)$lang, $columnFilters);
         $this->json([
             'draw' => intval($_POST['draw'] ?? 1),
             'recordsTotal' => $res['recordsTotal'],
             'recordsFiltered' => $res['recordsFiltered'],
             'data' => $res['data'],
         ]);
+    }
+    /** 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout,
+     *  shared by both the Earning and Deduction tabs (see PayrollEarningDeductionTypeModel::
+     *  columnDistinctValues()'s own docblock on why the result is scoped to the requesting tab's
+     *  own item_type). */
+    public function pedTypeColumnValues() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'values' => []]);
+            return;
+        }
+        $itemType = (string)($_POST['item_type'] ?? '');
+        if (!in_array($itemType, ['earning', 'deduction'], true)) {
+            $this->json(['status' => true, 'values' => []]);
+            return;
+        }
+        $column = (string)($_POST['column'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $values = $this->pedTypeModel->columnDistinctValues((int)$compId, $itemType, $column, (string)$lang, $columnFilters, $column);
+        $this->json(['status' => true, 'values' => $values]);
     }
 
     public function pedTypeGet() {

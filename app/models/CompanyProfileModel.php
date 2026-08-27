@@ -159,7 +159,38 @@ class CompanyProfileModel {
             return $ok;
         }
     }
-    public function paginateData($tableName, $compId, $searchColumns, $sortColumns, $start, $length, $search, $colIndex, $orderDir) {
+    /**
+     * Appends `AND col IN (...)` clauses for the Excel-style column filter (2026-08-27 rollout) --
+     * shared by paginateData() and columnDistinctValues() so the two can never drift out of sync.
+     * `$columnFilters` is `[realColumnName => [selected values...]]` (already translated from the
+     * frontend's own column KEYS to real SQL column names by the controller, see
+     * CompanyProfileController::structureFilterMap()) -- validated again here against
+     * `$allowedColumns` regardless, never trusting the caller alone with something that ends up
+     * inside a backtick-quoted identifier.
+     */
+    private function applyColumnFilters(string $whereSql, array &$params, array $columnFilters, array $allowedColumns, ?string $excludeColumn = null): string {
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if ($col === $excludeColumn || !in_array($col, $allowedColumns, true) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $whereSql .= " AND `{$col}` IN (" . implode(', ', $placeholders) . ")";
+        }
+        return $whereSql;
+    }
+
+    public function paginateData($tableName, $compId, $searchColumns, $sortColumns, $start, $length, $search, $colIndex, $orderDir, array $columnFilters = [], array $allowedColumns = []) {
         $sortColumn = $sortColumns[$colIndex] ?? $sortColumns[0];
         $orderDir = strtoupper($orderDir) === 'DESC' ? 'DESC' : 'ASC';
         $baseWhere = "comp_id = :comp_id AND deleted_at IS NULL AND status != 'deleted'";
@@ -178,6 +209,9 @@ class CompanyProfileModel {
             }
             $whereSql .= " AND (" . implode(" OR ", $searchTerms) . ")";
         }
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout
+        // (same "counts toward recordsFiltered, not recordsTotal" placement as the search box above).
+        $whereSql = $this->applyColumnFilters($whereSql, $params, $columnFilters, $allowedColumns);
         $countQuery = "SELECT COUNT(*) FROM `{$tableName}` WHERE {$whereSql}";
         $stmtCount = $this->db->prepare($countQuery);
         $stmtCount->execute($params);
@@ -199,6 +233,32 @@ class CompanyProfileModel {
             'recordsFiltered' => $recordsFiltered,
             'data' => $data
         ];
+    }
+
+    /**
+     * Distinct values for ONE column of a structure table, respecting every OTHER currently-active
+     * Excel-style column filter but NOT this column's own selection -- same "opening a column's own
+     * dropdown shows every value it could hold" rule as EmployeeModel::listColumnValues(), see that
+     * method's own docblock. Deliberately does NOT also respect the table's free-text search box
+     * (unlike EmployeeModel's own version) -- these 6 structure tables have no other pre-existing
+     * filter UI beyond DataTables' own search box, and threading that through here too would add
+     * real complexity for a genuinely minor edge case (the checkbox list not ALSO narrowing when
+     * something is typed in the search box); the actual table rows still correctly narrow by both
+     * together via paginateData()'s own search+columnFilters combination.
+     */
+    public function columnDistinctValues(string $tableName, int $compId, string $column, array $allowedColumns, array $columnFilters, ?string $excludeColumn): array {
+        if (!in_array($column, $allowedColumns, true)) {
+            return [];
+        }
+        $whereSql = "comp_id = :comp_id AND deleted_at IS NULL AND status != 'deleted'";
+        $params = [':comp_id' => $compId];
+        $whereSql = $this->applyColumnFilters($whereSql, $params, $columnFilters, $allowedColumns, $excludeColumn);
+        $sql = "SELECT DISTINCT `{$column}` AS value FROM `{$tableName}`
+                WHERE {$whereSql} AND `{$column}` IS NOT NULL AND `{$column}` != ''
+                ORDER BY value ASC LIMIT 500";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'value');
     }
 
     private function structureConfig(): array {

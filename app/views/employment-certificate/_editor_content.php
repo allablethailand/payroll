@@ -179,15 +179,18 @@
        Template ที่กำลังแก้" -- re-applies a different preset's layout to what's open RIGHT NOW
        (destructive, confirmed before replacing), not a "switch to a different existing template"
        picker. -->
-  <button type="button" class="btn btn-outline-primary btn-sm" id="ectChangePresetBtn">
-    <i class="fa-solid fa-shuffle me-1"></i><span data-i18n="ect_change_preset">Change Layout</span>
-  </button>
-  <!-- 2026-08-26, explicit follow-up: "การเปิดการตั้งค่าใน fullscreen...ย้ายตำแหน่งมาไว้ใต้ Tab Design" --
-       moved out of the shared topbar into the Design tab's own controls row, matching the new
-       "fullscreen only covers Design" scope. -->
+  <!-- 2026-08-27, explicit request: "ปรับให้ Change Layout กับ Fullscreen ไปอยู่ติดกันที่มุมขวาจะสวยกว่า" --
+       same grouping as Payslip Template's own editor, see that file's comment. -->
+  <div class="pst-editor-actions-right">
+    <button type="button" class="btn btn-outline-primary btn-sm" id="ectChangePresetBtn">
+      <i class="fa-solid fa-shuffle me-1"></i><span data-i18n="ect_change_preset">Change Layout</span>
+    </button>
+    <!-- 2026-08-27, explicit request: hidden while the Fullscreen modal is open (see
+         .ect-fullscreen-active rule) -- the modal's own close (X) button already covers that. -->
     <button type="button" class="btn btn-outline-secondary btn-sm" id="ectFullscreenBtn" title="Fullscreen">
       <i class="fa-solid fa-expand me-1"></i><span data-i18n="ect_fullscreen">Fullscreen</span>
     </button>
+  </div>
   </div>
 </div>
 

@@ -326,89 +326,166 @@ class EmployeeModel {
         return ['ready' => empty($missing), 'missing_tabs' => $missingTabs];
     }
 
-    public function list(int $compId, int $start, int $length, array $filters, string $search, int $colIndex, string $orderDir, string $lang = 'th'): array {
+    private const LIST_JOINS = "FROM `employees` e
+                    LEFT JOIN `structure_roles` r ON e.role_id = r.id
+                    LEFT JOIN `structure_positions` p ON e.position_id = p.id
+                    LEFT JOIN `structure_departments` d ON e.department_id = d.id
+                    LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
+                    LEFT JOIN `shifts` sh ON e.shift_id = sh.id
+                    LEFT JOIN `structure_branches` b ON e.branch_id = b.id";
+
+    /** Maps this list's DataTables column keys to their real SQL expression -- shared by list()'s
+     *  own SELECT and listColumnValues()'s DISTINCT lookup, so the two can never quietly drift out
+     *  of sync (e.g. the Excel-style filter offering a value list() itself would never actually
+     *  match, or vice versa). Language-dependent columns (role/position/department/team/shift/
+     *  branch, each backed by a *_th/*_en pair) resolve to whichever the caller's own $lang picked. */
+    private function listColumnExprMap(string $lang): array {
         $nameCol = $lang === 'en' ? 'role_name_en' : 'role_name_th';
         $deptCol = $lang === 'en' ? 'department_name_en' : 'department_name_th';
         $branchCol = $lang === 'en' ? 'branch_name_en' : 'branch_name_th';
         $shiftCol = $lang === 'en' ? 'shift_name_en' : 'shift_name_th';
         $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
         $positionCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
+        return [
+            'employee_no' => 'e.employee_no',
+            'name' => "CONCAT(e.name_th, ' ', e.surname_th)",
+            'phone' => 'e.mobile_no',
+            'role' => "r.{$nameCol}",
+            'position' => "p.{$positionCol}",
+            'department' => "d.{$deptCol}",
+            'team' => "tm.{$teamCol}",
+            'shift' => "sh.{$shiftCol}",
+            'branch' => "b.{$branchCol}",
+            'start_work_date' => 'e.employment_date',
+            'status' => 'e.employee_status',
+        ];
+    }
 
+    /**
+     * Builds the shared WHERE clause + bound params for both list() and listColumnValues() --
+     * 2026-08-27, explicit request: "ในตารางทุกตาราง...เพิ่มให้สามารถ Filter ได้...เหมือนกับ Excel" (the
+     * Excel-style per-column header filter, proof-of-concept on this table first). `filters` carries
+     * the ORIGINAL station filters (status/employment_status/role_id/department_id/team_id/
+     * shift_id/branch_id/created_date_from/created_date_to) exactly as before, PLUS a new
+     * `column_filters` entry: `[columnKey => [selected values...]]`, one IN(...) clause appended per
+     * non-empty entry (AND'd together, same as Excel's own "each column's filter narrows further"
+     * semantics). `$excludeColumnFilter`, when set, skips that ONE column's own entry in
+     * `column_filters` -- this is what makes opening column X's own filter dropdown show every value
+     * X could possibly hold (not just the ones its own currently-checked selection already narrowed
+     * to), while still respecting every OTHER active filter -- genuine Excel behavior, not a
+     * simplification.
+     */
+    private function buildListWhere(int $compId, array $filters, string $search, string $lang, ?string $excludeColumnFilter = null): array {
+        $exprMap = $this->listColumnExprMap($lang);
+        $where = "e.comp_id = :comp_id AND e.deleted_at IS NULL";
+        $params = [':comp_id' => $compId];
+
+        if (!empty($filters['status'])) {
+            $where .= " AND e.employee_status = :status";
+            $params[':status'] = $filters['status'];
+        }
+        if (!empty($filters['employment_status'])) {
+            $where .= " AND e.employment_status = :employment_status";
+            $params[':employment_status'] = $filters['employment_status'];
+        }
+        if (!empty($filters['role_id'])) {
+            $where .= " AND e.role_id = :role_id";
+            $params[':role_id'] = (int)$filters['role_id'];
+        }
+        if (!empty($filters['department_id'])) {
+            $where .= " AND e.department_id = :department_id";
+            $params[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['team_id'])) {
+            $where .= " AND e.team_id = :team_id";
+            $params[':team_id'] = (int)$filters['team_id'];
+        }
+        if (!empty($filters['shift_id'])) {
+            $where .= " AND e.shift_id = :shift_id";
+            $params[':shift_id'] = (int)$filters['shift_id'];
+        }
+        if (!empty($filters['branch_id'])) {
+            $where .= " AND e.branch_id = :branch_id";
+            $params[':branch_id'] = (int)$filters['branch_id'];
+        }
+        if (!empty($filters['created_date_from'])) {
+            $where .= " AND DATE(e.created_at) >= :created_date_from";
+            $params[':created_date_from'] = $filters['created_date_from'];
+        }
+        if (!empty($filters['created_date_to'])) {
+            $where .= " AND DATE(e.created_at) <= :created_date_to";
+            $params[':created_date_to'] = $filters['created_date_to'];
+        }
+        if ($search !== '') {
+            $where .= " AND (e.employee_no LIKE :search1 OR e.name_th LIKE :search2 OR e.surname_th LIKE :search3 OR e.name_en LIKE :search4 OR e.surname_en LIKE :search5 OR e.personal_email LIKE :search6)";
+            for ($i = 1; $i <= 6; $i++) {
+                $params[":search{$i}"] = "%{$search}%";
+            }
+        }
+
+        $colFilters = $filters['column_filters'] ?? [];
+        $paramIdx = 0;
+        foreach ($colFilters as $col => $values) {
+            if ($col === $excludeColumnFilter || !isset($exprMap[$col]) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $expr = $col === 'status' ? "IF(e.employee_status = 'active', 'Active', CONCAT(UCASE(LEFT(e.employee_status,1)), SUBSTRING(e.employee_status,2)))" : $exprMap[$col];
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $where .= " AND {$expr} IN (" . implode(', ', $placeholders) . ")";
+        }
+
+        return [$where, $params];
+    }
+
+    public function list(int $compId, int $start, int $length, array $filters, string $search, int $colIndex, string $orderDir, string $lang = 'th'): array {
+        $exprMap = $this->listColumnExprMap($lang);
         // 2026-08-26, explicit request: "เิ่ม position กับเบอร์โทรเข้าตาราง" -- Phone inserted right
         // after Name (contact info clustered with identity), Position inserted right after Role (org
         // placement clustered together) -- same "inserting a column mid-list shifts every later
         // index by one" convention Team's own addition already established (see CLAUDE.md's Team
         // section). employee_no/name/role/department/team/shift/branch/start_work_date/status/
         // completeness column indices all shift accordingly.
+        // 2026-08-27, shifted by +1 again: "ปุ่มที่ expand ตารางเพื่อดูข้อมูลของ column ที่ซ่อน ควรแยกมาเป็น
+        // column แรก" -- a new dedicated Responsive expand-control column was inserted at index 0 on
+        // the frontend (list.js), pushing every column below down by one again.
         $sortColumns = [
-            1 => '`e`.`employee_no`',
-            2 => '`e`.`name_th`',
-            3 => '`e`.`mobile_no`',
-            4 => "`r`.`{$nameCol}`",
-            5 => "`p`.`{$positionCol}`",
-            6 => "`d`.`{$deptCol}`",
-            7 => "`tm`.`{$teamCol}`",
-            8 => "`sh`.`{$shiftCol}`",
-            9 => "`b`.`{$branchCol}`",
-            10 => '`e`.`employment_date`',
-            11 => '`e`.`employee_status`',
+            2 => '`e`.`employee_no`',
+            3 => '`e`.`name_th`',
+            4 => '`e`.`mobile_no`',
+            5 => "`r`.`" . $this->langNameCol($lang, 'role_name') . "`",
+            6 => "`p`.`" . $this->langNameCol($lang, 'position_name') . "`",
+            7 => "`d`.`" . $this->langNameCol($lang, 'department_name') . "`",
+            8 => "`tm`.`" . $this->langNameCol($lang, 'team_name') . "`",
+            9 => "`sh`.`" . $this->langNameCol($lang, 'shift_name') . "`",
+            10 => "`b`.`" . $this->langNameCol($lang, 'branch_name') . "`",
+            11 => '`e`.`employment_date`',
+            12 => '`e`.`employee_status`',
         ];
         $sortColumn = $sortColumns[$colIndex] ?? '`e`.`id`';
         $orderDir = strtoupper($orderDir) === 'DESC' ? 'DESC' : 'ASC';
 
-        $baseWhere = "e.comp_id = :comp_id AND e.deleted_at IS NULL";
-        $params = [':comp_id' => $compId];
-
-        if (!empty($filters['status'])) {
-            $baseWhere .= " AND e.employee_status = :status";
-            $params[':status'] = $filters['status'];
-        }
-        if (!empty($filters['employment_status'])) {
-            $baseWhere .= " AND e.employment_status = :employment_status";
-            $params[':employment_status'] = $filters['employment_status'];
-        }
-        if (!empty($filters['role_id'])) {
-            $baseWhere .= " AND e.role_id = :role_id";
-            $params[':role_id'] = (int)$filters['role_id'];
-        }
-        if (!empty($filters['department_id'])) {
-            $baseWhere .= " AND e.department_id = :department_id";
-            $params[':department_id'] = (int)$filters['department_id'];
-        }
-        if (!empty($filters['team_id'])) {
-            $baseWhere .= " AND e.team_id = :team_id";
-            $params[':team_id'] = (int)$filters['team_id'];
-        }
-        if (!empty($filters['shift_id'])) {
-            $baseWhere .= " AND e.shift_id = :shift_id";
-            $params[':shift_id'] = (int)$filters['shift_id'];
-        }
-        if (!empty($filters['branch_id'])) {
-            $baseWhere .= " AND e.branch_id = :branch_id";
-            $params[':branch_id'] = (int)$filters['branch_id'];
-        }
-        if (!empty($filters['created_date_from'])) {
-            $baseWhere .= " AND DATE(e.created_at) >= :created_date_from";
-            $params[':created_date_from'] = $filters['created_date_from'];
-        }
-        if (!empty($filters['created_date_to'])) {
-            $baseWhere .= " AND DATE(e.created_at) <= :created_date_to";
-            $params[':created_date_to'] = $filters['created_date_to'];
-        }
-
-        $totalStmt = $this->db->prepare("SELECT COUNT(*) FROM `employees` e WHERE {$baseWhere}");
-        $totalStmt->execute($params);
+        // Both COUNT queries now need the same JOINs as the main data query -- column_filters
+        // (2026-08-27) can filter on a JOINed display-name column (e.g. d.department_name_th), not
+        // just e.*'s own FK id columns like the pre-existing station filters, so a bare
+        // `FROM employees e` here would 42S22 the moment any column_filters entry is active.
+        [$baseWhere, $baseParams] = $this->buildListWhere($compId, $filters, '', $lang);
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) " . self::LIST_JOINS . " WHERE {$baseWhere}");
+        $totalStmt->execute($baseParams);
         $recordsTotal = (int)$totalStmt->fetchColumn();
 
-        $whereSql = $baseWhere;
-        if ($search !== '') {
-            $whereSql .= " AND (e.employee_no LIKE :search1 OR e.name_th LIKE :search2 OR e.surname_th LIKE :search3 OR e.name_en LIKE :search4 OR e.surname_en LIKE :search5 OR e.personal_email LIKE :search6)";
-            for ($i = 1; $i <= 6; $i++) {
-                $params[":search{$i}"] = "%{$search}%";
-            }
-        }
+        [$whereSql, $params] = $this->buildListWhere($compId, $filters, $search, $lang);
 
-        $countSql = "SELECT COUNT(*) FROM `employees` e WHERE {$whereSql}";
+        $countSql = "SELECT COUNT(*) " . self::LIST_JOINS . " WHERE {$whereSql}";
         $countStmt = $this->db->prepare($countSql);
         $countStmt->execute($params);
         $recordsFiltered = (int)$countStmt->fetchColumn();
@@ -419,25 +496,19 @@ class EmployeeModel {
         // decryption cost is paid just to render this list (see completenessColumns()'s docblock).
         $completenessSelect = implode(', ', array_map(fn($c) => "e.`{$c}`", $this->completenessColumns()));
         $dataSql = "SELECT e.id, e.employee_no,
-                        CONCAT(e.name_th, ' ', e.surname_th) AS name,
+                        {$exprMap['name']} AS name,
                         e.personal_email AS email,
-                        e.mobile_no AS phone,
-                        COALESCE(r.{$nameCol}, '') AS role,
-                        COALESCE(p.{$positionCol}, '') AS position,
-                        COALESCE(d.{$deptCol}, '') AS department,
-                        COALESCE(tm.{$teamCol}, '') AS team,
-                        COALESCE(sh.{$shiftCol}, '') AS shift,
-                        COALESCE(b.{$branchCol}, '') AS branch,
-                        e.employment_date AS start_work_date,
-                        e.employee_status AS status,
+                        {$exprMap['phone']} AS phone,
+                        COALESCE({$exprMap['role']}, '') AS role,
+                        COALESCE({$exprMap['position']}, '') AS position,
+                        COALESCE({$exprMap['department']}, '') AS department,
+                        COALESCE({$exprMap['team']}, '') AS team,
+                        COALESCE({$exprMap['shift']}, '') AS shift,
+                        COALESCE({$exprMap['branch']}, '') AS branch,
+                        {$exprMap['start_work_date']} AS start_work_date,
+                        {$exprMap['status']} AS status,
                         {$completenessSelect}
-                    FROM `employees` e
-                    LEFT JOIN `structure_roles` r ON e.role_id = r.id
-                    LEFT JOIN `structure_positions` p ON e.position_id = p.id
-                    LEFT JOIN `structure_departments` d ON e.department_id = d.id
-                    LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
-                    LEFT JOIN `shifts` sh ON e.shift_id = sh.id
-                    LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+                    " . self::LIST_JOINS . "
                     WHERE {$whereSql}
                     ORDER BY {$sortColumn} {$orderDir}
                     LIMIT :limit OFFSET :offset";
@@ -466,6 +537,37 @@ class EmployeeModel {
             'filtered' => $recordsFiltered,
             'data' => $data,
         ];
+    }
+
+    private function langNameCol(string $lang, string $prefix): string {
+        return $lang === 'en' ? "{$prefix}_en" : "{$prefix}_th";
+    }
+
+    /**
+     * Distinct values for ONE column of the Employee List, respecting every OTHER currently-active
+     * filter (station filters + every OTHER column's own Excel-style checkbox selection) but NOT
+     * this column's own selection -- see buildListWhere()'s own docblock for why. Powers the
+     * Excel-style per-column header filter's checkbox list (`api/employee.list-column-values`).
+     * Capped at 500 distinct values -- same pragmatic cap a real spreadsheet's own filter dropdown
+     * would eventually need too; a column that legitimately has more distinct values than that
+     * (none currently do on this table) would need pagination/search-within-the-dropdown to stay
+     * usable, not attempted here since nothing on this table needs it yet.
+     */
+    public function listColumnValues(int $compId, string $column, array $filters, string $search, string $lang = 'th'): array {
+        $exprMap = $this->listColumnExprMap($lang);
+        if (!isset($exprMap[$column])) {
+            return [];
+        }
+        $expr = $column === 'status'
+            ? "IF(e.employee_status = 'active', 'Active', CONCAT(UCASE(LEFT(e.employee_status,1)), SUBSTRING(e.employee_status,2)))"
+            : $exprMap[$column];
+        [$where, $params] = $this->buildListWhere($compId, $filters, $search, $lang, $column);
+        $sql = "SELECT DISTINCT {$expr} AS value " . self::LIST_JOINS . "
+                WHERE {$where} AND {$expr} IS NOT NULL AND {$expr} != ''
+                ORDER BY value ASC LIMIT 500";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'value');
     }
 
     private function buildAddressDisplay(array $row, string $suffix): array {

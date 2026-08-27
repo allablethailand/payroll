@@ -71,7 +71,10 @@ function initEarningTypeTable() {
         ajax: {
             url: `${BASE_URL}/api/ped-type.list`,
             type: 'POST',
-            data: function (d) { d.item_type = 'earning'; }
+            data: function (d, settings) {
+                d.item_type = 'earning';
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            }
         },
         columns: [
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
@@ -95,8 +98,34 @@ function initEarningTypeTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            injectAddButton(this.api(), 'earning', 'earning_type', 'Earning Type');
-            injectSeedDefaultsButton(this.api());
+            const self = this.api();
+            injectAddButton(self, 'earning', 'earning_type', 'Earning Type');
+            injectSeedDefaultsButton(self);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, server mode. Excludes the composite item-name+tags cell (1), the boolean
+            // calc_sso/calc_pf icons (4, 5), and actions (7).
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: [
+                    { index: 0, key: 'item_code' },
+                    { index: 2, key: 'calculation_method' },
+                    { index: 3, key: 'tax_treatment' },
+                    { index: 6, key: 'status' },
+                ],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/ped-type.column-values`,
+                        method: 'POST',
+                        data: { item_type: 'earning', column: key, column_filters: getColumnFilterValues(self) },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -114,7 +143,10 @@ function initDeductionTypeTable() {
         ajax: {
             url: `${BASE_URL}/api/ped-type.list`,
             type: 'POST',
-            data: function (d) { d.item_type = 'deduction'; }
+            data: function (d, settings) {
+                d.item_type = 'deduction';
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            }
         },
         columns: [
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
@@ -136,8 +168,33 @@ function initDeductionTypeTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            injectAddButton(this.api(), 'deduction', 'deduction_type', 'Deduction Type');
-            injectSeedDefaultsButton(this.api());
+            const self = this.api();
+            injectAddButton(self, 'deduction', 'deduction_type', 'Deduction Type');
+            injectSeedDefaultsButton(self);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, server mode. Excludes the composite item-name+tags cell (1) and actions (5).
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: [
+                    { index: 0, key: 'item_code' },
+                    { index: 2, key: 'calculation_method' },
+                    { index: 3, key: 'tax_deduction_impact' },
+                    { index: 4, key: 'status' },
+                ],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/ped-type.column-values`,
+                        method: 'POST',
+                        data: { item_type: 'deduction', column: key, column_filters: getColumnFilterValues(self) },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -472,7 +529,8 @@ function initPayrollCycleTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-cycle').length === 0) {
                 $searchDiv.append(`
@@ -481,6 +539,19 @@ function initPayrollCycleTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes actions (6).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'cycle_name' },
+                    { index: 1, key: 'frequency' },
+                    { index: 2, key: 'cutoff' },
+                    { index: 3, key: 'payment' },
+                    { index: 4, key: 'bank_file_format' },
+                    { index: 5, key: 'status' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -761,7 +832,8 @@ function initAttendanceBonusTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-bonus').length === 0) {
                 $searchDiv.append(`
@@ -770,6 +842,16 @@ function initAttendanceBonusTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the multi-value condition badges (1) and the two
+            // multi-line computed summary columns (2, 3, no single filterable value), plus actions (5).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'scheme_name' },
+                    { index: 4, key: 'status' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -1003,7 +1085,8 @@ function initBonusLedgerTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-ledger').length === 0) {
                 $searchDiv.append(`
@@ -1012,6 +1095,19 @@ function initBonusLedgerTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes actions (6).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee' },
+                    { index: 1, key: 'status' },
+                    { index: 2, key: 'streak_count' },
+                    { index: 3, key: 'cycle_count' },
+                    { index: 4, key: 'amount' },
+                    { index: 5, key: 'locked' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); }
     });

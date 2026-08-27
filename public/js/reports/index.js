@@ -193,7 +193,21 @@ function initExportHistoryTable() {
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         language: getTableLang(),
-        drawCallback: function () { getTableLang(); }
+        drawCallback: function () { getTableLang(); },
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+        // rollout, client mode. No actions column on this table -- every column is filterable.
+        initComplete: function () {
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'generated_at' },
+                    { index: 1, key: 'report_code' },
+                    { index: 2, key: 'format' },
+                    { index: 3, key: 'file_name' },
+                    { index: 4, key: 'generated_by' },
+                ]
+            });
+        }
     });
 }
 

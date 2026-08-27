@@ -158,26 +158,28 @@
                         <th class="text-end" data-i18n="table_net_pay">Net Pay</th>
                         <th data-i18n="table_calc_status">Calculation</th>
                         <th data-i18n="table_remark">Remark</th>
-                        <th class="text-center" data-i18n="table_action">Action</th>
+                        <!-- 2026-08-27, explicit request: blank out any "Action(s)" header, matches
+                             the empty-header convention every other Actions column already uses. -->
+                        <th class="text-center"></th>
                     </tr>
                 </thead>
                 <tbody></tbody>
             </table>
           </div>
         </div>
+        <!-- 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น
+             Timeline สวยๆ" -- was a plain DataTable (5 columns: Date/Time, Action, Status Change,
+             Performed By, Note). Replaced with the SAME `.apv-stage` circular-marker/connector-line
+             design this page already uses for its own Timeline modal/status card
+             (apvCreatedStageHtmlRd()/apvApprovalStageHtmlRd()/apvPaidStageHtmlRd() in detail.js) --
+             reusing an already-established "nice timeline" component on this exact page rather than
+             inventing a new visual pattern, see renderAuditHistoryTimelineRd()'s own docblock. -->
         <div class="tab-pane fade" id="run-history-pane" role="tabpanel" aria-labelledby="run-history-tab" tabindex="0">
-            <table class="table table-hover table-border align-middle w-100" id="tb_audit_log">
-                <thead class="table-light text-secondary">
-                    <tr>
-                        <th data-i18n="audit_performed_at">Date/Time</th>
-                        <th data-i18n="audit_action">Action</th>
-                        <th data-i18n="audit_state_change">Status Change</th>
-                        <th data-i18n="audit_performed_by">Performed By</th>
-                        <th data-i18n="audit_note">Note</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+            <div id="noAuditYet" class="text-center text-secondary py-4 d-none">
+                <i class="fa-solid fa-clock-rotate-left fa-2x mb-3 text-secondary opacity-50"></i>
+                <span data-i18n="no_history_yet">No action has been taken on this request yet.</span>
+            </div>
+            <div id="run_audit_timeline" class="apv-timeline"></div>
         </div>
     </div>
 

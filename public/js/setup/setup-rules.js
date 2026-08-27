@@ -96,6 +96,7 @@ function getShiftWorkDaysPayload() {
 function renderShift() {
     if ($.fn.DataTable.isDataTable('#tb_shift')) { $('#tb_shift').DataTable().ajax.reload(null, false); return; }
     dtShift = $('#tb_shift').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/shift.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}</div>` },
@@ -109,7 +110,22 @@ function renderShift() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
-        initComplete: addButtonInitComplete('btn-add-shift', 'fa-solid fa-plus', 'add_shift', 'Shift', 'openShiftModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-shift', 'fa-solid fa-plus', 'add_shift', 'Shift', 'openShiftModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the multi-value work-days summary (3, composite), the
+            // interactive status SWITCH (6, not a display value), and actions (7).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'time_range' },
+                    { index: 4, key: 'location' },
+                    { index: 5, key: 'updated_at' },
+                ]
+            });
+        }
     });
 }
 function toggleShiftStatus(id) {
@@ -246,6 +262,7 @@ function updateHolidayModeHint() {
 function renderHoliday() {
     if ($.fn.DataTable.isDataTable('#tb_holiday')) { $('#tb_holiday').DataTable().ajax.reload(null, false); return; }
     dtHoliday = $('#tb_holiday').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/holiday.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
@@ -257,7 +274,20 @@ function renderHoliday() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
-        initComplete: addButtonInitComplete('btn-add-holiday', 'fa-solid fa-plus', 'add_holiday', 'Holiday', 'openHolidayModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-holiday', 'fa-solid fa-plus', 'add_holiday', 'Holiday', 'openHolidayModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the multi-value scope summary (3, composite), the
+            // interactive status SWITCH (4), and actions (5).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'holiday_date' },
+                    { index: 2, key: 'recurring' },
+                ]
+            });
+        }
     });
 }
 function toggleHolidayStatus(id) {
@@ -360,6 +390,7 @@ let dtWorkLocation;
 function renderWorkLocation() {
     if ($.fn.DataTable.isDataTable('#tb_work_location')) { $('#tb_work_location').DataTable().ajax.reload(null, false); return; }
     dtWorkLocation = $('#tb_work_location').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/work-location.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}</div>` },
@@ -370,7 +401,19 @@ function renderWorkLocation() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },
-        initComplete: addButtonInitComplete('btn-add-location', 'fa-solid fa-plus', 'add_work_location', 'Location', 'openWorkLocationModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-location', 'fa-solid fa-plus', 'add_work_location', 'Location', 'openWorkLocationModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the interactive status SWITCH (3) and actions (4).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'address' },
+                ]
+            });
+        }
     });
 }
 function toggleWorkLocationStatus(id) {
@@ -441,6 +484,7 @@ function leaveQuotaUnitLabel(unit) {
 function renderLeave() {
     if ($.fn.DataTable.isDataTable('#tb_leave')) { $('#tb_leave').DataTable().ajax.reload(null, false); return; }
     dtLeave = $('#tb_leave').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/leave-type.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
@@ -454,7 +498,22 @@ function renderLeave() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
-        initComplete: addButtonInitComplete('btn-add-leave', 'fa-solid fa-plus', 'add_leave_type', 'Leave Type', 'openLeaveModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-leave', 'fa-solid fa-plus', 'add_leave_type', 'Leave Type', 'openLeaveModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the interactive status SWITCH (6) and actions (7).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'category' },
+                    { index: 3, key: 'quota' },
+                    { index: 4, key: 'paid' },
+                    { index: 5, key: 'carry_over' },
+                ]
+            });
+        }
     });
 }
 function toggleLeaveStatus(id) {
@@ -574,6 +633,7 @@ function otRateBadge(row) {
 function renderOt() {
     if ($.fn.DataTable.isDataTable('#tb_ot')) { $('#tb_ot').DataTable().ajax.reload(null, false); return; }
     dtOt = $('#tb_ot').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/ot-rate.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}</div>` },
@@ -584,7 +644,19 @@ function renderOt() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_ot_rates_yet'] || 'No OT rates have been added yet.' },
-        initComplete: addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'OT Rate', 'openOtModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'OT Rate', 'openOtModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the interactive status SWITCH (3) and actions (4).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'scope' },
+                    { index: 2, key: 'rate' },
+                ]
+            });
+        }
     });
 }
 function toggleOtStatus(id) {

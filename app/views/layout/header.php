@@ -10,6 +10,7 @@
 <link href="<?=BASE_URL?>/node_modules/@fortawesome/fontawesome-free/css/all.min.css" rel="stylesheet">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/sweetalert2/dist/sweetalert2.min.css">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/datatables.net-bs5/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="<?=BASE_URL?>/node_modules/datatables.net-responsive-bs5/css/responsive.bootstrap5.min.css">
 <link href="<?=BASE_URL?>/node_modules/select2/dist/css/select2.min.css" rel="stylesheet">
 <link href="<?=BASE_URL?>/node_modules/select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/css/bootstrap-datepicker.standalone.min.css">
@@ -28,6 +29,7 @@
 <script src="<?=asset('public/js/app.js')?>"></script>
 <script src="<?=asset('public/js/alert.js')?>"></script>
 <script src="<?=asset('public/js/input.js')?>"></script>
+<script src="<?=asset('public/js/table-column-filter.js')?>"></script>
 <nav class="origami-navbar">
     <div class="nav-container">
         <div class="nav-left">
