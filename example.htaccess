@@ -1,0 +1,12 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /payroll/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.+)$ index.php?url=$1 [QSA,L]
+</IfModule>
+
+# Block direct access to dotfiles (.env, .gitignore, etc.) — these must never be served directly.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
