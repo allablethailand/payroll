@@ -96,9 +96,17 @@ function computeMiniTimelineProgress(row) {
 // Submit (draft) and Lock (paid) both call the EXACT SAME existing endpoints detail.js already
 // uses, no new backend/business logic at all. pending_approval has no shortcut here on purpose --
 // approving now belongs on the rebuilt Payroll Approval page (permission-gated, captures a
-// reason); approved has no shortcut either since Mark Paid needs payment method/reference input
-// that doesn't fit safely in a compact cell -- both stay reachable via the existing Edit/View ->
-// Detail page flow, unaffected by this change.
+// reason).
+// 2026-08-27, explicit follow-up request ("ในหน้า Process List ให้แสดงปุ่มเพิ่มด้วยครับ" -- after
+// adding the Mark as Paid button+modal to the Detail page's own timeline) -- Mark Paid genuinely
+// DOES need payment method/reference/date input, so unlike Submit/Lock it can't be a one-click
+// confirm; it opens the exact same #runMarkPaidModal markup/i18n keys the Detail page uses
+// (duplicated into this page's own view, same "each page stays self-contained" convention this
+// whole file already follows -- see the comment above MINI_TIMELINE_STEPS further up). Gated by
+// row.can_finalize_payroll (new flag from PayrollController::list(), same permission
+// PayrollRunModel::markPaid()/lock() themselves enforce) -- Lock below is now gated by the same
+// flag too, closing a pre-existing gap where it rendered for anyone regardless of permission and
+// only failed server-side on click.
 // 2026-08-22, bug fix (explicit report: "มันคือปุ่มดำเนินการครับ อยากให้แสดงผลเป็นปุ่มอยู่อีกบรรทัด
 // แยกออกจาก Timeline" -> follow-up: "ให้ปุ่มเป็นสีเดียวกับหน้า Detail") -- was a bare icon sitting
 // inline right next to the dot chain, which read as an extra timeline dot instead of an action. Now
@@ -110,7 +118,10 @@ function miniTimelineQuickActionHtml(row) {
     if (row.state === 'draft') {
         return `<button type="button" class="btn btn-sm btn-primary mt-quick-action-btn btn-quick-submit-run" data-id="${row.id}"><i class="fa-solid fa-paper-plane me-1"></i>${langData['action_submit'] || 'Submit for Approval'}</button>`;
     }
-    if (row.state === 'paid') {
+    if (row.state === 'approved' && row.can_finalize_payroll) {
+        return `<button type="button" class="btn btn-sm btn-primary mt-quick-action-btn btn-quick-mark-paid-run" data-id="${row.id}" data-payment-date="${row.payment_date || ''}"><i class="fa-solid fa-money-check-dollar me-1"></i>${langData['action_mark_paid'] || 'Mark as Paid'}</button>`;
+    }
+    if (row.state === 'paid' && row.can_finalize_payroll) {
         return `<button type="button" class="btn btn-sm btn-primary mt-quick-action-btn btn-quick-lock-run" data-id="${row.id}"><i class="fa-solid fa-lock me-1"></i>${langData['action_lock'] || 'Lock'}</button>`;
     }
     return '';
@@ -825,6 +836,8 @@ function resetRunForm() {
     $('#run_offcycle_row').removeClass('d-none');
     $('#run_purpose').val('payroll').trigger('change');
     $('#run_compute_statutory').prop('checked', true);
+    $('#run_include_base_salary').prop('checked', false);
+    $('#run_include_standing_items').prop('checked', false);
     setOffCycleMode(false);
 }
 // Off-cycle runs (e.g. an out-of-cycle payment) skip the Payroll Cycle field entirely -- per
@@ -856,10 +869,12 @@ function setOffCycleMode(isOffCycle) {
         $('#run_purpose').val('payroll').trigger('change');
     }
 }
-// Compute Statutory only matters (and only shows) once Incentive/Other Payment is actually
-// selected -- a normal Payroll run always computes it, no choice to offer.
+// Compute Statutory/Include Base Salary/Include Standing Items only matter (and only show) once
+// Incentive/Other Payment is actually selected -- a normal Payroll run always includes all three,
+// no choice to offer.
 function updateComputeStatutoryVisibility() {
-    $('#run_compute_statutory_row').toggleClass('d-none', $('#run_purpose').val() !== 'incentive');
+    const isIncentive = $('#run_purpose').val() === 'incentive';
+    $('#run_compute_statutory_row, #run_include_base_salary_row, #run_include_standing_items_row').toggleClass('d-none', !isIncentive);
 }
 // Auto-fills Period Start/End/Payment Date from the selected cycle's own configured cutoff/
 // payment day settings, per explicit request -- pure convenience default, every field stays
@@ -906,6 +921,8 @@ function collectRunFormData() {
         cycle_id: isOffCycle ? null : $('#run_cycle_id').val(),
         run_purpose: runPurpose,
         compute_statutory: runPurpose === 'incentive' && $('#run_compute_statutory').is(':checked') ? 1 : 0,
+        include_base_salary: runPurpose === 'incentive' && $('#run_include_base_salary').is(':checked') ? 1 : 0,
+        include_standing_items: runPurpose === 'incentive' && $('#run_include_standing_items').is(':checked') ? 1 : 0,
         run_name: $('#run_name').val().trim(),
         period_start_date: toIsoDatePr($('#run_period_start').val()),
         period_end_date: toIsoDatePr($('#run_period_end').val()),
@@ -1284,6 +1301,57 @@ $(document).on('click', '.btn-quick-submit-run', function (e) {
         });
     });
 });
+// 2026-08-27: Mark Paid needs input (payment method/reference/date), so unlike Submit/Lock right
+// above/below it opens a small modal instead of a plain showConfirm(). #runMarkPaidQuickPaymentDate
+// carries the id of the row currently being marked paid across that click -> submit round trip
+// (module-scoped, since there's no `currentRun` object on this page the way detail.js has one).
+let quickMarkPaidRunId = null;
+$(document).on('click', '.btn-quick-mark-paid-run', function (e) {
+    e.stopPropagation();
+    quickMarkPaidRunId = $(this).data('id');
+    $('#run_mark_paid_method').val('bank_transfer').trigger('change');
+    $('#run_mark_paid_reference').val('');
+    // Defaults to the run's own scheduled payment_date (carried on the button itself via
+    // data-payment-date, set from row.payment_date -- the list's own row data already has it, no
+    // extra AJAX round trip needed) -- must follow .val() with .datepicker('update'), see
+    // detail.js's own btn-tl-mark-paid handler for the full bootstrap-datepicker desync mechanism
+    // this guards against.
+    $('#run_mark_paid_date').val(toDisplayDatePr($(this).data('payment-date'))).datepicker('update');
+    $('.is-invalid', '#runMarkPaidForm').removeClass('is-invalid');
+    new bootstrap.Modal(document.getElementById('runMarkPaidModal')).show();
+});
+$(document).on('submit', '#runMarkPaidForm', function (e) {
+    e.preventDefault();
+    if (!quickMarkPaidRunId) return;
+    const method = $('#run_mark_paid_method').val();
+    if (!method) {
+        $('#run_mark_paid_method').next('.select2-container').find('.select2-selection').addClass('is-invalid');
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    bootstrap.Modal.getInstance(document.getElementById('runMarkPaidModal')).hide();
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.mark-paid`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({
+            id: quickMarkPaidRunId,
+            payment_method: method,
+            payment_reference: $('#run_mark_paid_reference').val().trim() || null,
+            payment_date: toIsoDatePr($('#run_mark_paid_date').val()) || null,
+        }),
+        success: function (res) {
+            if (res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                refreshAfterRunMutation();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
+    });
+});
 $(document).on('click', '.btn-quick-lock-run', function (e) {
     e.stopPropagation();
     const id = $(this).data('id');
@@ -1324,6 +1392,7 @@ $(document).ready(function () {
         initDatepicker('#run_period_start');
         initDatepicker('#run_period_end');
         initDatepicker('#run_payment_date');
+        initDatepicker('#run_mark_paid_date');
     }
     updateClearFilterVisibility();
 });

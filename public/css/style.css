@@ -1516,10 +1516,18 @@ html, body {
     gap: 6px;
     width: 100%;
 }
+/* 2026-08-27, explicit request ("ปุ่มในหน้า timeline ของ Process detail น่าจะมีคำกำหับในปุ่มให้ดูง่าย")
+   -- these buttons went from icon-only to icon+label (see timelineStepActionsHtml() in
+   public/js/payroll/detail.js), so the old 110px cap (sized for an icon alone) was widened to fit
+   a real label; text is still allowed to wrap onto a 2nd line inside a button rather than
+   overflow, and flex-wrap on the row above lets a button drop to its own line entirely when a
+   step has several (pending_approval's Approve/Request Info/Reject/Send Back). */
 .process-timeline .tl-actions-row .btn {
     width: auto;
     flex: 1 1 auto;
-    max-width: 110px;
+    max-width: 168px;
+    font-size: 0.78rem;
+    white-space: normal;
 }
 @keyframes process-tl-pulse {
     0% { box-shadow: 0 0 0 0 rgba(255, 153, 0, .45); }
@@ -4518,6 +4526,39 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     padding: .6rem;
     font-size: 13px;
 }
+.tcf-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .5rem;
+    padding-bottom: .35rem;
+    border-bottom: 1px solid #f0f0f1;
+}
+.tcf-panel-title {
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 12.5px;
+}
+.tcf-panel-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    flex: none;
+}
+.tcf-panel-close:hover {
+    color: #374151;
+    background: #f3f4f6;
+}
 .tcf-search-wrap {
     position: relative;
     margin-bottom: .5rem;
@@ -4580,4 +4621,62 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     margin-top: .5rem;
     padding-top: .5rem;
     border-top: 1px solid #f0f0f1;
+}
+
+/* ==========================================================================
+   Reports page redesign (2026-08-27, explicit request: "ปรับ Design และโครงสร้างให้หน่อยครับ...
+   แบ่งเป็น Report ที่ต้องดึงจากรอบการจ่าย และ Report ประจำปีที่ต้องออก ให้รูปแบบการใช้งานดูง่าย และรู้ว่า
+   ต้องทำอะไร") -- `.reports-period-bar` is the single shared period picker at the top of each
+   frequency tab (payroll run for Per-Cycle, year for Annual), replacing every card's own repeated
+   year/run field. `.reports-type-section` groups cards by report type (Statutory/Payment/Internal)
+   underneath it, same secondary grouping the old top-level tabs used to provide on their own.
+   ========================================================================== */
+.reports-period-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: linear-gradient(135deg, rgba(255, 153, 0, .08), rgba(255, 153, 0, .02));
+    border: 1px solid rgba(255, 153, 0, .18);
+    border-radius: 14px;
+    padding: 1rem 1.25rem;
+    flex-wrap: wrap;
+}
+.reports-period-bar-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FF9900, #ffb84d);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex: none;
+    box-shadow: 0 4px 10px rgba(255, 153, 0, .3);
+}
+.reports-period-bar-body {
+    flex: 1;
+    min-width: 220px;
+}
+.reports-period-bar-hint {
+    font-size: .85rem;
+    color: #667085;
+    margin-bottom: .45rem;
+}
+.reports-type-section {
+    margin-bottom: 1.75rem;
+}
+.reports-type-section:last-child {
+    margin-bottom: 0;
+}
+.reports-type-section-title {
+    font-weight: 700;
+    color: #344054;
+    font-size: .92rem;
+    margin-bottom: .85rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid #eef0f2;
+}
+.reports-type-section-title i {
+    color: #FF9900;
 }

@@ -235,6 +235,29 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- 2026-08-27, explicit request ("การทำงานจ่ายนอกรอบ สามารถเลือกได้ว่าจะนำเงินเดือน
+                             หรือค่าเงินได้เงินหักที่มีการตั้งค่าไว้มาคำนวณ") -- both off by default, same
+                             "Incentive/Other Payment only" visibility as run_compute_statutory_row right
+                             above (toggled by the same updateComputeStatutoryVisibility() in index.js).
+                             include_standing_items also unlocks the two-panel Earning/Deduction item
+                             selector on the Detail page once this run is created (see that page's own
+                             #pedTypeSettingsSection). -->
+                        <div class="row mb-3 d-none" id="run_include_base_salary_row">
+                            <div class="col-sm-9 offset-sm-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="run_include_base_salary">
+                                    <label class="form-check-label" for="run_include_base_salary" data-i18n="include_base_salary_label">Include base salary (full amount, not prorated)</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="run_include_standing_items_row">
+                            <div class="col-sm-9 offset-sm-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="run_include_standing_items">
+                                    <label class="form-check-label" for="run_include_standing_items" data-i18n="include_standing_items_label">Include configured earning/deduction items (standing PED assignments + Recurring Allowances)</label>
+                                </div>
+                            </div>
+                        </div>
                         <div class="row mb-3" id="run_cycle_row">
                             <div class="col-sm-3 align-self-center">
                                 <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Cycle</span> <span class="text-danger">*</span></label>
@@ -318,6 +341,45 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-danger"><span data-i18n="confirm_cancel_run">Confirm Cancellation</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mark as Paid modal (2026-08-27, explicit request: "ในหน้า Process List ให้แสดงปุ่มเพิ่มด้วยครับ"
+         -- same markup/i18n keys as the Detail page's own #runMarkPaidModal (app/views/payroll/
+         detail.php), duplicated per this app's "each page's own JS/view stays self-contained"
+         convention (see the class-level comment above MINI_TIMELINE_STEPS in public/js/payroll/
+         index.js). Triggered from the mini-timeline's own Mark as Paid quick-action button
+         (miniTimelineQuickActionHtml() in index.js), gated by row.can_finalize_payroll. -->
+    <div class="modal fade" id="runMarkPaidModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runMarkPaidModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="runMarkPaidModalLabel">
+                        <i class="fa-solid fa-money-check-dollar me-1"></i><span data-i18n="action_mark_paid">Mark as Paid</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="runMarkPaidForm" novalidate>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label"><span data-i18n="payment_method_label">Payment Method</span> <span class="text-danger">*</span></label>
+                            <select class="form-select select2-static required" id="run_mark_paid_method" data-option-keys="payment_method_bank_transfer,payment_method_cash,payment_method_cheque" data-option-values="bank_transfer,cash,cheque"></select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" data-i18n="payment_reference_label">Payment Reference</label>
+                            <input type="text" class="form-control" id="run_mark_paid_reference" autocomplete="off">
+                        </div>
+                        <div class="mb-1">
+                            <label class="form-label" data-i18n="modal_payment_date">Payment Date</label>
+                            <input type="text" class="form-control datepicker" id="run_mark_paid_date" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-primary"><span data-i18n="action_mark_paid">Mark as Paid</span></button>
                     </div>
                 </form>
             </div>

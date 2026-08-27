@@ -262,6 +262,7 @@
     $router->post('api/shift.options', 'MasterController@getMaster');
     $router->get('reports', 'ReportsController@index');
     $router->get('api/report.list', 'ReportsController@list');
+    $router->get('api/report.cycle-runs', 'ReportsController@cycleRuns');
     $router->get('api/report.generate', 'ReportsController@generate');
     $router->get('api/report.export-logs', 'ReportsController@exportLogs');
     $router->get('submission', 'SubmissionController@index');

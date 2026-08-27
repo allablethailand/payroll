@@ -207,29 +207,69 @@ function timelineStepActionsHtml(i, run, currentIndex) {
     if (run.state === 'draft' && i === 1) {
         return `<button type="button" id="btnSubmitRun" class="btn btn-sm btn-primary"><i class="fa-solid fa-paper-plane me-1"></i><span data-i18n="action_submit">${langData['action_submit'] || 'Submit for Approval'}</span></button>`;
     }
+    // 2026-08-27, explicit request ("ปุ่มในหน้า timeline ของ Process detail น่าจะมีคำกำหับในปุ่มให้ดู
+    // ง่าย") -- every button here used to be icon-only with just a hover `title` tooltip, which
+    // isn't discoverable at a glance (especially on a touch device, where hover tooltips don't
+    // really exist). Every button below now carries a visible text label too (icon + `me-1` +
+    // label span, same shape the standalone #btnSubmitRun button above and the Timeline modal's
+    // own footer buttons in renderRunTimelineModal() already used) -- `title` is kept alongside
+    // as a redundant a11y/tooltip hint, not the only way to read what the button does anymore.
+    // .tl-actions-row's own CSS (style.css) was widened to fit a label, not just an icon.
     const buttons = [];
     if (i === 1 && run.submitted_at) {
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-view-timeline" title="${langData['action_timeline'] || 'Timeline'}"><i class="fa-solid fa-list-check"></i></button>`);
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-view-timeline" title="${langData['action_timeline'] || 'Timeline'}"><i class="fa-solid fa-list-check me-1"></i>${langData['action_timeline'] || 'Timeline'}</button>`);
     }
     if (i === currentIndex) {
         if (run.state === 'pending_approval') {
+            // 2026-08-27, explicit follow-up request ("ปรับ station ตรง Approve ตอนนี้มีหลายปุ่มครับ
+            // สำหรับคนที่มีสิทธิ์อนุมัติ") -- an approver used to see 4 buttons stacked here at once
+            // (Approve/Request Info/Reject/Send Back for Revision), on top of View Timeline right
+            // above -- cluttered, especially once every button gained a text label the same day.
+            // Approve stays its own prominent button (the common-case action); the other 3 collapse
+            // into one "More" dropdown -- same delegated .btn-tl-request-info/.btn-tl-reject/
+            // .btn-tl-revert click handlers still fire either way (class-based, not id-based), so no
+            // JS handler changes were needed, only where these 3 buttons physically render.
             if (run.can_approve_payroll) {
-                buttons.push(`<button type="button" class="btn btn-sm btn-success btn-tl-approve" title="${langData['action_approve'] || 'Approve'}"><i class="fa-solid fa-check"></i></button>`);
-                buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-request-info" title="${langData['action_request_info'] || 'Request Info'}"><i class="fa-solid fa-circle-info"></i></button>`);
-                buttons.push(`<button type="button" class="btn btn-sm btn-danger btn-tl-reject" title="${langData['action_reject'] || 'Reject'}"><i class="fa-solid fa-xmark"></i></button>`);
+                buttons.push(`<button type="button" class="btn btn-sm btn-success btn-tl-approve" title="${langData['action_approve'] || 'Approve'}"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
+                buttons.push(`<div class="dropdown d-inline-block">
+                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['action_more'] || 'More'}">
+                        <i class="fa-solid fa-ellipsis"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item btn-tl-request-info" href="#"><i class="fa-solid fa-circle-info me-2"></i>${langData['action_request_info'] || 'Request Info'}</a></li>
+                        <li><a class="dropdown-item text-danger btn-tl-reject" href="#"><i class="fa-solid fa-xmark me-2"></i>${langData['action_reject'] || 'Reject'}</a></li>
+                        <li><a class="dropdown-item btn-tl-revert" href="#"><i class="fa-solid fa-rotate-left me-2"></i>${langData['action_revert'] || 'Send Back for Revision'}</a></li>
+                    </ul>
+                </div>`);
+            } else if (run.can_process_payroll) {
+                // 2026-08-23, explicit request ("ในกรณีที่ส่ง Approve แล้วยังไม่มีใคร Approve สามารถดึง
+                // Process กลับได้") -- the submitter can pull their own still-undecided submission
+                // back too, not just an approver -- see PayrollRunModel::revert()'s own docblock.
+                // Only reachable here when can_approve_payroll is false (the branch above already
+                // folds this same action into its own dropdown when both permissions are held), so
+                // it's a single lone button, not a clutter case.
+                buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-revert" title="${langData['action_revert'] || 'Send Back for Revision'}"><i class="fa-solid fa-rotate-left me-1"></i>${langData['action_revert'] || 'Send Back for Revision'}</button>`);
             }
-            // 2026-08-23, explicit request ("ในกรณีที่ส่ง Approve แล้วยังไม่มีใคร Approve สามารถดึง
-            // Process กลับได้") -- the submitter (can_process_payroll) can pull their own
-            // still-undecided submission back too, not just an approver -- see
-            // PayrollRunModel::revert()'s own docblock for why pending_approval specifically
-            // allows either permission.
-            if (run.can_approve_payroll || run.can_process_payroll) {
-                buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-revert" title="${langData['action_revert'] || 'Send Back for Revision'}"><i class="fa-solid fa-rotate-left"></i></button>`);
+        } else if (run.state === 'approved') {
+            // 2026-08-27, explicit request ("จากอนุมัติแล้ว จะย้ายไป Station จ่ายแล้ว กดปุ่มไหน") --
+            // this was a real gap: PayrollRunModel::markPaid()/the mark-paid endpoint were fully
+            // built already but no button anywhere ever called them. can_finalize_payroll gates
+            // this the same way can_approve_payroll gates Undo Decision right below it.
+            if (run.can_finalize_payroll) {
+                buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-mark-paid" title="${langData['action_mark_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-money-check-dollar me-1"></i>${langData['action_mark_paid'] || 'Mark as Paid'}</button>`);
             }
-        } else if (run.state === 'approved' && run.can_approve_payroll) {
-            buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-revert" title="${langData['action_undo_decision'] || 'Undo Decision'}"><i class="fa-solid fa-rotate-left"></i></button>`);
+            if (run.can_approve_payroll) {
+                buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-revert" title="${langData['action_undo_decision'] || 'Undo Decision'}"><i class="fa-solid fa-rotate-left me-1"></i>${langData['action_undo_decision'] || 'Undo Decision'}</button>`);
+            }
+        } else if (run.state === 'paid' && run.can_finalize_payroll) {
+            // 2026-08-27, explicit follow-up request ("เพิ่มปุ่ม Lock ให้ด้วยครับ") -- same gap/fix
+            // as Mark as Paid right above: PayrollRunModel::lock()/the lock endpoint were already
+            // fully built (and already had a quick-action shortcut on the Process LIST page's mini
+            // timeline, see index.js's miniTimelineQuickActionHtml()) but the Detail page's own
+            // step-by-step timeline never got an equivalent button at the "Paid" step.
+            buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-lock" title="${langData['action_lock'] || 'Lock'}"><i class="fa-solid fa-lock me-1"></i>${langData['action_lock'] || 'Lock'}</button>`);
         } else if ((run.state === 'rejected' || run.state === 'need_info') && run.can_process_payroll) {
-            buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-pull-back" title="${langData['action_revise'] || 'Revise'}"><i class="fa-solid fa-pen-to-square"></i></button>`);
+            buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-pull-back" title="${langData['action_revise'] || 'Revise'}"><i class="fa-solid fa-pen-to-square me-1"></i>${langData['action_revise'] || 'Revise'}</button>`);
         }
     }
     return buttons.length ? `<div class="tl-actions-row">${buttons.join('')}</div>` : '';
@@ -323,9 +363,16 @@ function renderPedTypePanel(itemType, data, canEdit) {
     $(`.btn-edit-ped-type-panel[data-item-type="${itemType}"]`).toggleClass('d-none', !canEdit);
 }
 function renderPedTypeSettings(run) {
-    const isIncentive = run.run_purpose === 'incentive';
-    $('#pedTypeSettingsSection').toggleClass('d-none', isIncentive);
-    if (isIncentive) return;
+    // 2026-08-27, explicit request ("การทำงานจ่ายนอกรอบ...มีให้ติ๊กเลือกบางรายการที่จะนำมาแก้ไขหรือไม่
+    // นำมาแก้ไข") -- this panel used to hide outright for ANY incentive run (standing PED
+    // assignments were never a source at all). Now it also shows once that run opted into
+    // include_standing_items (new run.include_standing_items flag, set at creation -- see
+    // PayrollRunModel::recalculate()'s own docblock) -- same PayrollRunModel::savePedTypeSettings()
+    // endpoint this section already used for a normal run, now permitted for an incentive run too
+    // under that same condition (see that method's own updated docblock).
+    const hidePanel = run.run_purpose === 'incentive' && !run.include_standing_items;
+    $('#pedTypeSettingsSection').toggleClass('d-none', hidePanel);
+    if (hidePanel) return;
     pedTypeSettingsData = run.ped_type_settings || {};
     const canEdit = run.state === 'draft';
     renderPedTypePanel('earning', pedTypeSettingsData.earning, canEdit);
@@ -587,6 +634,15 @@ function renderRunTimelineModal(run) {
         buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-request-info"><i class="fa-solid fa-circle-info me-1"></i>${langData['action_request_info'] || 'Request Info'}</button>`);
         buttons.push(`<button type="button" class="btn btn-sm btn-danger btn-tl-reject"><i class="fa-solid fa-xmark me-1"></i>${langData['action_reject'] || 'Reject'}</button>`);
     }
+    // 2026-08-27: same Mark as Paid trigger as the inline timeline step button (see
+    // timelineStepActionsHtml()'s own comment) -- this modal's footer is reachable via the
+    // permanently-pinned "View Timeline" button at step 1, regardless of the run's current state.
+    if (run.state === 'approved' && run.can_finalize_payroll) {
+        buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-mark-paid"><i class="fa-solid fa-money-check-dollar me-1"></i>${langData['action_mark_paid'] || 'Mark as Paid'}</button>`);
+    }
+    if (run.state === 'paid' && run.can_finalize_payroll) {
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-lock"><i class="fa-solid fa-lock me-1"></i>${langData['action_lock'] || 'Lock'}</button>`);
+    }
     // 2026-08-23, explicit request ("ในกรณีที่ส่ง Approve แล้วยังไม่มีใคร Approve สามารถดึง Process
     // กลับได้") -- pending_approval's own revert is open to the submitter (can_process_payroll) as
     // well as an approver, unlike approved/rejected/need_info's "undo a decision" revert which
@@ -638,6 +694,7 @@ $(document).on('click', '.btn-tl-approve', function (e) {
     new bootstrap.Modal(document.getElementById('runApproveModal')).show();
 });
 $(document).on('click', '.btn-tl-reject', function (e) {
+    e.preventDefault(); // 2026-08-27: also rendered as a dropdown-item <a href="#"> now, see timelineStepActionsHtml()'s "More" dropdown
     e.stopPropagation();
     const inst = bootstrap.Modal.getInstance(document.getElementById('runTimelineModal'));
     if (inst) inst.hide();
@@ -645,17 +702,37 @@ $(document).on('click', '.btn-tl-reject', function (e) {
     new bootstrap.Modal(document.getElementById('runRejectModal')).show();
 });
 $(document).on('click', '.btn-tl-request-info', function (e) {
+    e.preventDefault(); // 2026-08-27: also rendered as a dropdown-item <a href="#"> now, see timelineStepActionsHtml()'s "More" dropdown
     e.stopPropagation();
     const inst = bootstrap.Modal.getInstance(document.getElementById('runTimelineModal'));
     if (inst) inst.hide();
     $('#run_request_info_reason').val('').removeClass('is-invalid');
     new bootstrap.Modal(document.getElementById('runRequestInfoModal')).show();
 });
+$(document).on('click', '.btn-tl-mark-paid', function (e) {
+    e.stopPropagation();
+    if (!currentRun) return;
+    const inst = bootstrap.Modal.getInstance(document.getElementById('runTimelineModal'));
+    if (inst) inst.hide();
+    $('#run_mark_paid_method').val('bank_transfer').trigger('change');
+    $('#run_mark_paid_reference').val('');
+    // Defaults to the run's own scheduled payment_date -- matches PayrollRunModel::markPaid()'s
+    // own fallback when payment_date is left blank, just shown up front so it's obvious what will
+    // be used if the user doesn't change it. Must follow .val() with .datepicker('update') --
+    // otherwise the widget's own internal state (this.dates, set to [] the first time
+    // initDatepicker() ran on page load while this field was still empty) never learns about this
+    // programmatic value, and clicking into/out of the field with no new pick would silently blank
+    // it right back out (see CLAUDE.md's bootstrap-datepicker note for the full mechanism).
+    $('#run_mark_paid_date').val(toDisplayDateRd(currentRun.payment_date)).datepicker('update');
+    $('.is-invalid', '#runMarkPaidForm').removeClass('is-invalid');
+    new bootstrap.Modal(document.getElementById('runMarkPaidModal')).show();
+});
 // The handlers below funnel through the generic callRunAction() helper (defined further down
 // this same file, hoisted so the declaration order doesn't matter) instead of writing their own
 // $.ajax blocks -- same id-scoped-to-PAYROLL_RUN_ID/reload-on-success/warn-on-failure shape every
 // other action on this page already uses (btnRecalculate, etc.).
 $(document).on('click', '.btn-tl-revert', function (e) {
+    e.preventDefault(); // 2026-08-27: also rendered as a dropdown-item <a href="#"> now, see timelineStepActionsHtml()'s "More" dropdown
     e.stopPropagation();
     const isPending = currentRun && currentRun.state === 'pending_approval';
     const title = isPending ? (langData['confirm_revert_title'] || 'Send this payroll run back for revision?') : (langData['confirm_undo_decision_title'] || 'Undo this decision?');
@@ -664,6 +741,14 @@ $(document).on('click', '.btn-tl-revert', function (e) {
         const inst = bootstrap.Modal.getInstance(document.getElementById('runTimelineModal'));
         if (inst) inst.hide();
         callRunAction('/api/payroll-run.revert', {}, langData['save_success']);
+    });
+});
+$(document).on('click', '.btn-tl-lock', function (e) {
+    e.stopPropagation();
+    showConfirm(langData['confirm_lock_title'] || 'Lock this entry?', langData['confirm_lock_message'] || 'Once locked, this entry can no longer be edited or deleted.', function () {
+        const inst = bootstrap.Modal.getInstance(document.getElementById('runTimelineModal'));
+        if (inst) inst.hide();
+        callRunAction('/api/payroll-run.lock', {}, langData['save_success']);
     });
 });
 $(document).on('submit', '#runApproveForm', function (e) {
@@ -692,6 +777,21 @@ $(document).on('submit', '#runRequestInfoForm', function (e) {
     }
     bootstrap.Modal.getInstance(document.getElementById('runRequestInfoModal')).hide();
     callRunAction('/api/payroll-run.request-info', { reason: reason }, langData['save_success']);
+});
+$(document).on('submit', '#runMarkPaidForm', function (e) {
+    e.preventDefault();
+    const method = $('#run_mark_paid_method').val();
+    if (!method) {
+        $('#run_mark_paid_method').next('.select2-container').find('.select2-selection').addClass('is-invalid');
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    bootstrap.Modal.getInstance(document.getElementById('runMarkPaidModal')).hide();
+    callRunAction('/api/payroll-run.mark-paid', {
+        payment_method: method,
+        payment_reference: $('#run_mark_paid_reference').val().trim() || null,
+        payment_date: toIsoDateRd($('#run_mark_paid_date').val()) || null,
+    }, langData['save_success']);
 });
 
 // "Items" (manage per-employee earning/deduction adjustment lines): available on ANY draft run
@@ -1485,9 +1585,19 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
     const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(manageLinesEmployeeId));
     $('#manageLinesEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
     const isIncentive = currentRun && currentRun.run_purpose === 'incentive';
-    $('#manageLinesHint').text(isIncentive
-        ? (langData['manage_items_hint_incentive'] || 'These are the only items counted for this employee -- no base salary, no standing earning/deduction assignments.')
-        : (langData['manage_items_hint_adjustment'] || 'Added on top of this employee\'s normal calculation, for this run only.'));
+    // 2026-08-27: an incentive run's manual lines are no longer necessarily the ONLY thing
+    // counted -- once include_base_salary/include_standing_items is on for this run (see
+    // PayrollRunModel::recalculate()'s own docblock), manual lines here are additive on top of
+    // those, same spirit (if not the exact same wording) as a normal run's own hint.
+    let hint;
+    if (!isIncentive) {
+        hint = langData['manage_items_hint_adjustment'] || 'Added on top of this employee\'s normal calculation, for this run only.';
+    } else if (currentRun.include_base_salary || currentRun.include_standing_items) {
+        hint = langData['manage_items_hint_incentive_partial'] || 'Added on top of this run\'s own settings (base salary and/or standing earning/deduction items, as configured for this run), for this employee only.';
+    } else {
+        hint = langData['manage_items_hint_incentive'] || 'These are the only items counted for this employee -- no base salary, no standing earning/deduction assignments.';
+    }
+    $('#manageLinesHint').text(hint);
     resetManualLineFormRd();
     // Always reopen on Tab 1 -- a stale "Attendance Data" tab left active from a previous employee
     // would otherwise show up front-and-center for someone this run isn't even sync-based for.
@@ -1854,6 +1964,13 @@ $(document).ready(function () {
         initDatepicker('#edit_period_start');
         initDatepicker('#edit_period_end');
         initDatepicker('#edit_payment_date');
+        // 2026-08-27, real bug found while adding the equivalent quick-action modal to the Process
+        // List page (this field was added earlier the same day but this call was missed) --
+        // without initDatepicker() ever running on it, the .btn-tl-mark-paid handler's own
+        // `.val(...).datepicker('update')` call would throw (`.datepicker` is not a function on an
+        // un-initialized field), since bootstrap-datepicker only attaches that API once `.datepicker()`
+        // has been called on the element at least once.
+        initDatepicker('#run_mark_paid_date');
     }
     if (typeof initSelect2 === 'function') {
         initSelect2('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle', { mode: 'ajax' });

@@ -2124,6 +2124,107 @@ try {
     checkTrue('run 3: the recurring_earning line resumes automatically after the suspend window ends', $recRun3Line !== false);
     check('run 3: gross = base(30000) + recurring earning(1200) again', (float)$recRun3Detail['gross_amount'], 31200.0);
 
+    echo "=== 2026-08-27: incentive run include_base_salary/include_standing_items opt-in toggles ===\n";
+    // Reuses $employeeFullId (base_salary=30000), but NOT its original $assignmentId/
+    // $customAssignmentId fixture assignments -- those got consumed (status flipped 'active' ->
+    // 'completed') when the very first fixture run's own markPaid() processed their single
+    // installment much earlier in this file (see the "Mark Paid" section around $runId), so by
+    // this point in the script they no longer match the PED query's own `status = 'active'` filter
+    // (real, found-while-writing-this-test confirmation that a completed assignment correctly
+    // never resurfaces in a later run -- not a bug). Fresh assignments below, same shape as the
+    // original fixture (same $pedTypeId catalog type, reusable since only the ASSIGNMENT/
+    // installment got consumed, not the catalog type itself).
+    $freshInsAssign = $pdo->prepare("INSERT INTO `employee_earning_deductions`
+        (employee_id, ped_type_id, total_installments, current_installment, amount_mode, total_amount, effective_date, status, created_by)
+        VALUES (:employee_id, :ped_type_id, 1, 0, 'even_split', 1000, '2020-01-01', 'active', :created_by)");
+    $freshInsAssign->execute([':employee_id' => $employeeFullId, ':ped_type_id' => $pedTypeId, ':created_by' => $adminUserId]);
+    $freshAssignmentId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, status)
+        VALUES (:assignment_id, 1, 1000, 'pending')")->execute([':assignment_id' => $freshAssignmentId]);
+    $pdo->prepare("INSERT INTO `employee_earning_deductions`
+        (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, total_amount, effective_date, status, created_by)
+        VALUES (:employee_id, NULL, 'ค่ามัดจำชุดยูนิฟอร์ม (fresh)', 'deduction', 1, 0, 'even_split', 200, '2020-01-01', 'active', :created_by)")
+        ->execute([':employee_id' => $employeeFullId, ':created_by' => $adminUserId]);
+    $freshCustomAssignmentId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, status)
+        VALUES (:assignment_id, 1, 200, 'pending')")->execute([':assignment_id' => $freshCustomAssignmentId]);
+    checkTrue('fixture: fresh (still-active) PED earning+deduction assignments created for the toggle tests', $freshAssignmentId > 0 && $freshCustomAssignmentId > 0);
+
+    // -- include_base_salary alone: full salary, no standing items, no proration --
+    $inclBaseOnlyStart = (clone $today)->modify('first day of +33 months')->format('Y-m-d');
+    $inclBaseOnlyEnd = (clone $today)->modify('last day of +33 months')->format('Y-m-d');
+    $inclBaseOnlyRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'include_base_salary' => 1, 'include_standing_items' => 0,
+        'run_name' => 'INCENTIVE_INCL_BASE_ONLY_' . uniqid(),
+        'period_start_date' => $inclBaseOnlyStart, 'period_end_date' => $inclBaseOnlyEnd, 'payment_date' => $inclBaseOnlyEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: incentive run with include_base_salary=1 only created' . (empty($inclBaseOnlyRes['status']) ? " ({$inclBaseOnlyRes['message']})" : ''), $inclBaseOnlyRes['status']);
+    $inclBaseOnlyRow = $pdo->query("SELECT include_base_salary, include_standing_items FROM payroll_runs WHERE id = {$inclBaseOnlyRes['id']}")->fetch(PDO::FETCH_ASSOC);
+    check('include_base_salary stored as 1', (int)$inclBaseOnlyRow['include_base_salary'], 1);
+    check('include_standing_items stored as 0', (int)$inclBaseOnlyRow['include_standing_items'], 0);
+    $runModel->joinEmployees($inclBaseOnlyRes['id'], $compId, [$employeeFullId], $adminUserId, true);
+    $runModel->recalculate($inclBaseOnlyRes['id'], $compId, $adminUserId, true);
+    $inclBaseOnlyDetail = $runModel->getDetails($inclBaseOnlyRes['id'], $compId)[0] ?? [];
+    check('include_base_salary=1: base_salary_amount is the FULL amount (30000, not prorated)', (float)($inclBaseOnlyDetail['base_salary_amount'] ?? -1), 30000.0);
+    check('include_base_salary=1: prorate_days stays null (no proration for an incentive run)', $inclBaseOnlyDetail['prorate_days'], null);
+    checkTrue('include_base_salary=1, include_standing_items=0: no ped-sourced line present', empty(array_filter(array_merge($inclBaseOnlyDetail['earning_breakdown'] ?? [], $inclBaseOnlyDetail['deduction_breakdown'] ?? []), fn($l) => ($l['source'] ?? null) === 'ped')));
+    check('include_base_salary=1, include_standing_items=0: gross = base only (30000)', (float)$inclBaseOnlyDetail['gross_amount'], 30000.0);
+
+    // -- include_standing_items alone: standing PED assignments pulled in, base salary stays 0 --
+    $inclItemsOnlyStart = (clone $today)->modify('first day of +34 months')->format('Y-m-d');
+    $inclItemsOnlyEnd = (clone $today)->modify('last day of +34 months')->format('Y-m-d');
+    $inclItemsOnlyRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'include_base_salary' => 0, 'include_standing_items' => 1,
+        'run_name' => 'INCENTIVE_INCL_ITEMS_ONLY_' . uniqid(),
+        'period_start_date' => $inclItemsOnlyStart, 'period_end_date' => $inclItemsOnlyEnd, 'payment_date' => $inclItemsOnlyEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: incentive run with include_standing_items=1 only created' . (empty($inclItemsOnlyRes['status']) ? " ({$inclItemsOnlyRes['message']})" : ''), $inclItemsOnlyRes['status']);
+    $runModel->joinEmployees($inclItemsOnlyRes['id'], $compId, [$employeeFullId], $adminUserId, true);
+    $runModel->recalculate($inclItemsOnlyRes['id'], $compId, $adminUserId, true);
+    $inclItemsOnlyDetail = $runModel->getDetails($inclItemsOnlyRes['id'], $compId)[0] ?? [];
+    check('include_standing_items=1, include_base_salary=0: base_salary_amount stays 0', (float)($inclItemsOnlyDetail['base_salary_amount'] ?? -1), 0.0);
+    $inclItemsPedEarning = current(array_filter($inclItemsOnlyDetail['earning_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'ped' && (int)($l['assignment_id'] ?? 0) === $freshAssignmentId));
+    checkTrue('include_standing_items=1: the standing PED earning assignment (TESTALLOW, +1000) is pulled in', $inclItemsPedEarning !== false);
+    $inclItemsPedDeduction = current(array_filter($inclItemsOnlyDetail['deduction_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'ped' && (int)($l['assignment_id'] ?? 0) === $freshCustomAssignmentId));
+    checkTrue('include_standing_items=1: the standing PED custom deduction (-200) is pulled in too', $inclItemsPedDeduction !== false);
+    check('include_standing_items=1, include_base_salary=0: gross = ped earning only (1000)', (float)$inclItemsOnlyDetail['gross_amount'], 1000.0);
+    check('include_standing_items=1: total_deduction = ped custom deduction (200)', (float)$inclItemsOnlyDetail['total_deduction_amount'], 200.0);
+
+    // -- both toggles on together, PLUS a manually-picked line, PLUS the two-panel earning-type
+    //    restriction (payroll_run_ped_type_settings, same mechanism a normal run already uses,
+    //    now also usable here since include_standing_items is on) restricting earning types down
+    //    to $otPedTypeId only -- TESTALLOW is NOT in that list, so it must be excluded, while the
+    //    unrestricted deduction side still lets the custom -200 deduction through unchanged.
+    $inclBothStart = (clone $today)->modify('first day of +35 months')->format('Y-m-d');
+    $inclBothEnd = (clone $today)->modify('last day of +35 months')->format('Y-m-d');
+    $inclBothRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'include_base_salary' => 1, 'include_standing_items' => 1,
+        'run_name' => 'INCENTIVE_INCL_BOTH_' . uniqid(),
+        'period_start_date' => $inclBothStart, 'period_end_date' => $inclBothEnd, 'payment_date' => $inclBothEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: incentive run with both toggles on created' . (empty($inclBothRes['status']) ? " ({$inclBothRes['message']})" : ''), $inclBothRes['status']);
+    $inclBothRunId = $inclBothRes['id'];
+    $runModel->joinEmployees($inclBothRunId, $compId, [$employeeFullId], $adminUserId, true);
+
+    $restrictSaveRes = $runModel->savePedTypeSettings($inclBothRunId, $compId, 'earning', [$otPedTypeId], $adminUserId, true);
+    checkTrue('savePedTypeSettings now succeeds for an incentive run once include_standing_items=1' . (empty($restrictSaveRes['status']) ? " ({$restrictSaveRes['message']})" : ''), $restrictSaveRes['status']);
+
+    $addBothManualRes = $runModel->addManualLine($inclBothRunId, $compId, $employeeFullId, $otPedTypeId, 5000, $adminUserId, true);
+    checkTrue('fixture: manual line (OT, +5000) added on top' . (empty($addBothManualRes['status']) ? " ({$addBothManualRes['message']})" : ''), $addBothManualRes['status']);
+
+    $runModel->recalculate($inclBothRunId, $compId, $adminUserId, true);
+    $inclBothDetail = $runModel->getDetails($inclBothRunId, $compId)[0] ?? [];
+    check('both toggles on: base_salary_amount is the FULL amount (30000)', (float)($inclBothDetail['base_salary_amount'] ?? -1), 30000.0);
+    $inclBothPedEarning = current(array_filter($inclBothDetail['earning_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'ped' && (int)($l['assignment_id'] ?? 0) === $freshAssignmentId));
+    check('earning-type restriction to [OT] excludes the standing TESTALLOW PED earning', $inclBothPedEarning, false);
+    $inclBothPedDeduction = current(array_filter($inclBothDetail['deduction_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'ped' && (int)($l['assignment_id'] ?? 0) === $freshCustomAssignmentId));
+    checkTrue('deduction side is untouched by the earning-only restriction -- custom -200 still included', $inclBothPedDeduction !== false);
+    $inclBothManualLine = current(array_filter($inclBothDetail['earning_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'manual_line'));
+    checkTrue('the manually-picked OT line is additive on top of base salary/standing items', $inclBothManualLine !== false);
+    check('both toggles on + manual line: gross = base(30000) + manual OT(5000), TESTALLOW excluded by restriction', (float)$inclBothDetail['gross_amount'], 35000.0);
+    check('both toggles on: total_deduction = ped custom deduction (200)', (float)$inclBothDetail['total_deduction_amount'], 200.0);
+    checkTrue('no "no_manual_lines" false-positive once base salary/standing items are actually present', strpos((string)($inclBothDetail['calc_errors'] ?? ''), 'no_manual_lines') === false);
+
 } finally {
     $pdo->rollBack();
 }

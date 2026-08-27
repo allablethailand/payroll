@@ -11651,6 +11651,39 @@ ALTER TABLE `payroll_sync_items`
 
 COMMIT;
 
+--
+-- payroll_runs: include_base_salary/include_standing_items (2026-08-27, explicit request:
+-- "การทำงานจ่ายนอกรอบ สามารถเลือกได้ว่าจะนำเงินเดือนหรือค่าเงินได้เงินหักที่มีการตั้งค่าไว้มาคำนวณ มีให้ติ๊ก
+-- เลือกบางรายการที่จะนำมาแก้ไขหรือไม่นำมาแก้ไข") -- two more admin-choice toggles for an 'incentive'
+-- (off-cycle) run, same "explicit per-run opt-in, only meaningful when run_purpose='incentive'"
+-- pattern as compute_statutory right next to them (a normal 'payroll' run's create() always forces
+-- both to 1 regardless of what's stored here, same as compute_statutory already does):
+--   - include_base_salary: pulls in the employee's FULL base_salary_amount (confirmed via
+--     AskUserQuestion: NOT prorated against period_start/end_date -- an off-cycle run's period
+--     dates are often just payment_date itself, see payroll_runs' own create()-time fallback,
+--     which would otherwise prorate a real month's salary down to a single day's worth).
+--   - include_standing_items: pulls in the employee's standing PED assignments
+--     (employee_earning_deductions) AND Recurring Earnings (employee_recurring_earnings) --
+--     confirmed via AskUserQuestion as the two sources "ที่ตั้งค่าไว้" covers -- gated by the SAME
+--     payroll_run_ped_type_settings two-panel Earning/Deduction selection an admin already uses to
+--     narrow a normal run's items (see that table's own docblock above), now also usable on an
+--     incentive run once this is on. Deliberately excludes attendance bonus and sync-derived
+--     lines -- neither has an off-cycle-run equivalent (both are tied to a real pay period/cycle
+--     or a pulled sync process).
+-- DEFAULT 0 (not 1, unlike compute_statutory) so this ALTER's backfill preserves EVERY existing
+-- incentive run's current behavior unchanged (base salary/standing items were always skipped
+-- entirely before this column existed) -- a value of 0 is a true no-op for
+-- PayrollRunModel::recalculate()'s own $includeBaseSalary/$includeStandingItems ternaries. Has no
+-- effect at all on a normal 'payroll' row regardless of what ends up stored here (recalculate()
+-- only ever reads these two columns inside the run_purpose='incentive' branch).
+--
+
+ALTER TABLE `payroll_runs`
+  ADD COLUMN `include_base_salary` tinyint(1) NOT NULL DEFAULT 0 AFTER `compute_statutory`,
+  ADD COLUMN `include_standing_items` tinyint(1) NOT NULL DEFAULT 0 AFTER `include_base_salary`;
+
+COMMIT;
+
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

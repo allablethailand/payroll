@@ -55,6 +55,10 @@
         if ($panel) return $panel;
         $panel = $(`
             <div class="tcf-panel d-none">
+                <div class="tcf-panel-header">
+                    <span class="tcf-panel-title"></span>
+                    <button type="button" class="tcf-panel-close" title=""><i class="fa-solid fa-xmark"></i></button>
+                </div>
                 <div class="tcf-search-wrap">
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <input type="text" class="tcf-search" placeholder="">
@@ -72,6 +76,8 @@
                 </div>
             </div>
         `).appendTo('body');
+        $panel.find('.tcf-panel-title').text((window.langData && langData['column_filter_title']) || 'Filter');
+        $panel.find('.tcf-panel-close').attr('title', (window.langData && langData['close']) || 'Close');
         $panel.find('.tcf-search-wrap input').attr('placeholder', (window.langData && langData['search']) || 'Search...');
         $panel.find('.tcf-select-all-label').text((window.langData && langData['select_all']) || 'Select All');
         $panel.find('.tcf-clear-btn').text((window.langData && langData['clear_filter']) || 'Clear');
@@ -273,12 +279,22 @@
         }
         closePanel();
     });
+    $(document).on('click', '.tcf-panel-close', function (e) {
+        e.stopPropagation();
+        closePanel();
+    });
     $(document).on('click', function (e) {
         if ($panel && !$panel.hasClass('d-none') && !$(e.target).closest('.tcf-panel, .tcf-filter-btn').length) {
             closePanel();
         }
     });
-    $(window).on('resize scroll', function () {
+    // 2026-08-27, explicit bug report: scrolling the page (e.g. scrolling back up after opening the
+    // panel) was closing it -- NOT wanted, since the panel is meant to stay open while the user
+    // scrolls to compare values. Only `resize` still closes it (the panel's position is computed
+    // once, from the filter button's rect, at open time -- a viewport resize can leave it visibly
+    // misplaced, which a scroll alone does not). Explicit close is now via the X button or an
+    // outside click instead.
+    $(window).on('resize', function () {
         if (panelOwner) closePanel();
     });
 

@@ -31,6 +31,22 @@ class PayrollReportDataModel {
         return $row ?: null;
     }
 
+    /**
+     * Every reportable (usable-state) run for a company, newest pay period first -- backs the
+     * Per-Cycle Reports matrix table (one row per completed run) added 2026-08-27.
+     */
+    public function getCompletedRuns(int $compId, array $allowedStates): array {
+        $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
+        $sql = "SELECT r.id, r.run_name, r.state, r.period_start_date, r.period_end_date, c.cycle_name
+                FROM `payroll_runs` r
+                LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
+                ORDER BY r.period_start_date DESC, r.id DESC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge([$compId], $allowedStates));
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     /** Runs whose pay period falls (even partially) within the given calendar year, usable states only. */
     public function getRunsInYear(int $compId, int $year, array $allowedStates): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));

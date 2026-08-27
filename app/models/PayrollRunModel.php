@@ -469,6 +469,13 @@ class PayrollRunModel {
         return $this->userCan($actingEmployeeId, 'can_process_payroll', $isAdmin);
     }
 
+    /** Same, for can_finalize_payroll -- gates the Detail page's "Mark as Paid"/"Lock" buttons
+     *  (markPaid()/lock() below), same simple role-flag check (no department-scoping like
+     *  can_approve_payroll needs -- finalizing isn't tied to who submitted the run). */
+    public function canFinalizePayroll(int $actingEmployeeId, bool $isAdmin): bool {
+        return $this->userCan($actingEmployeeId, 'can_finalize_payroll', $isAdmin);
+    }
+
     private function userCan(int $actingEmployeeId, string $permissionColumn, bool $isAdmin): bool {
         if ($isAdmin) {
             return true;
@@ -626,20 +633,28 @@ class PayrollRunModel {
         }
 
         // "Incentive/Other Payment" run purpose (per explicit request, 2026-08-19): a special
-        // payment (e.g. a one-off incentive) that deliberately does NOT involve base salary --
-        // only whatever specific earning/deduction items the admin picks per employee (see
-        // joinEmployees()/addManualLine() below). Only makes sense for a genuine off-cycle run
-        // (same gate as the manual employee roster) -- a cycle-based or Pending-Pull run is real
-        // payroll by definition, so 'incentive' is rejected there rather than silently ignored.
-        // compute_statutory is the admin's per-run choice (also confirmed explicit, 2026-08-19)
-        // of whether this incentive should still go through SSO/PVD/tax -- but a normal 'payroll'
-        // run must ALWAYS compute statutory; that's not something the UI is allowed to turn off,
-        // so it's forced to true here regardless of what the request sent, not just hidden in the UI.
+        // payment (e.g. a one-off incentive) that BY DEFAULT does not involve base salary or the
+        // employee's standing earning/deduction setup -- only whatever specific earning/deduction
+        // items the admin picks per employee (see joinEmployees()/addManualLine() below). Only
+        // makes sense for a genuine off-cycle run (same gate as the manual employee roster) -- a
+        // cycle-based or Pending-Pull run is real payroll by definition, so 'incentive' is
+        // rejected there rather than silently ignored.
+        // compute_statutory/include_base_salary/include_standing_items are all the admin's own
+        // per-run opt-in choice (compute_statutory confirmed explicit 2026-08-19; the other two
+        // 2026-08-27, explicit request: "การทำงานจ่ายนอกรอบ สามารถเลือกได้ว่าจะนำเงินเดือนหรือค่า
+        // เงินได้เงินหักที่มีการตั้งค่าไว้มาคำนวณ", confirmed via AskUserQuestion -- two SEPARATE
+        // toggles, base salary paid FULL/not prorated, standing items = PED assignments + Recurring
+        // Earnings) -- but a normal 'payroll' run must ALWAYS include all three; that's not
+        // something the UI is allowed to turn off, so all three are forced to their "on" value here
+        // regardless of what the request sent, not just hidden in the UI. See recalculate()'s own
+        // docblock (search $includeBaseSalary/$includeStandingItems) for what each actually changes.
         $runPurpose = (string)($data['run_purpose'] ?? 'payroll') === 'incentive' ? 'incentive' : 'payroll';
         if ($runPurpose === 'incentive' && ($cycleId !== null || $syncProcessId !== null)) {
             return ['status' => false, 'message' => 'Incentive/Other Payment is only available for an off-cycle run with no payroll cycle selected.'];
         }
         $computeStatutory = $runPurpose === 'incentive' ? (!empty($data['compute_statutory']) ? 1 : 0) : 1;
+        $includeBaseSalary = $runPurpose === 'incentive' ? (!empty($data['include_base_salary']) ? 1 : 0) : 1;
+        $includeStandingItems = $runPurpose === 'incentive' ? (!empty($data['include_standing_items']) ? 1 : 0) : 1;
 
         // Auto-sync Origami HR master data (department/position/shift/employee) right before
         // pulling this process into a run, so the user doesn't have to run "Sync Now" as a
@@ -673,11 +688,13 @@ class PayrollRunModel {
         $notes = !empty($data['notes']) ? trim((string)$data['notes']) : null;
 
         $stmt = $this->db->prepare("INSERT INTO `payroll_runs`
-            (comp_id, cycle_id, sync_process_id, run_purpose, compute_statutory, run_name, period_start_date, period_end_date, payment_date, state, notes, created_by)
-            VALUES (:comp_id, :cycle_id, :sync_process_id, :run_purpose, :compute_statutory, :run_name, :start, :end, :pay_date, 'draft', :notes, :created_by)");
+            (comp_id, cycle_id, sync_process_id, run_purpose, compute_statutory, include_base_salary, include_standing_items, run_name, period_start_date, period_end_date, payment_date, state, notes, created_by)
+            VALUES (:comp_id, :cycle_id, :sync_process_id, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :run_name, :start, :end, :pay_date, 'draft', :notes, :created_by)");
         $stmt->execute([
             ':comp_id' => $compId, ':cycle_id' => $cycleId, ':sync_process_id' => $syncProcessId,
-            ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory, ':run_name' => $runName,
+            ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
+            ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
+            ':run_name' => $runName,
             ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
             ':notes' => $notes, ':created_by' => $userId,
         ]);
@@ -952,27 +969,47 @@ class PayrollRunModel {
         }
 
         // "Incentive/Other Payment" runs (see create()'s docblock for the full reasoning) skip
-        // base salary/proration, standing PED assignments, and attendance bonus entirely -- only
-        // the manually-picked payroll_run_manual_lines for each employee count. Statutory is only
-        // computed when the admin opted into it for this specific run (compute_statutory);
-        // otherwise every line here is exactly what was picked, nothing withheld automatically.
-        // A normal 'payroll' run's create() always forces compute_statutory=1, so this ternary
-        // never actually skips statutory for real payroll.
+        // base salary/proration, standing PED assignments, and attendance bonus entirely by
+        // default -- only the manually-picked payroll_run_manual_lines for each employee count.
+        // Statutory is only computed when the admin opted into it for this specific run
+        // (compute_statutory); otherwise every line here is exactly what was picked, nothing
+        // withheld automatically. A normal 'payroll' run's create() always forces
+        // compute_statutory=1, so this ternary never actually skips statutory for real payroll.
+        //
+        // 2026-08-27, explicit request ("การทำงานจ่ายนอกรอบ สามารถเลือกได้ว่าจะนำเงินเดือนหรือ
+        // ค่าเงินได้เงินหักที่มีการตั้งค่าไว้มาคำนวณ") -- two more per-run opt-in toggles, same
+        // "admin's explicit choice, forced true for a normal payroll run" pattern as
+        // compute_statutory right above:
+        //   - include_base_salary: pulls in the employee's FULL base_salary_amount (no proration
+        //     -- explicit decision, since an off-cycle run's period dates are optional/often
+        //     meaningless for prorating against) as part of gross, same as a normal run always does.
+        //   - include_standing_items: pulls in standing PED assignments (employee_earning_deductions)
+        //     AND Recurring Earnings (EmployeeRecurringEarningModel) -- the two "configured on the
+        //     Employee Detail Salary tab" sources -- same $pedRestrictSql-gated query a normal run
+        //     always runs, and the exact same two-panel Earning/Deduction type-selection UI
+        //     (payroll_run_ped_type_settings, see that table's own docblock) an admin already uses to
+        //     narrow a normal run's items, now also usable on an incentive run once this is on.
+        //     Deliberately does NOT include attendance bonus or sync-derived lines -- both are tied
+        //     to a real pay period/cycle or a pulled sync process, neither of which an off-cycle
+        //     incentive run has.
         $isIncentive = ($run['run_purpose'] ?? 'payroll') === 'incentive';
         $computeStatutory = $isIncentive ? !empty($run['compute_statutory']) : true;
+        $includeBaseSalary = $isIncentive ? !empty($run['include_base_salary']) : true;
+        $includeStandingItems = $isIncentive ? !empty($run['include_standing_items']) : true;
 
         // Per-run item restriction (see payroll_run_ped_type_settings' own docblock in
         // database/payroll.sql for the full reasoning): no rows saved for a given item_type =
         // unrestricted for that type (every active standing PED assignment of that type is
         // included, exactly as before this setting existed) -- earning and deduction are
         // restricted/unrestricted completely independently of each other, matching the two-panel
-        // (Earning left / Deduction right) selection UI where each side saves separately. Only
-        // meaningful for the non-incentive PED-assignment branch below -- an incentive run's items
-        // are already explicitly hand-picked per employee (payroll_run_manual_lines), unrelated to
-        // this table.
+        // (Earning left / Deduction right) selection UI where each side saves separately.
+        // 2026-08-27: also meaningful for an incentive run once include_standing_items is on --
+        // same table, same "no rows = unrestricted" default either way; only whether the
+        // PED-assignment query below runs AT ALL differs by run type (see $includeStandingItems
+        // above and its own gate further down).
         $earningRestrictIds = [];
         $deductionRestrictIds = [];
-        if (!$isIncentive) {
+        if (!$isIncentive || $includeStandingItems) {
             $stmtRestrict = $this->db->prepare("SELECT s.ped_type_id, pt.item_type FROM `payroll_run_ped_type_settings` s
                 JOIN `payroll_earning_deduction_types` pt ON pt.id = s.ped_type_id WHERE s.run_id = :run_id");
             $stmtRestrict->execute([':run_id' => $id]);
@@ -1058,7 +1095,7 @@ class PayrollRunModel {
                     // vice versa.
                     $errors[] = 'profile_incomplete';
                 }
-                if (!$isIncentive && $baseSalary <= 0) {
+                if ((!$isIncentive || $includeBaseSalary) && $baseSalary <= 0) {
                     $errors[] = 'missing_base_salary';
                 }
 
@@ -1078,7 +1115,19 @@ class PayrollRunModel {
                 $prorateDays = null;
                 $prorateTotalDays = null;
                 $effectiveBase = 0.0;
-                if (!$isIncentive) {
+                // 2026-08-27, explicit request/confirmed via AskUserQuestion ("เต็มจำนวน ไม่ Prorate")
+                // -- an incentive run that opts into include_base_salary uses the FULL
+                // base_salary_amount as-is, no proration against period_start/end_date at all
+                // (unlike the normal-run branch below): an off-cycle run's period dates are often
+                // just payment_date itself (see create()'s own "defaults to payment_date, a
+                // single-day period" fallback), which would otherwise prorate a real month's salary
+                // down to a single day's worth -- clearly not the intent of "bring in the base
+                // salary".
+                if ($isIncentive) {
+                    if ($includeBaseSalary) {
+                        $effectiveBase = $baseSalary;
+                    }
+                } else {
                     $effectiveStart = $employmentDate > $periodStart ? $employmentDate : $periodStart;
                     $effectiveEnd = ($employmentEndDate !== null && $employmentEndDate < $periodEnd) ? $employmentEndDate : $periodEnd;
 
@@ -1114,8 +1163,72 @@ class PayrollRunModel {
                 $deductionLines = [];
 
                 if ($isIncentive) {
-                    // Manually-picked items only (see joinEmployees()/addManualLine() docblocks) --
-                    // no standing PED assignments, no attendance bonus, nothing automatic.
+                    // 2026-08-27, explicit request/AskUserQuestion-confirmed scope ("เงินได้/เงินหัก
+                    // ปกติ (PED) + เบี้ยเลี้ยงประจำ") -- once include_standing_items is on, pull in
+                    // the SAME two sources the normal-run branch below always does (standing PED
+                    // assignments + Recurring Earnings), gated by the SAME $pedRestrictSql/
+                    // payroll_run_ped_type_settings two-panel selection an admin already uses on a
+                    // normal run. Deliberately does NOT also pull attendance bonus or sync-derived
+                    // lines here (see $includeStandingItems' own docblock above for why -- neither
+                    // has an off-cycle-run equivalent). This is a duplicated copy of those two
+                    // specific queries from the `else` branch below, not a shared helper -- matches
+                    // this method's own existing precedent of duplicating the payroll_run_manual_lines
+                    // query per-branch instead (see the "Ad-hoc per-employee adjustments" comment
+                    // further down, same SQL as this branch's own manual-lines query below).
+                    if ($includeStandingItems) {
+                        $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
+                                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.payee_employee_id,
+                                pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
+                            FROM `employee_earning_deductions` eed
+                            LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
+                            JOIN `employee_earning_deduction_installments` i ON i.assignment_id = eed.id AND i.status = 'pending'
+                            WHERE eed.employee_id = :employee_id AND eed.status = 'active' AND eed.deleted_at IS NULL
+                            AND eed.effective_date <= :period_end{$pedRestrictSql}
+                            ORDER BY eed.id ASC, i.installment_no ASC");
+                        $stmtPed->execute(array_merge([':employee_id' => $employeeId, ':period_end' => $periodEnd], $pedRestrictParams));
+                        $pedSeen = [];
+                        foreach ($stmtPed->fetchAll(PDO::FETCH_ASSOC) as $ped) {
+                            $assignmentId = (int)$ped['assignment_id'];
+                            if (isset($pedSeen[$assignmentId])) {
+                                continue; // only the first (earliest) pending installment per assignment
+                            }
+                            $pedSeen[$assignmentId] = true;
+                            $resolved = $this->resolveManualLineRow($ped);
+                            $line = [
+                                'source' => 'ped',
+                                'assignment_id' => $assignmentId,
+                                'installment_id' => (int)$ped['installment_id'],
+                                'code' => $resolved['code'],
+                                'name_th' => $resolved['name_th'],
+                                'name_en' => $resolved['name_en'],
+                                'amount' => (float)$ped['amount'],
+                                'is_custom' => $resolved['is_custom'],
+                                'payee_employee_id' => $ped['payee_employee_id'] !== null ? (int)$ped['payee_employee_id'] : null,
+                            ];
+                            if ($resolved['item_type'] === 'earning') {
+                                $earningLines[] = $line;
+                            } else {
+                                $deductionLines[] = $line;
+                            }
+                        }
+
+                        foreach ($this->recurringEarningModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                            $earningLines[] = [
+                                'source' => 'recurring_earning',
+                                'recurring_id' => (int)$rec['recurring_id'],
+                                'code' => $rec['item_code'],
+                                'name_th' => $rec['item_name_th'],
+                                'name_en' => $rec['item_name_en'],
+                                'amount' => (float)$rec['amount'],
+                                'is_custom' => false,
+                            ];
+                        }
+                    }
+
+                    // Manually-picked items (see joinEmployees()/addManualLine() docblocks) --
+                    // additive on top of the standing items above when include_standing_items is on,
+                    // or the ONLY source when it's off (today's original/default incentive-run
+                    // behavior, unchanged). No attendance bonus, no sync-derived lines, ever.
                     $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.payee_employee_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
@@ -1141,9 +1254,14 @@ class PayrollRunModel {
                             $deductionLines[] = $entry;
                         }
                     }
-                    if (empty($manualLines)) {
-                        // Joined but nothing picked yet -- almost certainly an oversight, same
-                        // spirit as missing_base_salary for a normal payroll row.
+                    // Genuinely nothing at all for this employee -- no manual lines picked, no
+                    // standing items pulled in (either because include_standing_items is off, or on
+                    // but nothing matched), and no base salary either. Almost certainly an oversight,
+                    // same spirit as missing_base_salary for a normal payroll row. Widened from the
+                    // original "just check $manualLines" version (2026-08-27) so turning on
+                    // include_base_salary/include_standing_items alone no longer falsely flags an
+                    // employee who has real pay lines from those sources but never got a manual line.
+                    if (empty($manualLines) && empty($earningLines) && empty($deductionLines) && $effectiveBase <= 0) {
                         $errors[] = 'no_manual_lines';
                     }
                 } else {
@@ -1553,11 +1671,16 @@ class PayrollRunModel {
      * $itemType, then reinserts $pedTypeIds. Saving every currently-active item of that type is
      * equivalent to "include all" in effect, but is stored as an explicit list (ticking every box
      * IS the reset-to-default action from the checklist UI's point of view; there's no separate
-     * hidden "unrestricted" toggle to expose). Draft only, and only for a normal 'payroll' run --
-     * an 'incentive' run already picks items explicitly per employee (payroll_run_manual_lines) and
-     * has no use for this. Recalculates immediately after saving (2026-08-19, explicit request: the
-     * calculation table should reflect the new selection right away, not require a separate manual
-     * Recalculate click).
+     * hidden "unrestricted" toggle to expose). Draft only.
+     *
+     * 2026-08-27: now also usable on an 'incentive' run, but ONLY once that run opted into
+     * include_standing_items (see recalculate()'s own docblock) -- without that flag on, this
+     * table is never read at all for that run (payroll_run_manual_lines is its only item source),
+     * so saving a restriction here would silently do nothing; still blocked in that case with a
+     * clearer message pointing at the actual toggle, rather than the old blanket "doesn't apply to
+     * Incentive" rejection this used to always give. Recalculates immediately after saving
+     * (2026-08-19, explicit request: the calculation table should reflect the new selection right
+     * away, not require a separate manual Recalculate click).
      */
     public function savePedTypeSettings(int $id, int $compId, string $itemType, array $pedTypeIds, int $userId, bool $isAdmin): array {
         if (!in_array($itemType, ['earning', 'deduction'], true)) {
@@ -1573,8 +1696,8 @@ class PayrollRunModel {
         if ($run['state'] !== 'draft') {
             return ['status' => false, 'message' => 'Only a draft payroll run can be edited.'];
         }
-        if (($run['run_purpose'] ?? 'payroll') === 'incentive') {
-            return ['status' => false, 'message' => 'Item selection does not apply to an Incentive/Other Payment run.'];
+        if (($run['run_purpose'] ?? 'payroll') === 'incentive' && empty($run['include_standing_items'])) {
+            return ['status' => false, 'message' => 'Turn on "Include configured earning/deduction items" for this run before selecting which items to include.'];
         }
         $pedTypeIds = array_values(array_unique(array_map('intval', $pedTypeIds)));
         if (!empty($pedTypeIds)) {

@@ -81,8 +81,14 @@ class PayrollController extends Controller {
         // still used as-is for every internal AJAX call (api/payroll-run.get?id=, save/submit/
         // approve/etc. payloads), same as every other list/detail endpoint in this app. Only the
         // URL a user can see/bookmark/share gets obfuscated.
+        // can_finalize_payroll (2026-08-27, gates the mini-timeline's own Mark as Paid/Lock quick
+        // actions, see index.js's miniTimelineQuickActionHtml()) -- unlike can_approve_payroll,
+        // this isn't department-scoped per row, so it's the same value for every row in the
+        // response; computed once outside the loop rather than once per row.
+        $canFinalize = $this->model->canFinalizePayroll($this->userId(), $this->isAdmin());
         foreach ($rows as &$row) {
             $row['public_id'] = IdCodec::encode((int)$row['id']);
+            $row['can_finalize_payroll'] = $canFinalize;
         }
         unset($row);
         $this->json(['status' => true, 'data' => $rows]);
@@ -106,6 +112,7 @@ class PayrollController extends Controller {
         $row['approval_flow'] = $this->model->approvalFlow($id, (int)$compId);
         $row['can_approve_payroll'] = $this->model->canApprovePayroll($this->userId(), $this->isAdmin(), $row);
         $row['can_process_payroll'] = $this->model->canProcessPayroll($this->userId(), $this->isAdmin());
+        $row['can_finalize_payroll'] = $this->model->canFinalizePayroll($this->userId(), $this->isAdmin());
         $pedSettings = $this->model->getPedTypeSettings($id, (int)$compId);
         $row['ped_type_settings'] = ['earning' => $pedSettings['earning'] ?? null, 'deduction' => $pedSettings['deduction'] ?? null];
         $this->json(['status' => true, 'data' => $row]);

@@ -681,6 +681,47 @@
         </div>
     </div>
 
+    <!-- Mark as Paid modal (2026-08-27, explicit request: "จากอนุมัติแล้ว จะย้ายไป Station จ่ายแล้ว
+         กดปุ่มไหน" -- turned out there was NO button anywhere in this app that ever called the
+         already-fully-built PayrollRunModel::markPaid()/api/payroll-run.mark-paid; this modal + its
+         trigger buttons below are that missing piece). payment_method/payment_reference/
+         modal_payment_date i18n keys already existed pre-seeded in en.json/th.json for exactly this
+         (unused until now) -- reused as-is. Gated by can_finalize_payroll (new flag, mirrors
+         can_approve_payroll/can_process_payroll's own PayrollController::get() pattern), same
+         permission PayrollRunModel::markPaid() itself enforces server-side. -->
+    <div class="modal fade" id="runMarkPaidModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runMarkPaidModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="runMarkPaidModalLabel">
+                        <i class="fa-solid fa-money-check-dollar me-1"></i><span data-i18n="action_mark_paid">Mark as Paid</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="runMarkPaidForm" novalidate>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label"><span data-i18n="payment_method_label">Payment Method</span> <span class="text-danger">*</span></label>
+                            <select class="form-select select2-static required" id="run_mark_paid_method" data-option-keys="payment_method_bank_transfer,payment_method_cash,payment_method_cheque" data-option-values="bank_transfer,cash,cheque"></select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" data-i18n="payment_reference_label">Payment Reference</label>
+                            <input type="text" class="form-control" id="run_mark_paid_reference" autocomplete="off">
+                        </div>
+                        <div class="mb-1">
+                            <label class="form-label" data-i18n="modal_payment_date">Payment Date</label>
+                            <input type="text" class="form-control datepicker" id="run_mark_paid_date" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-primary"><span data-i18n="action_mark_paid">Mark as Paid</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Approval Timeline modal (2026-08-22, explicit request: same "who needs to approve /
          reversed history / approve-and-revert from here" panel added to the Approval Queue's own
          Timeline modal, also reachable from this page). Approve/Reject/Request Info/Revert only
