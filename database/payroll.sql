@@ -11611,6 +11611,46 @@ ALTER TABLE `employees`
 
 COMMIT;
 
+--
+-- 2026-08-27, Payroll Sync: support_team_id/support_team_text + signature_drawing (explicit
+-- request: "PAYROLL_SYNC_API.md มีการส่งลายเซ็น และทีม support มาด้วย ในการรับข้อมูลมาทำเงินเดือน ตอน
+-- บันทึกข้อมูลพนักงาน ให้ไปบันทึกในตารางทีม และ Assign ให้พนักงาน Auto เพิ่ม ลายเซ็นถูกส่งมาแบบ base64") --
+-- both fields were added to PAYROLL_SYNC_API.md's own 2026-08-27 revision note (items[].support_team_id/
+-- .support_team_text from Origami's m_employee.support_team_id joined to m_support_team, and
+-- items[].signature_drawing from m_employee_info.signature_drawing) but the receiving side
+-- (PayrollSyncModel) never had any column/handling for either -- see that class's own docblock for
+-- what applyOneEmployeeMasterFields() now does with them (resolveOrCreateTeamId()/team_id, and
+-- decode+save signature_drawing as a real file under employees.signature_path).
+--
+-- structure_teams gets the exact same origami_ref_id/data_source columns already added to
+-- structure_departments/structure_positions above (2026-08-18 rev 2 section) -- same reasoning:
+-- match by origami_ref_id first, fall back to an exact name match, create a new row only when
+-- neither resolves. Deliberately NOT given a sync_batch_id column like those two -- there is no
+-- TeamSyncer/MasterDataSyncOrchestrator entity type for Team (it remains a manual-HR-config-only
+-- concept per its own 2026-08-24 section above), so nothing would ever populate a batch reference
+-- for it; this is the same lightweight one-off resolve-or-create PayrollSyncModel already does for
+-- department/position, not a new full syncer.
+--
+ALTER TABLE `structure_teams`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL AFTER `team_code`,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual' AFTER `origami_ref_id`,
+  ADD UNIQUE KEY `uq_teams_origami_ref` (`origami_ref_id`,`comp_id`);
+
+-- payroll_sync_items: support_team_id/support_team_text stored plainly (small mapping ids/labels,
+-- same treatment as dept_id/posi_id/dept_description/position_name already on this table).
+-- signature_drawing is the actual drawn-signature IMAGE content (not a path like emp_pic), so unlike
+-- emp_pic it's encrypted at rest -- AES-256-GCM via EncryptionService, sharing this row's existing
+-- single `key_version` column with pay_bank_no/id_card_no/spouse_data/children_data (same "one
+-- column serves every encrypted field on the row, all re-keyed together" convention already
+-- documented on this table). `longtext` because a `data:image/...;base64,...` data URI can run to
+-- tens of KB, further inflated by the encryption envelope.
+ALTER TABLE `payroll_sync_items`
+  ADD COLUMN `support_team_id` bigint(20) DEFAULT NULL COMMENT 'Origami internal m_support_team id (2026-08-27) -- resolved/created against structure_teams.origami_ref_id on pull, mirrors dept_id/posi_id' AFTER `emp_tel`,
+  ADD COLUMN `support_team_text` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `support_team_id`,
+  ADD COLUMN `signature_drawing` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted (shares key_version) -- the employee''s drawn signature image, as a data: URI or bare base64 payload per PAYROLL_SYNC_API.md' AFTER `children_data`;
+
+COMMIT;
+
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

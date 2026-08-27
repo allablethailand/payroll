@@ -161,6 +161,33 @@ declare(strict_types=1);
  * ("Buddhist", "Judaism", "None", "Other"; there's also no "Sikh" equivalent on Origami's side),
  * so a correct fix needs an explicit alias table, not the same direct name-match used for
  * nationality. Flagged for a follow-up request rather than guessed at here.
+ *
+ * items[].support_team_id / .support_team_text / .signature_drawing (added to the doc's 2026-08-27
+ * revision) are handled per explicit request ("ตอนบันทึกข้อมูลพนักงาน ให้ไปบันทึกในตารางทีม และ Assign
+ * ให้พนักงาน Auto เพิ่ม ลายเซ็นถูกส่งมาแบบ base64"):
+ *   - support_team_id/.support_team_text get the exact same resolve-or-create treatment as
+ *     dept_id/.posi_id above -- see resolveOrCreateTeamId(). Matches structure_teams.origami_ref_id
+ *     first, falls back to an exact team_name_th/_en match, creates a new row (both name columns set
+ *     to the same incoming text, same "no separate TH/EN source on the wire" precedent as nickname)
+ *     only when neither resolves, and writes the resolved id to employees.team_id on every pull --
+ *     this auto-assigns the employee to their support team without any manual step.
+ *   - signature_drawing is stored encrypted in payroll_sync_items (see that table's own column
+ *     comment) since, unlike emp_pic (a path), this is the actual signature IMAGE content -- decoded
+ *     (stripping an optional `data:image/...;base64,` prefix per the doc's own field note) and
+ *     MIME-sniffed via decodeSignatureDrawing() using the exact same allowlist (jpg/png/svg) as
+ *     EmployeeController::uploadSignature(), then written to a real file under
+ *     public/uploads/employee_signatures/{comp_id}/ and employees.signature_path pointed at it --
+ *     same path convention/validation (EmployeeModel::isValidSignaturePath()) as a manual signature
+ *     upload through the Employee Detail UI, so nothing downstream needs to know this one came from
+ *     a sync pull rather than a live drawing. A malformed/unrecognized value is silently skipped
+ *     (existing signature_path left untouched) rather than failing the whole pull -- same "don't
+ *     guess, don't block on one bad field" stance as the personal-profile normalizers above. Only
+ *     writes a NEW file when the decoded bytes actually differ from what's already on disk at the
+ *     employee's current signature_path (a sha256 comparison) -- guards against silently piling up
+ *     an identical orphaned file on every single pull for an employee whose signature never changes,
+ *     while still following this app's existing "re-upload just points at a new file, old one is
+ *     left orphaned" precedent (CompanyProfileController/EmployeeController's own uploadSignature())
+ *     on the pulls where the signature genuinely did change.
  */
 class PayrollSyncModel {
     private PDO $db;
@@ -282,7 +309,8 @@ class PayrollSyncModel {
                  leave_approve_days, leave_wait_days, leave_without_pay_days, trip_allowance, item_values,
                  dept_id, posi_id, pass_pro, pass_pro_date, title, gender, date_birth, nickname,
                  nationality, religion, marital_status, military_service, emp_pic, email, emp_tel,
-                 spouse_data, children_data)
+                 support_team_id, support_team_text,
+                 spouse_data, children_data, signature_drawing)
             VALUES
                 (:process_id, :employee_id, :payroll_code, :emp_code, :mapping_status, :report_item_id,
                  :dept_description, :position_name, :branch_id, :branch_name,
@@ -294,7 +322,8 @@ class PayrollSyncModel {
                  :leave_approve_days, :leave_wait_days, :leave_without_pay_days, :trip_allowance, :item_values,
                  :dept_id, :posi_id, :pass_pro, :pass_pro_date, :title, :gender, :date_birth, :nickname,
                  :nationality, :religion, :marital_status, :military_service, :emp_pic, :email, :emp_tel,
-                 :spouse_data, :children_data)");
+                 :support_team_id, :support_team_text,
+                 :spouse_data, :children_data, :signature_drawing)");
 
         $unmappedCount = 0;
         foreach ($items as $item) {
@@ -323,6 +352,12 @@ class PayrollSyncModel {
             // other two encrypted fields.
             $spouseEnc = !empty($item['spouse']) ? EncryptionService::encrypt(json_encode($item['spouse'], JSON_UNESCAPED_UNICODE)) : null;
             $childrenEnc = !empty($item['children']) ? EncryptionService::encrypt(json_encode($item['children'], JSON_UNESCAPED_UNICODE)) : null;
+            // signature_drawing (2026-08-27) is the actual signature IMAGE content, not a path like
+            // emp_pic -- encrypted at rest same as pay_bank_no/idcard/spouse/children above, sharing
+            // this row's single key_version column. Stored exactly as received (data: URI or bare
+            // base64) -- decodeSignatureDrawing() does the prefix-stripping/MIME-sniffing later, at
+            // apply time, not here.
+            $signatureEnc = !empty($item['signature_drawing']) ? EncryptionService::encrypt((string)$item['signature_drawing']) : null;
             $stmt->execute([
                 ':process_id' => $processRowId, ':employee_id' => $employeeId, ':payroll_code' => $payrollCode,
                 ':emp_code' => $item['emp_code'] ?? null, ':mapping_status' => $mappingStatus,
@@ -336,7 +371,7 @@ class PayrollSyncModel {
                 ':id_card_no' => $idCardEnc['value'] ?? null,
                 ':id_card_issue_date' => $item['idcard_issued'] ?? null,
                 ':id_card_expire_date' => $item['idcard_expire'] ?? null,
-                ':key_version' => $bankNoEnc['key_version'] ?? $idCardEnc['key_version'] ?? $spouseEnc['key_version'] ?? $childrenEnc['key_version'] ?? null,
+                ':key_version' => $bankNoEnc['key_version'] ?? $idCardEnc['key_version'] ?? $spouseEnc['key_version'] ?? $childrenEnc['key_version'] ?? $signatureEnc['key_version'] ?? null,
                 ':working_days' => $item['working_days'] ?? null, ':working_mins' => $item['working_mins'] ?? null,
                 ':absent_days' => $item['absent_days'] ?? null, ':absent_mins' => $item['absent_mins'] ?? null,
                 ':late_mins' => $item['late_mins'] ?? null, ':early_mins' => $item['early_mins'] ?? null,
@@ -353,7 +388,9 @@ class PayrollSyncModel {
                 ':nationality' => $item['nationality'] ?? null, ':religion' => $item['religion'] ?? null,
                 ':marital_status' => $item['marital_status'] ?? null, ':military_service' => $item['military_service'] ?? null,
                 ':emp_pic' => $item['emp_pic'] ?? null, ':email' => $item['email'] ?? null, ':emp_tel' => $item['emp_tel'] ?? null,
+                ':support_team_id' => $item['support_team_id'] ?? null, ':support_team_text' => $item['support_team_text'] ?? null,
                 ':spouse_data' => $spouseEnc['value'] ?? null, ':children_data' => $childrenEnc['value'] ?? null,
+                ':signature_drawing' => $signatureEnc['value'] ?? null,
             ]);
         }
         return $unmappedCount;
@@ -546,7 +583,7 @@ class PayrollSyncModel {
                 id_card_no, id_card_issue_date, id_card_expire_date, key_version,
                 dept_id, dept_description, posi_id, position_name,
                 title, gender, date_birth, nickname, nationality, religion, marital_status, email, emp_tel,
-                pass_pro, pass_pro_date
+                pass_pro, pass_pro_date, support_team_id, support_team_text, signature_drawing
             FROM payroll_sync_items WHERE process_id = :process_id AND mapping_status = 'mapped' AND employee_id IS NOT NULL");
         $stmt->execute([':process_id' => $processRowId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -665,6 +702,101 @@ class PayrollSyncModel {
             $id = $stmt->fetchColumn();
             return $id !== false ? (int)$id : null;
         }
+    }
+
+    /**
+     * Same resolve-or-create treatment as department/position above (2026-08-27, explicit request:
+     * "ตอนบันทึกข้อมูลพนักงาน ให้ไปบันทึกในตารางทีม และ Assign ให้พนักงาน Auto"), against `structure_teams`
+     * -- items[].support_team_id/.support_team_text line up with that table's own origami_ref_id/
+     * team_name_th/team_name_en columns. Both name columns are set to the same incoming text on
+     * create (no separate TH/EN source on the wire, same fallback already used for nickname_th/en
+     * above) -- `client_name` is deliberately left NULL, since Origami's payload has no equivalent
+     * field to populate it from and it's a free-text, manually-curated concept (which client/project
+     * this team is deployed to) that a sync pull has no basis to guess at.
+     */
+    private function resolveOrCreateTeamId(int $compId, ?int $origamiTeamId, ?string $teamName, ?int $triggeredBy): ?int {
+        $teamName = $teamName !== null ? trim($teamName) : null;
+        if ($origamiTeamId === null && ($teamName === null || $teamName === '')) {
+            return null;
+        }
+        if ($origamiTeamId !== null) {
+            $stmt = $this->db->prepare("SELECT id FROM structure_teams WHERE origami_ref_id = :ref AND comp_id = :comp AND deleted_at IS NULL");
+            $stmt->execute([':ref' => $origamiTeamId, ':comp' => $compId]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) {
+                return (int)$id;
+            }
+        }
+        if ($teamName !== null && $teamName !== '') {
+            $stmt = $this->db->prepare("SELECT id FROM structure_teams WHERE comp_id = :comp AND deleted_at IS NULL AND status != 'deleted' AND (team_name_th = :name OR team_name_en = :name) LIMIT 1");
+            $stmt->execute([':comp' => $compId, ':name' => $teamName]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) {
+                return (int)$id;
+            }
+        }
+        if ($teamName === null || $teamName === '') {
+            // Nothing to label a brand-new team with -- an id alone (no support_team_text sent)
+            // isn't enough to create a meaningful row.
+            return null;
+        }
+        $code = 'SYNC-' . ($origamiTeamId !== null ? (string)$origamiTeamId : strtoupper(substr(md5($teamName), 0, 8)));
+        try {
+            $ins = $this->db->prepare("INSERT INTO structure_teams (comp_id, team_code, team_name_th, team_name_en, status, origami_ref_id, data_source, created_by)
+                VALUES (:comp_id, :code, :name, :name, 'active', :ref_id, 'sync', :created_by)");
+            $ins->execute([':comp_id' => $compId, ':code' => $code, ':name' => $teamName, ':ref_id' => $origamiTeamId, ':created_by' => $triggeredBy]);
+            return (int)$this->db->lastInsertId();
+        } catch (PDOException $e) {
+            // Race: another concurrent pull already created this team -- re-resolve.
+            if ($origamiTeamId !== null) {
+                $stmt = $this->db->prepare("SELECT id FROM structure_teams WHERE origami_ref_id = :ref AND comp_id = :comp AND deleted_at IS NULL");
+                $stmt->execute([':ref' => $origamiTeamId, ':comp' => $compId]);
+                $id = $stmt->fetchColumn();
+                if ($id !== false) { return (int)$id; }
+            }
+            $stmt = $this->db->prepare("SELECT id FROM structure_teams WHERE comp_id = :comp AND team_code = :code AND deleted_at IS NULL");
+            $stmt->execute([':comp' => $compId, ':code' => $code]);
+            $id = $stmt->fetchColumn();
+            return $id !== false ? (int)$id : null;
+        }
+    }
+
+    /**
+     * Decodes items[].signature_drawing (already decrypted by the caller) into real image bytes --
+     * strips an optional `data:image/...;base64,` prefix per the doc's own field note ("expect either
+     * shape"), then MIME-sniffs the decoded bytes against the exact same allowlist
+     * EmployeeController::uploadSignature() uses for a live-drawn/uploaded signature (jpg/png/svg),
+     * so a sync-provided signature ends up validated exactly as strictly as a manual one. Returns
+     * null on anything malformed/unrecognized -- signature handling never fails the whole pull, it
+     * just leaves the employee's existing signature_path untouched (same "don't guess, don't block
+     * on one bad field" stance as the rest of this class).
+     */
+    private function decodeSignatureDrawing(?string $raw): ?array {
+        if ($raw === null) {
+            return null;
+        }
+        $raw = trim($raw);
+        if ($raw === '') {
+            return null;
+        }
+        if (str_starts_with($raw, 'data:')) {
+            $comma = strpos($raw, ',');
+            if ($comma === false) {
+                return null;
+            }
+            $raw = substr($raw, $comma + 1);
+        }
+        $bytes = base64_decode($raw, true);
+        if ($bytes === false || $bytes === '') {
+            return null;
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/svg+xml' => 'svg'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->buffer($bytes);
+        if (!isset($allowedMimes[$detectedMime])) {
+            return null;
+        }
+        return ['bytes' => $bytes, 'ext' => $allowedMimes[$detectedMime]];
     }
 
     /**
@@ -819,7 +951,7 @@ class PayrollSyncModel {
     }
 
     private function applyOneEmployeeMasterFields(int $compId, int $employeeId, array $row, ?int $triggeredBy): bool {
-        $stmt = $this->db->prepare("SELECT id_card_no, tax_id_no, passport_no, bank_account_no, sso_no, spouse_id_card_no, key_version, employment_status
+        $stmt = $this->db->prepare("SELECT id_card_no, tax_id_no, passport_no, bank_account_no, sso_no, spouse_id_card_no, key_version, employment_status, signature_path
             FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
         $current = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -890,6 +1022,14 @@ class PayrollSyncModel {
             $params[':position_id'] = $posiId;
         }
 
+        // Support Team (2026-08-27 request): same resolve-or-create + auto-assign treatment as
+        // Department/Position above -- see resolveOrCreateTeamId()'s own docblock.
+        $teamId = $this->resolveOrCreateTeamId($compId, isset($row['support_team_id']) ? (int)$row['support_team_id'] : null, $row['support_team_text'] ?? null, $triggeredBy);
+        if ($teamId !== null) {
+            $set[] = "team_id = :team_id";
+            $params[':team_id'] = $teamId;
+        }
+
         // Personal profile fields (2026-08-18 rev 2) -- title/gender/marital_status only written
         // when they normalize to a recognized value (see normalizeTitle()/normalizeGender()/
         // normalizeMaritalStatus() docblock for why raw/numeric-coded values are skipped rather
@@ -941,6 +1081,31 @@ class PayrollSyncModel {
         if (!empty($row['emp_tel'])) {
             $set[] = "office_tel = :office_tel";
             $params[':office_tel'] = $row['emp_tel'];
+        }
+
+        // Signature (2026-08-27 request): decrypt this row's stored ciphertext, decode+MIME-sniff
+        // it (see decodeSignatureDrawing()'s docblock), and only actually write a new file when the
+        // decoded bytes differ from what's already on disk at the employee's current signature_path
+        // -- see class docblock for why (avoid piling up an identical orphaned file on every pull).
+        if (!empty($row['signature_drawing'])) {
+            $signaturePlain = EncryptionService::decrypt($row['signature_drawing'], $sourceKeyVersion);
+            $decodedSignature = $signaturePlain !== null ? $this->decodeSignatureDrawing($signaturePlain) : null;
+            if ($decodedSignature !== null) {
+                $currentSigPath = $current['signature_path'] ?? null;
+                $currentSigAbsPath = $currentSigPath ? (__DIR__ . '/../../' . $currentSigPath) : null;
+                $unchanged = $currentSigAbsPath && is_file($currentSigAbsPath)
+                    && hash('sha256', (string)file_get_contents($currentSigAbsPath)) === hash('sha256', $decodedSignature['bytes']);
+                if (!$unchanged) {
+                    $signatureDir = __DIR__ . '/../../public/uploads/employee_signatures/' . $compId . '/';
+                    if (is_dir($signatureDir) || mkdir($signatureDir, 0755, true)) {
+                        $signatureFileName = bin2hex(random_bytes(16)) . '.' . $decodedSignature['ext'];
+                        if (file_put_contents($signatureDir . $signatureFileName, $decodedSignature['bytes']) !== false) {
+                            $set[] = "signature_path = :signature_path";
+                            $params[':signature_path'] = 'public/uploads/employee_signatures/' . $compId . '/' . $signatureFileName;
+                        }
+                    }
+                }
+            }
         }
 
         // Probation -> Permanent auto-transition (2026-08-19, explicit request -- reverses the
@@ -1084,6 +1249,12 @@ class PayrollSyncModel {
             $children = $childrenJson !== null ? json_decode($childrenJson, true) : [];
             $item['children'] = is_array($children) ? array_map([$this, 'maskNestedIdLikeFields'], $children) : [];
 
+            // signature_drawing (2026-08-27): the decrypted value is the actual image content --
+            // easily tens of KB and meaningless to display raw in the View modal, so this only ever
+            // surfaces a presence flag, same "never expose the sensitive raw value" policy as
+            // pay_bank_no/id_card_no above.
+            $item['has_signature_drawing'] = EncryptionService::decrypt($item['signature_drawing'] ?? null, $keyVersion) !== null;
+
             // Derived 3-state probation status (2026-08-19) -- see deriveProbationStatus()'s own
             // docblock. $item['pass_pro'] here is already the corrected 1/0/null stored at ingest
             // time (parseYesNoFlag()), not the raw "Y"/"N" wire value.
@@ -1092,7 +1263,7 @@ class PayrollSyncModel {
                 $item['pass_pro_date'] ?? null
             );
 
-            unset($item['pay_bank_no'], $item['id_card_no'], $item['key_version'], $item['spouse_data'], $item['children_data']);
+            unset($item['pay_bank_no'], $item['id_card_no'], $item['key_version'], $item['spouse_data'], $item['children_data'], $item['signature_drawing']);
         }
         unset($item);
 

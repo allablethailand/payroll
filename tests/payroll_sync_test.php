@@ -14,12 +14,18 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/services/EncryptionService.php';
 require_once __DIR__ . '/../app/models/PayrollSyncModel.php';
+require_once __DIR__ . '/../app/models/EmployeeModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
 
 $failures = 0;
 $passes = 0;
+// signature_drawing (2026-08-27) writes REAL files to disk via file_put_contents() -- a rolled-back
+// DB transaction cannot undo that, so every path this script's fixtures cause to be written is
+// tracked here and cleaned up in the `finally` block below, same precedent already established for
+// tests/employment_certificate_request_test.php's own real-PDF-file assertions.
+$signatureFilesWritten = [];
 function check(string $label, $actual, $expected): void {
     global $failures, $passes;
     if ($actual === $expected) {
@@ -737,11 +743,179 @@ try {
     check('getProcessDetail masks spouse_tax to the last 4 digits', $detailItem['spouse']['spouse_tax'] ?? null, 'xxxxxxxxx6665');
     check('getProcessDetail decrypts child name (not PII, shown plainly)', $detailItem['children'][0]['child_name'] ?? null, 'Nong');
     check('getProcessDetail masks child_idcard to the last 4 digits', $detailItem['children'][0]['child_idcard'] ?? null, 'xxxxxxxxx7778');
+
+    // ---------- 2026-08-27 fields: support_team_id/.support_team_text (resolve-or-create +
+    // auto-assign to employees.team_id, mirroring dept/position) and signature_drawing (decode
+    // base64 -> real file -> employees.signature_path, mirroring a manual signature upload). ----------
+    echo "=== 2026-08-27 fields (support team + signature_drawing) ===\n";
+    // A real, tiny (1x1) valid PNG -- so finfo's MIME sniff genuinely recognizes it as image/png,
+    // not a hand-waved "looks like base64" string.
+    $onePixelPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    $onePixelPngBytes = base64_decode($onePixelPngBase64, true);
+
+    $teamSigEmployeeNo = 'TEAMSIG_TEST_' . uniqid();
+    $insTeamSigEmp = $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+         emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'ทีมลายเซ็น', 'Test', 'TeamSig', '1990-01-01', 'Thai',
+         :email, '0800000004', 'Test Address', 'Test Address',
+         'Emergency', 'Contact', 'friend', '0899999995',
+         '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+    $insTeamSigEmp->execute([':comp_id' => $compId, ':employee_no' => $teamSigEmployeeNo, ':email' => uniqid() . '@test.local']);
+    $teamSigEmployeeId = (int)$pdo->lastInsertId();
+
+    $supportTeamOrigamiId = random_int(700000, 799999);
+    $tsProcessId1 = random_int(100000, 999999);
+    $tsIngest1 = $model->ingest([
+        'schema_version' => 1, 'process_id' => $tsProcessId1, 'process_no' => 'ORIGAMI-TEST-TEAMSIG-' . $tsProcessId1,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'items' => [[
+            'report_item_id' => 70, 'payroll_code' => $teamSigEmployeeNo,
+            'support_team_id' => $supportTeamOrigamiId, 'support_team_text' => 'IT Support',
+            'signature_drawing' => 'data:image/png;base64,' . $onePixelPngBase64,
+            'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    checkTrue('team+signature fixture ingest succeeds' . (empty($tsIngest1['status']) ? " ({$tsIngest1['message']})" : ''), $tsIngest1['status']);
+    $tsProcessRowId1 = $tsIngest1['process_row_id'] ?? 0;
+
+    $tsRaw1 = $pdo->query("SELECT support_team_id, support_team_text, signature_drawing FROM payroll_sync_items WHERE process_id = {$tsProcessRowId1} LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    check('support_team_id stored as-received', (int)($tsRaw1['support_team_id'] ?? 0), $supportTeamOrigamiId);
+    check('support_team_text stored as-received', $tsRaw1['support_team_text'] ?? null, 'IT Support');
+    checkTrue('signature_drawing is encrypted at rest (not the plain data URI)', strpos((string)$tsRaw1['signature_drawing'], 'base64') === false && !empty($tsRaw1['signature_drawing']));
+
+    $tsDetail1 = $model->getProcessDetail($tsProcessRowId1, $compId);
+    checkTrue('getProcessDetail never exposes raw signature_drawing', !array_key_exists('signature_drawing', $tsDetail1['items'][0] ?? []));
+    checkTrue('getProcessDetail flags has_signature_drawing=true', $tsDetail1['items'][0]['has_signature_drawing'] ?? false);
+
+    $tsApply1 = $model->applyEmployeeMasterFields($tsProcessRowId1, $compId, 1);
+    check('applyEmployeeMasterFields reaches the team+signature test employee', $tsApply1, 1);
+
+    $teamSigEmpStmt = $pdo->prepare("SELECT * FROM employees WHERE id = :id");
+    $teamSigEmpStmt->execute([':id' => $teamSigEmployeeId]);
+    $teamSigEmp = $teamSigEmpStmt->fetch(PDO::FETCH_ASSOC);
+
+    checkTrue('team_id was resolved to a real row (auto-assigned)', !empty($teamSigEmp['team_id']));
+    $newTeamStmt = $pdo->prepare("SELECT * FROM structure_teams WHERE id = :id");
+    $newTeamStmt->execute([':id' => $teamSigEmp['team_id']]);
+    $newTeam = $newTeamStmt->fetch(PDO::FETCH_ASSOC);
+    check('auto-created team name matches support_team_text', $newTeam['team_name_th'] ?? null, 'IT Support');
+    check('auto-created team origami_ref_id matches support_team_id', (int)($newTeam['origami_ref_id'] ?? 0), $supportTeamOrigamiId);
+    check('auto-created team data_source is sync', $newTeam['data_source'] ?? null, 'sync');
+    check('auto-created team client_name left null (no equivalent field on the wire)', $newTeam['client_name'], null);
+
+    checkTrue('signature_path was written', !empty($teamSigEmp['signature_path']));
+    checkTrue('signature_path matches the validated employee-signature pattern', EmployeeModel::isValidSignaturePath($teamSigEmp['signature_path'], $compId));
+    $sigAbsPath1 = __DIR__ . '/../' . $teamSigEmp['signature_path'];
+    if (!empty($teamSigEmp['signature_path'])) { $signatureFilesWritten[] = $sigAbsPath1; }
+    checkTrue('signature file actually exists on disk', is_file($sigAbsPath1));
+    check('signature file content matches the decoded PNG bytes exactly', is_file($sigAbsPath1) ? file_get_contents($sigAbsPath1) : null, $onePixelPngBytes);
+
+    // Re-resolve by id only (no text needed this time) must hit the SAME team row, not create a
+    // duplicate -- same idempotency precedent as resolveOrCreateDepartmentId()'s own test above.
+    $tsProcessId2 = random_int(100000, 999999);
+    $tsIngest2 = $model->ingest([
+        'schema_version' => 1, 'process_id' => $tsProcessId2, 'process_no' => 'ORIGAMI-TEST-TEAMSIG2-' . $tsProcessId2,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'items' => [[
+            'report_item_id' => 71, 'payroll_code' => $teamSigEmployeeNo,
+            'support_team_id' => $supportTeamOrigamiId,
+            'signature_drawing' => 'data:image/png;base64,' . $onePixelPngBase64, // unchanged content
+            'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    checkTrue('second team+signature fixture ingest succeeds', $tsIngest2['status']);
+    $model->applyEmployeeMasterFields($tsIngest2['process_row_id'] ?? 0, $compId, 1);
+    $teamCountStmt = $pdo->prepare("SELECT COUNT(*) FROM structure_teams WHERE origami_ref_id = :ref AND comp_id = :comp");
+    $teamCountStmt->execute([':ref' => $supportTeamOrigamiId, ':comp' => $compId]);
+    check('no duplicate team created when re-resolved by id only', (int)$teamCountStmt->fetchColumn(), 1);
+
+    $teamSigEmpStmt->execute([':id' => $teamSigEmployeeId]);
+    $teamSigEmpAfterUnchanged = $teamSigEmpStmt->fetch(PDO::FETCH_ASSOC);
+    check('re-applying an UNCHANGED signature does not write a new file (dedupe by content hash)', $teamSigEmpAfterUnchanged['signature_path'] ?? null, $teamSigEmp['signature_path']);
+
+    // A genuinely different signature must produce a NEW file and update signature_path, while the
+    // old file is left in place (orphaned) -- same precedent as a manual re-upload elsewhere in
+    // this app (CompanyProfileController/EmployeeController's own uploadSignature()).
+    $twoPixelPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAQAAABBFyN0AAAAC0lEQVR42mNkYPgPAAICAQAtxJ2GAAAAAElFTkSuQmCC';
+    $twoPixelPngBytes = base64_decode($twoPixelPngBase64, true);
+    $tsProcessId3 = random_int(100000, 999999);
+    $tsIngest3 = $model->ingest([
+        'schema_version' => 1, 'process_id' => $tsProcessId3, 'process_no' => 'ORIGAMI-TEST-TEAMSIG3-' . $tsProcessId3,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'items' => [[
+            'report_item_id' => 72, 'payroll_code' => $teamSigEmployeeNo,
+            'signature_drawing' => 'data:image/png;base64,' . $twoPixelPngBase64,
+            'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    checkTrue('changed-signature fixture ingest succeeds', $tsIngest3['status']);
+    $model->applyEmployeeMasterFields($tsIngest3['process_row_id'] ?? 0, $compId, 1);
+    $teamSigEmpStmt->execute([':id' => $teamSigEmployeeId]);
+    $teamSigEmpAfterChanged = $teamSigEmpStmt->fetch(PDO::FETCH_ASSOC);
+    checkTrue('a genuinely different signature DOES write a new file (path changed)', ($teamSigEmpAfterChanged['signature_path'] ?? null) !== $teamSigEmp['signature_path']);
+    $sigAbsPath3 = __DIR__ . '/../' . $teamSigEmpAfterChanged['signature_path'];
+    if (!empty($teamSigEmpAfterChanged['signature_path'])) { $signatureFilesWritten[] = $sigAbsPath3; }
+    check('new signature file content matches the new decoded PNG bytes', is_file($sigAbsPath3) ? file_get_contents($sigAbsPath3) : null, $twoPixelPngBytes);
+    checkTrue('old signature file is left in place, not deleted (same orphan-on-reupload precedent as the rest of the app)', is_file($sigAbsPath1));
+
+    // Malformed/unrecognized signature_drawing must never fail the pull and must leave
+    // signature_path untouched (don't guess, don't block on one bad field).
+    $tsProcessId4 = random_int(100000, 999999);
+    $tsIngest4 = $model->ingest([
+        'schema_version' => 1, 'process_id' => $tsProcessId4, 'process_no' => 'ORIGAMI-TEST-TEAMSIG4-' . $tsProcessId4,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'items' => [[
+            'report_item_id' => 73, 'payroll_code' => $teamSigEmployeeNo,
+            'signature_drawing' => 'not even base64 image data!!',
+            'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    checkTrue('malformed-signature fixture ingest still succeeds', $tsIngest4['status']);
+    $model->applyEmployeeMasterFields($tsIngest4['process_row_id'] ?? 0, $compId, 1);
+    $teamSigEmpStmt->execute([':id' => $teamSigEmployeeId]);
+    $teamSigEmpAfterMalformed = $teamSigEmpStmt->fetch(PDO::FETCH_ASSOC);
+    check('malformed signature_drawing leaves signature_path untouched', $teamSigEmpAfterMalformed['signature_path'] ?? null, $teamSigEmpAfterChanged['signature_path'] ?? null);
+
+    // No support_team_id/.support_team_text at all -- an employee's team_id must stay untouched
+    // (not nulled out), same "don't touch what isn't sent" convention as department/position above.
+    $tsProcessId5 = random_int(100000, 999999);
+    $tsIngest5 = $model->ingest([
+        'schema_version' => 1, 'process_id' => $tsProcessId5, 'process_no' => 'ORIGAMI-TEST-TEAMSIG5-' . $tsProcessId5,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'items' => [[
+            'report_item_id' => 74, 'payroll_code' => $teamSigEmployeeNo, 'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    checkTrue('no-team-no-signature fixture ingest succeeds', $tsIngest5['status']);
+    $model->applyEmployeeMasterFields($tsIngest5['process_row_id'] ?? 0, $compId, 1);
+    $teamSigEmpStmt->execute([':id' => $teamSigEmployeeId]);
+    $teamSigEmpFinal = $teamSigEmpStmt->fetch(PDO::FETCH_ASSOC);
+    check('team_id left untouched when the row carries no support_team fields at all', (int)($teamSigEmpFinal['team_id'] ?? 0), (int)$teamSigEmp['team_id']);
 } catch (Throwable $e) {
     $failures++;
     echo "  FAIL  uncaught exception: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";
 } finally {
     $pdo->rollBack();
+    foreach ($signatureFilesWritten as $path) {
+        if (is_file($path)) {
+            unlink($path);
+        }
+    }
 }
 
 echo "\n--------------------------------------------------\n";
