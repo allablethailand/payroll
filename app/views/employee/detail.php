@@ -140,6 +140,20 @@
                     <span class="fw-bold fs-5" id="profileCompletenessPercent">0%</span>
                 </div>
             </div>
+            <!-- 2026-08-28, explicit request: "เพิ่มปุ่ม Re Sync รายบุคคลของพนักงาน และมีประวัติการ Sync
+                 โชว์ในหน้าพนักงานด้วย" -- Employee Sync (Origami HR), confirmed via AskUserQuestion,
+                 latest-summary only (employees.sync_batch_id already tracks "last batch to touch
+                 this row", no new history table). Whole block starts d-none -- only ever shown once
+                 populateEmployeeForm() confirms this employee actually has origami_ref_id set (see
+                 detail.js's own updateOrigamiSyncSummary()) AND IS_ORIGAMI_HR_LINKED is true; a
+                 manually-entered employee with no Origami link at all has nothing to re-sync. -->
+            <div class="employee-origami-sync-summary text-sm-end d-none" id="employeeOrigamiSyncSummary">
+                <div class="text-muted small mb-1" data-i18n="origami_sync_summary_title">Origami Sync</div>
+                <div class="small mb-1" id="profileLastSyncedText">-</div>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnResyncOneEmployee">
+                    <i class="fa-solid fa-rotate me-1"></i><span data-i18n="employee_sync_resync_one_button">Re-Sync from Origami</span>
+                </button>
+            </div>
         </div>
     </div>
     <ul class="nav nav-tabs" id="employeeTabs" role="tablist">

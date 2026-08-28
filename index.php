@@ -280,6 +280,8 @@
     $router->post('api/employee-sync.filter-options', 'EmployeeSyncController@filterOptions');
     $router->post('api/employee-sync.candidates', 'EmployeeSyncController@candidates');
     $router->post('api/employee-sync.apply', 'EmployeeSyncController@apply');
+    $router->post('api/employee-sync.resync-one', 'EmployeeSyncController@resyncOne');
+    $router->get('api/employee-sync.last-sync-summary', 'EmployeeSyncController@lastSyncSummary');
     $router->get('api/employee-sync.log', 'EmployeeSyncController@log');
     $router->get('/employees/create', 'EmployeeController@create');
     $router->get('/employees/{id}', 'EmployeeController@detail');
