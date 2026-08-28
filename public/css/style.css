@@ -4680,3 +4680,119 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .reports-type-section-title i {
     color: #FF9900;
 }
+
+/* ==========================================================================
+   Dashboard (2026-08-28) -- overview page, built on the same .page-header-card/
+   .stat-card/.station-row primitives already used by Payroll Process/Detail so it
+   doesn't introduce a competing visual language, plus two small new pieces this
+   page needed: a generic panel wrapper (.dash-section-card) and a Quick Links tile
+   grid (.dash-quick-link).
+   ========================================================================== */
+.dash-section-card {
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+    padding: 16px 18px;
+}
+.dash-section-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+.dash-section-card-header h6 {
+    color: #344054;
+    font-weight: 700;
+}
+.dash-section-link {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #FF9900;
+    text-decoration: none;
+}
+.dash-section-link:hover {
+    color: #b45f00;
+    text-decoration: underline;
+}
+
+.dash-quick-links {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+.dash-quick-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 8px;
+    text-align: center;
+    text-decoration: none;
+    color: #4a3418;
+    font-size: .8rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #fff8ee 0%, #fff1dc 100%);
+    border: 1px solid rgba(255, 153, 0, .16);
+    border-radius: 12px;
+    transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.dash-quick-link:hover {
+    color: #b45f00;
+    border-color: rgba(255, 153, 0, .4);
+    box-shadow: 0 4px 12px rgba(255, 153, 0, .14);
+    transform: translateY(-2px);
+}
+.dash-quick-link-icon {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.dash-quick-link-icon img {
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+}
+
+.dash-run-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 4px;
+    text-decoration: none;
+    border-bottom: 1px solid #f2f2f2;
+}
+.dash-run-row:last-child {
+    border-bottom: none;
+}
+.dash-run-row:hover {
+    background: #fffaf1;
+}
+.dash-run-row-name {
+    font-weight: 600;
+    color: #212529;
+    font-size: .88rem;
+}
+.dash-run-row-period {
+    font-size: .76rem;
+    color: #6c757d;
+}
+.dash-run-row-meta {
+    text-align: right;
+    flex: 0 0 auto;
+}
+.dash-run-row-amount {
+    font-weight: 700;
+    font-size: .85rem;
+    color: #212529;
+    margin-bottom: 2px;
+}
+@media (max-width: 991px) {
+    .dash-quick-links {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}

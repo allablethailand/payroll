@@ -32,6 +32,7 @@
     $router->get('auth', 'AuthController@permission'); 
     $router->get('/', 'DashboardController@index'); 
     $router->get('dashboard', 'DashboardController@index');
+    $router->get('api/dashboard.summary', 'DashboardController@summary');
     $router->get('employees', 'EmployeeController@index');
     $router->get('/payroll-process', 'PayrollController@index');
     $router->get('/payroll-process/{id}', 'PayrollController@detail');
@@ -268,6 +269,10 @@
     $router->get('submission', 'SubmissionController@index');
     $router->post('api/employee.list', 'EmployeeController@list');
     $router->post('api/employee.list-column-values', 'EmployeeController@listColumnValues');
+    $router->post('api/employee-sync.filter-options', 'EmployeeSyncController@filterOptions');
+    $router->post('api/employee-sync.candidates', 'EmployeeSyncController@candidates');
+    $router->post('api/employee-sync.apply', 'EmployeeSyncController@apply');
+    $router->get('api/employee-sync.log', 'EmployeeSyncController@log');
     $router->get('/employees/create', 'EmployeeController@create');
     $router->get('/employees/{id}', 'EmployeeController@detail');
     $router->get('api/address/search', 'AddressController@getMetadata');

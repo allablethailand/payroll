@@ -745,12 +745,36 @@ class PayrollRunModel {
         }
         $notes = array_key_exists('notes', $data) ? (trim((string)$data['notes']) ?: null) : $run['notes'];
 
+        // Run type (compute full payroll vs. an off-cycle Incentive/Other Payment pull) is editable
+        // on a draft run, same forcing rules as create() -- only meaningful for a genuine off-cycle
+        // run (no cycle_id/sync_process_id, both immutable after creation). A cycle-based/Pending-
+        // Pull run keeps whatever create() already forced (always run_purpose='payroll' with all
+        // three flags on) regardless of what the request sends, since real payroll can't opt out of
+        // base salary/statutory/standing items. 2026-08-28, explicit request: "ในหน้า Process Detail
+        // สามารถแก้ไขได้ด้วยว่าคำนวณเงินเดือนหรือรายรับรายหักอื่นไหม หรือเป็นการดึงมาทำจ่ายแยก".
+        $runPurpose = $run['run_purpose'];
+        $computeStatutory = (int)$run['compute_statutory'];
+        $includeBaseSalary = (int)$run['include_base_salary'];
+        $includeStandingItems = (int)$run['include_standing_items'];
+        $isOffCycle = $run['cycle_id'] === null && $run['sync_process_id'] === null;
+        if ($isOffCycle && array_key_exists('run_purpose', $data)) {
+            $runPurpose = (string)($data['run_purpose'] ?? 'payroll') === 'incentive' ? 'incentive' : 'payroll';
+            $computeStatutory = $runPurpose === 'incentive' ? (!empty($data['compute_statutory']) ? 1 : 0) : 1;
+            $includeBaseSalary = $runPurpose === 'incentive' ? (!empty($data['include_base_salary']) ? 1 : 0) : 1;
+            $includeStandingItems = $runPurpose === 'incentive' ? (!empty($data['include_standing_items']) ? 1 : 0) : 1;
+        }
+
         $stmt = $this->db->prepare("UPDATE `payroll_runs` SET run_name = :run_name, period_start_date = :start,
-            period_end_date = :end, payment_date = :pay_date, notes = :notes, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+            period_end_date = :end, payment_date = :pay_date, notes = :notes,
+            run_purpose = :run_purpose, compute_statutory = :compute_statutory,
+            include_base_salary = :include_base_salary, include_standing_items = :include_standing_items,
+            updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
             WHERE id = :id");
         $stmt->execute([
             ':run_name' => $runName, ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
-            ':notes' => $notes, ':updated_by' => $userId, ':id' => $id,
+            ':notes' => $notes, ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
+            ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
+            ':updated_by' => $userId, ':id' => $id,
         ]);
         $this->logAudit($id, 'draft', 'draft', 'update', $userId);
         return ['status' => true, 'message' => 'Updated successfully.'];

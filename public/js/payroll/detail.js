@@ -428,6 +428,30 @@ $(document).on('click', '#btnSavePedTypeEdit', function () {
     });
 });
 
+// A run pulled from a cycle or a sync process is always full payroll -- editable only for a
+// genuine off-cycle run (see PayrollRunModel::update()'s own off-cycle gate). cycle_id/
+// sync_process_id come back from api/payroll-run.get as either a real value or null/empty string
+// depending on how PDO happened to cast that row, so both are checked loosely on purpose.
+function isOffCycleRunRd(run) {
+    return !run.cycle_id && !run.sync_process_id;
+}
+function runTypeLabelRd(run) {
+    if (run.run_purpose !== 'incentive') {
+        return langData['run_purpose_payroll'] || 'Payroll';
+    }
+    const parts = [];
+    if (Number(run.compute_statutory) === 1) parts.push(langData['compute_statutory_short'] || langData['compute_statutory_label'] || 'Tax/SSO/PVD');
+    if (Number(run.include_base_salary) === 1) parts.push(langData['include_base_salary_short'] || langData['include_base_salary_label'] || 'Base salary');
+    if (Number(run.include_standing_items) === 1) parts.push(langData['include_standing_items_short'] || langData['include_standing_items_label'] || 'Standing items');
+    const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment (no base salary)';
+    return parts.length ? `${label} (${parts.join(', ')})` : label;
+}
+function updateEditRunTypeVisibility() {
+    const isIncentive = $('#edit_run_purpose').val() === 'incentive';
+    $('#edit_run_compute_statutory_row, #edit_run_include_base_salary_row, #edit_run_include_standing_items_row').toggleClass('d-none', !isIncentive);
+}
+$(document).on('change', '#edit_run_purpose', updateEditRunTypeVisibility);
+
 function renderRunHeader(run) {
     currentRun = run;
     document.title = run.run_name;
@@ -443,6 +467,7 @@ function renderRunHeader(run) {
     $('#infoNet').text(fmtNumRd(run.total_net_amount));
     const creatorName = (currentLang === 'th' ? run.created_by_name_th : run.created_by_name_en) || run.created_by_name_th || run.created_by_name_en || '-';
     $('#infoCreatedBy').text(creatorName);
+    $('#infoRunType').text(runTypeLabelRd(run));
 
     if (run.state === 'rejected' && run.reject_reason) {
         $('#rejectReasonBox').removeClass('d-none').html(`<i class="fa-solid fa-circle-exclamation me-1"></i><strong>${langData['reject_reason_display'] || 'Reject Reason'}:</strong> ${escapeHtmlRd(run.reject_reason)}`);
@@ -1905,6 +1930,19 @@ $(document).on('click', '#btnEditRun', function () {
     $('#edit_period_end').val(toDisplayDateRd(currentRun.period_end_date));
     $('#edit_payment_date').val(toDisplayDateRd(currentRun.payment_date));
     $('#edit_notes').val(currentRun.notes || '');
+    // .datepicker('update') after programmatic .val() -- see CLAUDE.md's bootstrap-datepicker note
+    // (widget state goes stale otherwise, blanking the field on next click-away).
+    $('#edit_period_start, #edit_period_end, #edit_payment_date').datepicker('update');
+
+    const offCycle = isOffCycleRunRd(currentRun);
+    $('#edit_run_type_section').toggleClass('d-none', !offCycle);
+    if (offCycle) {
+        $('#edit_run_purpose').val(currentRun.run_purpose || 'payroll').trigger('change');
+        $('#edit_run_compute_statutory').prop('checked', Number(currentRun.compute_statutory) === 1);
+        $('#edit_run_include_base_salary').prop('checked', Number(currentRun.include_base_salary) === 1);
+        $('#edit_run_include_standing_items').prop('checked', Number(currentRun.include_standing_items) === 1);
+        updateEditRunTypeVisibility();
+    }
     $('.is-invalid').removeClass('is-invalid');
     new bootstrap.Modal(document.getElementById('editRunModal')).show();
 });
@@ -1932,6 +1970,15 @@ $(document).on('submit', '#editRunForm', function (e) {
         payment_date: toIsoDateRd($('#edit_payment_date').val()),
         notes: $('#edit_notes').val().trim(),
     };
+    // Only sent for a genuine off-cycle run -- PayrollRunModel::update() ignores these fields
+    // entirely for a cycle-based/Pending-Pull run anyway, but omitting them here keeps the
+    // payload honest about what this specific save is actually allowed to change.
+    if (isOffCycleRunRd(currentRun)) {
+        payload.run_purpose = $('#edit_run_purpose').val();
+        payload.compute_statutory = $('#edit_run_compute_statutory').is(':checked');
+        payload.include_base_salary = $('#edit_run_include_base_salary').is(':checked');
+        payload.include_standing_items = $('#edit_run_include_standing_items').is(':checked');
+    }
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.save`,
         method: 'POST',
@@ -1980,5 +2027,6 @@ $(document).ready(function () {
         // Attendance Deduction rate_unit dropdown -- re-initializing a select2 field on every open
         // can leave stale state/duplicate options behind).
         initSelect2('#manualLinePayeeEmployee', { mode: 'ajax', allowClear: true });
+        initSelect2('#edit_run_purpose', { mode: 'static' });
     }
 });

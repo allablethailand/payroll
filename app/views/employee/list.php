@@ -128,5 +128,159 @@
             </div>
         </div>
     </div>
+
+    <!-- Sync Employee from Origami (2026-08-28, explicit request) -- picker modal. Candidate data
+         is currently MOCKED (OrigamiEmployeeCandidateClient, see its own docblock); the whole
+         browse/filter/select/apply/log workflow is real, only the source of the candidate rows
+         will change once Origami implements docs/origami-employee-sync-api-guide.md. -->
+    <div class="modal fade" id="employeeSyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="employeeSyncModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="employeeSyncModalLabel">
+                        <i class="fa-solid fa-rotate me-1"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
+                    </h5>
+                    <button type="button" class="btn btn-outline-secondary btn-sm ms-auto me-2" id="btnOpenEmployeeSyncLog">
+                        <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="employee_sync_log_button">Sync Log</span>
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- 2026-08-28, explicit request: "ถ้ายังเชื่อมไม่ได้ก็ควรแจ้งว่าเชื่อมไม่ได้ ไม่ใช่
+                         Mock Data" (if still not connected, say so -- don't show Mock Data) --
+                         confirmed via AskUserQuestion: block the whole picker (filters/fetch/result
+                         area all stay hidden) until EmployeeSyncModel::requireConnected() reports a
+                         real connection, showing only this panel instead. Nothing here is ever
+                         mock/sample data. -->
+                    <div class="text-center py-5 d-none" id="employeeSyncNotConnected">
+                        <i class="fa-solid fa-plug-circle-xmark fa-2x text-danger mb-3"></i>
+                        <div class="fw-bold mb-1" data-i18n="employee_sync_not_connected_title">Not connected to Origami</div>
+                        <div class="text-muted small" id="employeeSyncNotConnectedMessage" data-i18n="employee_sync_not_connected_message">The connection to Origami has not been configured yet. Please contact your system administrator.</div>
+                    </div>
+                    <div id="employeeSyncFilterRow" class="d-none">
+                    <div class="row g-2 align-items-end mb-3">
+                        <!-- 2026-08-28, explicit follow-up: "ตัวที่เป็น Filter ต้อง Filter จาก Origami
+                             ครับ แล้วส่งไปดึงข้อมูลพนักงานอีกที" -- these 4 options are fetched from
+                             api/employee-sync.filter-options (Origami-sourced) and rendered as real
+                             <option> tags by employee-sync.js, NOT from Payroll's own local
+                             department/position/team endpoints -- select2 'native' mode only (no
+                             data-api/data-option-keys here on purpose). -->
+                        <div class="col-6 col-md-3">
+                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <select class="form-select" id="sync_filter_department"></select>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label mb-1" data-i18n="position">Position</label>
+                            <select class="form-select" id="sync_filter_position"></select>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label mb-1" data-i18n="employee_sync_filter_type">Type</label>
+                            <select class="form-select" id="sync_filter_type"></select>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label mb-1" data-i18n="employee_sync_filter_team">Team (Origami)</label>
+                            <select class="form-select" id="sync_filter_team"></select>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <button type="button" class="btn btn-primary w-100" id="btnFetchSyncCandidates">
+                                <i class="fa-solid fa-magnifying-glass me-1"></i><span data-i18n="employee_sync_fetch_button">Fetch</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="employeeSyncResultArea" class="d-none">
+                        <ul class="nav nav-tabs" id="employeeSyncTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="tab-sync-new-btn" data-bs-toggle="tab" data-bs-target="#tab-sync-new" type="button" role="tab">
+                                    <span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="syncNewCount">0</span>
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="tab-sync-existing-btn" data-bs-toggle="tab" data-bs-target="#tab-sync-existing" type="button" role="tab">
+                                    <span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="syncExistingCount">0</span>
+                                </button>
+                            </li>
+                        </ul>
+                        <div class="tab-content border border-top-0 rounded-bottom p-2 mb-3">
+                            <div class="tab-pane fade show active" id="tab-sync-new" role="tabpanel">
+                                <table class="table table-hover table-sm align-middle w-100" id="tb_sync_new">
+                                    <thead class="table-light text-secondary">
+                                        <tr>
+                                            <th style="width:3%;"><input type="checkbox" id="syncNewSelectAll"></th>
+                                            <th data-i18n="employee_no">Employee No.</th>
+                                            <th data-i18n="name">Name</th>
+                                            <th data-i18n="department">Department</th>
+                                            <th data-i18n="position">Position</th>
+                                            <th data-i18n="employee_sync_filter_type">Type</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="tab-pane fade" id="tab-sync-existing" role="tabpanel">
+                                <table class="table table-hover table-sm align-middle w-100" id="tb_sync_existing">
+                                    <thead class="table-light text-secondary">
+                                        <tr>
+                                            <th style="width:3%;"><input type="checkbox" id="syncExistingSelectAll"></th>
+                                            <th data-i18n="employee_no">Employee No.</th>
+                                            <th data-i18n="name">Name</th>
+                                            <th data-i18n="department">Department</th>
+                                            <th data-i18n="employee_sync_filter_type">Type</th>
+                                            <th data-i18n="employee_sync_update_col">Update Available</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-muted small text-center py-4" id="employeeSyncEmptyHint" data-i18n="employee_sync_empty_hint">Set filters (optional) and click Fetch to browse candidates from Origami.</div>
+                    </div>
+                </div>
+                <div class="modal-footer justify-content-between">
+                    <span class="text-muted small" id="syncSelectedCountLabel"></span>
+                    <div>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-primary d-none" id="btnApplyEmployeeSync">
+                            <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="syncSelectedCount">0</span>)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Log -->
+    <div class="modal fade" id="employeeSyncLogModal" tabindex="-1" aria-labelledby="employeeSyncLogModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="employeeSyncLogModalLabel">
+                        <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="employee_sync_log_title">Employee Sync Log</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <table class="table table-hover table-sm align-middle w-100" id="tb_sync_log">
+                        <thead class="table-light text-secondary">
+                            <tr>
+                                <th data-i18n="employee_sync_log_col_date">Date</th>
+                                <th data-i18n="employee_sync_log_col_triggered_by">By</th>
+                                <th data-i18n="employee_sync_log_col_status">Status</th>
+                                <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
+                                <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
+                                <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 <script src="<?=asset('public/js/employee/list.js')?>"></script>
+<script src="<?=asset('public/js/employee/employee-sync.js')?>"></script>

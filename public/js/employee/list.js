@@ -222,6 +222,17 @@ function initEmployeeTable() {
                 `;
                 $searchDiv.append(btn);
             }
+            // 2026-08-28, explicit request: "ต้องการปุ่ม Sync ข้อมูล Employee จากระบบ Origami" --
+            // see public/js/employee/employee-sync.js for the picker modal this opens.
+            if ($searchDiv.find('#btnOpenEmployeeSync').length === 0) {
+                let syncBtn = `
+                    <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSync" type="button">
+                        <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
+                    </button>
+                `;
+                $searchDiv.append(syncBtn);
+                if (typeof updateText === 'function') updateText($searchDiv[0]);
+            }
             let $input = $searchDiv.find('input').off('.employeeSearch');
             $input.on('keypress.employeeSearch', function (e) {
                 if (e.keyCode === 13) {

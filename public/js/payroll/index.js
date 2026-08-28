@@ -38,6 +38,23 @@ function stateBadgePr(state) {
     const text = langData['state_' + state] || state;
     return `<span class="badge ${cls}">${text}</span>`;
 }
+// 2026-08-28, explicit request: "ใน Process List ให้มีสัญลักษณ์บอกด้วยครับ" (whether this run
+// computes full payroll or is an off-cycle Incentive/Other Payment pull -- see
+// PayrollRunModel::update()'s own docblock for the run_purpose/compute_statutory/
+// include_base_salary/include_standing_items fields this reads). Only a normal 'payroll' run has
+// no icon (the common case, nothing to flag); an incentive/off-cycle run gets a gift icon whose
+// title lists exactly which of the 3 flags are on, reusing the same i18n strings the Create/Edit
+// run modals already use for those checkboxes so there's no new translation to keep in sync.
+function runTypeIconPr(row) {
+    if (row.run_purpose !== 'incentive') return '';
+    const parts = [];
+    if (Number(row.compute_statutory) === 1) parts.push(langData['compute_statutory_label'] || 'Compute tax/SSO/PVD');
+    if (Number(row.include_base_salary) === 1) parts.push(langData['include_base_salary_label'] || 'Include base salary');
+    if (Number(row.include_standing_items) === 1) parts.push(langData['include_standing_items_label'] || 'Include standing items');
+    const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment';
+    const title = parts.length ? `${label}: ${parts.join(', ')}` : label;
+    return `<i class="fa-solid fa-gift text-warning me-1" title="${escapeHtmlPr(title)}"></i>`;
+}
 function employeeNamePr(row) {
     return (currentLang === 'th' ? row.created_by_name_th : row.created_by_name_en) || row.created_by_name_th || row.created_by_name_en || '-';
 }
@@ -479,7 +496,14 @@ function initPayrollRunTable() {
             }
         },
         columns: [
-            { data: 'run_name', render: d => `<strong class="text-dark">${escapeHtmlPr(d)}</strong>` },
+            // Object-form render (not a plain function) so client-side sort/filter still operate on
+            // the raw run_name string, not the display HTML with the conditional icon prefixed --
+            // same DataTables sort-safety rule CLAUDE.md documents for formatted-date columns.
+            { data: 'run_name', render: {
+                display: (d, t, row) => `${runTypeIconPr(row)}<strong class="text-dark">${escapeHtmlPr(d)}</strong>`,
+                sort: d => d,
+                filter: d => d,
+            } },
             { data: null, render: (d, t, row) => `${toDisplayDatePr(row.period_start_date)} - ${toDisplayDatePr(row.period_end_date)}` },
             { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
             { data: 'employee_count', className: 'text-end' },

@@ -65,6 +65,14 @@
                     <div class="text-muted small" data-i18n="table_created_by">Created By</div>
                     <div class="fw-bold" id="infoCreatedBy">-</div>
                 </div>
+                <!-- 2026-08-28, explicit request: "สามารถแก้ไขได้ด้วยว่าคำนวณเงินเดือนหรือรายรับ
+                     รายหักอื่นไหม หรือเป็นการดึงมาทำจ่ายแยก" -- read-only summary of run_purpose/
+                     compute_statutory/include_base_salary/include_standing_items (editable via
+                     #btnEditRun's modal for an off-cycle run only, same forcing rule as create()). -->
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small" data-i18n="run_type_label">Run Type</div>
+                    <div class="fw-bold" id="infoRunType">-</div>
+                </div>
             </div>
           </div>
           <div class="detail-section d-none" id="pedTypeSettingsSection">
@@ -229,6 +237,46 @@
                                 <div class="input-group">
                                     <input type="text" class="form-control required datepicker" id="edit_payment_date" name="payment_date" autocomplete="off">
                                     <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 2026-08-28, explicit request -- only shown/editable for a genuine
+                             off-cycle run (no payroll cycle, not pulled from a sync process); a
+                             cycle-based/Pending-Pull run is always full payroll and this whole
+                             block stays hidden, same gate as PayrollRunModel::update() itself
+                             enforces server-side (see edit_run_type_hint below). -->
+                        <div class="d-none" id="edit_run_type_section">
+                            <div class="row mb-3" id="edit_run_purpose_row">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-0" data-i18n="modal_run_purpose">Run Purpose</label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <select class="form-select select2-static" id="edit_run_purpose" name="run_purpose"
+                                            data-option-keys="run_purpose_payroll,run_purpose_incentive" data-option-values="payroll,incentive"></select>
+                                </div>
+                            </div>
+                            <div class="row mb-3 d-none" id="edit_run_compute_statutory_row">
+                                <div class="col-sm-9 offset-sm-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="edit_run_compute_statutory">
+                                        <label class="form-check-label" for="edit_run_compute_statutory" data-i18n="compute_statutory_label">Compute tax/social security (SSO/PVD) for this payment</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mb-3 d-none" id="edit_run_include_base_salary_row">
+                                <div class="col-sm-9 offset-sm-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="edit_run_include_base_salary">
+                                        <label class="form-check-label" for="edit_run_include_base_salary" data-i18n="include_base_salary_label">Include base salary (full amount, not prorated)</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mb-3 d-none" id="edit_run_include_standing_items_row">
+                                <div class="col-sm-9 offset-sm-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="edit_run_include_standing_items">
+                                        <label class="form-check-label" for="edit_run_include_standing_items" data-i18n="include_standing_items_label">Include configured earning/deduction items (standing PED assignments + Recurring Allowances)</label>
+                                    </div>
                                 </div>
                             </div>
                         </div>
