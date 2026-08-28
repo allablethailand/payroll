@@ -610,7 +610,29 @@ try {
     check('military_status intentionally left unmapped despite a plausible-looking raw value', $profileEmp['military_status'], null);
     check('profile_photo_path intentionally left unmapped (emp_pic is a foreign filesystem path)', $profileEmp['profile_photo_path'], null);
     check('employment_status untouched by pass_pro here (fixture already started as permanent, not probation -- the probation->permanent auto-transition guard only fires from "probation", see the dedicated section below)', $profileEmp['employment_status'] ?? null, 'permanent');
-    checkTrue('has_spouse/spouse_name/spouse_id_card_no untouched (spouse mapping deliberately deferred)', empty($profileEmp['has_spouse']));
+    // 2026-08-28: spouse/children mapping was deferred before, now applied (real gap found and
+    // fixed -- see PayrollSyncModel's own docblock for the full reasoning + AskUserQuestion-
+    // confirmed "overwrite every pull" policy).
+    checkTrue('has_spouse is now set to true', !empty($profileEmp['has_spouse']));
+    check('spouse_name applied as "spouse_name spouse_lastname"', $profileEmp['spouse_name'] ?? null, 'Malee Jaidee');
+    $spouseIdCardPlain = EncryptionService::decrypt($profileEmp['spouse_id_card_no'] ?? null, (int)($profileEmp['key_version'] ?? 0));
+    check('spouse_id_card_no decrypts to the real value (encrypted, not plaintext)', $spouseIdCardPlain, '1112223334445');
+
+    $depStmt = $pdo->prepare("SELECT * FROM employee_dependents WHERE employee_id = :id AND deleted_at IS NULL");
+    $depStmt->execute([':id' => $profileTestEmployeeId]);
+    $deps = $depStmt->fetchAll(PDO::FETCH_ASSOC);
+    check('exactly 1 dependent (child) row created from the fixture\'s 1 child', count($deps), 1);
+    if (count($deps) === 1) {
+        check('dependent name applied as "child_name child_lastname"', $deps[0]['name'] ?? null, 'Nong Test');
+        check('dependent date_of_birth applied from child_birthday', $deps[0]['date_of_birth'] ?? null, '2015-05-05');
+        check('dependent relationship defaults to child_legitimate (child_type has no confirmed mapping)', $deps[0]['relationship'] ?? null, 'child_legitimate');
+        $childIdCardPlain = EncryptionService::decrypt($deps[0]['id_card_no'] ?? null, (int)($deps[0]['key_version'] ?? 0));
+        check('dependent id_card_no decrypts to the real value', $childIdCardPlain, '4445556667778');
+    }
+
+    $parentStmt = $pdo->prepare("SELECT * FROM employee_parents WHERE employee_id = :id AND deleted_at IS NULL");
+    $parentStmt->execute([':id' => $profileTestEmployeeId]);
+    check('no employee_parents rows created (fixture\'s father_name/mother_name are both absent, only the idcard fields are present and both null)', count($parentStmt->fetchAll(PDO::FETCH_ASSOC)), 0);
 
     // Idempotency: re-applying against the SAME dept_id/posi_id must resolve back to the same rows,
     // not create duplicates.
@@ -622,6 +644,9 @@ try {
     $posiCountStmt = $pdo->prepare("SELECT COUNT(*) FROM structure_positions WHERE origami_ref_id = :ref AND comp_id = :comp");
     $posiCountStmt->execute([':ref' => $profilePosiId, ':comp' => $compId]);
     check('no duplicate position created on a second pull', (int)$posiCountStmt->fetchColumn(), 1);
+    $depCountStmt = $pdo->prepare("SELECT COUNT(*) FROM employee_dependents WHERE employee_id = :id AND deleted_at IS NULL");
+    $depCountStmt->execute([':id' => $profileTestEmployeeId]);
+    check('no duplicate dependent row on a second pull (whole-set replace, not append)', (int)$depCountStmt->fetchColumn(), 1);
 
     // An unrecognized nationality name must NOT overwrite the already-resolved code with a bogus
     // string that would silently re-break the master_nationalities join this whole fix exists for.

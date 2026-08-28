@@ -909,6 +909,14 @@ const formSchemas = {
             { name: 'role_name_th', label: 'role_name', type: 'text', required: true, legal_key: 'local_name' },
             { name: 'role_name_en', label: 'role_name', type: 'text', required: true, legal_key: 'en_name' },
             { name: 'salary_access', label: 'salary_access', type: 'checkbox' },
+            // 2026-08-28, explicit request ("ให้ช่วยเพิ่ม checkbox ให้เลยครับ") -- these 3 previously
+            // had NO UI anywhere (PayrollRunModel::userCan() checks them directly on
+            // structure_roles, a separate mechanism from the Permission Matrix's permissions/
+            // role_permissions tables), defaulting to 0 for every role with no way to enable them
+            // short of raw SQL. Same generic checkbox field type salary_access already uses.
+            { name: 'can_process_payroll', label: 'can_process_payroll', type: 'checkbox' },
+            { name: 'can_approve_payroll', label: 'can_approve_payroll', type: 'checkbox' },
+            { name: 'can_finalize_payroll', label: 'can_finalize_payroll', type: 'checkbox' },
             { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
         ]
     },
