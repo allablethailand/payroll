@@ -530,13 +530,23 @@ class PayrollRunModel {
     // Off-cycle runs (cycleId === null) are deliberately exempt from this check -- there's no
     // cycle group to collide within, and an ad-hoc/out-of-cycle payment legitimately CAN share a
     // date range with a normal cycle's run (e.g. a one-off bonus run covering the same period).
+    /**
+     * 2026-08-28, real bug found and fixed (explicit report: "A payroll run already exists for
+     * this cycle and period. ทั้งๆอีกรอบยกเลิกไปแล้ว" -- a cancelled run still blocked a new one for
+     * the same cycle+period). Root cause: cancel() sets state='cancelled' but deliberately never
+     * touches deleted_at (it's a state transition, not a soft-delete -- the row must stay visible
+     * in run history/logs). This check only ever excluded deleted_at IS NULL, so a cancelled run
+     * still counted as "occupying" its period. A cancelled run represents money that never moved
+     * (see cancel()'s own docblock -- it even frees the run's sync_process_id back to Pending Pull
+     * for exactly this reason), so it must not block a fresh run for the same period.
+     */
     private function isDuplicatePeriod(int $compId, ?int $cycleId, string $start, string $end, ?int $excludeId): bool {
         if ($cycleId === null) {
             return false;
         }
         $sql = "SELECT COUNT(*) FROM `payroll_runs`
                 WHERE comp_id = :comp_id AND cycle_id = :cycle_id AND period_start_date = :start AND period_end_date = :end
-                AND deleted_at IS NULL";
+                AND deleted_at IS NULL AND state != 'cancelled'";
         $params = [':comp_id' => $compId, ':cycle_id' => $cycleId, ':start' => $start, ':end' => $end];
         if ($excludeId !== null) {
             $sql .= " AND id != :exclude_id";
