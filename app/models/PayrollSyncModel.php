@@ -131,12 +131,24 @@ declare(strict_types=1);
  *     copying it verbatim would just produce a broken image reference on this app's side.
  *   - spouse/.children are stored encrypted (spouse_data/children_data, whole-JSON-blob encryption
  *     since there's no per-field column to encrypt individually -- both contain real PII like
- *     spouse_idcard/child_idcard) but intentionally NOT yet written to employees.has_spouse/
- *     .spouse_name/.spouse_id_card_no or the `employee_dependents` table -- doing that safely needs
- *     its own design pass (e.g. how to avoid a sync-driven overwrite clobbering a dependent a
- *     payroll admin entered manually and Origami doesn't know about), not something to fold in as
- *     a side effect of this task. getProcessDetail() decrypts+masks the idcard-like nested fields
+ *     spouse_idcard/child_idcard). getProcessDetail() decrypts+masks the idcard-like nested fields
  *     before they'd ever reach the frontend, same policy as pay_bank_no/id_card_no above.
+ *   - **2026-08-28 update**: now also applied to the real employee record in
+ *     applyOneEmployeeMasterFields(), closing a real gap found in this exact scenario (confirmed
+ *     via explicit user report: "ข้อมูลที่เชื่อมมายังไม่ครบ...พวกลูก สามี ภรรยา" -- the data was being
+ *     received and stored, just never materialized onto the employee's actual profile). Confirmed
+ *     via AskUserQuestion: same "Origami is the source of truth, overwrite every pull" policy as
+ *     every other field in this method (NOT insert-once like EmployeeSyncer's payroll fields) --
+ *     spouse writes employees.has_spouse/.spouse_name/.spouse_id_card_no directly; the employee's
+ *     OWN father/mother (bundled inside the same `spouse` object per the doc's own note) and
+ *     children both do a whole-set delete+reinsert into employee_parents/employee_dependents on
+ *     every pull, same "replace, don't diff" convention already used elsewhere in this project
+ *     (approval_workflow_steps, holiday_assignments). The accepted tradeoff of this policy: a
+ *     dependent/parent a payroll admin added manually, that Origami has no record of, gets removed
+ *     on the next pull for that employee -- not an oversight, the explicitly chosen behavior.
+ *     `child_type`'s real legitimate/adopted mapping is still unconfirmed (see resolveEmployeeId()
+ *     area below) -- every synced child defaults to relationship='child_legitimate' since the
+ *     column is NOT NULL and there's no reliable signal to pick 'child_adopted' instead.
  *
  * items[].nationality switched on the sending side (PAYROLL_SYNC_API.md, 2026-08-19 revision) from
  * a raw internal Origami ID to a resolved display name (e.g. "Thai"). This mattered here because
@@ -583,7 +595,8 @@ class PayrollSyncModel {
                 id_card_no, id_card_issue_date, id_card_expire_date, key_version,
                 dept_id, dept_description, posi_id, position_name,
                 title, gender, date_birth, nickname, nationality, religion, marital_status, email, emp_tel,
-                pass_pro, pass_pro_date, support_team_id, support_team_text, signature_drawing
+                pass_pro, pass_pro_date, support_team_id, support_team_text, signature_drawing,
+                spouse_data, children_data
             FROM payroll_sync_items WHERE process_id = :process_id AND mapping_status = 'mapped' AND employee_id IS NOT NULL");
         $stmt->execute([':process_id' => $processRowId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -1106,6 +1119,106 @@ class PayrollSyncModel {
                     }
                 }
             }
+        }
+
+        // Spouse/children (2026-08-28, explicit follow-up -- was received and stored encrypted in
+        // payroll_sync_items.spouse_data/children_data since the 2026-08-18 rev 2 doc addition, but
+        // never actually applied to the employee's real profile; see this class's own docblock note
+        // above explaining why it was deferred). Confirmed via AskUserQuestion: same "Origami is the
+        // source of truth, overwrite on every pull" policy as the rest of this method (pay_bank/
+        // deduct_sso/etc.) -- NOT insert-once like EmployeeSyncer's payroll fields. This means a
+        // manually-added dependent/parent that Origami doesn't know about WILL be removed on the
+        // next pull -- an accepted tradeoff of the chosen policy, not an oversight.
+        $spouseJson = !empty($row['spouse_data']) ? EncryptionService::decrypt($row['spouse_data'], $sourceKeyVersion) : null;
+        $spouse = $spouseJson !== null ? json_decode($spouseJson, true) : null;
+        if (is_array($spouse) && !empty(trim((string)($spouse['spouse_name'] ?? '')))) {
+            $set[] = "has_spouse = 1";
+            $spouseFullName = trim((string)($spouse['spouse_name'] ?? '') . ' ' . (string)($spouse['spouse_lastname'] ?? ''));
+            $set[] = "spouse_name = :spouse_name";
+            $params[':spouse_name'] = $spouseFullName;
+            $plain['spouse_id_card_no'] = !empty($spouse['spouse_idcard']) ? (string)$spouse['spouse_idcard'] : null;
+            $touchedEncrypted = true;
+        } elseif (is_array($spouse)) {
+            // spouse_data present but genuinely empty (every field blank) -- ingest() already
+            // collapses this exact case to a NULL column (see class docblock), so in practice this
+            // branch is unreachable today; kept for safety if that normalization ever changes.
+            $set[] = "has_spouse = 0";
+            $set[] = "spouse_name = NULL";
+            $plain['spouse_id_card_no'] = null;
+            $touchedEncrypted = true;
+        }
+
+        $childrenJson = !empty($row['children_data']) ? EncryptionService::decrypt($row['children_data'], $sourceKeyVersion) : null;
+        $children = $childrenJson !== null ? json_decode($childrenJson, true) : null;
+
+        // employee_dependents (children) and employee_parents (the employee's OWN father/mother,
+        // bundled inside the same `spouse` object on the wire per PAYROLL_SYNC_API.md's own note)
+        // are separate tables from `employees` -- own-transaction guard per this project's own
+        // convention (multi-step write across 3 tables must not partially apply if interrupted).
+        $ownTransaction = !$this->db->inTransaction();
+        if ($ownTransaction) {
+            $this->db->beginTransaction();
+        }
+        try {
+            // Whole-set replace (delete+reinsert), same pattern already used elsewhere in this
+            // project (approval_workflow_steps, holiday_assignments) -- matches the "overwrite every
+            // pull" policy just confirmed, not a partial diff-and-patch.
+            if (is_array($spouse)) {
+                $this->db->prepare("DELETE FROM employee_parents WHERE employee_id = :employee_id AND relationship IN ('father', 'mother')")
+                    ->execute([':employee_id' => $employeeId]);
+                $parentSlots = [
+                    'father' => ['name' => trim((string)($spouse['father_name'] ?? '') . ' ' . (string)($spouse['father_lastname'] ?? '')), 'id_card' => $spouse['father_idcard'] ?? null],
+                    'mother' => ['name' => trim((string)($spouse['mother_name'] ?? '') . ' ' . (string)($spouse['mother_lastname'] ?? '')), 'id_card' => $spouse['mother_idcard'] ?? null],
+                ];
+                foreach ($parentSlots as $relationship => $parent) {
+                    if ($parent['name'] === '') {
+                        continue;
+                    }
+                    $idCardEnc = !empty($parent['id_card']) ? EncryptionService::encrypt((string)$parent['id_card']) : null;
+                    $stmtParent = $this->db->prepare("INSERT INTO employee_parents
+                            (employee_id, name, id_card_no, relationship, status, key_version, created_by)
+                        VALUES (:employee_id, :name, :id_card_no, :relationship, 'active', :key_version, :created_by)");
+                    $stmtParent->execute([
+                        ':employee_id' => $employeeId, ':name' => $parent['name'],
+                        ':id_card_no' => $idCardEnc['value'] ?? null, ':relationship' => $relationship,
+                        ':key_version' => $idCardEnc !== null ? EncryptionService::currentKeyVersion() : null,
+                        ':created_by' => $triggeredBy,
+                    ]);
+                }
+            }
+            if (is_array($children)) {
+                $this->db->prepare("DELETE FROM employee_dependents WHERE employee_id = :employee_id")
+                    ->execute([':employee_id' => $employeeId]);
+                foreach ($children as $child) {
+                    $childName = trim((string)($child['child_name'] ?? '') . ' ' . (string)($child['child_lastname'] ?? ''));
+                    if ($childName === '') {
+                        continue;
+                    }
+                    $idCardEnc = !empty($child['child_idcard']) ? EncryptionService::encrypt((string)$child['child_idcard']) : null;
+                    $dob = !empty($child['child_birthday']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$child['child_birthday']) ? $child['child_birthday'] : null;
+                    // child_type has no confirmed mapping to legitimate/adopted on this app's side
+                    // (see class docblock -- "a raw integer code, this app doesn't resolve them to a
+                    // label") -- 'child_legitimate' is the statistically likely default, not a
+                    // verified mapping; relationship is NOT NULL so a default is unavoidable here.
+                    $stmtChild = $this->db->prepare("INSERT INTO employee_dependents
+                            (employee_id, name, id_card_no, date_of_birth, relationship, studying, status, key_version, created_by)
+                        VALUES (:employee_id, :name, :id_card_no, :date_of_birth, 'child_legitimate', 0, 'active', :key_version, :created_by)");
+                    $stmtChild->execute([
+                        ':employee_id' => $employeeId, ':name' => $childName,
+                        ':id_card_no' => $idCardEnc['value'] ?? null, ':date_of_birth' => $dob,
+                        ':key_version' => $idCardEnc !== null ? EncryptionService::currentKeyVersion() : null,
+                        ':created_by' => $triggeredBy,
+                    ]);
+                }
+            }
+            if ($ownTransaction) {
+                $this->db->commit();
+            }
+        } catch (Throwable $e) {
+            if ($ownTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
         }
 
         // Probation -> Permanent auto-transition (2026-08-19, explicit request -- reverses the

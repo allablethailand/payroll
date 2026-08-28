@@ -23,6 +23,16 @@ function escapeHtmlPm(str) {
     return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
 }
 
+// 2026-08-28, real bug found and fixed (explicit report: "ในหน้าจัดการสิทธิ์การใช้งาน บางคำยังเป็นคีย์
+// ยังไม่แปล" -- some words on the Permission Matrix page still show as raw keys, not translated).
+// Root cause: this map only ever covered the original 5 module_codes from when this feature first
+// shipped -- the `permissions` table has since grown to 13 distinct module_codes (employee/
+// company_structure/bank_account/payslip_template/payroll_configuration/tax_statutory/
+// company_profile/employment_certificate_template all added later, across several rounds this same
+// session), and the fallback `map[code] || code` silently rendered the raw snake_case module_code
+// string for any of the 8 that were never added here -- which reads exactly like an untranslated
+// i18n key even though it technically isn't one. All 8 reuse EXISTING generic i18n keys already
+// used elsewhere in this app (checked first, none needed inventing) rather than new ones.
 function permissionModuleLabel(code) {
     const map = {
         holiday: langData['holiday'] || 'Holiday',
@@ -30,6 +40,14 @@ function permissionModuleLabel(code) {
         approval_workflow: langData['approval_workflow'] || 'Approval Workflow',
         approval_request: langData['approval_monitor'] || 'Approval Monitor',
         rbac: langData['permissions'] || 'Permissions',
+        employee: langData['employee'] || 'Employee',
+        company_structure: langData['organization_structure'] || 'Organization Structure',
+        bank_account: langData['bank_account'] || 'Bank Account',
+        payslip_template: langData['payslip_template'] || 'Payslip Template',
+        payroll_configuration: langData['payroll_configuration'] || 'Payroll Configuration',
+        tax_statutory: langData['local_statutory_and_tax_settings'] || 'Local Statutory & Tax Settings',
+        company_profile: langData['company_profile'] || 'Company Profile',
+        employment_certificate_template: langData['employment_certificate_template'] || 'Employment Certificate Template',
     };
     return map[code] || code;
 }

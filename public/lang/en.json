@@ -1610,5 +1610,8 @@
     "apply_default_confirm_message": "This will add any missing standard starter records for this list. Existing records will not be changed.",
     "apply_default_result": "Added {created} new record(s). {skipped} already existed.",
     "employee_sync_dept_position": "Department / Position",
-    "org_structure_sync_confirm_message": "This will insert/update {count} record(s) in this system."
+    "org_structure_sync_confirm_message": "This will insert/update {count} record(s) in this system.",
+    "can_process_payroll": "Can Create/Process Payroll Run",
+    "can_approve_payroll": "Can Approve Payroll Run",
+    "can_finalize_payroll": "Can Mark Paid/Finalize Payroll Run"
 }
