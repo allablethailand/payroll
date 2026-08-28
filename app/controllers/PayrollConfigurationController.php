@@ -5,6 +5,7 @@ require_once __DIR__ . '/../models/PayrollEarningDeductionTypeModel.php';
 require_once __DIR__ . '/../models/PayrollCycleModel.php';
 require_once __DIR__ . '/../models/AttendanceBonusSchemeModel.php';
 require_once __DIR__ . '/../models/AttendanceBonusLedgerModel.php';
+require_once __DIR__ . '/../models/AttendanceDeductionRuleModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 class PayrollConfigurationController extends Controller {
     private $model;
@@ -12,6 +13,7 @@ class PayrollConfigurationController extends Controller {
     private $cycleModel;
     private $attendanceBonusModel;
     private $ledgerModel;
+    private AttendanceDeductionRuleModel $attendanceDeductionRuleModel;
     private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new PayrollConfigurationModel();
@@ -19,6 +21,7 @@ class PayrollConfigurationController extends Controller {
         $this->cycleModel = new PayrollCycleModel();
         $this->attendanceBonusModel = new AttendanceBonusSchemeModel();
         $this->ledgerModel = new AttendanceBonusLedgerModel();
+        $this->attendanceDeductionRuleModel = new AttendanceDeductionRuleModel();
         $this->permissionModel = new PermissionModel();
     }
 
@@ -233,6 +236,19 @@ class PayrollConfigurationController extends Controller {
         $this->json(['status' => true, 'data' => $this->cycleModel->options((int)$compId, $search, $page, $limit)]);
     }
 
+    /** Not gated behind payroll_configuration.manage -- used by the Payroll Run create form (any
+     * user who can create a run, not just those managing cycle setup), same exposure level as
+     * cycleOptions() above which feeds the same form's cycle dropdown. */
+    public function cycleSuggestPeriod() {
+        $compId = getCompId();
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->cycleModel->suggestNextPeriod($id, (int)$compId));
+    }
+
     public function cycleList() {
         if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
@@ -313,13 +329,37 @@ class PayrollConfigurationController extends Controller {
         $search = (string)($_POST['search']['value'] ?? '');
         $colIndex = isset($_POST['order'][0]['column']) ? (int)$_POST['order'][0]['column'] : 0;
         $orderDir = isset($_POST['order'][0]['dir']) && $_POST['order'][0]['dir'] === 'desc' ? 'desc' : 'asc';
-        $res = $this->pedTypeModel->list((int)$compId, $start, $length, $itemType, $search, $colIndex, $orderDir);
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $res = $this->pedTypeModel->list((int)$compId, $start, $length, $itemType, $search, $colIndex, $orderDir, (string)$lang, $columnFilters);
         $this->json([
             'draw' => intval($_POST['draw'] ?? 1),
             'recordsTotal' => $res['recordsTotal'],
             'recordsFiltered' => $res['recordsFiltered'],
             'data' => $res['data'],
         ]);
+    }
+    /** 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout,
+     *  shared by both the Earning and Deduction tabs (see PayrollEarningDeductionTypeModel::
+     *  columnDistinctValues()'s own docblock on why the result is scoped to the requesting tab's
+     *  own item_type). */
+    public function pedTypeColumnValues() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'values' => []]);
+            return;
+        }
+        $itemType = (string)($_POST['item_type'] ?? '');
+        if (!in_array($itemType, ['earning', 'deduction'], true)) {
+            $this->json(['status' => true, 'values' => []]);
+            return;
+        }
+        $column = (string)($_POST['column'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $values = $this->pedTypeModel->columnDistinctValues((int)$compId, $itemType, $column, (string)$lang, $columnFilters, $column);
+        $this->json(['status' => true, 'values' => $values]);
     }
 
     public function pedTypeGet() {
@@ -354,6 +394,43 @@ class PayrollConfigurationController extends Controller {
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->pedTypeModel->save((int)$compId, $data, $userId);
         $this->json($result);
+    }
+
+    /** "Load Default Items" -- inserts the system's starter set of earning/deduction types for this company, skipping any item_code already present (active or soft-deleted). Idempotent, safe to click more than once. */
+    public function pedTypeSeedDefaults() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $res = $this->pedTypeModel->seedDefaults((int)$compId, $userId);
+        $this->json(['status' => true, 'message' => 'Loaded default items.', 'inserted' => $res['inserted'], 'skipped' => $res['skipped']]);
+    }
+
+    /* ==================== ATTENDANCE DEDUCTION RULES (Late / Absent / Unpaid Leave) ==================== */
+
+    public function attendanceDeductionMethodOptions() {
+        $this->json(['status' => true, 'data' => ['items' => $this->attendanceDeductionRuleModel->methodOptions(), 'total_count' => 0]]);
+    }
+
+    public function attendanceDeductionRuleGetAll() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        $this->json(['status' => true, 'data' => $this->attendanceDeductionRuleModel->ruleGetAll((int)$compId)]);
+    }
+
+    public function attendanceDeductionRuleSave() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $this->json($this->attendanceDeductionRuleModel->ruleSave($data, (int)$compId, $this->userId()));
     }
 
     public function pedTypeDelete() {

@@ -41,11 +41,27 @@ class BankAccountController extends Controller {
         $search = isset($request['search']['value']) ? (string)$request['search']['value'] : '';
         $colIndex = isset($request['order'][0]['column']) ? (int)$request['order'][0]['column'] : 0;
         $orderDir = isset($request['order'][0]['dir']) ? (string)$request['order'][0]['dir'] : 'asc';
-        $result = $this->model->list((int)$compId, $start, $length, $search, $colIndex, $orderDir);
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $columnFilters = is_array($request['column_filters'] ?? null) ? $request['column_filters'] : [];
+        $result = $this->model->list((int)$compId, $start, $length, $search, $colIndex, $orderDir, (string)$lang, $columnFilters);
         foreach ($result['data'] as &$row) {
             $row['is_default'] = isset($row['is_default']) ? (bool)$row['is_default'] : false;
         }
         $this->json($result);
+    }
+    /** 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout. */
+    public function columnValues() {
+        if (!$this->requirePermission('bank_account.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'values' => []]);
+            return;
+        }
+        $column = (string)($_POST['column'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $values = $this->model->columnDistinctValues((int)$compId, $column, (string)$lang, $columnFilters, $column);
+        $this->json(['status' => true, 'values' => $values]);
     }
     public function save() {
         if (!$this->requirePermission('bank_account.manage')) return;

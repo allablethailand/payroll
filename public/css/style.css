@@ -1,3 +1,133 @@
+/* Employment Certificate Template canvas fonts (2026-08-24, bug fix: "เลือก Font แล้วการแสดงในหน้าขาว
+   ไม่เปลี่ยน Font ตาม แต่ใน PDF ขึ้น Font ถูก") -- the canvas preview sets font-family:'TH Sarabun New'/
+   'DejaVu Sans' (see employment-certificate-template.js's applyElementStyle()) but neither is an
+   installed system font, so the browser silently fell back to the page's default sans-serif no
+   matter which was picked -- looked identical either way. dompdf's PDF output was always correct
+   because EmploymentCertificateRenderer registers both as embedded fonts server-side; the browser
+   was never given the same files. Fixed by serving the exact same TTFs dompdf uses (copied from
+   storage/fonts/thsarabun/ and vendor/dompdf's own bundled DejaVu Sans into public/fonts/) via
+   @font-face, so the canvas now renders the real glyphs, not just a same-looking fallback. */
+@font-face {
+    font-family: 'TH Sarabun New';
+    src: url('../fonts/thsarabun/THSarabun.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'TH Sarabun New';
+    src: url('../fonts/thsarabun/THSarabun-Bold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'TH Sarabun New';
+    src: url('../fonts/thsarabun/THSarabun-Italic.ttf') format('truetype');
+    font-weight: normal;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'TH Sarabun New';
+    src: url('../fonts/thsarabun/THSarabun-BoldItalic.ttf') format('truetype');
+    font-weight: bold;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Sans';
+    src: url('../fonts/dejavusans/DejaVuSans.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Sans';
+    src: url('../fonts/dejavusans/DejaVuSans-Bold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Sans';
+    src: url('../fonts/dejavusans/DejaVuSans-Oblique.ttf') format('truetype');
+    font-weight: normal;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Sans';
+    src: url('../fonts/dejavusans/DejaVuSans-BoldOblique.ttf') format('truetype');
+    font-weight: bold;
+    font-style: italic;
+    font-display: swap;
+}
+/* 2026-08-25, explicit request: "เพิ่มตัวเลือก font สัก 10 font ครับ" -- 2 more REAL, embeddable fonts
+   (dompdf already recognizes 'DejaVu Sans Mono'/'DejaVu Serif' natively for the PDF side, no
+   registerFont() call needed -- see EmploymentCertificateRenderer's own comment; these @font-face
+   rules are the browser-preview half of the same WYSIWYG guarantee TH Sarabun New/DejaVu Sans
+   already have). Helvetica/Times-Roman/Courier (the other 3 of the 7 total) are dompdf's own
+   base-14 fonts with no real TTF to embed either side -- the canvas preview for those falls back to
+   the equivalent SYSTEM font (Arial/Times New Roman/Courier New, all near-universally installed) via
+   a plain CSS font stack instead of @font-face, since there's no file to bundle for them at all. */
+@font-face {
+    font-family: 'DejaVu Sans Mono';
+    src: url('../fonts/dejavusansmono/DejaVuSansMono.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Sans Mono';
+    src: url('../fonts/dejavusansmono/DejaVuSansMono-Bold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Sans Mono';
+    src: url('../fonts/dejavusansmono/DejaVuSansMono-Oblique.ttf') format('truetype');
+    font-weight: normal;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Sans Mono';
+    src: url('../fonts/dejavusansmono/DejaVuSansMono-BoldOblique.ttf') format('truetype');
+    font-weight: bold;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Serif';
+    src: url('../fonts/dejavuserif/DejaVuSerif.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Serif';
+    src: url('../fonts/dejavuserif/DejaVuSerif-Bold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Serif';
+    src: url('../fonts/dejavuserif/DejaVuSerif-Italic.ttf') format('truetype');
+    font-weight: normal;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DejaVu Serif';
+    src: url('../fonts/dejavuserif/DejaVuSerif-BoldItalic.ttf') format('truetype');
+    font-weight: bold;
+    font-style: italic;
+    font-display: swap;
+}
+
 html, body {
     color: #555555;
     min-width: 375px;
@@ -140,6 +270,181 @@ html, body {
     width: 18px;
     border-radius: 2px;
 }
+.nav-hub-dropdown {
+    position: relative;
+}
+.nav-hub-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+.nav-hub-btn:hover {
+    opacity: 0.8;
+}
+.nav-hub-btn img {
+    width: 25px;
+    height: 25px;
+}
+.nav-hub-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 12px);
+    list-style: none;
+    margin: 0;
+    padding: 5px;
+    width: 260px;
+    box-sizing: border-box;
+    max-height: 450px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    z-index: 1010;
+    grid-template-columns: repeat(3, 1fr);
+    /* Firefox scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: #FF9900 rgba(255, 153, 0, 0.1);
+}
+.nav-hub-menu.active {
+    display: grid;
+}
+.nav-hub-menu::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border-radius: 14px;
+    background: linear-gradient(45deg, 
+        #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, 
+        #feca57, #ff9ff3, #54a0ff, #5f27cd, 
+        #ff6b6b);
+    background-size: 300% 300%;
+    animation: siriGlow 3s ease-in-out infinite;
+    z-index: -1;
+}
+.nav-hub-menu li {
+    background-color: #ffffff;
+}
+.nav-hub-menu li:first-child {
+    border-top-left-radius: 10px;
+}
+.nav-hub-menu li:nth-child(3) {
+    border-top-right-radius: 10px;
+}
+.nav-hub-menu li:nth-last-child(3) {
+  border-bottom-left-radius: 10px;
+}
+.nav-hub-menu li:last-child {
+    border-bottom-right-radius: 10px;
+}
+@keyframes siriGlow {
+    0% {
+        background-position: 0% 50%;
+        filter: hue-rotate(0deg) brightness(1);
+    }
+    25% {
+        background-position: 50% 0%;
+        filter: hue-rotate(90deg) brightness(1.2);
+    }
+    50% {
+        background-position: 100% 50%;
+        filter: hue-rotate(180deg) brightness(1);
+    }
+    75% {
+        background-position: 50% 100%;
+        filter: hue-rotate(270deg) brightness(1.2);
+    }
+    100% {
+        background-position: 0% 50%;
+        filter: hue-rotate(360deg) brightness(1);
+    }
+}
+/* Chrome/Edge/Safari scrollbar */
+.nav-hub-menu::-webkit-scrollbar {
+    width: 6px;
+}
+.nav-hub-menu::-webkit-scrollbar-track {
+    background: rgba(255, 153, 0, 0.1);
+    border-radius: 10px;
+}
+.nav-hub-menu::-webkit-scrollbar-thumb {
+    background: #FF9900;
+    border-radius: 10px;
+}
+.nav-hub-menu::-webkit-scrollbar-thumb:hover {
+    background: #e68a00;
+}
+.nav-hub-tile {
+    min-width: 0;
+}
+.nav-hub-tile-filler {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 18px 4px;
+    cursor: default;
+}
+.nav-hub-tile a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 18px 4px;
+    color: #4a5568;
+    text-decoration: none;
+    font-weight: 400;
+    text-align: center;
+    border-radius: 10px;
+    transition: background-color 0.15s ease;
+}
+.nav-hub-tile a:hover {
+    background-color: rgba(255, 153, 0, 0.1);
+    color: #1a202c;
+}
+.nav-hub-tile-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+}
+.nav-hub-tile-icon img {
+    max-width: 40px;
+    max-height: 40px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+.nav-hub-tile-label {
+    font-size: 0.75em;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    width: 100%;
+}
+.nav-hub-empty {
+    grid-column: 1 / -1;
+    padding: 10px 16px;
+    color: #94a3b8;
+    font-size: 0.9em;
+    text-align: center;
+}
 .profile-img-box {
     width: 42px;
     height: 42px;
@@ -192,6 +497,45 @@ html, body {
 .sidebar-overlay.active {
     display: block;
     opacity: 1;
+}
+/* 2026-08-23, explicit request ("ใน Menu อยากให้เพิ่มช่องในการค้นหา Menu ในกรณีที่ Menu เยอะๆ") --
+   filter box pinned at the top of the sidebar, above the scrolling menu list. See
+   public/js/app.js's registerSidebarMenuSearch(). */
+.sidebar-search {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 16px 4px;
+    padding: 8px 12px;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+.sidebar-search-icon {
+    color: #9aa1a9;
+    font-size: 0.8rem;
+    flex: 0 0 auto;
+}
+.sidebar-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    font-size: 0.85rem;
+    color: #4a5568;
+    outline: none;
+}
+.sidebar-search-input::placeholder {
+    color: #9aa1a9;
+}
+.sidebar-menu-no-results {
+    padding: 10px 20px;
+    font-size: 0.8rem;
+    color: #9aa1a9;
+    text-align: center;
 }
 .sidebar-menu {
     list-style: none;
@@ -338,6 +682,71 @@ html, body {
 .bg-head-first {
     background-color: #ec6622;
 }
+/* Company Profile — Logo upload card (2026-08-24, explicit request: "ปรับให้ Logo Upload อยู่ยนสุดของ
+   Form ขอ Design สวยๆ รวมถึงมี Preview ด้วย") -- own section at the bottom of the form, replacing the
+   old plain button + tiny inline preview. */
+/* 2026-08-26, explicit request: "สามารถเซ็นต์สดผ่านหน้าจอได้" -- the signature-pad canvas inside
+   #cpSignaturePadModal. */
+.cp-signature-pad-canvas {
+    width: 100%;
+    max-width: 500px;
+    height: 220px;
+    border: 1.5px dashed #dcdcdc;
+    border-radius: 10px;
+    background: #ffffff;
+    touch-action: none;
+    cursor: crosshair;
+    display: block;
+    margin: 0 auto;
+}
+.cp-logo-upload-card {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1.1rem;
+    border: 1.5px dashed #dcdcdc;
+    border-radius: 12px;
+    background: #fafafa;
+    transition: border-color .15s ease, background .15s ease;
+}
+.cp-logo-upload-card:hover {
+    border-color: rgba(255, 153, 0, .5);
+    background: rgba(255, 153, 0, .03);
+}
+.cp-logo-preview-box {
+    flex: none;
+    width: 110px;
+    height: 110px;
+    border-radius: 10px;
+    background: #fff;
+    border: 1px solid #eef0f2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.cp-logo-preview-box img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.cp-logo-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .35rem;
+    color: #b0b5bb;
+    text-align: center;
+    font-size: .7rem;
+    padding: 0 .4rem;
+}
+.cp-logo-placeholder i {
+    font-size: 1.6rem;
+}
+.cp-logo-actions {
+    flex: 1 1 auto;
+    min-width: 0;
+}
 .nav-tabs .nav-link {
     color: #6c757d;
     border: none;
@@ -381,12 +790,61 @@ html, body {
 .profile-upload-circle {
     cursor: pointer;
     object-fit: cover;
+    border: 2px dashed rgba(255, 153, 0, .35) !important;
+    background: linear-gradient(135deg, #fff8ee, #fff1dc) !important;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.profile-upload-circle:hover {
+    border-color: #FF9900 !important;
+    box-shadow: 0 0 0 .2rem rgba(255, 153, 0, .15);
+}
+.profile-upload-circle #profilePlaceholder i {
+    color: #FF9900;
 }
 .profile-upload-badge {
     width: 26px;
     height: 26px;
     cursor: pointer;
     transform: translate(-6px, -6px);
+    border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
+}
+
+/* .btn-outline-brand / .bg-brand — used across Employee Detail (type/gender/payment-type toggles,
+   the profile-photo camera badge, Add Dependent/Parent buttons) but never actually defined anywhere
+   in this file, so they rendered as plain unstyled Bootstrap buttons/badge (no border, no checked
+   state, no brand color at all) -- this is the "radio ยังดูไม่มีธีม" gap. NOT the same as
+   .btn-outline-primary/.bg-primary: this codebase's Bootstrap build hardcodes #0d6efd into those
+   classes' own --bs-btn-* custom properties rather than referencing the global --bs-primary token,
+   so the :root recolor above (search "Bootstrap primary recolor") does not actually reach them --
+   defining brand-specific classes here, hardcoded to #FF9900 like the rest of this file already
+   does, sidesteps that gap rather than depending on it.  */
+.btn-outline-brand {
+    color: #FF9900;
+    border-color: #FF9900;
+    background-color: #fff;
+}
+.btn-outline-brand:hover {
+    color: #fff;
+    background-color: #FF9900;
+    border-color: #FF9900;
+}
+.btn-check:checked + .btn-outline-brand,
+.btn-check:active + .btn-outline-brand,
+.btn-outline-brand:active,
+.btn-outline-brand.active {
+    color: #fff;
+    background-color: #FF9900;
+    border-color: #FF9900;
+    box-shadow: none;
+}
+.btn-check:focus + .btn-outline-brand,
+.btn-outline-brand:focus {
+    box-shadow: 0 0 0 .25rem rgba(255, 153, 0, .25);
+}
+.bg-brand {
+    background-color: #FF9900 !important;
+    color: #fff;
 }
 .scrollable-tabs {
     display: flex;
@@ -404,7 +862,6 @@ html, body {
     flex: 0 0 auto;
 }
 .structure-tabs-wrap .structure-tabs .nav-link {
-    border-radius: 999px;
     color: #6c757d;
     font-size: 0.9rem;
     padding: 0.4rem 1rem;
@@ -461,7 +918,3881 @@ html, body {
     background-color: rgba(255, 153, 0, .12);
     cursor: pointer;
 }
+/* ==========================================================================
+   Payroll Process "Station" bar + collapsible filter box.
+   Adapted from Origami's own Process page (app/views/process.php,
+   public/css/header.css .filter / .rows .columns .cards / .last-item / .inner) -- same
+   collapsible bordered filter box with a corner label + toggle icon, and the same
+   chevron-shaped station cards (fake-arrow via ::before/::after triangle notches) with a
+   reversed/rotated exception card for the branch-off state (Rejected here, Origami's own
+   Not Approved/Need Changes there) -- recolored to this app's orange/gold brand instead of
+   Origami's flat gray-on-white, same adaptation approach used for the header app-switcher.
+   ========================================================================== */
+.station-filter {
+    position: relative;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 22px 44px 16px 16px;
+    margin-bottom: 16px;
+    margin-top: 11px;
+    background: #ffffff;
+}
+/* Collapse/expand only clips this inner wrapper -- .station-filter itself must stay
+   overflow:visible or the corner label (positioned above the border) and the toggle icon get
+   cut off along with the collapsing content. */
+.station-filter-body {
+    overflow: hidden;
+    max-height: 200px;
+    transition: max-height 0.3s ease;
+}
+.station-filter.collapsed .station-filter-body {
+    max-height: 0;
+}
+.station-filter-label {
+    position: absolute;
+    top: -11px;
+    left: 14px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 1px 10px;
+    font-size: 12px;
+    color: #94a3b8;
+    z-index: 1;
+}
+.station-filter-toggle {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+    color: #FF9900;
+    cursor: pointer;
+    transition: color 0.15s ease, transform 0.2s ease;
+}
+.station-filter.collapsed .station-filter-toggle {
+    color: #94a3b8;
+}
+
+.station-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin-bottom: 18px;
+    padding: 4px 2px 8px;
+}
+.station-row::-webkit-scrollbar {
+    height: 5px;
+}
+.station-row::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 10px;
+}
+.station-row::-webkit-scrollbar-thumb {
+    background: #FF9900;
+    border-radius: 10px;
+}
+.station-col {
+    flex: 0 0 auto;
+    padding: 2px;
+}
+.station-col--reject {
+    margin-left: 24px;
+}
+.station-col--reject ~ .station-col--reject {
+    margin-left: 0;
+}
+.station-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 130px;
+    height: 38px;
+    padding: 0 20px 0 26px;
+    background: #f1f5f9;
+    color: #4a5568;
+    font-weight: 500;
+    white-space: nowrap;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.station-card::before,
+.station-card::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 0;
+    height: 0;
+    margin-top: -19px;
+    border-top: 19px solid transparent;
+    border-bottom: 19px solid transparent;
+}
+.station-card::before {
+    left: 0;
+    border-left: 12px solid #ffffff;
+}
+.station-card::after {
+    left: 100%;
+    border-left: 12px solid #f1f5f9;
+    z-index: 1;
+}
+.station-card:hover {
+    background: #e2e8f0;
+}
+.station-card:hover::after {
+    border-left-color: #e2e8f0;
+}
+.station-card.active {
+    background: #FF9900;
+    color: #ffffff;
+}
+.station-card.active::after {
+    border-left-color: #FF9900;
+}
+.station-count {
+    display: inline-block;
+    min-width: 18px;
+    background: #e2e8f0;
+    color: #64748b;
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+}
+.station-card.active .station-count {
+    background: rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+}
+
+/* Exception/branch-off station: whole card rotated 180deg so its chevron notches point the
+   opposite way (visually "branches off" instead of continuing the forward flow); .station-card-inner
+   is counter-rotated so its text/count still read normally. */
+.station-card--reject {
+    transform: rotate(180deg);
+}
+.station-card--reject::before {
+    border-left-color: #ffffff;
+}
+.station-card--reject::after {
+    border-left-color: #f1f5f9;
+}
+.station-card--reject:hover::after {
+    border-left-color: #e2e8f0;
+}
+.station-card--reject.active {
+    background: #dc3545;
+}
+.station-card--reject.active::after {
+    border-left-color: #dc3545;
+}
+/* Cancelled shares the reject card's rotated/branch-off shape but its own muted color -- a
+   deliberate stop, not an error to fix and resubmit, so it shouldn't read as "red = wrong". */
+.station-card--cancel.active {
+    background: #6c757d;
+}
+.station-card--cancel.active::after {
+    border-left-color: #6c757d;
+}
+/* need_info (2026-08-22, explicit request: "Status ในหน้า Approve มี...Need Information") -- same
+   rotated/branch-off shape, its own blue accent (distinct from rejected's red / cancelled's grey). */
+.station-card--needinfo.active {
+    background: #0d6efd;
+}
+.station-card--needinfo.active::after {
+    border-left-color: #0d6efd;
+}
+.station-card-inner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transform: rotate(180deg);
+}
+
+#tb_pending_sync_wrapper .dt-length {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.bulk-pull-bar {
+    /* inline-flex (toggled from JS) so the pill sizes to its content instead of stretching the
+       full row width with a big empty gap between the count and the button */
+    align-items: center;
+    gap: 14px;
+    /* Warning/amber tint, matching the row-level "Pull to Run" button's own color family
+       (text-warning) -- same direction, not the brand-orange tint used elsewhere on this page. */
+    background: rgba(255, 193, 7, 0.12);
+    border-radius: 5px;
+    padding: 6px 8px 6px 16px;
+    margin-left: 10px;
+}
+.bulk-pull-bar-count {
+    color: #92720c;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.sync-summary-card {
+    background: rgba(255, 153, 0, 0.06);
+    border: 1px solid rgba(255, 153, 0, 0.2);
+    border-radius: 14px;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 18px 16px;
+}
+.sync-summary-field {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.sync-summary-icon {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 153, 0, 0.15);
+    color: #ec6622;
+    font-size: 1.05rem;
+}
+/* Explicit sizes for the summary card's own label/value text -- Bootstrap's .small/.fw-bold
+   alone read too small against this app's 12px base font, per explicit feedback. Scoped under
+   .sync-summary-field so it doesn't affect .small/.fw-bold usage anywhere else. */
+.sync-summary-field .small {
+    font-size: 11.5px;
+}
+.sync-summary-field .fw-bold {
+    font-size: 15px;
+}
+/* Dense, many-column tables (11 columns of mixed badges/stacked-lines/small-text in the Pending
+   Sync View modal) read as a disorganized wall of content with nothing to anchor the eye per
+   explicit feedback -- vertical dividers between columns + zebra striping + a firmer header give
+   it an actual grid to scan instead of everything blending together. */
+.sync-detail-table {
+    border: 1px solid #eee;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.sync-detail-table table {
+    margin-bottom: 0;
+}
+.sync-detail-table thead th {
+    border-top: none;
+    border-bottom-width: 2px;
+    padding: 10px 14px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6c757d;
+    white-space: nowrap;
+}
+.sync-detail-table tbody td {
+    padding: 12px 14px;
+    vertical-align: middle;
+    font-size: 13px;
+}
+.sync-detail-table th:not(:last-child),
+.sync-detail-table td:not(:last-child) {
+    border-right: 1px solid #f2f2f2;
+}
+.sync-detail-table tbody tr:nth-child(even) {
+    background-color: #fbfbfc;
+}
+
+/* Per-employee card list (Pending Sync View modal, section 1) -- replaces an 11-column table.
+   Color is reserved for status meaning only (the Mapped/Unmapped badge, SSO badge) -- every
+   purely decorative icon here (bank, id-card) stays neutral text-muted so nothing competes with
+   what the color is actually trying to say. */
+.sync-emp-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.sync-emp-card {
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: #fff;
+}
+.sync-emp-card-unmapped {
+    border-color: #f3c2bd;
+    background: #fff9f8;
+}
+.sync-emp-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-bottom: 10px;
+}
+.sync-emp-card-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.sync-emp-card-name {
+    font-size: 14px;
+}
+.sync-emp-card-dept {
+    font-size: 12.5px;
+    color: #495057;
+}
+.sync-emp-stats {
+    display: flex;
+    flex-wrap: wrap;
+    background: #fbfbfc;
+    border: 1px solid #f2f2f2;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+.sync-emp-stat {
+    flex: 1 1 0;
+    min-width: 100px;
+    padding: 7px 12px;
+    border-right: 1px solid #f2f2f2;
+    display: flex;
+    flex-direction: column;
+}
+.sync-emp-stat:last-child {
+    border-right: none;
+}
+.sync-emp-stat-label {
+    font-size: 10.5px;
+    color: #9aa1a9;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+.sync-emp-stat-value {
+    font-weight: 600;
+    font-size: 14px;
+    color: #343a40;
+    white-space: nowrap;
+}
+.sync-emp-card-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    align-items: center;
+    padding-top: 8px;
+    border-top: 1px dashed #eef0f2;
+    font-size: 13px;
+}
+.sync-emp-card .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0.4em 0.65em;
+}
+.sync-emp-card-payment,
+.sync-emp-card-idcard {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.sync-emp-card-items {
+    flex: 1 1 100%;
+    order: 3;
+}
+@media (min-width: 768px) {
+    .sync-emp-card-items {
+        flex: 0 1 auto;
+        order: 0;
+        margin-left: auto;
+        text-align: right;
+    }
+}
+
 .datepicker table tr td.day.focused,
 .datepicker table tr td.day:focus {
     background-color: rgba(255, 153, 0, .12);
+}
+
+/* ==========================================================================
+   Bootstrap "primary" recolor -- brand orange (#FF9900), not Bootstrap's stock blue.
+   The project convention (CLAUDE.md) has always required primary buttons to be brand
+   orange, but nothing in this file was actually overriding Bootstrap's own --bs-primary
+   token before now (only .btn-primary usages happened to exist without a matching
+   override) -- found and fixed while building the Payroll Run Detail timeline below,
+   whose whole "the ONE primary action is visually obvious" point depends on this actually
+   being orange. Root-level so .text-primary/.bg-primary-subtle/etc. follow via Bootstrap
+   5.3's own CSS variable system.
+   2026-08-20 correction: the above was only ever half-true. Verified against the compiled
+   node_modules/bootstrap/dist/css/bootstrap.min.css -- .btn-primary hardcodes
+   --bs-btn-bg:#0d6efd etc. directly on the class itself instead of reading --bs-primary, so
+   this :root override never actually reached buttons (only .text-primary-style utilities,
+   which do reference var(--bs-primary-rgb), were ever affected). Exact same gap
+   .btn-outline-brand/.bg-brand below were created to work around -- found while doing a
+   color-consistency pass on Employee Detail (its "Next"/"Save" buttons were all
+   .btn-warning, some hacked orange via an inline style, because .btn-primary silently
+   wasn't orange). Fixed for real below with an explicit .btn-primary override using the
+   same per-component --bs-btn-* token technique as .btn-outline-brand. */
+:root {
+    --bs-primary: #FF9900;
+    --bs-primary-rgb: 255, 153, 0;
+    --bs-primary-text-emphasis: #b45f00;
+    --bs-primary-bg-subtle: #fff3e0;
+    --bs-primary-border-subtle: #ffd699;
+}
+.btn-primary {
+    --bs-btn-bg: #FF9900;
+    --bs-btn-border-color: #FF9900;
+    --bs-btn-hover-bg: #e68a00;
+    --bs-btn-hover-border-color: #e68a00;
+    --bs-btn-active-bg: #cc7a00;
+    --bs-btn-active-border-color: #cc7a00;
+    --bs-btn-disabled-bg: #FF9900;
+    --bs-btn-disabled-border-color: #FF9900;
+    --bs-btn-focus-shadow-rgb: 255, 153, 0;
+}
+/* ==========================================================================
+   Payroll Run Detail — process timeline (per-record step tracker) + next-step banner.
+   Adapted from Origami's own Process Detail page (C:\xampp\htdocs\origami\payroll,
+   assets/js/process-detail.js TIMELINE_STEPS/renderChrome()/renderNextStepHtml() +
+   assets/css/app.css .process-timeline/.tl-step/.process-next-step) -- same connected-
+   badge spine with a per-step date + action button directly underneath it, and a
+   colored next-step callout below the spine. Recolored to this app's own orange/green/
+   red/grey palette (same as the List page's own station-bar chevrons, itself already an
+   earlier adaptation of this same Origami page) instead of copying Origami's own tones.
+   ========================================================================== */
+.process-timeline-wrap {
+    padding: 20px 20px 16px;
+    margin-top: 6px;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    background: #fbfbfc;
+}
+.process-timeline {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.process-timeline .tl-step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    position: relative;
+    color: #adb5bd;
+    min-width: 0;
+    padding: 0 4px;
+}
+.process-timeline .tl-step:not(:first-child)::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    right: 50%;
+    width: 100%;
+    height: 2px;
+    background: #e2e8f0;
+    z-index: 0;
+}
+.process-timeline .tl-step.done::before,
+.process-timeline .tl-step.current::before {
+    background: #a8d5ae;
+}
+.process-timeline .tl-step.rejected::before {
+    background: #f3c2bd;
+}
+.process-timeline .tl-step.cancelled::before {
+    background: #d6d8db;
+}
+/* need_info (2026-08-22, explicit request: "Status ในหน้า Approve มี...Need Information") -- a
+   real third branch off pending_approval, alongside rejected/cancelled above. Blue (#0d6efd)
+   deliberately distinct from done/current/rejected/cancelled's green/orange/red/grey -- reads as
+   "needs your input" rather than "wrong" or "stopped". */
+.process-timeline .tl-step.need_info::before {
+    background: #b6d4fe;
+}
+.process-timeline .tl-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid #e2e8f0;
+    background: #fff;
+    position: relative;
+    z-index: 1;
+    color: #c2c2c2;
+    font-size: 15px;
+    box-shadow: 0 2px 5px rgba(16, 24, 40, .06);
+}
+.process-timeline .tl-step.done .tl-icon {
+    border-color: #198754;
+    background: linear-gradient(135deg, #e8f6ee, #d1e7dd);
+    color: #198754;
+}
+.process-timeline .tl-step.current .tl-icon {
+    border-color: #FF9900;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(255, 153, 0, .35);
+    animation: process-tl-pulse 1.8s infinite;
+}
+.process-timeline .tl-step.rejected .tl-icon {
+    border-color: #dc3545;
+    background: linear-gradient(135deg, #fdecea, #f8d7da);
+    color: #dc3545;
+}
+.process-timeline .tl-step.cancelled .tl-icon {
+    border-color: #6c757d;
+    background: linear-gradient(135deg, #f1f3f5, #e2e8f0);
+    color: #6c757d;
+}
+.process-timeline .tl-step.need_info .tl-icon {
+    border-color: #0d6efd;
+    background: linear-gradient(135deg, #e7f1ff, #cfe2ff);
+    color: #0d6efd;
+}
+.process-timeline .tl-label {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: #999;
+}
+.process-timeline .tl-step.current .tl-label {
+    color: #b45f00;
+    font-weight: 600;
+}
+.process-timeline .tl-step.done .tl-label {
+    color: #198754;
+    font-weight: 600;
+}
+.process-timeline .tl-step.rejected .tl-label {
+    color: #dc3545;
+    font-weight: 600;
+}
+.process-timeline .tl-step.cancelled .tl-label {
+    color: #6c757d;
+    font-weight: 600;
+}
+.process-timeline .tl-step.need_info .tl-label {
+    color: #0d6efd;
+    font-weight: 600;
+}
+.process-timeline .tl-date {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.7rem;
+    color: #9aa1a9;
+    white-space: nowrap;
+}
+.process-timeline .tl-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    margin-top: 10px;
+    width: 100%;
+    padding: 0 4px;
+}
+.process-timeline .tl-actions .btn {
+    width: 100%;
+    max-width: 168px;
+}
+.process-timeline .tl-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+}
+/* 2026-08-27, explicit request ("ปุ่มในหน้า timeline ของ Process detail น่าจะมีคำกำหับในปุ่มให้ดูง่าย")
+   -- these buttons went from icon-only to icon+label (see timelineStepActionsHtml() in
+   public/js/payroll/detail.js), so the old 110px cap (sized for an icon alone) was widened to fit
+   a real label; text is still allowed to wrap onto a 2nd line inside a button rather than
+   overflow, and flex-wrap on the row above lets a button drop to its own line entirely when a
+   step has several (pending_approval's Approve/Request Info/Reject/Send Back). */
+.process-timeline .tl-actions-row .btn {
+    width: auto;
+    flex: 1 1 auto;
+    max-width: 168px;
+    font-size: 0.78rem;
+    white-space: normal;
+}
+@keyframes process-tl-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 153, 0, .45); }
+    70% { box-shadow: 0 0 0 8px rgba(255, 153, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 153, 0, 0); }
+}
+/* Stack vertically on narrow screens instead of squeezing 5 columns into a phone width. */
+@media (max-width: 576px) {
+    .process-timeline {
+        flex-direction: column;
+        gap: 20px;
+    }
+    .process-timeline .tl-step:not(:first-child)::before {
+        display: none;
+    }
+}
+
+/* ==========================================================================
+   Payroll Process list — Status column, merged with the mini-timeline (2026-08-23, explicit
+   request: "ถ้ามี Comment จากการอนุมัติ ให้นำมาแสดงด้วยใน Column Status แยกอาจยุบรวม Column Status
+   กับ Column Timeline เนื่องจากมีความสอดคล้องกันในการแสดงผล และในColumn นี้ เพิ่มปุ่มดำเนินการที่
+   สามารถกดได้ รวมถึงวันที่ Status เข้าไปด้วย") -- badge + mini-timeline dots + reject/need-info
+   comment + status date + quick-action button, stacked in one cell instead of 3 separate columns
+   (Status/Timeline/Last Updated). See public/js/payroll/index.js's renderStatusTimelineCell().
+   ========================================================================== */
+.status-timeline-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 190px;
+    max-width: 260px;
+    padding: 6px 0;
+}
+.status-timeline-cell .stc-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.status-timeline-cell .stc-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    color: #9aa1a9;
+    white-space: nowrap;
+}
+.status-timeline-cell .stc-timeline {
+    padding: 2px 2px 0;
+}
+.status-timeline-cell .stc-comment {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    line-height: 1.35;
+}
+.status-timeline-cell .stc-comment i {
+    margin-top: 2px;
+    flex: 0 0 auto;
+}
+.status-timeline-cell .stc-comment span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.status-timeline-cell .stc-comment-danger {
+    background: #fdecea;
+    color: #a83232;
+}
+.status-timeline-cell .stc-comment-info {
+    background: #e7f1ff;
+    color: #1a5fb4;
+}
+.status-timeline-cell .stc-action {
+    margin-top: 2px;
+}
+.status-timeline-cell .stc-action .btn {
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    line-height: 1.6;
+}
+
+/* ==========================================================================
+   Payroll Process list — compact per-row "Timeline" column (2026-08-22, explicit request:
+   "หน้า Process List อยากให้เพิ่มอีก Column เป็น Timeline ย่อๆ ว่า Process นี้ถึงขั้นตอนไหนแล้ว",
+   matching Origami's own Process List .pl-stepper dot-chain widget). Same spine/branch concept
+   and same done/current/rejected/cancelled color tokens as .process-timeline above (kept
+   identical on purpose for visual consistency across the two pages) but sized down to a bare
+   dot-and-line chain with no inline label/date -- those live in each dot's `title` tooltip
+   instead, since a table cell has nowhere near the width .process-timeline needs. See
+   public/js/payroll/index.js's own computeMiniTimelineProgress()/renderMiniTimelineDots() (a
+   deliberately separate, duplicated copy of detail.js's version -- see that file's own comment
+   for why this project keeps per-page-JS helpers self-contained rather than sharing them).
+   Sizing/spacing bumped up a notch (2026-08-23, explicit request: "Column Status ช่วยปรับ Design
+   ให้สวยขึ้นหน่อยครับ ตอนนี้แน่นไปหมด") now that the dots live inside the wider merged Status column
+   (.stc-timeline above) instead of their own narrow 14%-width column. The quick-action button now
+   sits in its own .stc-action wrapper (not .mini-timeline-wrap, retired along with the old
+   3-column layout) styled directly under .status-timeline-cell above.
+   ========================================================================== */
+/* 2026-08-22, explicit request ("Timeline กับ Status ชื่อซ้ำกัน และมีจุดสุดท้ายที่มี icon...ต่างเพื่อน
+   ถ้าเป็น icon ก็เปลี่ยนให้เป็น icon ทั้งหมด") -- dropped the current-step label/date line this
+   widget briefly had (redundant with the Status column right next to it) and gave EVERY dot a
+   consistent icon (not just done/branch ones -- not-yet-reached/current dots now show their own
+   step icon too, same set as the full-size .process-timeline uses, so no dot is ever blank next to
+   ones that do have an icon). Depth via a white "punch-through" ring, same trick noted in this
+   session's own Origami research: "circular icon markers with box-shadow: 0 0 0 4px #fff to punch
+   through the connecting line". */
+.mini-timeline {
+    display: flex;
+    align-items: center;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    min-width: 150px;
+}
+.mini-timeline .mt-step {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
+.mini-timeline .mt-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid #e2e8f0;
+    background: #fff;
+    box-shadow: 0 0 0 2px #fff;
+    flex: 0 0 auto;
+    font-size: 8px;
+    /* Default (not-yet-reached) dot stays white -- its icon must be a visible grey, not white,
+       or it would disappear against that white background. Every colored/dark state below
+       overrides this back to white for contrast against ITS OWN background. */
+    color: #c2c2c2;
+    transition: width .15s ease, height .15s ease;
+}
+.mini-timeline .mt-step.done .mt-dot {
+    border-color: #198754;
+    background: #198754;
+    color: #fff;
+}
+.mini-timeline .mt-step.current .mt-dot {
+    width: 19px;
+    height: 19px;
+    border-color: #FF9900;
+    background: #FF9900;
+    color: #fff;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(255, 153, 0, .3);
+    animation: process-tl-pulse 1.8s infinite;
+}
+.mini-timeline .mt-step.rejected .mt-dot {
+    border-color: #dc3545;
+    background: #dc3545;
+    color: #fff;
+}
+.mini-timeline .mt-step.cancelled .mt-dot {
+    border-color: #6c757d;
+    background: #6c757d;
+    color: #fff;
+}
+.mini-timeline .mt-step.need_info .mt-dot {
+    border-color: #0d6efd;
+    background: #0d6efd;
+    color: #fff;
+}
+.mini-timeline .mt-line {
+    flex: 1 1 16px;
+    width: 16px;
+    height: 2px;
+    border-radius: 1px;
+    background: #e2e8f0;
+}
+.mini-timeline .mt-line.done {
+    background: #a8d5ae;
+}
+
+.process-next-step {
+    margin: 14px 0 0;
+    padding: 10px 16px;
+    background: #fff8ec;
+    border-left: 3px solid #FF9900;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #7a5200;
+}
+.process-next-step i {
+    margin-right: 6px;
+}
+.process-next-step.waiting {
+    background: #f4f8fb;
+    border-left-color: #5bc0de;
+    color: #2b5f76;
+}
+.process-next-step.done {
+    background: #f0f9f0;
+    border-left-color: #198754;
+    color: #2e6b2e;
+}
+.process-next-step.error {
+    background: #fdecea;
+    border-left-color: #dc3545;
+    color: #a83232;
+}
+.process-next-step.muted {
+    background: #f1f3f5;
+    border-left-color: #6c757d;
+    color: #495057;
+}
+
+/* ==========================================================================
+   Approval Flow timeline (2026-08-23, explicit request: "ปุ่มการดูFlow การอนุมัต ให้ล้อมาจาก
+   รายการอนุมัติของ C:\xampp\htdocs\origami\payroll รวมถึง Design ต่างๆ ให้แสดงผลแบบเดียวกัน") --
+   mirrors that reference app's own assets/js/approval-timeline.js (.apv-* classnames kept
+   identical on purpose): a vertical spine of "stages" connected by a line, each stage a colored
+   circular icon marker + a title/status-badge/date header + a body. Newest stage at the TOP
+   (Paid/Locked first, then Approval, then Created last) -- reading from the bottom (oldest) UP to
+   the top (latest) tracks the run's history chronologically, same "จากล่างขึ้นบน" convention this
+   app's own Timeline modal already used before this redesign. The Approval stage's body holds one
+   "substep" card per eligible approver (this app has a flat pool of any-one-can-decide approvers,
+   not Origami's literal sequential step chain -- see PayrollRunModel::approvalFlow()), each showing
+   that person's own status/date/note. No employee photo -- this app has no wired avatar upload
+   path (employees.profile_photo_path exists in the schema but nothing populates/serves it yet), so
+   people render as a plain colored initial-circle instead of Origami's real photo. Used by both
+   public/js/payroll/approval.js (Approval Queue page) and public/js/payroll/detail.js (Run Detail
+   page) -- same classnames, deliberately separate render functions per that file's own established
+   "duplicate, don't share across pages" convention (see approval.js's own comments for why). ========================================================================== */
+.apv-timeline { padding: 4px 2px; }
+.apv-stage { position: relative; display: flex; gap: 16px; padding-bottom: 30px; }
+.apv-stage-last { padding-bottom: 4px; }
+.apv-stage-marker { position: relative; flex: none; width: 38px; }
+.apv-stage-icon {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 14px; position: relative; z-index: 2;
+    box-shadow: 0 0 0 4px #fff;
+}
+.apv-stage-line {
+    position: absolute; top: 38px; bottom: -30px; left: 18px; width: 2px;
+    background: #e5e7eb; z-index: 1;
+}
+.apv-stage-content { flex: 1; min-width: 0; padding-top: 6px; }
+.apv-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.apv-stage-title { font-weight: 700; color: #1f2937; }
+.apv-badge {
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    white-space: nowrap;
+}
+.apv-stage-date { font-size: 12px; color: #9ca3af; margin-top: 3px; }
+.apv-stage-body { margin-top: 8px; }
+.apv-substep {
+    background: #f9fafb; border: 1px solid #f0f0f1; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px;
+}
+.apv-substep:last-child { margin-bottom: 0; }
+.apv-substep-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.apv-substep-label { font-weight: 600; color: #374151; display: flex; align-items: center; gap: 8px; }
+.apv-substep-date { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+.apv-substep-remark {
+    margin-top: 6px; font-size: 12px; color: #4b5563; background: #fff;
+    border-left: 3px solid #e5e7eb; padding: 6px 10px; border-radius: 4px;
+}
+.apv-people { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
+.apv-person { display: flex; align-items: center; gap: 6px; max-width: 160px; }
+.apv-person-avatar {
+    width: 26px; height: 26px; min-width: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: #eef0f2; color: #6c757d; font-size: 11px; font-weight: 700;
+    border: 1px solid #e5e7eb; flex: none;
+}
+.apv-person-name { font-size: 12px; color: #4b5563; line-height: 1.2; }
+.apv-muted-text { color: #6b7280; }
+.apv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.apv-timeline-log { margin-top: 4px; }
+.apv-timeline-log .apv-log-entry { border-left: 2px solid #e5e7eb; padding: 0 0 14px 14px; }
+.apv-timeline-log .apv-log-entry:last-child { padding-bottom: 0; }
+.apv-timeline-log .apv-log-date { font-size: 11px; color: #9ca3af; }
+.apv-timeline-log .apv-log-action { font-weight: 600; color: #374151; font-size: 13px; }
+.apv-timeline-log .apv-log-meta { font-size: 11px; color: #9ca3af; }
+.apv-timeline-log .apv-log-note { font-size: 12px; color: #4b5563; margin-top: 2px; }
+
+/* ==========================================================================
+   Generic Approval Request timeline (`#requestDetailModal`, public/js/setup/approval-request-
+   detail.js) -- 2026-08-26, explicit request: "การอนุมัติให้เป็นรูปแบบเดียวกับ Approve Process ครับมี
+   timeline ให้กดดู". Same visual language as the Payroll Approve Process timeline above (.apv-*) --
+   colored circular marker + connecting line + title/badge/body -- but deliberately a SEPARATE
+   classname set (.art-*) and simpler shape, since this one is document-type-agnostic (driven only by
+   an approval_request_id, shared by both the Payslip Requests and Employment Certificate Requests
+   tabs) and has no per-approver "substep" concept the way PayrollRunModel::approvalFlow() does.
+   Oldest stage FIRST here (Requested at the top, reading downward) -- unlike .apv-* above, since this
+   timeline is built by simply appending each `approval_request_logs` row in the order the API already
+   returns them, not reversed for a "newest first" reading. ========================================================================== */
+.art-timeline { padding: 4px 2px; }
+.art-stage { position: relative; display: flex; gap: 16px; padding-bottom: 26px; }
+.art-stage:last-child { padding-bottom: 4px; }
+.art-stage-rail { position: relative; flex: none; width: 34px; }
+.art-stage-marker {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 13px; position: relative; z-index: 2;
+    box-shadow: 0 0 0 4px #fff; background: #9ca3af;
+}
+.art-stage-requested .art-stage-marker { background: #6c757d; }
+.art-stage-approve .art-stage-marker { background: #16a34a; }
+.art-stage-reject .art-stage-marker { background: #dc3545; }
+.art-stage-cancel .art-stage-marker { background: #9ca3af; }
+.art-stage-pending .art-stage-marker { background: #FF9900; }
+.art-stage-line {
+    position: absolute; top: 34px; bottom: -26px; left: 16px; width: 2px;
+    background: #e5e7eb; z-index: 1;
+}
+.art-stage:last-child .art-stage-line { display: none; }
+.art-stage-content { flex: 1; min-width: 0; padding-top: 5px; }
+.art-stage-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.art-stage-title { font-weight: 700; color: #1f2937; font-size: 13.5px; }
+.art-stage-body { margin-top: 4px; font-size: 12.5px; color: #6b7280; }
+.art-stage-note {
+    margin-top: 6px; font-size: 12px; color: #4b5563; background: #f9fafb;
+    border-left: 3px solid #e5e7eb; padding: 6px 10px; border-radius: 4px;
+}
+.art-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+    white-space: nowrap; color: #fff;
+}
+.art-badge-approved { background: #16a34a; }
+.art-badge-rejected { background: #dc3545; }
+.art-badge-cancelled { background: #9ca3af; }
+.art-badge-pending { background: #FF9900; }
+
+/* ==========================================================================
+   Payroll Run Detail — colored stat cards (Employees/Gross/Deductions/Net Pay), replacing
+   the single shared-frame summary row per explicit request ("แบ่ง Card เป็นสีๆ ตอนนี้เป็น
+   กรอบเดียวกันไม่สวย" -- split into colored cards, one shared frame doesn't look good).
+   Each variant is its own card with a colored left accent + tinted icon chip, not just a
+   text color change, so they read as genuinely separate cards at a glance.
+   ========================================================================== */
+.stat-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 100%;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-left: 4px solid transparent;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+}
+.stat-card-icon {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+.stat-card-label {
+    font-size: 0.78rem;
+    color: #6c757d;
+}
+.stat-card-value {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #212529;
+}
+.stat-card-info { border-left-color: #0dcaf0; }
+.stat-card-info .stat-card-icon { background: rgba(13, 202, 240, .15); color: #087990; }
+.stat-card-success { border-left-color: #198754; }
+.stat-card-success .stat-card-icon { background: rgba(25, 135, 84, .15); color: #198754; }
+.stat-card-danger { border-left-color: #dc3545; }
+.stat-card-danger .stat-card-icon { background: rgba(220, 53, 69, .15); color: #dc3545; }
+.stat-card-primary { border-left-color: #FF9900; }
+.stat-card-primary .stat-card-icon { background: rgba(255, 153, 0, .15); color: #FF9900; }
+.stat-card-primary .stat-card-value { color: #b45f00; }
+
+/* ==========================================================================
+   .card-surface -- used as the page-section card wrapper across this app (Payroll Process,
+   Company Setup, Setup & Rules, etc.) but was never actually defined anywhere; every page
+   using it had to also tack on p-3/p-md-4 utility classes just to get padding, and never got
+   a border/shadow/radius at all -- plain invisible box. Defined properly now (found while
+   addressing "everything under the tabs looks too cramped" on Payroll Run Detail). Padding
+   here matches the p-3/p-md-4 values pages were already using by hand, so any page that still
+   sets those utility classes explicitly keeps its exact existing spacing (Bootstrap's utility
+   padding carries !important and wins over this plain class rule) -- only the border/shadow/
+   radius newly apply everywhere, and pages that (like this one) no longer set the padding
+   utilities by hand now get sensible default padding instead of none.
+   ========================================================================== */
+.card-surface {
+    background: #ffffff;
+    border: 1px solid #eef0f2;
+    border-radius: 14px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+}
+@media (min-width: 768px) {
+    .card-surface {
+        padding: 1.5rem;
+    }
+}
+
+/* ==========================================================================
+   .page-header-card -- the distinctive page-title header block (icon + title + description) that
+   sits under the breadcrumb at the top of a page. Split out of plain .card-surface (2026-08-19,
+   explicit request: "card-surface ที่เป็น head ของแต่ละหน้าช่วยหา Design ที่เป็นเอกลักษณ์") -- .card-
+   surface itself stays a neutral, content-agnostic wrapper used all over the app for unrelated
+   section cards, so it couldn't be the thing restyled here without changing dozens of other cards
+   that have nothing to do with page titles. This is deliberately its own class instead.
+   STANDING CONVENTION, not a one-off: every page's top header block should use this pattern going
+   forward (only Employee List has been migrated to it so far -- retrofitting every other page is a
+   separate, larger pass, not done in this commit). Structure:
+     <div class="page-header-card mb-4">
+       <div class="page-header-card-icon"><i class="fa-solid fa-xxx"></i></div>
+       <div class="page-header-card-body">
+         <h5 class="page-header-card-title" data-i18n="...">Title</h5>
+         <p class="page-header-card-desc" data-i18n="...">Description</p>
+       </div>
+     </div>
+   Warm gradient background + a soft radial glow in the corner (brand orange, very low opacity) reads
+   as "this app's" header rather than a generic dashboard card; the icon is a solid orange-gradient
+   badge (reuses the same 135deg #ffab26->#FF9900 gradient already used for the profile-photo upload
+   badge/other brand accents elsewhere in this file) instead of the flat tinted square every other
+   icon-in-a-box on this site already uses, so it doesn't blend into every other "icon + label" element
+   on the page. Light-mode only, matching every other color in this file -- no dark-mode variants
+   exist anywhere in this stylesheet.
+   ========================================================================== */
+.page-header-card {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: linear-gradient(135deg, #fff8ee 0%, #fff1dc 55%, #ffe8c4 100%);
+    border: 1px solid rgba(255, 153, 0, .18);
+    border-radius: 16px;
+    padding: 1.1rem 1.4rem;
+    box-shadow: 0 4px 16px rgba(255, 153, 0, .08);
+}
+.page-header-card::before {
+    content: '';
+    position: absolute;
+    top: -45%;
+    right: -8%;
+    width: 240px;
+    height: 240px;
+    background: radial-gradient(circle, rgba(255, 153, 0, .16), transparent 70%);
+    pointer-events: none;
+}
+.page-header-card-icon {
+    position: relative;
+    z-index: 1;
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    box-shadow: 0 4px 10px rgba(255, 153, 0, .35);
+}
+.page-header-card-body {
+    position: relative;
+    z-index: 1;
+}
+.page-header-card-title {
+    color: #4a3418;
+    font-weight: 700;
+    margin: 0;
+}
+.page-header-card-desc {
+    color: #8a6d47;
+    margin: .25rem 0 0;
+}
+
+/* ==========================================================================
+   Payroll Run Detail — Details/Action History tab card polish. Nav-tabs + tab-content had no
+   visible frame at all (tab-content only had rounded-bottom, no border), and the panes had no
+   padding once the p-3/p-md-4 utility classes were dropped from them -- both contributed to
+   the "too cramped" feedback. Scoped to this page's own tab ids, not .nav-tabs/.tab-content
+   globally, so other pages' tabs (Employee Detail, Company Setup, etc.) are untouched.
+   ========================================================================== */
+#runDetailTabs.nav-tabs {
+    border-bottom-color: #dee2e6;
+}
+#runDetailTabs .nav-link {
+    font-weight: 500;
+    padding: 0.65rem 1.25rem;
+}
+#runDetailTabs .nav-link.active {
+    color: #b45f00;
+    font-weight: 600;
+}
+#runDetailTabsContent {
+    border: 1px solid #eef0f2;
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    box-shadow: 0 2px 10px rgba(16, 24, 40, .04);
+}
+#run-details-pane,
+#run-history-pane {
+    padding: 1.75rem 1.5rem;
+}
+@media (min-width: 768px) {
+    #run-details-pane,
+    #run-history-pane {
+        padding: 2rem 2rem;
+    }
+}
+/* Run Information / Employee Breakdown as two visually distinct sub-sections within the Details
+   tab (per explicit request) -- deliberately lighter than .card-surface (no shadow, thinner
+   border) since they already sit inside #runDetailTabsContent's own bordered/shadowed card;
+   stacking two full .card-surface-strength cards there would look like cards-within-cards. */
+.detail-section {
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    padding: 1.5rem;
+    background: #fff;
+}
+.detail-section + .detail-section {
+    margin-top: 1.75rem;
+}
+/* ==========================================================================
+   Approval Workflow editor (public/js/setup/approval-workflow.js) -- redesign (2026-08-23,
+   explicit request: "ปรับ Design หน้าตั้งค่า Approval WorkFlow ให้ดูสวยขึ้น และใช้งานง่ายขึ้น").
+   Previously plain Bootstrap utility classes (border/rounded/p-2, bare btn-group) with no
+   dedicated styling at all. Basic-info fields move into a light card grid instead of the
+   label-in-col-sm-3 row pattern; each step becomes a proper connected-timeline card (numbered
+   badge in the brand orange gradient + a vertical connector line, echoing .page-header-card-icon
+   elsewhere in this file) so the step ORDER reads visually, which matters more now that gating
+   (requires_previous_step) makes order meaningful again. Approver entries render as pill "chips"
+   with a type icon instead of two bare <select> elements side by side. AND/OR/Finish is a
+   color-coded segmented toggle (blue/cyan/amber) instead of a plain btn-group with no visual
+   distinction between the three meanings.
+   ========================================================================== */
+.awf-basic-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .9rem 1.5rem;
+    background: #fafbfc;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+@media (min-width: 768px) {
+    .awf-basic-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    .awf-basic-grid .awf-field-full {
+        grid-column: 1 / -1;
+    }
+}
+.awf-field label {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #667085;
+    margin-bottom: .3rem;
+    display: block;
+}
+.awf-section-title {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: .25rem;
+}
+.awf-section-title .awf-section-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    font-size: .85rem;
+    flex: none;
+}
+.awf-section-title h6 {
+    margin: 0;
+}
+
+.awf-step-list {
+    position: relative;
+}
+.awf-step-card {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: .85rem;
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-radius: 14px;
+    padding: 1rem 1rem 1.1rem;
+    margin-bottom: .85rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+    transition: box-shadow .15s ease, border-color .15s ease;
+}
+.awf-step-card:hover {
+    border-color: rgba(255, 153, 0, .35);
+    box-shadow: 0 4px 14px rgba(16, 24, 40, .07);
+}
+.awf-step-card.sortable-ghost {
+    opacity: .4;
+}
+.awf-step-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: none;
+    padding-top: .1rem;
+}
+.awf-step-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    font-weight: 700;
+    font-size: .85rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(255, 153, 0, .35);
+}
+.awf-step-connector {
+    width: 2px;
+    flex: 1 1 auto;
+    min-height: 14px;
+    background: repeating-linear-gradient(180deg, #ffd694 0 4px, transparent 4px 8px);
+    margin-top: 4px;
+}
+.awf-step-card:last-child .awf-step-connector {
+    display: none;
+}
+.awf-step-drag {
+    color: #c4c9d1;
+    cursor: grab;
+    padding-top: .35rem;
+    flex: none;
+}
+.awf-step-drag:hover {
+    color: #98a2b3;
+}
+.awf-step-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.awf-step-name-input {
+    font-weight: 600;
+}
+.awf-approver-chip {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    background: #fafbfc;
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    padding: .35rem .5rem;
+    margin-bottom: .4rem;
+}
+.awf-approver-chip-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    background: rgba(255, 153, 0, .12);
+    color: #b45f00;
+    font-size: .75rem;
+}
+.awf-add-approver-btn {
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .82rem;
+}
+.awf-step-divider {
+    border: none;
+    border-top: 1px dashed #eef0f2;
+    margin: .75rem 0 .65rem;
+}
+.awf-step-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem 1.5rem;
+}
+.awf-group-toggle .btn {
+    font-size: .78rem;
+    font-weight: 600;
+    padding: .3rem .65rem;
+}
+.awf-group-toggle .btn[data-group-type="and"].active-group { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.awf-group-toggle .btn[data-group-type="or"].active-group { background: #06b6d4; border-color: #06b6d4; color: #fff; }
+.awf-group-toggle .btn[data-group-type="finish"].active-group { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.awf-seq-switch .form-check-label {
+    color: #667085;
+    cursor: pointer;
+}
+.awf-seq-switch .form-check-input:checked {
+    background-color: #FF9900;
+    border-color: #FF9900;
+}
+.awf-step-remove {
+    flex: none;
+    color: #d92d20;
+    background: transparent;
+    border: none;
+    padding: .25rem .4rem;
+}
+.awf-step-remove:hover {
+    background: rgba(217, 45, 32, .08);
+    border-radius: 8px;
+}
+.awf-flow-status-wrap {
+    min-width: 0;
+}
+/* Compact VIEW-mode row (as opposed to the rich .awf-step-editing card above it) -- a horizontal
+   summary line instead of the full editor, so a flow with several steps reads like a list, not a
+   stack of open forms. Edit swaps this same .awf-step-card node for .awf-step-editing in place. */
+.awf-step-view {
+    align-items: center;
+    padding-top: .75rem;
+    padding-bottom: .75rem;
+}
+.awf-step-view-name {
+    font-weight: 600;
+    color: #1d2939;
+    margin-bottom: .35rem;
+}
+.awf-approver-chip-view {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    background: #fafbfc;
+    border: 1px solid #eef0f2;
+    border-radius: 999px;
+    padding: .2rem .6rem .2rem .3rem;
+    margin: 0 .35rem .35rem 0;
+    font-size: .82rem;
+    color: #344054;
+}
+.awf-approver-chip-view .awf-approver-chip-icon {
+    width: 20px;
+    height: 20px;
+    font-size: .68rem;
+}
+.awf-step-view-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem .9rem;
+    margin-top: .35rem;
+}
+.awf-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .78rem;
+    color: #667085;
+}
+.awf-meta-pill i {
+    font-size: .72rem;
+}
+.awf-meta-pill-and i { color: #3b82f6; }
+.awf-meta-pill-or i { color: #06b6d4; }
+.awf-meta-pill-finish i { color: #f59e0b; }
+.awf-step-view-actions {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    gap: .1rem;
+}
+/* ==========================================================================
+   Employment Certificate Template designer (public/js/setup/employment-certificate-template.js,
+   2026-08-24) -- free-form drag/resize canvas. .ect-page is a literal 210mm x 297mm (A4) box;
+   every element inside it is positioned with left/top/width/height as PERCENTAGES, so this CSS
+   box IS the same coordinate space the PDF renderer uses server-side (see
+   EmploymentCertificateRenderer::buildHtml()) -- true WYSIWYG, no unit conversion.
+   ========================================================================== */
+.ect-ribbon {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: .9rem;
+    padding: .6rem .9rem;
+    background: #f7f7f8;
+}
+.ect-ribbon-group {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+}
+.ect-ribbon-group #ectPropFontSize {
+    width: 70px;
+}
+.ect-ribbon-group #ectPropFontFamily {
+    width: 170px;
+}
+.ect-ribbon-group #ectPropFontColor {
+    width: 44px;
+    padding: 2px 4px;
+}
+.ect-ribbon-label {
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #8a8a8a;
+    margin: 0;
+}
+.ect-ribbon-sep {
+    width: 1px;
+    align-self: stretch;
+    background: #dcdcdc;
+    margin-bottom: 2px;
+}
+.ect-ribbon-hint {
+    align-self: center;
+}
+.ect-designer {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+.ect-palette {
+    width: 260px;
+    flex: none;
+    position: sticky;
+    top: 1rem;
+}
+.ect-palette-list {
+    max-height: 380px;
+    overflow-y: auto;
+}
+.ect-palette-group {
+    margin-bottom: .7rem;
+}
+.ect-palette-group-title {
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #8a8a8a;
+    margin: .4rem 0 .4rem;
+}
+.ect-palette-group:first-child .ect-palette-group-title {
+    margin-top: 0;
+}
+/* 2026-08-25, explicit request: "ส่วน Add to Canvas สามารถปรับให้สวยขึ้นและดูง่ายขึ้นได้อีกไหม" -- 2-col
+   grid of icon+label chip cards, replacing the old plain full-width outline buttons (one per row). */
+.ect-palette-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: .5rem;
+}
+.ect-palette-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .35rem;
+    padding: .6rem .3rem;
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    background: #fff;
+    cursor: grab;
+    transition: border-color .15s ease, background .15s ease, transform .1s ease;
+}
+.ect-palette-chip:hover {
+    border-color: rgba(255, 153, 0, .5);
+    background: rgba(255, 153, 0, .04);
+    transform: translateY(-1px);
+}
+.ect-palette-chip:active {
+    cursor: grabbing;
+}
+.ect-palette-chip-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 153, 0, .12);
+    color: #FF9900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .95rem;
+}
+.ect-palette-chip-label {
+    font-size: .72rem;
+    text-align: center;
+    line-height: 1.25;
+    color: #495057;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+/* Layers panel (2026-08-24, explicit request: "โดยมี layer บอกเหมือน photoshop") -- 3rd column,
+   mirrors .ect-palette's own width/sticky treatment on the opposite side. */
+/* 2026-08-25, explicit follow-up: "ย้าย water mark ไปเป็นอีก card บน Layer" -- Watermark and Layers
+   now stack vertically in ONE sticky column instead of Layers being the only thing there; the
+   width/flex/sticky positioning that used to live on .ect-layers itself moved up to this wrapper. */
+.ect-layers-column {
+    width: 240px;
+    flex: none;
+    position: sticky;
+    top: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.ect-layers {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.ect-layers-list {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+.ect-layer-row {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .35rem .5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: .82rem;
+    color: #495057;
+    transition: background .1s ease;
+}
+.ect-layer-row:hover {
+    background: rgba(255, 153, 0, .08);
+}
+.ect-layer-row.ect-layer-selected {
+    background: rgba(255, 153, 0, .18);
+    color: #b45f00;
+    font-weight: 600;
+}
+/* 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" -- a
+   hidden layer's row reads visually muted (Photoshop's own convention for a hidden layer's name),
+   same .pst-layer-hidden rule mirrored in Payslip Template. */
+.ect-layer-row.ect-layer-hidden .ect-layer-label {
+    color: #adb5bd;
+    font-style: italic;
+}
+.ect-layer-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ect-layer-group {
+    border: 1px solid #eef0f2;
+    border-radius: 8px;
+    margin-bottom: .25rem;
+    overflow: hidden;
+}
+.ect-layer-group-row {
+    font-weight: 600;
+    background: #f7f7f8;
+}
+.ect-layer-children {
+    padding-left: 1.1rem;
+    border-top: 1px solid #eef0f2;
+}
+.ect-canvas-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+/* 2026-08-24, explicit request: "ปรับหน้าจอให้ดูเป็น photoshop มากขึ้น" + "ส่วนที่เป็นหน้ากระดาษ เพิ่ม
+   ความสูงขึ้นอีกนิด" -- dark neutral surround (was light gray) behind the white "paper" like
+   Photoshop/InDesign's own canvas area, and a taller working viewport (was max-height:80vh only --
+   now also a min-height so it doesn't shrink to content on a short template) inside the already-
+   fullscreen edit modal. This is purely the on-screen viewport; the actual physical page size fed
+   to the PDF renderer (.ect-page's own width/height below) is untouched -- changing THAT would
+   silently change real paper dimensions, not just how much of it fits on screen. */
+.ect-canvas-scroll {
+    overflow: auto;
+    min-height: 70vh;
+    max-height: 85vh;
+    background: #3a3a3a;
+    padding: 2rem;
+    border-radius: 10px;
+}
+.ect-page {
+    position: relative;
+    width: 210mm;
+    height: 297mm;
+    background: #fff;
+    box-shadow: 0 4px 28px rgba(0, 0, 0, .45);
+    margin: 0 auto;
+    flex: none;
+}
+/* Grid overlay (2026-08-24, explicit request: "อยากให้มีเส้นตารางขึ้นแทนหน้าขาวเปล่าๆ และมีปุ่ม เปิด/
+   แสดง ตารางด้วยครับ", densified 2026-08-25 explicit follow-up: "ปรับให้เส้น grid ถี่ขึ้นอีก") --
+   two layers: a fine 1%-of-page minor grid (100x100, very light) plus a 5%-of-page major grid
+   (20x20, slightly darker) on top, so it reads as graph paper rather than one flat spacing. Purely
+   visual (no snap-to-grid logic -- wasn't asked for, just a placement reference) toggled via
+   #ectGridToggle. Percentage-based so it lines up with the same coordinate space every element's
+   own pos/width/height already use. */
+.ect-page.ect-grid-on {
+    background-image:
+        linear-gradient(to right, rgba(0, 0, 0, .12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, .12) 1px, transparent 1px),
+        linear-gradient(to right, rgba(0, 0, 0, .05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, .05) 1px, transparent 1px);
+    background-size: 5% 5%, 5% 5%, 1% 1%, 1% 1%;
+}
+/* 2026-08-25, explicit follow-up: "ให้เอามาไว้ตรงที่บนของกรอบ preview ครับ grid อยู่ฝั่งขวา" -- this strip
+   moved from being a separate row ABOVE the whole designer to being the top edge of the canvas frame
+   itself (.ect-canvas-wrap), so it reads like tabs on a window rather than a generic toolbar. */
+.ect-canvas-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin: -1rem -1rem .75rem;
+    padding: .6rem 1rem;
+    border-bottom: 1px solid #eef0f2;
+    flex-wrap: wrap;
+}
+/* 2026-08-25, explicit follow-up: "ย้าย water mark ไปเป็นอีก card บน Layer" -- moved OUT of the canvas
+   toolbar strip entirely, into its own dedicated card stacked above the Layers panel (both live in
+   .ect-layers-column, see below) instead of sharing a row with Grid/Undo/Redo/Zoom. */
+.ect-watermark-card #ectWatermarkText {
+    width: 100%;
+}
+/* 2026-08-25, designer ergonomics round 3 -- explicit request batch: pan/zoom, bigger Save/Preview,
+   page-margin guide, "change starting layout", and the TH/EN-tabs-in-one-modal redesign below. */
+.ect-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+/* Language tabs (explicit request: "มี 2 tab เป็น en กับ th อยู่แถวๆ grid แต่ Design ให้ชัดว่านี่คือ tab
+   และย้าย grid มาไว้ฝั่งขวา") -- deliberately styled as an unmistakable tab strip (underline + active
+   state), NOT a button pair like Grid/Watermark, so it doesn't read as "just another toolbar
+   toggle". Switching tabs never discards work -- see pairState/switchToLangTab() in the JS -- so
+   there's no confirm dialog on click, just a dirty-dot (.ect-lang-tab-dot) showing which language
+   still has unsaved edits. */
+.ect-lang-tabs {
+    display: flex;
+    gap: .25rem;
+    border-bottom: 2px solid #eef0f2;
+}
+.ect-lang-tab {
+    border: none;
+    background: none;
+    padding: .5rem 1rem .6rem;
+    font-weight: 600;
+    color: #98a2b3;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    cursor: pointer;
+}
+.ect-lang-tab:hover {
+    color: #495057;
+}
+.ect-lang-tab.active {
+    color: #b45f00;
+    border-bottom-color: #FF9900;
+}
+.ect-lang-tab-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #FF9900;
+    display: inline-block;
+}
+/* 2026-08-25, explicit request: "Tab Thai กับ Eng อยากให้มีรูปธงด้วยครับเหมือนตัวเปลี่ยนภาษา" -- reuses
+   the exact same public/flags/th.png|gb.png the system language switcher (public/js/app.js) uses. */
+.ect-lang-tab-flag {
+    width: 16px;
+    height: auto;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .08);
+}
+.ect-lang-tab-missing-badge {
+    font-size: .68rem;
+    font-weight: 500;
+    color: #c0c4cb;
+    text-transform: uppercase;
+}
+/* Zoom control (explicit request: "เพิ่ม Function Zoom in Zoom out ได้ โดยเลือกเป็น % และให้ Reset กลับ
+   มาที่ 100% ได้") -- #ectPage itself is CSS-transform-scaled (see applyZoom() in the JS); the % select
+   is the source of truth, +/- step through ZOOM_LEVELS, Reset jumps straight back to 100%. */
+.ect-zoom-control {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+}
+.ect-zoom-control select {
+    width: 85px;
+}
+/* Pan (explicit request: "ตรงพื้นที่ว่าง ให้สามารถลากเพื่อดูซ้ายขวาได้") -- grabbing empty canvas area
+   (not an element) drag-scrolls .ect-canvas-scroll, see the #ectPage mousedown handler in the JS. */
+.ect-canvas-scroll.ect-pannable {
+    cursor: grab;
+}
+.ect-canvas-scroll.ect-panning {
+    cursor: grabbing;
+    user-select: none;
+}
+/* Page-margin guide (explicit request: "เพิ่มให้ตั้งค่าขอบกระดาษได้ด้วยครับ") -- a dashed inset
+   rectangle only, NOT enforced against the PDF output (see the migration's own comment on
+   `margin_mm`) -- purely a placement reference like the grid, so it never silently changes where an
+   existing element renders. */
+.ect-margin-guide {
+    position: absolute;
+    border: 1px dashed rgba(0, 100, 200, .35);
+    pointer-events: none;
+    z-index: 0;
+}
+/* Page navigator (explicit request: "รองรับการมีหลายๆหน้า โดยที่มีปุ่มให้เลือกเพิ่มหรือลด") -- sits
+   directly under the canvas, centered, same spirit as Word/PowerPoint's own page strip. */
+.ect-page-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    margin-top: .5rem;
+    padding-top: .5rem;
+    border-top: 1px solid #eef0f2;
+    flex-wrap: wrap;
+}
+.ect-page-nav-label {
+    font-weight: 600;
+    color: #495057;
+    min-width: 90px;
+    text-align: center;
+}
+.ect-page-nav-sep {
+    width: 1px;
+    height: 20px;
+    background: #e4e7ec;
+    margin: 0 .25rem;
+}
+/* Insert > Symbol dropdown (explicit request: "มีให้เพิ่ม Symbol ได้") -- a small grid of common
+   Unicode characters; clicking one drops it onto the canvas as a new free-text element.
+   2026-08-25, real bug found and fixed: `.ect-symbol-menu { display: grid; }` was a single-class
+   selector -- EXACTLY the same specificity as Bootstrap's own `.dropdown-menu { display: none; }`
+   base rule. A specificity TIE is broken by cascade order (whichever rule appears later in the
+   page's combined stylesheet order wins), and this app's own style.css loads after bootstrap.css,
+   so `display: grid` was winning even while the dropdown was supposed to be CLOSED (no `.show`
+   class) -- Bootstrap's JS correctly removed `.show` and tore down its Popper positioning on
+   close, but the element never actually went `display:none`, so it stayed visibly on screen and
+   looked exactly like "opens fine, but clicking to close does nothing." Fixed by scoping BOTH the
+   hidden and shown rules to two-class selectors so this module's CSS is unambiguously more
+   specific than Bootstrap's single-class default in both states, instead of depending on a cascade
+   tie-break that source-order changes (a future stylesheet reorder, a bundler, etc.) could flip
+   back the other way. */
+.dropdown-menu.ect-symbol-menu {
+    display: none;
+}
+.dropdown-menu.ect-symbol-menu.show {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+    width: 280px;
+}
+.ect-symbol-item {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    border: none;
+    background: none;
+}
+.ect-symbol-item:hover {
+    background: #fff3e0;
+}
+/* Empty-state shown inside a language tab that hasn't been created yet for this pair (2026-08-25,
+   TH/EN-tabs unification -- explicit request: list rows collapse the old inline Generate-Auto/
+   create-manually buttons down to just a status symbol, "ในหน้าตารางอาจเป็นแค่สัญลักษณ์ว่าตั้งค่าแล้ว" --
+   those actions now live HERE instead, inside the tab that's actually missing). */
+.ect-lang-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 50vh;
+    gap: 1rem;
+    color: #98a2b3;
+}
+.ect-lang-empty-state i.ect-lang-empty-icon {
+    font-size: 2.5rem;
+    color: #d7dbe0;
+}
+/* Bigger Save/Preview (explicit request: "ปุ่ม Save และ Preview ให้เพิ่มขยายให้ใหญ่ขึ้นหน่อยครับ") */
+.ect-footer-btn-lg {
+    padding: .55rem 1.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+}
+/* Standalone editor page (2026-08-25, explicit request: "หน้าแก้ไขให้เปลี่ยนเป็นการเปิด Tab ใหม่ เพื่อให้
+   การจัดการมีพื้นที่มากขึ้น โดยส่ง key ไปต่อ /key"; explicit same-day follow-up corrected an earlier
+   "bare" no-nav version back to the normal .container/.container-body + breadcrumb shell every other
+   page uses: "ไม่ต้องแสดงใน modal ครับ ให้เป็น page ปกติได้เลย มี head ปกติเหมือนหน้า Detail ของพนักงาน").
+   .ect-editor-topbar below is this page's OWN contextual header, same precedent as Employee Detail's
+   own profile-header card standing in for a generic .page-header-card. */
+.ect-editor-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    background: #fff;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .06);
+}
+/* 2026-08-25, explicit follow-up: "ปรับส่วนของ card template name ให้สวยขึ้น" -- reads as a document
+   TITLE (Google Docs/Word convention: an icon + a borderless input that only shows its outline on
+   focus) instead of a plain labeled text field. */
+.ect-editor-title-group {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    flex: 1 1 auto;
+    min-width: 220px;
+}
+.ect-editor-title-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    font-size: 1rem;
+}
+.ect-editor-title-input {
+    border: 1px solid transparent;
+    background: transparent;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #212529;
+    padding: .3rem .5rem;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 420px;
+}
+.ect-editor-title-input:hover {
+    background: #f8f9fa;
+}
+.ect-editor-title-input:focus {
+    outline: none;
+    background: #fff;
+    border-color: #FF9900;
+    box-shadow: 0 0 0 3px rgba(255, 153, 0, .15);
+}
+/* 2026-08-26: persistently-visible pencil affordance next to the borderless title input above --
+   see the markup's own comment for why (the title looked like static text, not an editable field). */
+.ect-editor-title-edit-btn {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    font-size: .8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s ease, color .15s ease;
+}
+.ect-editor-title-edit-btn:hover {
+    background: #fff1de;
+    color: #FF9900;
+}
+.ect-editor-topbar-fields {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+/* Page Size/Orientation/Margin grouped into one visually distinct cluster instead of 3 separate
+   look-alike form groups. */
+.ect-page-setup-cluster {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: .4rem .6rem;
+}
+.ect-page-setup-label {
+    font-size: .74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #98a2b3;
+    padding-right: .25rem;
+    border-right: 1px solid #e4e7ec;
+    margin-right: .1rem;
+}
+.ect-page-setup-cluster .form-select {
+    width: auto;
+}
+.ect-editor-footer {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    background: #fff;
+    border-radius: 12px;
+    padding: .85rem 1.25rem;
+    margin-top: 1rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .06);
+    position: sticky;
+    bottom: 0;
+}
+/* Word-style margin presets dropdown (explicit request: "การเลือกขอบกระดาษให้เป็น dropdown เลือกแบบ word
+   ครับ เลือกจากตัวอย่าง") -- each option shows a small rectangle whose inset border visually represents
+   that preset's relative margin size, same spirit as Word's own Page Layout > Margins picker. */
+.ect-margin-menu {
+    padding: .5rem;
+    min-width: 220px;
+}
+.ect-margin-option {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    border-radius: 6px;
+    padding: .4rem .5rem;
+}
+.ect-margin-option.active {
+    background: #fff3e0;
+}
+.ect-margin-option-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+.ect-margin-option-text small {
+    color: #98a2b3;
+}
+.ect-margin-preview {
+    flex: none;
+    width: 28px;
+    height: 36px;
+    border: 1.5px solid #98a2b3;
+    border-radius: 2px;
+    position: relative;
+    background: #fff;
+}
+.ect-margin-preview::after {
+    content: '';
+    position: absolute;
+    border: 1px dashed #FF9900;
+}
+.ect-margin-preview-narrow::after { inset: 3px; }
+.ect-margin-preview-normal::after { inset: 6px; }
+.ect-margin-preview-moderate::after { inset: 8px 6px; }
+.ect-margin-preview-wide::after { inset: 10px 8px; }
+.ect-multiselect-hint {
+    font-size: .78rem;
+}
+.ect-el {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px dashed rgba(255, 153, 0, .45);
+    background: rgba(255, 153, 0, .03);
+    cursor: move;
+}
+.ect-el:hover {
+    border-color: #FF9900;
+}
+.ect-el-selected {
+    border: 1.5px solid #FF9900;
+    background: rgba(255, 153, 0, .09);
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .15);
+}
+.ect-el-body {
+    width: 100%;
+    height: 100%;
+    padding: 2px 4px;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.3;
+    color: #1d2939;
+    pointer-events: none;
+}
+.ect-el-image .ect-el-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #98a2b3;
+    font-size: 1.6rem;
+}
+/* 2026-08-25, explicit request: "การลากรูป Logo ไปลงในหน้าตั้งค่า อยากให้ขึ้นเป็นรูป Logo จริงๆ เลยรวมถึง
+   การดึงรูปที่ Upload ไปใช้งานด้วย" -- real thumbnail once resolveElementImageUrl() finds a URL,
+   falls back to the existing icon placeholder otherwise (see elementHtml() in the JS). */
+/* 2026-08-25, explicit request: "insert shape ต่างๆ เหมือน Word" / "เพิ่ม option การเพิ่มตาราง" */
+.ect-el-shape .ect-el-body {
+    padding: 0;
+}
+.ect-el-table .ect-el-body {
+    padding: 0;
+    white-space: normal;
+}
+.ect-el-table .ect-el-body table {
+    pointer-events: none;
+}
+.ect-el-image .ect-el-body img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+.ect-resize-handle {
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    width: 11px;
+    height: 11px;
+    background: #FF9900;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: nwse-resize;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .25);
+}
+/* v2 additions (2026-08-24) -- multi-template picker, preset cards, image library grid, drag-over
+   state for native HTML5 drag-and-drop from the palette. */
+.ect-style-btn.active {
+    background: #FF9900;
+    border-color: #FF9900;
+    color: #fff;
+}
+.ect-page.ect-drop-target {
+    outline: 2px dashed #FF9900;
+    outline-offset: -2px;
+}
+.ect-el.ect-el-selected .ect-quick-delete,
+.ect-el:hover .ect-quick-delete {
+    display: flex;
+}
+.ect-quick-delete {
+    display: none;
+    position: absolute;
+    top: -11px;
+    right: -11px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #d92d20;
+    color: #fff;
+    align-items: center;
+    justify-content: center;
+    font-size: .75rem;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(16, 24, 40, .35);
+    border: 2px solid #fff;
+    z-index: 6;
+    transition: transform .1s ease;
+}
+.ect-quick-delete:hover {
+    transform: scale(1.15);
+    background: #b42318;
+}
+/* New Template gallery (2026-08-25, explicit request: "ตอนกด New Template ให้ขึ้นเป็นตัวอย่าง Template
+   คล้ายๆกับ Google Doc") -- replaced the old 2-col icon+label list with a wider card grid, each card
+   showing a small CSS-drawn mockup of the preset's actual layout (see PRESET_MOCKUPS in the JS). */
+.ect-preset-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+}
+.ect-preset-card {
+    position: relative;
+    border: 1.5px solid #eef0f2;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+    background: #fff;
+}
+.ect-preset-card:hover {
+    border-color: rgba(255, 153, 0, .5);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(16, 24, 40, .1);
+}
+.ect-preset-card.active {
+    border-color: #FF9900;
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .25);
+}
+.ect-preset-mock {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 210 / 297;
+    background: #fbfbfc;
+    border-bottom: 1px solid #eef0f2;
+}
+.ect-preset-mock-blank {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c0c4cb;
+    font-size: 1.8rem;
+}
+.ect-preset-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .3rem;
+    padding: .5rem .6rem;
+}
+.ect-preset-card-label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: #495057;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ect-preset-card.active .ect-preset-card-label {
+    color: #b45f00;
+}
+.ect-preset-preview-btn {
+    padding: 0 .3rem;
+    line-height: 1;
+    flex: none;
+}
+/* TH/EN unified template list (2026-08-25, explicit request: "ให้มี th กับ eng ในการจัดการเลย ไม่ต้อง
+   แยกเป็น Tab เหมือนเดิม"; simplified further the same day, explicit follow-up: "ในหน้าตารางอาจเป็นแค่
+   สัญลักษณ์ว่าตั้งค่าแล้ว...ในหน้ารายการจะได้มีปุ่มดำเนินการแค่ชุดเดียว") -- each per-language cell is now
+   JUST a compact ready/not-ready symbol (+ a clickable default-star when ready) -- no action buttons
+   live in these cells any more. Generate Auto / create-manually moved INSIDE the edit modal's own
+   empty-state for that language tab (see .ect-lang-empty-state above); all row actions (Preview/
+   Edit/Duplicate/Delete) collapsed into ONE shared action group per pair, rendered by
+   ectActionsGroupHtml() in the JS. Used identically by both the Employment Certificate and Payslip
+   Template tables. */
+.ect-lang-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+}
+/* Split-button style dropdowns for the unified Preview/Delete actions (explicit design ask: "การลบ
+   แค่ยาวภาษาตรงนี้คิดไม่ออกช่วย Design ให้หน่อยครับ" -- resolved as a dropdown listing only the
+   language(s) that actually exist, e.g. "Delete both" + "Delete Thai only" + "Delete English only",
+   so deleting a single language never requires a second, separate button group). */
+.ect-actions-group .dropdown-menu {
+    min-width: 170px;
+}
+.ect-actions-group .dropdown-item.text-danger:hover {
+    background: #fdeeee;
+}
+.ect-image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: .75rem;
+}
+.ect-image-grid-item {
+    position: relative;
+    border: 1px solid #eef0f2;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    aspect-ratio: 1;
+    background: #fafbfc;
+}
+.ect-image-grid-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.ect-image-grid-item:hover {
+    border-color: #FF9900;
+}
+/* 2026-08-25, explicit follow-up: "เลือก insert ได้ทีละหลายรูป" -- clicking a tile toggles this class
+   instead of inserting immediately; a checkmark badge shows which ones are currently selected. */
+.ect-image-grid-item.selected {
+    border-color: #FF9900;
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .35);
+}
+.ect-image-grid-item .ect-image-selected-badge {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #FF9900;
+    color: #fff;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: .65rem;
+}
+.ect-image-grid-item.selected .ect-image-selected-badge {
+    display: flex;
+}
+/* Insert/edit Table modal (explicit request: "เพิ่ม option การเพิ่มตาราง...เหมือน word") */
+.ect-table-cells-grid {
+    display: grid;
+    gap: 4px;
+    max-height: 320px;
+    overflow: auto;
+}
+.ect-table-cells-grid input {
+    width: 100%;
+    font-size: .8rem;
+    padding: .25rem .35rem;
+    border: 1px solid #dcdcdc;
+    border-radius: 4px;
+}
+.ect-image-grid-item .ect-image-delete {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(217, 45, 32, .9);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .7rem;
+}
+.modal-body {
+    width: 100%;
+    max-height: calc(100vh - 100px - 100px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    scrollbar-color: #f1f1f1;
+    scrollbar-width: thin;
+}
+.modal-fullscreen .modal-body {
+    max-height: 100%;
+}
+/* Payslip Template canvas designer (public/js/setup/payslip-template.js) -- ported
+   directly from the Employment Certificate Template designer (see CLAUDE.md's ECT v1-v12
+   sections for the full history/bug-fix lineage this mechanism already went through -- pan/zoom,
+   undo-redo, group/ungroup, Layers panel, Insert Table/Shape/Symbol, multi-page, the Symbol-dropdown
+   CSS-specificity-tie bug fix, etc. all carry over unchanged). .pst-page is a literal page-size box
+   (A4/Letter/Legal per the template's own page_size/orientation) -- every element inside it is
+   positioned with left/top/width/height as PERCENTAGES, the exact same coordinate space
+   PayslipTemplateRenderer::buildHtml() uses server-side -- true WYSIWYG, no unit conversion. */
+
+.pst-ribbon {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: .9rem;
+    padding: .6rem .9rem;
+    background: #f7f7f8;
+}
+.pst-ribbon-group {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+}
+.pst-ribbon-group #pstPropFontSize {
+    width: 70px;
+}
+.pst-ribbon-group #pstPropFontFamily {
+    width: 170px;
+}
+.pst-ribbon-group #pstPropFontColor {
+    width: 44px;
+    padding: 2px 4px;
+}
+.pst-ribbon-label {
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #8a8a8a;
+    margin: 0;
+}
+.pst-ribbon-sep {
+    width: 1px;
+    align-self: stretch;
+    background: #dcdcdc;
+    margin-bottom: 2px;
+}
+.pst-ribbon-hint {
+    align-self: center;
+}
+.pst-designer {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+.pst-palette {
+    width: 260px;
+    flex: none;
+    position: sticky;
+    top: 1rem;
+}
+.pst-palette-list {
+    max-height: 380px;
+    overflow-y: auto;
+}
+.pst-palette-group {
+    margin-bottom: .7rem;
+}
+.pst-palette-group-title {
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #8a8a8a;
+    margin: .4rem 0 .4rem;
+}
+.pst-palette-group:first-child .pst-palette-group-title {
+    margin-top: 0;
+}
+
+.pst-palette-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: .5rem;
+}
+.pst-palette-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .35rem;
+    padding: .6rem .3rem;
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    background: #fff;
+    cursor: grab;
+    transition: border-color .15s ease, background .15s ease, transform .1s ease;
+}
+.pst-palette-chip:hover {
+    border-color: rgba(255, 153, 0, .5);
+    background: rgba(255, 153, 0, .04);
+    transform: translateY(-1px);
+}
+.pst-palette-chip:active {
+    cursor: grabbing;
+}
+.pst-palette-chip-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 153, 0, .12);
+    color: #FF9900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .95rem;
+}
+.pst-palette-chip-label {
+    font-size: .72rem;
+    text-align: center;
+    line-height: 1.25;
+    color: #495057;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+
+.pst-layers-column {
+    width: 240px;
+    flex: none;
+    position: sticky;
+    top: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.pst-layers {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.pst-layers-list {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+.pst-layer-row {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .35rem .5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: .82rem;
+    color: #495057;
+    transition: background .1s ease;
+}
+.pst-layer-row:hover {
+    background: rgba(255, 153, 0, .08);
+}
+.pst-layer-row.pst-layer-selected {
+    background: rgba(255, 153, 0, .18);
+    color: #b45f00;
+    font-weight: 600;
+}
+/* 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" -- same
+   as Employment Certificate Template's own .ect-layer-hidden rule. */
+.pst-layer-row.pst-layer-hidden .pst-layer-label {
+    color: #adb5bd;
+    font-style: italic;
+}
+.pst-layer-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pst-layer-group {
+    border: 1px solid #eef0f2;
+    border-radius: 8px;
+    margin-bottom: .25rem;
+    overflow: hidden;
+}
+.pst-layer-group-row {
+    font-weight: 600;
+    background: #f7f7f8;
+}
+.pst-layer-children {
+    padding-left: 1.1rem;
+    border-top: 1px solid #eef0f2;
+}
+.pst-canvas-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.pst-canvas-scroll {
+    overflow: auto;
+    min-height: 70vh;
+    max-height: 85vh;
+    background: #3a3a3a;
+    padding: 2rem;
+    border-radius: 10px;
+}
+/* 2026-08-26, explicit request: "อยากให้กระดาษอยู่ตรงกลางเป็น Default ของกรอบสีดำ" -- real bug, not a
+   guess: .pst-page already has `margin:0 auto`, but that centers it within its DIRECT parent
+   (#pstZoomStage/#ectZoomStage), which applyZoom() resizes via inline JS to EXACTLY match the page's
+   own scaled footprint -- so there's never any extra space inside that wrapper to center within. The
+   wrapper itself is what needs centering, within the much wider dark canvas-scroll area around it. */
+#pstZoomStage,
+#ectZoomStage {
+    margin: 0 auto;
+}
+.pst-page {
+    position: relative;
+    width: 210mm;
+    height: 297mm;
+    background: #fff;
+    box-shadow: 0 4px 28px rgba(0, 0, 0, .45);
+    margin: 0 auto;
+    flex: none;
+}
+
+.pst-page.pst-grid-on {
+    background-image:
+        linear-gradient(to right, rgba(0, 0, 0, .12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, .12) 1px, transparent 1px),
+        linear-gradient(to right, rgba(0, 0, 0, .05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, .05) 1px, transparent 1px);
+    background-size: 5% 5%, 5% 5%, 1% 1%, 1% 1%;
+}
+
+.pst-canvas-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin: -1rem -1rem .75rem;
+    padding: .6rem 1rem;
+    border-bottom: 1px solid #eef0f2;
+    flex-wrap: wrap;
+}
+
+.pst-watermark-card #pstWatermarkText {
+    width: 100%;
+}
+
+.pst-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+
+.pst-lang-tabs {
+    display: flex;
+    gap: .25rem;
+    border-bottom: 2px solid #eef0f2;
+}
+.pst-lang-tab {
+    border: none;
+    background: none;
+    padding: .5rem 1rem .6rem;
+    font-weight: 600;
+    color: #98a2b3;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    cursor: pointer;
+}
+.pst-lang-tab:hover {
+    color: #495057;
+}
+.pst-lang-tab.active {
+    color: #b45f00;
+    border-bottom-color: #FF9900;
+}
+.pst-lang-tab-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #FF9900;
+    display: inline-block;
+}
+
+.pst-lang-tab-flag {
+    width: 16px;
+    height: auto;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .08);
+}
+.pst-lang-tab-missing-badge {
+    font-size: .68rem;
+    font-weight: 500;
+    color: #c0c4cb;
+    text-transform: uppercase;
+}
+
+.pst-zoom-control {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+}
+.pst-zoom-control select {
+    width: 85px;
+}
+
+.pst-canvas-scroll.pst-pannable {
+    cursor: grab;
+}
+.pst-canvas-scroll.pst-panning {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.pst-margin-guide {
+    position: absolute;
+    border: 1px dashed rgba(0, 100, 200, .35);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.pst-page-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    margin-top: .5rem;
+    padding-top: .5rem;
+    border-top: 1px solid #eef0f2;
+    flex-wrap: wrap;
+}
+.pst-page-nav-label {
+    font-weight: 600;
+    color: #495057;
+    min-width: 90px;
+    text-align: center;
+}
+.pst-page-nav-sep {
+    width: 1px;
+    height: 20px;
+    background: #e4e7ec;
+    margin: 0 .25rem;
+}
+
+.dropdown-menu.pst-symbol-menu {
+    display: none;
+}
+.dropdown-menu.pst-symbol-menu.show {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+    width: 280px;
+}
+.pst-symbol-item {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    border: none;
+    background: none;
+}
+.pst-symbol-item:hover {
+    background: #fff3e0;
+}
+
+.pst-lang-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 50vh;
+    gap: 1rem;
+    color: #98a2b3;
+}
+.pst-lang-empty-state i.pst-lang-empty-icon {
+    font-size: 2.5rem;
+    color: #d7dbe0;
+}
+
+.pst-footer-btn-lg {
+    padding: .55rem 1.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.pst-editor-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    background: #fff;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .06);
+}
+
+.pst-editor-title-group {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    flex: 1 1 auto;
+    min-width: 220px;
+}
+.pst-editor-title-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ffab26, #FF9900);
+    color: #fff;
+    font-size: 1rem;
+}
+.pst-editor-title-input {
+    border: 1px solid transparent;
+    background: transparent;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #212529;
+    padding: .3rem .5rem;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 420px;
+}
+.pst-editor-title-input:hover {
+    background: #f8f9fa;
+}
+.pst-editor-title-input:focus {
+    outline: none;
+    background: #fff;
+    border-color: #FF9900;
+    box-shadow: 0 0 0 3px rgba(255, 153, 0, .15);
+}
+/* 2026-08-26: same pencil affordance as .ect-editor-title-edit-btn -- see that rule's own comment. */
+.pst-editor-title-edit-btn {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    font-size: .8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s ease, color .15s ease;
+}
+.pst-editor-title-edit-btn:hover {
+    background: #fff1de;
+    color: #FF9900;
+}
+.pst-editor-topbar-fields {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.pst-page-setup-cluster {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: .4rem .6rem;
+}
+.pst-page-setup-label {
+    font-size: .74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #98a2b3;
+    padding-right: .25rem;
+    border-right: 1px solid #e4e7ec;
+    margin-right: .1rem;
+}
+.pst-page-setup-cluster .form-select {
+    width: auto;
+}
+.pst-editor-footer {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    background: #fff;
+    border-radius: 12px;
+    padding: .85rem 1.25rem;
+    margin-top: 1rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .06);
+    position: sticky;
+    bottom: 0;
+}
+
+.pst-margin-menu {
+    padding: .5rem;
+    min-width: 220px;
+}
+.pst-margin-option {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    border-radius: 6px;
+    padding: .4rem .5rem;
+}
+.pst-margin-option.active {
+    background: #fff3e0;
+}
+.pst-margin-option-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+.pst-margin-option-text small {
+    color: #98a2b3;
+}
+.pst-margin-preview {
+    flex: none;
+    width: 28px;
+    height: 36px;
+    border: 1.5px solid #98a2b3;
+    border-radius: 2px;
+    position: relative;
+    background: #fff;
+}
+.pst-margin-preview::after {
+    content: '';
+    position: absolute;
+    border: 1px dashed #FF9900;
+}
+.pst-margin-preview-narrow::after { inset: 3px; }
+.pst-margin-preview-normal::after { inset: 6px; }
+.pst-margin-preview-moderate::after { inset: 8px 6px; }
+.pst-margin-preview-wide::after { inset: 10px 8px; }
+.pst-multiselect-hint {
+    font-size: .78rem;
+}
+.pst-el {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px dashed rgba(255, 153, 0, .45);
+    background: rgba(255, 153, 0, .03);
+    cursor: move;
+}
+.pst-el:hover {
+    border-color: #FF9900;
+}
+.pst-el-selected {
+    border: 1.5px solid #FF9900;
+    background: rgba(255, 153, 0, .09);
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .15);
+}
+.pst-el-body {
+    width: 100%;
+    height: 100%;
+    padding: 2px 4px;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.3;
+    color: #1d2939;
+    pointer-events: none;
+}
+.pst-el-image .pst-el-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #98a2b3;
+    font-size: 1.6rem;
+}
+
+
+.pst-el-shape .pst-el-body {
+    padding: 0;
+}
+.pst-el-table .pst-el-body {
+    padding: 0;
+    white-space: normal;
+}
+.pst-el-table .pst-el-body table {
+    pointer-events: none;
+}
+.pst-el-image .pst-el-body img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+.pst-resize-handle {
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    width: 11px;
+    height: 11px;
+    background: #FF9900;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: nwse-resize;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .25);
+}
+
+.pst-style-btn.active {
+    background: #FF9900;
+    border-color: #FF9900;
+    color: #fff;
+}
+.pst-page.pst-drop-target {
+    outline: 2px dashed #FF9900;
+    outline-offset: -2px;
+}
+.pst-el.pst-el-selected .pst-quick-delete,
+.pst-el:hover .pst-quick-delete {
+    display: flex;
+}
+.pst-quick-delete {
+    display: none;
+    position: absolute;
+    top: -11px;
+    right: -11px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #d92d20;
+    color: #fff;
+    align-items: center;
+    justify-content: center;
+    font-size: .75rem;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(16, 24, 40, .35);
+    border: 2px solid #fff;
+    z-index: 6;
+    transition: transform .1s ease;
+}
+.pst-quick-delete:hover {
+    transform: scale(1.15);
+    background: #b42318;
+}
+
+.pst-preset-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+}
+.pst-preset-card {
+    position: relative;
+    border: 1.5px solid #eef0f2;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+    background: #fff;
+}
+.pst-preset-card:hover {
+    border-color: rgba(255, 153, 0, .5);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(16, 24, 40, .1);
+}
+.pst-preset-card.active {
+    border-color: #FF9900;
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .25);
+}
+.pst-preset-mock {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 210 / 297;
+    background: #fbfbfc;
+    border-bottom: 1px solid #eef0f2;
+}
+.pst-preset-mock-blank {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c0c4cb;
+    font-size: 1.8rem;
+}
+.pst-preset-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .3rem;
+    padding: .5rem .6rem;
+}
+.pst-preset-card-label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: #495057;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pst-preset-card.active .pst-preset-card-label {
+    color: #b45f00;
+}
+.pst-preset-preview-btn {
+    padding: 0 .3rem;
+    line-height: 1;
+    flex: none;
+}
+
+.pst-lang-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+}
+
+.pst-actions-group .dropdown-menu {
+    min-width: 170px;
+}
+.pst-actions-group .dropdown-item.text-danger:hover {
+    background: #fdeeee;
+}
+.pst-image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: .75rem;
+}
+.pst-image-grid-item {
+    position: relative;
+    border: 1px solid #eef0f2;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    aspect-ratio: 1;
+    background: #fafbfc;
+}
+.pst-image-grid-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.pst-image-grid-item:hover {
+    border-color: #FF9900;
+}
+
+.pst-image-grid-item.selected {
+    border-color: #FF9900;
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .35);
+}
+.pst-image-grid-item .pst-image-selected-badge {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #FF9900;
+    color: #fff;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: .65rem;
+}
+.pst-image-grid-item.selected .pst-image-selected-badge {
+    display: flex;
+}
+
+.pst-table-cells-grid {
+    display: grid;
+    gap: 4px;
+    max-height: 320px;
+    overflow: auto;
+}
+.pst-table-cells-grid input {
+    width: 100%;
+    font-size: .8rem;
+    padding: .25rem .35rem;
+    border: 1px solid #dcdcdc;
+    border-radius: 4px;
+}
+.pst-image-grid-item .pst-image-delete {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(217, 45, 32, .9);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .7rem;
+}
+.modal-body {
+    width: 100%;
+    max-height: calc(100vh - 100px - 100px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    scrollbar-color: #f1f1f1;
+    scrollbar-width: thin;
+}
+.modal-fullscreen .modal-body {
+    max-height: 100%;
+}
+
+/* Payslip Template editor -- "Template Info" card (language_mode + header/footer text + status/
+   default toggles). 2026-08-25, explicit follow-up: "ปรับให้สวยขึ้นได้ไหมครับ และปรับจาก textbox
+   เป็น textarea" -- this section has no Employment Certificate Template equivalent to port styling
+   from (that module has no language_mode/header-footer/is_default concept at all), so it originally
+   shipped with zero dedicated CSS and rendered as a bare, unstyled card. */
+.pst-info-card {
+    overflow: hidden;
+}
+.pst-info-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .75rem;
+    padding: .7rem 1.1rem;
+    background: linear-gradient(135deg, rgba(255, 153, 0, .1), rgba(255, 153, 0, .03));
+    border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+.pst-info-card-title {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-weight: 700;
+    color: #333;
+    font-size: .95rem;
+}
+.pst-info-card-title i {
+    color: #FF9900;
+}
+/* 2026-08-27, explicit request: "ปรับให้ Change Layout กับ Fullscreen ไปอยู่ติดกันที่มุมขวา" -- one flex
+   item (instead of two separately-distributed ones) so .pst-info-card-header's own
+   justify-content:space-between carries the pair together to the row's right edge. */
+.pst-editor-actions-right {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+.pst-info-toggles {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+}
+.pst-info-toggles .form-check {
+    margin-bottom: 0;
+}
+.pst-info-card-body {
+    padding: 1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.pst-info-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+.pst-info-row-lang {
+    align-items: center;
+}
+.pst-info-label {
+    flex: 0 0 110px;
+    font-weight: 600;
+    font-size: .82rem;
+    color: #667085;
+    padding-top: .4rem;
+    margin: 0;
+}
+.pst-info-row-lang .pst-info-label {
+    padding-top: 0;
+}
+#pstLanguageModeSelect {
+    max-width: 220px;
+}
+.pst-info-textareas {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .7rem;
+    min-width: 0;
+}
+.pst-info-textarea-group {
+    position: relative;
+}
+.pst-info-textarea-group textarea {
+    resize: vertical;
+    min-height: 52px;
+    padding-right: 34px;
+}
+.pst-info-lang-flag {
+    position: absolute;
+    top: 7px;
+    right: 9px;
+    width: 17px;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .12);
+    pointer-events: none;
+}
+@media (max-width: 768px) {
+    .pst-info-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .pst-info-label {
+        flex: none;
+        padding-top: 0;
+    }
+    .pst-info-textareas {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Payslip Template / Employment Certificate Template -- "Assign To" tab (2026-08-25 follow-up,
+   explicit request: "เพิ่ม Tab...เป็น checkbox ให้เลือก...เลือกได้กับทุกคน ทุกแผนก ทุกทีม แต่ถ้ามีการ
+   ตั้งค่าซ้ำต้องแจ้ง Error"). .pst-assign-* / .ect-assign-* are identical rules (one shared selector
+   list) -- both editors moved this into its own top-level .setup-tabs pane, so there's no longer any
+   difference in how much surrounding chrome each one gets (round 1's card-vs-inline-row distinction
+   no longer applies). Full checkbox lists (not a search-dropdown) so "every department/team" is just
+   "check every box", per the explicit request. */
+.pst-assign-card,
+.ect-assign-card {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, .07);
+    border-radius: .75rem;
+}
+.pst-assign-hint,
+.ect-assign-hint {
+    line-height: 1.5;
+}
+.pst-assign-columns,
+.ect-assign-columns {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+.pst-assign-column,
+.ect-assign-column {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: #fafbfc;
+    border: 1px solid rgba(0, 0, 0, .06);
+    border-radius: .6rem;
+    padding: .75rem;
+}
+.pst-assign-column-header,
+.ect-assign-column-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: .5rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+.pst-assign-column-header .form-check-label,
+.ect-assign-column-header .form-check-label {
+    color: #333;
+}
+.pst-assign-column-header i,
+.ect-assign-column-header i {
+    color: #FF9900;
+}
+.pst-assign-filter,
+.ect-assign-filter {
+    margin-bottom: .5rem;
+}
+.pst-assign-checklist,
+.ect-assign-checklist {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 320px;
+    min-height: 120px;
+    padding-right: .25rem;
+}
+/* 2026-08-25, real bug found and fixed (not a guess) -- "หมายถึงในแต่ละ item ไม่ checkbox" (the row
+   text showed, but no checkbox). This shorthand `padding` sets padding-LEFT too, which -- same
+   specificity as Bootstrap's own `.form-check { padding-left: 1.5em; }`, and this stylesheet loads
+   AFTER bootstrap.min.css -- overrode it down to .4rem. Bootstrap positions `.form-check-input` via
+   `float:left; margin-left:-1.5em;`, expecting that 1.5em of left padding as its landing space; with
+   only .4rem of room the checkbox got pulled outside the row's own left edge, invisible/unclickable,
+   while the label text (which doesn't depend on that padding) rendered completely normally -- hence
+   "each item has no checkbox" specifically, not "nothing renders at all". Fixed by only setting the
+   padding sides that don't collide with Bootstrap's own layout-critical padding-left. */
+.pst-assign-item,
+.ect-assign-item {
+    padding-top: .3rem;
+    padding-right: .4rem;
+    padding-bottom: .3rem;
+    border-radius: .4rem;
+}
+.pst-assign-item:hover,
+.ect-assign-item:hover {
+    background: rgba(255, 153, 0, .08);
+}
+.pst-assign-item .form-check-label,
+.ect-assign-item .form-check-label {
+    font-size: .88rem;
+    word-break: break-word;
+}
+@media (max-width: 900px) {
+    .pst-assign-columns,
+    .ect-assign-columns {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ในหน้า List สามารถเปิด Draft หรือ
+   Public ได้จากหน้านั้นเลย" -- small clickable badge next to each language cell's ready/not-ready icon
+   in both Payslip Template's and Employment Certificate Template's list (ect-publish-* shared, same
+   class names used by both pst-publish-toggle/ect-publish-toggle click handlers). */
+.ect-publish-badge {
+    padding: .1rem .5rem;
+    font-size: .72rem;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    line-height: 1.4;
+}
+.ect-publish-badge.ect-publish-draft {
+    background: #fff3cd;
+    color: #8a6d00;
+    border-color: #ffe69c;
+}
+.ect-publish-badge.ect-publish-public {
+    background: #d1f4e0;
+    color: #0f6b3f;
+    border-color: #a9e8c4;
+}
+.ect-publish-badge:hover {
+    filter: brightness(0.95);
+}
+/* 2026-08-26, explicit follow-up: "ปุ่ม Draft กับ Public ให้เป็น Switch ปิดเปิด แล้วแยกมาเป็น Column
+   แรกสุด" -- a pair with both languages stacks 2 switches (one per language) in this one cell.
+   2026-08-26, same-day follow-up: "Design ตรง Switch...ใน Column ยังแสดงผลไม่สวย" -- redesigned from a
+   bare Bootstrap form-switch + label into a small colored pill (amber = draft, green = public,
+   matching .ect-publish-badge's own palette) so the column reads as a clear status chip rather than a
+   plain, cramped checkbox row -- no HTML/JS change needed, this is a pure CSS restyle of the exact
+   same .form-check.form-switch markup pstPublishSwitchesHtml()/ectPublishSwitchesHtml() already emit. */
+/* 2026-08-26, same-day follow-up: "ตรงตารางใน column status ไม่ต้องมีคำว่า Draft หรือ Public ให้มี
+   Switch และรูปธง design ให้แสดงผลในแถวเดียว" -- the "Draft"/"Public" text label is dropped from the
+   pill entirely (label kept in the markup as .visually-hidden so the <label for="..."> association --
+   and its click-to-toggle target area -- isn't lost for assistive tech, it's just not painted), and a
+   pair's TH+EN pills now sit side-by-side in ONE row via .pst-publish-switch-group instead of stacking
+   with a margin-top hack (removed below, flex `gap` on the group does that job instead). Because the
+   pill no longer needs room for a text label, it also shrinks from a fixed min-width pill down to a
+   compact icon-sized chip. */
+.pst-publish-switch-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
+.pst-publish-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .3rem;
+    white-space: nowrap;
+    background: #fff3cd;
+    border: 1px solid #ffe69c;
+    border-radius: 999px;
+    padding: .3rem .5rem;
+    transition: background .15s ease, border-color .15s ease;
+}
+.pst-publish-switch-row:has(.pst-publish-switch:checked),
+.pst-publish-switch-row:has(.ect-publish-switch:checked) {
+    background: #d1f4e0;
+    border-color: #a9e8c4;
+}
+.pst-publish-switch-flag {
+    flex: none;
+    border-radius: 2px;
+}
+/* Deliberately NOT touching .form-check's own display/padding-left/float layout at all -- it stays
+   exactly the normal Bootstrap block component internally (its .form-check-input/.form-check-label
+   float-based positioning depends on that), just sitting as one flex ITEM of the outer row alongside
+   the flag image -- flex only affects how .form-check is placed relative to its siblings here, not how
+   its own children behave inside it, so this is safe (same bug category already found once this
+   session -- see the JS's own comment on why the outer wrapper carries the flex/pill styling instead). */
+.pst-publish-switch-row .form-check {
+    min-height: 0;
+}
+.pst-publish-switch-row .form-check-input {
+    cursor: pointer;
+    margin-top: 0;
+}
+.pst-publish-switch-row .form-check-label {
+    cursor: pointer;
+}
+
+/* 2026-08-26, explicit request: "การตั้งค่า Template ทั้ง Slip เงินเดือนและเอกสารให้มี Draft Mode และ
+   Public Mode และเพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save" -- Draft/Public switch + Auto Save checkbox
+   inside the editor itself (Payslip Template's existing .pst-info-card, and Employment Certificate
+   Template's new equivalent .ect-info-card, see _editor_content.php for both). */
+.ect-info-card {
+    background: linear-gradient(135deg, rgba(255, 153, 0, .06), rgba(255, 153, 0, .01));
+    border: 1px solid #ffe1b3;
+    border-radius: 12px;
+    padding: .9rem 1.1rem;
+    margin-bottom: 1rem;
+}
+.pst-publish-row,
+.ect-publish-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.pst-publish-switch-label,
+.ect-publish-switch-label {
+    font-weight: 600;
+    font-size: .85rem;
+}
+
+/* 2026-08-26, explicit request: "ตรง Assign To ช่วยปรับให้ใช้งานง่ายขึ้นไม่ซับซ้อน" -- the simple
+   Everyone/Specific-selection switch that now hides the 3 checkbox columns by default. */
+/* 2026-08-26, explicit follow-up: "การเปิดการตั้งค่าใน fullscreen ปรับให้รองรับเฉพาะหน้า Design" --
+   hides the Design/Assign To tab nav + the Assign To pane while fullscreen is active, leaving only
+   Design's own content visible (matches both templates' shared .pst-fullscreen-active toggle). */
+/* 2026-08-26, explicit request: "ปรับปรุงหน้า No Permission และหน้า 404 ให้ใหม่ให้เข้ากับธีมของระบบ" --
+   shared by app/views/permission.php (403) and app/views/error404.php (404), rendered through the
+   normal header/footer layout (same nav/sidebar as every other page) so navigating away is easy. */
+.error-page-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    padding: 2rem 1rem;
+}
+.error-page-card {
+    background: rgba(255, 255, 255, .7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 153, 0, .18);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(16, 24, 40, .08);
+    padding: 3rem 2.5rem;
+    text-align: center;
+    max-width: 480px;
+    width: 100%;
+}
+.error-page-icon {
+    width: 84px;
+    height: 84px;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: #fff;
+    background: linear-gradient(135deg, #FF9900, #ffb84d);
+    box-shadow: 0 6px 18px rgba(255, 153, 0, .35);
+}
+.error-page-code {
+    font-weight: 800;
+    font-size: 3rem;
+    background: linear-gradient(135deg, #FF9900, #b45f00);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: .25rem;
+}
+.error-page-title {
+    font-weight: 700;
+    color: #344054;
+    margin-bottom: .5rem;
+}
+.error-page-desc {
+    color: #667085;
+    margin-bottom: 1.75rem;
+}
+.error-page-btn {
+    padding: .6rem 1.75rem;
+}
+.pst-fullscreen-active #pstEditorTabs,
+.pst-fullscreen-active #pstTabAssign,
+.pst-fullscreen-active #ectEditorTabs,
+.pst-fullscreen-active #ectTabAssign {
+    display: none !important;
+}
+/* 2026-08-27, explicit request: "ตอน Fullscreen มีปุ่มปิดอยู่แล้ว ไม่ต้องแสดงปุ่ม Fullscreen ซ้ำ" -- the
+   Fullscreen button relocates INTO the modal along with the rest of #pstEditorContent/#ectEditorContent
+   (see the JS's own show.bs.modal handler), so once `.pst-fullscreen-active` is applied there's already
+   a real Bootstrap `.btn-close` in the modal header -- hide the now-redundant toggle button rather than
+   showing two different ways to close the same modal. */
+.pst-fullscreen-active #pstFullscreenBtn,
+.pst-fullscreen-active #ectFullscreenBtn {
+    display: none !important;
+}
+/* 2026-08-26, same-day follow-up: "fullscreen mode ตัด pst-editor-footer ออกให้ปุ่มแสดงใน footer เลย
+   จะได้ไม่เปลืองพื้นที่" -- .pst-editor-footer/.ect-editor-footer (shares the same rule, one class)
+   keeps its own box styling for its NORMAL in-page position, but once relocated into the fullscreen
+   modal's real Bootstrap `.modal-footer` (see the JS's own show.bs.modal handler), its background/
+   shadow/padding/sticky-positioning are neutralized here so the Save/Preview buttons read as sitting
+   directly IN the modal's own footer, not as a smaller styled box double-boxed inside it. */
+.modal-footer .pst-editor-footer,
+.modal-footer .ect-editor-footer {
+    background: none;
+    box-shadow: none;
+    padding: 0;
+    margin-top: 0;
+    position: static;
+    width: 100%;
+}
+/* "ปุ่มปิด fullscreen อยากให้ design ให้ชัดๆ หรือให้แสดง modal-header ด้วย นำ header กับการแก้ชื่อไปใส่ใน
+   modal header" -- same treatment for .pst-editor-topbar/.ect-editor-topbar once relocated into the
+   fullscreen modal's real `.modal-header` (which already supplies its own padding/border/background,
+   plus the always-present .btn-close) -- the title group renders as the header's own title instead of
+   a separate styled card nested inside it. */
+.modal-header .pst-editor-topbar,
+.modal-header .ect-editor-topbar {
+    background: none;
+    box-shadow: none;
+    padding: 0;
+    margin-bottom: 0;
+    border-radius: 0;
+    flex: 1 1 auto;
+}
+.pst-assign-mode-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.5rem;
+    padding: .6rem .9rem;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+/* ==========================================================================
+   Excel-style per-column header filter (public/js/table-column-filter.js) -- 2026-08-27, explicit
+   request: "ในตารางทุกตาราง ใน thead ของแต่ละ Column เพิ่มให้สามารถ Filter ได้...เหมือนกับ Excel".
+   Proof-of-concept wired into Employee List first -- see that JS file's own docblock.
+   ========================================================================== */
+/* 2026-08-27, explicit follow-up round 2: "อยากให้ thead แสดงแถวเดียว แล้ว item filter ไปอยู่ฝั่งขวา
+   คู่กันกับ sort" -- co-opting DataTables' own internal header wrapper markup turned out unreliable
+   (see initExcelColumnFilters()'s own comment), so this is now a fully self-built row:
+   `.tcf-header-row` (flex, space-between) > `.tcf-header-title` (flex-grow, ellipsis-truncated -- full
+   text still reachable via its own `title` tooltip) + `.tcf-header-right` (flex:none -- the sort-arrow
+   span + filter button, paired together, never fighting the title for space). */
+.tcf-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+}
+.tcf-header-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+/* 2026-08-27, explicit follow-up round 3: "ขีดควรมาอยู่หลัง icon filter จะได้รู้ว่าเป็นของ column ไหน" --
+   the divider previously sat BETWEEN the sort arrow and the filter icon (see .tcf-filter-btn's own
+   history below); moved to trail the WHOLE right-hand group instead, so it reads as "this is where
+   THIS column's controls end" (a column boundary marker) rather than a separator between two icons
+   that both belong to the same column. */
+.tcf-header-right {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: 2px;
+    padding-right: 9px;
+}
+.tcf-header-right::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1px;
+    height: 13px;
+    background: rgba(0, 0, 0, .15);
+}
+/* 2026-08-27, explicit follow-up: "ตอนนี้กดทั้ง th แล้ว sort ไม่ต้องการให้กดที่ icon sort ค่อย sort" --
+   only the sort-arrow icon is a real click target now (see initExcelColumnFilters()'s own comment on
+   `data-dt-order="icon-only"` + `order.listener()`), so the whole-cell `cursor:pointer`/hover outline
+   dataTables.bootstrap5.css puts on every `.dt-orderable-asc`/`.dt-orderable-desc` th would be
+   actively misleading here -- overridden back to a normal cursor on the cell, moved onto just the
+   icon instead. Full selector chain repeated (not just `.tcf-th.dt-orderable-asc`) to match/exceed
+   that stylesheet's own specificity rather than relying on load order -- same "always match Bootstrap's
+   own selector specificity, don't rely on a tie-break" convention already established elsewhere in
+   this project's CSS (see the Employment Certificate Template Symbol-dropdown fix). */
+table.dataTable thead > tr > th.tcf-th.dt-orderable-asc,
+table.dataTable thead > tr > th.tcf-th.dt-orderable-desc {
+    cursor: default;
+}
+table.dataTable thead > tr > th.tcf-th.dt-orderable-asc:hover,
+table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
+    outline: none;
+}
+.tcf-header-right .dt-column-order {
+    cursor: pointer;
+}
+/* 2026-08-27, explicit follow-up: "อยากให้ปรับ Design การจัดวาง icon filter ให้ใหม่" -- confirmed via
+   AskUserQuestion: keep it always visible (not hover-reveal). Round 3 moved the actual divider line
+   off this button and onto `.tcf-header-right::after` instead (see that rule's own comment) -- this
+   button itself just needs its own hover/active highlight box now. */
+.tcf-filter-btn {
+    position: relative;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    margin: 0;
+    color: #adb5bd;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 4px;
+    flex: none;
+}
+.tcf-filter-btn:hover {
+    color: #FF9900;
+    background: rgba(255, 153, 0, .1);
+}
+.tcf-filter-btn.tcf-filter-active {
+    color: #FF9900;
+    background: rgba(255, 153, 0, .15);
+}
+.tcf-panel {
+    position: absolute;
+    z-index: 2000;
+    width: 260px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, .08);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(16, 24, 40, .18);
+    padding: .6rem;
+    font-size: 13px;
+}
+.tcf-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .5rem;
+    padding-bottom: .35rem;
+    border-bottom: 1px solid #f0f0f1;
+}
+.tcf-panel-title {
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 12.5px;
+}
+.tcf-panel-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    flex: none;
+}
+.tcf-panel-close:hover {
+    color: #374151;
+    background: #f3f4f6;
+}
+.tcf-search-wrap {
+    position: relative;
+    margin-bottom: .5rem;
+}
+.tcf-search-wrap i {
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 11px;
+}
+.tcf-search-wrap input {
+    width: 100%;
+    padding: .3rem .5rem .3rem 1.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 12.5px;
+}
+.tcf-search-wrap input:focus {
+    outline: none;
+    border-color: #FF9900;
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .15);
+}
+.tcf-select-all-row {
+    border-bottom: 1px solid #f0f0f1;
+    padding-bottom: .35rem;
+    margin-bottom: .35rem;
+}
+.tcf-item {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .25rem .2rem;
+    margin: 0;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 400;
+    color: #374151;
+}
+.tcf-item:hover {
+    background: #f9fafb;
+}
+.tcf-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.tcf-select-all-label {
+    font-weight: 600;
+}
+.tcf-list {
+    max-height: 220px;
+    overflow-y: auto;
+}
+.tcf-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: .5rem;
+    padding-top: .5rem;
+    border-top: 1px solid #f0f0f1;
+}
+
+/* ==========================================================================
+   Reports page redesign (2026-08-27, explicit request: "ปรับ Design และโครงสร้างให้หน่อยครับ...
+   แบ่งเป็น Report ที่ต้องดึงจากรอบการจ่าย และ Report ประจำปีที่ต้องออก ให้รูปแบบการใช้งานดูง่าย และรู้ว่า
+   ต้องทำอะไร") -- `.reports-period-bar` is the single shared period picker at the top of each
+   frequency tab (payroll run for Per-Cycle, year for Annual), replacing every card's own repeated
+   year/run field. `.reports-type-section` groups cards by report type (Statutory/Payment/Internal)
+   underneath it, same secondary grouping the old top-level tabs used to provide on their own.
+   ========================================================================== */
+.reports-period-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: linear-gradient(135deg, rgba(255, 153, 0, .08), rgba(255, 153, 0, .02));
+    border: 1px solid rgba(255, 153, 0, .18);
+    border-radius: 14px;
+    padding: 1rem 1.25rem;
+    flex-wrap: wrap;
+}
+.reports-period-bar-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FF9900, #ffb84d);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex: none;
+    box-shadow: 0 4px 10px rgba(255, 153, 0, .3);
+}
+.reports-period-bar-body {
+    flex: 1;
+    min-width: 220px;
+}
+.reports-period-bar-hint {
+    font-size: .85rem;
+    color: #667085;
+    margin-bottom: .45rem;
+}
+.reports-type-section {
+    margin-bottom: 1.75rem;
+}
+.reports-type-section:last-child {
+    margin-bottom: 0;
+}
+.reports-type-section-title {
+    font-weight: 700;
+    color: #344054;
+    font-size: .92rem;
+    margin-bottom: .85rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid #eef0f2;
+}
+.reports-type-section-title i {
+    color: #FF9900;
+}
+
+/* ==========================================================================
+   Dashboard (2026-08-28) -- overview page, built on the same .page-header-card/
+   .stat-card/.station-row primitives already used by Payroll Process/Detail so it
+   doesn't introduce a competing visual language, plus two small new pieces this
+   page needed: a generic panel wrapper (.dash-section-card) and a Quick Links tile
+   grid (.dash-quick-link).
+   ========================================================================== */
+.dash-section-card {
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+    padding: 16px 18px;
+}
+.dash-section-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+.dash-section-card-header h6 {
+    color: #344054;
+    font-weight: 700;
+}
+.dash-section-link {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #FF9900;
+    text-decoration: none;
+}
+.dash-section-link:hover {
+    color: #b45f00;
+    text-decoration: underline;
+}
+
+.dash-quick-links {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+.dash-quick-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 8px;
+    text-align: center;
+    text-decoration: none;
+    color: #4a3418;
+    font-size: .8rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #fff8ee 0%, #fff1dc 100%);
+    border: 1px solid rgba(255, 153, 0, .16);
+    border-radius: 12px;
+    transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.dash-quick-link:hover {
+    color: #b45f00;
+    border-color: rgba(255, 153, 0, .4);
+    box-shadow: 0 4px 12px rgba(255, 153, 0, .14);
+    transform: translateY(-2px);
+}
+.dash-quick-link-icon {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.dash-quick-link-icon img {
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+}
+
+.dash-run-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 4px;
+    text-decoration: none;
+    border-bottom: 1px solid #f2f2f2;
+}
+.dash-run-row:last-child {
+    border-bottom: none;
+}
+.dash-run-row:hover {
+    background: #fffaf1;
+}
+.dash-run-row-name {
+    font-weight: 600;
+    color: #212529;
+    font-size: .88rem;
+}
+.dash-run-row-period {
+    font-size: .76rem;
+    color: #6c757d;
+}
+.dash-run-row-meta {
+    text-align: right;
+    flex: 0 0 auto;
+}
+.dash-run-row-amount {
+    font-weight: 700;
+    font-size: .85rem;
+    color: #212529;
+    margin-bottom: 2px;
+}
+@media (max-width: 991px) {
+    .dash-quick-links {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }

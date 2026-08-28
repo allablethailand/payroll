@@ -79,6 +79,14 @@ class StatutoryCalculationEngine {
         $line = [
             'statutory_item_id' => (int)$item['statutory_item_id'],
             'code' => $item['code'],
+            // 2026-08-21, real bug fix (explicit report: "รายละเอียดการคำนวณ...แสดงแค่ Code
+            // อยากให้มีชื่อด้วย ที่เห็นชัดว่าขาดคือ รายการหัก (ภาครัฐ)") -- name_th/name_en were
+            // already selected by CompanyStatutorySettingModel::list() into $item, just never
+            // carried through into this returned line, so every consumer (Payroll Run Detail's
+            // breakdown modal, statutory_breakdown stored on payroll_run_details, etc.) only ever
+            // had the bare code to show.
+            'name_th' => $item['name_th'] ?? null,
+            'name_en' => $item['name_en'] ?? null,
             'category' => $item['category'],
             'calc_method' => $item['calc_method'],
             'calc_base' => $baseKey,

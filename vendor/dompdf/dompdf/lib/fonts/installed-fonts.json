@@ -1,0 +1,8 @@
+{
+    "th sarabun new": {
+        "normal": "C:\\xampp-vonconnect\\htdocs\\payroll\\vendor\\dompdf\\dompdf\/lib\/fonts\/th_sarabun_new_normal_654c6537df98c637962c2c6f7e285407",
+        "bold": "C:\\xampp-vonconnect\\htdocs\\payroll\\vendor\\dompdf\\dompdf\/lib\/fonts\/th_sarabun_new_bold_cc8d509c3a33278119c4199e530a2dea",
+        "italic": "C:\\xampp-vonconnect\\htdocs\\payroll\\vendor\\dompdf\\dompdf\/lib\/fonts\/th_sarabun_new_italic_08a1e570bf1810531918e3b8656dcad6",
+        "bold_italic": "th_sarabun_new_bold_italic_6ffac0abe1129e4bed8985e83128e527"
+    }
+}

@@ -8,45 +8,54 @@
             <span class="bc-current" data-i18n="tax_and_statutory">Tax & Statutory</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-scale-balanced me-2"></i>
-            <span data-i18n="tax_and_statutory">Tax & Statutory</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="tax_statutory_description">Configure statutory items (tax, social insurance, provident fund) per country, with rate history and progressive tax brackets.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="tax_and_statutory">Tax & Statutory</h5>
+            <p class="page-header-card-desc" data-i18n="tax_statutory_description">Configure statutory items (tax, social insurance, provident fund) per country, with rate history and progressive tax brackets.</p>
+        </div>
     </div>
 
-    <ul class="nav nav-tabs" id="taxStatutoryTabs" role="tablist">
+    <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="taxStatutoryTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="master-rate-tab" data-bs-toggle="tab" data-bs-target="#master-rate-pane" type="button" role="tab" aria-controls="master-rate-pane" aria-selected="true">
+            <button class="nav-link setup-menu active" id="master-rate-tab" data-bs-toggle="tab" data-bs-target="#master-rate-pane" type="button" role="tab" aria-controls="master-rate-pane" aria-selected="true">
                 <i class="fa-solid fa-globe me-2"></i><span data-i18n="tab_master_rate">Master Rates</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="false">
+            <button class="nav-link setup-menu" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="false">
                 <i class="fa-solid fa-building me-2"></i><span data-i18n="tab_company_setting">Company Settings</span>
             </button>
         </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
     <div class="tab-pane fade show active p-3 p-md-4" id="master-rate-pane" role="tabpanel" aria-labelledby="master-rate-tab" tabindex="0">
-        <div class="row mb-3">
-            <div class="col-sm-4 col-md-3">
-                <label class="form-label mb-1"><span data-i18n="filter_country">Country</span></label>
-                <select class="form-select select2-remote" id="filter_country_code" data-api="/api/country.get" data-type="country"></select>
-            </div>
+        <!-- 2026-08-28, explicit request: "แสดงผลเฉพาะตามประเทศที่ตัวเองตั้งค่า...ให้รองรับเฉพาะ
+             ประเทศไทยก่อน" -- the interactive country filter (which defaulted to blank, showing
+             every country's items mixed together -- a real gap, see TaxStatutoryController's own
+             companyCountry() docblock) is replaced by a plain label: this whole page is now always
+             scoped server-side to the company's own registered country, so a filter that could only
+             ever show ONE value would just be confusing UI. #masterRateCountryLabel is filled in
+             from the list response itself (countries_name_th/en, already joined) -- no separate
+             lookup call needed. -->
+        <div class="mb-3">
+            <span class="text-muted small" data-i18n="master_rate_country_scope_label">Showing statutory items for your company's registered country:</span>
+            <span class="fw-bold" id="masterRateCountryLabel">-</span>
         </div>
         <table class="table table-hover table-border align-middle w-100" id="tb_statutory_item">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th scope="col" style="width: 9%;" data-i18n="table_country">Country</th>
-                    <th scope="col" style="width: 12%;" data-i18n="table_code">Code</th>
-                    <th scope="col" style="width: 20%;" data-i18n="table_name">Name</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_category">Category</th>
-                    <th scope="col" style="width: 15%;" data-i18n="table_calc_method">Calculation Method</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_current_rate">Current Rate</th>
+                    <th scope="col" style="width: 8%;" data-i18n="table_country">Country</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_code">Code</th>
+                    <th scope="col" style="width: 16%;" data-i18n="table_name">Name</th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_category">Category</th>
+                    <th scope="col" style="width: 12%;" data-i18n="table_calc_method">Calculation Method</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_current_rate">Current Rate</th>
+                    <th scope="col" style="width: 13%;" data-i18n="table_last_updated">Last Updated</th>
                     <th scope="col" style="width: 8%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 10%; text-align: center;"></th>
+                    <th scope="col" style="width: 11%; text-align: center;"></th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -57,13 +66,14 @@
         <table class="table table-hover table-border align-middle w-100" id="tb_company_setting">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th scope="col" style="width: 12%;" data-i18n="table_code">Code</th>
-                    <th scope="col" style="width: 22%;" data-i18n="table_name">Name</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_category">Category</th>
-                    <th scope="col" style="width: 18%;" data-i18n="table_current_rate">Rate in Use</th>
-                    <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 8%;" data-i18n="modal_company_rate_editable_short">Adjustable</th>
-                    <th scope="col" style="width: 10%; text-align: center;"></th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_code">Code</th>
+                    <th scope="col" style="width: 18%;" data-i18n="table_name">Name</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_category">Category</th>
+                    <th scope="col" style="width: 15%;" data-i18n="table_current_rate">Rate in Use</th>
+                    <th scope="col" style="width: 9%;" data-i18n="col_status">Status</th>
+                    <th scope="col" style="width: 7%;" data-i18n="modal_company_rate_editable_short">Adjustable</th>
+                    <th scope="col" style="width: 13%;" data-i18n="table_last_updated">Last Updated</th>
+                    <th scope="col" style="width: 8%; text-align: center;"></th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -88,14 +98,12 @@
                             <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
                             <span data-i18n="modal_sec_item_info">Item Information</span>
                         </h6>
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_country">Country</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-9">
-                                <select class="form-select select2-remote required" id="item_country_code" name="country_code" data-api="/api/country.get" data-type="country"></select>
-                            </div>
-                        </div>
+                        <!-- 2026-08-28, explicit request -- country is no longer a field the user
+                             fills in here at all (same precedent as Holiday's own country_code:
+                             "ไม่ใช่ field ที่ผู้ใช้กรอกเอง ระบบดึงจาก companies.registered_country
+                             อัตโนมัติ"). TaxStatutoryController::itemSave() always forces it to the
+                             acting company's own registered country server-side regardless of what
+                             a request contains, so showing a picker here would just be misleading. -->
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
                                 <label class="form-label mb-0"><span data-i18n="modal_code">Code</span> <span class="text-danger">*</span></label>
@@ -212,6 +220,7 @@
                                 <th scope="col" data-i18n="table_effective_date">Effective Date</th>
                                 <th scope="col" data-i18n="table_end_date">End Date</th>
                                 <th scope="col" data-i18n="table_rate_summary">Rate</th>
+                                <th scope="col" data-i18n="table_last_updated">Last Updated</th>
                                 <th scope="col" style="text-align: center;"></th>
                             </tr>
                         </thead>
@@ -304,7 +313,7 @@
                         <div id="rate_bracket_fields" class="d-none">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <h6 class="fw-bold mb-0"><span data-i18n="tax_brackets">Tax Brackets</span></h6>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddBracketRow"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket">Add Bracket</span></button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddBracketRow"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket">Bracket</span></button>
                             </div>
                             <div class="table-responsive">
                                 <table class="table pl-table mb-0">

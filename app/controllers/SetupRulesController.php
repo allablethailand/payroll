@@ -243,6 +243,12 @@ class SetupRulesController extends Controller {
         $this->json($this->model->leaveTypeToggleStatus($id, (int)$compId, $this->userId()));
     }
 
+    public function leaveTypeApplyDefaults() {
+        if (!$this->requirePermission('leave_type.manage')) return;
+        $compId = getCompId();
+        $this->json($this->model->leaveTypeApplyDefaults((int)$compId, $this->userId()));
+    }
+
     /* ==================== OT RATE ==================== */
 
     public function otScopeOptions() {

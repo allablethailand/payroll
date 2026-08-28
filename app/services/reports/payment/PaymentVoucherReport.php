@@ -37,6 +37,20 @@ class PaymentVoucherReport implements ReportGeneratorInterface {
         return ['pdf'];
     }
 
+    // Same 3-line helper as EmploymentCertificateRenderer::formatDate()/PayslipTemplateRenderer::
+    // formatDate()/PaySlipReport::formatDate() -- 2026-08-26, explicit request: "Format วันที่การแสดงผล
+    // ทั้งหมดของระบบให้เป็น dd/mm/yyyy". Gregorian dd/mm/yyyy specifically (not converted to พ.ศ.) --
+    // this report's own voucher-number year label is พ.ศ. by explicit separate convention (see
+    // $currentYearBe below), but nothing asked for the payment-period DATES themselves to become
+    // Buddhist-calendar, only for their day/month/year ORDER to be consistent app-wide.
+    private function formatDate(?string $ymd): string {
+        if (empty($ymd)) {
+            return '-';
+        }
+        $ts = strtotime($ymd);
+        return $ts !== false ? date('d/m/Y', $ts) : $ymd;
+    }
+
     /**
      * @param array $context { comp_id: int, year: int (พ.ศ.), employee_id: int }
      */
@@ -83,7 +97,8 @@ class PaymentVoucherReport implements ReportGeneratorInterface {
             $totalDeduction += (float)$detail['total_deduction_amount'];
             $totalNet += (float)$detail['net_amount'];
             $rowsHtml .= '<tr>'
-                . '<td>' . htmlspecialchars($run['period_start_date'] . ' - ' . $run['period_end_date']) . '</td>'
+                // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy"
+                . '<td>' . htmlspecialchars($this->formatDate($run['period_start_date']) . ' - ' . $this->formatDate($run['period_end_date'])) . '</td>'
                 . '<td class="amount">' . number_format((float)$detail['gross_amount'], 2) . '</td>'
                 . '<td class="amount">' . number_format((float)$detail['total_deduction_amount'], 2) . '</td>'
                 . '<td class="amount">' . number_format((float)$detail['net_amount'], 2) . '</td>'

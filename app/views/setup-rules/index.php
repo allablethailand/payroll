@@ -8,12 +8,14 @@
             <span class="bc-current" data-i18n="setup_and_rules">Setup & Rules</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-gears"></i>
-            <span data-i18n="setup_and_rules">Setup & Rules</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="setup_and_rules_description">Define work shifts, public holidays, leave types, and overtime (OT) calculation rates for employees.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-gears"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="setup_and_rules">Setup & Rules</h5>
+            <p class="page-header-card-desc" data-i18n="setup_and_rules_description">Define work shifts, public holidays, leave types, and overtime (OT) calculation rates for employees.</p>
+        </div>
     </div>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">
@@ -51,6 +53,7 @@
                             <th data-i18n="shift_name">Shift Name</th>
                             <th data-i18n="shift_code">Shift Code</th>
                             <th data-i18n="time">Time</th>
+                            <th data-i18n="working_days">Working Days</th>
                             <th data-i18n="work_location">Work Location</th>
                             <th data-i18n="last_modified">Last Modified</th>
                             <th data-i18n="status" class="text-center">Status</th>
@@ -105,7 +108,6 @@
                             <th data-i18n="ot_name">OT Name</th>
                             <th data-i18n="applies_to">Applies To</th>
                             <th data-i18n="multiplier">Multiplier</th>
-                            <th data-i18n="calculation_base">Calculation Base</th>
                             <th data-i18n="status" class="text-center">Status</th>
                             <th class="text-end"></th>
                         </tr>
@@ -165,6 +167,24 @@
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="work_location">Work Location</label>
                         <select class="form-select select2-remote" id="shiftWorkLocation" data-api="/api/work-location.options" data-type="location"></select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" data-i18n="working_days">Working Days</label><br>
+                        <!-- 2026-08-21, explicit request: weekly working-day pattern per Shift, used by
+                             PayrollRunModel::recalculate()'s salary_type='daily' branch (via
+                             SetupRulesModel::payableDaysForEmployee()) to know which days are payable.
+                             Unlike #eedInterestToggle (single-select), each day here toggles independently
+                             -- see toggleShiftWorkDay() in setup-rules.js. Defaults to Mon-Fri active for a
+                             brand-new shift, matching the DB column defaults. -->
+                        <div class="btn-group btn-group-sm" role="group" id="shiftWorkDaysToggle">
+                            <button type="button" class="btn btn-outline-brand active" data-day="monday"><span data-i18n="day_mon_short">Mon</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-day="tuesday"><span data-i18n="day_tue_short">Tue</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-day="wednesday"><span data-i18n="day_wed_short">Wed</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-day="thursday"><span data-i18n="day_thu_short">Thu</span></button>
+                            <button type="button" class="btn btn-outline-brand active" data-day="friday"><span data-i18n="day_fri_short">Fri</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-day="saturday"><span data-i18n="day_sat_short">Sat</span></button>
+                            <button type="button" class="btn btn-outline-brand" data-day="sunday"><span data-i18n="day_sun_short">Sun</span></button>
+                        </div>
                     </div>
                     <div class="col-12">
                         <label class="form-label" data-i18n="description">Description</label>
@@ -434,12 +454,20 @@
                         <select class="form-select select2-remote required" id="otScope" data-api="/api/ot-rate.scope-options" data-type="ot_scope"></select>
                     </div>
                     <div class="col-md-6">
+                        <label class="form-label" data-i18n="calculation_base">Calculation Base</label>
+                        <select class="form-select select2-static" id="otBase" data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" data-i18n="ot_calculation_method">Calculation Method</label>
+                        <select class="form-select select2-static" id="otCalcMethod" data-option-keys="ot_calc_method_multiplier,ot_calc_method_flat_amount" data-option-values="multiplier,flat_amount"></select>
+                    </div>
+                    <div class="col-12" id="otMultiplierWrapper">
                         <label class="form-label" data-i18n="multiplier_rate">Multiplier Rate (x)</label>
                         <input type="number" step="0.1" min="0.1" class="form-control" id="otMultiplier" value="1.5">
                     </div>
-                    <div class="col-12">
-                        <label class="form-label" data-i18n="calculation_base">Calculation Base</label>
-                        <select class="form-select select2-static" id="otBase" data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select>
+                    <div class="col-12 d-none" id="otFlatAmountWrapper">
+                        <label class="form-label" data-i18n="ot_flat_amount_rate">Flat Amount (per hour/day)</label>
+                        <input type="number" step="0.01" min="0.01" class="form-control" id="otFlatAmountRate" placeholder="e.g., 100.00">
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2 mt-1">
                         <div class="form-check form-switch m-0">
@@ -471,4 +499,133 @@
         </div>
     </div>
 </div>
+
+<!-- 2026-08-28, explicit request: "เพิ่มให้ Sync ข้อมูลวันหยุดตามประกาศจาก API ที่มี...แต่ต้อง Map
+     กับข้อมูลที่มีแล้ว แล้วค่อยมานำตั้งค่าให้พนักงานต่อ" -- picker modal, same 2-tab New/Existing
+     review pattern as the Employee Sync picker (Employee List page). See HolidaySyncModel's own
+     docblock for the full design; public/js/setup/holiday-sync.js for the JS. -->
+<div class="modal fade" id="holidaySyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="holidaySyncModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="holidaySyncModalLabel">
+                    <i class="fa-brands fa-google me-1"></i><span data-i18n="holiday_sync_button">Sync from Google Calendar</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center py-5 d-none" id="holidaySyncNotConnected">
+                    <i class="fa-solid fa-plug-circle-xmark fa-2x text-danger mb-3 d-block"></i>
+                    <div class="fw-bold mb-1" data-i18n="holiday_sync_not_connected_title">Not connected to Google Calendar</div>
+                    <div class="text-muted small" id="holidaySyncNotConnectedMessage"></div>
+                </div>
+                <div id="holidaySyncFilterRow">
+                    <div class="alert alert-warning small mb-3" data-i18n="holiday_sync_review_warning">
+                        This calendar includes some cultural and government-only observances that may not be official paid holidays for your company (e.g. Chinese New Year, Valentine's Day, Christmas, Royal Ploughing Day). Please review each item before syncing.
+                    </div>
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label mb-1" data-i18n="holiday_sync_year">Year</label>
+                            <select class="form-select" id="holiday_sync_year"></select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <button type="button" class="btn btn-primary w-100" id="btnFetchHolidaySync">
+                                <i class="fa-solid fa-magnifying-glass me-1"></i><span data-i18n="employee_sync_fetch_button">Fetch</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2026-08-28, side-by-side layout: same fix as Employee Sync's picker (see
+                         that file's own comment for the full root-cause writeup) -- fixes the
+                         same display:none-at-DataTable-init-time bug here too. Date+Holiday Name
+                         merged into one "calendar date chip" cell (2026-08-28, explicit request:
+                         "ปรับข้อมูลตาราง ตรง Sync ให้ดูสวยขึ้น") -- see
+                         hsRenderHolidayCell() in holiday-sync.js. -->
+                    <div id="holidaySyncResultArea" class="d-none">
+                        <div class="row g-3">
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="holidaySyncNewCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_new">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="holidaySyncNewSelectAll"></th>
+                                                <th data-i18n="holiday">Holiday</th>
+                                                <th data-i18n="table_last_updated">Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="holidaySyncExistingCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_existing">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="holidaySyncExistingSelectAll"></th>
+                                                <th data-i18n="holiday">Holiday</th>
+                                                <th data-i18n="employee_sync_update_col">Update Available</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-muted small text-center py-4" id="holidaySyncEmptyHint" data-i18n="holiday_sync_empty_hint">Pick a year and click Fetch to browse holidays from Google Calendar.</div>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <span class="text-muted small" id="holidaySyncSelectedCountLabel"></span>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-primary d-none" id="btnApplyHolidaySync">
+                        <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="holidaySyncSelectedCount">0</span>)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Holiday Sync Log -->
+<div class="modal fade" id="holidaySyncLogModal" tabindex="-1" aria-labelledby="holidaySyncLogModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="holidaySyncLogModalLabel">
+                    <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="holiday_sync_log_title">Holiday Sync Log</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-hover table-sm align-middle w-100" id="tb_holiday_sync_log">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th data-i18n="employee_sync_log_col_date">Date</th>
+                            <th data-i18n="employee_sync_log_col_triggered_by">By</th>
+                            <th data-i18n="employee_sync_log_col_status">Status</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="<?=asset('public/js/setup/setup-rules.js')?>"></script>
+<script src="<?=asset('public/js/setup/holiday-sync.js')?>"></script>

@@ -8,9 +8,14 @@
             <span class="bc-current"><span data-i18n="company_setup">Company Setup</span></span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0"><i class="fa-solid fa-building me-1"></i><span data-i18n="company_management">Company Management</span></h5>
-        <p class="text-muted small m-0 mt-1"><span data-i18n="company_management_description">Configure and manage corporate profile, local tax identification, and primary bank accounts for payroll processing.</span></p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-building"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="company_management">Company Management</h5>
+            <p class="page-header-card-desc" data-i18n="company_management_description">Configure and manage corporate profile, local tax identification, and primary bank accounts for payroll processing.</p>
+        </div>
     </div>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">
@@ -136,6 +141,76 @@
                 <input type="text" class="form-control required" name="authorized_signatory_name">
             </div>
         </div>
+        <!-- 2026-08-24, explicit request: "ปรับให้ Logo Upload อยู่ยนสุดของ Form ขอ Design สวยๆ รวมถึงมี
+             Preview ด้วย" -- moved from section 1 to its own numbered section 4 at the very bottom of
+             the form (was inline with Company Information before), redesigned as a proper upload card
+             instead of a plain button+small-preview row. Same upload endpoint/hidden-field-into-save
+             convention as before, nothing changed on the backend. -->
+        <h6 class="text-secondary fw-bold mb-3 mt-4">
+            <label class="label label-head bg-head-first rounded-2 text-white me-2">4</label>
+            <span data-i18n="company_logo">Company Logo</span>
+        </h6>
+        <div class="row">
+            <div class="col-sm-6 mt-3">
+                <div class="cp-logo-upload-card" id="cpLogoUploadCard">
+                    <div class="cp-logo-preview-box" id="cpLogoPreviewBox">
+                        <img id="cpLogoPreviewImg" src="" alt="Logo" class="d-none">
+                        <div class="cp-logo-placeholder" id="cpLogoPlaceholder">
+                            <i class="fa-solid fa-building"></i>
+                            <span data-i18n="no_logo_uploaded">No logo uploaded</span>
+                        </div>
+                    </div>
+                    <div class="cp-logo-actions">
+                        <label class="btn btn-outline-secondary btn-sm" for="cp_logo_file">
+                            <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_logo">Upload Logo</span>
+                        </label>
+                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpLogoRemoveBtn">
+                            <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                        </button>
+                        <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                        <input type="hidden" id="cp_logo_path" name="logo_path">
+                        <p class="text-muted small mt-2 mb-0" data-i18n="company_logo_reuse_hint">Used as the default logo on Payslip and Employment Certificate templates that don't have their own.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name หรือสามารถเซ็นต์สด
+             ผ่านหน้าจอได้" -- same upload-card layout as Company Logo just above, plus a second input
+             method (a live signature-pad drawn on a canvas, opened in a modal -- see
+             #cpSignaturePadModal below this template). Both paths end up producing the exact same kind
+             of file through the exact same upload endpoint (uploadSignature()), so this card doesn't
+             need to know or care which one was used. -->
+        <h6 class="text-secondary fw-bold mb-3 mt-4">
+            <label class="label label-head bg-head-first rounded-2 text-white me-2">5</label>
+            <span data-i18n="company_signature">Authorized Signature</span>
+        </h6>
+        <div class="row">
+            <div class="col-sm-6 mt-3">
+                <div class="cp-logo-upload-card" id="cpSignatureUploadCard">
+                    <div class="cp-logo-preview-box" id="cpSignaturePreviewBox">
+                        <img id="cpSignaturePreviewImg" src="" alt="Signature" class="d-none">
+                        <div class="cp-logo-placeholder" id="cpSignaturePlaceholder">
+                            <i class="fa-solid fa-signature"></i>
+                            <span data-i18n="no_signature_uploaded">No signature yet</span>
+                        </div>
+                    </div>
+                    <div class="cp-logo-actions">
+                        <label class="btn btn-outline-secondary btn-sm" for="cp_signature_file">
+                            <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_signature">Upload Image</span>
+                        </label>
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="cpDrawSignatureBtn">
+                            <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpSignatureRemoveBtn">
+                            <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                        </button>
+                        <input type="file" id="cp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                        <input type="hidden" id="cp_signature_path" name="signature_path">
+                        <p class="text-muted small mt-2 mb-0" data-i18n="company_signature_reuse_hint">Available as the "Authorized Signature" item when designing Payslip and Employment Certificate templates.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     <div class="text-end">
         <button type="button" class="btn btn-warning save-company-profile"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
@@ -187,6 +262,20 @@
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p5" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p5">
                         <i class="fa-solid fa-ranking-star me-2"></i><span data-i18n="rank">Rank</span>
+                    </button>
+                </li>
+                <!-- 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้
+                     เป็นการเพิ่มการตั้งค่าเช่นเดียวกับ Department" -- outsourcing company's own project/
+                     client team grouping, same CRUD pattern as Department/Position/Rank above (see
+                     CompanyProfileModel::structureConfig()'s 'team' entry + company-profile.js's
+                     formSchemas.team for the generic dispatcher wiring). Moved before Permissions
+                     (explicit follow-up: "ในหน้าตั้งค่าย้ายทีมมาไว้ก่อน permission") -- purely a DOM
+                     reorder, `data-page="p7"`/`id="structure-tab-p7"` untouched on purpose so
+                     company-profile.js's initStructure() switch(page) dispatch needs no change at
+                     all; only visual tab order moved. -->
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link structure-menu" id="structure-tab-p7" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p7">
+                        <i class="fa-solid fa-people-group me-2"></i><span data-i18n="team">Team</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
@@ -291,5 +380,155 @@
         <div id="permissionMatrixContainer" class="table-responsive"></div>
     </div>
 </template>
+<template id="tmpl-team-pane">
+    <div class="mt-5 mb-5 table-responsive">
+        <table class="table table-striped table-hover" id="tb_team">
+            <thead>
+                <tr>
+                    <th data-i18n="team_code">Team Code</th>
+                    <th data-i18n="team_name">Team Name</th>
+                    <th data-i18n="team_client_name">Client / Project</th>
+                    <th data-i18n="status">Status</th>
+                    <th style="width: 120px;"></th>
+                </tr>
+            </thead>
+        </table>
+    </div>
+</template>
+<!-- 2026-08-26, explicit request: "สามารถเซ็นต์สดผ่านหน้าจอได้" -- signature-pad modal. Lives OUTSIDE
+     every <template> above (a <template>'s content is inert until cloned by JS, so a live
+     bootstrap.Modal needs to sit in real page DOM instead) -- plain mouse/touch canvas drawing, no new
+     dependency (same "no reason to add a library for basic bounding-box interaction" precedent
+     Employment Certificate Template's own canvas designer already established). -->
+<div class="modal fade" id="cpSignaturePadModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <canvas id="cpSignaturePadCanvas" class="cp-signature-pad-canvas" width="500" height="220"></canvas>
+                <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" id="cpSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="cpSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sync Department/Position/Team from Origami (2026-08-28, explicit request: "ส่วนของ Department
+     หรือข้อมูลที่ดึง Filter ได้ตอนนี้ เพิ่มปุ่มให้ Sync ได้ด้วย") -- ONE shared modal for all 3 entity
+     types (title/columns swapped by JS via #orgStructureSyncModalLabel/orgSyncCurrentEntityType),
+     same review-first architecture and side-by-side New/Already-Exists layout as Employee/Holiday
+     Sync (see OrgStructureSyncModel's own docblock). No filter row -- unlike Employee Sync, there's
+     nothing to narrow by, so the modal fetches immediately on open. -->
+<div class="modal fade" id="orgStructureSyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="orgStructureSyncModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="orgStructureSyncModalLabel">
+                    <i class="fa-solid fa-rotate me-1"></i><span id="orgStructureSyncModalLabelText">Sync from Origami</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center py-5 d-none" id="orgStructureSyncNotConnected">
+                    <i class="fa-solid fa-plug-circle-xmark fa-2x text-danger mb-3"></i>
+                    <div class="fw-bold mb-1" data-i18n="employee_sync_not_connected_title">Not connected to Origami</div>
+                    <div class="text-muted small" id="orgStructureSyncNotConnectedMessage" data-i18n="employee_sync_not_connected_message">The connection to Origami has not been configured yet. Please contact your system administrator.</div>
+                </div>
+                <div id="orgStructureSyncBody" class="d-none">
+                    <div id="orgStructureSyncResultArea" class="d-none">
+                        <div class="row g-3">
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="orgSyncNewCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_new">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="orgSyncNewSelectAll"></th>
+                                                <th data-i18n="name">Name</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="orgSyncExistingCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_existing">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="orgSyncExistingSelectAll"></th>
+                                                <th data-i18n="name">Name</th>
+                                                <th data-i18n="employee_sync_update_col">Update Available</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-muted small text-center py-4" id="orgStructureSyncLoadingHint">
+                        <i class="fa-solid fa-spinner fa-spin me-1"></i><span data-i18n="loading">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <span class="text-muted small" id="orgSyncSelectedCountLabel"></span>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-primary d-none" id="btnApplyOrgStructureSync">
+                        <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="orgSyncSelectedCount">0</span>)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Org Structure Sync Log -->
+<div class="modal fade" id="orgStructureSyncLogModal" tabindex="-1" aria-labelledby="orgStructureSyncLogModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="orgStructureSyncLogModalLabel">
+                    <i class="fa-solid fa-clock-rotate-left me-1"></i><span id="orgStructureSyncLogModalLabelText">Sync Log</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-hover table-sm align-middle w-100" id="tb_org_structure_sync_log">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th data-i18n="employee_sync_log_col_date">Date</th>
+                            <th data-i18n="employee_sync_log_col_triggered_by">By</th>
+                            <th data-i18n="employee_sync_log_col_status">Status</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="<?=asset('public/js/setup/company-profile.js')?>"></script>
 <script src="<?=asset('public/js/setup/permission-matrix.js')?>"></script>
+<script src="<?=asset('public/js/setup/org-structure-sync.js')?>"></script>

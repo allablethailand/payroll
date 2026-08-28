@@ -103,6 +103,7 @@ let dtAttendance;
 function renderAttendance() {
     if ($.fn.DataTable.isDataTable('#tb_attendance')) { dtAttendance.ajax.reload(null, false); return; }
     dtAttendance = $('#tb_attendance').DataTable({
+        responsive: true,
         ajax: {
             url: `${BASE_URL}/api/manual-attendance.list`, dataSrc: 'data',
             data: function (d) {
@@ -124,7 +125,24 @@ function renderAttendance() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_attendance_yet'] || 'No attendance records have been added yet.' },
-        initComplete: addButtonInitCompleteMe('btn-add-attendance', 'fa-solid fa-plus', 'add_attendance', 'Add Attendance', 'openAttendanceModal()')
+        initComplete: function () {
+            addButtonInitCompleteMe('btn-add-attendance', 'fa-solid fa-plus', 'add_attendance', 'Attendance', 'openAttendanceModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the actions column (8).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee' },
+                    { index: 1, key: 'work_date' },
+                    { index: 2, key: 'shift' },
+                    { index: 3, key: 'clock_in' },
+                    { index: 4, key: 'clock_out' },
+                    { index: 5, key: 'actual_hours' },
+                    { index: 6, key: 'status' },
+                    { index: 7, key: 'data_source' },
+                ]
+            });
+        }
     });
 }
 function openAttendanceModal(id) {
@@ -202,6 +220,7 @@ let dtLeave;
 function renderLeave() {
     if ($.fn.DataTable.isDataTable('#tb_leave')) { dtLeave.ajax.reload(null, false); return; }
     dtLeave = $('#tb_leave').DataTable({
+        responsive: true,
         ajax: {
             url: `${BASE_URL}/api/manual-leave.list`, dataSrc: 'data',
             data: function (d) {
@@ -222,7 +241,23 @@ function renderLeave() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_leave_yet'] || 'No leave records have been added yet.' },
-        initComplete: addButtonInitCompleteMe('btn-add-leave', 'fa-solid fa-plus', 'add_leave', 'Add Leave', 'openLeaveModal()')
+        initComplete: function () {
+            addButtonInitCompleteMe('btn-add-leave', 'fa-solid fa-plus', 'add_leave', 'Leave', 'openLeaveModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the actions column (7).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee' },
+                    { index: 1, key: 'leave_type' },
+                    { index: 2, key: 'start_date' },
+                    { index: 3, key: 'end_date' },
+                    { index: 4, key: 'total_days' },
+                    { index: 5, key: 'status' },
+                    { index: 6, key: 'data_source' },
+                ]
+            });
+        }
     });
 }
 function openLeaveModal(id) {
@@ -297,6 +332,7 @@ let dtOvertime;
 function renderOvertime() {
     if ($.fn.DataTable.isDataTable('#tb_overtime')) { dtOvertime.ajax.reload(null, false); return; }
     dtOvertime = $('#tb_overtime').DataTable({
+        responsive: true,
         ajax: {
             url: `${BASE_URL}/api/manual-overtime.list`, dataSrc: 'data',
             data: function (d) {
@@ -317,7 +353,23 @@ function renderOvertime() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_overtime_yet'] || 'No overtime records have been added yet.' },
-        initComplete: addButtonInitCompleteMe('btn-add-overtime', 'fa-solid fa-plus', 'add_overtime', 'Add Overtime', 'openOvertimeModal()')
+        initComplete: function () {
+            addButtonInitCompleteMe('btn-add-overtime', 'fa-solid fa-plus', 'add_overtime', 'Overtime', 'openOvertimeModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the actions column (7).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee' },
+                    { index: 1, key: 'ot_name' },
+                    { index: 2, key: 'ot_date' },
+                    { index: 3, key: 'hours' },
+                    { index: 4, key: 'amount' },
+                    { index: 5, key: 'status' },
+                    { index: 6, key: 'data_source' },
+                ]
+            });
+        }
     });
 }
 function openOvertimeModal(id) {

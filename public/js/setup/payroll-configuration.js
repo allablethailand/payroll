@@ -29,9 +29,9 @@ function statusBadge(row) {
     return `<span class="badge ${cls}">${text}</span>`;
 }
 function actionButtons(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-ped-type" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-ped-type" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-ped-type" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-ped-type" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 function injectAddButton(api, itemType, i18nKey, defaultLabel) {
@@ -41,6 +41,18 @@ function injectAddButton(api, itemType, i18nKey, defaultLabel) {
         const btn = `
             <button type="button" class="btn btn-primary ms-1 btn-add-ped-type" data-item-type="${itemType}">
                 <i class="fa-solid fa-plus me-1"></i><span data-i18n="${i18nKey}">${langData[i18nKey] || defaultLabel}</span>
+            </button>
+        `;
+        $searchDiv.append(btn);
+    }
+}
+function injectSeedDefaultsButton(api) {
+    const $wrapper = $(api.table().container());
+    const $searchDiv = $wrapper.find('.dt-search');
+    if ($searchDiv.find('.btn-seed-ped-defaults').length === 0) {
+        const btn = `
+            <button type="button" class="btn btn-outline-secondary ms-1 btn-seed-ped-defaults">
+                <i class="fa-solid fa-download me-1"></i><span data-i18n="load_default_items">${langData['load_default_items'] || 'Load Default Items'}</span>
             </button>
         `;
         $searchDiv.append(btn);
@@ -59,7 +71,10 @@ function initEarningTypeTable() {
         ajax: {
             url: `${BASE_URL}/api/ped-type.list`,
             type: 'POST',
-            data: function (d) { d.item_type = 'earning'; }
+            data: function (d, settings) {
+                d.item_type = 'earning';
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            }
         },
         columns: [
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
@@ -83,7 +98,34 @@ function initEarningTypeTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            injectAddButton(this.api(), 'earning', 'earning_type', 'Earning Type');
+            const self = this.api();
+            injectAddButton(self, 'earning', 'earning_type', 'Earning Type');
+            injectSeedDefaultsButton(self);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, server mode. Excludes the composite item-name+tags cell (1), the boolean
+            // calc_sso/calc_pf icons (4, 5), and actions (7).
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: [
+                    { index: 0, key: 'item_code' },
+                    { index: 2, key: 'calculation_method' },
+                    { index: 3, key: 'tax_treatment' },
+                    { index: 6, key: 'status' },
+                ],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/ped-type.column-values`,
+                        method: 'POST',
+                        data: { item_type: 'earning', column: key, column_filters: getColumnFilterValues(self) },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -101,7 +143,10 @@ function initDeductionTypeTable() {
         ajax: {
             url: `${BASE_URL}/api/ped-type.list`,
             type: 'POST',
-            data: function (d) { d.item_type = 'deduction'; }
+            data: function (d, settings) {
+                d.item_type = 'deduction';
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            }
         },
         columns: [
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
@@ -123,7 +168,33 @@ function initDeductionTypeTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            injectAddButton(this.api(), 'deduction', 'deduction_type', 'Deduction Type');
+            const self = this.api();
+            injectAddButton(self, 'deduction', 'deduction_type', 'Deduction Type');
+            injectSeedDefaultsButton(self);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, server mode. Excludes the composite item-name+tags cell (1) and actions (5).
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: [
+                    { index: 0, key: 'item_code' },
+                    { index: 2, key: 'calculation_method' },
+                    { index: 3, key: 'tax_deduction_impact' },
+                    { index: 4, key: 'status' },
+                ],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/ped-type.column-values`,
+                        method: 'POST',
+                        data: { item_type: 'deduction', column: key, column_filters: getColumnFilterValues(self) },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -263,6 +334,9 @@ $(document).ready(function () {
         if (tabId === 'deductions-tab') {
             initDeductionTypeTable();
         }
+        if (tabId === 'attendance-deduction-tab') {
+            loadAttendanceDeductionCards();
+        }
         if (tabId === 'attendance-bonus-tab') {
             initAttendanceBonusTable();
         }
@@ -279,6 +353,30 @@ $(document).on('click', '.btn-add-ped-type', function () {
     const itemType = $(this).data('item-type');
     resetPedTypeForm(itemType);
     new bootstrap.Modal(document.getElementById('itemModal')).show();
+});
+$(document).on('click', '.btn-seed-ped-defaults', function () {
+    const title = langData['load_default_items'] || 'Load Default Items';
+    const msg = langData['confirm_load_default_items_message'] || 'Add the system\'s starter set of common earning/deduction items? Any item code you already have is skipped -- nothing gets overwritten or duplicated.';
+    showConfirm(title, msg, function () {
+        $.ajax({
+            url: `${BASE_URL}/api/ped-type.seed-defaults`,
+            method: 'POST',
+            dataType: 'json',
+            success: function (res) {
+                if (res.status) {
+                    const tpl = langData['load_default_items_result'] || '{inserted} item(s) added, {skipped} already existed.';
+                    showSuccess(tpl.replace('{inserted}', res.inserted).replace('{skipped}', res.skipped));
+                    if (tb_earning_type) tb_earning_type.ajax.reload(null, false);
+                    if (tb_deduction_type) tb_deduction_type.ajax.reload(null, false);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () {
+                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+            }
+        });
+    });
 });
 $(document).on('click', '.btn-edit-ped-type', function () {
     const id = $(this).data('id');
@@ -401,9 +499,9 @@ function escapeHtmlPc(str) {
     return $('<div>').text(str === null || str === undefined ? '' : str).html();
 }
 function cycleActionButtons(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-cycle" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-cycle" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-cycle" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-cycle" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 let tb_payroll_cycle;
@@ -431,7 +529,8 @@ function initPayrollCycleTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-cycle').length === 0) {
                 $searchDiv.append(`
@@ -440,6 +539,19 @@ function initPayrollCycleTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes actions (6).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'cycle_name' },
+                    { index: 1, key: 'frequency' },
+                    { index: 2, key: 'cutoff' },
+                    { index: 3, key: 'payment' },
+                    { index: 4, key: 'bank_file_format' },
+                    { index: 5, key: 'status' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -692,9 +804,9 @@ function bonusStatusBadge(status) {
     return `<span class="badge ${cls}">${text}</span>`;
 }
 function bonusActionButtons(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-bonus" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-bonus" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-bonus" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-bonus" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 function initAttendanceBonusTable() {
@@ -720,15 +832,26 @@ function initAttendanceBonusTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-bonus').length === 0) {
                 $searchDiv.append(`
                     <button type="button" class="btn text-white ms-1 btn-add-bonus" style="background-color:#FF9900;border-color:#FF9900;">
-                        <i class="fa-solid fa-plus me-2"></i><span data-i18n="add_attendance_bonus">${langData['add_attendance_bonus'] || 'Add Attendance Bonus Scheme'}</span>
+                        <i class="fa-solid fa-plus me-2"></i><span data-i18n="add_attendance_bonus">${langData['add_attendance_bonus'] || 'Attendance Bonus Scheme'}</span>
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the multi-value condition badges (1) and the two
+            // multi-line computed summary columns (2, 3, no single filterable value), plus actions (5).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'scheme_name' },
+                    { index: 4, key: 'status' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -745,7 +868,7 @@ function resetBonusForm() {
     $('#reset_cycle_start_month').val('').trigger('change');
     $('#bonus_status').val('active').trigger('change');
     applyResetBasisFields('employee_anniversary');
-    $('#attendanceBonusModalLabel').text(langData['add_attendance_bonus'] || 'Add Attendance Bonus Scheme');
+    $('#attendanceBonusModalLabel').text(langData['add_attendance_bonus'] || 'Attendance Bonus Scheme');
 }
 function populateBonusForm(row) {
     $('#bonus_id').val(row.id);
@@ -913,14 +1036,17 @@ function ledgerLockedBadge(row) {
 }
 function ledgerActionButtons(row) {
     const isLocked = !!row.locked_at;
-    let html = '<div class="d-flex justify-content-center gap-1">';
-    if (!isLocked) {
-        html += `<button type="button" class="btn btn-sm btn-link text-secondary btn-edit-ledger" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
-        html += `<button type="button" class="btn btn-sm btn-link text-primary btn-lock-ledger" data-id="${row.id}" title="${langData['lock_entry'] || 'Lock'}"><i class="fa-solid fa-lock"></i></button>`;
-        html += `<button type="button" class="btn btn-sm btn-link text-danger btn-delete-ledger" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+    // No buttons at all once locked -- return '' rather than an empty .btn-group wrapper (2026-08-21:
+    // an empty bordered/bg-white group would show as a visible blank box in the cell, unlike the
+    // old plain flex div which was invisible when empty).
+    if (isLocked) {
+        return '';
     }
-    html += '</div>';
-    return html;
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-ledger" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>
+        <button type="button" class="btn btn-link text-primary border-start btn-lock-ledger" data-id="${row.id}" title="${langData['lock_entry'] || 'Lock'}"><i class="fa-solid fa-lock"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-ledger" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
+    </div>`;
 }
 function currentLedgerFilter() {
     return {
@@ -959,15 +1085,29 @@ function initBonusLedgerTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-ledger').length === 0) {
                 $searchDiv.append(`
                     <button type="button" class="btn text-white ms-1 btn-add-ledger" style="background-color:#FF9900;border-color:#FF9900;">
-                        <i class="fa-solid fa-plus me-2"></i><span data-i18n="add_ledger_entry">${langData['add_ledger_entry'] || 'Add Ledger Entry'}</span>
+                        <i class="fa-solid fa-plus me-2"></i><span data-i18n="add_ledger_entry">${langData['add_ledger_entry'] || 'Ledger Entry'}</span>
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes actions (6).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee' },
+                    { index: 1, key: 'status' },
+                    { index: 2, key: 'streak_count' },
+                    { index: 3, key: 'cycle_count' },
+                    { index: 4, key: 'amount' },
+                    { index: 5, key: 'locked' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -998,7 +1138,7 @@ function resetLedgerForm() {
     $('#ledger_period_year').val(f.year);
     $('#ledger_period_month').val(f.month);
     updateLedgerPeriodDisplay();
-    $('#ledgerEntryModalLabel').text(langData['add_ledger_entry'] || 'Add Ledger Entry');
+    $('#ledgerEntryModalLabel').text(langData['add_ledger_entry'] || 'Ledger Entry');
 }
 function populateLedgerForm(row) {
     $('#ledger_id').val(row.id);
@@ -1169,5 +1309,223 @@ function initBonusLedgerUI() {
                 }
             });
         });
+    });
+}
+
+/* ==================== ATTENDANCE DEDUCTION RULES (Late / Absent / Unpaid Leave) ====================
+ * 2026-08-21: moved from a button+shared-modal-with-pill-switcher on the Deductions tab to its own
+ * tab (#attendance-deduction-pane) showing all 3 events as cards -- each card's "Configure" button
+ * opens this modal already scoped to that one event (openAttendanceDeductionRuleModal(eventCode)),
+ * so there's no in-modal event picker anymore. currentAttendanceRules caches all 3 events' rules
+ * (refetched on every card-tab-show and every modal-open, cheap since it's a single GET returning
+ * all 3 at once -- same "always pull fresh" spirit as the DataTable Edit-button convention
+ * elsewhere in this codebase, just applied to a fixed 3-item list instead). currentAttendanceBrackets
+ * is the source-of-truth array for the currently-open event's bracket editor -- same "rebuild rows
+ * from an array" idiom used elsewhere in this codebase (approval-workflow.js's step editor,
+ * payslip-template.js's field list).
+ *
+ * rate_unit (2026-08-21, "นาทีละกี่บาท ชั่วโมงละกี่บาท") replaces the old fixed-per-event unit
+ * assumption (late was always "per minute", absent/unpaid_leave always "per day") -- freely
+ * choosable per rule now, so ATTENDANCE_RATE_UNIT_LABELS is keyed by rate_unit, not by event.
+ */
+let currentAttendanceRules = {};
+let currentAttendanceEvent = 'late';
+let currentAttendanceBrackets = [];
+
+const ATTENDANCE_DEFAULT_RATE_UNIT = { late: 'minute', absent: 'day', unpaid_leave: 'day' };
+
+const ATTENDANCE_RATE_UNIT_LABELS = {
+    minute: {
+        flat: () => langData['attendance_deduction_rate_per_unit_minute'] || 'Deduction Amount per Minute',
+        min: () => langData['attendance_deduction_bracket_min_minute'] || 'From (min)',
+        max: () => langData['attendance_deduction_bracket_max_minute'] || 'To (min, blank = no limit)'
+    },
+    hour: {
+        flat: () => langData['attendance_deduction_rate_per_unit_hour'] || 'Deduction Amount per Hour',
+        min: () => langData['attendance_deduction_bracket_min_hour'] || 'From (hours)',
+        max: () => langData['attendance_deduction_bracket_max_hour'] || 'To (hours, blank = no limit)'
+    },
+    day: {
+        flat: () => langData['attendance_deduction_rate_per_unit_day'] || 'Deduction Amount per Day',
+        min: () => langData['attendance_deduction_bracket_min_day'] || 'From (days)',
+        max: () => langData['attendance_deduction_bracket_max_day'] || 'To (days, blank = no limit)'
+    }
+};
+
+function attendanceEventLabel(eventCode) {
+    const map = { late: 'attendance_deduction_event_late', absent: 'attendance_deduction_event_absent', unpaid_leave: 'attendance_deduction_event_unpaid_leave' };
+    return langData[map[eventCode]] || eventCode;
+}
+
+function applyAttendanceRateUnitLabels(rateUnit) {
+    const labels = ATTENDANCE_RATE_UNIT_LABELS[rateUnit] || ATTENDANCE_RATE_UNIT_LABELS.minute;
+    $('#attendanceFlatLabel').text(labels.flat());
+    $('#attendanceBracketMinLabel').text(labels.min());
+    $('#attendanceBracketMaxLabel').text(labels.max());
+}
+function applyAttendanceDeductionMethodFields(method) {
+    $('#attendanceFlatSection').toggleClass('d-none', method !== 'flat_amount');
+    $('#attendancePercentSection').toggleClass('d-none', method !== 'percent_of_rate');
+    $('#attendanceBracketSection').toggleClass('d-none', method !== 'tiered_bracket');
+    $('#attendanceRateUnitWrapper').toggleClass('d-none', method === 'percent_of_rate');
+    applyAttendanceRateUnitLabels($('#attendanceRateUnit').val() || 'minute');
+}
+$(document).on('change', '#attendanceDeductionMethod', function () {
+    applyAttendanceDeductionMethodFields($(this).val());
+});
+$(document).on('change', '#attendanceRateUnit', function () {
+    applyAttendanceRateUnitLabels($(this).val());
+});
+
+function renderAttendanceBracketRows() {
+    const $tbody = $('#attendanceBracketRows');
+    if (!currentAttendanceBrackets.length) {
+        $tbody.html(`<tr><td colspan="4" class="text-center text-muted small py-2">-</td></tr>`);
+        return;
+    }
+    $tbody.html(currentAttendanceBrackets.map((b, i) => `
+        <tr>
+            <td><input type="number" min="0" class="form-control form-control-sm" value="${b.min_units ?? ''}" onchange="updateAttendanceBracketField(${i}, 'min_units', this.value)"></td>
+            <td><input type="number" min="0" class="form-control form-control-sm" value="${b.max_units ?? ''}" placeholder="${langData['no_limit'] || 'No limit'}" onchange="updateAttendanceBracketField(${i}, 'max_units', this.value)"></td>
+            <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" value="${b.deduction_amount ?? ''}" onchange="updateAttendanceBracketField(${i}, 'deduction_amount', this.value)"></td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeAttendanceBracketRow(${i})"><i class="fa-solid fa-trash"></i></button></td>
+        </tr>
+    `).join(''));
+}
+function updateAttendanceBracketField(index, field, value) {
+    currentAttendanceBrackets[index][field] = value === '' ? null : value;
+}
+function addAttendanceBracketRow() {
+    currentAttendanceBrackets.push({ min_units: null, max_units: null, deduction_amount: null });
+    renderAttendanceBracketRows();
+}
+function removeAttendanceBracketRow(index) {
+    currentAttendanceBrackets.splice(index, 1);
+    renderAttendanceBracketRows();
+}
+
+function renderAttendanceDeductionEvent(eventCode) {
+    currentAttendanceEvent = eventCode;
+    const r = currentAttendanceRules[eventCode] || { method_code: 'percent_of_rate', rate_unit: ATTENDANCE_DEFAULT_RATE_UNIT[eventCode], rate_per_unit: null, multiplier_rate: '1.00', method_name_th: '', method_name_en: '', brackets: [] };
+    const $method = $('#attendanceDeductionMethod');
+    const methodLabel = (currentLang === 'th' ? r.method_name_th : r.method_name_en) || langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate';
+    $method.empty().append(new Option(methodLabel, r.method_code, true, true)).trigger('change.select2');
+    $('#attendanceRateUnit').val(r.rate_unit || ATTENDANCE_DEFAULT_RATE_UNIT[eventCode] || 'minute').trigger('change.select2');
+    applyAttendanceDeductionMethodFields(r.method_code);
+    $('#attendanceRatePerUnit').val(r.rate_per_unit || '');
+    $('#attendanceMultiplierRate').val(r.multiplier_rate || '1.00');
+    currentAttendanceBrackets = (r.brackets || []).map(b => ({ min_units: b.min_units, max_units: b.max_units, deduction_amount: b.deduction_amount }));
+    renderAttendanceBracketRows();
+}
+
+function openAttendanceDeductionRuleModal(eventCode) {
+    // #attendanceRateUnit is select2-static -- already initialized once by app.js's global
+    // `.select2-static` sweep on page load (2026-08-21 bug fix: re-running initSelect2 static mode
+    // here on every open re-synced its `data` array into real <option> elements each time without
+    // clearing the previous set -- select2('destroy') tears down the widget but doesn't strip
+    // options it added, so the dropdown showed every option duplicated after the modal was opened
+    // once. #attendanceDeductionMethod is select2-remote/ajax mode instead, which doesn't upfront-
+    // populate <option> elements this way, so re-initializing it per-open (unchanged below) is safe.
+    initSelect2('#attendanceDeductionMethod', { mode: 'ajax' });
+    $.ajax({
+        url: `${BASE_URL}/api/attendance-deduction-rule.get-all`, method: 'GET', dataType: 'json',
+        success: function (res) {
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+            currentAttendanceRules = res.data;
+            renderAttendanceDeductionEvent(eventCode);
+            $('#attendanceDeductionRuleModalEvent').text(attendanceEventLabel(eventCode));
+            new bootstrap.Modal(document.getElementById('attendanceDeductionRuleModal')).show();
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+}
+function saveAttendanceDeductionRule() {
+    const method = $('#attendanceDeductionMethod').val();
+    if (!method) {
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    const payload = { event_code: currentAttendanceEvent, method_code: method };
+    if (method === 'flat_amount') {
+        payload.rate_unit = $('#attendanceRateUnit').val() || 'minute';
+        payload.rate_per_unit = parseFloat($('#attendanceRatePerUnit').val());
+        if (!payload.rate_per_unit || payload.rate_per_unit <= 0) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+    } else if (method === 'percent_of_rate') {
+        payload.multiplier_rate = parseFloat($('#attendanceMultiplierRate').val()) || 1.00;
+    } else if (method === 'tiered_bracket') {
+        payload.rate_unit = $('#attendanceRateUnit').val() || 'minute';
+        if (!currentAttendanceBrackets.length) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        payload.brackets = currentAttendanceBrackets.map(b => ({
+            min_units: parseInt(b.min_units) || 0,
+            max_units: (b.max_units === null || b.max_units === '') ? null : parseInt(b.max_units),
+            deduction_amount: parseFloat(b.deduction_amount) || 0
+        }));
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/attendance-deduction-rule.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                const modalEl = document.getElementById('attendanceDeductionRuleModal');
+                const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) { modalInstance.hide(); }
+                loadAttendanceDeductionCards();
+            } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+}
+
+/* Cards on #attendance-deduction-pane -- 3 fixed items (Late/Absent/Unpaid Leave), not a DataTable
+ * (same reasoning as the Permission Matrix page: a fixed small grid, not a record list to paginate). */
+function attendanceDeductionCardSummary(eventCode) {
+    const r = currentAttendanceRules[eventCode];
+    if (!r || !r.id) {
+        return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_default_badge'] || 'Default'}</span> <div class="text-muted small mt-1">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'} (1.00x)</div>`;
+    }
+    if (r.method_code === 'flat_amount') {
+        const unitLabel = (ATTENDANCE_RATE_UNIT_LABELS[r.rate_unit] || ATTENDANCE_RATE_UNIT_LABELS.minute).flat();
+        const amt = parseFloat(r.rate_per_unit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return `<span class="badge bg-info-subtle text-info">${langData['attendance_deduction_method_flat_amount'] || 'Flat Amount'}</span> <div class="text-muted small mt-1">${unitLabel}: ${amt}</div>`;
+    }
+    if (r.method_code === 'tiered_bracket') {
+        const n = (r.brackets || []).length;
+        return `<span class="badge bg-warning-subtle text-warning">${langData['attendance_deduction_method_tiered_bracket'] || 'Tiered Brackets'}</span> <div class="text-muted small mt-1">${n} ${langData['attendance_deduction_brackets'] || 'Brackets'}</div>`;
+    }
+    const mult = parseFloat(r.multiplier_rate || 1).toFixed(2);
+    return `<span class="badge bg-success-subtle text-success">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'}</span> <div class="text-muted small mt-1">${mult}x</div>`;
+}
+function renderAttendanceDeductionCards() {
+    const events = ['late', 'absent', 'unpaid_leave'];
+    const icons = { late: 'fa-user-clock', absent: 'fa-user-slash', unpaid_leave: 'fa-calendar-xmark' };
+    $('#attendanceDeductionCards').html(events.map(eventCode => `
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body d-flex flex-column">
+                    <h6 class="fw-bold mb-3"><i class="fa-solid ${icons[eventCode]} me-2 text-brand"></i>${attendanceEventLabel(eventCode)}</h6>
+                    <div class="mb-3">${attendanceDeductionCardSummary(eventCode)}</div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm mt-auto" onclick="openAttendanceDeductionRuleModal('${eventCode}')">
+                        <i class="fa-solid fa-gear me-1"></i><span data-i18n="attendance_deduction_configure">${langData['attendance_deduction_configure'] || 'Configure'}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join(''));
+}
+function loadAttendanceDeductionCards() {
+    $.ajax({
+        url: `${BASE_URL}/api/attendance-deduction-rule.get-all`, method: 'GET', dataType: 'json',
+        success: function (res) {
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+            currentAttendanceRules = res.data;
+            renderAttendanceDeductionCards();
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
     });
 }

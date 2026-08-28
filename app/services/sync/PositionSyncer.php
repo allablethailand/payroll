@@ -30,14 +30,25 @@ class PositionSyncer extends AbstractMasterDataSyncer {
         return ['ref_id' => 'Origami Ref ID (optional)', 'code' => 'Position Code', 'name_th' => 'Name (Thai)', 'name_en' => 'Name (English)'];
     }
 
+    /** 2026-08-28, same real-data fix as DepartmentSyncer::upsertItem() -- see that method's own
+     *  docblock for the full reasoning (checked against Origami's ACTUAL response, not
+     *  theoretical). */
     protected function upsertItem(int $compId, array $item, int $batchId, ?int $triggeredBy, ?int $existingId, string $dataSource): void {
+        $refId = isset($item['ref_id']) && is_numeric($item['ref_id']) ? (int)$item['ref_id'] : null;
         $code = trim((string)($item['code'] ?? ''));
+        if ($code === '') {
+            if ($refId === null) {
+                throw new InvalidArgumentException('Missing code and ref_id -- cannot identify this candidate at all.');
+            }
+            $code = 'ORG-' . $refId;
+        }
         $nameTh = trim((string)($item['name_th'] ?? ''));
         $nameEn = trim((string)($item['name_en'] ?? ''));
-        if ($code === '' || $nameTh === '' || $nameEn === '') {
-            throw new InvalidArgumentException('Missing code/name_th/name_en.');
+        if ($nameTh === '' && $nameEn === '') {
+            throw new InvalidArgumentException('Missing name_th and name_en.');
         }
-        $refId = isset($item['ref_id']) && is_numeric($item['ref_id']) ? (int)$item['ref_id'] : null;
+        if ($nameTh === '') { $nameTh = $nameEn; }
+        if ($nameEn === '') { $nameEn = $nameTh; }
         if ($existingId !== null) {
             $stmt = $this->db->prepare("UPDATE structure_positions SET
                     position_code = :code, position_name_th = :name_th, position_name_en = :name_en,

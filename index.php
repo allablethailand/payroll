@@ -24,20 +24,15 @@
             }
         }
     });
-    // TODO(A5, deferred): replace with real login/session issuance. company_id must match a
-    // real row in `companies` -- getCompId() now reads this key directly (previously it read
-    // $_SESSION['comp_id'], which was never set anywhere, so every request silently fell back to
-    // a hardcoded comp_id=1 regardless of this array; fixed alongside the Phase A security pass).
-    $_SESSION['user'] = [
-        'employee_id' => 2,
-        'company_id'  => 1,
-        'role'        => 'admin'
-    ];
+    // Real sessions are issued by auth/index.php (Origami SSO login). No dev-fallback session here
+    // anymore -- anyone without a real session gets redirected to /auth (or a 401 on API routes)
+    // by ensure_login() below, same as any other unauthenticated request.
     ensure_login();
     $router = new Router();
     $router->get('auth', 'AuthController@permission'); 
     $router->get('/', 'DashboardController@index'); 
     $router->get('dashboard', 'DashboardController@index');
+    $router->get('api/dashboard.summary', 'DashboardController@summary');
     $router->get('employees', 'EmployeeController@index');
     $router->get('/payroll-process', 'PayrollController@index');
     $router->get('/payroll-process/{id}', 'PayrollController@detail');
@@ -45,14 +40,38 @@
     $router->get('/payroll-approval', 'PayrollController@approvalQueue');
     $router->get('api/payroll-run.list', 'PayrollController@list');
     $router->get('api/payroll-run.get', 'PayrollController@get');
+    $router->get('api/payroll-run.approval-timeline', 'PayrollController@approvalTimeline');
     $router->post('api/payroll-run.save', 'PayrollController@save');
     $router->post('api/payroll-run.delete', 'PayrollController@delete');
     $router->post('api/payroll-run.recalculate', 'PayrollController@recalculate');
+    $router->post('api/payroll-run.save-ped-type-settings', 'PayrollController@savePedTypeSettings');
+    $router->post('api/payroll-run.manual-employee-options', 'PayrollController@manualEmployeeOptions');
+    $router->post('api/payroll-run.manual-employee-all-ids', 'PayrollController@manualEmployeeAllIds');
+    $router->post('api/payroll-run.manual-employee-column-values', 'PayrollController@manualEmployeeColumnValues');
+    $router->post('api/payroll-run.join-employees', 'PayrollController@joinEmployees');
+    $router->post('api/payroll-run.remove-employee', 'PayrollController@removeEmployee');
+    $router->get('api/payroll-run.manual-lines', 'PayrollController@manualLinesForEmployee');
+    $router->post('api/payroll-run.add-manual-line', 'PayrollController@addManualLine');
+    $router->post('api/payroll-run.remove-manual-line', 'PayrollController@removeManualLine');
+    $router->get('api/payroll-run.sync-lines-for-employee', 'PayrollController@syncLinesForEmployee');
+    $router->post('api/payroll-run.line-override.save', 'PayrollController@lineOverrideSave');
+    $router->post('api/payroll-run.line-override.remove', 'PayrollController@lineOverrideRemove');
+    $router->get('api/payroll-run.attendance-data-for-employee', 'PayrollController@attendanceDataForEmployee');
+    $router->post('api/payroll-run.attendance-override.save', 'PayrollController@attendanceOverrideSave');
+    $router->post('api/payroll-run.attendance-override.remove', 'PayrollController@attendanceOverrideRemove');
+    $router->get('api/payroll-run.raw-sync-data-for-employee', 'PayrollController@rawSyncDataForEmployee');
+    $router->post('api/payroll-run.save-employee-exemption', 'PayrollController@saveEmployeeExemption');
     $router->post('api/payroll-run.submit', 'PayrollController@submit');
     $router->post('api/payroll-run.revert', 'PayrollController@revert');
     $router->post('api/payroll-run.approve', 'PayrollController@approve');
     $router->post('api/payroll-run.reject', 'PayrollController@reject');
+    $router->post('api/payroll-run.bulk-approve', 'PayrollController@bulkApprove');
+    $router->post('api/payroll-run.bulk-reject', 'PayrollController@bulkReject');
+    $router->post('api/payroll-run.cancel', 'PayrollController@cancel');
     $router->post('api/payroll-run.revise-after-reject', 'PayrollController@reviseAfterReject');
+    $router->post('api/payroll-run.request-info', 'PayrollController@requestInfo');
+    $router->post('api/payroll-run.bulk-request-info', 'PayrollController@bulkRequestInfo');
+    $router->post('api/payroll-run.revise-after-need-info', 'PayrollController@reviseAfterNeedInfo');
     $router->post('api/payroll-run.mark-paid', 'PayrollController@markPaid');
     $router->post('api/payroll-run.lock', 'PayrollController@lock');
     $router->get('setup/company-profile', 'CompanyProfileController@index');
@@ -61,6 +80,7 @@
     $router->post('api/bank-file-format.options', 'PayrollConfigurationController@bankFileFormatOptions');
     $router->get('api/payroll-cycle.list', 'PayrollConfigurationController@cycleList');
     $router->get('api/payroll-cycle.get', 'PayrollConfigurationController@cycleGet');
+    $router->get('api/payroll-cycle.suggest-period', 'PayrollConfigurationController@cycleSuggestPeriod');
     $router->post('api/payroll-cycle.save', 'PayrollConfigurationController@cycleSave');
     $router->post('api/payroll-cycle.delete', 'PayrollConfigurationController@cycleDelete');
     $router->get('api/attendance-bonus.list', 'PayrollConfigurationController@attendanceBonusList');
@@ -75,9 +95,14 @@
     $router->post('api/attendance-bonus.ledger.delete', 'PayrollConfigurationController@bonusLedgerDelete');
     $router->post('api/ped-type.source-event-options', 'PayrollConfigurationController@pedSourceEventOptions');
     $router->post('api/ped-type.list', 'PayrollConfigurationController@pedTypeList');
+    $router->post('api/ped-type.column-values', 'PayrollConfigurationController@pedTypeColumnValues');
     $router->get('api/ped-type.get', 'PayrollConfigurationController@pedTypeGet');
     $router->post('api/ped-type.save', 'PayrollConfigurationController@pedTypeSave');
     $router->post('api/ped-type.delete', 'PayrollConfigurationController@pedTypeDelete');
+    $router->post('api/ped-type.seed-defaults', 'PayrollConfigurationController@pedTypeSeedDefaults');
+    $router->post('api/attendance-deduction-rule.method-options', 'PayrollConfigurationController@attendanceDeductionMethodOptions');
+    $router->get('api/attendance-deduction-rule.get-all', 'PayrollConfigurationController@attendanceDeductionRuleGetAll');
+    $router->post('api/attendance-deduction-rule.save', 'PayrollConfigurationController@attendanceDeductionRuleSave');
     $router->get('setup/tax-statutory', 'TaxStatutoryController@index');
     $router->get('api/statutory-item.list', 'TaxStatutoryController@itemList');
     $router->get('api/statutory-item.get', 'TaxStatutoryController@itemGet');
@@ -92,6 +117,14 @@
     $router->post('api/company-statutory-setting.save', 'TaxStatutoryController@companySettingSave');
     $router->post('api/company-statutory-setting.reset', 'TaxStatutoryController@companySettingReset');
     $router->get('setup/document-approval', 'DocumentApprovalController@index');
+    $router->get('api/document-numbering.list', 'DocumentNumberingController@list');
+    $router->post('api/document-numbering.save', 'DocumentNumberingController@save');
+    // 2026-08-24, explicit request: "menu Payslip น่าจะต้องเปลี่ยนชื่อและ link นะครับ เพราะไม่ใช่แค่
+    // payslip อย่างเดียว" (the menu now also hosts Employment Certificate Template settings) --
+    // route prefix renamed payslip/* -> payslip-documents/* to match. Controller/view file paths
+    // (PayslipController, app/views/payslip/*) are internal, not user-facing, so left unrenamed.
+    $router->get('payslip-documents/requests', 'PayslipController@requests');
+    $router->get('payslip-documents/settings', 'PayslipController@settings');
     $router->post('api/approval-workflow.document-type-options', 'ApprovalWorkflowController@documentTypeOptions');
     $router->get('api/approval-workflow.list', 'ApprovalWorkflowController@workflowList');
     $router->get('api/approval-workflow.get', 'ApprovalWorkflowController@workflowGet');
@@ -99,6 +132,10 @@
     $router->post('api/approval-workflow.delete', 'ApprovalWorkflowController@workflowDelete');
     $router->post('api/approval-workflow.duplicate', 'ApprovalWorkflowController@workflowDuplicate');
     $router->post('api/approval-workflow.toggle-status', 'ApprovalWorkflowController@workflowToggleStatus');
+    $router->get('api/approval-workflow.flow-get', 'ApprovalWorkflowController@flowGet');
+    $router->post('api/approval-workflow.step-save', 'ApprovalWorkflowController@stepSave');
+    $router->post('api/approval-workflow.step-delete', 'ApprovalWorkflowController@stepDelete');
+    $router->post('api/approval-workflow.steps-sort', 'ApprovalWorkflowController@stepsSort');
     $router->post('api/approval-request.create', 'ApprovalWorkflowController@requestCreate');
     $router->post('api/approval-request.act', 'ApprovalWorkflowController@requestAct');
     $router->get('api/approval-request.get', 'ApprovalWorkflowController@requestGet');
@@ -125,16 +162,56 @@
     $router->post('api/leave-type.save', 'SetupRulesController@leaveTypeSave');
     $router->post('api/leave-type.delete', 'SetupRulesController@leaveTypeDelete');
     $router->post('api/leave-type.toggle-status', 'SetupRulesController@leaveTypeToggleStatus');
+    $router->post('api/leave-type.apply-defaults', 'SetupRulesController@leaveTypeApplyDefaults');
     $router->get('api/permission-matrix.get', 'PermissionController@matrix');
     $router->post('api/permission-matrix.save', 'PermissionController@save');
+    $router->get('payslip-template/edit/{key}', 'PayslipTemplateController@editPage');
     $router->post('api/payslip-template.field-options', 'PayslipTemplateController@fieldTypeOptions');
+    $router->post('api/payslip-template.assignable-options', 'PayslipTemplateController@assignableOptions');
+    $router->post('api/payslip-template.preset-options', 'PayslipTemplateController@presetOptions');
     $router->get('api/payslip-template.list', 'PayslipTemplateController@list');
+    $router->get('api/payslip-template.paired-list', 'PayslipTemplateController@pairedList');
+    $router->post('api/payslip-template.generate-other-language', 'PayslipTemplateController@generateOtherLanguage');
     $router->get('api/payslip-template.get', 'PayslipTemplateController@get');
     $router->post('api/payslip-template.save', 'PayslipTemplateController@save');
+    $router->post('api/payslip-template.create-from-preset', 'PayslipTemplateController@createFromPreset');
+    $router->post('api/payslip-template.duplicate', 'PayslipTemplateController@duplicate');
+    $router->post('api/payslip-template.duplicate-pair', 'PayslipTemplateController@duplicatePair');
+    $router->post('api/payslip-template.preset-elements', 'PayslipTemplateController@presetElements');
     $router->post('api/payslip-template.delete', 'PayslipTemplateController@delete');
     $router->post('api/payslip-template.toggle-status', 'PayslipTemplateController@toggleStatus');
+    $router->post('api/payslip-template.set-default', 'PayslipTemplateController@setDefault');
+    $router->post('api/payslip-template.publish-toggle', 'PayslipTemplateController@publishToggle');
     $router->post('api/payslip-template.upload-logo', 'PayslipTemplateController@uploadLogo');
+    $router->get('api/payslip-template.list-images', 'PayslipTemplateController@listImages');
+    $router->post('api/payslip-template.upload-image', 'PayslipTemplateController@uploadImage');
+    $router->post('api/payslip-template.delete-image', 'PayslipTemplateController@deleteImage');
     $router->post('api/payslip-template.preview', 'PayslipTemplateController@preview');
+    $router->post('api/payslip-template.preset-preview', 'PayslipTemplateController@presetPreview');
+    $router->get('employment-certificate/settings', 'EmploymentCertificateTemplateController@index');
+    $router->get('employment-certificate/edit/{key}', 'EmploymentCertificateTemplateController@editPage');
+    $router->post('api/employment-certificate-template.field-options', 'EmploymentCertificateTemplateController@fieldTypeOptions');
+    $router->post('api/employment-certificate-template.assignable-options', 'EmploymentCertificateTemplateController@assignableOptions');
+    $router->post('api/employment-certificate-template.preset-options', 'EmploymentCertificateTemplateController@presetOptions');
+    $router->get('api/employment-certificate-template.list', 'EmploymentCertificateTemplateController@list');
+    $router->get('api/employment-certificate-template.paired-list', 'EmploymentCertificateTemplateController@pairedList');
+    $router->post('api/employment-certificate-template.generate-other-language', 'EmploymentCertificateTemplateController@generateOtherLanguage');
+    $router->get('api/employment-certificate-template.get', 'EmploymentCertificateTemplateController@get');
+    $router->get('api/employment-certificate-template.get-default', 'EmploymentCertificateTemplateController@getDefault');
+    $router->post('api/employment-certificate-template.save', 'EmploymentCertificateTemplateController@save');
+    $router->post('api/employment-certificate-template.create-from-preset', 'EmploymentCertificateTemplateController@createFromPreset');
+    $router->post('api/employment-certificate-template.duplicate', 'EmploymentCertificateTemplateController@duplicate');
+    $router->post('api/employment-certificate-template.duplicate-pair', 'EmploymentCertificateTemplateController@duplicatePair');
+    $router->post('api/employment-certificate-template.preset-elements', 'EmploymentCertificateTemplateController@presetElements');
+    $router->post('api/employment-certificate-template.delete', 'EmploymentCertificateTemplateController@delete');
+    $router->post('api/employment-certificate-template.set-default', 'EmploymentCertificateTemplateController@setDefault');
+    $router->post('api/employment-certificate-template.publish-toggle', 'EmploymentCertificateTemplateController@publishToggle');
+    $router->post('api/employment-certificate-template.upload-logo', 'EmploymentCertificateTemplateController@uploadLogo');
+    $router->get('api/employment-certificate-template.list-images', 'EmploymentCertificateTemplateController@listImages');
+    $router->post('api/employment-certificate-template.upload-image', 'EmploymentCertificateTemplateController@uploadImage');
+    $router->post('api/employment-certificate-template.delete-image', 'EmploymentCertificateTemplateController@deleteImage');
+    $router->post('api/employment-certificate-template.preview', 'EmploymentCertificateTemplateController@preview');
+    $router->post('api/employment-certificate-template.preset-preview', 'EmploymentCertificateTemplateController@presetPreview');
     $router->post('api/payslip-distribution.channel-options', 'PayslipDistributionController@channelOptions');
     $router->get('api/payslip-distribution.settings-get', 'PayslipDistributionController@settingsGet');
     $router->post('api/payslip-distribution.settings-save', 'PayslipDistributionController@settingsSave');
@@ -143,8 +220,21 @@
     $router->post('api/payslip-request.run-options', 'PayslipRequestController@runOptions');
     $router->post('api/payslip-request.employee-options', 'PayslipRequestController@employeeOptions');
     $router->post('api/payslip-request.create', 'PayslipRequestController@create');
+
+    // Employment Certificate Requests (2026-08-26, explicit request: paired with Payslip Requests
+    // on the same page/menu -- see requests.php's new tab). No dedicated employee-options route --
+    // the "which employee" picker reuses the existing generic `api/employee.report_to.get`.
+    $router->get('api/employment-certificate-request.list', 'EmploymentCertificateRequestController@list');
+    $router->get('api/employment-certificate-request.get', 'EmploymentCertificateRequestController@get');
+    $router->post('api/employment-certificate-request.create', 'EmploymentCertificateRequestController@create');
+    $router->get('api/employment-certificate-request.download', 'EmploymentCertificateRequestController@download');
     $router->get('api/payslip-delivery-log.list', 'PayslipDeliveryLogController@list');
     $router->post('api/payslip-delivery-log.resend', 'PayslipDeliveryLogController@resend');
+    // 2026-08-26: unified Payslip + Employment Certificate delivery/issuance log -- see
+    // DocumentDeliveryLogModel's own docblock. Replaces api/payslip-delivery-log.list as the
+    // Delivery Log tab's own data source; the payslip-only endpoint above stays for its own resend
+    // action's sake and isn't removed.
+    $router->get('api/document-delivery-log.list', 'DocumentDeliveryLogController@list');
     $router->get('manual-entry', 'ManualEntryController@index');
     $router->get('api/manual-attendance.list', 'ManualEntryController@attendanceList');
     $router->get('api/manual-attendance.get', 'ManualEntryController@attendanceGet');
@@ -171,18 +261,33 @@
     $router->post('api/holiday.save', 'SetupRulesController@holidaySave');
     $router->post('api/holiday.delete', 'SetupRulesController@holidayDelete');
     $router->post('api/holiday.toggle-status', 'SetupRulesController@holidayToggleStatus');
+    $router->post('api/holiday-sync.candidates', 'HolidaySyncController@candidates');
+    $router->post('api/holiday-sync.apply', 'HolidaySyncController@apply');
+    $router->get('api/holiday-sync.log', 'HolidaySyncController@log');
+
+    $router->post('api/org-structure-sync.candidates', 'OrgStructureSyncController@candidates');
+    $router->post('api/org-structure-sync.apply', 'OrgStructureSyncController@apply');
+    $router->get('api/org-structure-sync.log', 'OrgStructureSyncController@log');
     $router->post('api/shift.options', 'MasterController@getMaster');
     $router->get('reports', 'ReportsController@index');
     $router->get('api/report.list', 'ReportsController@list');
+    $router->get('api/report.cycle-runs', 'ReportsController@cycleRuns');
     $router->get('api/report.generate', 'ReportsController@generate');
     $router->get('api/report.export-logs', 'ReportsController@exportLogs');
     $router->get('submission', 'SubmissionController@index');
     $router->post('api/employee.list', 'EmployeeController@list');
+    $router->post('api/employee.list-column-values', 'EmployeeController@listColumnValues');
+    $router->post('api/employee-sync.filter-options', 'EmployeeSyncController@filterOptions');
+    $router->post('api/employee-sync.candidates', 'EmployeeSyncController@candidates');
+    $router->post('api/employee-sync.apply', 'EmployeeSyncController@apply');
+    $router->get('api/employee-sync.log', 'EmployeeSyncController@log');
     $router->get('/employees/create', 'EmployeeController@create');
     $router->get('/employees/{id}', 'EmployeeController@detail');
     $router->get('api/address/search', 'AddressController@getMetadata');
     $router->post('api/company.get', 'CompanyProfileController@get');
     $router->post('api/company.save', 'CompanyProfileController@save');
+    $router->post('api/company.upload-logo', 'CompanyProfileController@uploadLogo');
+    $router->post('api/company.upload-signature', 'CompanyProfileController@uploadSignature');
     $router->post('api/country.get', 'MasterController@getMaster');
     $router->post('api/nationality.get', 'MasterController@getMaster');
     $router->post('api/religion.get', 'MasterController@getMaster');
@@ -191,6 +296,10 @@
     $router->post('api/structure.department', 'CompanyProfileController@department');
     $router->post('api/structure.position', 'CompanyProfileController@position');
     $router->post('api/structure.rank', 'CompanyProfileController@rank');
+    // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการเพิ่ม
+    // การตั้งค่าเช่นเดียวกับ Department" -- same route shape as department/position/rank above.
+    $router->post('api/structure.team', 'CompanyProfileController@team');
+    $router->post('api/structure.column-values', 'CompanyProfileController@structureColumnValues');
     $router->post('api/structure.branch.save', 'CompanyProfileController@branchSave');
     $router->post('api/structure.branch.delete', 'CompanyProfileController@branchDelete');
     $router->post('api/structure.role.save', 'CompanyProfileController@roleSave');
@@ -201,17 +310,22 @@
     $router->post('api/structure.position.delete', 'CompanyProfileController@positionDelete');
     $router->post('api/structure.rank.save', 'CompanyProfileController@rankSave');
     $router->post('api/structure.rank.delete', 'CompanyProfileController@rankDelete');
+    $router->post('api/structure.team.save', 'CompanyProfileController@teamSave');
+    $router->post('api/structure.team.delete', 'CompanyProfileController@teamDelete');
     $router->post('api/bank.get', 'MasterController@getMaster');
     $router->post('api/department.get', 'MasterController@getMaster');
     $router->post('api/role.get', 'MasterController@getMaster');
     $router->post('api/position.get', 'MasterController@getMaster');
+    $router->post('api/team.get', 'MasterController@getMaster');
     $router->post('api/branch.get', 'MasterController@getMaster');
     $router->post('api/employee.report_to.get', 'EmployeeController@reportToOptions');
     $router->post('api/bank_account.list', 'BankAccountController@list');
+    $router->post('api/bank_account.column-values', 'BankAccountController@columnValues');
     $router->post('api/bank_account.save', 'BankAccountController@save');
     $router->post('api/bank_account.delete', 'BankAccountController@delete');
     $router->get('api/employee.get', 'EmployeeController@get');
     $router->post('api/employee.save', 'EmployeeController@save');
+    $router->post('api/employee.upload-signature', 'EmployeeController@uploadSignature');
     $router->post('api/employee.delete', 'EmployeeController@delete');
     $router->get('api/employee.dependent.list', 'EmployeeController@dependentList');
     $router->post('api/employee.dependent.save', 'EmployeeController@dependentSave');
@@ -222,11 +336,22 @@
     $router->post('api/employee.earning-deduction.options', 'EmployeeController@earningDeductionOptions');
     $router->get('api/employee.earning-deduction.list', 'EmployeeController@earningDeductionList');
     $router->get('api/employee.earning-deduction.get', 'EmployeeController@earningDeductionGet');
+    $router->get('api/employee.earning-deduction.preview-installments', 'EmployeeController@earningDeductionPreviewInstallments');
     $router->post('api/employee.earning-deduction.save', 'EmployeeController@earningDeductionSave');
     $router->post('api/employee.earning-deduction.status', 'EmployeeController@earningDeductionStatus');
     $router->post('api/employee.earning-deduction.delete', 'EmployeeController@earningDeductionDelete');
+    // 2026-08-26: Recurring Earnings (Salary tab's own new section) -- see
+    // EmployeeRecurringEarningModel's own docblock.
+    $router->post('api/employee.recurring-earning.type-options', 'EmployeeController@recurringEarningTypeOptions');
+    $router->get('api/employee.recurring-earning.list', 'EmployeeController@recurringEarningList');
+    $router->get('api/employee.recurring-earning.get', 'EmployeeController@recurringEarningGet');
+    $router->post('api/employee.recurring-earning.save', 'EmployeeController@recurringEarningSave');
+    $router->post('api/employee.recurring-earning.delete', 'EmployeeController@recurringEarningDelete');
     $router->get('api/employee.document.list', 'EmployeeController@documentList');
     $router->post('api/employee.document.upload', 'EmployeeController@documentUpload');
     $router->get('api/employee.document.view', 'EmployeeController@documentView');
     $router->post('api/employee.document.delete', 'EmployeeController@documentDelete');
+    $router->post('api/payroll-sync.ingest', 'PayrollSyncController@ingest');
+    $router->get('api/payroll-sync.pending-list', 'PayrollSyncController@pendingList');
+    $router->get('api/payroll-sync.pending-get', 'PayrollSyncController@pendingGet');
     $router->dispatch();

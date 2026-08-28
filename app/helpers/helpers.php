@@ -21,7 +21,12 @@
         $isAuthRoute = (strpos($requestUri, '/auth') !== false);
         $isApiAuthRoute = (strpos($requestUri, '/api/auth') !== false);
         $isApiLoginRoute = (strpos($requestUri, '/api/login') !== false);
-        $isExcluded = $isAuthRoute || $isApiAuthRoute || $isApiLoginRoute;
+        // Machine-to-machine ingest from Origami's cron job (see PayrollSyncController::ingest())
+        // -- authenticated by its own Bearer/PAYROLL_SYNC_INGEST_API_KEY check, not a session.
+        // Scoped to this one action specifically -- other api/payroll-sync.* routes (e.g.
+        // pending-list, for the logged-in Payroll Process page) must stay session-gated.
+        $isApiPayrollSyncRoute = (strpos($requestUri, '/api/payroll-sync.ingest') !== false);
+        $isExcluded = $isAuthRoute || $isApiAuthRoute || $isApiLoginRoute || $isApiPayrollSyncRoute;
         if (!$isLoggedIn && !$isExcluded) {
             $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
             $isApiRoute = (strpos($requestUri, '/api/') !== false);

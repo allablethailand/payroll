@@ -45,6 +45,36 @@ try {
     $compId = 1;
     $adminUserId = 1;
 
+    // Same isolation as tests/payroll_run_test.php: recalculate() now pulls incomplete-profile
+    // employees into the calculation table instead of excluding them (see
+    // PayrollRunModel::recalculate(), 2026-08-19), so leftover placeholder employees anyone has
+    // ever created against this real, shared dev-DB company (id 1) -- e.g. via interactive manual
+    // testing of the Pending Pull screen -- now legitimately show up in every run this test
+    // creates and block submit()/approve() through no fault of this test's own fixture. Broadened
+    // from is_payroll_ready=0-only to every employee at comp_id=1 (2026-08-19, found while adding
+    // independent-tab-save support to EmployeeModel::save(): a real leftover row, is_payroll_ready=1
+    // from back when that column was hardcoded true on every successful save, still matched every
+    // run's period and inflated employee_count/corrupted the single-employee txt-export assertions
+    // below) since this test creates its own complete fixture set from scratch regardless. Soft-
+    // delete them for this run only, entirely inside this script's own transaction (rolled back at
+    // the very end), so nothing here is a real/permanent change.
+    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL")
+        ->execute([':comp_id' => $compId]);
+
+    // Same isolation, same reason (2026-08-24): this real dev-DB company has a real, live
+    // PAYROLL_RUN_APPROVAL Approval Workflow configured (named approver, not a test fixture) --
+    // PayrollRunModel::approve()/reject()/requestInfo()/revert() now route through that REAL
+    // engine whenever one is active, admin included (see canApproveThisRun()'s own docblock,
+    // 2026-08-24 fix -- admin no longer bypasses a configured workflow). This test isn't testing
+    // the Approval Workflow engine itself (see tests/approval_workflow_test.php for that) -- it
+    // just needs runs to reach 'approved' quickly via the flat admin-bypass fallback, so
+    // temporarily deactivate whatever's live, entirely inside this script's own rolled-back
+    // transaction (restored the instant it rolls back, same as the employees soft-delete above).
+    $pdo->prepare("UPDATE `approval_workflows` SET status = 'inactive'
+        WHERE comp_id = :comp_id AND status = 'active'
+          AND id IN (SELECT workflow_id FROM `approval_workflow_document_types` WHERE document_type_code = 'PAYROLL_RUN_APPROVAL')")
+        ->execute([':comp_id' => $compId]);
+
     // ---------- Fixtures ----------
     $today = new DateTime();
     $periodStart = (clone $today)->modify('first day of this month')->format('Y-m-d');
@@ -254,21 +284,41 @@ try {
     // ---------- Pay Slip: template-driven rendering (falls back to fixed layout above when no default template exists) ----------
     echo "=== PaySlipReport: template-driven rendering ===\n";
     $payslipTemplateModel = new PayslipTemplateModel($pdo);
-    check('no default payslip template exists yet for this fixture company', $payslipTemplateModel->getDefaultForCompany($compId), null);
+    // Isolation step -- comp_id=1 is the real dev DB and may have a genuine admin-created default
+    // template at any time (see tests/payslip_template_test.php's own comment on this same issue).
+    $pdo->prepare("UPDATE `payslip_templates` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE comp_id = :comp_id AND deleted_at IS NULL")
+        ->execute([':comp_id' => $compId]);
+    check('no default payslip template exists yet for this fixture company', $payslipTemplateModel->getDefault($compId, 'th'), null);
 
-    $templateSave = $payslipTemplateModel->save([
-        'name_th' => 'ทดสอบสลิป', 'name_en' => 'Test Slip Template', 'language_mode' => 'both', 'is_default' => 1, 'status' => 'active',
+    $psBase = ['pos_x_pct' => 8, 'width_pct' => 40, 'height_pct' => 5, 'font_size' => 12, 'font_family' => 'th_sarabun_new',
+        'font_color' => '#000000', 'text_align' => 'left', 'font_weight' => 'normal', 'font_style' => 'normal', 'text_decoration' => 'none'];
+    $templateSave = $payslipTemplateModel->save($compId, [
+        'language' => 'th', 'template_name' => 'Test Slip Template', 'is_default' => 1, 'status' => 'active',
         'header_text_th' => 'ทดสอบหัวกระดาษ', 'footer_text_en' => 'Test footer',
-        'fields' => [
-            ['field_key' => 'company_name'], ['field_key' => 'employee_no'], ['field_key' => 'employee_name'],
-            ['field_key' => 'department'], ['field_key' => 'position'], ['field_key' => 'basic_salary'],
-            ['field_key' => 'earning_lines_all'], ['field_key' => 'deduction_lines_all'], ['field_key' => 'statutory_lines_all'],
-            ['field_key' => 'gross_amount'], ['field_key' => 'total_deduction_amount'], ['field_key' => 'net_amount'],
-            ['field_key' => 'ytd_summary'], ['field_key' => 'bank_account_masked'], ['field_key' => 'company_logo'],
+        'elements' => [
+            $psBase + ['element_type' => 'text', 'content' => '{{company_name}}', 'pos_y_pct' => 2],
+            $psBase + ['element_type' => 'text', 'content' => '{{employee_no}}', 'pos_y_pct' => 10],
+            $psBase + ['element_type' => 'text', 'content' => '{{employee_name}}', 'pos_y_pct' => 16],
+            $psBase + ['element_type' => 'text', 'content' => '{{department}}', 'pos_y_pct' => 22],
+            $psBase + ['element_type' => 'text', 'content' => '{{position}}', 'pos_y_pct' => 28],
+            $psBase + ['element_type' => 'text', 'content' => '{{basic_salary}}', 'pos_y_pct' => 34],
+            $psBase + ['element_type' => 'text', 'content' => '{{earning_lines_all}}', 'pos_y_pct' => 40, 'width_pct' => 84, 'height_pct' => 12],
+            $psBase + ['element_type' => 'text', 'content' => '{{deduction_lines_all}}', 'pos_y_pct' => 53, 'width_pct' => 84, 'height_pct' => 12],
+            $psBase + ['element_type' => 'text', 'content' => '{{statutory_lines_all}}', 'pos_y_pct' => 66, 'width_pct' => 84, 'height_pct' => 12],
+            $psBase + ['element_type' => 'text', 'content' => '{{gross_amount}}', 'pos_y_pct' => 80],
+            $psBase + ['element_type' => 'text', 'content' => '{{total_deduction_amount}}', 'pos_y_pct' => 85],
+            $psBase + ['element_type' => 'text', 'content' => '{{net_amount}}', 'pos_y_pct' => 90],
+            $psBase + ['element_type' => 'text', 'content' => '{{ytd_summary}}', 'pos_y_pct' => 95, 'width_pct' => 84],
+            $psBase + ['element_type' => 'text', 'content' => '{{bank_account_masked}}', 'pos_x_pct' => 52, 'pos_y_pct' => 80],
+            $psBase + ['element_type' => 'image', 'field_key' => 'company_logo', 'content' => null, 'pos_x_pct' => 70, 'pos_y_pct' => 2, 'width_pct' => 20, 'height_pct' => 8],
         ],
-    ], $compId, $adminUserId);
+    ], $adminUserId);
     checkTrue('payslip template with a broad field mix saves', $templateSave['status']);
-    checkTrue('getDefaultForCompany now finds the new default template', $payslipTemplateModel->getDefaultForCompany($compId) !== null);
+    // 2026-08-26: publish_status defaults to 'draft' on every INSERT -- getDefault() now also
+    // requires publish_status='public' (see PayslipTemplateModel::save()'s own comment), so this
+    // fixture must be explicitly published before PaySlipReport::generate() can find it.
+    checkTrue('template published', $payslipTemplateModel->setPublishStatus($compId, (int)$templateSave['template_id'], 'public', $adminUserId)['status']);
+    checkTrue('getDefault() now finds the new default template', $payslipTemplateModel->getDefault($compId, 'th') !== null);
 
     $templatedSlip = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
     checkTrue('templated PDF content starts with %PDF header', str_starts_with($templatedSlip['content'], '%PDF'));
@@ -278,10 +328,27 @@ try {
     // company_logo field with no logo_path set must not error -- it should just be skipped.
     checkTrue('generate() does not throw when company_logo field has no uploaded logo', is_string($templatedSlip['content']));
 
-    $toggleOff = $payslipTemplateModel->toggleStatus((int)$templateSave['id'], $compId, $adminUserId);
+    // ---------- PaySlipReport: falls back to the Company Profile logo when the template has none ----------
+    echo "=== PaySlipReport: falls back to the Company Profile logo when the template has none ===\n";
+    $tinyPng = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+    $companyLogoDir = __DIR__ . '/../public/uploads/company_logos/' . $compId;
+    @mkdir($companyLogoDir, 0777, true);
+    $companyLogoRel = 'public/uploads/company_logos/' . $compId . '/' . bin2hex(random_bytes(16)) . '.png';
+    file_put_contents(__DIR__ . '/../' . $companyLogoRel, $tinyPng);
+    try {
+        $pdo->prepare('UPDATE `companies` SET logo_path = :p WHERE id = :id')->execute([':p' => $companyLogoRel, ':id' => $compId]);
+        $slipWithCompanyLogoFallback = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
+        checkTrue('PDF still valid when falling back to the company logo', str_starts_with($slipWithCompanyLogoFallback['content'], '%PDF'));
+        checkTrue('PDF is larger than the no-logo-at-all version (company logo actually embedded)', strlen($slipWithCompanyLogoFallback['content']) > strlen($templatedSlip['content']));
+    } finally {
+        $pdo->prepare('UPDATE `companies` SET logo_path = NULL WHERE id = :id')->execute([':id' => $compId]);
+        @unlink(__DIR__ . '/../' . $companyLogoRel);
+    }
+
+    $toggleOff = $payslipTemplateModel->toggleStatus($compId, (int)$templateSave['template_id'], $adminUserId);
     checkTrue('deactivating the template succeeds', $toggleOff['status']);
     check('deactivating clears is_default', $toggleOff['new_status'], 'inactive');
-    check('no default template again after deactivation', $payslipTemplateModel->getDefaultForCompany($compId), null);
+    check('no default template again after deactivation', $payslipTemplateModel->getDefault($compId, 'th'), null);
 
     $fallbackAgainSlip = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
     checkTrue('generate() falls back cleanly after the template is deactivated', str_starts_with($fallbackAgainSlip['content'], '%PDF'));

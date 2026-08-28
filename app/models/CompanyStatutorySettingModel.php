@@ -19,13 +19,18 @@ class CompanyStatutorySettingModel {
         if ($countryCode === null) {
             return [];
         }
+        // "Last edited" (2026-08-28, explicit request) applies only to a company's OWN override row
+        // (css.*) -- a statutory item still on system default has never been edited BY this
+        // company, so last_edited_* stays null there rather than borrowing the master item's own
+        // edit time (that would misleadingly read as "this company changed something").
         $sql = "SELECT si.id AS statutory_item_id, si.code, si.name_th, si.name_en, si.category, si.calc_method, si.calc_base,
                     si.is_employee_applicable, si.is_employer_applicable, si.default_is_active, si.is_company_rate_editable,
                     rh.employee_rate AS master_employee_rate, rh.employer_rate AS master_employer_rate,
                     rh.employee_amount AS master_employee_amount, rh.employer_amount AS master_employer_amount,
                     css.id AS setting_id, css.status AS setting_status,
                     css.employee_rate_override, css.employer_rate_override,
-                    css.employee_amount_override, css.employer_amount_override, css.remark
+                    css.employee_amount_override, css.employer_amount_override, css.remark,
+                    css.updated_at AS last_edited_at, editor.name_th AS last_edited_by_name_th, editor.name_en AS last_edited_by_name_en
                 FROM `statutory_items` si
                 LEFT JOIN `statutory_item_rate_history` rh ON rh.id = (
                     SELECT id FROM `statutory_item_rate_history`
@@ -33,6 +38,7 @@ class CompanyStatutorySettingModel {
                     ORDER BY effective_date DESC, id DESC LIMIT 1
                 )
                 LEFT JOIN `company_statutory_settings` css ON css.statutory_item_id = si.id AND css.comp_id = :comp_id AND css.deleted_at IS NULL
+                LEFT JOIN `employees` editor ON editor.id = COALESCE(css.updated_by, css.created_by)
                 WHERE si.deleted_at IS NULL AND si.status = 'active' AND si.country_code = :country_code
                 ORDER BY si.sort_order ASC, si.id ASC";
         $stmt = $this->db->prepare($sql);

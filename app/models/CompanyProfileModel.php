@@ -5,6 +5,30 @@ class CompanyProfileModel {
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
     }
+
+    /** logo_path must exactly match what uploadLogo() produces for THIS company -- same
+     *  traversal-proofing pattern as PayslipTemplateModel::isValidLogoPath()/
+     *  EmploymentCertificateTemplateModel::isValidLogoPath(). */
+    public static function isValidLogoPath(?string $path, int $compId): bool {
+        if ($path === null || $path === '') {
+            return true;
+        }
+        $pattern = '#^public/uploads/company_logos/' . $compId . '/[a-f0-9]{32}\.(jpg|png|svg)$#';
+        return (bool)preg_match($pattern, $path);
+    }
+
+    /** 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name หรือสามารถเซ็นต์สด
+     *  ผ่านหน้าจอได้" -- same traversal-proofing pattern as isValidLogoPath() above, one company-wide
+     *  signature image (uploaded file OR a live-drawn signature exported to PNG client-side -- both
+     *  go through the exact same upload endpoint/path convention, only the file content differs). */
+    public static function isValidSignaturePath(?string $path, int $compId): bool {
+        if ($path === null || $path === '') {
+            return true;
+        }
+        $pattern = '#^public/uploads/company_signatures/' . $compId . '/[a-f0-9]{32}\.(jpg|png|svg)$#';
+        return (bool)preg_match($pattern, $path);
+    }
+
     public function get() {
         $companyId = $_SESSION['user']['company_id'] ?? null;
         if (!$companyId) {
@@ -59,15 +83,34 @@ class CompanyProfileModel {
         if (!$companyId) {
             return false;
         }
-        $stmtCheck = $this->db->prepare("SELECT id FROM companies WHERE id = :company_id");
+        $stmtCheck = $this->db->prepare("SELECT id, setup_status FROM companies WHERE id = :company_id");
         $stmtCheck->execute([':company_id' => $companyId]);
         $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+        $wasDraft = $existing && ($existing['setup_status'] ?? null) === 'draft';
         $statutoryJson = null;
         if (isset($data['statutory_data']) && is_array($data['statutory_data'])) {
             $statutoryJson = json_encode($data['statutory_data'], JSON_UNESCAPED_UNICODE);
         }
         if ($existing) {
-            $sql = "UPDATE companies SET 
+            // A company auto-provisioned via Origami SSO (auth/index.php) starts as
+            // setup_status='draft' with placeholder registered_country='XX'/'PENDING' fields --
+            // only advance it to 'active' once a real, supported country and non-placeholder
+            // required fields are actually saved. A draft re-saved with placeholders still
+            // pending stays draft. Existing companies are already setup_status='active' by
+            // default, so this only ever matters for auto-provisioned rows.
+            $isRealCountry = false;
+            if (!empty($data['registered_country']) && $data['registered_country'] !== 'XX') {
+                $chkCountry = $this->db->prepare("SELECT 1 FROM master_countries WHERE countries_code = :code LIMIT 1");
+                $chkCountry->execute([':code' => $data['registered_country']]);
+                $isRealCountry = (bool)$chkCountry->fetchColumn();
+            }
+            $placeholder = ['PENDING', ''];
+            $isComplete = $isRealCountry
+                && !in_array((string)($data['global_tax_id'] ?? ''), $placeholder, true)
+                && !in_array((string)($data['authorized_signatory_name'] ?? ''), $placeholder, true)
+                && !in_array((string)($data['address_line_1'] ?? ''), $placeholder, true);
+
+            $sql = "UPDATE companies SET
                         company_legal_name = :company_legal_name,
                         local_name = :local_name,
                         registered_country = :registered_country,
@@ -77,10 +120,13 @@ class CompanyProfileModel {
                         master_address_id = :master_address_id,
                         statutory_data = :statutory_data,
                         authorized_signatory_name = :authorized_signatory_name,
+                        logo_path = :logo_path,
+                        signature_path = :signature_path,
+                        setup_status = :setup_status,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id";
             $stmt = $this->db->prepare($sql);
-            return $stmt->execute([
+            $ok = $stmt->execute([
                 ':id' => $companyId,
                 ':company_legal_name' => $data['company_legal_name'] ?? null,
                 ':local_name' => $data['local_name'] ?? null,
@@ -90,11 +136,61 @@ class CompanyProfileModel {
                 ':address_line_2' => !empty($data['address_line_2']) ? $data['address_line_2'] : null,
                 ':master_address_id' => !empty($data['master_address_id']) ? (int)$data['master_address_id'] : null,
                 ':statutory_data' => $statutoryJson,
-                ':authorized_signatory_name' => $data['authorized_signatory_name'] ?? null
+                ':authorized_signatory_name' => $data['authorized_signatory_name'] ?? null,
+                // Uploaded via a separate endpoint (CompanyProfileController::uploadLogo(), same
+                // pattern as PayslipTemplateController's own logo upload) -- the client keeps
+                // whatever path it already had in a hidden field across saves, same as Payslip
+                // Template's modal does, so an unrelated profile save never accidentally clears it.
+                ':logo_path' => !empty($data['logo_path']) ? $data['logo_path'] : null,
+                ':signature_path' => !empty($data['signature_path']) ? $data['signature_path'] : null,
+                ':setup_status' => $isComplete ? 'active' : 'draft',
             ]);
-        } 
+            // Auto-seed the default earning/deduction items the moment a company actually
+            // transitions draft -> active (2026-08-21, explicit request: "กรณีเป็นการเปิดใช้งาน
+            // บริษัทใหม่ ให้ขึ้น Default ของระบบไว้ให้เลย") -- only on the real transition, not every
+            // subsequent save of an already-active company. seedDefaults() is idempotent (skips any
+            // item_code already present, active or soft-deleted) so it's safe even if this ever
+            // fires more than once for the same company. The manual "Load Default Items" button in
+            // Payroll Configuration still works independently of this -- unchanged.
+            if ($ok && $isComplete && $wasDraft) {
+                $userId = $_SESSION['user']['employee_id'] ?? null;
+                (new PayrollEarningDeductionTypeModel())->seedDefaults((int)$companyId, $userId !== null ? (int)$userId : null);
+            }
+            return $ok;
+        }
     }
-    public function paginateData($tableName, $compId, $searchColumns, $sortColumns, $start, $length, $search, $colIndex, $orderDir) {
+    /**
+     * Appends `AND col IN (...)` clauses for the Excel-style column filter (2026-08-27 rollout) --
+     * shared by paginateData() and columnDistinctValues() so the two can never drift out of sync.
+     * `$columnFilters` is `[realColumnName => [selected values...]]` (already translated from the
+     * frontend's own column KEYS to real SQL column names by the controller, see
+     * CompanyProfileController::structureFilterMap()) -- validated again here against
+     * `$allowedColumns` regardless, never trusting the caller alone with something that ends up
+     * inside a backtick-quoted identifier.
+     */
+    private function applyColumnFilters(string $whereSql, array &$params, array $columnFilters, array $allowedColumns, ?string $excludeColumn = null): string {
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if ($col === $excludeColumn || !in_array($col, $allowedColumns, true) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $whereSql .= " AND `{$col}` IN (" . implode(', ', $placeholders) . ")";
+        }
+        return $whereSql;
+    }
+
+    public function paginateData($tableName, $compId, $searchColumns, $sortColumns, $start, $length, $search, $colIndex, $orderDir, array $columnFilters = [], array $allowedColumns = []) {
         $sortColumn = $sortColumns[$colIndex] ?? $sortColumns[0];
         $orderDir = strtoupper($orderDir) === 'DESC' ? 'DESC' : 'ASC';
         $baseWhere = "comp_id = :comp_id AND deleted_at IS NULL AND status != 'deleted'";
@@ -113,6 +209,9 @@ class CompanyProfileModel {
             }
             $whereSql .= " AND (" . implode(" OR ", $searchTerms) . ")";
         }
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout
+        // (same "counts toward recordsFiltered, not recordsTotal" placement as the search box above).
+        $whereSql = $this->applyColumnFilters($whereSql, $params, $columnFilters, $allowedColumns);
         $countQuery = "SELECT COUNT(*) FROM `{$tableName}` WHERE {$whereSql}";
         $stmtCount = $this->db->prepare($countQuery);
         $stmtCount->execute($params);
@@ -134,6 +233,32 @@ class CompanyProfileModel {
             'recordsFiltered' => $recordsFiltered,
             'data' => $data
         ];
+    }
+
+    /**
+     * Distinct values for ONE column of a structure table, respecting every OTHER currently-active
+     * Excel-style column filter but NOT this column's own selection -- same "opening a column's own
+     * dropdown shows every value it could hold" rule as EmployeeModel::listColumnValues(), see that
+     * method's own docblock. Deliberately does NOT also respect the table's free-text search box
+     * (unlike EmployeeModel's own version) -- these 6 structure tables have no other pre-existing
+     * filter UI beyond DataTables' own search box, and threading that through here too would add
+     * real complexity for a genuinely minor edge case (the checkbox list not ALSO narrowing when
+     * something is typed in the search box); the actual table rows still correctly narrow by both
+     * together via paginateData()'s own search+columnFilters combination.
+     */
+    public function columnDistinctValues(string $tableName, int $compId, string $column, array $allowedColumns, array $columnFilters, ?string $excludeColumn): array {
+        if (!in_array($column, $allowedColumns, true)) {
+            return [];
+        }
+        $whereSql = "comp_id = :comp_id AND deleted_at IS NULL AND status != 'deleted'";
+        $params = [':comp_id' => $compId];
+        $whereSql = $this->applyColumnFilters($whereSql, $params, $columnFilters, $allowedColumns, $excludeColumn);
+        $sql = "SELECT DISTINCT `{$column}` AS value FROM `{$tableName}`
+                WHERE {$whereSql} AND `{$column}` IS NOT NULL AND `{$column}` != ''
+                ORDER BY value ASC LIMIT 500";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'value');
     }
 
     private function structureConfig(): array {
@@ -172,6 +297,19 @@ class CompanyProfileModel {
                 'required' => ['rank_code', 'rank_name_th', 'rank_name_en'],
                 'unique_columns' => ['rank_code'],
                 'booleans' => ['ot_eligible'],
+            ],
+            // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็น
+            // การเพิ่มการตั้งค่าเช่นเดียวกับ Department" -- outsourcing company's own project/client
+            // team grouping (see structure_teams' own migration comment for the full context).
+            // client_name is intentionally NOT in `required` -- a team can exist before its client
+            // assignment is finalized, same "not every column that CAN be filled has to be" stance
+            // department's own cost_center already takes.
+            'team' => [
+                'table' => 'structure_teams',
+                'columns' => ['team_code', 'team_name_th', 'team_name_en', 'client_name', 'status'],
+                'required' => ['team_code', 'team_name_th', 'team_name_en'],
+                'unique_columns' => ['team_code'],
+                'booleans' => [],
             ],
         ];
     }
