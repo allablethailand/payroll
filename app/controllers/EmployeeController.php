@@ -2,14 +2,17 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/EmployeeModel.php';
 require_once __DIR__ . '/../models/EmployeeEarningDeductionModel.php';
+require_once __DIR__ . '/../models/EmployeeRecurringEarningModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 class EmployeeController extends Controller {
     private $model;
     private $earningDeductionModel;
+    private EmployeeRecurringEarningModel $recurringEarningModel;
     private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new EmployeeModel();
         $this->earningDeductionModel = new EmployeeEarningDeductionModel();
+        $this->recurringEarningModel = new EmployeeRecurringEarningModel();
         $this->permissionModel = new PermissionModel();
     }
 
@@ -58,6 +61,18 @@ class EmployeeController extends Controller {
         $filters = [
             'status' => $_POST['status'] ?? '',
             'employment_status' => $_POST['employment_status'] ?? '',
+            'role_id' => $_POST['role_id'] ?? '',
+            'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
+            'shift_id' => $_POST['shift_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+            'created_date_from' => $_POST['created_date_from'] ?? '',
+            'created_date_to' => $_POST['created_date_to'] ?? '',
+            // 2026-08-27, explicit request: Excel-style per-column header filter (proof-of-concept
+            // on this table first) -- see EmployeeModel::buildListWhere()'s own docblock. Sent by
+            // jQuery as nested `column_filters[colKey][]=value` form fields, which PHP already
+            // parses into this exact shape.
+            'column_filters' => is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [],
         ];
         $search = (string)($_POST['search']['value'] ?? '');
         $colIndex = isset($_POST['order'][0]['column']) ? (int)$_POST['order'][0]['column'] : 0;
@@ -70,6 +85,36 @@ class EmployeeController extends Controller {
             "recordsFiltered" => $res['filtered'],
             "data" => $res['data']
         ]);
+    }
+    /** 2026-08-27, explicit request: "ในตารางทุกตาราง...เพิ่มให้สามารถ Filter ได้...เหมือนกับ Excel" --
+     *  proof-of-concept on this table first (server-side, so the checkbox list can't be computed
+     *  from the browser's own already-loaded rows the way a client-side table's filter can). Powers
+     *  one column's filter dropdown -- excludes that column's OWN current selection from the WHERE
+     *  clause (see EmployeeModel::buildListWhere()) so opening it shows every value it could hold,
+     *  not just the ones already checked. */
+    public function listColumnValues() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'values' => []]);
+            return;
+        }
+        $column = (string)($_POST['column'] ?? '');
+        $filters = [
+            'status' => $_POST['status'] ?? '',
+            'employment_status' => $_POST['employment_status'] ?? '',
+            'role_id' => $_POST['role_id'] ?? '',
+            'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
+            'shift_id' => $_POST['shift_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+            'created_date_from' => $_POST['created_date_from'] ?? '',
+            'created_date_to' => $_POST['created_date_to'] ?? '',
+            'column_filters' => is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [],
+        ];
+        $search = (string)($_POST['search'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $values = $this->model->listColumnValues((int)$compId, $column, $filters, $search, (string)$lang);
+        $this->json(['status' => true, 'values' => $values]);
     }
     public function get() {
         if (!$this->requirePermission('employee.view')) return;
@@ -116,6 +161,53 @@ class EmployeeController extends Controller {
         $result = $this->model->save((int)$compId, $data, $userId);
         $this->json($result);
     }
+    /** 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้" --
+     *  identical pattern/validation to CompanyProfileController::uploadSignature() (finfo MIME check,
+     *  2MB limit, jpg/png/svg only, random 32-hex filename), one folder per company (not per
+     *  employee -- see EmployeeModel::isValidSignaturePath()'s own comment on why). Same dual input
+     *  method too: a live-drawn signature reaches here as a normal multipart file upload (the
+     *  browser's canvas is exported to a PNG Blob client-side), no separate endpoint needed. */
+    public function uploadSignature() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            $this->json(['status' => false, 'message' => 'File upload failed.']);
+            return;
+        }
+        $file = $_FILES['file'];
+        $maxSize = 2 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            $this->json(['status' => false, 'message' => 'File size exceeds 2MB limit.']);
+            return;
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/svg+xml' => 'svg'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->file($file['tmp_name']);
+        if (!isset($allowedMimes[$detectedMime])) {
+            $this->json(['status' => false, 'message' => 'Unsupported file type. Use JPG, PNG, or SVG.']);
+            return;
+        }
+        $ext = $allowedMimes[$detectedMime];
+
+        $uploadDir = __DIR__ . '/../../public/uploads/employee_signatures/' . (int)$compId . '/';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $this->json(['status' => false, 'message' => 'Failed to prepare storage directory.']);
+            return;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $ext;
+        $destPath = $uploadDir . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            $this->json(['status' => false, 'message' => 'Failed to save file.']);
+            return;
+        }
+        $relativePath = 'public/uploads/employee_signatures/' . (int)$compId . '/' . $safeName;
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'signature_path' => $relativePath]);
+    }
+
     public function delete() {
         if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
@@ -149,7 +241,11 @@ class EmployeeController extends Controller {
         $page = intval($_POST['page'] ?? 1);
         $limit = intval($_POST['limit'] ?? 10);
         $search = (string)($_POST['searchTerm'] ?? '');
-        $data = $this->earningDeductionModel->activeOptions((int)$compId, $search, $page, $limit);
+        // 'type' comes through automatically for a select2-remote field with data-type="earning"/
+        // "deduction" set (2026-08-19, explicit request: Add Earning/Add Deduction each pre-filter
+        // the catalog dropdown to their own item_type).
+        $itemType = (string)($_POST['type'] ?? '');
+        $data = $this->earningDeductionModel->activeOptions((int)$compId, $search, $page, $limit, $itemType !== '' ? $itemType : null);
         $this->json(['status' => true, 'data' => $data]);
     }
     public function earningDeductionList() {
@@ -160,7 +256,8 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'data' => []]);
             return;
         }
-        $data = $this->earningDeductionModel->list($employeeId, (int)$compId);
+        $itemType = isset($_GET['item_type']) ? (string)$_GET['item_type'] : '';
+        $data = $this->earningDeductionModel->list($employeeId, (int)$compId, $itemType !== '' ? $itemType : null);
         $this->json(['status' => true, 'data' => $data]);
     }
     public function earningDeductionGet() {
@@ -176,6 +273,24 @@ class EmployeeController extends Controller {
             $this->json(['status' => true, 'data' => $row]);
         } else {
             $this->json(['status' => false, 'message' => 'Record not found.']);
+        }
+    }
+    /** Pure calculation preview (2026-08-20, explicit request) -- lets the modal show/auto-fill
+     *  the per-installment schedule live as principal/installments/interest settings change,
+     *  without duplicating the amortization math in JS. Mirrors POST /api/payslip-template.preview's
+     *  shape (server computes, client just renders). Not permission-gated: it touches no employee
+     *  data, just runs arithmetic on whatever numbers are passed in. */
+    public function earningDeductionPreviewInstallments() {
+        $principal = isset($_GET['principal']) && is_numeric($_GET['principal']) ? (float)$_GET['principal'] : 0.0;
+        $totalInstallments = isset($_GET['total_installments']) ? (int)$_GET['total_installments'] : 0;
+        $interestType = isset($_GET['interest_type']) ? (string)$_GET['interest_type'] : 'none';
+        $interestRate = isset($_GET['interest_rate']) && is_numeric($_GET['interest_rate']) ? (float)$_GET['interest_rate'] : null;
+        try {
+            $amounts = $this->earningDeductionModel->computeInstallmentSchedule($principal, $totalInstallments, $interestType, $interestRate);
+            $this->json(['status' => true, 'data' => ['amounts' => $amounts]]);
+        } catch (InvalidArgumentException $e) {
+            http_response_code(422);
+            $this->json(['status' => false, 'message' => $e->getMessage()]);
         }
     }
     public function earningDeductionSave() {
@@ -239,6 +354,91 @@ class EmployeeController extends Controller {
         $result = $this->earningDeductionModel->delete($id, (int)$compId, $employeeId, $userId);
         $this->json($result);
     }
+
+    /* ==================== Recurring Earnings (Salary tab's own new section) --
+       2026-08-26, explicit request: "รายรับที่ได้ทุกเดือนเช่นพวกค่าตำแหน่ง ค่ารถ ค่าน้ำมัน...ให้เพิ่มส่วนนี้
+       เข้าไปด้วย และระงับการจ่ายได้" -- see EmployeeRecurringEarningModel's own docblock for why this is
+       a separate table/section from Earning-Deduction (loans/installments). ==================== */
+
+    /** Dropdown options for the allowance-type picker -- a dedicated, pre-filtered wrapper around
+     *  the SAME catalog query the Earning-Deduction tab's own #eed_ped_type_id already uses, fixed
+     *  to item_type=earning + calculation_method=fixed_amount server-side (no client-passed filter
+     *  needed, so initSelect2's generic ajax data-builder didn't need touching for a 3rd filter). */
+    public function recurringEarningTypeOptions() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['items' => [], 'total_count' => 0]]);
+            return;
+        }
+        $page = intval($_POST['page'] ?? 1);
+        $limit = intval($_POST['limit'] ?? 10);
+        $search = (string)($_POST['searchTerm'] ?? '');
+        $data = $this->earningDeductionModel->activeOptions((int)$compId, $search, $page, $limit, 'earning', 'fixed_amount');
+        $this->json(['status' => true, 'data' => $data]);
+    }
+    public function recurringEarningList() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'data' => []]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->recurringEarningModel->list($employeeId, (int)$compId)]);
+    }
+    public function recurringEarningGet() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $row = $this->recurringEarningModel->get($id, (int)$compId);
+        if ($row) {
+            $this->json(['status' => true, 'data' => $row]);
+        } else {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+        }
+    }
+    public function recurringEarningSave() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
+        if ($employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing employee_id.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->recurringEarningModel->save($employeeId, (int)$compId, $data, $userId));
+    }
+    public function recurringEarningDelete() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($employeeId <= 0 || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid request.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->recurringEarningModel->delete($id, (int)$compId, $employeeId, $userId));
+    }
+
     private function handleChildList(string $type): void {
         if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();

@@ -7831,6 +7831,7 @@ CREATE TABLE `employees` (
   `marital_status` enum('single','married','divorced','widowed') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `military_status` enum('exempted','served','not_yet','na') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `id_card_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
+  `id_card_issue_date` date DEFAULT NULL,
   `id_card_expire_date` date DEFAULT NULL,
   `tax_id_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
   `passport_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
@@ -8292,6 +8293,35 @@ INSERT INTO `statutory_item_brackets` (`id`, `statutory_item_rate_history_id`, `
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `document_numbering_settings`
+--
+-- 2026-08-23, explicit request ("ในหน้า Document & Approval Document Numbering ยังไม่สามารถตั้งค่า
+-- ได้จริง") -- the Document Numbering tab was a static HTML mockup (hardcoded rows, edit buttons
+-- with no handler) with no schema/model/controller behind it at all. document_type_code is a
+-- fixed, code-tied enum (PAYSLIP/PAYROLL_RUN/WHT_CERT/BANK_TRANSFER) rather than a master table --
+-- each one corresponds to an actual generator elsewhere in the app (PaySlipReport, the WHT export,
+-- BankTransferFileReport), not a freely-extensible dropdown a company could add its own entries
+-- to, matching the same reasoning ot_rates.calculation_method already documents for NOT being a
+-- master table. DocumentNumberingModel::list() lazily seeds any missing row with sensible
+-- defaults on first read rather than requiring a separate seed migration per company.
+--
+
+CREATE TABLE `document_numbering_settings` (
+  `id` int(11) NOT NULL,
+  `comp_id` int(11) NOT NULL,
+  `document_type_code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `prefix_format` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `digit_count` tinyint(4) NOT NULL DEFAULT 4,
+  `current_number` int(11) NOT NULL DEFAULT 0,
+  `reset_cycle` enum('never','yearly','monthly') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'never',
+  `updated_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `company_statutory_settings`
 --
 
@@ -8322,7 +8352,7 @@ CREATE TABLE `company_statutory_settings` (
 CREATE TABLE `payroll_runs` (
   `id` int(11) NOT NULL,
   `comp_id` int(11) NOT NULL,
-  `cycle_id` int(11) NOT NULL,
+  `cycle_id` int(11) DEFAULT NULL COMMENT 'NULL = off-cycle/ad-hoc run not tied to any payroll_cycles config -- e.g. a one-off out-of-cycle payment',
   `run_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `period_start_date` date NOT NULL,
   `period_end_date` date NOT NULL,
@@ -8335,6 +8365,7 @@ CREATE TABLE `payroll_runs` (
   `has_validation_errors` tinyint(1) NOT NULL DEFAULT 0,
   `submitted_at` timestamp NULL DEFAULT NULL,
   `submitted_by` int(11) DEFAULT NULL,
+  `approval_request_id` int(11) DEFAULT NULL COMMENT 'Links to approval_requests.id when an active PAYROLL_RUN_APPROVAL workflow is configured for this company at submit time (2026-08-23, explicit report: approval was configured via the Approval Workflow tab / approval_workflow_steps but PayrollRunModel was still only consulting the flat structure_roles.can_approve_payroll check -- see PayrollRunModel::submit()/approve()/reject() docblocks). NULL means no such workflow existed at submit time, so approve()/reject()/etc. fall back to the flat role-based check for backward compatibility.',
   `approved_at` timestamp NULL DEFAULT NULL,
   `approved_by` int(11) DEFAULT NULL,
   `rejected_at` timestamp NULL DEFAULT NULL,
@@ -8397,6 +8428,8 @@ CREATE TABLE `payroll_run_audit_logs` (
   `action` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `performed_by` int(11) NOT NULL,
+  `ip_address` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `performed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -8420,10 +8453,39 @@ CREATE TABLE `master_bank_file_formats` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `master_bank_file_formats` (`id`, `bank_id`, `code`, `name_th`, `name_en`, `file_extension`, `is_active`, `sort_order`, `created_at`, `updated_at`) VALUES
-(1, NULL, 'KBANK_SMART', 'กสิกรไทย - K-Cash Connect Smart', 'Kasikornbank - K-Cash Connect Smart', 'txt', 1, 1, '2026-07-21 17:50:24', NULL),
-(2, NULL, 'SCB', 'ไทยพาณิชย์ - SCB Business Net', 'Siam Commercial Bank - SCB Business Net', 'txt', 1, 2, '2026-07-21 17:50:24', NULL),
-(3, NULL, 'BBL', 'กรุงเทพ - Bualuang iBanking', 'Bangkok Bank - Bualuang iBanking', 'txt', 1, 3, '2026-07-21 17:50:24', NULL),
+(1, 2, 'KBANK_SMART', 'กสิกรไทย - K-Cash Connect Smart', 'Kasikornbank - K-Cash Connect Smart', 'txt', 1, 1, '2026-07-21 17:50:24', NULL),
+(2, 5, 'SCB', 'ไทยพาณิชย์ - SCB Business Net', 'Siam Commercial Bank - SCB Business Net', 'txt', 1, 2, '2026-07-21 17:50:24', NULL),
+(3, 1, 'BBL', 'กรุงเทพ - Bualuang iBanking', 'Bangkok Bank - Bualuang iBanking', 'txt', 1, 3, '2026-07-21 17:50:24', NULL),
 (4, NULL, 'DBS_IDEAL', 'DBS - IDEAL', 'DBS - IDEAL', 'csv', 1, 4, '2026-07-21 17:50:24', NULL);
+
+--
+-- 2026-08-21, explicit request ("รายชื่อธนาคารที่ให้เลือกมีน้อยมากไม่ครบตามที่จัดเก็บไว้ใน Database"):
+-- the 4 rows above only cover 3 of the 15 banks seeded in master_banks (KBank/SCB/BBL) + DBS, which
+-- isn't even a master_banks row -- so this list looked incomplete next to the real bank directory
+-- used elsewhere (e.g. Bank Accounts). Filling in the remaining 12 master_banks rows here so every
+-- seeded bank has AT LEAST an entry to pick -- but unlike the original 4 (real, publicly-documented
+-- corporate-banking product names), nobody has verified what each of these 12 banks' actual bulk-
+-- transfer file layout/portal is called, so name_th/name_en say so explicitly rather than guessing a
+-- plausible-sounding but fabricated product name (same "flag as unverified, don't invent" convention
+-- as PndOneKorExporter/Sso110Exporter). Doesn't change BankTransferFileReport's own behavior --
+-- see that class's docblock -- it still generates one generic CSV regardless of which of these is
+-- picked, this is only about the picker not looking incomplete. bank_id now links back to
+-- master_banks (was NULL on all 4 original rows despite the column existing for exactly this).
+--
+
+INSERT INTO `master_bank_file_formats` (`id`, `bank_id`, `code`, `name_th`, `name_en`, `file_extension`, `is_active`, `sort_order`, `created_at`, `updated_at`) VALUES
+(5, 3, 'KTB', 'กรุงไทย (ยังไม่ยืนยันรูปแบบไฟล์)', 'Krung Thai Bank (format not yet verified)', 'txt', 1, 5, '2026-08-21 00:00:00', NULL),
+(6, 4, 'TTB', 'ทหารไทยธนชาต (ยังไม่ยืนยันรูปแบบไฟล์)', 'TMBThanachart Bank (format not yet verified)', 'txt', 1, 6, '2026-08-21 00:00:00', NULL),
+(7, 6, 'CIMBT', 'ซีไอเอ็มบีไทย (ยังไม่ยืนยันรูปแบบไฟล์)', 'CIMB Thai Bank (format not yet verified)', 'txt', 1, 7, '2026-08-21 00:00:00', NULL),
+(8, 7, 'UOB', 'ยูโอบี (ยังไม่ยืนยันรูปแบบไฟล์)', 'United Overseas Bank Thai (format not yet verified)', 'txt', 1, 8, '2026-08-21 00:00:00', NULL),
+(9, 8, 'BAY', 'กรุงศรีอยุธยา (ยังไม่ยืนยันรูปแบบไฟล์)', 'Bank of Ayudhya - Krungsri (format not yet verified)', 'txt', 1, 9, '2026-08-21 00:00:00', NULL),
+(10, 9, 'GSB', 'ออมสิน (ยังไม่ยืนยันรูปแบบไฟล์)', 'Government Savings Bank (format not yet verified)', 'txt', 1, 10, '2026-08-21 00:00:00', NULL),
+(11, 10, 'GHB', 'อาคารสงเคราะห์ (ยังไม่ยืนยันรูปแบบไฟล์)', 'Government Housing Bank (format not yet verified)', 'txt', 1, 11, '2026-08-21 00:00:00', NULL),
+(12, 11, 'BAAC', 'ธ.ก.ส. (ยังไม่ยืนยันรูปแบบไฟล์)', 'Bank for Agriculture and Agricultural Cooperatives (format not yet verified)', 'txt', 1, 12, '2026-08-21 00:00:00', NULL),
+(13, 12, 'TISCO', 'ทิสโก้ (ยังไม่ยืนยันรูปแบบไฟล์)', 'Tisco Bank (format not yet verified)', 'txt', 1, 13, '2026-08-21 00:00:00', NULL),
+(14, 13, 'KKP', 'เกียรตินาคินภัทร (ยังไม่ยืนยันรูปแบบไฟล์)', 'Kiatnakin Phatra Bank (format not yet verified)', 'txt', 1, 14, '2026-08-21 00:00:00', NULL),
+(15, 14, 'ICBC', 'ไอซีบีซี (ไทย) (ยังไม่ยืนยันรูปแบบไฟล์)', 'ICBC Thai (format not yet verified)', 'txt', 1, 15, '2026-08-21 00:00:00', NULL),
+(16, 15, 'LHBANK', 'แลนด์ แอนด์ เฮ้าส์ (ยังไม่ยืนยันรูปแบบไฟล์)', 'Land and Houses Bank (format not yet verified)', 'txt', 1, 16, '2026-08-21 00:00:00', NULL);
 
 -- --------------------------------------------------------
 
@@ -8525,9 +8587,32 @@ CREATE TABLE `approval_workflow_document_types` (
 --
 -- Table structure for table `approval_workflow_steps`
 --
--- Ordered steps within a workflow. Whole set is replaced (delete+reinsert) on each workflow
--- save, same pattern as employee_earning_deduction_installments — this is config, not history
--- (see approval_request_logs for the history side).
+-- Ordered steps within a workflow. Each step's actual approver list lives in
+-- `approval_workflow_step_approvers` (2026-08-23: a step used to carry a single approver_type/
+-- approver_id pair directly on this row -- moved out to a child table so one step can list
+-- MULTIPLE people, per explicit request: "ในแต่ละแถวย่อยก็สามารถใส่ได้หลายคน").
+--
+-- 2026-08-23, second change the same day: ported the gating/verdict model from origami's
+-- `m_approval_master`/`getApprovalResult` (explicit request, with the AND/OR/Finish semantics
+-- spelled out verbatim by the user) --
+--   `requires_previous_step`: freely toggle PER STEP whether it must wait its turn. Steps with
+--   this =1 form an ordered queue (by step_order) -- a queued step only becomes actionable once
+--   every EARLIER queued step has been fully approved; the button stays visible but disabled
+--   until then. Steps with =0 are always immediately actionable, regardless of queue position
+--   (e.g. step 1 gates step 2, but step 3 can be approved anytime).
+--   `group_type`: how this step's own result (once decided) feeds the OVERALL request verdict,
+--   computed across every step after each action (see ApprovalRequestModel::recomputeVerdict()):
+--   'and' = every AND-group step must be approved for the request to pass, any one rejected fails
+--   it immediately; 'or' = with 2+ OR-group steps, one approval is enough to satisfy the OR side
+--   (all rejected fails it); with 0-1 OR-group steps the OR side has no effect on the outcome
+--   either way (explicit clarification: a lone OR step doesn't auto-pass, it simply doesn't
+--   count); 'finish' = the moment any Finish-group step is decided, that decision alone becomes
+--   the whole request's final result immediately, ignoring every other step's state.
+--   Whole step set is soft-deleted and replaced only when the saved config actually differs from
+--   what's stored (see ApprovalWorkflowModel::save()) -- not hard delete+reinsert every time, so
+--   that (a) already-decided approval_request_step_approvers snapshots (which don't FK to this
+--   table) stay meaningful history regardless, and (b) an unchanged save doesn't needlessly
+--   recycle ids.
 --
 
 CREATE TABLE `approval_workflow_steps` (
@@ -8535,17 +8620,39 @@ CREATE TABLE `approval_workflow_steps` (
   `workflow_id` int(11) NOT NULL,
   `step_order` int(11) NOT NULL,
   `step_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `approver_type` enum('user','role') COLLATE utf8mb4_unicode_ci NOT NULL,
-  `approver_id` int(11) NOT NULL COMMENT 'employees.id when approver_type=user, structure_roles.id when approver_type=role. Polymorphic by design, no single FK possible.',
-  `joint_approve_mode` enum('any','all') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'any' COMMENT 'Only meaningful when approver_type=role and the role has more than one active employee: all = every current holder must approve this step before it advances, any = the first action decides.',
-  `timeout_hours` int(11) DEFAULT NULL COMMENT 'Config-only in this round: no scheduled-job engine exists yet to act on this automatically.',
-  `escalation_approver_type` enum('user','role') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `escalation_approver_id` int(11) DEFAULT NULL COMMENT 'Same polymorphic shape as approver_id, config-only (see timeout_hours).',
+  `group_type` enum('and','or','finish') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'and',
+  `requires_previous_step` tinyint(1) NOT NULL DEFAULT 0,
+  `joint_approve_mode` enum('any','all') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'any' COMMENT 'Only meaningful when this step resolves to more than one eligible person (multiple approver entries, and/or a role with several holders): all = every eligible person must approve this step, any = the first action decides this step''s own result.',
+  `status` enum('active','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_workflow_step_order` (`workflow_id`,`step_order`),
+  KEY `idx_aws_workflow_step_order` (`workflow_id`,`step_order`) COMMENT 'Not unique: soft-deleted rows from a prior save keep their original step_order, so a fresh active set can legitimately reuse the same numbers -- app layer guarantees only one ACTIVE row per (workflow_id, step_order) by always inserting a whole fresh set together.',
   CONSTRAINT `fk_aws_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `approval_workflows` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `approval_workflow_step_approvers`
+--
+-- One or more approver entries per step (2026-08-23). Each entry is a specific user or a role
+-- (whose current holders all join the pool) -- a step's full eligible pool is the union of every
+-- entry's resolution. Whole set is replaced (delete+reinsert) alongside its parent step on every
+-- workflow save, same pattern as `approval_workflow_steps` itself.
+--
+
+CREATE TABLE `approval_workflow_step_approvers` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `step_id` int(11) NOT NULL,
+  `approver_type` enum('user','role') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `approver_id` int(11) NOT NULL COMMENT 'employees.id when approver_type=user, structure_roles.id when approver_type=role. Polymorphic by design, no single FK possible.',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_awsa_step` (`step_id`),
+  CONSTRAINT `fk_awsa_step` FOREIGN KEY (`step_id`) REFERENCES `approval_workflow_steps` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 -- --------------------------------------------------------
@@ -8566,7 +8673,7 @@ CREATE TABLE `approval_requests` (
   `document_type_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `reference_id` int(11) NOT NULL COMMENT 'id of the actual document row; meaning depends on document_type_code (e.g. payroll_runs.id for PAYROLL_RUN_APPROVAL). Polymorphic by design, no FK.',
   `reference_label` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Human-readable snapshot (e.g. run name/period) captured at request creation, so the monitor page does not need a different join per document_type_code.',
-  `current_step_order` int(11) NOT NULL DEFAULT 1,
+  `current_step_order` int(11) NOT NULL DEFAULT 1 COMMENT '2026-08-23: no longer a gating pointer (multiple steps can be simultaneously actionable once requires_previous_step allows it) -- informational display only, recomputed after every action as the lowest step_order among approval_request_step_approvers rows still pending, for the Monitor/PayslipRequestModel list views that show a single "current step" label.',
   `status` enum('pending','approved','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
   `requested_by` int(11) NOT NULL,
   `requested_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -8602,6 +8709,48 @@ CREATE TABLE `approval_request_logs` (
   PRIMARY KEY (`id`),
   KEY `idx_arl_request` (`request_id`),
   CONSTRAINT `fk_arl_request` FOREIGN KEY (`request_id`) REFERENCES `approval_requests` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `approval_request_step_approvers`
+--
+-- 2026-08-23: the persisted eligibility/tracking snapshot for a running request, per explicit
+-- request ("สร้างตารางเก็บรายการ Approve ของแต่ละ Process แล้วก็ดึงจากตารางนั้นว่าใครมีสิทธิ์ Approve
+-- บ้าง...ไม่ใช่ไปดึงข้อมูลใหม่ทุกรอบ") -- the eligible pool for EVERY active step is resolved from
+-- `approval_workflow_step_approvers` exactly ONCE, at request creation, and written here; every
+-- later read (who can act, who already has) comes from this table, never a fresh live
+-- role-membership query. Two columns carry the actual meaning: who is eligible
+-- (`eligible_employee_ids`) and who actually acted (`acted_by`). Storage granularity follows
+-- `joint_approve_mode` exactly as specified: when 'all', one row per eligible person (each
+-- individually tracked, `eligible_employee_ids` holding a single id); when 'any', one shared row
+-- covering the whole pool (`eligible_employee_ids` a CSV of everyone eligible), acted on by
+-- whichever one of them gets there first.
+--
+-- 2026-08-23, second change the same day: `group_type`/`requires_previous_step` are a snapshot of
+-- the same-named columns on `approval_workflow_steps` at creation time (see that table's own
+-- comment for what they mean) -- frozen here so a later edit to the workflow's config can't
+-- retroactively change the rules a request already in flight is being judged by.
+--
+
+CREATE TABLE `approval_request_step_approvers` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `request_id` int(11) NOT NULL,
+  `step_order` int(11) NOT NULL,
+  `step_name_snapshot` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `group_type` enum('and','or','finish') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'and',
+  `requires_previous_step` tinyint(1) NOT NULL DEFAULT 0,
+  `joint_approve_mode` enum('any','all') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'any',
+  `eligible_employee_ids` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'CSV of employees.id. Single id when joint_approve_mode=all (one row per eligible person). Whole resolved pool as CSV when =any (one shared row).',
+  `status` enum('pending','approved','rejected') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `acted_by` int(11) DEFAULT NULL COMMENT 'employees.id who actually acted on this row. NULL until acted.',
+  `note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `acted_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_arsa_request_step` (`request_id`,`step_order`),
+  CONSTRAINT `fk_arsa_request` FOREIGN KEY (`request_id`) REFERENCES `approval_requests` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
 -- --------------------------------------------------------
@@ -9403,6 +9552,14 @@ ALTER TABLE `company_statutory_settings`
   ADD KEY `statutory_item_id` (`statutory_item_id`);
 
 --
+-- Indexes for table `document_numbering_settings`
+--
+ALTER TABLE `document_numbering_settings`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_comp_doctype` (`comp_id`,`document_type_code`),
+  ADD KEY `idx_comp_id` (`comp_id`);
+
+--
 -- Indexes for table `payroll_runs`
 --
 ALTER TABLE `payroll_runs`
@@ -9603,6 +9760,12 @@ ALTER TABLE `company_statutory_settings`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `document_numbering_settings`
+--
+ALTER TABLE `document_numbering_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `payroll_runs`
 --
 ALTER TABLE `payroll_runs`
@@ -9782,6 +9945,12 @@ ALTER TABLE `statutory_item_brackets`
 ALTER TABLE `company_statutory_settings`
   ADD CONSTRAINT `fk_company_statutory_settings_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_company_statutory_settings_item` FOREIGN KEY (`statutory_item_id`) REFERENCES `statutory_items` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+--
+-- Constraints for table `document_numbering_settings`
+--
+ALTER TABLE `document_numbering_settings`
+  ADD CONSTRAINT `fk_docnum_comp` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
 -- Constraints for table `payroll_runs`
@@ -10012,6 +10181,1513 @@ CREATE TABLE `overtime_records` (
   CONSTRAINT `fk_overtime_records_rate` FOREIGN KEY (`ot_rate_id`) REFERENCES `ot_rates` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_overtime_records_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Origami SSO auto-provisioning (auth/index.php). Origami's OAuth response only ever exposes a
+-- one-way SHA256 hash of its internal numeric IDs (never the raw ID), so identity established via
+-- SSO alone cannot be matched against companies.ref_id / employees.origami_ref_id (which store the
+-- raw ID, populated only by a real Master Data Sync -- still a stub, see OrigamiSyncClient). These
+-- hash columns are a second, independent matching path used only by auth/index.php; once a real
+-- sync eventually populates ref_id/origami_ref_id for the same row, both paths simply agree.
+--
+
+ALTER TABLE `companies`
+  ADD COLUMN `origami_sso_comp_key` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+    COMMENT 'SHA256(Origami comp_id) -- set only when auto-provisioned via SSO login, ref_id unknown at that point' AFTER `ref_id`,
+  ADD COLUMN `setup_status` enum('draft','active') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active'
+    COMMENT 'draft = auto-provisioned via SSO with placeholder registered_country/global_tax_id/etc; blocks PayrollRunModel::create() until Company Profile is saved with real values',
+  ADD UNIQUE KEY `uq_companies_origami_sso_comp_key` (`origami_sso_comp_key`);
+
+ALTER TABLE `employees`
+  ADD COLUMN `origami_sso_user_key` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+    COMMENT 'SHA256(Origami emp_id) -- set only when auto-provisioned via SSO login, origami_ref_id unknown at that point' AFTER `origami_ref_id`,
+  ADD COLUMN `is_payroll_ready` tinyint(1) NOT NULL DEFAULT 1
+    COMMENT '0 = auto-provisioned via SSO with placeholder salary/tax/employment data; excluded from PayrollRunModel::recalculate() until a real EmployeeModel::save() completes the profile',
+  ADD UNIQUE KEY `uq_employees_origami_sso_user_key` (`comp_id`, `origami_sso_user_key`);
+
+-- --------------------------------------------------------
+
+--
+-- Payroll Sync ingest API (see C:\xampp\htdocs\origami\payroll\docs\PAYROLL_SYNC_API.md).
+-- Origami Payroll (attendance/OT/leave processing) pushes an approved cycle's computed
+-- attendance-derived variable pay (OT, late/absent, leave, trip allowance, custom items) to
+-- POST /api/payroll-sync.ingest. `origami_payroll_comp_code` is a SEPARATE mapping key/ID-space
+-- from `ref_id`/`origami_sso_comp_key` above -- that doc explicitly says its own `comp_id` is
+-- "not meaningful outside" the sending app, so it must not be conflated with the SSO integration's
+-- Origami IDs. Employee mapping needs no new column: `items[].payroll_code` is guaranteed
+-- non-empty and matches `employees.employee_no` directly (Origami echoing back a code we own).
+--
+
+ALTER TABLE `companies`
+  ADD COLUMN `origami_payroll_comp_code` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL
+    COMMENT 'Mapping key for the Payroll Sync ingest API -- matches items[].comp_code, a different Origami subsystem/ID-space than ref_id/origami_sso_comp_key' AFTER `origami_sso_comp_key`,
+  ADD UNIQUE KEY `uq_companies_origami_payroll_comp_code` (`origami_payroll_comp_code`);
+
+CREATE TABLE `payroll_sync_processes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `origami_process_id` bigint(20) NOT NULL COMMENT 'idempotency key -- globally unique, not scoped per company',
+  `process_no` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `origami_report_id` bigint(20) DEFAULT NULL,
+  `origami_comp_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `origami_comp_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `origami_period_id` bigint(20) DEFAULT NULL,
+  `period_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `frequency_type` enum('monthly','semimonthly','weekly','biweekly') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `schema_version` tinyint(3) unsigned NOT NULL,
+  `item_count` int(11) NOT NULL DEFAULT 0,
+  `unmapped_item_count` int(11) NOT NULL DEFAULT 0,
+  `raw_payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'full original JSON as received, verbatim -- the audit trail for this table (no created_by/updated_by: the actor is Origami''s cron, not a logged-in employee)',
+  `received_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_sync_processes_origami_process_id` (`origami_process_id`),
+  KEY `idx_payroll_sync_processes_comp` (`comp_id`),
+  CONSTRAINT `fk_payroll_sync_processes_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payroll_sync_items` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `process_id` int(11) NOT NULL,
+  `employee_id` int(11) DEFAULT NULL COMMENT 'NULL when payroll_code could not be matched -- see mapping_status',
+  `payroll_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `emp_code` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `mapping_status` enum('mapped','unmapped') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `origami_report_item_id` bigint(20) DEFAULT NULL,
+  `dept_description` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `position_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `origami_branch_id` bigint(20) DEFAULT NULL,
+  `branch_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `origami_shift_working_id` bigint(20) DEFAULT NULL,
+  `shift_working_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pay_type` enum('cash','transfer') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `origami_pay_bank_id` bigint(20) DEFAULT NULL COMMENT 'Origami internal m_bank.id -- not meaningful outside Origami, kept for traceability only',
+  `pay_bank_code` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pay_bank_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pay_bank_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
+  `deduct_sso` tinyint(1) DEFAULT NULL COMMENT 'tri-state: NULL = never configured on Origami side (m_employee_welfare not populated), distinct from explicit false',
+  `id_card_no` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted',
+  `id_card_issue_date` date DEFAULT NULL,
+  `id_card_expire_date` date DEFAULT NULL,
+  `key_version` tinyint(3) unsigned DEFAULT NULL COMMENT 'ENCRYPTION_KEY_V{n} version used for pay_bank_no/id_card_no in this row',
+  `working_days` decimal(6,2) DEFAULT NULL,
+  `working_mins` int(11) DEFAULT NULL,
+  `absent_days` decimal(6,2) DEFAULT NULL,
+  `absent_mins` int(11) DEFAULT NULL,
+  `late_mins` int(11) DEFAULT NULL,
+  `early_mins` int(11) DEFAULT NULL,
+  `ot_mins` int(11) DEFAULT NULL,
+  `ot_req_hrs` decimal(6,2) DEFAULT NULL,
+  `ot_req_working_day_hrs` decimal(6,2) DEFAULT NULL,
+  `ot_req_weekend_hrs` decimal(6,2) DEFAULT NULL,
+  `ot_req_holiday_hrs` decimal(6,2) DEFAULT NULL,
+  `leave_approve_days` decimal(6,2) DEFAULT NULL,
+  `leave_wait_days` decimal(6,2) DEFAULT NULL,
+  `leave_without_pay_days` decimal(6,2) DEFAULT NULL,
+  `trip_allowance` decimal(15,2) DEFAULT NULL,
+  `item_values` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw items[].item_values[] JSON array as sent -- opaque computed data at this stage, not normalized further',
+  `dept_id` bigint(20) DEFAULT NULL COMMENT 'Origami internal m_department id (2026-08-18 rev 2) -- resolved/created against structure_departments.origami_ref_id on pull',
+  `posi_id` bigint(20) DEFAULT NULL COMMENT 'Origami internal m_position id (2026-08-18 rev 2) -- resolved/created against structure_positions.origami_ref_id on pull',
+  `pass_pro` tinyint(1) DEFAULT NULL COMMENT 'tri-state: NULL = never set on Origami side, distinct from explicit false',
+  `pass_pro_date` date DEFAULT NULL,
+  `title` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw legacy value as sent (e.g. "Mr." or a numeric code) -- not normalized at ingest, see PayrollSyncModel for the whitelist used when mapping to employees.title',
+  `gender` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw legacy value as sent',
+  `date_birth` date DEFAULT NULL,
+  `nickname` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `nationality` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `religion` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `marital_status` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw legacy value as sent',
+  `military_service` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'raw legacy value as sent -- intentionally never mapped to employees.military_status, see PayrollSyncModel docblock',
+  `emp_pic` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Origami''s own local upload path -- informational only, never copied into employees.profile_photo_path (does not resolve to a file on this app''s own storage)',
+  `email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `emp_tel` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `spouse_data` text COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted JSON object of items[].spouse (shares key_version) -- contains PII (spouse_idcard etc), stored only, not yet mapped to employees',
+  `children_data` text COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted JSON array of items[].children (shares key_version) -- contains PII (child_idcard), stored only, not yet mapped to employee_dependents',
+  PRIMARY KEY (`id`),
+  KEY `idx_payroll_sync_items_process` (`process_id`),
+  KEY `idx_payroll_sync_items_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_sync_items_process` FOREIGN KEY (`process_id`) REFERENCES `payroll_sync_processes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_sync_items_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payroll_sync_employee_status` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `process_id` int(11) NOT NULL,
+  `employee_id` int(11) DEFAULT NULL,
+  `payroll_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `emp_code` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `emp_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `dept_description` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `position_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `emp_start_date` date DEFAULT NULL,
+  `emp_resign_date` date DEFAULT NULL,
+  `is_new_hire` tinyint(1) NOT NULL DEFAULT 0,
+  `is_resigned_this_period` tinyint(1) NOT NULL DEFAULT 0,
+  `status_text` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_payroll_sync_employee_status_process` (`process_id`),
+  KEY `idx_payroll_sync_employee_status_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_sync_employee_status_process` FOREIGN KEY (`process_id`) REFERENCES `payroll_sync_processes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_sync_employee_status_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Payroll Process "Pending Pull" station: links a payroll_runs row back to the
+-- payroll_sync_processes row it was pulled from (Payroll Process page, station bar). NULL =
+-- created standalone, not from an Origami sync push -- the whole point is both paths stay
+-- supported. UNIQUE so a given sync process can only ever be pulled into one run.
+--
+
+ALTER TABLE `payroll_runs`
+  ADD COLUMN `sync_process_id` int(11) DEFAULT NULL
+    COMMENT 'payroll_sync_processes.id this run was pulled from via the Pending Pull station; NULL = created standalone, not from an Origami sync push' AFTER `cycle_id`,
+  ADD UNIQUE KEY `uq_payroll_runs_sync_process` (`sync_process_id`),
+  ADD CONSTRAINT `fk_payroll_runs_sync_process` FOREIGN KEY (`sync_process_id`) REFERENCES `payroll_sync_processes` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- --------------------------------------------------------
+
+--
+-- Payroll Process station bar: Cancelled state. Cancellable from draft/pending_approval/
+-- approved/rejected (anything before money has actually moved) -- not from paid/locked, since a
+-- run that's already been paid needs a real reversal process, not a state flip. Reason required,
+-- same shape as reject_reason/rejected_at/rejected_by.
+--
+
+ALTER TABLE `payroll_runs`
+  MODIFY COLUMN `state` enum('draft','pending_approval','approved','paid','locked','rejected','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  ADD COLUMN `cancelled_at` timestamp NULL DEFAULT NULL AFTER `reject_reason`,
+  ADD COLUMN `cancelled_by` int(11) DEFAULT NULL AFTER `cancelled_at`,
+  ADD COLUMN `cancel_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `cancelled_by`;
+
+-- --------------------------------------------------------
+
+--
+-- Manually-curated employee roster for a genuine off-cycle run (cycle_id AND sync_process_id both
+-- NULL -- e.g. a one-off bonus payout not tied to any recurring cycle or Origami sync push). Per
+-- explicit request (2026-08-19), PayrollRunModel::recalculate()'s employee eligibility now
+-- branches 3 ways: a Pending-Pull run only includes employees actually present in that sync
+-- process's payload; a normal cycle-based run keeps the existing employment-date-range eligibility;
+-- and this kind of run has NO automatic eligibility at all -- only employees explicitly "Joined" via
+-- this table are included, added/removed through the Employee Detail page's Join Employees modal.
+--
+
+CREATE TABLE `payroll_run_manual_employees` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `joined_by` int(11) DEFAULT NULL,
+  `joined_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_manual_employees` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_manual_employees_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_manual_employees_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_manual_employees_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- "Incentive/Other Payment" off-cycle runs (2026-08-19, explicit request): a special-payment run
+-- (e.g. a one-off incentive) that deliberately does NOT involve base salary at all -- only whatever
+-- specific earning/deduction items the admin picks per employee. run_purpose is only ever
+-- 'incentive' for a genuine off-cycle run (cycle_id AND sync_process_id both NULL, same gate as
+-- payroll_run_manual_employees above) -- enforced in PayrollRunModel::create(), not just the UI.
+-- compute_statutory lets the admin choose, per run, whether this incentive should still go through
+-- the statutory engine (SSO/PVD/tax) or skip it entirely -- a normal 'payroll' run always computes
+-- statutory regardless of what's stored here (PayrollRunModel::recalculate() ignores this column
+-- unless run_purpose='incentive').
+--
+
+ALTER TABLE `payroll_runs`
+  ADD COLUMN `run_purpose` enum('payroll','incentive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'payroll' AFTER `sync_process_id`,
+  ADD COLUMN `compute_statutory` tinyint(1) NOT NULL DEFAULT 1 AFTER `run_purpose`;
+
+--
+-- Per-employee manual earning/deduction lines for an 'incentive' run -- picked from the same
+-- payroll_earning_deduction_types master list used for standing PED assignments, but deliberately
+-- NOT written into employee_earning_deductions (that table is for recurring/ongoing assignments;
+-- an incentive line is specific to this one run only, same reasoning that already kept the off-cycle
+-- manual employee roster above out of any date-range-driven table). Amount is entered per employee
+-- individually (no single flat amount applied to everyone), so different people can get different
+-- incentive amounts for the same item in the same run. Not soft-deleted -- this is run-scoped
+-- composition data that only exists while the run is still draft (add/remove both gated to draft in
+-- PayrollRunModel), analogous to payroll_run_manual_employees.
+--
+
+CREATE TABLE `payroll_run_manual_lines` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `ped_type_id` int(11) NOT NULL,
+  `amount` decimal(15,2) NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_payroll_run_manual_lines_run_employee` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_manual_lines_ped_type` (`ped_type_id`),
+  CONSTRAINT `fk_payroll_run_manual_lines_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_manual_lines_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_manual_lines_ped_type` FOREIGN KEY (`ped_type_id`) REFERENCES `payroll_earning_deduction_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Per-run restriction on which payroll_earning_deduction_types get pulled into
+-- PayrollRunModel::recalculate()'s standing-PED-assignment lines (2026-08-19, explicit request):
+-- by default (no rows for a run) every active type is included -- same behavior as before this
+-- table existed. Saving ANY row here switches that run to "restricted" mode: only the listed
+-- ped_type_id's are included. is_sync_only types (e.g. trip allowance) always pass through
+-- regardless of this table's contents -- they're driven entirely by Origami sync data and were
+-- never offered as a selectable option here in the first place (same exclusion
+-- EmployeeEarningDeductionModel::activeOptions() already applies for the manual-line picker).
+-- Only meaningful for a normal 'payroll' run still in draft -- an 'incentive' run already has its
+-- own explicit per-employee item picker (payroll_run_manual_lines) and never reads this table.
+--
+
+CREATE TABLE `payroll_run_ped_type_settings` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `ped_type_id` int(11) NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_ped_type_settings` (`run_id`,`ped_type_id`),
+  KEY `idx_payroll_run_ped_type_settings_ped_type` (`ped_type_id`),
+  CONSTRAINT `fk_payroll_run_ped_type_settings_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_ped_type_settings_ped_type` FOREIGN KEY (`ped_type_id`) REFERENCES `payroll_earning_deduction_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Free-text comment per ad-hoc line (2026-08-19, explicit request) -- e.g. "August OT shortfall
+-- top-up" or "Deducted per HR memo #123", so a reviewer looking at the Manage Payment Items list
+-- later (including after markPaid, when the line becomes read-only history) knows WHY this specific
+-- one-off adjustment was made, not just what/how much. Optional -- amount alone is still valid.
+--
+
+ALTER TABLE `payroll_run_manual_lines`
+  ADD COLUMN `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `amount`;
+
+--
+-- Custom (not-in-the-catalog) manual line item (2026-08-19, explicit request): "ระบุ item ได้เอง
+-- ว่าจะจ่ายเพิ่มหรือหักจากอะไร" -- lets an admin type a free-text label + pick earning/deduction
+-- directly for a genuine one-off payment/deduction that isn't worth creating a standing
+-- payroll_earning_deduction_types catalog entry for. ped_type_id is now nullable: exactly one of
+-- (ped_type_id) or (custom_item_name + custom_item_type) is set per row, enforced at the
+-- application layer in PayrollRunModel::addManualLine() (same pattern as every other
+-- soft-delete/uniqueness rule in this project that isn't a DB constraint). custom_item_type only
+-- (no separate custom_item_name-is-earning-or-deduction column) because the type genuinely IS a
+-- free choice here, unlike a catalog item where item_type is fixed by the master record.
+--
+
+ALTER TABLE `payroll_run_manual_lines`
+  MODIFY COLUMN `ped_type_id` int(11) DEFAULT NULL,
+  ADD COLUMN `custom_item_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ped_type_id`,
+  ADD COLUMN `custom_item_type` enum('earning','deduction') COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `custom_item_name`;
+
+--
+-- Employee Setup form trimmed to Payroll-relevant fields (2026-08-19, explicit request): the
+-- registered/contact address and emergency contact sections are hidden in
+-- app/views/employee/detail.php (never read by any statutory calc/report/sync in this app) and
+-- dropped from EmployeeModel::requiredColumns() -- these 6 columns were NOT NULL specifically
+-- because they used to be mandatory form fields; now that the form can legitimately submit them
+-- blank, they need to accept NULL like every other optional column in this table (see e.g.
+-- nickname_th/company_email/driver_license_no, all nullable already) or every save with them left
+-- blank would fail outright (EmployeeModel::save() converts an empty string to NULL for every
+-- non-boolean/non-int column uniformly, not just the ones that happen to already allow it).
+--
+
+ALTER TABLE `employees`
+  MODIFY COLUMN `address_line_1_register` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `address_line_1_contact` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `emergency_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `emergency_surname` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `emergency_relationship` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `emergency_mobile` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+
+COMMIT;
+
+--
+-- 2026-08-19: employees.cycle_id -- explicit request ("ใน Tab เงินเดือนมีให้เลือกรอบการจ่ายได้ด้วย")
+-- to let an employee be assigned to a specific payroll_cycles row from the Employee Detail Salary
+-- tab. Nullable/optional (not added to EmployeeModel::requiredColumns()) -- same FK convention as
+-- fk_employees_shift/fk_employees_work_location (ON DELETE SET NULL ON UPDATE CASCADE) so deleting
+-- a cycle later never blocks or cascades into employee data, it just clears the assignment.
+--
+-- NOTE: PayrollRunModel::recalculate()'s cycle-based employee eligibility does NOT read this column
+-- yet -- it remains purely employment_date/employment_end_date range-based. This column is a plain
+-- data field for now (display + assignment only); wiring it into run eligibility was not requested
+-- and would be a separate, more consequential change to the payroll calculation engine.
+--
+
+ALTER TABLE `employees`
+  ADD COLUMN `cycle_id` int(11) DEFAULT NULL COMMENT 'assigned payroll cycle (payroll_cycles.id)' AFTER `shift_id`;
+
+ALTER TABLE `employees`
+  ADD KEY `idx_employees_cycle` (`cycle_id`);
+
+ALTER TABLE `employees`
+  ADD CONSTRAINT `fk_employees_cycle` FOREIGN KEY (`cycle_id`) REFERENCES `payroll_cycles` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+COMMIT;
+
+--
+-- 2026-08-19: independent tab-by-tab saving on Employee Detail (explicit request -- saving one tab
+-- used to require every OTHER tab's required fields to already be filled too, because
+-- EmployeeModel::save() rejected the whole request if ANY of requiredColumns() was empty regardless
+-- of which tab was actually being saved -- a brand-new employee couldn't even save the Info tab
+-- alone). These 16 columns were NOT NULL with no DEFAULT, which made that gate unavoidable at the DB
+-- level too; relaxed to nullable so a partially-filled record can exist mid-onboarding.
+-- department_id/role_id/position_id/branch_id/work_location_id/shift_id/cycle_id were ALREADY
+-- nullable at the DB level (only EmployeeModel::save()'s application-layer gate was blocking them) --
+-- no ALTER needed for those.
+--
+-- employee_no is deliberately NOT included here -- it stays NOT NULL, the one field EmployeeModel::
+-- save() still hard-requires on every save regardless of tab, since it's the row's business identity
+-- (used as the URL/lookup key everywhere) and has no natural default.
+--
+-- What now gates whether an employee can actually be run through payroll is the "Verify Status"
+-- (employees.is_payroll_ready, already existed, already read by PayrollRunModel::recalculate() --
+-- see its own comments) computed fresh on every save from EmployeeModel::isPayrollReady() instead of
+-- being hardcoded to 1. See EmployeeModel::save()/isPayrollReady() for the exact rule.
+--
+
+ALTER TABLE `employees`
+  MODIFY COLUMN `title` enum('mr','mrs','ms') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `name_th` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `surname_th` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `name_en` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `surname_en` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `date_of_birth` date DEFAULT NULL,
+  MODIFY COLUMN `nationality` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `personal_email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `mobile_no` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `employment_date` date DEFAULT NULL,
+  MODIFY COLUMN `employment_status` enum('probation','permanent','contract','resigned','terminated') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `employment_type` enum('full_time','part_time','daily','internship') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `workforce_type` enum('office','field','remote','hybrid') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `record_time_method` enum('fingerprint','qr_code','mobile_app','manual','none') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  MODIFY COLUMN `salary_effective_date` date DEFAULT NULL,
+  MODIFY COLUMN `tax_calculation_method` enum('average','actual') COLLATE utf8mb4_unicode_ci DEFAULT NULL;
+
+COMMIT;
+
+--
+-- 2026-08-19: employees.mobile_country_code -- explicit request ("เบอร์โทรศัพท์ให้ใส่ Prefix ได้") to
+-- let mobile_no carry a calling-code prefix (+66/+65/+60/+1/...). Kept as its own column rather than
+-- merged into mobile_no itself -- that column is varchar(10) and validated against a strict 9-10 (TH)
+-- / 7-15 (non-TH) digit-only regex in EmployeeModel::save(), neither of which should have to account
+-- for a prefix. Display-only pairing (input-group in the view) -- not read by any calc/report, so no
+-- format validation beyond what the static dropdown itself constrains it to.
+--
+
+ALTER TABLE `employees`
+  ADD COLUMN `mobile_country_code` varchar(5) COLLATE utf8mb4_unicode_ci DEFAULT '+66' COMMENT 'phone country calling code prefix, display-only alongside mobile_no' AFTER `mobile_no`;
+
+COMMIT;
+
+--
+-- 2026-08-19: employee_earning_deductions custom-item support -- explicit request ("ในส่วนของ Item
+-- ให้สามารถใส่เองได้ โดยบอกว่าเป็นรายได้หรือรายหัก"). Same shape as payroll_run_manual_lines' own
+-- custom_item_name/custom_item_type pair (added earlier this session for per-run ad-hoc adjustments)
+-- -- ped_type_id relaxed to nullable so a row can be EITHER a catalog reference (ped_type_id set,
+-- custom_item_name/type both NULL) OR a free-text item (ped_type_id NULL, both custom_item_* set).
+-- Enforced as an either/or at the application layer in EmployeeEarningDeductionModel::save(), not a
+-- DB CHECK constraint (same reasoning as every other app-layer invariant in this project).
+--
+
+ALTER TABLE `employee_earning_deductions`
+  MODIFY COLUMN `ped_type_id` int(11) DEFAULT NULL;
+
+ALTER TABLE `employee_earning_deductions`
+  ADD COLUMN `custom_item_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `ped_type_id`,
+  ADD COLUMN `custom_item_type` enum('earning','deduction') COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `custom_item_name`;
+
+COMMIT;
+
+--
+-- 2026-08-20: employee_earning_deductions interest support -- explicit request ("อยากให้มีการ
+-- กำหนดได้ค่าคิดดอกเบี้ยหรือไม่คิดดอกเบี้ย...ถ้ามีการคิดดอกเบี้ย ก็ต้องกำหนดต่อได้ว่าดอกเบี้ยแบบไหน
+-- คงที่ ลดต้นลดดอก"). interest_rate is a % PER INSTALLMENT PERIOD, not annual -- nothing in this
+-- schema ties an assignment to its payroll_cycles.payroll_frequency, so there is no reliable way
+-- to convert an annual rate without guessing (see EmployeeEarningDeductionModel::
+-- computeInstallmentSchedule()). principal_amount is kept separate from total_amount:
+-- total_amount keeps its existing meaning (sum of the stored installment amounts, i.e. total
+-- repayment including any interest); principal_amount is what the user actually typed as the
+-- loan/deduction principal before interest (equals total_amount when interest_type = none).
+--
+
+ALTER TABLE `employee_earning_deductions`
+  ADD COLUMN `interest_type` enum('none','fixed','reducing_balance') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'none' AFTER `amount_mode`,
+  ADD COLUMN `interest_rate` decimal(5,2) DEFAULT NULL COMMENT 'percent per installment period, only when interest_type != none' AFTER `interest_type`,
+  ADD COLUMN `principal_amount` decimal(15,2) DEFAULT NULL COMMENT 'principal before interest; equals total_amount when interest_type = none' AFTER `total_amount`;
+
+COMMIT;
+
+--
+-- 2026-08-21: employees resignation/termination fields -- explicit request ("ใน Tab การจ้างงาน
+-- ลาออก เลิกจ้าง อยากให้เพิ่มให้ใส่วันที่มีผล และวันที่สุดท้ายของการดึงไปทำรายงาน และใส่เหตุผลได้
+-- ด้วย"). employment_end_date already existed (read extensively by PayrollRunModel for final-run
+-- pro-rating/eligibility) but had no UI field to actually set it -- these two new columns plus
+-- wiring employment_end_date into EmployeeModel::allColumns() give the Employment tab a real home
+-- for all three. employment_status_effective_date and employment_end_date are deliberately two
+-- separate dates (confirmed with the user, not the same date from two angles) -- e.g. the date HR
+-- records the change taking effect can differ from the last date payroll/reports should still
+-- count the employee (notice period, etc).
+--
+
+ALTER TABLE `employees`
+  ADD COLUMN `employment_status_effective_date` date DEFAULT NULL COMMENT 'วันที่การเปลี่ยนสถานะ (ลาออก/เลิกจ้าง) มีผล' AFTER `employment_status`,
+  ADD COLUMN `employment_end_reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลการลาออก/เลิกจ้าง' AFTER `employment_end_date`;
+
+COMMIT;
+
+--
+-- 2026-08-20: Configurable Attendance Deduction Rules (Late / Absent / Unpaid Leave) -- explicit
+-- request ("การหักสาย อยากให้มีการตั้งค่าได้...ให้เป็นรายการให้เลือกและใส่เงื่อนไขเองได้", later broadened:
+-- "รองรับการ Set เงื่อนของ สาย ขาดงาน ลาไม่รับเงินด้วย...ดึงไปใช้ในการทำ Process เงินเดือนด้วย"). Replaces
+-- SyncPayResolver's previously hardcoded salary-derived formulas for these 3 events with a
+-- company-configurable rule per event, read at payroll calc time. Originally built Late-only as
+-- `late_deduction_rules` (single company-wide row); generalized the same day, before any real
+-- company had configured it, to `attendance_deduction_rules` keyed by `(comp_id, event_code)` --
+-- one row PER EVENT per company, not a single row -- so Late/Absent/Unpaid Leave are each
+-- independently configurable. `master_attendance_deduction_methods` is the usual global
+-- fixed-but-growable-set master table (same shape as `master_ot_scope_types`) -- deliberately
+-- unit-agnostic wording (no "per minute"/"per day" baked into the labels) since the same 3 methods
+-- apply to all 3 events; each rule's own `rate_unit` column (added 2026-08-21, see below) picks the
+-- unit, defaulting per-event (minute for Late, day for Absent/Unpaid Leave) but freely changeable.
+-- `attendance_deduction_rule_brackets` is only populated when method_code='tiered_bracket',
+-- delete+reinsert whole set on every save (same pattern as `holiday_assignments`/
+-- `approval_workflow_steps`). No row for a given (company, event) = default behavior =
+-- percent_of_rate @ multiplier 1.00, i.e. byte-for-byte identical to the old hardcoded
+-- formula for that event -- existing companies see zero behavior change until they explicitly
+-- configure something.
+--
+-- `rate_unit` (2026-08-21, explicit request: "การตั้งค่าเงื่อนไขการหักสาย ให้มี นาทีละ กี่บาท ชั่วโมงละกี่บาท")
+-- -- only meaningful for flat_amount (interprets rate_per_unit) and tiered_bracket (interprets
+-- min_units/max_units); ignored for percent_of_rate, which is always computed against actual
+-- minutes internally regardless of this column (see SyncPayResolver's own docblock for why: a
+-- day-based rate hides real shift-length variation within a period, e.g. a half-day Saturday vs a
+-- full weekday -- minutes never do).
+--
+
+CREATE TABLE `master_attendance_deduction_methods` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_attendance_deduction_method_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_attendance_deduction_methods` (`code`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('percent_of_rate','เปอร์เซ็นต์ของอัตราที่คำนวณจากเงินเดือน (ค่าเริ่มต้นของระบบ)','Percent of Salary-derived Rate (system default)',1,10),
+('flat_amount','อัตราคงที่ต่อหน่วย','Flat Amount per Unit',1,20),
+('tiered_bracket','ขั้นบันไดตามจำนวนหน่วย','Tiered by Units',1,30);
+
+CREATE TABLE `attendance_deduction_rules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `event_code` enum('late','absent','unpaid_leave') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `method_code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rate_unit` enum('minute','hour','day') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'minute' COMMENT 'interprets rate_per_unit (flat_amount) and min_units/max_units (tiered_bracket) -- ignored by percent_of_rate',
+  `rate_per_unit` decimal(10,2) DEFAULT NULL COMMENT 'used when method_code=flat_amount -- baht per rate_unit',
+  `multiplier_rate` decimal(6,2) DEFAULT 1.00 COMMENT 'used when method_code=percent_of_rate',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_attendance_deduction_rules_comp_event` (`comp_id`,`event_code`),
+  KEY `idx_attendance_deduction_rules_method` (`method_code`),
+  CONSTRAINT `fk_attendance_deduction_rules_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_attendance_deduction_rules_method` FOREIGN KEY (`method_code`) REFERENCES `master_attendance_deduction_methods` (`code`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `attendance_deduction_rule_brackets` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `rule_id` int(11) NOT NULL,
+  `min_units` int(11) NOT NULL COMMENT 'unit per the parent rule''s own rate_unit column (minute/hour/day)',
+  `max_units` int(11) DEFAULT NULL COMMENT 'NULL = unbounded (no upper limit)',
+  `deduction_amount` decimal(10,2) NOT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_attendance_deduction_rule_brackets_rule` (`rule_id`),
+  CONSTRAINT `fk_attendance_deduction_rule_brackets_rule` FOREIGN KEY (`rule_id`) REFERENCES `attendance_deduction_rules` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-21: OT Rate gains a "flat amount" method, alongside the existing multiplier-based one --
+-- explicit request, paralleling Attendance Deduction Rules' percent-of-rate/flat-amount/
+-- tiered-bracket choice ("เพิ่มตัวเลือก 'จำนวนเงินคงที่' ต่อชม./วัน ใน OT Rate ที่มีอยู่"). Existing rows
+-- default to `calculation_method='multiplier'` -- their only-ever behavior until now, zero change
+-- for already-configured companies. `calculation_base` (hourly/daily) keeps its existing meaning
+-- under BOTH methods (which unit the rate is expressed against), read by
+-- SyncPayResolver::otRateForScope() same as before, just with one more field.
+--
+
+ALTER TABLE `ot_rates`
+  ADD COLUMN `calculation_method` enum('multiplier','flat_amount') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'multiplier' AFTER `calculation_base`,
+  ADD COLUMN `flat_amount_rate` decimal(10,2) DEFAULT NULL COMMENT 'used when calculation_method=flat_amount -- baht/hour or baht/day per calculation_base' AFTER `calculation_method`;
+
+COMMIT;
+
+--
+-- 2026-08-21: per-run, per-employee, per-item override/exemption for a SYNC-COMPUTED deduction line
+-- (LATE_DEDUCT/ABSENT_DEDUCT/LEAVE_NO_PAY_DEDUCT etc.) -- explicit request ("ต้องการปรับค่า สาย
+-- ขาดงาน ลาไม่รับเงิน หรือยกเว้นไม่ให้หัก"). Deliberately scoped to THIS run only (confirmed choice,
+-- not a standing per-employee setting) -- same "for this run only" scope
+-- payroll_run_manual_lines already uses, applied by PayrollRunModel::recalculate() every time it
+-- (re)computes, so re-running Recalculate does not lose the adjustment. `item_code` matches the
+-- resolved code on the sync-computed deduction line (the company's own catalog item_code when
+-- mapped via source_event_code, or SyncPayResolver::RULE_DRIVEN_ITEM_DEFS's default_code otherwise)
+-- -- not a FK to any catalog table, since a default code like 'ABSENT_DEDUCT' may not correspond to
+-- any payroll_earning_deduction_types row for a company that never customized it.
+--
+
+CREATE TABLE `payroll_run_line_overrides` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `item_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `action` enum('override_amount','exclude') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `override_amount` decimal(15,2) DEFAULT NULL COMMENT 'used when action=override_amount',
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_line_overrides` (`run_id`,`employee_id`,`item_code`),
+  KEY `idx_payroll_run_line_overrides_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_line_overrides_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_line_overrides_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-21: employee-to-employee transfer deduction -- explicit request ("หักเพื่อไปจ่ายให้ใคร โดย
+-- เลือกพนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้"). `payee_employee_id` set on a DEDUCTION item (either a
+-- standing employee_earning_deductions assignment, or a one-off payroll_run_manual_lines row) makes
+-- PayrollRunModel::recalculate() automatically create a matching real earning line (code
+-- TRANSFER_IN, taxable, included in gross_amount) for the payee employee in the SAME run --
+-- confirmed choice, not just a reference/report field. Only meaningful when the item resolves to
+-- item_type='deduction' -- enforced at the application layer (same reasoning as
+-- interest_type being forced to 'none' for earning items already). ON DELETE SET NULL (not
+-- RESTRICT) so deleting the payee employee doesn't block deleting/managing the deduction item
+-- itself -- it just stops transferring anywhere (falls back to a plain deduction) on the next save.
+--
+
+ALTER TABLE `employee_earning_deductions`
+  ADD COLUMN `payee_employee_id` int(11) DEFAULT NULL AFTER `external_reference_no`,
+  ADD CONSTRAINT `fk_eed_payee_employee` FOREIGN KEY (`payee_employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `payroll_run_manual_lines`
+  ADD COLUMN `payee_employee_id` int(11) DEFAULT NULL AFTER `note`,
+  ADD CONSTRAINT `fk_prml_payee_employee` FOREIGN KEY (`payee_employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+COMMIT;
+
+--
+-- 2026-08-21: per-run, per-employee correction of the RAW attendance numbers Origami sent (not the
+-- resulting deduction amount -- see payroll_run_line_overrides above for that) -- explicit request
+-- ("ให้สามารถแก้ไข...รายการของแต่ละคนได้ เช่นปรับการลา การสาย หากขาดงาน...ต้องการแก้ตัวเลขดิบที่ Sync
+-- มา ไม่ใช่แค่ยอดเงิน"). Column names are DELIBERATELY IDENTICAL to their source payroll_sync_items
+-- columns so a fetched row can be passed straight into SyncPayResolver::resolve()'s new 4th param
+-- with zero remapping. NULL in any column = "use whatever Origami actually sent for this field"
+-- (same convention as payroll_run_line_overrides). absent_days (not absent_mins) is the one
+-- editable absence column -- matches how HR naturally thinks about an absence and avoids leaving a
+-- second, stale representation for SyncPayResolver's multi-unit dedup to get confused by; decimal
+-- allows a half-day correction (0.5). Same reasoning is why there is exactly one editable column
+-- per event throughout this table, never two competing units for the same thing.
+--
+
+CREATE TABLE `payroll_run_sync_item_overrides` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `ot_req_working_day_hrs` decimal(8,2) DEFAULT NULL,
+  `ot_req_weekend_hrs` decimal(8,2) DEFAULT NULL,
+  `ot_req_holiday_hrs` decimal(8,2) DEFAULT NULL,
+  `trip_allowance` decimal(15,2) DEFAULT NULL,
+  `late_mins` decimal(8,2) DEFAULT NULL,
+  `absent_days` decimal(6,2) DEFAULT NULL,
+  `leave_without_pay_days` decimal(6,2) DEFAULT NULL,
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_sync_item_overrides` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_sync_item_overrides_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_sync_item_overrides_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_sync_item_overrides_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-21, explicit request ("พนักงานที่อยู่ในช่วงทดลองงาน จะไม่จ่ายในวันหยุด จ่ายแค่วันทำงาน"):
+-- weekly working-day pattern per Shift, needed to make employees.salary_type='daily' actually mean
+-- "paid per real working day" -- see PayrollRunModel::recalculate()'s new daily-salary branch and
+-- SetupRulesModel::payableDaysForEmployee(). Seven plain booleans, not a master table -- days of the
+-- week are a fixed set of exactly 7, never a growable list, so CLAUDE.md's master-table convention
+-- (for open-ended option sets) doesn't apply here. Defaults (Mon-Fri on, Sat/Sun off) backfill every
+-- existing shift with the most common pattern -- leaving them all off would have silently zeroed out
+-- every daily-rate employee's pay the moment this shipped. A half-day Saturday is still "works"
+-- (boolean, not hours) -- this only needs to know whether a day counts as payable at all, not how
+-- many hours; shift length is a daily-*rate* employee's own concern, not this pattern's.
+--
+
+ALTER TABLE `shifts`
+  ADD COLUMN `works_monday` tinyint(1) NOT NULL DEFAULT 1 AFTER `break_minutes`,
+  ADD COLUMN `works_tuesday` tinyint(1) NOT NULL DEFAULT 1 AFTER `works_monday`,
+  ADD COLUMN `works_wednesday` tinyint(1) NOT NULL DEFAULT 1 AFTER `works_tuesday`,
+  ADD COLUMN `works_thursday` tinyint(1) NOT NULL DEFAULT 1 AFTER `works_wednesday`,
+  ADD COLUMN `works_friday` tinyint(1) NOT NULL DEFAULT 1 AFTER `works_thursday`,
+  ADD COLUMN `works_saturday` tinyint(1) NOT NULL DEFAULT 0 AFTER `works_friday`,
+  ADD COLUMN `works_sunday` tinyint(1) NOT NULL DEFAULT 0 AFTER `works_saturday`;
+
+COMMIT;
+
+--
+-- 2026-08-21, explicit request ("พนักงานทุกคน สามารถลบข้อมูลออกจากรอบได้ ต่อให้ Sync มาจาก Origami เอง
+-- ก็ตาม") -- lets ANY employee be removed from a run, including one whose membership is otherwise
+-- automatic (a genuinely-synced row from payroll_sync_items, or a cycle-based run's date-range
+-- membership) -- neither of which has any "roster row" to simply delete the way
+-- payroll_run_manual_employees already allows for an off-cycle/manually-joined employee.
+-- PayrollRunModel::recalculate()'s sync-branch and cycle-branch eligibility queries both gain a
+-- NOT EXISTS against this table. Undo path reuses the existing Join Employees picker (see
+-- PayrollRunModel::joinEmployees()/manualEmployeeOptions()) rather than new UI -- for a cycle-only
+-- run, "joining" an employee who's present here just clears the exclusion (re-admitting them via
+-- the date-range rule that already governs that run type); for a sync/off-cycle run it does the
+-- same on top of its existing add behavior.
+--
+
+CREATE TABLE `payroll_run_excluded_employees` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `excluded_by` int(11) DEFAULT NULL,
+  `excluded_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_excluded_employees` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_excluded_employees_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_excluded_employees_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_excluded_employees_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-21, explicit request ("จัดการได้ว่า คนนี้ไม่ต้องคำนวณภาษี ไม่นำส่งประกันสังคมในรอบนี้") --
+-- per-run, per-employee opt-out of tax (TH_PIT) and/or SSO (TH_SSO) calculation, layered on top of
+-- the employee's own permanent employees.tax_exempt/sso_enrolled columns without touching them --
+-- deliberately scoped to THIS run only, same "for this run only" convention as
+-- payroll_run_line_overrides/payroll_run_sync_item_overrides. Merged into $employeeFlags in
+-- PayrollRunModel::recalculate()'s Pass 2 right before StatutoryCalculationEngine::calculate() --
+-- reuses the engine's existing flag-driven zeroing (TAX_EXEMPT_ITEMS / sso_enrolled flag map) and
+-- the existing tax_exempt skip on the ThPitCalculator recompute, so no engine changes needed.
+-- PVD is deliberately NOT included -- only tax + SSO were asked for.
+--
+
+CREATE TABLE `payroll_run_employee_exemptions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `run_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `exempt_tax` tinyint(1) NOT NULL DEFAULT 0,
+  `exempt_sso` tinyint(1) NOT NULL DEFAULT 0,
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_run_employee_exemptions` (`run_id`,`employee_id`),
+  KEY `idx_payroll_run_employee_exemptions_employee` (`employee_id`),
+  CONSTRAINT `fk_payroll_run_employee_exemptions_run` FOREIGN KEY (`run_id`) REFERENCES `payroll_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_payroll_run_employee_exemptions_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-22, explicit request ("Status ในหน้า Approve มี Waiting Approve Not Approve Need
+-- Information") -- confirmed with the user this must be a REAL new state, not just a label change:
+-- a third branch off pending_approval alongside the existing `rejected` branch (rejected = something
+-- is wrong; need_info = more info is needed before a decision can be made). Same column shape as
+-- rejected_at/rejected_by/reject_reason. See PayrollRunModel::requestInfo()/reviseAfterNeedInfo()/
+-- bulkRequestInfo() -- all three are exact mirrors of the existing reject()/reviseAfterReject()/
+-- bulkReject() trio.
+--
+
+ALTER TABLE `payroll_runs`
+  MODIFY COLUMN `state` enum('draft','pending_approval','approved','paid','locked','rejected','cancelled','need_info') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  ADD COLUMN `need_info_at` timestamp NULL DEFAULT NULL AFTER `cancel_reason`,
+  ADD COLUMN `need_info_by` int(11) DEFAULT NULL AFTER `need_info_at`,
+  ADD COLUMN `need_info_reason` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `need_info_by`;
+
+COMMIT;
+
+--
+-- 2026-08-24, Employment Certificate Template designer (explicit request: "เพิ่มการตั้งค่าการจัดการ
+-- รูปแบบ Employment Certificate ให้รองรับทั้งภาษาไทย และภาษาอังกฤษ รองรับการจัดตำแหน่งแบบอิสระ...เหมือน
+-- Word Photoshop") -- global master field catalog (mirrors master_payslip_field_types) + one
+-- template per (comp_id, language) with freely positioned/resized elements stored as percentages
+-- of an A4 page, so the browser editor and the dompdf renderer share the exact same coordinate
+-- space (no px/pt/mm conversion drift). Each element is either 'text' (content may embed
+-- {{field_key}} tokens resolved at generation time -- covers both a pure single-field box like
+-- "{{employee_name}}" and a hand-written paragraph with data merged inline) or 'image' (currently
+-- only company_logo). This is the template/designer piece only -- the request+approval flow
+-- (Employment Certificate document type wired into ApprovalRequestModel, a "Requests" page, the
+-- generalized Payslip-menu-becomes-a-shared-document-menu idea) is a deliberately separate,
+-- later phase per explicit agreement with the user.
+--
+
+CREATE TABLE `master_employment_certificate_field_types` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `field_group` enum('company','employee','document') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `element_type` enum('text','image') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ecft_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `master_employment_certificate_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('static_text','ข้อความ/ย่อหน้าอิสระ','Free Text / Paragraph','document','text',1,5),
+('company_logo','โลโก้บริษัท','Company Logo','company','image',1,10),
+('company_name','ชื่อบริษัท','Company Name','company','text',1,20),
+('company_address','ที่อยู่บริษัท','Company Address','company','text',1,30),
+('company_tax_id','เลขผู้เสียภาษีบริษัท','Company Tax ID','company','text',1,40),
+('company_signatory','ผู้มีอำนาจลงนาม','Authorized Signatory','company','text',1,50),
+('employee_no','รหัสพนักงาน','Employee No.','employee','text',1,60),
+('employee_name','ชื่อ-นามสกุลพนักงาน','Employee Name','employee','text',1,70),
+('position','ตำแหน่ง','Position','employee','text',1,80),
+('department','แผนก','Department','employee','text',1,90),
+('employment_date','วันที่เริ่มงาน','Employment Start Date','employee','text',1,100),
+('employment_status','สถานะการจ้าง','Employment Status','employee','text',1,110),
+('employment_type','ประเภทการจ้าง','Employment Type','employee','text',1,120),
+('base_salary','เงินเดือน','Base Salary','employee','text',1,130),
+('issue_date','วันที่ออกเอกสาร','Issue Date','document','text',1,140);
+
+CREATE TABLE `employment_certificate_templates` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `logo_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'public/uploads/employment_cert_logos/{comp_id}/{hash}.{ext}, validated at application layer',
+  `status` enum('active','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ect_tenant` (`comp_id`,`language`,`status`),
+  CONSTRAINT `fk_ect_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `employment_certificate_template_elements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `element_type` enum('text','image') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  `field_key` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'references master_employment_certificate_field_types.code -- required for image elements (company_logo), NULL for text (content carries the string/tokens instead)',
+  `content` text COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'text elements only -- literal text, may embed {{field_key}} tokens resolved at generation time',
+  `pos_x_pct` decimal(6,3) NOT NULL DEFAULT 0.000,
+  `pos_y_pct` decimal(6,3) NOT NULL DEFAULT 0.000,
+  `width_pct` decimal(6,3) NOT NULL DEFAULT 20.000,
+  `height_pct` decimal(6,3) NOT NULL DEFAULT 5.000,
+  `font_size` int(11) NOT NULL DEFAULT 14,
+  `text_align` enum('left','center','right') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'left',
+  `font_weight` enum('normal','bold') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'normal',
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_ecte_template` (`template_id`),
+  CONSTRAINT `fk_ecte_template` FOREIGN KEY (`template_id`) REFERENCES `employment_certificate_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+INSERT INTO `permissions` (`module_code`,`action_code`,`permission_key`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('employment_certificate_template','manage','employment_certificate_template.manage','จัดการเทมเพลตหนังสือรับรองการทำงาน','Manage Employment Certificate Templates',1,150);
+
+COMMIT;
+
+--
+-- 2026-08-24, Employment Certificate Template v2 (explicit follow-up request: multiple templates
+-- + 2-3 standard presets, page size/orientation, reusable uploaded-image library, watermark toggle
+-- in Preview, proper Thai PDF font, drag-and-drop placement, and full text formatting -- color/
+-- italic/underline/font-family "เหมือน Word"). employment_certificate_templates/
+-- employment_certificate_template_elements were both still completely empty in the real dev DB at
+-- this point (confirmed via SELECT COUNT(*) before writing this), so these ALTERs carry no data
+-- migration risk -- no backfill needed for template_name/is_default/page_size/orientation.
+--
+
+ALTER TABLE `employment_certificate_templates`
+  ADD COLUMN `template_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Untitled' AFTER `language`,
+  ADD COLUMN `is_default` tinyint(1) NOT NULL DEFAULT 0 AFTER `template_name`,
+  ADD COLUMN `page_size` enum('A4','Letter','Legal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'A4' AFTER `is_default`,
+  ADD COLUMN `orientation` enum('portrait','landscape') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'portrait' AFTER `page_size`;
+
+CREATE TABLE `employment_certificate_images` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `file_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `original_filename` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `uploaded_by` int(11) DEFAULT NULL,
+  `uploaded_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_eci_comp` (`comp_id`),
+  CONSTRAINT `fk_eci_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+ALTER TABLE `employment_certificate_template_elements`
+  ADD COLUMN `image_asset_id` int(11) DEFAULT NULL COMMENT 'references employment_certificate_images.id -- a custom uploaded image element (element_type=image, field_key NULL). field_key=company_logo elements leave this NULL and use the template''s own logo_path instead.' AFTER `field_key`,
+  ADD COLUMN `font_family` enum('th_sarabun_new','dejavu_sans') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th_sarabun_new' AFTER `font_size`,
+  ADD COLUMN `font_color` varchar(7) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '#000000' AFTER `font_family`,
+  ADD COLUMN `font_style` enum('normal','italic') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'normal' AFTER `font_weight`,
+  ADD COLUMN `text_decoration` enum('none','underline') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'none' AFTER `font_style`,
+  ADD CONSTRAINT `fk_ecte_image_asset` FOREIGN KEY (`image_asset_id`) REFERENCES `employment_certificate_images` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+COMMIT;
+
+--
+-- 2026-08-24, Company Profile logo (explicit request: "ในหน้า Profile บริษัท ให้สามารถใส่ Logo ได้
+-- และดึงไปใช้กับหน้าตั้งค่า Slip เงินเดือน และใบรับรอง") -- one logo per company, used as the
+-- fallback default whenever a Payslip/Employment Certificate template doesn't have its own
+-- uploaded logo (see PaySlipReport / EmploymentCertificateRenderer's own comments for exactly how
+-- that fallback resolves).
+--
+
+ALTER TABLE `companies`
+  ADD COLUMN `logo_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'public/uploads/company_logos/{id}/{hash}.{ext} -- reused as the default logo for Payslip/Employment Certificate templates when a template has none of its own' AFTER `authorized_signatory_name`;
+
+COMMIT;
+
+--
+-- 2026-08-24, Approval Workflow — 3rd document type: Employment Certificate approval (explicit
+-- request: "ใน Approval Flow เพิ่มอีก Tab เป็น Tab การตั้งค่าการอนุมัติการขอใบรับรอง"). Just the
+-- master row + settings-page tab -- `approval_document_types` and the whole ApprovalWorkflowModel/
+-- ApprovalRequestModel engine are already fully DB-driven with no hardcoded document-type list
+-- anywhere (confirmed by reading validateDocumentTypeCodes()), so this is purely additive. NOT
+-- wired to any actual request/issuance flow yet, same as everything else Employment Certificate --
+-- there is still no request/approval flow for certificates at all (see CLAUDE.md's Employment
+-- Certificate Template section), so a workflow configured here has no consumer calling
+-- ApprovalRequestModel::create() with this code yet. Admins can configure it in advance, same
+-- pattern as Holiday's resolveHolidaysForEmployee() being built/tested with no caller yet.
+--
+
+INSERT INTO `approval_document_types` (`code`, `name_th`, `name_en`, `is_active`, `sort_order`) VALUES
+('EMPLOYMENT_CERTIFICATE_APPROVAL', 'อนุมัติคำขอใบรับรองการทำงาน', 'Employment Certificate Request Approval', 1, 3);
+
+COMMIT;
+
+--
+-- 2026-08-24, Team (explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...เป็นบริษัทที่
+-- จ้าง outsource เพื่อไปอยู่กับหลาย Project...ทีมให้เป็นการเพิ่มการตั้งค่าเช่นเดียวกับ Department แล้วดึงมาใช้
+-- และเพิ่ม Filter ทีมในหน้า list พนักงานด้วย") -- naming ("ทีม (Team)") and whether Team needs a
+-- separate client/scope field beyond code+name (yes) both confirmed via AskUserQuestion. Company-
+-- scoped structure entity, same shape as `structure_departments`/`structure_positions` (per-company,
+-- soft-deletable, plugged into CompanyProfileModel::structureConfig()'s existing generic
+-- save/delete dispatcher -- no new CRUD code needed there, just a new config entry) plus one extra
+-- free-text `client_name` column (which client/project this team is deployed to -- deliberately NOT
+-- split into _th/_en like department_name is, matching `structure_departments.cost_center`'s own
+-- single free-text-field precedent, since a client's name isn't something that gets translated).
+--
+
+CREATE TABLE `structure_teams` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL COMMENT 'ID บริษัทที่ล็อกอิน',
+  `team_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `team_name_th` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `team_name_en` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `client_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อลูกค้า/ขอบเขตโครงการที่ทีมนี้ไปประจำ (outsource staffing) -- free text, ไม่บังคับกรอก',
+  `status` enum('active','inactive','deleted') COLLATE utf8mb4_unicode_ci DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_comp_team_code` (`comp_id`,`team_code`,`deleted_at`),
+  CONSTRAINT `fk_structure_teams_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+ALTER TABLE `employees`
+  ADD COLUMN `team_id` int(11) DEFAULT NULL AFTER `department_id`,
+  ADD CONSTRAINT `fk_employees_team` FOREIGN KEY (`team_id`) REFERENCES `structure_teams` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+COMMIT;
+
+--
+-- 2026-08-24, Employment Certificate Template designer -- Group/Ungroup (explicit request: "เลือก
+-- หลายรายการเพื่อลบ หรือ Group รวม layout ได้ และสามารถ ungroup ได้ โดยมี layer บอกเหมือน photoshop")
+-- -- `group_key` is a client-generated opaque string (e.g. "grp_<timestamp>_<rand>"), NOT a foreign
+-- key to another table -- grouping here just means "these elements move together and collapse into
+-- one row in the Layers panel", not a separate first-class entity with its own properties. Elements
+-- with the same non-null group_key within one template are a group; NULL = ungrouped.
+--
+
+ALTER TABLE `employment_certificate_template_elements`
+  ADD COLUMN `group_key` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `sort_order`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Employment Certificate Template -- TH/EN unified list (explicit request: "ตรงตาราง
+-- Template ในขั้นตอนการจัดการ ให้มี th กับ eng ในการจัดการเลย ไม่ต้องแยกเป็น Tab เหมือนเดิม...แล้วในตาราง
+-- แสดงผลก็ว่า template นี้ th eng พร้อมใช้งานทั้ง 2 ไหม"). `pair_key` links a TH row and an EN row as
+-- "the same logical template, two language designs" -- confirmed via AskUserQuestion over
+-- restructuring the schema into one row per template (that option would mean merging two fully
+-- separate element sets into one row's data model, a much bigger and riskier change for the same
+-- outcome). Every row gets a pair_key from now on (including a brand-new, not-yet-paired template --
+-- see EmploymentCertificateTemplateModel::save()'s own comment), and every pre-existing row here
+-- gets backfilled with a unique synthetic one so the "group by pair_key" list query never has to
+-- special-case NULL.
+--
+
+ALTER TABLE `employment_certificate_templates`
+  ADD COLUMN `pair_key` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `language`,
+  ADD KEY `idx_ect_pair_key` (`comp_id`, `pair_key`);
+
+UPDATE `employment_certificate_templates` SET `pair_key` = CONCAT('legacy_', `id`) WHERE `pair_key` IS NULL;
+
+COMMIT;
+
+--
+-- 2026-08-25, Employment Certificate Template -- designer ergonomics round 3 (explicit request:
+-- "เพิ่มให้ตั้งค่าขอบกระดาษได้ด้วยครับ"). `margin_mm` is a VISUAL PLACEMENT GUIDE ONLY (a dashed inset
+-- rectangle drawn on the canvas so the admin doesn't place elements right up against the paper edge)
+-- -- it is deliberately NOT sent to EmploymentCertificateRenderer/dompdf and does not clip or
+-- reposition anything in the actual PDF output. Elements keep positioning exactly like before,
+-- percentage-of-page, independent of this value -- changing it never silently moves existing
+-- elements. NOT NULL DEFAULT 15.00 backfills every pre-existing row automatically (MySQL fills
+-- existing rows with the column default on ADD COLUMN NOT NULL DEFAULT ...) so the guide has a
+-- sensible value from the start rather than "0mm/no margin" for every template that already exists.
+--
+
+ALTER TABLE `employment_certificate_templates`
+  ADD COLUMN `margin_mm` decimal(5,2) NOT NULL DEFAULT 15.00 AFTER `orientation`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Employment Certificate Template -- 5 more employee fields for the "Add to Canvas"
+-- palette (explicit request: "ตรง Add to Canvas สามารถเพิ่ม item อะไรเกี่ยวกับพนักงานและบริษัทได้อีกไหม
+-- ครับ"). Company-side had nothing more genuinely available (the `companies` table has no phone/
+-- email/website column at all to pull from) so this round is employee-only: branch/team (this app's
+-- own outsourcing-firm domain makes "which client/project team" a genuinely relevant certificate
+-- field, see structure_teams' own `client_name` column), gender, nationality, date of birth --
+-- deliberately did NOT add id_card_no/passport_no (PII that most real employment certificates in
+-- this app's context don't print, and this app has no "purpose" selector to gate that kind of
+-- disclosure on) or contact fields (mobile/personal email -- not something a certificate states).
+--
+
+INSERT INTO `master_employment_certificate_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('employee_branch','สาขา','Branch','employee','text',1,91),
+('employee_team','ทีม/โครงการ','Team/Project','employee','text',1,92),
+('employee_gender','เพศ','Gender','employee','text',1,93),
+('employee_nationality','สัญชาติ','Nationality','employee','text',1,94),
+('employee_date_of_birth','วันเกิด','Date of Birth','employee','text',1,95);
+
+COMMIT;
+
+--
+-- 2026-08-25, Employment Certificate Template -- multi-page support + Insert Table/Shape (explicit
+-- request: "รองรับการมีหลายๆหน้า โดยที่มีปุ่มให้เลือกเพิ่มหรือลด" / "เพิ่ม option การเพิ่มตาราง...และสามารถ
+-- insert shape ต่างๆ เหมือน Word"). `page_number` (1-based) lets one template's elements span
+-- multiple pages -- the admin's "add/remove page" buttons just change which page_number new
+-- elements land on and which one the canvas currently shows; nothing else about the coordinate
+-- model changes (still percentage-of-ONE-page, just repeated per page_number in the PDF, one
+-- physical page per distinct page_number found). `element_type` gained 'shape' (rectangle/ellipse/
+-- line, font_color doubles as fill/stroke color, field_key holds which shape) and 'table' (a small
+-- JSON grid -- rows/cols/border color+width/cell text -- stored in `content`, same column every
+-- other text element already uses for its own string data, no new column needed for it).
+-- `font_family` widened from a 2-value enum to a plain varchar (explicit request: "เพิ่มตัวเลือก font
+-- สัก 10 font ครับ" -- see EmploymentCertificateRenderer's own comment on why this shipped with 7
+-- real, embeddable fonts instead of 10: every option here has to have an ACTUAL font file dompdf can
+-- embed, or the canvas preview and the real PDF would silently drift apart again, the exact bug
+-- class already fixed once in this module -- there simply aren't 10 more legitimately-licensed,
+-- already-available font files in this environment to add without either breaking that guarantee or
+-- bundling something not freely redistributable, same reasoning as why Tahoma/Leelawadee were never
+-- bundled either).
+--
+
+ALTER TABLE `employment_certificate_template_elements`
+  MODIFY COLUMN `element_type` enum('text','image','shape','table') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  MODIFY COLUMN `font_family` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th_sarabun_new',
+  ADD COLUMN `page_number` int(11) NOT NULL DEFAULT 1 AFTER `sort_order`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Payslip Template -- rebuilt as a free-form canvas designer, explicit request: "ปรับให้
+-- การตั้งค่า Slip เงินเดือน Template เป็นเหมือนกับใบรับรอง" (make it like the Employment Certificate
+-- Template designer) -- confirmed via AskUserQuestion: FULL canvas designer, not just a matching
+-- List+Modal page shell. `payslip_template_fields` (the old ordered field-list) is dropped entirely
+-- and replaced by `payslip_template_elements`, the exact same shape as
+-- `employment_certificate_template_elements` (percentage-positioned text/image/shape/table elements,
+-- `group_key`/`page_number` included) -- confirmed both `payslip_templates` and
+-- `payslip_template_fields` were completely EMPTY in the real dev DB before writing this (SELECT
+-- COUNT(*) on both first), so this is a clean cutover with no data-migration risk, same as
+-- Employment Certificate Template's own v2 migration note.
+--
+-- Deliberately KEPT from the old Payslip Template, unlike Employment Certificate Template's own
+-- design (which has neither concept at all):
+--  - `is_default`/`language_mode`/`header_text_*`/`footer_text_*`/`status` (active/inactive) on
+--    `payslip_templates` -- these aren't redundant here the way Employment Certificate's per-pair
+--    default-star was (see that module's v10 removal) -- `is_default` genuinely controls which
+--    template `PaySlipReport::generate()` picks when none is specified, and `status='inactive'`
+--    already had real meaning (a template can be disabled without deleting it). `language_mode`
+--    stays a SINGLE shared canvas per template (not a fork into two independent language rows like
+--    Employment Certificate's `pair_key`) because payslip field values are almost entirely
+--    data-driven tokens that already resolve per-language at generation time (see
+--    PayslipTemplateRenderer::buildTokens()), not hand-authored free text needing two independent
+--    layouts -- forking would have added real complexity for no corresponding benefit here.
+--  - There is therefore NO pair_key/TH-EN-tabs machinery ported over at all -- the editor page is
+--    addressed by a plain template `id`, not a pair key.
+--
+-- `master_payslip_field_types` gains the same `element_type` column Employment Certificate's own
+-- master table has (text/image -- only `company_logo` is `image`) plus a new `static_text` field
+-- (free-form paragraph, mirrors Employment Certificate's own "Auto Replace" {{field_key}} embedding
+-- mechanism) and widens `field_group` to add `document` for it. `earning_lines_all`/
+-- `deduction_lines_all`/`statutory_lines_all` need NO special schema/element-type of their own --
+-- they stay ordinary `text` elements whose content is exactly the single bound token
+-- `{{earning_lines_all}}` etc. (the SAME `{{field_key}}`-token convention every other bound field
+-- already uses), and PayslipTemplateRenderer::renderElementHtml() special-cases those 3 specific
+-- token strings to expand into a real itemized table instead of doing plain string substitution --
+-- this needed zero new columns/element types, only server-side rendering logic.
+--
+
+ALTER TABLE `master_payslip_field_types`
+  MODIFY COLUMN `field_group` enum('employee_info','company_info','earning','deduction','statutory','summary','document') COLLATE utf8mb4_unicode_ci NOT NULL,
+  ADD COLUMN `element_type` enum('text','image') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text' AFTER `field_group`;
+
+UPDATE `master_payslip_field_types` SET `element_type` = 'image' WHERE `code` = 'company_logo';
+
+INSERT INTO `master_payslip_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('static_text','ข้อความ/ย่อหน้าอิสระ','Free Text / Paragraph','document','text',1,5);
+
+ALTER TABLE `payslip_templates`
+  ADD COLUMN `page_size` enum('A4','Letter','Legal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'A4' AFTER `language_mode`,
+  ADD COLUMN `orientation` enum('portrait','landscape') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'portrait' AFTER `page_size`,
+  ADD COLUMN `margin_mm` decimal(5,2) NOT NULL DEFAULT 15.00 AFTER `orientation`;
+
+CREATE TABLE `payslip_template_elements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `element_type` enum('text','image','shape','table') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'text',
+  `field_key` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'references master_payslip_field_types.code for image elements (company_logo) or the shape type for shape elements -- NULL for text/table (content carries the string/tokens/JSON instead)',
+  `image_asset_id` int(11) DEFAULT NULL COMMENT 'references payslip_images.id -- a custom uploaded image element, distinct from field_key=company_logo which uses the template''s own logo_path instead',
+  `content` text COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'text elements: literal text, may embed {{field_key}} tokens. table elements: JSON grid.',
+  `pos_x_pct` decimal(6,3) NOT NULL DEFAULT 0.000,
+  `pos_y_pct` decimal(6,3) NOT NULL DEFAULT 0.000,
+  `width_pct` decimal(6,3) NOT NULL DEFAULT 20.000,
+  `height_pct` decimal(6,3) NOT NULL DEFAULT 5.000,
+  `font_size` int(11) NOT NULL DEFAULT 14,
+  `font_family` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th_sarabun_new',
+  `font_color` varchar(7) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '#000000',
+  `text_align` enum('left','center','right') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'left',
+  `font_weight` enum('normal','bold') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'normal',
+  `font_style` enum('normal','italic') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'normal',
+  `text_decoration` enum('none','underline') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'none',
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `group_key` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `page_number` int(11) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  KEY `idx_pte_template` (`template_id`),
+  CONSTRAINT `fk_pte_template` FOREIGN KEY (`template_id`) REFERENCES `payslip_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `payslip_images` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `file_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `original_filename` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `uploaded_by` int(11) DEFAULT NULL,
+  `uploaded_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pimg_comp` (`comp_id`),
+  CONSTRAINT `fk_pimg_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+ALTER TABLE `payslip_template_elements`
+  ADD CONSTRAINT `fk_pte_image_asset` FOREIGN KEY (`image_asset_id`) REFERENCES `payslip_images` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+DROP TABLE `payslip_template_fields`;
+
+INSERT INTO `permissions` (`module_code`,`action_code`,`permission_key`,`name_th`,`name_en`,`is_active`,`sort_order`) VALUES
+('payslip_template','manage','payslip_template.manage','จัดการเทมเพลตสลิปเงินเดือน','Manage Payslip Templates',1,151)
+ON DUPLICATE KEY UPDATE `permission_key` = `permission_key`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Payslip Template canvas designer, immediate follow-up fix -- the old `name_th`/
+-- `name_en` (two required, separately-typed template names) don't fit the canvas designer's single
+-- Word-doc-title-style name field (`template_name`, matching Employment Certificate Template's own
+-- convention -- see that class's `.ect-editor-title-input`). Confirmed via grep that no other file
+-- anywhere in the app reads `payslip_templates.name_th`/`name_en` (only PayslipTemplateModel/
+-- Controller ever did, both already rewritten for this feature) -- safe to drop outright rather than
+-- keep as unused dead columns. `payslip_templates` was still completely empty at this point (same
+-- confirmed-empty state as the main migration above), so no data to carry over.
+--
+
+ALTER TABLE `payslip_templates`
+  ADD COLUMN `template_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' AFTER `country_code`,
+  DROP COLUMN `name_th`,
+  DROP COLUMN `name_en`;
+
+COMMIT;
+
+--
+-- 2026-08-25, Payslip Template + Employment Certificate Template -- per-template ASSIGNMENT to
+-- department/team/employee (explicit request: "สามารถ Assign ตั้งค่าให้พนักงาน เป็นรายแผนก รายทีม
+-- หรือรายคน หรือใช้งานร่วมกันทั้งหมดก็ได้" -- assign a template to specific departments/teams/
+-- individual employees, any combination at once on one template). Mirrors `holidays`/
+-- `holiday_assignments`' own polymorphic scope pattern (see SetupRulesModel::resolveHolidaysForEmployee()/
+-- validateScopeRef()) but DELIBERATELY simpler -- no `assignment_mode` include/exclude toggle, since
+-- nothing in this request asked for a "blacklist everyone except" case the way Holiday genuinely
+-- needed one for "the whole company is off except department X". Semantics here: a template with
+-- ZERO assignment rows is UNSCOPED (applies as the general company default, exactly today's existing
+-- `is_default`/`getDefault()` behavior, unchanged); a template with ANY assignment rows only applies
+-- to the union of those department/team/employee scopes. Resolution priority when more than one
+-- scope type matches the same employee: employee > team > department (same "most specific wins"
+-- convention as Holiday's own employee > position > department > shift priority).
+--
+
+CREATE TABLE `payslip_template_assignments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `scope_type` enum('department','team','employee') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `scope_id` int(11) NOT NULL COMMENT 'polymorphic -- structure_departments.id / structure_teams.id / employees.id depending on scope_type, validated at application layer',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pta_template` (`template_id`),
+  KEY `idx_pta_scope` (`scope_type`, `scope_id`),
+  CONSTRAINT `fk_pta_template` FOREIGN KEY (`template_id`) REFERENCES `payslip_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+CREATE TABLE `employment_certificate_template_assignments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `template_id` int(11) NOT NULL,
+  `scope_type` enum('department','team','employee') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `scope_id` int(11) NOT NULL COMMENT 'polymorphic -- structure_departments.id / structure_teams.id / employees.id depending on scope_type, validated at application layer',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ecta_template` (`template_id`),
+  KEY `idx_ecta_scope` (`scope_type`, `scope_id`),
+  CONSTRAINT `fk_ecta_template` FOREIGN KEY (`template_id`) REFERENCES `employment_certificate_templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+COMMIT;
+
+--
+-- 2026-08-25, Payslip Template's 2-language handling rebuilt to match Employment Certificate
+-- Template's own pair pattern exactly (explicit request: "ในหน้าตั้งค่า Slip การทำ 2 ภาษาอยากให้เป็น
+-- เหมือนหน้าของเอกสาร และรูปแบบการทำเหมือนกัน" -- confirmed via AskUserQuestion: drop `language_mode`'s
+-- 'both' option entirely and mirror ECT's language/pair_key columns exactly, rather than keep 'both'
+-- as a 3rd option alongside a th/en pair). `language_mode` ('th'/'en'/'both', ONE shared canvas
+-- across languages) is replaced by `language` (enum('th','en'), one canvas PER language, same shape
+-- as `employment_certificate_templates.language`) + `pair_key` (same shape as that table's own
+-- `pair_key`, links a TH row and an EN row as "the same logical template"). `is_default` becomes
+-- per (comp_id, language) instead of company-wide, matching ECT's own single-default-per-language
+-- enforcement (PayslipTemplateModel::getDefault($compId, $language) replaces the old
+-- getDefaultForCompany($compId)). `status`/`deleted_at` (the active/inactive/deleted soft-delete
+-- toggle, distinct from ECT which has no 'inactive' state) and every other Payslip-only field
+-- (header/footer text, is_default itself) are UNCHANGED -- only the language mechanism is being
+-- unified, not the fields the original rebuild already deliberately kept different from ECT.
+--
+-- Real production data at migration time: exactly one template existed (id=165, "Slip เงินเดือน",
+-- language_mode='both', is_default=1) -- per the user's explicit choice, it keeps 100% of its
+-- content and becomes the TH row of a new pair; an EN version can be created afterward via
+-- "Generate Auto" or manually, same as any other pair missing one language.
+--
+
+ALTER TABLE `payslip_templates`
+  ADD COLUMN `language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th' AFTER `template_name`,
+  ADD COLUMN `pair_key` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `language`,
+  ADD KEY `idx_pst_pair_key` (`comp_id`, `pair_key`);
+
+UPDATE `payslip_templates` SET `language` = 'en' WHERE `language_mode` = 'en';
+UPDATE `payslip_templates` SET `pair_key` = CONCAT('legacy_', `id`) WHERE `pair_key` IS NULL;
+
+ALTER TABLE `payslip_templates` DROP COLUMN `language_mode`;
+
+COMMIT;
+
+--
+-- 2026-08-26, Employment Certificate REQUEST/ISSUANCE flow (explicit request: "ในส่วนของ Request
+-- เพิ่ม Tab สำหรับการ Request ใบรับรองขึ้นมาด้วยคู่กับ Pay slip และการอนุมัติให้เป็นรูปแบบเดียวกับ Approve
+-- Process ครับมี timeline ให้กดดู") -- this is the request/issuance flow CLAUDE.md's Employment
+-- Certificate Template section has been explicitly deferring since phase 1 ("ยังไม่มี request/
+-- issuance flow หรือการออกเอกสารจริงให้พนักงานเลยในรอบนี้"). `EMPLOYMENT_CERTIFICATE_APPROVAL` was
+-- already seeded into `approval_document_types` back then (config-only, no consumer) -- this table
+-- is the first real consumer of it. Mirrors `payslip_requests`' own shape/FK style exactly (see that
+-- table's own comment) -- `requested_by` is HR submitting on behalf of the employee, same "no
+-- self-service portal yet" precedent. `language` picks which language design
+-- (EmploymentCertificateTemplateModel::resolveTemplateForEmployee()) to issue against -- confirmed
+-- upfront at request-creation time (not deferred to issuance) that a template actually exists for
+-- that employee+language, so a request can never be approved into a dead end. `status` mirrors
+-- `payslip_requests`' own two-phase pattern (engine verdict first, then a document-specific
+-- follow-on outcome) -- 'approved' is the generic engine's terminal verdict; 'issued'/'issue_failed'
+-- is EmploymentCertificateRequestModel's own best-effort PDF generation immediately after, same
+-- separation Payslip's own 'approved' -> 'sent'/'send_failed' already established.
+--
+
+CREATE TABLE `employment_certificate_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `comp_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL COMMENT 'พนักงานเจ้าของใบรับรองที่ขอ',
+  `language` enum('th','en') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'th',
+  `requested_by` int(11) NOT NULL COMMENT 'employees.id ของผู้กดขอจริง (ตอนนี้คือ HR กดแทน, อนาคตอาจเป็นตัวพนักงานเองผ่าน portal)',
+  `approval_request_id` int(11) DEFAULT NULL,
+  `status` enum('pending','approved','rejected','cancelled','issued','issue_failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `file_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'public/uploads/employment_certificate_files/{comp_id}/{hash}.pdf once issued -- generated ONCE at approval time and never re-rendered, so a later change to the employee''s data or the template does not retroactively alter an already-issued document',
+  `issue_error` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'set when status=issue_failed, so an admin can see why without digging through logs',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ecr_approval_request` (`approval_request_id`),
+  KEY `idx_ecr_lookup` (`comp_id`,`employee_id`,`status`),
+  CONSTRAINT `fk_ecr_company` FOREIGN KEY (`comp_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ecr_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ecr_approval_request` FOREIGN KEY (`approval_request_id`) REFERENCES `approval_requests` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `employee_recurring_earnings`
+--
+-- 2026-08-26, explicit request: "ส่วนของเงินเดือนในหน้าจัดการข้อมูลพนักงาน จะมีรายรับที่ได้ทุกเดือนเช่นพวก
+-- ค่าตำแหน่ง ค่ารถ ค่าน้ำมัน และอื่นๆ ให้เพิ่มส่วนนี้เข้าไปด้วย และระงับการจ่ายได้ รวมถึงการตั้งค่าส่วนนี้เพิ่มเติมให้นำไป
+-- คำนวณในรอบการจ่ายด้วย" -- deliberately a NEW table, not a new mode of `employee_earning_deductions`,
+-- which is inherently installment-based (total_installments/current_installment NOT NULL, a fixed
+-- total split across a finite schedule) and genuinely doesn't fit an allowance that recurs
+-- indefinitely with no end date. Confirmed via AskUserQuestion: lives as its OWN new section on the
+-- Employee Detail Salary tab (not folded into the Earning-Deduction tab, which stays loan/
+-- installment-only) -- see EmployeeRecurringEarningModel's own docblock for the full reasoning.
+--
+-- `ped_type_id` reuses the EXISTING `payroll_earning_deduction_types` catalog (Payroll
+-- Configuration > Earning-Deduction Types) rather than a new master table or free text --
+-- application layer restricts selection to item_type='earning' AND calculation_method='fixed_amount'
+-- (this feature is specifically "enter THIS employee's own flat monthly amount", not a percentage or
+-- a manual-entry-per-run item).
+--
+-- "Suspend" (confirmed via AskUserQuestion: a date RANGE, not a plain on/off toggle) is
+-- `suspended_from`/`suspended_to` -- both columns set together or neither (enforced at the
+-- application layer, not a DB CHECK constraint, same convention as every other cross-field
+-- validation in this project). PayrollRunModel::recalculate() excludes a row from a run whenever
+-- that run's pay period overlaps the suspend window at all, and automatically resumes once the
+-- run's period moves past `suspended_to` -- no separate re-activation step needed.
+--
+-- `status` is deliberately just enum('active','deleted') (not the usual active/inactive/deleted
+-- triple) -- there is no independent on/off toggle here, suspension is entirely date-range-driven,
+-- so a third "inactive" state would have no distinct meaning from "suspended right now" or
+-- "deleted".
+--
+
+CREATE TABLE `employee_recurring_earnings` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `employee_id` int(11) NOT NULL,
+  `ped_type_id` int(11) NOT NULL COMMENT 'payroll_earning_deduction_types.id, restricted at the application layer to item_type=earning AND calculation_method=fixed_amount',
+  `amount` decimal(15,2) NOT NULL COMMENT 'this employee''s own flat monthly amount -- independent of payroll_earning_deduction_types.fixed_amount, which is only a company-wide default/reference',
+  `effective_date` date NOT NULL,
+  `suspended_from` date DEFAULT NULL COMMENT 'both suspended_from/suspended_to set together or neither -- see table comment',
+  `suspended_to` date DEFAULT NULL,
+  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('active','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_by` int(11) DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ere_employee` (`employee_id`),
+  KEY `idx_ere_ped_type` (`ped_type_id`),
+  CONSTRAINT `fk_ere_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ere_ped_type` FOREIGN KEY (`ped_type_id`) REFERENCES `payroll_earning_deduction_types` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว" (add a
+-- Photoshop-style show/hide "eye" toggle per layer, instead of only being able to delete). A hidden
+-- element is excluded from BOTH the on-canvas render AND the generated PDF (a real functional
+-- alternative to deleting, not just an editor-only view filter) while keeping its position/size/
+-- content/formatting intact so it can be shown again later. Defaults to 1 (visible) so every
+-- existing saved template renders exactly as it always has.
+ALTER TABLE `employment_certificate_template_elements`
+  ADD COLUMN `is_visible` tinyint(1) NOT NULL DEFAULT 1 AFTER `sort_order`;
+ALTER TABLE `payslip_template_elements`
+  ADD COLUMN `is_visible` tinyint(1) NOT NULL DEFAULT 1 AFTER `sort_order`;
+
+-- 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode และเพิ่มให้ติ๊กได้ว่าต้องการให้ Auto Save
+-- โดยตั้งต้นเป็น Draft mode ก่อน แล้วค่อย Public และในหน้า List สามารถเปิด Draft หรือ Public ได้จากหน้านั้นเลย"
+-- -- `publish_status` is a workflow-stage gate LAYERED ON TOP of the existing `status`/`deleted_at`
+-- soft-delete convention, not a replacement for it: only publish_status='public' rows are ever
+-- eligible for real generation (getDefault()/resolveTemplateForEmployee(), see both models' own
+-- comments) -- a draft is a work-in-progress that must never silently reach a real payslip/
+-- certificate. Every NEW template starts 'draft' (enforced in save()'s own INSERT branch, hardcoded,
+-- never accepted from client input) and is only ever flipped via the dedicated setPublishStatus()
+-- action (List page toggle or the editor's own switch) -- never as a side effect of an ordinary or
+-- auto- save, so autosave can never silently publish an unfinished design. Existing rows are
+-- backfilled to 'public' immediately below so no currently-working template (including the one real
+-- production template, id=165/legacy_165) silently stops generating the moment this ships -- only
+-- templates created AFTER this migration start as draft.
+ALTER TABLE `payslip_templates`
+  ADD COLUMN `publish_status` enum('draft','public') NOT NULL DEFAULT 'draft' AFTER `status`,
+  ADD COLUMN `auto_save` tinyint(1) NOT NULL DEFAULT 0 AFTER `publish_status`;
+UPDATE `payslip_templates` SET `publish_status` = 'public';
+ALTER TABLE `employment_certificate_templates`
+  ADD COLUMN `publish_status` enum('draft','public') NOT NULL DEFAULT 'draft' AFTER `status`,
+  ADD COLUMN `auto_save` tinyint(1) NOT NULL DEFAULT 0 AFTER `publish_status`;
+UPDATE `employment_certificate_templates` SET `publish_status` = 'public';
+
+-- 2026-08-26, explicit request: "ตรงส่วนของการตั้งค่าบริษัท เพิ่มให้แนบลายเซ็นต์ Authorized Signatory
+-- Name หรือสามารถเซ็นต์สดผ่านหน้าจอได้ และเพิ่มใน Item ในการจัดการ Template Slip เงินเดือนและเอกสาร" --
+-- one company-wide signature image (uploaded file OR a live-drawn signature exported to PNG
+-- client-side, both via CompanyProfileController::uploadSignature(), same convention as `logo_path`
+-- just above it) -- new `company_signature` field type lets both canvas designers place it, resolved
+-- the same way `company_logo` already is (see PayslipTemplateRenderer/EmploymentCertificateRenderer).
+ALTER TABLE `companies`
+  ADD COLUMN `signature_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'public/uploads/company_signatures/{id}/{hash}.{ext} -- the Authorized Signatory''s signature (uploaded image or live-drawn), reused as the "Authorized Signature" item on Payslip/Employment Certificate templates' AFTER `logo_path`;
+INSERT INTO `master_payslip_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('company_signature','ลายเซ็นผู้มีอำนาจลงนาม','Authorized Signature','company_info','image',1,125);
+INSERT INTO `master_employment_certificate_field_types` (`code`,`name_th`,`name_en`,`field_group`,`element_type`,`is_active`,`sort_order`) VALUES
+('company_signature','ลายเซ็นผู้มีอำนาจลงนาม','Authorized Signature','company','image',1,15);
+
+-- 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้ และส่วนของ
+-- ที่อยู่ให้เพิ่มสามารถปักหมุด Location บน Map ได้" -- signature_path is a plain passthrough column, same
+-- convention as the pre-existing (previously unwired) profile_photo_path column, uploaded via
+-- EmployeeController::uploadSignature(). address_latitude/longitude are nullable and scoped to the
+-- CONTACT address specifically (where the employee can actually be reached, unlike the register
+-- address, which is often a permanent household record) -- OpenStreetMap/Leaflet, no API key needed.
+ALTER TABLE `employees`
+  ADD COLUMN `signature_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `profile_photo_path`,
+  ADD COLUMN `address_latitude` decimal(10,7) DEFAULT NULL AFTER `master_address_id_contact`,
+  ADD COLUMN `address_longitude` decimal(10,7) DEFAULT NULL AFTER `address_latitude`;
+
+-- 2026-08-26, explicit request: "ตัวข้อมูลเงินเดือนตอนนี้ เก็บเป็นตัวเลขตรงๆ ไม่ต้องการให้เห็นตัวเลขตรงๆใน
+-- ฐานข้อมูลครับ รวมถึงเงินได้ส่วนอื่นๆ หรือตัวเงินของทั้งระบบเลย" -- scoped (confirmed via AskUserQuestion)
+-- to the SINGLE most sensitive per-employee value first, `employees.base_salary_amount`, not every
+-- monetary column system-wide -- see EmployeeModel::encryptedColumns()'s own comment for why this one
+-- column was safe to do without touching any SQL-side SUM/WHERE/ORDER BY (verified by grep across the
+-- whole codebase before making this change: nothing aggregates/filters/sorts on it in SQL, it's read
+-- once per employee into PHP). `payroll_run_details.base_salary_amount` (the per-run snapshot, used
+-- extensively in report/statutory SUM queries) and every other monetary column are DELIBERATELY left
+-- untouched -- that would need a much larger redesign (decrypt-then-aggregate-in-PHP everywhere) and
+-- is a separate, not-yet-started phase, not part of this change.
+--
+-- Same AES-256-GCM mechanism as bank_account_no/sso_no/tax_id_no just above (application-layer only,
+-- via EncryptionService, keyed by the row's own shared `key_version` column -- never a DB-level
+-- feature). On a genuinely FRESH install this ALTER is a no-op data-wise (empty table, nothing to
+-- migrate). On an EXISTING database with real employee data (this project's own dev DB, at the time
+-- this was written), plain SQL cannot perform the actual encryption -- that required a one-time PHP
+-- script (loop every employee row, EncryptionService::encrypt() the existing plaintext value, verify
+-- every row round-trips through decrypt() before dropping the old column) run once, out-of-band, not
+-- part of this file. Do the same before applying this ALTER to any other database that already has
+-- real salary data in it.
+ALTER TABLE `employees`
+  MODIFY COLUMN `base_salary_amount` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted';
+
+COMMIT;
+
+--
+-- 2026-08-27, Payroll Sync: support_team_id/support_team_text + signature_drawing (explicit
+-- request: "PAYROLL_SYNC_API.md มีการส่งลายเซ็น และทีม support มาด้วย ในการรับข้อมูลมาทำเงินเดือน ตอน
+-- บันทึกข้อมูลพนักงาน ให้ไปบันทึกในตารางทีม และ Assign ให้พนักงาน Auto เพิ่ม ลายเซ็นถูกส่งมาแบบ base64") --
+-- both fields were added to PAYROLL_SYNC_API.md's own 2026-08-27 revision note (items[].support_team_id/
+-- .support_team_text from Origami's m_employee.support_team_id joined to m_support_team, and
+-- items[].signature_drawing from m_employee_info.signature_drawing) but the receiving side
+-- (PayrollSyncModel) never had any column/handling for either -- see that class's own docblock for
+-- what applyOneEmployeeMasterFields() now does with them (resolveOrCreateTeamId()/team_id, and
+-- decode+save signature_drawing as a real file under employees.signature_path).
+--
+-- structure_teams gets the exact same origami_ref_id/data_source columns already added to
+-- structure_departments/structure_positions above (2026-08-18 rev 2 section) -- same reasoning:
+-- match by origami_ref_id first, fall back to an exact name match, create a new row only when
+-- neither resolves. Originally NOT given a sync_batch_id column like those two -- there was no
+-- TeamSyncer/MasterDataSyncOrchestrator entity type for Team yet (it was manual-HR-config-only
+-- per its own 2026-08-24 section above); this is the same lightweight one-off resolve-or-create
+-- PayrollSyncModel already does for department/position, not a full syncer.
+--
+-- 2026-08-28 update: sync_batch_id ADDED after all -- the Org Structure interactive Sync picker
+-- (see OrgStructureSyncModel's own docblock) now covers Department/Position/Team all three,
+-- reusing AbstractMasterDataSyncer's applyResolved()/upsertItem() pattern, which writes
+-- sync_batch_id on every touch same as department/position already do -- Team needed the column
+-- to match.
+--
+ALTER TABLE `structure_teams`
+  ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL AFTER `team_code`,
+  ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual' AFTER `origami_ref_id`,
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL AFTER `data_source`,
+  ADD UNIQUE KEY `uq_teams_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_teams_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- payroll_sync_items: support_team_id/support_team_text stored plainly (small mapping ids/labels,
+-- same treatment as dept_id/posi_id/dept_description/position_name already on this table).
+-- signature_drawing is the actual drawn-signature IMAGE content (not a path like emp_pic), so unlike
+-- emp_pic it's encrypted at rest -- AES-256-GCM via EncryptionService, sharing this row's existing
+-- single `key_version` column with pay_bank_no/id_card_no/spouse_data/children_data (same "one
+-- column serves every encrypted field on the row, all re-keyed together" convention already
+-- documented on this table). `longtext` because a `data:image/...;base64,...` data URI can run to
+-- tens of KB, further inflated by the encryption envelope.
+ALTER TABLE `payroll_sync_items`
+  ADD COLUMN `support_team_id` bigint(20) DEFAULT NULL COMMENT 'Origami internal m_support_team id (2026-08-27) -- resolved/created against structure_teams.origami_ref_id on pull, mirrors dept_id/posi_id' AFTER `emp_tel`,
+  ADD COLUMN `support_team_text` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER `support_team_id`,
+  ADD COLUMN `signature_drawing` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AES-256-GCM encrypted (shares key_version) -- the employee''s drawn signature image, as a data: URI or bare base64 payload per PAYROLL_SYNC_API.md' AFTER `children_data`;
+
+COMMIT;
+
+--
+-- payroll_runs: include_base_salary/include_standing_items (2026-08-27, explicit request:
+-- "การทำงานจ่ายนอกรอบ สามารถเลือกได้ว่าจะนำเงินเดือนหรือค่าเงินได้เงินหักที่มีการตั้งค่าไว้มาคำนวณ มีให้ติ๊ก
+-- เลือกบางรายการที่จะนำมาแก้ไขหรือไม่นำมาแก้ไข") -- two more admin-choice toggles for an 'incentive'
+-- (off-cycle) run, same "explicit per-run opt-in, only meaningful when run_purpose='incentive'"
+-- pattern as compute_statutory right next to them (a normal 'payroll' run's create() always forces
+-- both to 1 regardless of what's stored here, same as compute_statutory already does):
+--   - include_base_salary: pulls in the employee's FULL base_salary_amount (confirmed via
+--     AskUserQuestion: NOT prorated against period_start/end_date -- an off-cycle run's period
+--     dates are often just payment_date itself, see payroll_runs' own create()-time fallback,
+--     which would otherwise prorate a real month's salary down to a single day's worth).
+--   - include_standing_items: pulls in the employee's standing PED assignments
+--     (employee_earning_deductions) AND Recurring Earnings (employee_recurring_earnings) --
+--     confirmed via AskUserQuestion as the two sources "ที่ตั้งค่าไว้" covers -- gated by the SAME
+--     payroll_run_ped_type_settings two-panel Earning/Deduction selection an admin already uses to
+--     narrow a normal run's items (see that table's own docblock above), now also usable on an
+--     incentive run once this is on. Deliberately excludes attendance bonus and sync-derived
+--     lines -- neither has an off-cycle-run equivalent (both are tied to a real pay period/cycle
+--     or a pulled sync process).
+-- DEFAULT 0 (not 1, unlike compute_statutory) so this ALTER's backfill preserves EVERY existing
+-- incentive run's current behavior unchanged (base salary/standing items were always skipped
+-- entirely before this column existed) -- a value of 0 is a true no-op for
+-- PayrollRunModel::recalculate()'s own $includeBaseSalary/$includeStandingItems ternaries. Has no
+-- effect at all on a normal 'payroll' row regardless of what ends up stored here (recalculate()
+-- only ever reads these two columns inside the run_purpose='incentive' branch).
+--
+
+ALTER TABLE `payroll_runs`
+  ADD COLUMN `include_base_salary` tinyint(1) NOT NULL DEFAULT 0 AFTER `compute_statutory`,
+  ADD COLUMN `include_standing_items` tinyint(1) NOT NULL DEFAULT 0 AFTER `include_base_salary`;
 
 COMMIT;
 

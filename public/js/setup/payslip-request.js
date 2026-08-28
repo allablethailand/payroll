@@ -1,8 +1,13 @@
 /**
- * Payslip Requests (Mode B) — Document & Approval > "Payslip Requests" tab.
+ * Payslip Requests (Mode B) — Payslip Tracking > "Payslip Requests" tab.
  * HR submits a request on behalf of an employee (no employee self-service portal exists in this
- * codebase yet). Approve/Reject/Cancel deliberately reuse the existing generic Approval Monitor
- * tab -- this file only handles creation + listing.
+ * codebase yet). Approve/Reject/Cancel reuse the generic approval engine
+ * (`/api/approval-request.get|logs|act`) via the SHARED `#requestDetailModal` (2026-08-26: moved to
+ * `approval-request-detail.js` so the new Employment Certificate Requests tab on this same page can
+ * reuse the exact same modal/timeline instead of duplicating it -- see that file's own docblock).
+ * This used to be the standalone "Monitor" tab (removed) which covered every document type, but
+ * SLIP_REQUEST_APPROVAL was the only document type actually wired to the engine at the time, so the
+ * detail/act UI moved here instead of being dropped.
  */
 let tb_payslip_request;
 
@@ -25,7 +30,7 @@ function payslipRequestStatusBadge(status) {
 
 function formatPayPeriod(row) {
     if (!row.period_start_date || !row.period_end_date) return escapeHtmlPr(row.run_name);
-    return `${escapeHtmlPr(row.run_name)} <span class="text-secondary small">(${row.period_start_date} - ${row.period_end_date})</span>`;
+    return `${escapeHtmlPr(row.run_name)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
 }
 
 function initPayslipRequestTable() {
@@ -41,14 +46,24 @@ function initPayslipRequestTable() {
             { data: null, render: (d, t, row) => formatPayPeriod(row) },
             { data: null, render: (d, t, row) => escapeHtmlPr((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || '-') },
             { data: 'status', render: d => payslipRequestStatusBadge(d) },
-            { data: 'created_at' }
+            // object-form render (display only) -- client-side table, defaults to sorting by this
+            // exact column (order: [[4,'desc']] below), see reports/index.js's own comment for why
+            // 'sort'/'filter' must stay on the raw ISO string.
+            { data: 'created_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
+            {
+                data: null, orderable: false, className: 'text-center',
+                render: (d, t, row) => row.approval_request_id
+                    ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-view-payslip-request" data-id="${row.approval_request_id}"><i class="fa-solid fa-eye"></i></button>`
+                    : ''
+            }
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         language: getTableLang(),
         order: [[4, 'desc']],
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-pr').length === 0) {
                 $searchDiv.append(`
@@ -57,6 +72,18 @@ function initPayslipRequestTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode (this table already loads its full dataset into the browser).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'employee' },
+                    { index: 1, key: 'pay_period' },
+                    { index: 2, key: 'requested_by' },
+                    { index: 3, key: 'status' },
+                    { index: 4, key: 'created_at' },
+                ]
+            });
         }
     });
 }
@@ -124,7 +151,14 @@ $(document).on('submit', '#payslipRequestForm', function (e) {
     });
 });
 
+/* ---------- Request detail / approve / reject / cancel -- shared modal, see
+   approval-request-detail.js for openApprovalRequestDetail()/the approve-reject-cancel handlers. ---------- */
+$(document).on('click', '.btn-view-payslip-request', function () {
+    openApprovalRequestDetail($(this).data('id'), () => { if (tb_payslip_request) tb_payslip_request.ajax.reload(null, false); });
+});
+
 $(document).ready(function () {
+    initPayslipRequestTable();
     $('#payslipRequestTabBtn').on('shown.bs.tab', function () {
         initPayslipRequestTable();
     });

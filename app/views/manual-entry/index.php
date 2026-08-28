@@ -8,12 +8,14 @@
             <span class="bc-current" data-i18n="manual_time_entry">Manual Time Entry</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-pen-to-square"></i>
-            <span data-i18n="manual_time_entry">Manual Time Entry</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="manual_time_entry_description">Manually record attendance, leave, and overtime for employees when there is no HR system integration.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
+         app/views/payroll/index.php). -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-pen-to-square"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="manual_time_entry">Manual Time Entry</h5>
+            <p class="page-header-card-desc" data-i18n="manual_time_entry_description">Manually record attendance, leave, and overtime for employees when there is no HR system integration.</p>
+        </div>
     </div>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">

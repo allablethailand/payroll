@@ -62,11 +62,29 @@ function currentRateCellTs(row) {
     }
     return `<span class="text-muted small">${langData['calc_method_formula'] || 'Formula-based'}</span>`;
 }
+// 2026-08-28, explicit request: "เก็บ Log ดำเนินการว่าแก้ไขล่าสุดเมื่อไหร่" -- updated_at/updated_by
+// (falling back to created_at/created_by, see TaxStatutoryModel/CompanyStatutorySettingModel's own
+// "editor" join comments) already existed on every one of these 3 tables, just never surfaced in
+// the UI. dateField defaults to 'updated_at' (present on all 3 API responses); Company Settings
+// passes 'last_edited_at' instead since that one is null until the company has actually customized
+// anything (see CompanyStatutorySettingModel::list()'s own docblock on why it doesn't borrow the
+// master item's own edit time).
+function lastEditedCellTs(row, dateField) {
+    dateField = dateField || 'updated_at';
+    const raw = row[dateField];
+    if (!raw) {
+        return '<span class="text-muted small">-</span>';
+    }
+    const name = (currentLang === 'th' ? row.last_edited_by_name_th : row.last_edited_by_name_en)
+        || row.last_edited_by_name_th || row.last_edited_by_name_en;
+    const dateStr = typeof formatDisplayDate === 'function' ? formatDisplayDate(raw) : raw;
+    return `<div class="small">${escapeHtmlTs(dateStr)}</div>${name ? `<div class="text-muted small">${escapeHtmlTs(name)}</div>` : ''}`;
+}
 function actionButtonsTs(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-item" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-primary btn-manage-rate" data-id="${row.id}" title="${langData['manage_rate'] || 'Manage Rate'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-item" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-item" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link text-primary border-start btn-manage-rate" data-id="${row.id}" title="${langData['manage_rate'] || 'Manage Rate'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-item" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 
@@ -79,9 +97,20 @@ function initStatutoryItemTable() {
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/statutory-item.list`,
-            dataSrc: 'data',
-            data: function (d) {
-                d.country_code = $('#filter_country_code').val() || '';
+            // 2026-08-28, explicit request: the page is now always scoped server-side to the
+            // company's own registered country (see TaxStatutoryController::companyCountry()) --
+            // no country_code param is sent anymore, the server ignores/overrides it either way.
+            // dataSrc as a function (not just 'data') so the response can also fill in
+            // #masterRateCountryLabel from the first row's own countries_name_th/en -- no separate
+            // lookup call needed for that label.
+            dataSrc: function (json) {
+                const rows = json.data || [];
+                const first = rows[0];
+                const label = first
+                    ? ((currentLang === 'en' ? first.countries_name_en : first.countries_name_th) || first.country_code)
+                    : (langData['no_statutory_country_configured'] || '-');
+                $('#masterRateCountryLabel').text(label);
+                return rows;
             }
         },
         columns: [
@@ -91,6 +120,7 @@ function initStatutoryItemTable() {
             { data: 'category', render: d => categoryBadgeTs(d) },
             { data: 'calc_method', render: d => calcMethodLabelTs(d) },
             { data: null, render: (d, t, row) => currentRateCellTs(row) },
+            { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
             { data: 'status', render: d => statusBadgeTs(d) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => actionButtonsTs(row) }
         ],
@@ -98,7 +128,8 @@ function initStatutoryItemTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
-            const $wrapper = $(this.api().table().container());
+            const self = this.api();
+            const $wrapper = $(self.table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-item').length === 0) {
                 $searchDiv.append(`
@@ -107,6 +138,21 @@ function initStatutoryItemTable() {
                     </button>
                 `);
             }
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes Last Updated (6, 2026-08-28 addition -- a compound
+            // date+name cell, orderable:false, same treatment as any actions column) and actions (8).
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'country_code' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'item_name' },
+                    { index: 3, key: 'category' },
+                    { index: 4, key: 'calc_method' },
+                    { index: 5, key: 'current_rate' },
+                    { index: 7, key: 'status' },
+                ]
+            });
         },
         drawCallback: function () { getTableLang(); }
     });
@@ -116,7 +162,6 @@ function resetItemForm() {
     $('#statutoryItemForm')[0].reset();
     $('#item_id').val('');
     $('.is-invalid').removeClass('is-invalid');
-    $('#item_country_code').val('').trigger('change');
     $('#item_category').val('').trigger('change');
     $('#item_calc_method').val('').trigger('change');
     $('#item_calc_base').val('').trigger('change');
@@ -126,10 +171,6 @@ function resetItemForm() {
 }
 function populateItemForm(row) {
     $('#item_id').val(row.id);
-    if (row.country_code) {
-        const opt = new Option(row.countries_name_th || row.country_code, row.country_code, true, true);
-        $('#item_country_code').append(opt).trigger('change');
-    }
     $('#item_code').val(row.code);
     $('#item_name_th').val(row.name_th);
     $('#item_name_en').val(row.name_en);
@@ -160,7 +201,8 @@ function validateItemForm() {
 function collectItemFormData() {
     return {
         id: $('#item_id').val() || undefined,
-        country_code: $('#item_country_code').val(),
+        // country_code deliberately not sent -- TaxStatutoryController::itemSave() always forces it
+        // to the acting company's own registered country server-side, ignoring the payload entirely.
         code: $('#item_code').val().trim(),
         name_th: $('#item_name_th').val().trim(),
         name_en: $('#item_name_en').val().trim(),
@@ -178,9 +220,9 @@ function collectItemFormData() {
 
 /* ---------- Rate History (list) ---------- */
 function rateHistoryActionButtonsTs(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 function rateSummaryTs(row) {
@@ -209,7 +251,6 @@ function initRateHistoryTable() {
     }
     tb_rate_history = $('#tb_rate_history').DataTable({
         responsive: true,
-        searching: false,
         paging: false,
         info: false,
         ajax: {
@@ -218,13 +259,39 @@ function initRateHistoryTable() {
             data: function (d) { d.item_id = currentItemCtx ? currentItemCtx.id : 0; }
         },
         columns: [
-            { data: 'effective_date' },
-            { data: 'end_date', render: d => d || `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>` },
+            // object-form render (display only) -- client-side table with no explicit `order` set,
+            // so DataTables defaults to sorting by column 0 (this one) ascending; 'sort'/'filter'
+            // must stay on the raw ISO string, see reports/index.js's own comment for why.
+            { data: 'effective_date', render: { display: d => formatDisplayDate(d), sort: d => d, filter: d => d } },
+            { data: 'end_date', render: { display: d => d ? formatDisplayDate(d) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`, sort: d => d || '', filter: d => d || '' } },
             { data: null, render: (d, t, row) => rateSummaryTs(row) },
+            { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => rateHistoryActionButtonsTs(row) }
         ],
         language: getTableLang(),
-        drawCallback: function () { getTableLang(); }
+        drawCallback: function () { getTableLang(); },
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+        // rollout. Real gotcha found while wiring this up: `searching:false` (this table's own
+        // original setting, kept the native search box out of this small modal table on purpose)
+        // doesn't just hide the search INPUT -- per DataTables' own core (_fnReDraw()), it skips
+        // `_fnFilterComplete()` ENTIRELY when the filter FEATURE is off, which is also what invokes
+        // every `$.fn.dataTable.ext.search` predicate (what this filter component itself uses) --
+        // so the checkbox UI would have looked like it worked while silently filtering nothing.
+        // Flipped to `searching:true` to keep the underlying feature/pipeline alive, then the
+        // rendered search box itself is hidden right below (same net visual result as before, still
+        // functionally filterable via the header icons now).
+        searching: true,
+        initComplete: function () {
+            const self = this.api();
+            $(self.table().container()).find('.dt-search').hide();
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'effective_date' },
+                    { index: 1, key: 'end_date' },
+                ]
+            });
+        }
     });
 }
 function openRateHistoryModal(row) {
@@ -369,9 +436,6 @@ function collectRateVersionFormData() {
 
 /* ---------- UI bindings ---------- */
 function initStatutoryItemUI() {
-    $(document).on('change', '#filter_country_code', function () {
-        if (tb_statutory_item) tb_statutory_item.ajax.reload(null, true);
-    });
     $(document).on('click', '.btn-add-item', function () {
         resetItemForm();
         new bootstrap.Modal(document.getElementById('statutoryItemModal')).show();
@@ -614,8 +678,8 @@ function csAdjustableCellTs(row) {
     return adjustable ? (langData['yes'] || 'Yes') : `<span class="text-muted">${langData['no'] || 'No'}</span>`;
 }
 function csActionButtonsTs(row) {
-    return `<div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-cs" data-id="${row.statutory_item_id}"><i class="fas fa-edit"></i></button>
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn btn-link text-warning btn-edit-cs" data-id="${row.statutory_item_id}"><i class="fas fa-edit"></i></button>
     </div>`;
 }
 function initCompanySettingTable() {
@@ -625,7 +689,6 @@ function initCompanySettingTable() {
     }
     tb_company_setting = $('#tb_company_setting').DataTable({
         responsive: true,
-        searching: false,
         paging: false,
         info: false,
         ajax: {
@@ -639,10 +702,32 @@ function initCompanySettingTable() {
             { data: null, render: (d, t, row) => csRateInUseCellTs(row) },
             { data: 'effective_status', render: d => csEffectiveStatusBadgeTs(d) },
             { data: null, render: (d, t, row) => csAdjustableCellTs(row) },
+            { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row, 'last_edited_at') },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => csActionButtonsTs(row) }
         ],
         language: getTableLang(),
-        drawCallback: function () { getTableLang(); }
+        drawCallback: function () { getTableLang(); },
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+        // rollout. Same `searching:false` gotcha as `tb_rate_history` above (see that table's own
+        // comment) -- flipped to `searching:true` to keep the filter pipeline alive, native search
+        // box hidden right below to preserve the original look. Excludes Last Updated (6, 2026-08-28
+        // addition) and actions (7).
+        searching: true,
+        initComplete: function () {
+            const self = this.api();
+            $(self.table().container()).find('.dt-search').hide();
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'code' },
+                    { index: 1, key: 'item_name' },
+                    { index: 2, key: 'category' },
+                    { index: 3, key: 'rate_in_use' },
+                    { index: 4, key: 'effective_status' },
+                    { index: 5, key: 'adjustable' },
+                ]
+            });
+        }
     });
 }
 function masterRateDisplayTs(row) {
@@ -767,8 +852,6 @@ $(document).ready(function () {
     initStatutoryItemUI();
     initCompanySettingUI();
     if (typeof initSelect2 === 'function') {
-        initSelect2('#filter_country_code', { mode: 'ajax' });
-        initSelect2('#item_country_code', { mode: 'ajax' });
         initSelect2('#item_category', { mode: 'static' });
         initSelect2('#item_calc_method', { mode: 'static' });
         initSelect2('#item_calc_base', { mode: 'static' });

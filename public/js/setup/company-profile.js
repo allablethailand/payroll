@@ -12,6 +12,157 @@ $(document).on('click', '.setup-tabs .setup-menu', function () {
 
     initPage(page);
 });
+function showCpLogoPreview(path) {
+    if (path) {
+        $('#cpLogoPreviewImg').attr('src', `${BASE_URL}/${path}`).removeClass('d-none');
+        $('#cpLogoPlaceholder').addClass('d-none');
+        $('#cpLogoRemoveBtn').removeClass('d-none');
+    } else {
+        $('#cpLogoPreviewImg').attr('src', '').addClass('d-none');
+        $('#cpLogoPlaceholder').removeClass('d-none');
+        $('#cpLogoRemoveBtn').addClass('d-none');
+    }
+}
+$(document).on('change', '#cp_logo_file', function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    $.ajax({
+        url: `${BASE_URL}/api/company.upload-logo`,
+        method: 'POST', data: formData, processData: false, contentType: false, dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                $('input[name="logo_path"]').val(res.logo_path);
+                showCpLogoPreview(res.logo_path);
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Upload failed.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'Upload failed.'); }
+    });
+    $(this).val('');
+});
+// Client-side only -- clears the hidden field so Save persists logo_path=null. The uploaded file
+// itself isn't deleted from disk (same convention as Payslip Template/Employment Certificate's own
+// logo fields -- re-uploading there just as silently orphans the old file too, no cleanup job exists
+// anywhere in the app yet for any of the 3).
+$(document).on('click', '#cpLogoRemoveBtn', function () {
+    $('input[name="logo_path"]').val('');
+    showCpLogoPreview(null);
+});
+
+/* ---------- Authorized Signature (2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized
+   Signatory Name หรือสามารถเซ็นต์สดผ่านหน้าจอได้") -- upload-file path mirrors Company Logo above
+   exactly; the live signature pad is a plain <canvas> with hand-written mouse/touch drawing (no new
+   dependency, same precedent as Employment Certificate Template's own hand-rolled canvas
+   interactions) that exports to a PNG Blob and posts through the SAME uploadSignature() endpoint a
+   file-picker upload would, so the rest of this file (preview/hidden-field/remove) doesn't need to
+   know which input method produced the image. ---------- */
+function showCpSignaturePreview(path) {
+    if (path) {
+        $('#cpSignaturePreviewImg').attr('src', `${BASE_URL}/${path}`).removeClass('d-none');
+        $('#cpSignaturePlaceholder').addClass('d-none');
+        $('#cpSignatureRemoveBtn').removeClass('d-none');
+    } else {
+        $('#cpSignaturePreviewImg').attr('src', '').addClass('d-none');
+        $('#cpSignaturePlaceholder').removeClass('d-none');
+        $('#cpSignatureRemoveBtn').addClass('d-none');
+    }
+}
+function uploadCpSignatureBlob(blob) {
+    const formData = new FormData();
+    formData.append('file', blob, 'signature.png');
+    $.ajax({
+        url: `${BASE_URL}/api/company.upload-signature`,
+        method: 'POST', data: formData, processData: false, contentType: false, dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                $('input[name="signature_path"]').val(res.signature_path);
+                showCpSignaturePreview(res.signature_path);
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Upload failed.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'Upload failed.'); }
+    });
+}
+$(document).on('change', '#cp_signature_file', function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    uploadCpSignatureBlob(file);
+    $(this).val('');
+});
+// Client-side only -- clears the hidden field so Save persists signature_path=null, same
+// no-disk-cleanup convention as #cpLogoRemoveBtn above.
+$(document).on('click', '#cpSignatureRemoveBtn', function () {
+    $('input[name="signature_path"]').val('');
+    showCpSignaturePreview(null);
+});
+
+let cpSignaturePadCtx = null;
+let cpSignaturePadDrawing = false;
+let cpSignaturePadHasStrokes = false;
+function cpSignaturePadPos(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const point = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    return {
+        x: (point.clientX - rect.left) * (canvas.width / rect.width),
+        y: (point.clientY - rect.top) * (canvas.height / rect.height)
+    };
+}
+function initCpSignaturePad() {
+    const canvas = document.getElementById('cpSignaturePadCanvas');
+    if (!canvas) return;
+    cpSignaturePadCtx = canvas.getContext('2d');
+    cpSignaturePadCtx.fillStyle = '#ffffff';
+    cpSignaturePadCtx.fillRect(0, 0, canvas.width, canvas.height);
+    cpSignaturePadCtx.lineWidth = 2.5;
+    cpSignaturePadCtx.lineCap = 'round';
+    cpSignaturePadCtx.strokeStyle = '#1a1a1a';
+    cpSignaturePadHasStrokes = false;
+    const startDraw = function (e) {
+        e.preventDefault();
+        cpSignaturePadDrawing = true;
+        const p = cpSignaturePadPos(canvas, e);
+        cpSignaturePadCtx.beginPath();
+        cpSignaturePadCtx.moveTo(p.x, p.y);
+    };
+    const moveDraw = function (e) {
+        if (!cpSignaturePadDrawing) return;
+        e.preventDefault();
+        const p = cpSignaturePadPos(canvas, e);
+        cpSignaturePadCtx.lineTo(p.x, p.y);
+        cpSignaturePadCtx.stroke();
+        cpSignaturePadHasStrokes = true;
+    };
+    const endDraw = function () { cpSignaturePadDrawing = false; };
+    canvas.onmousedown = startDraw;
+    canvas.onmousemove = moveDraw;
+    canvas.onmouseup = endDraw;
+    canvas.onmouseleave = endDraw;
+    canvas.ontouchstart = startDraw;
+    canvas.ontouchmove = moveDraw;
+    canvas.ontouchend = endDraw;
+}
+$(document).on('click', '#cpDrawSignatureBtn', function () {
+    new bootstrap.Modal(document.getElementById('cpSignaturePadModal')).show();
+});
+$('#cpSignaturePadModal').on('shown.bs.modal', function () { initCpSignaturePad(); });
+$(document).on('click', '#cpSignaturePadClearBtn', function () { initCpSignaturePad(); });
+$(document).on('click', '#cpSignaturePadSaveBtn', function () {
+    const canvas = document.getElementById('cpSignaturePadCanvas');
+    if (!canvas) return;
+    if (!cpSignaturePadHasStrokes) {
+        showWarning(langData['draw_signature_hint'] || 'Draw with your mouse or finger, then click Save.');
+        return;
+    }
+    canvas.toBlob(function (blob) {
+        if (!blob) return;
+        uploadCpSignatureBlob(blob);
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('cpSignaturePadModal')).hide();
+    }, 'image/png');
+});
 $(document).on('change', '#registered_country', function () {
     renderCountrySpecificForm($(this).val());
 });
@@ -137,6 +288,10 @@ function initCompanyData() {
                 $('input[name="address_line_1"]').val(data.address_line_1 || '');
                 $('input[name="address_line_2"]').val(data.address_line_2 || '');
                 $('input[name="authorized_signatory_name"]').val(data.authorized_signatory_name || '');
+                $('input[name="logo_path"]').val(data.logo_path || '');
+                showCpLogoPreview(data.logo_path || null);
+                $('input[name="signature_path"]').val(data.signature_path || '');
+                showCpSignaturePreview(data.signature_path || null);
                 if (data.statutory_data && typeof data.statutory_data === 'object') {
                     Object.keys(data.statutory_data).forEach(key => {
                         const $field = $(`[name="${key}"]`);
@@ -189,6 +344,8 @@ $(document).on('click', '.save-company-profile', function () {
         address_line_2: $('input[name="address_line_2"]').val()?.trim() || '',
         master_address_id: $('input[name="master_address_id"]').val() || null,
         authorized_signatory_name: $('input[name="authorized_signatory_name"]').val()?.trim() || '',
+        logo_path: $('input[name="logo_path"]').val() || null,
+        signature_path: $('input[name="signature_path"]').val() || null,
         statutory_data: {}
     };
     $('#dynamic_statutory_fields_container input').each(function () {
@@ -270,7 +427,12 @@ function initBankAccountTable() {
         order: [[0, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/bank_account.list`,
-            type: 'POST'
+            type: 'POST',
+            data: function (d, settings) {
+                // Built from `settings` (not the outer `structureTables['bank_account']` variable) --
+                // see table-column-filter.js's getColumnFilterValues() docblock for why.
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            }
         },
         columns: [
             {
@@ -342,6 +504,32 @@ function initBankAccountTable() {
                 $searchDiv.append(btn);
             }
             updateText($wrapper[0]);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, server mode. Excludes the masked account_no (1, not the raw filterable
+            // value), the boolean is_default icon (5), and actions (6).
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: [
+                    { index: 0, key: 'bank_name' },
+                    { index: 2, key: 'account_name' },
+                    { index: 3, key: 'branch_name' },
+                    { index: 4, key: 'account_type' },
+                    { index: 6, key: 'status' },
+                ],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/bank_account.column-values`,
+                        method: 'POST',
+                        data: { column: key, column_filters: getColumnFilterValues(self) },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
         },
         drawCallback: function () {
             getTableLang();
@@ -393,8 +581,43 @@ function initStructure(page) {
             updateText($structureContent[0]);
             if (typeof initPermissionMatrix === 'function') { initPermissionMatrix(); }
             break;
+        // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการ
+        // เพิ่มการตั้งค่าเช่นเดียวกับ Department" -- 7th Organization Structure sub-tab.
+        case 'p7':
+            $structureContent.html($('#tmpl-team-pane').html());
+            initStructureTable('team', '#tb_team');
+            break;
     }
 }
+// 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout,
+// server mode (see table-column-filter.js's own docblock). Frontend column KEY -> DataTable column
+// INDEX per structure type -- must stay in sync with getStructureColumns()'s own per-type array
+// below, and with CompanyProfileController::structureFilterMap()'s matching KEY set on the backend
+// (the KEY strings are what travel over the wire in `column_filters`, matched on both sides).
+// Excludes boolean-icon columns (is_default/lock_stamp/salary_access/ot_eligible) and
+// computed/composite columns (rank's own salary_min-salary_max range) -- same exclusion policy as
+// every other table in this rollout -- plus the actions column, always last.
+const STRUCTURE_FILTER_COLUMNS = {
+    branch: [
+        { index: 0, key: 'branch_code' }, { index: 1, key: 'name' }, { index: 2, key: 'tax_branch_id' },
+        { index: 3, key: 'sso_branch_code' }, { index: 5, key: 'location' }, { index: 7, key: 'status' },
+    ],
+    role: [
+        { index: 0, key: 'name' }, { index: 2, key: 'status' },
+    ],
+    department: [
+        { index: 0, key: 'department_code' }, { index: 1, key: 'name' }, { index: 2, key: 'cost_center' }, { index: 3, key: 'status' },
+    ],
+    position: [
+        { index: 0, key: 'position_code' }, { index: 1, key: 'name' }, { index: 2, key: 'position_allowance' }, { index: 3, key: 'status' },
+    ],
+    rank: [
+        { index: 0, key: 'rank_code' }, { index: 1, key: 'name' }, { index: 4, key: 'status' },
+    ],
+    team: [
+        { index: 0, key: 'team_code' }, { index: 1, key: 'name' }, { index: 2, key: 'client_name' }, { index: 3, key: 'status' },
+    ],
+};
 function initStructureTable(type, tableId) {
     if ($.fn.DataTable.isDataTable(tableId)) {
         $(tableId).DataTable().ajax.reload(null, false);
@@ -408,11 +631,16 @@ function initStructureTable(type, tableId) {
         ajax: {
             url: `${BASE_URL}/api/structure.${type}`,
             type: "POST",
-            data: function (d) {
-                d.status = $('#filter_status').val() || 'Active'; 
+            data: function (d, settings) {
+                d.status = $('#filter_status').val() || 'Active';
+                // Built from `settings` (DataTables' own 2nd arg to ajax.data), NOT the outer
+                // `structureTables[type]` variable -- same "first request runs synchronously during
+                // construction, before that assignment completes" reasoning as Employee List's own
+                // fix, see table-column-filter.js's getColumnFilterValues() docblock.
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
-        columns: getStructureColumns(type), 
+        columns: getStructureColumns(type),
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         language: getTableLang(),
@@ -429,6 +657,25 @@ function initStructureTable(type, tableId) {
                 `;
                 $searchDiv.append(btn);
             }
+            // 2026-08-28, explicit request: "ส่วนของ Department หรือข้อมูลที่ดึง Filter ได้ตอนนี้
+            // เพิ่มปุ่มให้ Sync ได้ด้วย แต่...ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น" -- see
+            // public/js/setup/org-structure-sync.js for the picker this opens. Only Department/
+            // Position/Team have anything to sync (Branch/Role/Rank have no Origami-side
+            // equivalent at all), and only when this company is actually Origami-HR-linked.
+            const ORG_SYNC_ENTITY_TYPES = ['department', 'position', 'team'];
+            if (ORG_SYNC_ENTITY_TYPES.includes(type) && typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
+                if ($searchDiv.find('.btn-open-org-sync').length === 0) {
+                    let syncBtn = `
+                        <button type="button" class="btn btn-outline-secondary btn-open-org-sync ms-1" data-entity-type="${type}">
+                            <i class="fa-solid fa-rotate me-1"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-open-org-sync-log ms-1" data-entity-type="${type}">
+                            <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="employee_sync_log_button">Sync Log</span>
+                        </button>
+                    `;
+                    $searchDiv.append(syncBtn);
+                }
+            }
             let $input = $searchDiv.find('input').off(`.${type}Search`);
             $input.on(`keypress.${type}Search`, function (e) {
                 if (e.keyCode === 13) {
@@ -439,6 +686,23 @@ function initStructureTable(type, tableId) {
                 }
             });
             updateText($wrapper[0]);
+            initExcelColumnFilters(self, {
+                mode: 'server',
+                columns: STRUCTURE_FILTER_COLUMNS[type] || [],
+                fetchValues: function (key, done) {
+                    $.ajax({
+                        url: `${BASE_URL}/api/structure.column-values`,
+                        method: 'POST',
+                        data: { type: type, column: key, column_filters: getColumnFilterValues(self) },
+                        dataType: 'json'
+                    }).done(function (res) {
+                        done((res && res.values) || []);
+                    }).fail(function () {
+                        done([]);
+                    });
+                },
+                onApply: function () { self.ajax.reload(null, false); }
+            });
         },
         drawCallback: function () {
             getTableLang(); 
@@ -569,11 +833,11 @@ function getStructureColumns(type) {
         case 'rank':
             return [
                 { data: "rank_code" },
-                { 
+                {
                     data: null,
                     render: (data, type, row) => getLocaleText(row, 'rank_name')
                 },
-                { 
+                {
                     data: null,
                     render: function (data, type, row) {
                         let min = row.salary_min ? parseFloat(row.salary_min).toLocaleString('th-TH') : '0';
@@ -581,7 +845,7 @@ function getStructureColumns(type) {
                         return `${min} - ${max}`;
                     }
                 },
-                { 
+                {
                     data: "ot_eligible",
                     className: "text-center",
                     render: function (data) {
@@ -589,11 +853,30 @@ function getStructureColumns(type) {
                     }
                 },
                 { data: "status", render: statusRender },
-                { 
-                    data: null, 
-                    orderable: false, 
+                {
+                    data: null,
+                    orderable: false,
                     className: "text-center",
-                    render: (data, type, row) => getActionButtons(row, 'rank') 
+                    render: (data, type, row) => getActionButtons(row, 'rank')
+                }
+            ];
+        // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็น
+        // การเพิ่มการตั้งค่าเช่นเดียวกับ Department" -- same shape as the 'department' case above,
+        // plus client_name (the client/project this team is deployed to).
+        case 'team':
+            return [
+                { data: "team_code" },
+                {
+                    data: null,
+                    render: (data, type, row) => getLocaleText(row, 'team_name')
+                },
+                { data: "client_name", defaultContent: "-" },
+                { data: "status", render: statusRender },
+                {
+                    data: null,
+                    orderable: false,
+                    className: "text-center",
+                    render: (data, type, row) => getActionButtons(row, 'team')
                 }
             ];
     }
@@ -604,6 +887,7 @@ const apiEndpointPrefix = {
     department: 'structure.department',
     position: 'structure.position',
     rank: 'structure.rank',
+    team: 'structure.team',
     bank_account: 'bank_account'
 };
 const formSchemas = {
@@ -654,6 +938,18 @@ const formSchemas = {
             { name: 'salary_min', label: 'salary_range', type: 'number', step: '0.01', legal_key: 'min' },
             { name: 'salary_max', label: 'salary_range', type: 'number', step: '0.01', legal_key: 'max' },
             { name: 'ot_eligible', label: 'ot_eligible', type: 'checkbox' },
+            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+        ]
+    },
+    // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการเพิ่ม
+    // การตั้งค่าเช่นเดียวกับ Department" -- same shape as 'department' above, plus client_name
+    // (confirmed via AskUserQuestion: Team needs a separate client/scope field, not just code+name).
+    team: {
+        fields: [
+            { name: 'team_code', label: 'team_code', type: 'text', required: true },
+            { name: 'team_name_th', label: 'team_name', type: 'text', required: true, legal_key: 'local_name' },
+            { name: 'team_name_en', label: 'team_name', type: 'text', required: true, legal_key: 'en_name' },
+            { name: 'client_name', label: 'team_client_name', type: 'text' },
             { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
         ]
     },

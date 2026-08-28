@@ -12,24 +12,44 @@ class EmployeeEarningDeductionModel {
         return (bool)$stmt->fetch();
     }
 
-    public function list(int $employeeId, int $compId): array {
+    /** $itemType: optional 'earning'/'deduction' filter -- COALESCE against custom_item_type so a
+     *  custom row is filtered by its own declared type, not left out just because it has no
+     *  ped_type_id to join a catalog item_type from. */
+    public function list(int $employeeId, int $compId, ?string $itemType = null): array {
         if (!$this->employeeBelongsToComp($employeeId, $compId)) {
             return [];
         }
-        $sql = "SELECT eed.*, pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, pt.source_event_code
+        $sql = "SELECT eed.*, pt.item_code,
+                    COALESCE(pt.item_name_th, eed.custom_item_name) AS item_name_th,
+                    COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
+                    COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
+                    pt.source_event_code,
+                    payee.employee_no AS payee_employee_no
                 FROM `employee_earning_deductions` eed
-                JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
-                WHERE eed.employee_id = :employee_id AND eed.deleted_at IS NULL
-                ORDER BY eed.effective_date DESC, eed.id DESC";
+                LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
+                LEFT JOIN `employees` payee ON payee.id = eed.payee_employee_id
+                WHERE eed.employee_id = :employee_id AND eed.deleted_at IS NULL";
+        $params = [':employee_id' => $employeeId];
+        if ($itemType !== null && $itemType !== '') {
+            $sql .= " AND COALESCE(pt.item_type, eed.custom_item_type) = :item_type";
+            $params[':item_type'] = $itemType;
+        }
+        $sql .= " ORDER BY eed.effective_date DESC, eed.id DESC";
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([':employee_id' => $employeeId]);
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function get(int $id, int $compId): ?array {
-        $sql = "SELECT eed.*, pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, pt.calculation_method AS ped_calculation_method
+        $sql = "SELECT eed.*, pt.item_code,
+                    COALESCE(pt.item_name_th, eed.custom_item_name) AS item_name_th,
+                    COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
+                    COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
+                    pt.calculation_method AS ped_calculation_method,
+                    payee.employee_no AS payee_employee_no
                 FROM `employee_earning_deductions` eed
-                JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
+                LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
+                LEFT JOIN `employees` payee ON payee.id = eed.payee_employee_id
                 JOIN `employees` e ON eed.employee_id = e.id
                 WHERE eed.id = :id AND e.comp_id = :comp_id AND eed.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
@@ -44,10 +64,22 @@ class EmployeeEarningDeductionModel {
         return $row;
     }
 
-    public function activeOptions(int $compId, string $search, int $page, int $limit): array {
+    public function activeOptions(int $compId, string $search, int $page, int $limit, ?string $itemType = null, ?string $calculationMethod = null): array {
         $offset = ($page - 1) * $limit;
         $where = "WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' AND is_sync_only = 0";
         $params = [':comp_id' => $compId];
+        if ($itemType !== null && $itemType !== '') {
+            $where .= " AND item_type = :item_type";
+            $params[':item_type'] = $itemType;
+        }
+        // 2026-08-26: added for EmployeeRecurringEarningModel's own type-options endpoint (only
+        // fixed_amount earning types make sense for "enter this employee's own flat monthly
+        // amount") -- optional, so the Earning-Deduction tab's own existing calls (no 4th arg) are
+        // completely unaffected.
+        if ($calculationMethod !== null && $calculationMethod !== '') {
+            $where .= " AND calculation_method = :calculation_method";
+            $params[':calculation_method'] = $calculationMethod;
+        }
         if ($search !== '') {
             $where .= " AND (item_code LIKE :search1 OR item_name_th LIKE :search2 OR item_name_en LIKE :search3)";
             $params[':search1'] = "%{$search}%";
@@ -75,14 +107,69 @@ class EmployeeEarningDeductionModel {
         return ['items' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'total_count' => $totalCount];
     }
 
-    private function buildInstallmentAmounts(string $amountMode, float $totalAmount, int $totalInstallments, array $customAmounts): array {
-        if ($amountMode === 'custom_per_installment') {
-            return array_map(fn($v) => round((float)$v, 2), $customAmounts);
-        }
+    /** Splits $totalAmount evenly across $totalInstallments, dumping the rounding remainder into
+     *  the last installment so the sum always exactly equals $totalAmount. */
+    private function evenSplit(float $totalAmount, int $totalInstallments): array {
         $base = round($totalAmount / $totalInstallments, 2);
         $amounts = array_fill(0, $totalInstallments, $base);
         $remainder = round($totalAmount - ($base * $totalInstallments), 2);
         $amounts[$totalInstallments - 1] = round($amounts[$totalInstallments - 1] + $remainder, 2);
+        return $amounts;
+    }
+
+    private function buildInstallmentAmounts(string $amountMode, float $totalAmount, int $totalInstallments, array $customAmounts): array {
+        if ($amountMode === 'custom_per_installment') {
+            return array_map(fn($v) => round((float)$v, 2), $customAmounts);
+        }
+        return $this->evenSplit($totalAmount, $totalInstallments);
+    }
+
+    /** Pure calculation, no DB access -- computes the per-installment amount schedule for a loan-
+     *  style deduction (2026-08-20, explicit request: "กำหนดได้ค่าคิดดอกเบี้ยหรือไม่คิดดอกเบี้ย...
+     *  คงที่ ลดต้นลดดอก"). $interestRatePercent is a % PER INSTALLMENT PERIOD, not annual -- nothing
+     *  in this schema ties an assignment to its payroll_cycles.payroll_frequency, so there's no
+     *  reliable way to convert an annual rate without guessing; per-period keeps the math
+     *  unambiguous (see the matching comment on the interest_type/interest_rate columns).
+     *  'fixed' = flat/add-on interest (totalInterest = principal * rate * n, spread evenly).
+     *  'reducing_balance' = standard amortized-payment schedule (equal total payments, but the
+     *  principal/interest split shifts each period) -- the LAST installment is deliberately
+     *  "whatever balance remains + interest on it" rather than the regular payment amount, so the
+     *  schedule always exactly zeroes out regardless of per-installment rounding drift. */
+    public function computeInstallmentSchedule(float $principal, int $totalInstallments, string $interestType, ?float $interestRatePercent): array {
+        if ($principal <= 0) {
+            throw new InvalidArgumentException('principal must be greater than zero.');
+        }
+        if ($totalInstallments < 1) {
+            throw new InvalidArgumentException('total_installments must be at least 1.');
+        }
+        if (!in_array($interestType, ['none', 'fixed', 'reducing_balance'], true)) {
+            throw new InvalidArgumentException('Invalid interest_type.');
+        }
+        if ($interestType === 'none') {
+            return $this->evenSplit($principal, $totalInstallments);
+        }
+        if ($interestRatePercent === null || $interestRatePercent <= 0) {
+            throw new InvalidArgumentException('interest_rate must be greater than zero when interest_type is not none.');
+        }
+        $r = $interestRatePercent / 100;
+
+        if ($interestType === 'fixed') {
+            $totalInterest = $principal * $r * $totalInstallments;
+            return $this->evenSplit($principal + $totalInterest, $totalInstallments);
+        }
+
+        // reducing_balance
+        $payment = $principal * $r / (1 - (1 + $r) ** (-$totalInstallments));
+        $amounts = [];
+        $balance = $principal;
+        for ($i = 0; $i < $totalInstallments - 1; $i++) {
+            $installmentInterest = $balance * $r;
+            $roundedPayment = round($payment, 2);
+            $principalPortion = $roundedPayment - $installmentInterest;
+            $balance -= $principalPortion;
+            $amounts[] = $roundedPayment;
+        }
+        $amounts[] = round($balance + ($balance * $r), 2);
         return $amounts;
     }
 
@@ -93,17 +180,37 @@ class EmployeeEarningDeductionModel {
 
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
-        foreach (['ped_type_id', 'total_installments', 'amount_mode', 'effective_date'] as $field) {
+        foreach (['total_installments', 'amount_mode', 'effective_date'] as $field) {
             if (empty($data[$field])) {
                 return ['status' => false, 'message' => "Missing required field: {$field}"];
             }
         }
 
-        $pedTypeId = (int)$data['ped_type_id'];
-        $stmtType = $this->db->prepare("SELECT id FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND is_sync_only = 0 AND deleted_at IS NULL");
-        $stmtType->execute([':id' => $pedTypeId, ':comp_id' => $compId]);
-        if (!$stmtType->fetch()) {
-            return ['status' => false, 'message' => 'Invalid or inactive payroll item selected.'];
+        // Either a catalog reference (ped_type_id) OR a free-text item (custom_item_name +
+        // custom_item_type) -- explicit request ("Item ให้สามารถใส่เองได้ โดยบอกว่าเป็นรายได้หรือ
+        // รายหัก"), same either/or shape as PayrollRunModel::addManualLine()'s custom items.
+        $pedTypeId = null;
+        $customItemName = null;
+        $customItemType = null;
+        $resolvedItemType = null;
+        if (!empty($data['ped_type_id'])) {
+            $pedTypeId = (int)$data['ped_type_id'];
+            $stmtType = $this->db->prepare("SELECT id, item_type FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND is_sync_only = 0 AND deleted_at IS NULL");
+            $stmtType->execute([':id' => $pedTypeId, ':comp_id' => $compId]);
+            $pedType = $stmtType->fetch(PDO::FETCH_ASSOC);
+            if (!$pedType) {
+                return ['status' => false, 'message' => 'Invalid or inactive payroll item selected.'];
+            }
+            $resolvedItemType = (string)$pedType['item_type'];
+        } elseif (!empty($data['custom_item_name']) && !empty($data['custom_item_type'])) {
+            if (!in_array($data['custom_item_type'], ['earning', 'deduction'], true)) {
+                return ['status' => false, 'message' => 'Invalid custom_item_type.'];
+            }
+            $customItemName = trim((string)$data['custom_item_name']);
+            $customItemType = (string)$data['custom_item_type'];
+            $resolvedItemType = $customItemType;
+        } else {
+            return ['status' => false, 'message' => 'Select an item from the list, or enter a custom item name and type.'];
         }
 
         $totalInstallments = (int)$data['total_installments'];
@@ -139,12 +246,55 @@ class EmployeeEarningDeductionModel {
             }
         }
 
+        // Interest (2026-08-20, explicit request). The schedule itself (installment_amounts,
+        // above) is always taken from the client verbatim same as before -- these three fields
+        // are stored purely as metadata about how that schedule was derived, not recomputed here.
+        // See computeInstallmentSchedule()'s docblock for why interest_rate is per-period, not
+        // annual, and the ALTER TABLE comment in database/payroll.sql for principal_amount vs
+        // total_amount's split meaning.
+        $interestType = !empty($data['interest_type']) ? (string)$data['interest_type'] : 'none';
+        if (!in_array($interestType, ['none', 'fixed', 'reducing_balance'], true)) {
+            return ['status' => false, 'message' => 'Invalid interest_type.'];
+        }
+        // 2026-08-21, explicit request ("รายรับให้ตัดเรื่องดอกเบี้ยไปเลย มีแค่รายหักที่บอกว่าคิดหรือ
+        // ไม่คิดดอกเบี้ย") -- interest never applies to an earning. The modal already hides the whole
+        // interest section for earnings (applyEedInterestVisibility() in detail.js), this is the
+        // server-side backstop against a malformed/direct API call.
+        if ($interestType !== 'none' && $resolvedItemType === 'earning') {
+            return ['status' => false, 'message' => 'Interest is not applicable to earning items.'];
+        }
+        $interestRate = null;
+        if ($interestType !== 'none') {
+            if (!isset($data['interest_rate']) || !is_numeric($data['interest_rate']) || (float)$data['interest_rate'] <= 0) {
+                return ['status' => false, 'message' => 'interest_rate must be greater than zero when interest_type is not none.'];
+            }
+            $interestRate = round((float)$data['interest_rate'], 2);
+        }
+        $principalAmount = (isset($data['principal_amount']) && is_numeric($data['principal_amount']) && (float)$data['principal_amount'] > 0)
+            ? round((float)$data['principal_amount'], 2)
+            : $totalAmount;
+
         $effectiveDate = (string)$data['effective_date'];
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $effectiveDate)) {
             return ['status' => false, 'message' => 'Invalid effective_date.'];
         }
 
         $notes = !empty($data['notes']) ? trim((string)$data['notes']) : null;
+
+        // Transfer-to-payee (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร โดยเลือกพนักงานได้ว่า
+        // จะหักของคนนี้ไปให้คนนี้") -- only meaningful on a deduction; forced null (not an error) for
+        // an earning, same as interest_type being forced to 'none' above. Wired into
+        // PayrollRunModel::recalculate()'s transfer-credit pass -- see that method's own docblock.
+        $payeeEmployeeId = null;
+        if (!empty($data['payee_employee_id']) && $resolvedItemType === 'deduction') {
+            $payeeEmployeeId = (int)$data['payee_employee_id'];
+            if ($payeeEmployeeId === $employeeId) {
+                return ['status' => false, 'message' => 'An employee cannot be their own transfer payee.'];
+            }
+            if (!$this->employeeBelongsToComp($payeeEmployeeId, $compId)) {
+                return ['status' => false, 'message' => 'Invalid payee employee.'];
+            }
+        }
         $externalReferenceNo = !empty($data['external_reference_no']) ? trim((string)$data['external_reference_no']) : null;
 
         $installmentAmounts = $this->buildInstallmentAmounts($amountMode, $totalAmount, $totalInstallments, $customAmounts);
@@ -175,20 +325,29 @@ class EmployeeEarningDeductionModel {
                 }
 
                 $sql = "UPDATE `employee_earning_deductions` SET
-                            ped_type_id = :ped_type_id, total_installments = :total_installments,
-                            amount_mode = :amount_mode, total_amount = :total_amount,
+                            ped_type_id = :ped_type_id, custom_item_name = :custom_item_name, custom_item_type = :custom_item_type,
+                            total_installments = :total_installments,
+                            amount_mode = :amount_mode, interest_type = :interest_type, interest_rate = :interest_rate,
+                            total_amount = :total_amount, principal_amount = :principal_amount,
                             effective_date = :effective_date, notes = :notes, external_reference_no = :external_reference_no,
+                            payee_employee_id = :payee_employee_id,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':ped_type_id' => $pedTypeId,
+                    ':custom_item_name' => $customItemName,
+                    ':custom_item_type' => $customItemType,
                     ':total_installments' => $totalInstallments,
                     ':amount_mode' => $amountMode,
+                    ':interest_type' => $interestType,
+                    ':interest_rate' => $interestRate,
                     ':total_amount' => $totalAmount,
+                    ':principal_amount' => $principalAmount,
                     ':effective_date' => $effectiveDate,
                     ':notes' => $notes,
                     ':external_reference_no' => $externalReferenceNo,
+                    ':payee_employee_id' => $payeeEmployeeId,
                     ':updated_by' => $userId,
                     ':id' => $id,
                 ]);
@@ -198,19 +357,25 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = $id;
             } else {
                 $sql = "INSERT INTO `employee_earning_deductions`
-                            (employee_id, ped_type_id, total_installments, current_installment, amount_mode, total_amount, effective_date, status, notes, external_reference_no, created_by)
+                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, interest_type, interest_rate, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, created_by)
                         VALUES
-                            (:employee_id, :ped_type_id, :total_installments, 0, :amount_mode, :total_amount, :effective_date, 'active', :notes, :external_reference_no, :created_by)";
+                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :created_by)";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':employee_id' => $employeeId,
                     ':ped_type_id' => $pedTypeId,
+                    ':custom_item_name' => $customItemName,
+                    ':custom_item_type' => $customItemType,
                     ':total_installments' => $totalInstallments,
                     ':amount_mode' => $amountMode,
+                    ':interest_type' => $interestType,
+                    ':interest_rate' => $interestRate,
                     ':total_amount' => $totalAmount,
+                    ':principal_amount' => $principalAmount,
                     ':effective_date' => $effectiveDate,
                     ':notes' => $notes,
                     ':external_reference_no' => $externalReferenceNo,
+                    ':payee_employee_id' => $payeeEmployeeId,
                     ':created_by' => $userId,
                 ]);
                 $assignmentId = (int)$this->db->lastInsertId();

@@ -170,6 +170,77 @@ try {
     checkTrue('leave type delete succeeds', $del['status']);
     check('leave type no longer retrievable after delete', $model->leaveTypeGet((int)$sickLeave['id'], $compId), null);
 
+    // ---------- Shift weekly working-day pattern (2026-08-21) ----------
+    $wdShift = $model->shiftSave([
+        'shift_name_th' => 'กะวันทำงาน P3', 'shift_name_en' => 'Working Days Shift P3', 'shift_code' => 'P3_WD_' . uniqid(),
+        'start_time' => '08:00', 'end_time' => '17:00', 'status' => 'active',
+        'works_monday' => 1, 'works_tuesday' => 1, 'works_wednesday' => 1, 'works_thursday' => 1, 'works_friday' => 1,
+        'works_saturday' => 0, 'works_sunday' => 0,
+    ], $compId, $userId);
+    checkTrue('shift with explicit Mon-Fri working days saves', $wdShift['status']);
+    $wdShiftId = $wdShift['id'];
+
+    $fetchedWdShift = $model->shiftGet($wdShiftId, $compId);
+    check('shift round-trips works_monday=1', (int)$fetchedWdShift['works_monday'], 1);
+    check('shift round-trips works_saturday=0', (int)$fetchedWdShift['works_saturday'], 0);
+    check('shift round-trips works_sunday=0', (int)$fetchedWdShift['works_sunday'], 0);
+
+    // A 6-day Saturday shift, to prove UPDATE also persists the pattern (not just INSERT).
+    $sixDayShift = $model->shiftSave([
+        'shift_name_th' => 'กะ 6 วัน P3', 'shift_name_en' => 'Six Day Shift P3', 'shift_code' => 'P3_WD6_' . uniqid(),
+        'start_time' => '08:00', 'end_time' => '17:00', 'status' => 'active',
+        'works_monday' => 1, 'works_tuesday' => 1, 'works_wednesday' => 1, 'works_thursday' => 1, 'works_friday' => 1,
+        'works_saturday' => 1, 'works_sunday' => 0,
+    ], $compId, $userId);
+    $sixDayUpdate = $model->shiftSave([
+        'id' => $sixDayShift['id'],
+        'shift_name_th' => 'กะ 6 วัน P3', 'shift_name_en' => 'Six Day Shift P3', 'shift_code' => $model->shiftGet($sixDayShift['id'], $compId)['shift_code'],
+        'start_time' => '08:00', 'end_time' => '17:00', 'status' => 'active',
+        'works_monday' => 1, 'works_tuesday' => 1, 'works_wednesday' => 1, 'works_thursday' => 1, 'works_friday' => 1,
+        'works_saturday' => 0, 'works_sunday' => 0,
+    ], $compId, $userId);
+    checkTrue('shift update with changed working days succeeds', $sixDayUpdate['status']);
+    $afterUpdate = $model->shiftGet((int)$sixDayShift['id'], $compId);
+    check('shift UPDATE persisted works_saturday flip to 0', (int)$afterUpdate['works_saturday'], 0);
+
+    // ---------- payableDaysForEmployee() (2026-08-21) ----------
+    // 2028-06-05 (Mon) .. 2028-06-11 (Sun): a clean 7-day week, 2028-06-07 is a Wednesday
+    // (a scheduled work day), 2028-06-10 is a Saturday (already excluded by the shift pattern).
+    $wdEmp = makeEmployee($pdo, $compId, 'P3_WD_EMP_' . uniqid());
+    $assignWd = $model->shiftAssignEmployees($wdShiftId, [$wdEmp], $compId, $userId);
+    checkTrue('assign employee to Mon-Fri shift for payableDays test', $assignWd['status']);
+
+    $payableNoHoliday = $model->payableDaysForEmployee($wdEmp, $compId, '2028-06-05', '2028-06-11');
+    check('payableDays: 7-day week, Mon-Fri shift, no holiday -> total_days=7', $payableNoHoliday['total_days'], 7);
+    check('payableDays: 7-day week, Mon-Fri shift, no holiday -> payable_days=5', $payableNoHoliday['payable_days'], 5);
+    checkTrue('payableDays: has_shift_pattern=true when shift assigned', $payableNoHoliday['has_shift_pattern']);
+
+    // Company holiday on the Wednesday (a scheduled work day) -- must reduce payable_days by 1.
+    $wedHoliday = $model->holidaySave([
+        'name_th' => 'วันหยุด P3 พุธ', 'name_en' => 'P3 Wed Holiday', 'holiday_date' => '2028-06-07',
+        'is_recurring' => 0, 'assignment_mode' => 'exclude', 'status' => 'active', 'assignments' => [],
+    ], $compId, $userId);
+    checkTrue('company-wide holiday on the Wednesday saves', $wedHoliday['status']);
+    $payableWithWedHoliday = $model->payableDaysForEmployee($wdEmp, $compId, '2028-06-05', '2028-06-11');
+    check('payableDays: holiday on a scheduled work day -> payable_days=4', $payableWithWedHoliday['payable_days'], 4);
+
+    // Company holiday on the Saturday (already excluded by the shift pattern) -- must NOT
+    // double-subtract; payable_days stays at 4, not 3.
+    $satHoliday = $model->holidaySave([
+        'name_th' => 'วันหยุด P3 เสาร์', 'name_en' => 'P3 Sat Holiday', 'holiday_date' => '2028-06-10',
+        'is_recurring' => 0, 'assignment_mode' => 'exclude', 'status' => 'active', 'assignments' => [],
+    ], $compId, $userId);
+    checkTrue('company-wide holiday on the already-off Saturday saves', $satHoliday['status']);
+    $payableWithBothHolidays = $model->payableDaysForEmployee($wdEmp, $compId, '2028-06-05', '2028-06-11');
+    check('payableDays: holiday on an already-off day does NOT double-subtract -> payable_days still 4', $payableWithBothHolidays['payable_days'], 4);
+
+    // No shift assigned at all -- falls back to "every day counts unless it's a holiday" and
+    // flags has_shift_pattern=false rather than silently guessing Mon-Fri.
+    $noShiftEmp = makeEmployee($pdo, $compId, 'P3_NOSHIFT_EMP_' . uniqid());
+    $payableNoShift = $model->payableDaysForEmployee($noShiftEmp, $compId, '2028-06-05', '2028-06-11');
+    checkFalse('payableDays: has_shift_pattern=false when no shift assigned', $payableNoShift['has_shift_pattern']);
+    check('payableDays: no shift -> only the 2 company holidays excluded -> payable_days=5', $payableNoShift['payable_days'], 5);
+
 } finally {
     $pdo->rollBack();
 }

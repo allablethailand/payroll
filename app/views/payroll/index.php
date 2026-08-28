@@ -9,49 +9,192 @@
             <span class="bc-current" data-i18n="payroll_process">Payroll Process</span>
         </h5>
     </nav>
-    <div class="mb-4">
-        <h5 class="text-secondary fw-bold m-0">
-            <i class="fa-solid fa-money-check-dollar me-2"></i>
-            <span data-i18n="payroll_process">Payroll Process</span>
-        </h5>
-        <p class="text-muted small m-0 mt-1" data-i18n="payroll_process_description">Manage payroll runs from draft through approval, payment, and closing. Click a row to open its management page.</p>
+    <!-- .page-header-card rollout (2026-08-21, explicit request: "ช่วยปรับให้ header แต่ละ Page
+         เป็นรูปแบบเดียวกัน เฉพาะหน้าหลัก") -- same standing convention Employee List already uses,
+         per style.css's own comment on .page-header-card. -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-money-check-dollar"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="payroll_process">Payroll Process</h5>
+            <p class="page-header-card-desc" data-i18n="payroll_process_description">Manage payroll runs from draft through approval, payment, and closing. Click a row to open its management page.</p>
+        </div>
     </div>
 
-    <div class="card-surface p-3 p-md-4">
-        <div class="row mb-3 g-2">
-            <div class="col-sm-4 col-md-3">
-                <label class="form-label mb-1"><span data-i18n="filter_state">Status</span></label>
-                <select class="form-select select2-static" id="filter_state" data-option-keys="state_draft,state_pending_approval,state_approved,state_paid,state_locked,state_rejected" data-option-values="draft,pending_approval,approved,paid,locked,rejected"></select>
-            </div>
-            <div class="col-sm-4 col-md-3">
-                <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
-                <div class="input-group">
-                    <input type="text" class="form-control datepicker" id="filter_date_from" autocomplete="off">
-                    <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                </div>
-            </div>
-            <div class="col-sm-4 col-md-3">
-                <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
-                <div class="input-group">
-                    <input type="text" class="form-control datepicker" id="filter_date_to" autocomplete="off">
-                    <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+        <div class="station-filter" id="stationFilter">
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <button type="button" class="station-filter-toggle" id="stationFilterToggle" title="Toggle filter">
+                <i class="fas fa-chevron-up"></i>
+            </button>
+            <div class="station-filter-body">
+                <div class="row g-2">
+                    <div class="col-sm-4 col-md-3">
+                        <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" id="filter_date_from" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                        </div>
+                    </div>
+                    <div class="col-sm-4 col-md-3">
+                        <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" id="filter_date_to" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
+        <div class="d-flex justify-content-end mb-3">
+            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearDateFilter">
+                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+            </button>
+        </div>
+
+        <div class="station-row" id="stationRow">
+            <div class="station-col">
+                <div class="station-card" data-state="pending_sync">
+                    <span data-i18n="state_pending_sync">Pending Pull</span> <span class="station-count">0</span>
+                </div>
+            </div>
+            <div class="station-col">
+                <div class="station-card active" data-state="draft">
+                    <span data-i18n="state_draft">In Progress</span> <span class="station-count">0</span>
+                </div>
+            </div>
+            <div class="station-col">
+                <div class="station-card" data-state="pending_approval">
+                    <span data-i18n="state_pending_approval">Pending Approval</span> <span class="station-count">0</span>
+                </div>
+            </div>
+            <div class="station-col">
+                <div class="station-card" data-state="approved">
+                    <span data-i18n="state_approved">Approved</span> <span class="station-count">0</span>
+                </div>
+            </div>
+            <div class="station-col">
+                <div class="station-card" data-state="paid">
+                    <span data-i18n="state_paid">Paid</span> <span class="station-count">0</span>
+                </div>
+            </div>
+            <div class="station-col">
+                <div class="station-card" data-state="locked">
+                    <span data-i18n="state_locked">Locked</span> <span class="station-count">0</span>
+                </div>
+            </div>
+            <div class="station-col station-col--reject">
+                <div class="station-card station-card--reject" data-state="rejected">
+                    <div class="station-card-inner">
+                        <span data-i18n="state_rejected">Rejected (Sent Back)</span> <span class="station-count">0</span>
+                    </div>
+                </div>
+            </div>
+            <!-- 2026-08-22, explicit request ("Status ในหน้า Approve มี...Need Information") -- a
+                 real third branch off pending_approval, alongside Rejected, added here too so a
+                 need_info run isn't invisible/uncounted on the Process List's own station bar. -->
+            <div class="station-col station-col--reject">
+                <div class="station-card station-card--reject station-card--needinfo" data-state="need_info">
+                    <div class="station-card-inner">
+                        <span data-i18n="state_need_info">Need Information</span> <span class="station-count">0</span>
+                    </div>
+                </div>
+            </div>
+            <div class="station-col station-col--reject">
+                <div class="station-card station-card--reject station-card--cancel" data-state="cancelled">
+                    <div class="station-card-inner">
+                        <span data-i18n="state_cancelled">Cancelled</span> <span class="station-count">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <table class="table table-hover table-border align-middle w-100" id="tb_payroll_run">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th scope="col" style="width: 22%;" data-i18n="table_run_name">Run Name</th>
-                    <th scope="col" style="width: 16%;" data-i18n="table_period">Pay Period</th>
-                    <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 10%;" data-i18n="table_employee_count">Employees</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_net_amount">Net Total</th>
-                    <th scope="col" style="width: 14%;" data-i18n="table_created_by">Created By</th>
-                    <th scope="col" style="width: 15%;" data-i18n="table_updated_at">Last Updated</th>
+                    <th scope="col" style="width: 17%;" data-i18n="table_run_name">Run Name</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_period">Pay Period</th>
+                    <!-- 2026-08-23, explicit request ("ถ้ามี Comment จากการอนุมัติ ให้นำมาแสดงด้วยใน
+                         Column Status แยกอาจยุบรวม Column Status กับ Column Timeline...และในColumn นี้
+                         เพิ่มปุ่มดำเนินการที่สามารถกดได้ รวมถึงวันที่ Status เข้าไปด้วย"; widened + given
+                         real spacing 2026-08-23 per explicit follow-up: "ช่วยปรับ Design ให้สวยขึ้นหน่อย
+                         ครับ ตอนนี้แน่นไปหมด") -- Status, Timeline, and Last Updated collapsed into one
+                         column: badge + status date on one row, mini-timeline dots on their own row,
+                         a reject/need-info comment chip when present, then the quick-action button. -->
+                    <th scope="col" style="width: 29%;" data-i18n="col_status">Status</th>
+                    <th scope="col" style="width: 7%;" data-i18n="table_employee_count">Employees</th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_net_amount">Net Total</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_created_by">Created By</th>
+                    <!-- 2026-08-27, explicit request: "th ของทุกตาราง ถ้ามีคำว่า Action ให้ตัดออกให้เป็น
+                         th เปล่าๆ" -- matches the empty-header convention every other Actions column in
+                         this app already uses (e.g. Company Setup's structure tables). -->
+                    <th scope="col" style="width: 7%;" class="text-center"></th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
+
+        <div class="d-none align-items-center mb-2 bulk-pull-bar" id="bulkPullBar">
+            <span class="bulk-pull-bar-count"><strong id="bulkPullCount">0</strong> <span data-i18n="bulk_pull_selected_label">selected</span></span>
+            <button type="button" class="btn btn-sm btn-warning" id="btnBulkPull">
+                <i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">Pull to Run</span>
+            </button>
+        </div>
+
+        <table class="table table-hover table-border align-middle w-100 d-none" id="tb_pending_sync">
+            <thead class="table-light text-secondary">
+                <tr>
+                    <th scope="col" style="width: 3%;"><input type="checkbox" id="pendingSyncSelectAll"></th>
+                    <th scope="col" style="width: 20%;" data-i18n="table_process_no">Process No</th>
+                    <th scope="col" style="width: 18%;" data-i18n="table_period">Pay Period</th>
+                    <th scope="col" style="width: 12%;" data-i18n="table_frequency">Frequency</th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_employee_count">Employees</th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_unmapped">Unmapped</th>
+                    <th scope="col" style="width: 14%;" data-i18n="table_received_at">Received</th>
+                    <th scope="col" style="width: 13%;"></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+    <!-- Pending Sync View Modal -->
+    <div class="modal fade" id="pendingSyncViewModal" tabindex="-1" aria-labelledby="pendingSyncViewModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="pendingSyncViewModalLabel">
+                        <i class="fa-solid fa-file-lines me-1"></i><span data-i18n="modal_view_sync_title">Sync Data Detail</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="pendingSyncViewBody">
+                    <div class="text-center text-muted py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i> <span data-i18n="loading">Loading...</span></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Pull Modal -->
+    <div class="modal fade" id="bulkPullModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="bulkPullModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="bulkPullModalLabel">
+                        <i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="bulk_pull_modal_title">Pull Selected to Runs</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small" data-i18n="bulk_pull_modal_description">Each item below becomes its own separate payroll run -- set the cycle and period for each one.</p>
+                    <div id="bulkPullRows"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnBulkPullSubmit"><span data-i18n="save">Save</span></button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Create Payroll Run Modal -->
@@ -65,8 +208,57 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <form id="payrollRunForm" novalidate>
+                    <input type="hidden" id="run_sync_process_id" name="sync_process_id" value="">
                     <div class="modal-body">
-                        <div class="row mb-3">
+                        <div class="row mb-3" id="run_offcycle_row">
+                            <div class="col-sm-9 offset-sm-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="run_is_offcycle">
+                                    <label class="form-check-label" for="run_is_offcycle" data-i18n="offcycle_run_label">Off-cycle run (no payroll cycle needed -- e.g. an out-of-cycle payment)</label>
+                                </div>
+                            </div>
+                        </div>
+        <div class="row mb-3 d-none" id="run_purpose_row">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0" data-i18n="modal_run_purpose">Run Purpose</label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-static" id="run_purpose" name="run_purpose"
+                                        data-option-keys="run_purpose_payroll,run_purpose_incentive" data-option-values="payroll,incentive"></select>
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="run_compute_statutory_row">
+                            <div class="col-sm-9 offset-sm-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="run_compute_statutory" checked>
+                                    <label class="form-check-label" for="run_compute_statutory" data-i18n="compute_statutory_label">Compute tax/social security (SSO/PVD) for this payment</label>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 2026-08-27, explicit request ("การทำงานจ่ายนอกรอบ สามารถเลือกได้ว่าจะนำเงินเดือน
+                             หรือค่าเงินได้เงินหักที่มีการตั้งค่าไว้มาคำนวณ") -- both off by default, same
+                             "Incentive/Other Payment only" visibility as run_compute_statutory_row right
+                             above (toggled by the same updateComputeStatutoryVisibility() in index.js).
+                             include_standing_items also unlocks the two-panel Earning/Deduction item
+                             selector on the Detail page once this run is created (see that page's own
+                             #pedTypeSettingsSection). -->
+                        <div class="row mb-3 d-none" id="run_include_base_salary_row">
+                            <div class="col-sm-9 offset-sm-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="run_include_base_salary">
+                                    <label class="form-check-label" for="run_include_base_salary" data-i18n="include_base_salary_label">Include base salary (full amount, not prorated)</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="run_include_standing_items_row">
+                            <div class="col-sm-9 offset-sm-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="run_include_standing_items">
+                                    <label class="form-check-label" for="run_include_standing_items" data-i18n="include_standing_items_label">Include configured earning/deduction items (standing PED assignments + Recurring Allowances)</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mb-3" id="run_cycle_row">
                             <div class="col-sm-3 align-self-center">
                                 <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Cycle</span> <span class="text-danger">*</span></label>
                             </div>
@@ -84,7 +276,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-0"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger" id="run_period_required_mark">*</span></label>
                             </div>
                             <div class="col-sm-4">
                                 <div class="input-group">
@@ -128,5 +320,96 @@
             </div>
         </div>
     </div>
+
+    <!-- Cancel Run Modal (row action -- same reason-required flow as the Detail page's own cancel
+         modal; needs a hidden run id here since this page has many rows, not one) -->
+    <div class="modal fade" id="cancelRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="cancelRunModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="cancelRunModalLabel">
+                        <i class="fa-solid fa-ban me-1"></i><span data-i18n="cancel_modal_title">Cancel Payroll Run</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="cancelRunForm" novalidate>
+                    <input type="hidden" id="cancel_run_id" value="">
+                    <div class="modal-body">
+                        <label class="form-label"><span data-i18n="cancel_reason_label">Cancel Reason</span> <span class="text-danger">*</span></label>
+                        <textarea class="form-control required" id="cancel_reason" name="reason" rows="3" data-i18n="cancel_reason_placeholder" placeholder="Explain why this payroll run is being cancelled..."></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-danger"><span data-i18n="confirm_cancel_run">Confirm Cancellation</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mark as Paid modal (2026-08-27, explicit request: "ในหน้า Process List ให้แสดงปุ่มเพิ่มด้วยครับ"
+         -- same markup/i18n keys as the Detail page's own #runMarkPaidModal (app/views/payroll/
+         detail.php), duplicated per this app's "each page's own JS/view stays self-contained"
+         convention (see the class-level comment above MINI_TIMELINE_STEPS in public/js/payroll/
+         index.js). Triggered from the mini-timeline's own Mark as Paid quick-action button
+         (miniTimelineQuickActionHtml() in index.js), gated by row.can_finalize_payroll. -->
+    <div class="modal fade" id="runMarkPaidModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runMarkPaidModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" id="runMarkPaidModalLabel">
+                        <i class="fa-solid fa-money-check-dollar me-1"></i><span data-i18n="action_mark_paid">Mark as Paid</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="runMarkPaidForm" novalidate>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label"><span data-i18n="payment_method_label">Payment Method</span> <span class="text-danger">*</span></label>
+                            <select class="form-select select2-static required" id="run_mark_paid_method" data-option-keys="payment_method_bank_transfer,payment_method_cash,payment_method_cheque" data-option-values="bank_transfer,cash,cheque"></select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" data-i18n="payment_reference_label">Payment Reference</label>
+                            <input type="text" class="form-control" id="run_mark_paid_reference" autocomplete="off">
+                        </div>
+                        <div class="mb-1">
+                            <label class="form-label" data-i18n="modal_payment_date">Payment Date</label>
+                            <input type="text" class="form-control datepicker" id="run_mark_paid_date" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-primary"><span data-i18n="action_mark_paid">Mark as Paid</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approval Flow timeline modal (2026-08-23, explicit request: "ในหน้า Process List ถ้าส่ง
+         Approve ไปแล้ว ควรมีปุ่มให้กดดู Workflow ของการอนุมัติด้วย") -- read-only here (this page shows
+         progress, not where you act -- approving stays on the Payroll Approval page/Detail page's
+         own Timeline, per this page's own existing "approving now belongs on the rebuilt Payroll
+         Approval page" convention). Same .apv-* design as those pages' own Timeline modals. -->
+    <div class="modal fade" id="runWorkflowModal" tabindex="-1" aria-labelledby="runWorkflowModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title text-secondary mb-0" id="runWorkflowModalLabel">
+                            <i class="fa-solid fa-list-check me-1"></i><span data-i18n="approval_timeline_title">Approval Timeline</span>
+                        </h5>
+                        <div class="text-muted small" id="runWorkflowModalRunName"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="runWorkflowModalBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 <script src="<?=asset('public/js/payroll/index.js')?>"></script>

@@ -6,7 +6,44 @@ class BankAccountModel {
         $this->db = Database::getInstance()->pdo;
     }
 
-    public function list(int $compId, int $start, int $length, string $search, int $colIndex, string $orderDir): array {
+    /** Frontend column KEY -> real SQL expression for the Excel-style column filter (2026-08-27
+     *  rollout). `account_no` (ciphertext, decrypted only per-row after the query above) and
+     *  `is_default` (boolean icon, not a meaningful checkbox label) are deliberately NOT included --
+     *  same exclusion policy every other table in this rollout applies to its own non-filterable
+     *  columns; `bank_name` is `$lang`-resolved the same way EmployeeModel::listColumnExprMap() does. */
+    private function columnFilterExprMap(string $lang): array {
+        return [
+            'bank_name' => $lang === 'en' ? 'mb.bank_name_en' : 'mb.bank_name_th',
+            'account_name' => 'ba.account_name',
+            'branch_name' => 'ba.branch_name',
+            'account_type' => 'ba.account_type',
+            'status' => 'ba.status',
+        ];
+    }
+
+    private function applyColumnFilters(string $whereSql, array &$params, array $columnFilters, array $exprMap, ?string $excludeColumn = null): string {
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if ($col === $excludeColumn || !isset($exprMap[$col]) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $whereSql .= " AND {$exprMap[$col]} IN (" . implode(', ', $placeholders) . ")";
+        }
+        return $whereSql;
+    }
+
+    public function list(int $compId, int $start, int $length, string $search, int $colIndex, string $orderDir, string $lang = 'th', array $columnFilters = []): array {
         $sortColumns = [
             0 => '`ba`.`id`',
             1 => '`mb`.`bank_name_th`',
@@ -35,6 +72,8 @@ class BankAccountModel {
             $params[':search3'] = "%{$search}%";
             $params[':search4'] = "%{$search}%";
         }
+        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout.
+        $whereSql = $this->applyColumnFilters($whereSql, $params, $columnFilters, $this->columnFilterExprMap($lang));
 
         $countSql = "SELECT COUNT(*) FROM `bank_accounts` ba LEFT JOIN `master_banks` mb ON ba.bank_id = mb.id WHERE {$whereSql}";
         $countStmt = $this->db->prepare($countSql);
@@ -66,6 +105,26 @@ class BankAccountModel {
             'recordsFiltered' => $recordsFiltered,
             'data' => $data,
         ];
+    }
+
+    /** Distinct values for ONE column of the bank account list, respecting every OTHER active
+     *  Excel-style column filter but not this column's own selection -- see
+     *  EmployeeModel::listColumnValues()'s own docblock for why. */
+    public function columnDistinctValues(int $compId, string $column, string $lang, array $columnFilters, ?string $excludeColumn): array {
+        $exprMap = $this->columnFilterExprMap($lang);
+        if (!isset($exprMap[$column])) {
+            return [];
+        }
+        $expr = $exprMap[$column];
+        $where = "ba.comp_id = :comp_id AND ba.deleted_at IS NULL AND ba.status != 'deleted'";
+        $params = [':comp_id' => $compId];
+        $where = $this->applyColumnFilters($where, $params, $columnFilters, $exprMap, $excludeColumn);
+        $sql = "SELECT DISTINCT {$expr} AS value FROM `bank_accounts` ba LEFT JOIN `master_banks` mb ON ba.bank_id = mb.id
+                WHERE {$where} AND {$expr} IS NOT NULL AND {$expr} != ''
+                ORDER BY value ASC LIMIT 500";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'value');
     }
 
     private function isAccountNoDuplicate(int $compId, string $accountNoHash, ?int $excludeId): bool {

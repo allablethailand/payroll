@@ -4,6 +4,7 @@ require_once __DIR__ . '/../models/ApprovalWorkflowModel.php';
 require_once __DIR__ . '/../models/ApprovalRequestModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 require_once __DIR__ . '/../models/PayslipRequestModel.php';
+require_once __DIR__ . '/../models/EmploymentCertificateRequestModel.php';
 
 class ApprovalWorkflowController extends Controller {
     private $model;
@@ -128,6 +129,64 @@ class ApprovalWorkflowController extends Controller {
         $this->json($this->model->toggleStatus((int)$compId, $id, $this->actingUserId(), $status));
     }
 
+    /** The simplified Settings UI's per-tab flow load (2026-08-24 -- see ApprovalWorkflowModel's
+     *  own docblock on getByDocumentType()/stepSave()/stepDelete()/stepsSort() for the full
+     *  redesign context). `data: null` (not an error) is the normal "never configured yet" case --
+     *  the tab renders an empty step list ready for the first "+ Step". */
+    public function flowGet() {
+        if (!$this->requirePermission('approval_workflow.view')) return;
+        $compId = getCompId();
+        $documentTypeCode = (string)($_GET['document_type_code'] ?? '');
+        if (!$compId || $documentTypeCode === '') {
+            $this->json(['status' => false, 'message' => 'Missing document_type_code.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->getByDocumentType((int)$compId, $documentTypeCode)]);
+    }
+
+    public function stepSave() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = $this->jsonBody();
+        if ($data === null) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $this->json($this->model->stepSave((int)$compId, $data, $this->actingUserId()));
+    }
+
+    public function stepDelete() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
+        $compId = getCompId();
+        $id = isset($_POST['step_id']) ? (int)$_POST['step_id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing step_id.']);
+            return;
+        }
+        $this->json($this->model->stepDelete((int)$compId, $id, $this->actingUserId()));
+    }
+
+    public function stepsSort() {
+        if (!$this->requirePermission('approval_workflow.manage')) return;
+        $compId = getCompId();
+        $data = $this->jsonBody();
+        if ($data === null) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $documentTypeCode = (string)($data['document_type_code'] ?? '');
+        $stepIds = is_array($data['step_ids'] ?? null) ? $data['step_ids'] : [];
+        if (!$compId || $documentTypeCode === '') {
+            $this->json(['status' => false, 'message' => 'Missing document_type_code.']);
+            return;
+        }
+        $this->json($this->model->stepsSort((int)$compId, $documentTypeCode, $stepIds));
+    }
+
     public function requestCreate() {
         $compId = getCompId();
         if (!$compId) {
@@ -149,8 +208,9 @@ class ApprovalWorkflowController extends Controller {
      * After the generic engine acts, a thin per-document-type sync hook runs for any document
      * type that needs one -- keeps ApprovalRequestModel itself document-type-agnostic (per its
      * own docblock) while still letting a terminal outcome (approved/rejected/cancelled) update
-     * the document's own table. Currently only SLIP_REQUEST_APPROVAL has one; add more `case`s
-     * here as other document types get wired to this engine.
+     * the document's own table. `EMPLOYMENT_CERTIFICATE_APPROVAL` added 2026-08-26 -- see
+     * EmploymentCertificateRequestModel's own docblock for the first real consumer of that
+     * document type (seeded config-only back in Employment Certificate Template's own v4).
      */
     private function syncDocumentAfterAct(int $compId, int $requestId, string $requestStatus, array $data): void {
         $request = $this->requestModel->get($compId, $requestId);
@@ -161,6 +221,9 @@ class ApprovalWorkflowController extends Controller {
             case 'SLIP_REQUEST_APPROVAL':
                 $selectedChannel = isset($data['selected_channel']) ? (string)$data['selected_channel'] : null;
                 (new PayslipRequestModel())->syncFromApprovalStatus((int)$request['reference_id'], $requestStatus, $selectedChannel);
+                break;
+            case 'EMPLOYMENT_CERTIFICATE_APPROVAL':
+                (new EmploymentCertificateRequestModel())->syncFromApprovalStatus((int)$request['reference_id'], $requestStatus);
                 break;
         }
     }

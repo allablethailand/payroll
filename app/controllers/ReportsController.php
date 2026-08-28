@@ -3,14 +3,28 @@ declare(strict_types=1);
 require_once __DIR__ . '/../services/reports/ReportRegistry.php';
 require_once __DIR__ . '/../models/ReportExportLogModel.php';
 require_once __DIR__ . '/../models/PayrollRunModel.php';
+require_once __DIR__ . '/../models/PayrollReportDataModel.php';
 
 class ReportsController extends Controller {
     private $logModel;
     private PayrollRunModel $payrollRunModel;
+    private PayrollReportDataModel $reportDataModel;
+
+    /**
+     * 2026-08-27: the "Per-Cycle Reports" matrix table lists one row per run in any of these
+     * states -- the SAME set every individual cycle report generator already gates on via its own
+     * ALLOWED_STATES const (see e.g. PndOneReport/Sso110Report/PaySlipReport). Kept as one
+     * constant here rather than importing each report's own const, since this is a display-layer
+     * concern (which runs even show up as rows) independent of any one report's own generation
+     * gate -- a report whose row *is* listed can still individually refuse a state it doesn't
+     * accept (defense in depth, not expected to ever actually diverge today).
+     */
+    private const CYCLE_REPORT_STATES = ['approved', 'paid', 'locked'];
 
     public function __construct() {
         $this->logModel = new ReportExportLogModel();
         $this->payrollRunModel = new PayrollRunModel();
+        $this->reportDataModel = new PayrollReportDataModel();
     }
 
     private function userId(): int {
@@ -112,6 +126,21 @@ class ReportsController extends Controller {
         header('Content-Length: ' . strlen($result['content']));
         echo $result['content'];
         exit;
+    }
+
+    /**
+     * 2026-08-27, explicit request: "ปรับให้เป็นตาราง เลย เป็นแถวละ 1 รอบที่เสร็จแล้ว...โดยเรียงจาก
+     * รอบล่าสุดขึ้นหัวตาราง" -- backs the Per-Cycle Reports matrix table's rows (one completed
+     * payroll run per row, newest pay period first).
+     */
+    public function cycleRuns() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => []]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->reportDataModel->getCompletedRuns((int)$compId, self::CYCLE_REPORT_STATES)]);
     }
 
     public function exportLogs() {

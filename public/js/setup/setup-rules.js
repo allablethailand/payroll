@@ -1,6 +1,7 @@
 /**
- * Setup & Rules page. Shift, Holiday, Work Location, Leave Type, and OT Rate are all wired to
- * real backends (SetupRulesController).
+ * Setup & Rules page. Shift, Holiday, Work Location, Leave Type, and OT Rate are all wired to real
+ * backends (SetupRulesController). OT Rate briefly moved to Payroll Configuration and back the same
+ * day (2026-08-21, "ย้ายตัวคูณ OT ไปไว้ที่เดิมครับ") -- stays here now.
  *
  * All DataTables here rely on DataTables' own built-in search box (default `dom`, no override)
  * with the "Add" button injected into `.dt-search` via `initComplete`, matching the convention
@@ -73,14 +74,35 @@ function confirmDelete() {
 
 /* ==================== SHIFT ==================== */
 let dtShift;
+// Day-of-week keys match the shifts.works_* DB columns / payload field names verbatim.
+const SHIFT_WORK_DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const SHIFT_WORK_DAY_SHORT_KEYS = { monday: 'day_mon_short', tuesday: 'day_tue_short', wednesday: 'day_wed_short', thursday: 'day_thu_short', friday: 'day_fri_short', saturday: 'day_sat_short', sunday: 'day_sun_short' };
+function shiftWorkDaysSummary(row) {
+    const active = SHIFT_WORK_DAY_KEYS.filter(k => !!row['works_' + k]);
+    if (active.length === 7) { return langData['every_day'] || 'Every day'; }
+    if (active.length === 0) { return '<span class="text-faint">-</span>'; }
+    return active.map(k => langData[SHIFT_WORK_DAY_SHORT_KEYS[k]] || k.slice(0, 3)).join(', ');
+}
+function setShiftWorkDays(row) {
+    SHIFT_WORK_DAY_KEYS.forEach(k => {
+        $(`#shiftWorkDaysToggle button[data-day="${k}"]`).toggleClass('active', row ? !!row['works_' + k] : (k !== 'saturday' && k !== 'sunday'));
+    });
+}
+function getShiftWorkDaysPayload() {
+    const payload = {};
+    SHIFT_WORK_DAY_KEYS.forEach(k => { payload['works_' + k] = $(`#shiftWorkDaysToggle button[data-day="${k}"]`).hasClass('active') ? 1 : 0; });
+    return payload;
+}
 function renderShift() {
     if ($.fn.DataTable.isDataTable('#tb_shift')) { $('#tb_shift').DataTable().ajax.reload(null, false); return; }
     dtShift = $('#tb_shift').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/shift.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}</div>` },
             { data: 'shift_code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint"><i class="fa-regular fa-clock me-1"></i>${(row.start_time || '').slice(0, 5)} - ${(row.end_time || '').slice(0, 5)}</span>` },
+            { data: null, render: (d, t, row) => `<span class="text-faint">${shiftWorkDaysSummary(row)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${row.location_name_th ? escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en) : '-'}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${row.updated_at ? fmtDate(row.updated_at.slice(0, 10)) : fmtDate(row.created_at.slice(0, 10))}</span>` },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleShiftStatus(${row.id})`) },
@@ -88,7 +110,22 @@ function renderShift() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
-        initComplete: addButtonInitComplete('btn-add-shift', 'fa-solid fa-plus', 'add_shift', 'Add Shift', 'openShiftModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-shift', 'fa-solid fa-plus', 'add_shift', 'Shift', 'openShiftModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the multi-value work-days summary (3, composite), the
+            // interactive status SWITCH (6, not a display value), and actions (7).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'time_range' },
+                    { index: 4, key: 'location' },
+                    { index: 5, key: 'updated_at' },
+                ]
+            });
+        }
     });
 }
 function toggleShiftStatus(id) {
@@ -117,6 +154,7 @@ function openShiftModal(id) {
                 $('#shiftEnd').val((s.end_time || '').slice(0, 5));
                 $('#shiftBreak').val(s.break_minutes || 0);
                 $('#shiftStatus').prop('checked', s.status === 'active');
+                setShiftWorkDays(s);
                 const $loc = $('#shiftWorkLocation');
                 $loc.empty();
                 if (s.work_location_id) {
@@ -134,12 +172,13 @@ function openShiftModal(id) {
     $('#shiftDesc').val(''); $('#shiftStart').val('08:00'); $('#shiftEnd').val('17:00'); $('#shiftBreak').val(0);
     $('#shiftWorkLocation').empty().trigger('change.select2');
     $('#shiftStatus').prop('checked', true);
+    setShiftWorkDays(null);
     new bootstrap.Modal(document.getElementById('shiftModal')).show();
 }
 function saveShift() {
     const name = $('#shiftName').val().trim(), code = $('#shiftCode').val().trim();
     if (!name || !code) { showWarning(langData['required_star_message'] || 'Please fill all fields marked with *'); return; }
-    const payload = {
+    const payload = Object.assign({
         id: $('#shiftId').val() || null,
         shift_name_th: name, shift_name_en: name, shift_code: code,
         description: $('#shiftDesc').val().trim(),
@@ -147,7 +186,7 @@ function saveShift() {
         break_minutes: parseInt($('#shiftBreak').val()) || 0,
         work_location_id: $('#shiftWorkLocation').val() || null,
         status: $('#shiftStatus').is(':checked') ? 'active' : 'inactive'
-    };
+    }, getShiftWorkDaysPayload());
     $.ajax({
         url: `${BASE_URL}/api/shift.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
@@ -223,6 +262,7 @@ function updateHolidayModeHint() {
 function renderHoliday() {
     if ($.fn.DataTable.isDataTable('#tb_holiday')) { $('#tb_holiday').DataTable().ajax.reload(null, false); return; }
     dtHoliday = $('#tb_holiday').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/holiday.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
@@ -234,7 +274,40 @@ function renderHoliday() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
-        initComplete: addButtonInitComplete('btn-add-holiday', 'fa-solid fa-plus', 'add_holiday', 'Add Holiday', 'openHolidayModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-holiday', 'fa-solid fa-plus', 'add_holiday', 'Holiday', 'openHolidayModal()').call(this);
+            // 2026-08-28, explicit request: "เพิ่มให้ Sync ข้อมูลวันหยุดตามประกาศจาก API ที่มี" -- see
+            // public/js/setup/holiday-sync.js for the picker modal this opens, and
+            // HolidaySyncModel's own docblock for the full design.
+            const $wrapper = $(this.api().table().container());
+            const $searchDiv = $wrapper.find('.dt-search');
+            if ($searchDiv.find('#btnOpenHolidaySync').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-outline-secondary ms-1" id="btnOpenHolidaySync">
+                        <i class="fa-brands fa-google me-1"></i><span data-i18n="holiday_sync_button">Sync from Google Calendar</span>
+                    </button>
+                `);
+            }
+            if ($searchDiv.find('#btnOpenHolidaySyncLog').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-outline-secondary ms-1" id="btnOpenHolidaySyncLog">
+                        <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="holiday_sync_log_button">Sync Log</span>
+                    </button>
+                `);
+            }
+            if (typeof updateText === 'function') updateText($searchDiv[0]);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the multi-value scope summary (3, composite), the
+            // interactive status SWITCH (4), and actions (5).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'holiday_date' },
+                    { index: 2, key: 'recurring' },
+                ]
+            });
+        }
     });
 }
 function toggleHolidayStatus(id) {
@@ -337,6 +410,7 @@ let dtWorkLocation;
 function renderWorkLocation() {
     if ($.fn.DataTable.isDataTable('#tb_work_location')) { $('#tb_work_location').DataTable().ajax.reload(null, false); return; }
     dtWorkLocation = $('#tb_work_location').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/work-location.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}</div>` },
@@ -347,7 +421,19 @@ function renderWorkLocation() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },
-        initComplete: addButtonInitComplete('btn-add-location', 'fa-solid fa-plus', 'add_work_location', 'Add Location', 'openWorkLocationModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-location', 'fa-solid fa-plus', 'add_work_location', 'Location', 'openWorkLocationModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the interactive status SWITCH (3) and actions (4).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'address' },
+                ]
+            });
+        }
     });
 }
 function toggleWorkLocationStatus(id) {
@@ -418,6 +504,7 @@ function leaveQuotaUnitLabel(unit) {
 function renderLeave() {
     if ($.fn.DataTable.isDataTable('#tb_leave')) { $('#tb_leave').DataTable().ajax.reload(null, false); return; }
     dtLeave = $('#tb_leave').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/leave-type.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
@@ -431,7 +518,37 @@ function renderLeave() {
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
-        initComplete: addButtonInitComplete('btn-add-leave', 'fa-solid fa-plus', 'add_leave_type', 'Add Leave Type', 'openLeaveModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-leave', 'fa-solid fa-plus', 'add_leave_type', 'Leave Type', 'openLeaveModal()').call(this);
+            // "Apply Default" (2026-08-28) -- seeds the 10 starter leave types (see
+            // SetupRulesModel::LEAVE_TYPE_DEFAULTS) via api/leave-type.apply-defaults. Idempotent
+            // (skips any code that already exists for this company), so the button stays useful
+            // indefinitely, not just on a first-time empty table. Shares generic apply_default_*
+            // i18n keys intended for reuse on other data-management tabs later.
+            const $wrapper = $(this.api().table().container());
+            const $searchDiv = $wrapper.find('.dt-search');
+            if ($searchDiv.find('#btnApplyLeaveTypeDefaults').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-outline-secondary ms-1" id="btnApplyLeaveTypeDefaults">
+                        <i class="fa-solid fa-wand-magic-sparkles me-1"></i><span data-i18n="apply_default_button">Apply Default</span>
+                    </button>
+                `);
+            }
+            if (typeof updateText === 'function') updateText($searchDiv[0]);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the interactive status SWITCH (6) and actions (7).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'category' },
+                    { index: 3, key: 'quota' },
+                    { index: 4, key: 'paid' },
+                    { index: 5, key: 'carry_over' },
+                ]
+            });
+        }
     });
 }
 function toggleLeaveStatus(id) {
@@ -535,24 +652,64 @@ function saveLeave() {
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
+$(document).on('click', '#btnApplyLeaveTypeDefaults', function () {
+    showConfirm(
+        langData['apply_default_confirm_title'] || 'Apply default data?',
+        langData['apply_default_confirm_message'] || 'This will add any missing standard starter records. Existing records will not be changed.',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/leave-type.apply-defaults`, method: 'POST', dataType: 'json',
+                success: function (res) {
+                    if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                    const tpl = langData['apply_default_result'] || 'Added {created} new record(s). {skipped} already existed.';
+                    showSuccess(tpl.replace('{created}', res.created).replace('{skipped}', res.skipped));
+                    dtLeave.ajax.reload(null, false);
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred.'); }
+            });
+        }
+    );
+});
 
-/* ==================== OT RATE ==================== */
+/* ==================== OT RATE ====================
+ * Moved back here 2026-08-21 (explicit request: "ย้ายตัวคูณ OT ไปไว้ที่เดิมครับ") -- briefly lived
+ * under Payroll Configuration earlier the same day, reverted to its original tab.
+ * calculation_method/flat_amount_rate (added during that same detour, "เพิ่มตัวเลือก 'จำนวนเงินคงที่'
+ * ต่อชม./วัน") are kept -- only the location moved back, not the feature.
+ */
 let dtOt;
+function otRateBadge(row) {
+    return row.calculation_method === 'flat_amount'
+        ? `<span class="row-code">${parseFloat(row.flat_amount_rate || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${row.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>`
+        : `<span class="row-code">${parseFloat(row.multiplier_rate).toFixed(1)}x</span>`;
+}
 function renderOt() {
     if ($.fn.DataTable.isDataTable('#tb_ot')) { $('#tb_ot').DataTable().ajax.reload(null, false); return; }
     dtOt = $('#tb_ot').DataTable({
+        responsive: true,
         ajax: { url: `${BASE_URL}/api/ot-rate.list`, dataSrc: 'data' },
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}</div>` },
             { data: null, render: (d, t, row) => `<span class="badge-soft badge-weekday">${escapeHtmlSr(currentLang === 'th' ? row.scope_name_th : row.scope_name_en)}</span>` },
-            { data: null, render: (d, t, row) => `<span class="row-code">${parseFloat(row.multiplier_rate).toFixed(1)}x</span>` },
-            { data: null, render: (d, t, row) => `<span class="text-faint">${row.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>` },
+            { data: null, render: (d, t, row) => otRateBadge(row) },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleOtStatus(${row.id})`) },
             { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_ot_rates_yet'] || 'No OT rates have been added yet.' },
-        initComplete: addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'Add OT Rate', 'openOtModal()')
+        initComplete: function () {
+            addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'OT Rate', 'openOtModal()').call(this);
+            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+            // rollout, client mode. Excludes the interactive status SWITCH (3) and actions (4).
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'name' },
+                    { index: 1, key: 'scope' },
+                    { index: 2, key: 'rate' },
+                ]
+            });
+        }
     });
 }
 function toggleOtStatus(id) {
@@ -564,10 +721,21 @@ function toggleOtStatus(id) {
         }
     });
 }
+function applyOtCalculationMethodFields(method) {
+    $('#otMultiplierWrapper').toggleClass('d-none', method === 'flat_amount');
+    $('#otFlatAmountWrapper').toggleClass('d-none', method !== 'flat_amount');
+}
+$(document).on('change', '#otCalcMethod', function () {
+    applyOtCalculationMethodFields($(this).val());
+});
+$(document).on('click', '#shiftWorkDaysToggle button', function () {
+    $(this).toggleClass('active');
+});
 function openOtModal(id) {
     $('#otModalTitle').html(`<i class="fa-solid fa-coins"></i> <span data-i18n="ot_rate">${langData['ot_rate'] || 'OT Rate'}</span>`);
     initSelect2('#otScope', { mode: 'ajax' });
     initSelect2('#otBase', { mode: 'static' });
+    initSelect2('#otCalcMethod', { mode: 'static' });
     if (id) {
         $.ajax({
             url: `${BASE_URL}/api/ot-rate.get`, method: 'GET', data: { id }, dataType: 'json',
@@ -580,7 +748,10 @@ function openOtModal(id) {
                 const $scope = $('#otScope');
                 $scope.empty().append(new Option(currentLang === 'th' ? o.scope_name_th : o.scope_name_en, o.ot_scope_id, true, true)).trigger('change.select2');
                 $('#otMultiplier').val(o.multiplier_rate);
+                $('#otFlatAmountRate').val(o.flat_amount_rate || '');
                 $('#otBase').val(o.calculation_base).trigger('change.select2');
+                $('#otCalcMethod').val(o.calculation_method || 'multiplier').trigger('change.select2');
+                applyOtCalculationMethodFields(o.calculation_method || 'multiplier');
                 $('#otStatus').prop('checked', o.status === 'active');
                 new bootstrap.Modal(document.getElementById('otModal')).show();
             },
@@ -591,25 +762,44 @@ function openOtModal(id) {
     $('#otId').val(''); $('#otNameTh').val(''); $('#otNameEn').val('');
     $('#otScope').empty().trigger('change.select2');
     $('#otMultiplier').val(1.5);
+    $('#otFlatAmountRate').val('');
     $('#otBase').val('hourly').trigger('change.select2');
+    $('#otCalcMethod').val('multiplier').trigger('change.select2');
+    applyOtCalculationMethodFields('multiplier');
     $('#otStatus').prop('checked', true);
     new bootstrap.Modal(document.getElementById('otModal')).show();
 }
 function saveOt() {
     const nameTh = $('#otNameTh').val().trim();
     const scopeId = $('#otScope').val();
-    const multiplier = parseFloat($('#otMultiplier').val());
-    if (!nameTh || !scopeId || !multiplier || multiplier <= 0) {
+    const calcMethod = $('#otCalcMethod').val() || 'multiplier';
+    if (!nameTh || !scopeId) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
     const payload = {
         id: $('#otId').val() || null,
         ot_name_th: nameTh, ot_name_en: $('#otNameEn').val().trim(),
-        ot_scope_id: parseInt(scopeId), multiplier_rate: multiplier,
+        ot_scope_id: parseInt(scopeId),
         calculation_base: $('#otBase').val() || 'hourly',
+        calculation_method: calcMethod,
         status: $('#otStatus').is(':checked') ? 'active' : 'inactive'
     };
+    if (calcMethod === 'flat_amount') {
+        const flatAmount = parseFloat($('#otFlatAmountRate').val());
+        if (!flatAmount || flatAmount <= 0) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        payload.flat_amount_rate = flatAmount;
+    } else {
+        const multiplier = parseFloat($('#otMultiplier').val());
+        if (!multiplier || multiplier <= 0) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        payload.multiplier_rate = multiplier;
+    }
     $.ajax({
         url: `${BASE_URL}/api/ot-rate.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {

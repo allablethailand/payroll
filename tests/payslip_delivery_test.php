@@ -71,6 +71,32 @@ function makeEmployee(PDO $pdo, int $compId, string $employeeNo, ?int $departmen
 try {
     $compId = 1;
     $adminUserId = 1;
+
+    // Same isolation as tests/payroll_run_test.php: recalculate() now pulls incomplete-profile
+    // employees (is_payroll_ready=0) into the calculation table instead of excluding them (see
+    // PayrollRunModel::recalculate(), 2026-08-19), so leftover placeholder employees anyone has
+    // ever created against this real, shared dev-DB company (id 1) now legitimately show up in
+    // every run this test creates and block submit()/approve() through no fault of this test's own
+    // fixture. Soft-delete them for this run only, entirely inside this script's own transaction
+    // (rolled back at the very end), so nothing here is a real/permanent change.
+    // Broadened from is_payroll_ready=0-only (2026-08-19, see tests/payroll_run_test.php's own
+    // comment for the full reasoning): a leftover row with is_payroll_ready=1 -- from back when that
+    // column was hardcoded true on every successful save, before EmployeeModel::save() started
+    // computing it dynamically -- would slip past a narrower filter and still be picked up.
+    $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL")
+        ->execute([':comp_id' => $compId]);
+
+    // Same isolation, same reason as reports_test.php (2026-08-24): this real dev-DB company may
+    // have a real, live PAYROLL_RUN_APPROVAL Approval Workflow configured -- PayrollRunModel::
+    // approve() below now routes through that REAL engine whenever one is active, admin included
+    // (canApproveThisRun()'s 2026-08-24 fix). This test needs runModel->approve() to succeed via
+    // the flat admin-bypass fallback, so temporarily deactivate whatever's live, entirely inside
+    // this script's own rolled-back transaction.
+    $pdo->prepare("UPDATE `approval_workflows` SET status = 'inactive'
+        WHERE comp_id = :comp_id AND status = 'active'
+          AND id IN (SELECT workflow_id FROM `approval_workflow_document_types` WHERE document_type_code = 'PAYROLL_RUN_APPROVAL')")
+        ->execute([':comp_id' => $compId]);
+
     $today = new DateTime();
     $periodStart = (clone $today)->modify('first day of this month')->format('Y-m-d');
     $periodEnd = (clone $today)->modify('last day of this month')->format('Y-m-d');
@@ -178,7 +204,7 @@ try {
     $wfRes = $wfModel->save($compId, [
         'workflow_name' => 'PDV Test Workflow ' . uniqid(),
         'document_type_codes' => ['SLIP_REQUEST_APPROVAL'], 'status' => 'active',
-        'steps' => [['approver_type' => 'user', 'approver_id' => $approverEmployee]],
+        'steps' => [['approvers' => [['approver_type' => 'user', 'approver_id' => $approverEmployee]]]],
     ], $adminUserId);
     checkTrue('fixture: SLIP_REQUEST_APPROVAL workflow created', $wfRes['status']);
 

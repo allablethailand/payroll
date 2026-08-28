@@ -81,6 +81,20 @@ abstract class AbstractMasterDataSyncer implements MasterDataSyncerInterface {
         return ['action' => $existingId !== null ? 'updated' : 'inserted'];
     }
 
+    /**
+     * 2026-08-28, added for the interactive "Sync from Origami" picker pattern (Employee/Holiday/
+     * now Department+Position+Team) -- same shape as HolidaySyncer's own applyResolved(): the
+     * picker's own Model does its OWN local-match query (findByRefId() here is protected, not
+     * reachable from outside this class hierarchy) and passes the already-resolved $existingId in
+     * directly, skipping this class's own findByRefId()/findByNaturalKey() resolution entirely.
+     * Lives on the ABSTRACT base (not duplicated into DepartmentSyncer/PositionSyncer individually)
+     * since it needs nothing beyond upsertItem(), which every concrete subclass already implements.
+     */
+    public function applyResolved(int $compId, array $item, int $batchId, ?int $triggeredBy, ?int $existingId): array {
+        $this->upsertItem($compId, $item, $batchId, $triggeredBy, $existingId, 'sync');
+        return ['action' => $existingId !== null ? 'updated' : 'inserted'];
+    }
+
     protected function findByRefId(int $compId, int $refId): ?int {
         $stmt = $this->db->prepare("SELECT id FROM `{$this->tableName()}` WHERE origami_ref_id = :ref AND comp_id = :comp");
         $stmt->execute([':ref' => $refId, ':comp' => $compId]);
