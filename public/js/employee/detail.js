@@ -422,8 +422,58 @@ function renderProfileHeader(data) {
             .css('background-color', completenessColor(tabPercent));
     });
 
+    updateOrigamiSyncSummary(data);
+
     $('#employeeProfileHeader').removeClass('d-none');
 }
+// 2026-08-28, explicit request: "เพิ่มปุ่ม Re Sync รายบุคคลของพนักงาน และมีประวัติการ Sync โชว์ในหน้า
+// พนักงานด้วย" -- called from renderProfileHeader() so it stays in sync everywhere that already
+// runs (initial load AND after every tab's Save). Hidden entirely for an employee with no
+// origami_ref_id (nothing to re-sync) or when this company isn't Origami-HR-linked at all
+// (IS_ORIGAMI_HR_LINKED, set once in layout/header.php) -- same gating convention already used for
+// the Sync buttons on Employee List/Organizational Structure.
+function updateOrigamiSyncSummary(data) {
+    const $section = $('#employeeOrigamiSyncSummary');
+    if (!data.origami_ref_id || typeof IS_ORIGAMI_HR_LINKED === 'undefined' || !IS_ORIGAMI_HR_LINKED) {
+        $section.addClass('d-none');
+        return;
+    }
+    $section.removeClass('d-none');
+    $('#profileLastSyncedText').text(langData['loading'] || 'Loading...');
+    $.getJSON(`${BASE_URL}/api/employee-sync.last-sync-summary`, { employee_id: data.id }, function (res) {
+        const summary = (res && res.status) ? res.data : null;
+        if (summary && summary.started_at) {
+            const dateStr = typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(summary.started_at) : summary.started_at;
+            const statusCls = summary.status === 'completed' ? 'text-success' : (summary.status === 'failed' ? 'text-danger' : 'text-warning');
+            $('#profileLastSyncedText').html(`<span class="${statusCls}">${escapeHtml(dateStr)}</span>`);
+        } else {
+            $('#profileLastSyncedText').text(langData['employee_sync_never_synced'] || 'Never synced from Origami');
+        }
+    }).fail(function () {
+        $('#profileLastSyncedText').text(langData['employee_sync_never_synced'] || 'Never synced from Origami');
+    });
+}
+$(document).on('click', '#btnResyncOneEmployee', function () {
+    if (!currentEmployeeId) return;
+    const $btn = $(this).prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/employee-sync.resync-one`, method: 'POST',
+        data: { employee_id: currentEmployeeId }, dataType: 'json',
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+            showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+            // Re-syncing may have changed HR-owned fields (name/DOB/gender/email/mobile/employment
+            // date+status) -- full reload, same as opening this employee fresh, so the form isn't
+            // left showing stale values next to a "just synced" success toast.
+            loadEmployeeIfEditing();
+        },
+        error: function () {
+            $btn.prop('disabled', false);
+            showWarning(langData['save_failed'] || 'An error occurred while saving.');
+        }
+    });
+});
 function refreshProfileHeader() {
     const employeeNo = $('#employee_no').val();
     if (!employeeNo) return;

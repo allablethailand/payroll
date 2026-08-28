@@ -1613,5 +1613,8 @@
     "org_structure_sync_confirm_message": "This will insert/update {count} record(s) in this system.",
     "can_process_payroll": "Can Create/Process Payroll Run",
     "can_approve_payroll": "Can Approve Payroll Run",
-    "can_finalize_payroll": "Can Mark Paid/Finalize Payroll Run"
+    "can_finalize_payroll": "Can Mark Paid/Finalize Payroll Run",
+    "origami_sync_summary_title": "Origami Sync",
+    "employee_sync_resync_one_button": "Re-Sync from Origami",
+    "employee_sync_never_synced": "Never synced from Origami"
 }

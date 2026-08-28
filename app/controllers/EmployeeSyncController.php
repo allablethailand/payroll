@@ -77,6 +77,34 @@ class EmployeeSyncController extends Controller {
         $this->json($this->model->apply((int)$compId, $this->filtersFromRequest(), $refIds, $this->userId()));
     }
 
+    /** 2026-08-28, explicit request: per-employee "Re-Sync from Origami" button on Employee Detail. */
+    public function resyncOne() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $employeeId = (int)($_POST['employee_id'] ?? 0);
+        if ($employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing employee_id.']);
+            return;
+        }
+        $this->json($this->model->resyncOne((int)$compId, $employeeId, $this->userId()));
+    }
+
+    /** 2026-08-28, same request -- "last synced" summary shown on Employee Detail. */
+    public function lastSyncSummary() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        $employeeId = (int)($_GET['employee_id'] ?? 0);
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => true, 'data' => null]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->lastSyncSummary((int)$compId, $employeeId)]);
+    }
+
     public function log() {
         if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
