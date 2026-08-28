@@ -19,10 +19,12 @@ require_once __DIR__ . '/SyncBatchModel.php';
  * so there is exactly one place that knows how to write an Origami employee record and exactly one
  * audit trail for it, regardless of which entry point was used.
  *
- * The candidate FETCH itself is currently backed by OrigamiEmployeeCandidateClient, a MOCK (see
- * that class's own docblock + docs/origami-employee-sync-api-guide.md) -- there is no real Origami
- * endpoint for this yet. Swapping in a real HTTP client later only touches that one class; nothing
- * in this model, the controller, or the picker UI needs to change.
+ * The candidate FETCH itself is backed by OrigamiEmployeeCandidateClient, a REAL HTTP client as of
+ * 2026-08-28 (see that class's own docblock + docs/origami-employee-sync-api-guide.md) -- switched
+ * from an earlier mock once Origami's dev team confirmed real config. Every call into it here is
+ * wrapped in try/catch: filter-options.php is live, but candidates.php is still blocked on
+ * Origami's side, so fetchCandidates() genuinely throws (404) until that piece exists -- caught
+ * and returned as a clear `{status:false, message:...}` rather than an uncaught 500.
  *
  * 2026-08-28, explicit follow-up: every public method here calls requireConnected() FIRST and
  * refuses outright ("not connected", not mock data) unless ORIGAMI_API_BASE_URL/ORIGAMI_API_KEY
@@ -138,7 +140,11 @@ class EmployeeSyncModel {
         if ($origamiCompanyId === null) {
             return ['status' => false, 'message' => 'This company is not linked to an Origami HR company yet. Set the Origami reference ID in Company Profile first.'];
         }
-        $options = (new OrigamiEmployeeCandidateClient($this->db))->fetchFilterOptions($origamiCompanyId, $compId);
+        try {
+            $options = (new OrigamiEmployeeCandidateClient($this->db))->fetchFilterOptions($origamiCompanyId, $compId);
+        } catch (Throwable $e) {
+            return ['status' => false, 'message' => $e->getMessage()];
+        }
         return array_merge(['status' => true], $options);
     }
 
@@ -158,7 +164,11 @@ class EmployeeSyncModel {
 
         $filters = $this->normalizeFilters($compId, $rawFilters);
         $client = new OrigamiEmployeeCandidateClient($this->db);
-        $rows = $client->fetchCandidates($origamiCompanyId, $filters);
+        try {
+            $rows = $client->fetchCandidates($origamiCompanyId, $filters);
+        } catch (Throwable $e) {
+            return ['status' => false, 'message' => $e->getMessage()];
+        }
 
         $new = [];
         $existing = [];
@@ -204,7 +214,11 @@ class EmployeeSyncModel {
 
         $filters = $this->normalizeFilters($compId, $rawFilters);
         $client = new OrigamiEmployeeCandidateClient($this->db);
-        $rows = $client->fetchCandidates($origamiCompanyId, $filters);
+        try {
+            $rows = $client->fetchCandidates($origamiCompanyId, $filters);
+        } catch (Throwable $e) {
+            return ['status' => false, 'message' => $e->getMessage()];
+        }
         $byRefId = [];
         foreach ($rows as $row) {
             $byRefId[(int)$row['ref_id']] = $row;

@@ -6,6 +6,22 @@ Origami Payroll — ระบบเงินเดือน multi-country (TH, S
 ## Stack
 PHP 8.x, MySQL 8.x, Bootstrap 5, jQuery, SweetAlert2, CSS (custom, ไม่ใช้ CSS framework อื่นนอกจาก Bootstrap)
 
+## Deployment Status & Database Migrations
+- **เวอร์ชันนี้ขึ้นบน Production แล้ว (ยืนยันโดยผู้ใช้ 2026-08-28)** — `database/payroll.sql` ถือเป็น
+  schema baseline ที่ตรงกับสิ่งที่ deploy จริงแล้ว ณ จุดนี้ (ใช้สำหรับติดตั้งใหม่/fresh install เท่านั้น
+  จากนี้ไป)
+- **ห้ามแก้ `database/payroll.sql` เพิ่มเติมสำหรับงานหลังจากนี้อีก** (ก่อนหน้านี้ทั้ง session ที่ผ่านมา
+  ทุก schema change ถูก append เข้าไฟล์นี้ตรงๆ พร้อม comment ระบุวันที่ — เปลี่ยนวิธีตั้งแต่ตอนนี้)
+  ถ้ามีงานที่เกี่ยวกับ Database (ALTER/CREATE TABLE/INSERT ข้อมูล master ใหม่ ฯลฯ) ให้:
+  1. สร้างไฟล์ SQL ใหม่แยกต่างหากใน `database/migrations/` ตั้งชื่อตามวันที่ + คำอธิบายสั้นๆ
+     รูปแบบ `YYYY-MM-DD_short_description.sql` (เช่น `2026-08-29_add_xyz_column.sql`) — ถ้ามีมากกว่า
+     1 ไฟล์ในวันเดียวกัน ต่อท้ายด้วย `_2`/`_3` ตามลำดับ
+  2. รัน migration นั้นกับ DB จริงตามปกติ (เหมือนที่เคยทำมาตลอด session นี้ — ผ่าน PDO/PHP CLI หรือ
+     mysql client โดยตรง)
+  3. **ไม่ต้อง sync กลับเข้า `database/payroll.sql`** — ปล่อยให้ไฟล์นั้นหยุดนิ่งเป็น snapshot ของตอน
+     deploy จริง ประวัติการเปลี่ยนแปลงหลังจากนี้ทั้งหมดอยู่ใน `database/migrations/` แทน (ไฟล์ละ 1
+     การเปลี่ยนแปลง/1 feature ไม่ append หลายเรื่องปนกันในไฟล์เดียว)
+
 ## Code Convention
 - ทุก query ต้องใช้ PDO prepared statement เท่านั้น ห้าม concatenate ค่าที่มาจาก user input ลงใน SQL ตรงๆ
 - Controller/Model ใหม่ทุกไฟล์ต้องมี `declare(strict_types=1);`

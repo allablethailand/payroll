@@ -129,20 +129,20 @@
         </div>
     </div>
 
-    <!-- Sync Employee from Origami (2026-08-28, explicit request) -- picker modal. Candidate data
-         is currently MOCKED (OrigamiEmployeeCandidateClient, see its own docblock); the whole
-         browse/filter/select/apply/log workflow is real, only the source of the candidate rows
-         will change once Origami implements docs/origami-employee-sync-api-guide.md. -->
+    <!-- Sync Employee from Origami (2026-08-28, explicit request) -- picker modal. Real Origami
+         HTTP client (OrigamiEmployeeCandidateClient) as of the same day, see its own docblock. -->
     <div class="modal fade" id="employeeSyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="employeeSyncModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
+                <!-- 2026-08-28, explicit request: "ย้ายปุ่มประวัติการ Sync ให้หน่อยครับ ตอนนี้ดู
+                     สะเปะสะปะ" -- the Sync Log button used to live here, squeezed between the title
+                     and the close button. Moved to the Employee List's own search-bar toolbar (see
+                     list.js's initComplete) as a peer of the Sync from Origami button, matching this
+                     app's own convention for where action buttons belong. -->
                 <div class="modal-header">
                     <h5 class="modal-title text-secondary" id="employeeSyncModalLabel">
                         <i class="fa-solid fa-rotate me-1"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
                     </h5>
-                    <button type="button" class="btn btn-outline-secondary btn-sm ms-auto me-2" id="btnOpenEmployeeSyncLog">
-                        <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="employee_sync_log_button">Sync Log</span>
-                    </button>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -188,49 +188,65 @@
                         </div>
                     </div>
 
+                    <!-- 2026-08-28, explicit follow-up request: "ตารางอยู่ซ้ายขวา จะสะดวกกว่าไหมครับ"
+                         (side-by-side would be more convenient) -- replaced the New/Already-Exists
+                         Bootstrap tabs with 2 always-visible panels. This also fixes a real bug the
+                         same request surfaced ("ทดสอบกด Sync แล้วข้อมูลไม่ลงตาราง" -- data doesn't
+                         land in the table): the Already-Exists tab-pane was `fade` WITHOUT `show
+                         active`, i.e. `display:none` at the exact moment renderSyncTables() called
+                         `$('#tb_sync_existing').DataTable({responsive:true, ...})` -- DataTables
+                         Responsive computes column widths against the container's width AT INIT
+                         TIME, and a `display:none` container measures 0, so every column collapsed
+                         and the table rendered with no visible rows even though `data` genuinely had
+                         25 real candidates in it (same bug class already documented elsewhere in
+                         this project for a Bootstrap-tab-hidden DataTable, usually fixed by deferring
+                         init to `shown.bs.tab` -- side-by-side removes the bug at the ROOT instead,
+                         since neither panel is ever hidden, so there's no "later" to defer init to). -->
+                    <!-- 2026-08-28, explicit request: "ปรับข้อมูลตาราง ตรง Sync ให้ดูสวยขึ้น" -- Employee
+                         No.+Name merged into one identity cell (avatar circle, same #007aff style
+                         Employee List's own table already uses, + name/code stacked) and
+                         Department+Position merged into one stacked cell, both to make room for
+                         readable columns in a half-width panel and to look like a real "record"
+                         instead of a flat spreadsheet row -- see esRenderEmployeeCell()/
+                         esTypeBadgeHtml() in employee-sync.js. -->
                     <div id="employeeSyncResultArea" class="d-none">
-                        <ul class="nav nav-tabs" id="employeeSyncTabs" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="tab-sync-new-btn" data-bs-toggle="tab" data-bs-target="#tab-sync-new" type="button" role="tab">
-                                    <span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="syncNewCount">0</span>
-                                </button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="tab-sync-existing-btn" data-bs-toggle="tab" data-bs-target="#tab-sync-existing" type="button" role="tab">
-                                    <span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="syncExistingCount">0</span>
-                                </button>
-                            </li>
-                        </ul>
-                        <div class="tab-content border border-top-0 rounded-bottom p-2 mb-3">
-                            <div class="tab-pane fade show active" id="tab-sync-new" role="tabpanel">
-                                <table class="table table-hover table-sm align-middle w-100" id="tb_sync_new">
-                                    <thead class="table-light text-secondary">
-                                        <tr>
-                                            <th style="width:3%;"><input type="checkbox" id="syncNewSelectAll"></th>
-                                            <th data-i18n="employee_no">Employee No.</th>
-                                            <th data-i18n="name">Name</th>
-                                            <th data-i18n="department">Department</th>
-                                            <th data-i18n="position">Position</th>
-                                            <th data-i18n="employee_sync_filter_type">Type</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody></tbody>
-                                </table>
+                        <div class="row g-3">
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="syncNewCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0 es-sync-table" id="tb_sync_new">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="syncNewSelectAll"></th>
+                                                <th data-i18n="employee">Employee</th>
+                                                <th data-i18n="employee_sync_dept_position">Department / Position</th>
+                                                <th data-i18n="employee_sync_filter_type">Type</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
                             </div>
-                            <div class="tab-pane fade" id="tab-sync-existing" role="tabpanel">
-                                <table class="table table-hover table-sm align-middle w-100" id="tb_sync_existing">
-                                    <thead class="table-light text-secondary">
-                                        <tr>
-                                            <th style="width:3%;"><input type="checkbox" id="syncExistingSelectAll"></th>
-                                            <th data-i18n="employee_no">Employee No.</th>
-                                            <th data-i18n="name">Name</th>
-                                            <th data-i18n="department">Department</th>
-                                            <th data-i18n="employee_sync_filter_type">Type</th>
-                                            <th data-i18n="employee_sync_update_col">Update Available</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody></tbody>
-                                </table>
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="syncExistingCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0 es-sync-table" id="tb_sync_existing">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="syncExistingSelectAll"></th>
+                                                <th data-i18n="employee">Employee</th>
+                                                <th data-i18n="department">Department</th>
+                                                <th data-i18n="employee_sync_filter_type">Type</th>
+                                                <th data-i18n="employee_sync_update_col">Update Available</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>

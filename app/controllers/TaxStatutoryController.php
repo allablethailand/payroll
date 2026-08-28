@@ -31,13 +31,35 @@ class TaxStatutoryController extends Controller {
         return true;
     }
 
+    /** 2026-08-28, explicit request: "แสดงผลเฉพาะตามประเทศที่ตัวเองตั้งค่า" (show only according to the
+     *  company's own configured country) -- statutory_items/statutory_item_rate_history are GLOBAL
+     *  tables with no comp_id column at all (shared master data across every company on this
+     *  platform, confirmed by reading the schema directly), so this Master Rates tab previously had
+     *  NO country scoping whatsoever: #filter_country_code defaulted to blank, and
+     *  TaxStatutoryModel::list('') skips its own country filter entirely -- every company saw all
+     *  4 seeded countries' items mixed together (confirmed live: TH:3, SG:1, MY:3, US:3 rows).
+     *  Resolved here, server-side, rather than only defaulting the UI filter -- itemList()/
+     *  itemSave() below now always use THIS, ignoring whatever a request claims, so the scoping
+     *  can't be bypassed by editing the request. */
+    private function companyCountry(int $compId): ?string {
+        $stmt = Database::getInstance()->pdo->prepare("SELECT registered_country FROM `companies` WHERE id = :id");
+        $stmt->execute([':id' => $compId]);
+        $country = $stmt->fetchColumn();
+        return ($country === false || $country === null || $country === '') ? null : (string)$country;
+    }
+
     public function index() {
         $this->view('setup/tax-statutory');
     }
 
     public function itemList() {
         if (!$this->requirePermission('tax_statutory.manage')) return;
-        $countryCode = (string)($_GET['country_code'] ?? '');
+        $compId = (int)getCompId();
+        $countryCode = $this->companyCountry($compId);
+        if ($countryCode === null) {
+            $this->json(['status' => true, 'data' => [], 'message' => 'This company has no registered country set yet. Set it in Company Profile first.']);
+            return;
+        }
         $this->json(['status' => true, 'data' => $this->model->list($countryCode)]);
     }
 
@@ -64,6 +86,16 @@ class TaxStatutoryController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // Country is never taken from the request -- always the acting company's own, so a new/
+        // edited item can never end up under a different country than the one this whole page is
+        // now locked to (see companyCountry()'s own docblock).
+        $compId = (int)getCompId();
+        $countryCode = $this->companyCountry($compId);
+        if ($countryCode === null) {
+            $this->json(['status' => false, 'message' => 'This company has no registered country set yet. Set it in Company Profile first.']);
+            return;
+        }
+        $data['country_code'] = $countryCode;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->model->save($data, $userId);
         $this->json($result);

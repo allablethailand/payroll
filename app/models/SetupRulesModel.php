@@ -915,6 +915,77 @@ class SetupRulesModel {
         return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
     }
 
+    /**
+     * "Apply Default" button (2026-08-28, explicit request: "seed ผ่าน apply default button ครับ",
+     * following up on the earlier request that every data-management tab ship with starter data
+     * an admin can edit/delete/extend afterward) -- one starter row per master_leave_categories
+     * entry (category_id 1-10), general Thai-HR-SaaS-standard values, NOT verified against every
+     * country's actual labor law (same DRAFT/unverified caveat this project already carries on
+     * master_statutory_leave_minimums itself -- only annual(6)/maternity(98) are pinned exactly to
+     * that table's own TH floor, the rest are common-practice defaults an admin is expected to
+     * review). Deliberately reuses leaveTypeSave() row-by-row rather than a bare bulk INSERT, so a
+     * seeded row goes through the EXACT same validation (active category, duplicate-code check,
+     * statutory-minimum floor) a manually-created one would -- no parallel/divergent insert path
+     * to drift out of sync with leaveTypeSave() over time.
+     *
+     * Idempotent by design: a default whose CODE already exists for this company (either because
+     * it was already seeded once, or an admin independently created their own leave type using the
+     * same code) is silently skipped, not overwritten -- re-clicking "Apply Default" after editing
+     * some seeded rows only fills in whatever's still missing, it never resets edits back to the
+     * default values. This is also why the button stays usable indefinitely, not just once on an
+     * empty table.
+     */
+    private const LEAVE_TYPE_DEFAULTS = [
+        ['category_id' => 1, 'code' => 'SICK', 'name_th' => 'ลาป่วย', 'name_en' => 'Sick Leave',
+            'quota_amount' => 30, 'is_continuous' => 1, 'is_paid' => 1],
+        ['category_id' => 2, 'code' => 'PERSONAL', 'name_th' => 'ลากิจ', 'name_en' => 'Personal Leave',
+            'quota_amount' => 3, 'is_paid' => 1],
+        ['category_id' => 3, 'code' => 'ANNUAL', 'name_th' => 'ลาพักร้อน', 'name_en' => 'Annual Leave',
+            'quota_amount' => 6, 'is_paid' => 1, 'allow_carry_over' => 1, 'min_service_days' => 365],
+        ['category_id' => 4, 'code' => 'MATERNITY', 'name_th' => 'ลาคลอดบุตร', 'name_en' => 'Maternity Leave',
+            'quota_amount' => 98, 'requires_document' => 1, 'is_continuous' => 1, 'is_paid' => 1, 'gender_restriction' => 'female'],
+        ['category_id' => 5, 'code' => 'ORDINATION', 'name_th' => 'ลาบวช', 'name_en' => 'Ordination Leave',
+            'quota_amount' => 15, 'is_continuous' => 1, 'is_paid' => 0, 'gender_restriction' => 'male', 'min_service_days' => 365],
+        ['category_id' => 6, 'code' => 'MILITARY', 'name_th' => 'ลาราชการทหาร', 'name_en' => 'Military Leave',
+            'quota_amount' => 60, 'requires_document' => 1, 'is_continuous' => 1, 'is_paid' => 1, 'gender_restriction' => 'male'],
+        ['category_id' => 7, 'code' => 'LWOP', 'name_th' => 'ลาโดยไม่รับค่าจ้าง', 'name_en' => 'Leave Without Pay',
+            'quota_amount' => 0, 'is_paid' => 0, 'advance_notice_days' => 7],
+        ['category_id' => 8, 'code' => 'FAMILY', 'name_th' => 'ลาเพื่อดูแลครอบครัว/บุตร', 'name_en' => 'Family/Parental Leave',
+            'quota_amount' => 15, 'is_paid' => 0],
+        ['category_id' => 9, 'code' => 'EMERGENCY', 'name_th' => 'ลาฉุกเฉิน', 'name_en' => 'Emergency Leave',
+            'quota_amount' => 3, 'is_paid' => 1, 'advance_notice_days' => 0],
+        ['category_id' => 10, 'code' => 'OTHER', 'name_th' => 'ลาอื่นๆ', 'name_en' => 'Other Leave',
+            'quota_amount' => 0, 'is_paid' => 0],
+    ];
+
+    public function leaveTypeApplyDefaults(int $compId, int $userId): array {
+        $ownTransaction = !$this->db->inTransaction();
+        if ($ownTransaction) {
+            $this->db->beginTransaction();
+        }
+        $created = 0;
+        $skipped = 0;
+        try {
+            foreach (self::LEAVE_TYPE_DEFAULTS as $defaults) {
+                $result = $this->leaveTypeSave($defaults, $compId, $userId);
+                if ($result['status']) {
+                    $created++;
+                } else {
+                    $skipped++;
+                }
+            }
+            if ($ownTransaction) {
+                $this->db->commit();
+            }
+            return ['status' => true, 'created' => $created, 'skipped' => $skipped];
+        } catch (PDOException $e) {
+            if ($ownTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
     /* ==================== OT RATE ====================
      * Moved back here 2026-08-21 (explicit request: "ย้ายตัวคูณ OT ไปไว้ที่เดิมครับ") -- briefly lived
      * in its own OtRateModel.php under Payroll Configuration earlier the same day, reverted to its

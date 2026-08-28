@@ -1,7 +1,7 @@
 // "Sync Employee from Origami" picker (Employee List page, 2026-08-28) -- self-contained, same
 // convention as every other page's own JS in this app (escapeHtml/fmtNum etc. duplicated locally
-// rather than shared). Candidate data currently comes from a MOCK backend
-// (OrigamiEmployeeCandidateClient) -- see docs/origami-employee-sync-api-guide.md.
+// rather than shared). Candidate data is REAL as of the same day (OrigamiEmployeeCandidateClient
+// switched from a mock to a real HTTP client) -- see docs/origami-employee-sync-api-guide.md.
 let syncSelectedRefIds = new Set();
 let syncLastNewRows = [];
 let syncLastExistingRows = [];
@@ -28,6 +28,40 @@ function esCandidatePosition(row) {
 
 function esTypeLabel(type) {
     return langData['employee_sync_type_' + type] || type || '-';
+}
+
+// 2026-08-28, explicit request: "ปรับข้อมูลตาราง ตรง Sync ให้ดูสวยขึ้น" (make the Sync tables look
+// nicer). Employee No.+Name merged into one identity cell (avatar circle -- same #007aff style
+// Employee List's own table already uses for this exact purpose, so a candidate row reads like a
+// real record instead of a flat spreadsheet line) and Department+Position merged into one stacked
+// cell (New tab only -- Existing tab dropped Position entirely to make room for its own Type
+// column, since "has_update" -- not org placement -- is the decision that matters there).
+function esRenderEmployeeCell(row, employeeNo) {
+    const name = esCandidateName(row) || '-';
+    const letter = name.trim().charAt(0).toUpperCase() || '?';
+    return `
+        <div class="d-flex align-items-center gap-2 py-1">
+            <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0" style="width:32px;height:32px;font-size:.78rem;background-color:#007aff;">${esEscapeHtml(letter)}</div>
+            <div class="lh-sm">
+                <div class="fw-semibold">${esEscapeHtml(name)}</div>
+                <div class="text-muted small">${esEscapeHtml(employeeNo || '-')}</div>
+            </div>
+        </div>
+    `;
+}
+function esRenderDeptPositionCell(row) {
+    const dept = esCandidateDepartment(row);
+    const pos = esCandidatePosition(row);
+    return `
+        <div class="lh-sm">
+            <div>${esEscapeHtml(dept)}</div>
+            <div class="text-muted small">${esEscapeHtml(pos)}</div>
+        </div>
+    `;
+}
+function esTypeBadgeHtml(type) {
+    const cls = type === 'support' ? 'bg-info-subtle text-info' : 'bg-primary-subtle text-primary';
+    return `<span class="badge ${cls}">${esEscapeHtml(esTypeLabel(type))}</span>`;
 }
 
 function esResetModal() {
@@ -88,11 +122,9 @@ function renderSyncTables() {
         language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
         columns: [
             { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
-            { data: 'employee_no', render: d => esEscapeHtml(d) },
-            { data: null, render: (d, t, row) => esEscapeHtml(esCandidateName(row)) },
-            { data: null, render: (d, t, row) => esEscapeHtml(esCandidateDepartment(row)) },
-            { data: null, render: (d, t, row) => esEscapeHtml(esCandidatePosition(row)) },
-            { data: 'type', render: d => esEscapeHtml(esTypeLabel(d)) },
+            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.employee_no) },
+            { data: null, render: (d, t, row) => esRenderDeptPositionCell(row) },
+            { data: 'type', render: d => esTypeBadgeHtml(d) },
         ],
     });
     $('#tb_sync_existing').DataTable({
@@ -101,10 +133,9 @@ function renderSyncTables() {
         language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
         columns: [
             { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
-            { data: null, render: (d, t, row) => esEscapeHtml(row.existing_employee_no || row.employee_no) },
-            { data: null, render: (d, t, row) => esEscapeHtml(esCandidateName(row)) },
+            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.existing_employee_no || row.employee_no) },
             { data: null, render: (d, t, row) => esEscapeHtml(esCandidateDepartment(row)) },
-            { data: 'type', render: d => esEscapeHtml(esTypeLabel(d)) },
+            { data: 'type', render: d => esTypeBadgeHtml(d) },
             { data: null, render: (d, t, row) => esUpdateBadgeHtml(row) },
         ],
     });
@@ -119,10 +150,10 @@ function esFilters() {
     };
 }
 
-// 2026-08-28, explicit follow-up: filter OPTIONS come from Origami (mocked), not Payroll's own
-// local department/position/team endpoints -- see api/employee-sync.filter-options. Fetched once
-// per page load (the mock pool is static within a session) and rendered as real <option> tags,
-// then initialized as select2 'native' mode (per this app's own Select2 convention -- every
+// 2026-08-28, explicit follow-up: filter OPTIONS come from Origami itself (real, as of the same
+// day), not Payroll's own local department/position/team endpoints -- see
+// api/employee-sync.filter-options. Fetched once per modal open and rendered as real <option>
+// tags, then initialized as select2 'native' mode (per this app's own Select2 convention -- every
 // dropdown must be initialized through initSelect2(), even one with no remote/static i18n source).
 function esOptionsHtml(items, valueKey, labelFn) {
     const placeholder = `<option value="">${langData['select_option'] || 'Select...'}</option>`;

@@ -499,4 +499,133 @@
         </div>
     </div>
 </div>
+
+<!-- 2026-08-28, explicit request: "เพิ่มให้ Sync ข้อมูลวันหยุดตามประกาศจาก API ที่มี...แต่ต้อง Map
+     กับข้อมูลที่มีแล้ว แล้วค่อยมานำตั้งค่าให้พนักงานต่อ" -- picker modal, same 2-tab New/Existing
+     review pattern as the Employee Sync picker (Employee List page). See HolidaySyncModel's own
+     docblock for the full design; public/js/setup/holiday-sync.js for the JS. -->
+<div class="modal fade" id="holidaySyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="holidaySyncModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="holidaySyncModalLabel">
+                    <i class="fa-brands fa-google me-1"></i><span data-i18n="holiday_sync_button">Sync from Google Calendar</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center py-5 d-none" id="holidaySyncNotConnected">
+                    <i class="fa-solid fa-plug-circle-xmark fa-2x text-danger mb-3 d-block"></i>
+                    <div class="fw-bold mb-1" data-i18n="holiday_sync_not_connected_title">Not connected to Google Calendar</div>
+                    <div class="text-muted small" id="holidaySyncNotConnectedMessage"></div>
+                </div>
+                <div id="holidaySyncFilterRow">
+                    <div class="alert alert-warning small mb-3" data-i18n="holiday_sync_review_warning">
+                        This calendar includes some cultural and government-only observances that may not be official paid holidays for your company (e.g. Chinese New Year, Valentine's Day, Christmas, Royal Ploughing Day). Please review each item before syncing.
+                    </div>
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label mb-1" data-i18n="holiday_sync_year">Year</label>
+                            <select class="form-select" id="holiday_sync_year"></select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <button type="button" class="btn btn-primary w-100" id="btnFetchHolidaySync">
+                                <i class="fa-solid fa-magnifying-glass me-1"></i><span data-i18n="employee_sync_fetch_button">Fetch</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2026-08-28, side-by-side layout: same fix as Employee Sync's picker (see
+                         that file's own comment for the full root-cause writeup) -- fixes the
+                         same display:none-at-DataTable-init-time bug here too. Date+Holiday Name
+                         merged into one "calendar date chip" cell (2026-08-28, explicit request:
+                         "ปรับข้อมูลตาราง ตรง Sync ให้ดูสวยขึ้น") -- see
+                         hsRenderHolidayCell() in holiday-sync.js. -->
+                    <div id="holidaySyncResultArea" class="d-none">
+                        <div class="row g-3">
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="holidaySyncNewCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_new">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="holidaySyncNewSelectAll"></th>
+                                                <th data-i18n="holiday">Holiday</th>
+                                                <th data-i18n="table_last_updated">Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="holidaySyncExistingCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_existing">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="holidaySyncExistingSelectAll"></th>
+                                                <th data-i18n="holiday">Holiday</th>
+                                                <th data-i18n="employee_sync_update_col">Update Available</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-muted small text-center py-4" id="holidaySyncEmptyHint" data-i18n="holiday_sync_empty_hint">Pick a year and click Fetch to browse holidays from Google Calendar.</div>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <span class="text-muted small" id="holidaySyncSelectedCountLabel"></span>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-primary d-none" id="btnApplyHolidaySync">
+                        <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="holidaySyncSelectedCount">0</span>)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Holiday Sync Log -->
+<div class="modal fade" id="holidaySyncLogModal" tabindex="-1" aria-labelledby="holidaySyncLogModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="holidaySyncLogModalLabel">
+                    <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="holiday_sync_log_title">Holiday Sync Log</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-hover table-sm align-middle w-100" id="tb_holiday_sync_log">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th data-i18n="employee_sync_log_col_date">Date</th>
+                            <th data-i18n="employee_sync_log_col_triggered_by">By</th>
+                            <th data-i18n="employee_sync_log_col_status">Status</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="<?=asset('public/js/setup/setup-rules.js')?>"></script>
+<script src="<?=asset('public/js/setup/holiday-sync.js')?>"></script>

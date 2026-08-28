@@ -276,6 +276,26 @@ function renderHoliday() {
         language: { ...getTableLang(), emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-holiday', 'fa-solid fa-plus', 'add_holiday', 'Holiday', 'openHolidayModal()').call(this);
+            // 2026-08-28, explicit request: "เพิ่มให้ Sync ข้อมูลวันหยุดตามประกาศจาก API ที่มี" -- see
+            // public/js/setup/holiday-sync.js for the picker modal this opens, and
+            // HolidaySyncModel's own docblock for the full design.
+            const $wrapper = $(this.api().table().container());
+            const $searchDiv = $wrapper.find('.dt-search');
+            if ($searchDiv.find('#btnOpenHolidaySync').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-outline-secondary ms-1" id="btnOpenHolidaySync">
+                        <i class="fa-brands fa-google me-1"></i><span data-i18n="holiday_sync_button">Sync from Google Calendar</span>
+                    </button>
+                `);
+            }
+            if ($searchDiv.find('#btnOpenHolidaySyncLog').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-outline-secondary ms-1" id="btnOpenHolidaySyncLog">
+                        <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="holiday_sync_log_button">Sync Log</span>
+                    </button>
+                `);
+            }
+            if (typeof updateText === 'function') updateText($searchDiv[0]);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, client mode. Excludes the multi-value scope summary (3, composite), the
             // interactive status SWITCH (4), and actions (5).
@@ -500,6 +520,21 @@ function renderLeave() {
         language: { ...getTableLang(), emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-leave', 'fa-solid fa-plus', 'add_leave_type', 'Leave Type', 'openLeaveModal()').call(this);
+            // "Apply Default" (2026-08-28) -- seeds the 10 starter leave types (see
+            // SetupRulesModel::LEAVE_TYPE_DEFAULTS) via api/leave-type.apply-defaults. Idempotent
+            // (skips any code that already exists for this company), so the button stays useful
+            // indefinitely, not just on a first-time empty table. Shares generic apply_default_*
+            // i18n keys intended for reuse on other data-management tabs later.
+            const $wrapper = $(this.api().table().container());
+            const $searchDiv = $wrapper.find('.dt-search');
+            if ($searchDiv.find('#btnApplyLeaveTypeDefaults').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-outline-secondary ms-1" id="btnApplyLeaveTypeDefaults">
+                        <i class="fa-solid fa-wand-magic-sparkles me-1"></i><span data-i18n="apply_default_button">Apply Default</span>
+                    </button>
+                `);
+            }
+            if (typeof updateText === 'function') updateText($searchDiv[0]);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, client mode. Excludes the interactive status SWITCH (6) and actions (7).
             initExcelColumnFilters(this.api(), {
@@ -617,6 +652,24 @@ function saveLeave() {
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
+$(document).on('click', '#btnApplyLeaveTypeDefaults', function () {
+    showConfirm(
+        langData['apply_default_confirm_title'] || 'Apply default data?',
+        langData['apply_default_confirm_message'] || 'This will add any missing standard starter records. Existing records will not be changed.',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/leave-type.apply-defaults`, method: 'POST', dataType: 'json',
+                success: function (res) {
+                    if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                    const tpl = langData['apply_default_result'] || 'Added {created} new record(s). {skipped} already existed.';
+                    showSuccess(tpl.replace('{created}', res.created).replace('{skipped}', res.skipped));
+                    dtLeave.ajax.reload(null, false);
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred.'); }
+            });
+        }
+    );
+});
 
 /* ==================== OT RATE ====================
  * Moved back here 2026-08-21 (explicit request: "ย้ายตัวคูณ OT ไปไว้ที่เดิมครับ") -- briefly lived

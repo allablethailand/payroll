@@ -11625,16 +11625,23 @@ COMMIT;
 -- structure_teams gets the exact same origami_ref_id/data_source columns already added to
 -- structure_departments/structure_positions above (2026-08-18 rev 2 section) -- same reasoning:
 -- match by origami_ref_id first, fall back to an exact name match, create a new row only when
--- neither resolves. Deliberately NOT given a sync_batch_id column like those two -- there is no
--- TeamSyncer/MasterDataSyncOrchestrator entity type for Team (it remains a manual-HR-config-only
--- concept per its own 2026-08-24 section above), so nothing would ever populate a batch reference
--- for it; this is the same lightweight one-off resolve-or-create PayrollSyncModel already does for
--- department/position, not a new full syncer.
+-- neither resolves. Originally NOT given a sync_batch_id column like those two -- there was no
+-- TeamSyncer/MasterDataSyncOrchestrator entity type for Team yet (it was manual-HR-config-only
+-- per its own 2026-08-24 section above); this is the same lightweight one-off resolve-or-create
+-- PayrollSyncModel already does for department/position, not a full syncer.
+--
+-- 2026-08-28 update: sync_batch_id ADDED after all -- the Org Structure interactive Sync picker
+-- (see OrgStructureSyncModel's own docblock) now covers Department/Position/Team all three,
+-- reusing AbstractMasterDataSyncer's applyResolved()/upsertItem() pattern, which writes
+-- sync_batch_id on every touch same as department/position already do -- Team needed the column
+-- to match.
 --
 ALTER TABLE `structure_teams`
   ADD COLUMN `origami_ref_id` bigint(20) DEFAULT NULL AFTER `team_code`,
   ADD COLUMN `data_source` enum('sync','import','manual') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'manual' AFTER `origami_ref_id`,
-  ADD UNIQUE KEY `uq_teams_origami_ref` (`origami_ref_id`,`comp_id`);
+  ADD COLUMN `sync_batch_id` int(11) DEFAULT NULL AFTER `data_source`,
+  ADD UNIQUE KEY `uq_teams_origami_ref` (`origami_ref_id`,`comp_id`),
+  ADD CONSTRAINT `fk_teams_sync_batch` FOREIGN KEY (`sync_batch_id`) REFERENCES `sync_batches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- payroll_sync_items: support_team_id/support_team_text stored plainly (small mapping ids/labels,
 -- same treatment as dept_id/posi_id/dept_description/position_name already on this table).

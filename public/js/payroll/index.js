@@ -1401,10 +1401,28 @@ $(document).on('click', '.btn-quick-lock-run', function (e) {
     });
 });
 
+// 2026-08-28, explicit request: "รวมถึงใน Process ด้วย จะไม่มีข้อมูลรอบที่ดึงมา" (including in
+// Process too, there shouldn't be any pulled-round data) -- for a company with no Origami Payroll
+// link at all (`companies.origami_payroll_comp_code IS NULL`, IS_ORIGAMI_PAYROLL_LINKED set once
+// in layout/header.php), there will never be a real payroll_sync_processes row to pull from, so
+// the "Pending Pull" station is hidden entirely rather than sitting there permanently at 0.
+// Deliberately a SEPARATE flag from IS_ORIGAMI_HR_LINKED (used to gate the Employee/Holiday/
+// Department/Position/Team Sync buttons elsewhere) -- these are two genuinely different Origami
+// integrations with independent id spaces (ref_id vs. origami_payroll_comp_code), see
+// header.php's own comment for the full reasoning.
+function applyOrigamiPayrollLinkGating() {
+    if (typeof IS_ORIGAMI_PAYROLL_LINKED !== 'undefined' && !IS_ORIGAMI_PAYROLL_LINKED) {
+        $('.station-card[data-state="pending_sync"]').closest('.station-col').addClass('d-none');
+    }
+}
+
 $(document).ready(function () {
+    applyOrigamiPayrollLinkGating();
     registerStationSearchFilter();
     initPayrollRunTable();
-    loadPendingSyncCount();
+    if (typeof IS_ORIGAMI_PAYROLL_LINKED === 'undefined' || IS_ORIGAMI_PAYROLL_LINKED) {
+        loadPendingSyncCount();
+    }
     if (typeof initSelect2 === 'function') {
         initSelect2('#run_cycle_id', { mode: 'ajax' });
         initSelect2('#run_purpose', { mode: 'static' });

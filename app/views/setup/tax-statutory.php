@@ -32,23 +32,30 @@
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
     <div class="tab-pane fade show active p-3 p-md-4" id="master-rate-pane" role="tabpanel" aria-labelledby="master-rate-tab" tabindex="0">
-        <div class="row mb-3">
-            <div class="col-sm-4 col-md-3">
-                <label class="form-label mb-1"><span data-i18n="filter_country">Country</span></label>
-                <select class="form-select select2-remote" id="filter_country_code" data-api="/api/country.get" data-type="country"></select>
-            </div>
+        <!-- 2026-08-28, explicit request: "แสดงผลเฉพาะตามประเทศที่ตัวเองตั้งค่า...ให้รองรับเฉพาะ
+             ประเทศไทยก่อน" -- the interactive country filter (which defaulted to blank, showing
+             every country's items mixed together -- a real gap, see TaxStatutoryController's own
+             companyCountry() docblock) is replaced by a plain label: this whole page is now always
+             scoped server-side to the company's own registered country, so a filter that could only
+             ever show ONE value would just be confusing UI. #masterRateCountryLabel is filled in
+             from the list response itself (countries_name_th/en, already joined) -- no separate
+             lookup call needed. -->
+        <div class="mb-3">
+            <span class="text-muted small" data-i18n="master_rate_country_scope_label">Showing statutory items for your company's registered country:</span>
+            <span class="fw-bold" id="masterRateCountryLabel">-</span>
         </div>
         <table class="table table-hover table-border align-middle w-100" id="tb_statutory_item">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th scope="col" style="width: 9%;" data-i18n="table_country">Country</th>
-                    <th scope="col" style="width: 12%;" data-i18n="table_code">Code</th>
-                    <th scope="col" style="width: 20%;" data-i18n="table_name">Name</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_category">Category</th>
-                    <th scope="col" style="width: 15%;" data-i18n="table_calc_method">Calculation Method</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_current_rate">Current Rate</th>
+                    <th scope="col" style="width: 8%;" data-i18n="table_country">Country</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_code">Code</th>
+                    <th scope="col" style="width: 16%;" data-i18n="table_name">Name</th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_category">Category</th>
+                    <th scope="col" style="width: 12%;" data-i18n="table_calc_method">Calculation Method</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_current_rate">Current Rate</th>
+                    <th scope="col" style="width: 13%;" data-i18n="table_last_updated">Last Updated</th>
                     <th scope="col" style="width: 8%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 10%; text-align: center;"></th>
+                    <th scope="col" style="width: 11%; text-align: center;"></th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -59,13 +66,14 @@
         <table class="table table-hover table-border align-middle w-100" id="tb_company_setting">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th scope="col" style="width: 12%;" data-i18n="table_code">Code</th>
-                    <th scope="col" style="width: 22%;" data-i18n="table_name">Name</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_category">Category</th>
-                    <th scope="col" style="width: 18%;" data-i18n="table_current_rate">Rate in Use</th>
-                    <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 8%;" data-i18n="modal_company_rate_editable_short">Adjustable</th>
-                    <th scope="col" style="width: 10%; text-align: center;"></th>
+                    <th scope="col" style="width: 10%;" data-i18n="table_code">Code</th>
+                    <th scope="col" style="width: 18%;" data-i18n="table_name">Name</th>
+                    <th scope="col" style="width: 11%;" data-i18n="table_category">Category</th>
+                    <th scope="col" style="width: 15%;" data-i18n="table_current_rate">Rate in Use</th>
+                    <th scope="col" style="width: 9%;" data-i18n="col_status">Status</th>
+                    <th scope="col" style="width: 7%;" data-i18n="modal_company_rate_editable_short">Adjustable</th>
+                    <th scope="col" style="width: 13%;" data-i18n="table_last_updated">Last Updated</th>
+                    <th scope="col" style="width: 8%; text-align: center;"></th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -90,14 +98,12 @@
                             <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
                             <span data-i18n="modal_sec_item_info">Item Information</span>
                         </h6>
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_country">Country</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-9">
-                                <select class="form-select select2-remote required" id="item_country_code" name="country_code" data-api="/api/country.get" data-type="country"></select>
-                            </div>
-                        </div>
+                        <!-- 2026-08-28, explicit request -- country is no longer a field the user
+                             fills in here at all (same precedent as Holiday's own country_code:
+                             "ไม่ใช่ field ที่ผู้ใช้กรอกเอง ระบบดึงจาก companies.registered_country
+                             อัตโนมัติ"). TaxStatutoryController::itemSave() always forces it to the
+                             acting company's own registered country server-side regardless of what
+                             a request contains, so showing a picker here would just be misleading. -->
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
                                 <label class="form-label mb-0"><span data-i18n="modal_code">Code</span> <span class="text-danger">*</span></label>
@@ -214,6 +220,7 @@
                                 <th scope="col" data-i18n="table_effective_date">Effective Date</th>
                                 <th scope="col" data-i18n="table_end_date">End Date</th>
                                 <th scope="col" data-i18n="table_rate_summary">Rate</th>
+                                <th scope="col" data-i18n="table_last_updated">Last Updated</th>
                                 <th scope="col" style="text-align: center;"></th>
                             </tr>
                         </thead>

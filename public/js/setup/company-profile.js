@@ -657,6 +657,25 @@ function initStructureTable(type, tableId) {
                 `;
                 $searchDiv.append(btn);
             }
+            // 2026-08-28, explicit request: "ส่วนของ Department หรือข้อมูลที่ดึง Filter ได้ตอนนี้
+            // เพิ่มปุ่มให้ Sync ได้ด้วย แต่...ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น" -- see
+            // public/js/setup/org-structure-sync.js for the picker this opens. Only Department/
+            // Position/Team have anything to sync (Branch/Role/Rank have no Origami-side
+            // equivalent at all), and only when this company is actually Origami-HR-linked.
+            const ORG_SYNC_ENTITY_TYPES = ['department', 'position', 'team'];
+            if (ORG_SYNC_ENTITY_TYPES.includes(type) && typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
+                if ($searchDiv.find('.btn-open-org-sync').length === 0) {
+                    let syncBtn = `
+                        <button type="button" class="btn btn-outline-secondary btn-open-org-sync ms-1" data-entity-type="${type}">
+                            <i class="fa-solid fa-rotate me-1"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-open-org-sync-log ms-1" data-entity-type="${type}">
+                            <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="employee_sync_log_button">Sync Log</span>
+                        </button>
+                    `;
+                    $searchDiv.append(syncBtn);
+                }
+            }
             let $input = $searchDiv.find('input').off(`.${type}Search`);
             $input.on(`keypress.${type}Search`, function (e) {
                 if (e.keyCode === 13) {

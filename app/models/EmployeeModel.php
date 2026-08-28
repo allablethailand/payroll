@@ -495,7 +495,7 @@ class EmployeeModel {
         // tax_id_no/passport_no/bank_account_no/sso_no), never the plaintext, so no per-row
         // decryption cost is paid just to render this list (see completenessColumns()'s docblock).
         $completenessSelect = implode(', ', array_map(fn($c) => "e.`{$c}`", $this->completenessColumns()));
-        $dataSql = "SELECT e.id, e.employee_no,
+        $dataSql = "SELECT e.id, e.employee_no, e.data_source,
                         {$exprMap['name']} AS name,
                         e.personal_email AS email,
                         {$exprMap['phone']} AS phone,

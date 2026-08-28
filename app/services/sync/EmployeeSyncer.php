@@ -230,30 +230,84 @@ class EmployeeSyncer implements MasterDataSyncerInterface {
         $this->db->prepare($sql)->execute(array_merge([$compId], $seenRefIds));
     }
 
-    /** @param array{department_id: ?int, position_id: ?int, shift_id: ?int} $links */
+    /**
+     * 2026-08-28, real bug found and fixed against Origami's ACTUAL live candidates.php response
+     * (not a theoretical concern) -- of 50 real candidates fetched for a real company, gender was
+     * missing for 10, employment_date for 8, personal_email for 17, date_of_birth for 1, and
+     * mobile_no for ALL 50 -- meaning the original strict "every field required" validation below
+     * rejected literally every real-world candidate, making the whole picker feature unusable the
+     * first time it was ever pointed at real data (confirmed live: a 30-candidate apply came back
+     * 0 success / 30 error, all "Missing or invalid ...", then a 1-candidate retry failed the same
+     * way). Relaxed to reuse the EXACT SAME sentinel-placeholder convention
+     * `PayrollSyncModel::createPlaceholderEmployeesForUnmapped()` already established for this
+     * identical "sync brought over incomplete data, don't block on it" situation --
+     * `EmployeeModel::isCompletenessValueFilled()` already recognizes these specific sentinels
+     * ('1900-01-01', '0000000000', 'sync-pending-...@placeholder.local') and scores a record
+     * carrying them as incomplete, so a payroll admin sees it correctly flagged on Employee List's
+     * own completeness bar instead of the record either being silently rejected from sync entirely
+     * or landing with a fake value that reads as "complete." `employment_date`'s own fallback is
+     * `date('Y-m-d')` (today), not a sentinel -- same reasoning as that same PayrollSyncModel
+     * precedent: `PayrollRunModel::recalculate()` selects employees into a run by date range
+     * against this column, so an arbitrary sentinel date could silently push a real employee out
+     * of every run's window, where "today" keeps them correctly eligible going forward.
+     * `employee_no`/name(+surname)/`employment_status` stay hard-required (a missing employee_no
+     * falls back to a generated `ORG-{ref_id}` code instead, same "generated code" fallback the
+     * API guide already documents for department/position/shift; a name needs at least ONE full
+     * language pair, mirrored into the other exactly like every other th||en display fallback
+     * already in this app; employment_status directly drives active/probation/resigned and is too
+     * operationally significant to guess at, and none of the 50 real candidates were missing it
+     * anyway).
+     * @param array{department_id: ?int, position_id: ?int, shift_id: ?int} $links
+     */
     private function upsertItem(int $compId, array $item, array $links, int $batchId, ?int $triggeredBy, ?int $existingId, string $dataSource): void {
+        $refId = isset($item['ref_id']) && is_numeric($item['ref_id']) ? (int)$item['ref_id'] : null;
+
         $employeeNo = trim((string)($item['employee_no'] ?? ''));
+        if ($employeeNo === '') {
+            if ($refId === null) {
+                throw new InvalidArgumentException('Missing employee_no and ref_id -- cannot identify this candidate at all.');
+            }
+            $employeeNo = 'ORG-' . $refId;
+        }
+
         $nameTh = trim((string)($item['name_th'] ?? ''));
         $surnameTh = trim((string)($item['surname_th'] ?? ''));
         $nameEn = trim((string)($item['name_en'] ?? ''));
         $surnameEn = trim((string)($item['surname_en'] ?? ''));
-        $dob = trim((string)($item['date_of_birth'] ?? ''));
-        $gender = (string)($item['gender'] ?? '');
-        $employmentDate = trim((string)($item['employment_date'] ?? ''));
-        $employmentStatus = (string)($item['employment_status'] ?? '');
-        if ($employeeNo === '' || $nameTh === '' || $surnameTh === '' || $nameEn === '' || $surnameEn === ''
-            || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob) || !in_array($gender, ['male', 'female', 'other'], true)
-            || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $employmentDate)
-            || !in_array($employmentStatus, ['probation', 'permanent', 'contract', 'resigned', 'terminated'], true)) {
-            throw new InvalidArgumentException('Missing or invalid employee_no/name/surname/date_of_birth/gender/employment_date/employment_status.');
+        $hasTh = $nameTh !== '' && $surnameTh !== '';
+        $hasEn = $nameEn !== '' && $surnameEn !== '';
+        if (!$hasTh && !$hasEn) {
+            throw new InvalidArgumentException('Missing name -- need at least one full name+surname pair (Thai or English).');
         }
-        $personalEmail = trim((string)($item['personal_email'] ?? ''));
-        $mobileNo = substr(trim((string)($item['mobile_no'] ?? '')), 0, 10);
-        if ($personalEmail === '' || $mobileNo === '') {
-            throw new InvalidArgumentException('Missing personal_email/mobile_no.');
+        if (!$hasTh) { $nameTh = $nameEn; $surnameTh = $surnameEn; }
+        if (!$hasEn) { $nameEn = $nameTh; $surnameEn = $surnameTh; }
+
+        $dob = trim((string)($item['date_of_birth'] ?? ''));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
+            $dob = '1900-01-01';
+        }
+        $gender = (string)($item['gender'] ?? '');
+        if (!in_array($gender, ['male', 'female', 'other'], true)) {
+            $gender = 'male';
+        }
+        $employmentDate = trim((string)($item['employment_date'] ?? ''));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $employmentDate)) {
+            $employmentDate = date('Y-m-d');
+        }
+        $employmentStatus = (string)($item['employment_status'] ?? '');
+        if (!in_array($employmentStatus, ['probation', 'permanent', 'contract', 'resigned', 'terminated'], true)) {
+            throw new InvalidArgumentException('Missing or invalid employment_status.');
         }
 
-        $refId = isset($item['ref_id']) && is_numeric($item['ref_id']) ? (int)$item['ref_id'] : null;
+        $personalEmail = trim((string)($item['personal_email'] ?? ''));
+        if ($personalEmail === '') {
+            $personalEmail = 'sync-pending-' . ($refId ?? preg_replace('/[^A-Za-z0-9]/', '', $employeeNo)) . '@placeholder.local';
+        }
+        $mobileNo = substr(trim((string)($item['mobile_no'] ?? '')), 0, 10);
+        if ($mobileNo === '') {
+            $mobileNo = '0000000000';
+        }
+
         if ($existingId !== null) {
             $stmt = $this->db->prepare("UPDATE employees SET
                     employee_no = :employee_no, name_th = :name_th, surname_th = :surname_th, name_en = :name_en, surname_en = :surname_en,

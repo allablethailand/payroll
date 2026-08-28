@@ -42,6 +42,23 @@ class HolidaySyncer extends AbstractMasterDataSyncer {
         ];
     }
 
+    /** Applies one already-fetched external holiday item given an ALREADY-RESOLVED existing row
+     *  id (or null for a genuinely new one) -- unlike sync()/importRow() (inherited from
+     *  AbstractMasterDataSyncer), does not re-derive the match itself. Used by the interactive
+     *  Google Calendar holiday picker (HolidaySyncModel, 2026-08-28), which matches candidates by
+     *  DATE ALONE -- consistent with this app's own "one holiday per date" convention (see
+     *  SetupRulesModel::holidaySave()'s scope-blind date-collision check) rather than requiring an
+     *  exact name match like findByNaturalKey() above does. That distinction matters here: if an
+     *  admin already has a holiday saved locally under slightly different wording than Google's
+     *  own (e.g. manually retitled), re-syncing must still UPDATE that same row, not insert a
+     *  second holiday on the same date because the name didn't match exactly. data_source is
+     *  always 'sync' here (never 'import') since this genuinely comes from a live API call, not a
+     *  human-uploaded file. */
+    public function applyResolved(int $compId, array $item, int $batchId, ?int $triggeredBy, ?int $existingId): array {
+        $this->upsertItem($compId, $item, $batchId, $triggeredBy, $existingId, 'sync');
+        return ['action' => $existingId !== null ? 'updated' : 'inserted'];
+    }
+
     private function companyCountryCode(int $compId): string {
         $stmt = $this->db->prepare("SELECT registered_country FROM companies WHERE id = :id");
         $stmt->execute([':id' => $compId]);

@@ -11,9 +11,14 @@ class TaxStatutoryModel {
     }
 
     public function list(string $countryCode = ''): array {
+        // editor: COALESCE(updated_by, created_by) -- 2026-08-28, explicit request to surface "last
+        // edited when/by whom". updated_at is itself NOT NULL with an ON UPDATE CURRENT_TIMESTAMP
+        // default, so it's always populated (equal to created_at until a genuine edit happens) --
+        // updated_by stays NULL until then, which is why the WHO needs this fallback too.
         $sql = "SELECT si.*, mc.countries_name_th, mc.countries_name_en,
                     rh.id AS current_rate_id, rh.effective_date AS current_effective_date,
-                    rh.employee_rate, rh.employer_rate, rh.employee_amount, rh.employer_amount
+                    rh.employee_rate, rh.employer_rate, rh.employee_amount, rh.employer_amount,
+                    editor.name_th AS last_edited_by_name_th, editor.name_en AS last_edited_by_name_en
                 FROM `statutory_items` si
                 LEFT JOIN `master_countries` mc ON mc.countries_code = si.country_code
                 LEFT JOIN `statutory_item_rate_history` rh ON rh.id = (
@@ -21,6 +26,7 @@ class TaxStatutoryModel {
                     WHERE statutory_item_id = si.id AND deleted_at IS NULL
                     ORDER BY effective_date DESC, id DESC LIMIT 1
                 )
+                LEFT JOIN `employees` editor ON editor.id = COALESCE(si.updated_by, si.created_by)
                 WHERE si.deleted_at IS NULL";
         $params = [];
         if ($countryCode !== '') {
@@ -171,8 +177,10 @@ class TaxStatutoryModel {
 
     public function rateHistoryList(int $itemId): array {
         $sql = "SELECT rh.*,
-                    (SELECT COUNT(*) FROM `statutory_item_brackets` WHERE statutory_item_rate_history_id = rh.id) AS bracket_count
+                    (SELECT COUNT(*) FROM `statutory_item_brackets` WHERE statutory_item_rate_history_id = rh.id) AS bracket_count,
+                    editor.name_th AS last_edited_by_name_th, editor.name_en AS last_edited_by_name_en
                 FROM `statutory_item_rate_history` rh
+                LEFT JOIN `employees` editor ON editor.id = COALESCE(rh.updated_by, rh.created_by)
                 WHERE rh.statutory_item_id = :item_id AND rh.deleted_at IS NULL
                 ORDER BY rh.effective_date DESC, rh.id DESC";
         $stmt = $this->db->prepare($sql);

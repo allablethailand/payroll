@@ -419,5 +419,116 @@
         </div>
     </div>
 </div>
+
+<!-- Sync Department/Position/Team from Origami (2026-08-28, explicit request: "ส่วนของ Department
+     หรือข้อมูลที่ดึง Filter ได้ตอนนี้ เพิ่มปุ่มให้ Sync ได้ด้วย") -- ONE shared modal for all 3 entity
+     types (title/columns swapped by JS via #orgStructureSyncModalLabel/orgSyncCurrentEntityType),
+     same review-first architecture and side-by-side New/Already-Exists layout as Employee/Holiday
+     Sync (see OrgStructureSyncModel's own docblock). No filter row -- unlike Employee Sync, there's
+     nothing to narrow by, so the modal fetches immediately on open. -->
+<div class="modal fade" id="orgStructureSyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="orgStructureSyncModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="orgStructureSyncModalLabel">
+                    <i class="fa-solid fa-rotate me-1"></i><span id="orgStructureSyncModalLabelText">Sync from Origami</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center py-5 d-none" id="orgStructureSyncNotConnected">
+                    <i class="fa-solid fa-plug-circle-xmark fa-2x text-danger mb-3"></i>
+                    <div class="fw-bold mb-1" data-i18n="employee_sync_not_connected_title">Not connected to Origami</div>
+                    <div class="text-muted small" id="orgStructureSyncNotConnectedMessage" data-i18n="employee_sync_not_connected_message">The connection to Origami has not been configured yet. Please contact your system administrator.</div>
+                </div>
+                <div id="orgStructureSyncBody" class="d-none">
+                    <div id="orgStructureSyncResultArea" class="d-none">
+                        <div class="row g-3">
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="orgSyncNewCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_new">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="orgSyncNewSelectAll"></th>
+                                                <th data-i18n="name">Name</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="d-flex align-items-center mb-2">
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="orgSyncExistingCount">0</span></h6>
+                                </div>
+                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_existing">
+                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                            <tr>
+                                                <th style="width:3%;"><input type="checkbox" id="orgSyncExistingSelectAll"></th>
+                                                <th data-i18n="name">Name</th>
+                                                <th data-i18n="employee_sync_update_col">Update Available</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-muted small text-center py-4" id="orgStructureSyncLoadingHint">
+                        <i class="fa-solid fa-spinner fa-spin me-1"></i><span data-i18n="loading">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <span class="text-muted small" id="orgSyncSelectedCountLabel"></span>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-primary d-none" id="btnApplyOrgStructureSync">
+                        <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="orgSyncSelectedCount">0</span>)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Org Structure Sync Log -->
+<div class="modal fade" id="orgStructureSyncLogModal" tabindex="-1" aria-labelledby="orgStructureSyncLogModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="orgStructureSyncLogModalLabel">
+                    <i class="fa-solid fa-clock-rotate-left me-1"></i><span id="orgStructureSyncLogModalLabelText">Sync Log</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-hover table-sm align-middle w-100" id="tb_org_structure_sync_log">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th data-i18n="employee_sync_log_col_date">Date</th>
+                            <th data-i18n="employee_sync_log_col_triggered_by">By</th>
+                            <th data-i18n="employee_sync_log_col_status">Status</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
+                            <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="<?=asset('public/js/setup/company-profile.js')?>"></script>
 <script src="<?=asset('public/js/setup/permission-matrix.js')?>"></script>
+<script src="<?=asset('public/js/setup/org-structure-sync.js')?>"></script>

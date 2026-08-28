@@ -1,3 +1,6 @@
+function escapeHtmlList(str) {
+    return $('<div>').text(str === null || str === undefined ? '' : str).html();
+}
 // Profile completeness (2026-08-19, explicit request): color follows the same red/orange(brand)/
 // green scale used for the payroll run validation states elsewhere in this app -- red under 50%
 // (needs real attention), brand orange in the middle (getting there), green once genuinely mostly
@@ -157,7 +160,27 @@ function initEmployeeTable() {
                     return `<div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px; min-width: 38px; background-color: #007aff;">${letter}</div>`;
                 }
             },
-            { data: "employee_no", responsivePriority: 2 },
+            {
+                data: "employee_no",
+                responsivePriority: 2,
+                // 2026-08-28, explicit request: "ให้มีสัญลักษณ์เพิ่มเติมว่า คนนี้ Sync จาก Origami
+                // คนนี้ Manual" -- inline icon on the existing Employee No. column rather than a
+                // whole new sortable/filterable column (a dedicated column would need every
+                // sortColumns/listColumnExprMap/Excel-filter index below it in EmployeeModel::list()
+                // reshuffled, the same cost Team's own column addition paid -- not warranted for
+                // what the request itself called a "symbol", not a full column). Same 3-way source
+                // convention (manual/sync/import) already used for Manual Entry's own list
+                // (sourceBadgeMe() in manual-entry/index.js) and the Payroll Run Detail employee
+                // list (dataSourceBadgeRd() in payroll/detail.js) -- reuses their existing
+                // source_manual/source_sync/source_import i18n keys as the tooltip text.
+                render: function (data, type, row) {
+                    if (type !== 'display') return data;
+                    const icons = { sync: 'fa-cloud-arrow-down text-primary', import: 'fa-file-import text-info', manual: 'fa-user-pen text-secondary' };
+                    const iconCls = icons[row.data_source] || icons.manual;
+                    const label = langData['source_' + (row.data_source || 'manual')] || row.data_source || '';
+                    return `${escapeHtmlList(data)} <i class="fa-solid ${iconCls} ms-1" title="${escapeHtmlList(label)}" data-bs-toggle="tooltip"></i>`;
+                }
+            },
             { data: "name", responsivePriority: 1 },
             { data: "phone", render: d => d || '-', responsivePriority: 9 },
             { data: "role", responsivePriority: 6 },
@@ -224,15 +247,40 @@ function initEmployeeTable() {
             }
             // 2026-08-28, explicit request: "ต้องการปุ่ม Sync ข้อมูล Employee จากระบบ Origami" --
             // see public/js/employee/employee-sync.js for the picker modal this opens.
-            if ($searchDiv.find('#btnOpenEmployeeSync').length === 0) {
-                let syncBtn = `
-                    <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSync" type="button">
-                        <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
-                    </button>
-                `;
-                $searchDiv.append(syncBtn);
-                if (typeof updateText === 'function') updateText($searchDiv[0]);
+            // 2026-08-28, same-day follow-up: "ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น" --
+            // both Sync buttons below now gated on IS_ORIGAMI_HR_LINKED (set once in
+            // layout/header.php from companies.ref_id), not just left to fail with a "not linked"
+            // message after the admin already clicked in -- a company with no Origami HR link at
+            // all never sees these buttons.
+            if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
+                if ($searchDiv.find('#btnOpenEmployeeSync').length === 0) {
+                    let syncBtn = `
+                        <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSync" type="button">
+                            <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
+                        </button>
+                    `;
+                    $searchDiv.append(syncBtn);
+                }
+                // 2026-08-28, explicit request: "ย้ายปุ่มประวัติการ Sync ให้หน่อยครับ ตอนนี้ดูสะเปะสะปะ"
+                // (move the Sync Log button, it looks scattered right now) -- was squeezed into the
+                // picker modal's own header between the title and the close button. Moved out here
+                // as a proper peer button next to Sync from Origami, matching this app's own
+                // convention (every action button lives in the DataTable's search bar, not floating
+                // inside a modal header). Also fixes a real reachability gap this uncovered: since
+                // the picker modal now blocks its own content behind a "Not connected" panel when
+                // Origami isn't configured (see employee-sync.js), Sync Log used to be unreachable
+                // in that state too -- it opens its own separate modal and reads past history only,
+                // so it doesn't need a live connection at all.
+                if ($searchDiv.find('#btnOpenEmployeeSyncLog').length === 0) {
+                    let syncLogBtn = `
+                        <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSyncLog" type="button">
+                            <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="employee_sync_log_button">Sync Log</span>
+                        </button>
+                    `;
+                    $searchDiv.append(syncLogBtn);
+                }
             }
+            if (typeof updateText === 'function') updateText($searchDiv[0]);
             let $input = $searchDiv.find('input').off('.employeeSearch');
             $input.on('keypress.employeeSearch', function (e) {
                 if (e.keyCode === 13) {

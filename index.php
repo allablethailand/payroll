@@ -162,6 +162,7 @@
     $router->post('api/leave-type.save', 'SetupRulesController@leaveTypeSave');
     $router->post('api/leave-type.delete', 'SetupRulesController@leaveTypeDelete');
     $router->post('api/leave-type.toggle-status', 'SetupRulesController@leaveTypeToggleStatus');
+    $router->post('api/leave-type.apply-defaults', 'SetupRulesController@leaveTypeApplyDefaults');
     $router->get('api/permission-matrix.get', 'PermissionController@matrix');
     $router->post('api/permission-matrix.save', 'PermissionController@save');
     $router->get('payslip-template/edit/{key}', 'PayslipTemplateController@editPage');
@@ -260,6 +261,13 @@
     $router->post('api/holiday.save', 'SetupRulesController@holidaySave');
     $router->post('api/holiday.delete', 'SetupRulesController@holidayDelete');
     $router->post('api/holiday.toggle-status', 'SetupRulesController@holidayToggleStatus');
+    $router->post('api/holiday-sync.candidates', 'HolidaySyncController@candidates');
+    $router->post('api/holiday-sync.apply', 'HolidaySyncController@apply');
+    $router->get('api/holiday-sync.log', 'HolidaySyncController@log');
+
+    $router->post('api/org-structure-sync.candidates', 'OrgStructureSyncController@candidates');
+    $router->post('api/org-structure-sync.apply', 'OrgStructureSyncController@apply');
+    $router->get('api/org-structure-sync.log', 'OrgStructureSyncController@log');
     $router->post('api/shift.options', 'MasterController@getMaster');
     $router->get('reports', 'ReportsController@index');
     $router->get('api/report.list', 'ReportsController@list');

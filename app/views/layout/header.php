@@ -22,6 +22,31 @@
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";
+    <?php
+    // 2026-08-28, explicit request: "ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น รวมถึงใน
+    // Process ด้วย จะไม่มีข้อมูลรอบที่ดึงมา" -- every Sync-from-Origami button (Employee/Holiday/
+    // Department/Position/Team) and the Payroll Process page's "Pending Pull" station must hide
+    // entirely for a company that isn't linked to the relevant Origami integration, computed ONCE
+    // here (not per-page) so every page's own JS can just read a plain boolean instead of each
+    // re-querying `companies` itself. TWO SEPARATE flags, deliberately NOT one -- `ref_id` (Origami
+    // HR link, what Employee/Holiday/Department/Position/Team Sync all actually depend on) and
+    // `origami_payroll_comp_code` (Origami Payroll's own, unrelated ingest mapping, what "Pending
+    // Pull" on the Process page actually depends on) are genuinely different integrations with
+    // independent id spaces -- a company could plausibly have one configured without the other, so
+    // collapsing them into a single flag would risk hiding a feature that could actually work.
+    $compIdForOrigamiFlags = (int)(getCompId() ?? 0);
+    $isOrigamiHrLinked = false;
+    $isOrigamiPayrollLinked = false;
+    if ($compIdForOrigamiFlags > 0) {
+        $stmtOrigamiFlags = Database::getInstance()->pdo->prepare("SELECT ref_id, origami_payroll_comp_code FROM companies WHERE id = :id");
+        $stmtOrigamiFlags->execute([':id' => $compIdForOrigamiFlags]);
+        $companyOrigamiFlags = $stmtOrigamiFlags->fetch(PDO::FETCH_ASSOC);
+        $isOrigamiHrLinked = !empty($companyOrigamiFlags['ref_id']);
+        $isOrigamiPayrollLinked = !empty($companyOrigamiFlags['origami_payroll_comp_code']);
+    }
+    ?>
+    const IS_ORIGAMI_HR_LINKED = <?=$isOrigamiHrLinked ? 'true' : 'false'?>;
+    const IS_ORIGAMI_PAYROLL_LINKED = <?=$isOrigamiPayrollLinked ? 'true' : 'false'?>;
 </script>
 </head>
 <body>
