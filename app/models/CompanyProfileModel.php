@@ -272,10 +272,17 @@ class CompanyProfileModel {
             ],
             'role' => [
                 'table' => 'structure_roles',
-                'columns' => ['role_name_th', 'role_name_en', 'salary_access', 'status'],
+                // can_process_payroll/can_approve_payroll/can_finalize_payroll added 2026-08-28
+                // (explicit request, following a real bug report: a role could be granted every
+                // Permission Matrix checkbox and still be unable to touch Payroll Run at all,
+                // since these 3 columns are a separate, older mechanism PayrollRunModel::userCan()
+                // checks directly against structure_roles -- unrelated to permissions/
+                // role_permissions. There was no UI anywhere to set them before this; they
+                // defaulted to 0 for every role and could only be flipped via raw SQL.
+                'columns' => ['role_name_th', 'role_name_en', 'salary_access', 'can_process_payroll', 'can_approve_payroll', 'can_finalize_payroll', 'status'],
                 'required' => ['role_name_th', 'role_name_en'],
                 'unique_columns' => ['role_name_th', 'role_name_en'],
-                'booleans' => ['salary_access'],
+                'booleans' => ['salary_access', 'can_process_payroll', 'can_approve_payroll', 'can_finalize_payroll'],
             ],
             'department' => [
                 'table' => 'structure_departments',

@@ -1611,5 +1611,8 @@
     "apply_default_confirm_message": "ระบบจะเพิ่มรายการมาตรฐานที่ยังไม่มีในรายการนี้ ข้อมูลเดิมที่มีอยู่แล้วจะไม่ถูกเปลี่ยนแปลง",
     "apply_default_result": "เพิ่มข้อมูลใหม่ {created} รายการ (มีอยู่แล้ว {skipped} รายการ)",
     "employee_sync_dept_position": "แผนก / ตำแหน่ง",
-    "org_structure_sync_confirm_message": "ระบบจะเพิ่ม/อัปเดตข้อมูล {count} รายการในระบบนี้"
+    "org_structure_sync_confirm_message": "ระบบจะเพิ่ม/อัปเดตข้อมูล {count} รายการในระบบนี้",
+    "can_process_payroll": "สร้าง/แก้ไข/คำนวณเงินเดือนได้",
+    "can_approve_payroll": "อนุมัติเงินเดือนได้",
+    "can_finalize_payroll": "บันทึกจ่ายและปิดรอบเงินเดือนได้"
 }
