@@ -411,5 +411,25 @@
         </div>
     </div>
 
+    <!-- 2026-08-29, explicit request: "ถ้าข้อมูลไม่สมบูรณ์ให้มีบอกด้วย ว่าไม่สมบูรณ์กี่คนและมีปุ่ม i ให้คลิก
+         ดูรายละเอียดในหน้ารายการได้เลย" -- opened by the employee-count column's red error pill,
+         fetched on demand via api/payroll-run.error-employees. -->
+    <div class="modal fade" id="runErrorEmployeesModal" tabindex="-1" aria-labelledby="runErrorEmployeesModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger" id="runErrorEmployeesModalLabel">
+                        <i class="fa-solid fa-triangle-exclamation me-1"></i><span data-i18n="incomplete_data">Incomplete data</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="runErrorEmployeesModalBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 <script src="<?=asset('public/js/payroll/index.js')?>"></script>

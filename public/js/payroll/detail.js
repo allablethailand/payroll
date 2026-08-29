@@ -940,56 +940,141 @@ function removeEmployeeButtonRd(row) {
 // converted to a button-group earlier the same day but with a different btn-outline-* sub-style,
 // left it the one inconsistent holdout after the sitewide sweep standardized everything else to
 // this exact pattern; matched here now).
-// 2026-08-29, explicit request: "อยากให้มีปุ่ม Verify ของแต่ละคน และสามารถ Lock Unlock ได้" -- both
-// available on any draft run only (same gating as manageItemsButtonRd()/removeEmployeeButtonRd()
-// above); the button's own current-state is read back off `data-*` by the click handlers
-// (.btn-verify-employee/.btn-lock-employee) so a toggle click always flips whatever the row is
-// CURRENTLY showing, not a stale value captured at render time.
+// 2026-08-29, explicit request: "อยากให้มีปุ่ม Verify ของแต่ละคน และสามารถ Lock Unlock ได้", then split
+// out the same day: "ปุ่ม verify กับ Lock แยกออกมาอีก 1 Column ครับ" -- own button-group in the
+// dedicated "Verify / Lock" column (initRunDetailTable()'s column 10), not bundled into the general
+// Actions group anymore. Available on any draft run only (same gating as manageItemsButtonRd()/
+// removeEmployeeButtonRd()); the button's own current-state is read back off `data-*` by the click
+// handlers (.btn-verify-employee/.btn-lock-employee) so a toggle click always flips whatever the
+// row is CURRENTLY showing, not a stale value captured at render time. Read-only when the run isn't
+// draft (past that point verifying/locking has no meaning) -- shows plain badges instead.
 function verifyLockButtonsRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
-        return '';
+        const verified = row.is_verified ? `<span class="badge bg-success-subtle text-success" title="${langData['verify_status_verified'] || 'Verified'}"><i class="fa-solid fa-check-double"></i></span>` : '';
+        const locked = row.is_locked ? `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${langData['lock_status_locked'] || 'Locked'}"><i class="fa-solid fa-lock"></i></span>` : '';
+        return (verified + locked) || '<span class="text-muted">-</span>';
     }
     const verifyTitle = row.is_verified ? (langData['action_unverify'] || 'Unverify') : (langData['action_verify'] || 'Verify');
-    const verifyCls = row.is_verified ? 'text-success' : 'text-secondary';
+    // 2026-08-29, explicit follow-up request: "ปุ่ม Lock Verify ถ้ากดแล้วให้เปลี่ยนสีครับ" -- was a
+    // btn-link with just a text-color swap (subtle, easy to miss); pressed state is now a solid
+    // filled button so it's unmistakable at a glance, not just a slightly different icon tint.
+    const verifyBtnCls = row.is_verified ? 'btn-success text-white' : 'btn-outline-secondary';
     const lockTitle = row.is_locked ? (langData['action_unlock'] || 'Unlock') : (langData['action_lock'] || 'Lock');
-    const lockCls = row.is_locked ? 'text-danger' : 'text-secondary';
-    return `<button type="button" class="btn btn-link border-start ${verifyCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
-        <button type="button" class="btn btn-link border-start ${lockCls} btn-lock-employee" data-employee-id="${row.employee_id}" data-locked="${row.is_locked ? 'true' : 'false'}" title="${lockTitle}"><i class="fa-solid ${row.is_locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>`;
+    const lockBtnCls = row.is_locked ? 'btn-danger text-white' : 'btn-outline-secondary';
+    return `<div class="btn-group border rounded-3 bg-white">
+        <button type="button" class="btn ${verifyBtnCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
+        <button type="button" class="btn ${lockBtnCls} border-start btn-lock-employee" data-employee-id="${row.employee_id}" data-locked="${row.is_locked ? 'true' : 'false'}" title="${lockTitle}"><i class="fa-solid ${row.is_locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
+    </div>`;
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
 // destructive, "ไว้เตือนตัวเอง" -- a reminder note is useful regardless of where the run currently is).
+// 2026-08-29: "ถ้ามีการใส่ Comment ไปกี่ Comment แล้วให้แสดงตัวเลขที่ปุ่ม Comment ด้วยเป็นจุดแดงๆเหมือนการ
+// แจ้งเตือน" -- a small red notification-dot badge showing the current comment count, read from
+// row.comment_count (see initRunDetailTable()'s ajax/data source -- PayrollRunModel::getDetails()
+// now includes it per employee). Re-rendered after every add/edit/delete via loadRunDetail(), same
+// refresh pattern every other mutating action on this page already uses.
 function commentButtonRd(row) {
     const label = `${escapeAttrRd(row.employee_no)} - ${escapeAttrRd(employeeDisplayNameRd(row))}`;
-    return `<button type="button" class="btn btn-link text-warning border-start btn-comment-employee" data-employee-id="${row.employee_id}" data-employee-label="${label}" title="${langData['action_comments'] || 'Comments'}"><i class="fa-solid fa-comments"></i></button>`;
+    const count = Number(row.comment_count || 0);
+    const countBadge = count > 0
+        ? `<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.6rem;">${count}</span>`
+        : '';
+    return `<button type="button" class="btn btn-link text-warning border-start btn-comment-employee position-relative" data-employee-id="${row.employee_id}" data-employee-label="${label}" title="${langData['action_comments'] || 'Comments'}"><i class="fa-solid fa-comments"></i>${countBadge}</button>`;
 }
 function runDetailActionsRd(row) {
     return `<div class="btn-group border rounded-3 bg-white">
         <button type="button" class="btn btn-link text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
         ${rawSyncDataButtonRd(row)}
         ${manageItemsButtonRd(row)}
-        ${verifyLockButtonsRd(row)}
         ${commentButtonRd(row)}
         ${removeEmployeeButtonRd(row)}
     </div>`;
 }
 
 /* ---------- Formula popover (2026-08-29, explicit request: "ถ้าส่วนไหนที่เป็นสูตรการคำนวณให้มีปุ่มกดดูได้
-   ว่าคำนวณจากอะไรเป็นอะไร แสดงผลสวยๆเป็น popup hover ตอนชี้และกด") -- a small info button next to any
-   earning/deduction/statutory line whose `.note` field is a recognized machine-generated formula
-   trace (SyncPayResolver's own `sync_<event>_<value><unit>` notes, or a few known statutory engine/
-   ThPitCalculator notes) -- opens a Bootstrap popover (trigger "hover click" per the explicit
-   request for both) with a human-readable From -> To breakdown. `.note` is the ONLY calculation-
-   trace data this app's data model actually has (there is no separate audit-of-inputs table), so
-   this is a best-effort parse of that one field, not a full computation-replay system -- a line
-   whose note doesn't match a known pattern (a manually-typed comment, an unrecognized statutory
-   note) gets no button at all rather than a misleading/empty popover. ---------- */
+   ว่าคำนวณจากอะไรเป็นอะไร แสดงผลสวยๆเป็น popup hover ตอนชี้และกด" -- extended the same day: "ประกันสังคม
+   อยากให้เห็นสูตรคำนวณด้วยครับ และ OT ก็ให้เห็นสูตรคำนวณเลยว่า คำนวณจากอะไร ฐานเงินเดือนเท่าไหร่ / กี่วัน และ
+   คูณกับอะไร ผลลัพธ์ออกมาเท่าไหร่ ให้เป็น Format นี้ทุกสูตรการคำนวณที่แสดงผล") -- a small info button next
+   to any earning/deduction/statutory line, opening a Bootstrap popover (trigger "hover click" per
+   the explicit request for both) with a numbered step-by-step breakdown. PRIMARY source is the
+   line's own structured `.formula` field -- SyncPayResolver (OT/Late/Absent/Unpaid Leave/Leave
+   Pending/Trip Allowance) and StatutoryCalculationEngine's computeFlatRate() (TH_SSO/TH_PVD) now
+   attach this directly at computation time with the REAL numbers used (base salary, divisors, rate,
+   hours, caps, etc.), not reverse-engineered from a terse note string. FALLBACK is the older
+   note-string parser below, still used for anything without a structured formula yet (TH_PIT's
+   own placeholder-vs-ThPitCalculator-corrected note, a few static engine notes) -- a line with
+   neither gets no button at all rather than a misleading/empty popover. ---------- */
 const FORMULA_EVENT_LABELS_RD = {
     late: 'formula_event_late', absent: 'formula_event_absent',
     unpaid_leave: 'formula_event_unpaid_leave', leave_pending: 'formula_event_leave_pending',
     trip_allowance: 'formula_event_trip_allowance',
-    ot_weekday: 'formula_event_ot_weekday', ot_weekend: 'formula_event_ot_weekend', ot_holiday: 'formula_event_ot_holiday',
+    weekday: 'formula_event_ot_weekday', weekend: 'formula_event_ot_weekend', holiday: 'formula_event_ot_holiday',
 };
-const FORMULA_UNIT_LABELS_RD = { minutes: 'formula_unit_minutes', hours: 'formula_unit_hours', days: 'formula_unit_days', money: null };
+const FORMULA_UNIT_LABELS_RD = { minute: 'formula_unit_minutes', hour: 'formula_unit_hours', day: 'formula_unit_days' };
+function formulaStepRd(text) {
+    return `<li class="mb-1">${text}</li>`;
+}
+function formulaResultLineRd(amount) {
+    return `<div class="mt-2 pt-2 border-top fw-bold text-brand">${langData['formula_result'] || 'Result'}: ${fmtNumRd(amount)}</div>`;
+}
+/** @return string|null HTML step list (without the outer wrapper/title) or null if this formula type isn't recognized. */
+function buildFormulaStepsRd(formula) {
+    if (!formula) return null;
+    const steps = [];
+    switch (formula.type) {
+        case 'ot_multiplier': {
+            const scopeLabel = langData[FORMULA_EVENT_LABELS_RD[formula.scope]] || formula.scope;
+            if (formula.is_daily_base) {
+                steps.push(formulaStepRd(`${langData['formula_base_salary'] || 'Base salary'} ${fmtNumRd(formula.base_salary)} ÷ ${formula.days_divisor} ${langData['formula_unit_days'] || 'days'} = ${fmtNumRd(formula.unit_rate)} ${langData['formula_per_day'] || 'per day'}`));
+                steps.push(formulaStepRd(`${fmtNumRd(formula.unit_rate)} × ${formula.multiplier} (${scopeLabel}) = ${fmtNumRd(formula.unit_rate * formula.multiplier)} ${langData['formula_per_day'] || 'per day'}`));
+                steps.push(formulaStepRd(`${fmtNumRd(formula.unit_rate * formula.multiplier)} × (${formula.hours} ÷ ${formula.hours_divisor}) = ${fmtNumRd(formula.result)}`));
+            } else {
+                steps.push(formulaStepRd(`${langData['formula_base_salary'] || 'Base salary'} ${fmtNumRd(formula.base_salary)} ÷ ${formula.days_divisor} ${langData['formula_unit_days'] || 'days'} ÷ ${formula.hours_divisor} ${langData['formula_unit_hours'] || 'hours'} = ${fmtNumRd(formula.unit_rate)} ${langData['formula_per_hour'] || 'per hour'}`));
+                steps.push(formulaStepRd(`${fmtNumRd(formula.unit_rate)} × ${formula.multiplier} (${scopeLabel}) = ${fmtNumRd(formula.unit_rate * formula.multiplier)} ${langData['formula_per_hour'] || 'per hour'}`));
+                steps.push(formulaStepRd(`${fmtNumRd(formula.unit_rate * formula.multiplier)} × ${formula.hours} ${langData['formula_unit_hours'] || 'hours'} = ${fmtNumRd(formula.result)}`));
+            }
+            return steps.join('');
+        }
+        case 'ot_flat': {
+            const scopeLabel = langData[FORMULA_EVENT_LABELS_RD[formula.scope]] || formula.scope;
+            const qty = formula.is_daily_base ? (formula.hours / formula.hours_divisor) : formula.hours;
+            const qtyUnit = formula.is_daily_base ? (langData['formula_unit_days'] || 'days') : (langData['formula_unit_hours'] || 'hours');
+            steps.push(formulaStepRd(`${langData['formula_flat_rate'] || 'Flat rate'} (${scopeLabel}) ${fmtNumRd(formula.flat_rate)} × ${fmtNumRd(qty)} ${qtyUnit} = ${fmtNumRd(formula.result)}`));
+            return steps.join('');
+        }
+        case 'flat_rate': {
+            steps.push(formulaStepRd(`${langData['formula_eligible_base'] || 'Eligible base'} = ${fmtNumRd(formula.raw_base)}`));
+            if ((formula.min_base !== null && formula.effective_base > formula.raw_base) || (formula.max_base !== null && formula.effective_base < formula.raw_base)) {
+                steps.push(formulaStepRd(`${langData['formula_base_clamped'] || 'Clamped to configured min/max base'} (${langData['formula_min'] || 'min'} ${fmtNumRd(formula.min_base ?? 0)} / ${langData['formula_max'] || 'max'} ${formula.max_base !== null ? fmtNumRd(formula.max_base) : '-'}) = ${fmtNumRd(formula.effective_base)}`));
+            }
+            steps.push(formulaStepRd(`${fmtNumRd(formula.effective_base)} × ${formula.employee_rate}% = ${fmtNumRd(formula.employee_raw_amount)}`));
+            if (formula.employee_capped) {
+                steps.push(formulaStepRd(`${langData['formula_capped_at'] || 'Capped at the configured maximum contribution'} ${fmtNumRd(formula.max_employee_contribution)}`));
+            }
+            return steps.join('');
+        }
+        case 'attendance_percent': {
+            steps.push(formulaStepRd(`${fmtNumRd(formula.hourly_rate)} ÷ 60 × ${formula.minutes} ${langData['formula_unit_minutes'] || 'minutes'} × ${formula.multiplier} = ${fmtNumRd(formula.result)}`));
+            return steps.join('');
+        }
+        case 'attendance_flat': {
+            const unitLabel = langData[FORMULA_UNIT_LABELS_RD[formula.rate_unit]] || formula.rate_unit;
+            steps.push(formulaStepRd(`${fmtNumRd(formula.rate_per_unit)} / ${unitLabel} × ${fmtNumRd(formula.quantity_in_rate_unit)} ${unitLabel} = ${fmtNumRd(formula.result)}`));
+            return steps.join('');
+        }
+        case 'attendance_bracket': {
+            const unitLabel = langData[FORMULA_UNIT_LABELS_RD[formula.rate_unit]] || formula.rate_unit;
+            steps.push(formulaStepRd(`${fmtNumRd(formula.quantity_in_rate_unit)} ${unitLabel} ${langData['formula_falls_in_bracket'] || 'falls in bracket'} ${formula.bracket_min}-${formula.bracket_max !== null ? formula.bracket_max : '∞'} = ${fmtNumRd(formula.result)}`));
+            return steps.join('');
+        }
+        case 'passthrough': {
+            steps.push(formulaStepRd(`${langData['formula_reported_value'] || 'Reported value'}: ${fmtNumRd(formula.raw_value)}${formula.unit ? ' ' + (langData[FORMULA_UNIT_LABELS_RD[formula.unit] || ''] || formula.unit) : ''} = ${fmtNumRd(formula.result)}`));
+            return steps.join('');
+        }
+        default:
+            return null;
+    }
+}
 function explainLineNoteRd(note, amount) {
     if (!note) return null;
     const syncMatch = note.match(/^sync_(.+?)_([\d.]+)(minutes|hours|days|money)(_corrected)?$/);
@@ -997,13 +1082,13 @@ function explainLineNoteRd(note, amount) {
         const [, eventKey, value, unit, corrected] = syncMatch;
         const eventLabelKey = FORMULA_EVENT_LABELS_RD[eventKey];
         const eventLabel = eventLabelKey ? (langData[eventLabelKey] || eventKey) : eventKey;
-        const unitLabelKey = FORMULA_UNIT_LABELS_RD[unit];
+        const unitLabelKey = unit === 'money' ? null : (FORMULA_UNIT_LABELS_RD[unit.replace(/s$/, '')] || null);
         const unitLabel = unitLabelKey ? (langData[unitLabelKey] || unit) : '';
         const fromText = unit === 'money' ? fmtNumRd(value) : `${value} ${unitLabel}`;
         const correctedNote = corrected ? `<div class="small text-warning mt-1"><i class="fa-solid fa-pen me-1"></i>${langData['formula_manually_corrected'] || 'Manually corrected from the originally synced value'}</div>` : '';
         return `<div><strong>${eventLabel}</strong></div>
-            <div class="small text-muted mt-1">${langData['formula_from'] || 'From'}: ${escapeHtmlRd(fromText)}</div>
-            <div class="small text-muted">${langData['formula_to'] || 'To'}: ${fmtNumRd(amount)}</div>
+            <ol class="ps-3 mb-0 mt-1 small">${formulaStepRd(`${langData['formula_from'] || 'From'}: ${escapeHtmlRd(fromText)}`)}</ol>
+            ${formulaResultLineRd(amount)}
             ${correctedNote}`;
     }
     const knownNotes = {
@@ -1018,14 +1103,26 @@ function explainLineNoteRd(note, amount) {
     if (pitMatch) {
         const methodLabel = pitMatch[1] === 'average' ? (langData['formula_pit_method_average'] || 'Average method (est. annual tax spread evenly)') : (langData['formula_pit_method_cumulative'] || 'Cumulative method (actual tax-to-date)');
         return `<div><strong>${langData['formula_event_pit'] || 'Personal Income Tax'}</strong></div>
-            <div class="small text-muted mt-1">${methodLabel}</div>
-            <div class="small text-muted">${langData['formula_pit_annual_estimate'] || 'Estimated annual tax'}: ${fmtNumRd(pitMatch[2])}</div>
-            <div class="small text-muted">${langData['formula_to'] || 'To'} (${langData['formula_this_period'] || 'this period'}): ${fmtNumRd(amount)}</div>`;
+            <ol class="ps-3 mb-0 mt-1 small">
+                ${formulaStepRd(methodLabel)}
+                ${formulaStepRd(`${langData['formula_pit_annual_estimate'] || 'Estimated annual tax'}: ${fmtNumRd(pitMatch[2])}`)}
+            </ol>
+            ${formulaResultLineRd(amount)}`;
     }
     return null;
 }
-function formulaButtonRd(note, amount) {
-    const content = explainLineNoteRd(note, amount);
+function formulaButtonRd(line) {
+    const amount = line.amount !== undefined ? line.amount : line.employee_amount;
+    const stepsHtml = buildFormulaStepsRd(line.formula);
+    let content;
+    if (stepsHtml) {
+        const title = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code || '';
+        content = `<div><strong>${escapeHtmlRd(title)}</strong></div>
+            <ol class="ps-3 mb-0 mt-1 small">${stepsHtml}</ol>
+            ${formulaResultLineRd(amount)}`;
+    } else {
+        content = explainLineNoteRd(line.note, amount);
+    }
     if (!content) return '';
     const contentAttr = content.replace(/"/g, '&quot;');
     return `<button type="button" class="btn btn-sm btn-link p-0 ms-1 text-brand formula-info-btn" data-bs-toggle="popover" data-bs-trigger="hover click" data-bs-html="true" data-bs-placement="top" data-bs-title="${langData['formula_popover_title'] || 'How this was calculated'}" data-bs-content="${contentAttr}"><i class="fa-solid fa-circle-question"></i></button>`;
@@ -1054,7 +1151,7 @@ function breakdownLineRowsRd(lines) {
             : '';
         return `<tr>
             <td>${codeHtml}</td>
-            <td>${escapeHtmlRd(name)}${formulaButtonRd(line.note, line.amount)}${commentHtml}${payeeHtml}</td>
+            <td>${escapeHtmlRd(name)}${formulaButtonRd(line)}${commentHtml}${payeeHtml}</td>
             <td class="text-end">${fmtNumRd(line.amount)}</td>
         </tr>`;
     }).join('');
@@ -1071,7 +1168,7 @@ function statutoryRowsRd(items) {
         const note = item.note ? ` <span class="text-muted small">(${escapeHtmlRd(item.note)})</span>` : '';
         return `<tr>
             <td><code class="fw-bold text-dark">${escapeHtmlRd(item.code || '-')}</code>${note}</td>
-            <td>${escapeHtmlRd(name)}${formulaButtonRd(item.note, item.employee_amount)}</td>
+            <td>${escapeHtmlRd(name)}${formulaButtonRd(item)}</td>
             <td class="text-end">${fmtNumRd(item.employee_amount)}</td>
         </tr>`;
     }).join('');
@@ -1222,6 +1319,28 @@ function rawSyncDataItemValuesTableHtml(itemValues) {
 function rawSyncDataFieldLookupRd(key) {
     return RAW_SYNC_DATA_FIELDS_RD.find(f => f.key === key);
 }
+// 2026-08-29, explicit request: "การคิดจำนวนวันทำงาน ตอนนี้มีส่งมาจาก Origami ว่าทำงานทั้งหมดกี่วัน ให้แสดง
+// ในข้อมูลด้วยว่า จำนวนวันในรอบนั้นกี่วัน วันทำงานกี่วัน วันหยุดนักขัตฤกษ์กี่วัน วันหยุดประจำสัปดาห์กี่วัน" --
+// computed from this company's own shift/holiday config (PayrollRunModel::rawSyncDataForEmployee()'s
+// new working_days_breakdown, see SetupRulesModel::workingDaysBreakdown()), shown as a small summary
+// line right under the Attendance section's own field grid, next to Origami's own reported
+// working_days number above it -- so an admin can see both side by side.
+function workingDaysBreakdownHtml(breakdown) {
+    if (!breakdown) return '';
+    const noShiftNote = !breakdown.has_shift_pattern
+        ? `<div class="small text-warning mt-1"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['working_days_breakdown_no_shift'] || 'No shift assigned -- every non-holiday day counted as a working day.'}</div>`
+        : '';
+    return `<div class="small mt-2 pt-2 border-top">
+        <div class="text-muted mb-1">${langData['working_days_breakdown_title'] || "This company's own calendar (holidays/shift)"}:</div>
+        <div class="d-flex flex-wrap gap-3">
+            <span>${langData['working_days_breakdown_total'] || 'Total days'}: <strong>${breakdown.total_days}</strong></span>
+            <span>${langData['working_days_breakdown_working'] || 'Working days'}: <strong>${breakdown.working_days}</strong></span>
+            <span>${langData['working_days_breakdown_holiday'] || 'Public holidays'}: <strong>${breakdown.holiday_days}</strong></span>
+            <span>${langData['working_days_breakdown_weekly_off'] || 'Weekly off days'}: <strong>${breakdown.weekly_off_days}</strong></span>
+        </div>
+        ${noShiftNote}
+    </div>`;
+}
 function renderRawSyncDataModal(data) {
     const sectionsHtml = RAW_SYNC_DATA_SECTIONS_RD.map(section => {
         const fieldsHtml = section.fields.map(key => {
@@ -1232,10 +1351,12 @@ function renderRawSyncDataModal(data) {
                 <div class="fw-semibold">${rawSyncDataValueDisplay(data[f.key])}</div>
             </div>`;
         }).join('');
+        const breakdownHtml = section.titleKey === 'raw_sync_data_section_attendance' ? workingDaysBreakdownHtml(data.working_days_breakdown) : '';
         return `<div class="col-md-6">
             <div class="ped-type-panel border rounded-3 p-3 h-100">
                 <h6 class="text-secondary fw-bold mb-2"><i class="fa-solid ${section.icon} me-1"></i>${langData[section.titleKey] || section.fallback}</h6>
                 <div class="row g-2">${fieldsHtml}</div>
+                ${breakdownHtml}
             </div>
         </div>`;
     }).join('');
@@ -1295,55 +1416,126 @@ $(document).on('click', '#btnSaveRawSyncDataExemption', function () {
 function initRunDetailTable(details) {
     $('#noDetailsYet').toggleClass('d-none', details.length > 0);
     $('#tb_run_detail').toggleClass('d-none', details.length === 0);
+    // 2026-08-29, real bug found and fixed (explicit report: "checkbox ในกรณีที่ส่งไปอนุมัติแล้วยังขึ้นอยู่
+    // ต้องไม่ขึ้น") -- computed HERE, synchronously, from the SAME currentRun that
+    // renderRunHeader() always sets immediately before this function runs (see loadRunDetail()),
+    // rather than inside drawCallback's own applyRunDetailViewMode() reading the outer
+    // `tb_run_detail` variable. Root cause: drawCallback fires synchronously DURING the
+    // `$(...).DataTable({...})` constructor call below, i.e. BEFORE the `tb_run_detail = ...`
+    // assignment on that call has actually completed -- so on the very FIRST load of a run that is
+    // already non-draft (e.g. opening a run that's already pending_approval), that first
+    // drawCallback saw `tb_run_detail` as still undefined and silently skipped hiding the checkbox
+    // column. It only ever hid correctly on a SECOND reload, once `tb_run_detail` had a real value
+    // from a prior successful assignment -- exactly matching the reported symptom.
+    const showCheckboxColumn = !currentRun || currentRun.state === 'draft';
     if ($.fn.DataTable.isDataTable('#tb_run_detail')) {
-        $('#tb_run_detail').DataTable().clear().rows.add(details).draw();
+        const existingApi = $('#tb_run_detail').DataTable();
+        const existingCheckboxColumn = existingApi.column(0);
+        if (existingCheckboxColumn.visible() !== showCheckboxColumn) {
+            existingCheckboxColumn.visible(showCheckboxColumn, false);
+        }
+        existingApi.clear().rows.add(details).draw();
         return;
     }
+    // 2026-08-29, explicit request: "ตารางตรงพนักงาน ปรับให้แสดงเป็น 2 แถวแบบไม่ hide column ไหมครับ
+    // เพราะ expand ดูไม่สะดวก" -- Employee (No.+Name) and Calculation (status+Remark) combine
+    // related fields into 2-line cells; Base Salary/Gross/Deduction/Net are their own columns again
+    // as of a same-day follow-up (see the .rd-net-pill comment below). responsive:false (was true)
+    // means nothing ever collapses behind an expand-row arrow -- app/views/payroll/detail.php's own
+    // .table-responsive wrapper gives a plain horizontal scrollbar as the only narrow-viewport
+    // fallback instead, matching every other wide DataTable in this app.
     tb_run_detail = $('#tb_run_detail').DataTable({
-        responsive: true,
+        responsive: false,
         data: details,
         columns: [
             // 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify และ Lock"
-            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => `<input type="checkbox" class="form-check-input run-detail-row-check" data-employee-id="${row.employee_id}">` },
-            { data: 'employee_no' },
-            { data: null, render: (d, t, row) => escapeHtmlRd(employeeDisplayNameRd(row)) },
+            // -- 2026-08-29 (View Mode follow-up): the checkbox column has no purpose once nothing on
+            // this run can be verified/locked/bulk-actioned anymore -- visible: showCheckboxColumn
+            // (computed just above from currentRun.state, see this function's own top-of-function
+            // comment for why it's set HERE at construction time and not inside drawCallback).
+            { data: null, className: 'text-center', orderable: false, visible: showCheckboxColumn, render: (d, t, row) => `<input type="checkbox" class="form-check-input run-detail-row-check" data-employee-id="${row.employee_id}">` },
+            { data: 'employee_no', render: {
+                display: (d, t, row) => `<div class="fw-semibold">${escapeHtmlRd(employeeDisplayNameRd(row))}</div><div class="small text-muted">${escapeHtmlRd(d)}</div>`,
+                sort: d => d,
+                filter: (d, t, row) => `${d} ${employeeDisplayNameRd(row)}`,
+            } },
             { data: null, className: 'text-center', render: (d, t, row) => dataSourceBadgeRd(row) },
-            { data: 'base_salary_amount', className: 'text-end', render: d => fmtNumRd(d) },
+            // 2026-08-29, explicit follow-up request: "ตรงเงินได้เงินหักสุทธิ์ ปรับการแสดงผลให้ชัดขึ้น หรือแยก
+            // Column ไปเลย" -- the combined "Amounts" cell from the previous round packed Base
+            // Salary/Gross/Deduction/Net into one cell and wasn't clear enough; split back into their
+            // own columns. Net gets its own strong pill styling (rd-net-pill) since it's the figure
+            // people scan for first, distinct from the plain-text Base Salary/Gross/Deduction cells.
+            { data: 'base_salary_amount', className: 'text-end text-muted', render: d => fmtNumRd(d) },
             { data: 'gross_amount', className: 'text-end text-success fw-semibold', render: d => fmtNumRd(d) },
             { data: 'total_deduction_amount', className: 'text-end text-danger fw-semibold', render: d => fmtNumRd(d) },
-            { data: 'net_amount', className: 'text-end fw-bold', render: d => fmtNumRd(d) },
-            { data: 'calc_status', render: d => calcStatusBadgeRd(d) },
-            { data: 'calc_errors', render: d => calcErrorsRemarkRd(d) },
-            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => verifyLockBadgesRd(row) },
+            { data: 'net_amount', className: 'text-end', render: d => `<span class="rd-net-pill">${fmtNumRd(d)}</span>` },
+            { data: 'calc_status', render: {
+                display: (d, t, row) => `${calcStatusBadgeRd(d)}<div class="small mt-1">${calcErrorsRemarkRd(row.calc_errors)}</div>`,
+                sort: d => d,
+                filter: (d, t, row) => `${d} ${row.calc_errors || ''}`,
+            } },
+            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => verifyLockButtonsRd(row) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
-            // Responsive expand row.
+            // Responsive expand row (kept even with responsive:false, harmless no-op either way).
             { data: null, className: 'all', orderable: false, render: (d, t, row) => runDetailActionsRd(row) },
         ],
         paging: false,
         searching: details.length > 10,
         info: false,
         language: getTableLang(),
-        drawCallback: function () { getTableLang(); updateRunDetailBulkBar(); },
+        // 2026-08-29, explicit follow-up request: "รายการให้แสดงให้ต่างกับรายการที่ยังไม่ Verify หรือ Lock"
+        // -- a verified and/or locked row gets its own background tint (rd-row-verified/
+        // rd-row-locked, see style.css) so it reads as visually distinct from a plain not-yet-
+        // actioned row at a glance, not just via the Verify/Lock column's own button state.
+        // createdRow fires once per row (including on rows.add() during a later reload), so this
+        // stays correct across recalculate()/verify/lock round trips without any extra wiring.
+        createdRow: function (row, data) {
+            $(row).toggleClass('rd-row-verified', !!data.is_verified);
+            $(row).toggleClass('rd-row-locked', !!data.is_locked);
+        },
+        drawCallback: function () { getTableLang(); updateRunDetailBulkBar(); applyRunDetailViewMode(); },
         // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-        // rollout, client mode (plain `data:` array, no ajax at all). Excludes the checkbox (0),
-        // verify/lock (10), and actions (11) columns.
+        // rollout, client mode (plain `data:` array, no ajax at all). employee_no/name stay excluded
+        // (that column still combines 2 fields into one free-text cell -- the global search box
+        // covers it instead, see searching: true above); base_salary/gross/deduction/net are back to
+        // their own columns as of this same round, so their filters are restored too.
         initComplete: function () {
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 1, key: 'employee_no' },
-                    { index: 2, key: 'name' },
-                    { index: 3, key: 'data_source' },
-                    { index: 4, key: 'base_salary_amount' },
-                    { index: 5, key: 'gross_amount' },
-                    { index: 6, key: 'total_deduction_amount' },
-                    { index: 7, key: 'net_amount' },
-                    { index: 8, key: 'calc_status' },
-                    { index: 9, key: 'calc_errors' },
+                    { index: 2, key: 'data_source' },
+                    { index: 3, key: 'base_salary_amount' },
+                    { index: 4, key: 'gross_amount' },
+                    { index: 5, key: 'total_deduction_amount' },
+                    { index: 6, key: 'net_amount' },
+                    { index: 7, key: 'calc_status' },
                 ]
             });
         }
     });
+}
+
+/* ==================== View Mode (2026-08-29) ====================
+   Explicit request: "ตอน View Mode ในกรณีที่แก้ไขหรือทำอะไรไม่ได้แล้ว ส่วนของการแสดงผล อยากให้ปรับให้ดูเป็น
+   View อยากเดียว แต่สามารถกดดูรายละเอียดเท่าที่ดูได้ครับ จะได้ดูแตกต่างจากตอนสร้างและแก้ไข" -- whenever the
+   run is not draft (nothing editable anymore -- pending_approval/approved/paid/locked/rejected/
+   cancelled/need_info), the Employee Breakdown table visually reads as pure View: no checkbox
+   column (bulk verify/lock is a draft-only concept), no bulk action bar, and a small "View Mode"
+   pill next to the section heading so it's obviously different from the create/edit (draft)
+   experience at a glance -- clicking through to View Details/formula popovers/comments still all
+   work exactly as before, only the MUTATING affordances (checkboxes, bulk bar) disappear. Verify/
+   Lock buttons and Manage Items/Remove already individually gate on currentRun.state !== 'draft'
+   elsewhere in this file (verifyLockButtonsRd(), manageItemsButtonRd(), removeEmployeeButtonRd()) --
+   this just adds the section-level visual cue on top of those existing per-control gates. */
+function applyRunDetailViewMode() {
+    if (!currentRun) return;
+    const isViewMode = currentRun.state !== 'draft';
+    $('#runDetailViewModeBadge').toggleClass('d-none', !isViewMode);
+    $('#runDetailBulkBar').toggleClass('d-none', isViewMode || $('.run-detail-row-check:checked').length === 0);
+    // Checkbox column visibility is handled in initRunDetailTable() itself now (both the initial-
+    // construction and reload-existing-table paths), not here -- see that function's own comment
+    // for why (a real ordering bug: this drawCallback fires before the table's own outer variable
+    // assignment completes on first load).
 }
 
 /* ==================== Employee Verify / Lock / Comments (2026-08-29) ====================
@@ -1352,15 +1544,6 @@ function initRunDetailTable(details) {
    status tag. Mirrors this page's own established .btn-group/border/rounded-3/bg-white action-row
    idiom (runDetailActionsRd()) and showConfirm()/callRunAction() patterns already used for every
    other mutating action here. ==================== */
-function verifyLockBadgesRd(row) {
-    const verified = row.is_verified
-        ? `<span class="badge bg-success-subtle text-success" title="${(langData['verify_status_verified'] || 'Verified')}"><i class="fa-solid fa-check-double"></i></span>`
-        : '';
-    const locked = row.is_locked
-        ? `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${(langData['lock_status_locked'] || 'Locked')}"><i class="fa-solid fa-lock"></i></span>`
-        : '';
-    return verified + locked || '<span class="text-muted">-</span>';
-}
 function updateRunDetailBulkBar() {
     const count = $('.run-detail-row-check:checked').length;
     $('#runDetailBulkCount').text(count);
@@ -1446,6 +1629,10 @@ $(document).on('click', '.btn-lock-employee', function () {
 });
 
 let employeeCommentEmployeeId = null;
+// 2026-08-29: set while editing an existing comment (null = the form is in "add new" mode). Reset
+// on modal close/cancel/successful add so reopening the modal for a different employee, or for the
+// same one later, always starts fresh in "add" mode.
+let employeeCommentEditingId = null;
 function employeeCommentTagBadge(tag) {
     const map = {
         in_progress: { cls: 'bg-warning-subtle text-warning', key: 'employee_comment_tag_in_progress', fallback: 'In Progress' },
@@ -1465,6 +1652,18 @@ function renderEmployeeCommentTimeline(comments) {
     const html = comments.map(function (c, idx) {
         const isLast = idx === comments.length - 1;
         const name = currentLang === 'th' ? (c.created_by_name_th || c.created_by_name_en) : (c.created_by_name_en || c.created_by_name_th);
+        // 2026-08-29, explicit request: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย" -- a small
+        // "(edited)" marker only when updated_at is actually set (see
+        // PayrollRunModel::employeeCommentUpdate()'s own docblock -- a never-edited comment keeps
+        // both updated_by/updated_at null).
+        const editedTag = c.updated_at ? `<span class="text-muted fst-italic ms-1" style="font-size:.72em;">(${langData['employee_comment_edited'] || 'edited'})</span>` : '';
+        // 2026-08-29, explicit follow-up: "ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข ลบได้" -- edit/delete icons
+        // per comment are dropped entirely once the run has finished (commentsReadOnlyRd()), not
+        // just disabled, matching the same "view-only means the control isn't there at all" pattern
+        // Verify/Lock's own View Mode already uses elsewhere on this page.
+        const editDeleteIcons = commentsReadOnlyRd() ? '' : `
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-2 text-secondary btn-edit-employee-comment" data-id="${c.id}" data-tag="${c.tag || ''}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-2 text-danger btn-delete-employee-comment" data-id="${c.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
         return `<div class="apv-stage${isLast ? ' apv-stage-last' : ''}">
             <div class="apv-stage-marker">
                 <div class="apv-stage-icon"><i class="fa-solid fa-comment"></i></div>
@@ -1472,10 +1671,12 @@ function renderEmployeeCommentTimeline(comments) {
             </div>
             <div class="apv-stage-content">
                 <div class="apv-stage-head">
-                    <span class="apv-stage-title">${escapeHtmlRd(name || '-')}${employeeCommentTagBadge(c.tag)}</span>
-                    <span class="apv-stage-date">${formatDisplayDateTime ? formatDisplayDateTime(c.created_at) : c.created_at}</span>
+                    <span class="apv-stage-title">${escapeHtmlRd(name || '-')}${employeeCommentTagBadge(c.tag)}${editedTag}</span>
+                    <span class="apv-stage-date">
+                        ${formatDisplayDateTime ? formatDisplayDateTime(c.created_at) : c.created_at}${editDeleteIcons}
+                    </span>
                 </div>
-                <div class="apv-stage-body">${escapeHtmlRd(c.comment).replace(/\n/g, '<br>')}</div>
+                <div class="apv-stage-body" data-raw-comment="${escapeAttrRd(c.comment)}">${escapeHtmlRd(c.comment).replace(/\n/g, '<br>')}</div>
             </div>
         </div>`;
     }).join('');
@@ -1488,13 +1689,67 @@ function loadEmployeeComments() {
         success: function (res) { if (res.status) renderEmployeeCommentTimeline(res.data || []); }
     });
 }
+function resetEmployeeCommentForm() {
+    employeeCommentEditingId = null;
+    $('#employeeCommentTagNone').prop('checked', true);
+    $('#employeeCommentText').val('');
+    $('#btnAddEmployeeCommentLabel').text(langData['employee_comment_add'] || 'Add Comment');
+    $('#btnCancelEditEmployeeComment').addClass('d-none');
+}
+// 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข
+// ลบได้" -- deliberately a NARROWER cutoff than isViewMode (currentRun.state !== 'draft') used
+// elsewhere on this page; see PayrollRunModel::COMMENT_LOCKED_STATES's own docblock for why
+// comments stay editable through pending_approval/approved/rejected/need_info (still "in
+// progress") and only lock once the run has genuinely finished. Server-side enforcement lives in
+// that same constant, checked in employeeCommentAdd()/Update()/Delete() -- this client-side gate
+// is purely so the form controls don't even appear, not the actual authorization boundary.
+const COMMENT_LOCKED_STATES_RD = ['paid', 'locked', 'cancelled'];
+function commentsReadOnlyRd() {
+    return !!currentRun && COMMENT_LOCKED_STATES_RD.includes(currentRun.state);
+}
 $(document).on('click', '.btn-comment-employee', function () {
     employeeCommentEmployeeId = $(this).data('employee-id');
     $('#employeeCommentModalEmployeeName').text($(this).data('employee-label') || '');
-    $('#employeeCommentTag').val('').trigger('change');
-    $('#employeeCommentText').val('');
+    resetEmployeeCommentForm();
+    const readOnly = commentsReadOnlyRd();
+    $('#employeeCommentFormArea, #btnAddEmployeeComment').toggleClass('d-none', readOnly);
+    $('#employeeCommentReadOnlyNotice').toggleClass('d-none', !readOnly);
     loadEmployeeComments();
     new bootstrap.Modal(document.getElementById('employeeCommentModal')).show();
+});
+$(document).on('hidden.bs.modal', '#employeeCommentModal', function () {
+    resetEmployeeCommentForm();
+});
+$(document).on('click', '.btn-edit-employee-comment', function () {
+    employeeCommentEditingId = $(this).data('id');
+    const rawComment = $(this).closest('.apv-stage-content').find('.apv-stage-body').attr('data-raw-comment') || '';
+    $('#employeeCommentText').val(rawComment).trigger('focus');
+    const tag = $(this).data('tag') || '';
+    $(`#employeeCommentTagGroup input[value="${tag}"]`).prop('checked', true);
+    $('#btnAddEmployeeCommentLabel').text(langData['employee_comment_update'] || 'Update Comment');
+    $('#btnCancelEditEmployeeComment').removeClass('d-none');
+});
+$(document).on('click', '#btnCancelEditEmployeeComment', function () {
+    resetEmployeeCommentForm();
+});
+$(document).on('click', '.btn-delete-employee-comment', function () {
+    const commentId = $(this).data('id');
+    showConfirm(langData['confirm_delete_title'] || 'Confirm Delete', langData['confirm_delete_message'] || 'Are you sure you want to delete this item?', function () {
+        $.ajax({
+            url: `${BASE_URL}/api/payroll-run.employee-comment.delete`, method: 'POST', contentType: 'application/json', dataType: 'json',
+            data: JSON.stringify({ id: PAYROLL_RUN_ID, comment_id: commentId }),
+            success: function (res) {
+                if (res.status) {
+                    if (employeeCommentEditingId === commentId) resetEmployeeCommentForm();
+                    loadEmployeeComments();
+                    loadRunDetail(); // refreshes the comment-count badge on the row's Comment button
+                } else {
+                    showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
+                }
+            },
+            error: function () { showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.'); }
+        });
+    });
 });
 $(document).on('click', '#btnAddEmployeeComment', function () {
     const comment = ($('#employeeCommentText').val() || '').trim();
@@ -1502,18 +1757,23 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
         showWarning(langData['employee_comment_required'] || 'Please write a comment first.');
         return;
     }
-    const tag = $('#employeeCommentTag').val() || null;
+    const tag = $('#employeeCommentTagGroup input:checked').val() || null;
     const $btn = $(this);
     $btn.prop('disabled', true);
+    const isEdit = employeeCommentEditingId !== null;
+    const url = isEdit ? '/api/payroll-run.employee-comment.update' : '/api/payroll-run.employee-comment.add';
+    const payload = isEdit
+        ? { id: PAYROLL_RUN_ID, comment_id: employeeCommentEditingId, tag: tag, comment: comment }
+        : { id: PAYROLL_RUN_ID, employee_id: employeeCommentEmployeeId, tag: tag, comment: comment };
     $.ajax({
-        url: `${BASE_URL}/api/payroll-run.employee-comment.add`, method: 'POST', contentType: 'application/json', dataType: 'json',
-        data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: employeeCommentEmployeeId, tag: tag, comment: comment }),
+        url: `${BASE_URL}${url}`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify(payload),
         success: function (res) {
             $btn.prop('disabled', false);
             if (res.status) {
-                $('#employeeCommentText').val('');
-                $('#employeeCommentTag').val('').trigger('change');
+                resetEmployeeCommentForm();
                 loadEmployeeComments();
+                if (!isEdit) loadRunDetail(); // refreshes the comment-count badge on the row's Comment button
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
@@ -2404,8 +2664,5 @@ $(document).ready(function () {
         // can leave stale state/duplicate options behind).
         initSelect2('#manualLinePayeeEmployee', { mode: 'ajax', allowClear: true });
         initSelect2('#edit_run_purpose', { mode: 'static' });
-        // 2026-08-29: Comment modal's tag dropdown -- initialized once here (same "not per-modal-open"
-        // precedent as manualLinePayeeEmployee above), not per-open.
-        initSelect2('#employeeCommentTag', { mode: 'static' });
     }
 });

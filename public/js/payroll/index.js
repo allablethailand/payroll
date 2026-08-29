@@ -430,6 +430,47 @@ $(document).on('click', '.btn-view-run-workflow', function (e) {
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
     });
 });
+// 2026-08-29, explicit request: "มีปุ่ม i ให้คลิกดูรายละเอียดในหน้ารายการได้เลย" -- the employee-count
+// column's red error pill (rendered only when error_employee_count > 0) opens this modal, fetched
+// on demand per click (never pre-fetched per row -- see the render function's own comment above).
+function renderRunErrorEmployeesModal(rows) {
+    if (!rows.length) {
+        return `<p class="text-muted mb-0">${langData['no_data_found'] || 'No data found.'}</p>`;
+    }
+    const items = rows.map(r => {
+        const name = currentLang === 'th'
+            ? escapeHtmlPr(`${r.name_th || ''} ${r.surname_th || ''}`.trim())
+            : escapeHtmlPr(`${r.name_en || r.name_th || ''} ${r.surname_en || r.surname_th || ''}`.trim());
+        const errors = (r.calc_errors || '').split(',').map(s => s.trim()).filter(Boolean);
+        const errorList = errors.length
+            ? `<ul class="mb-0 ps-3 small text-danger">${errors.map(e => `<li>${escapeHtmlPr(e)}</li>`).join('')}</ul>`
+            : `<span class="small text-muted">${langData['no_details'] || 'No further details.'}</span>`;
+        return `<div class="border rounded-3 p-2 mb-2">
+            <div class="fw-semibold">${escapeHtmlPr(r.employee_no)} - ${name}</div>
+            ${errorList}
+        </div>`;
+    }).join('');
+    return items;
+}
+$(document).on('click', '.btn-view-run-errors', function (e) {
+    e.stopPropagation();
+    const id = $(this).data('id');
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.error-employees`,
+        method: 'GET',
+        data: { id },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            $('#runErrorEmployeesModalBody').html(renderRunErrorEmployeesModal(res.data || []));
+            new bootstrap.Modal(document.getElementById('runErrorEmployeesModal')).show();
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+});
 // Actions column for tb_payroll_run, rendered as one Bootstrap button-group (per explicit
 // request). Edit/View are now a SINGLE merged button (per explicit request) -- both just
 // navigate to the Detail page in a NEW tab using public_id (the IdCodec-encoded token, see
@@ -565,16 +606,23 @@ function initPayrollRunTable() {
             // ข้อมูลแล้วกี่คน" -- object-form render (display/sort/filter split, same DataTables sort-
             // safety convention this app already uses for formatted date/badge columns) so sorting by
             // this column still sorts numerically by the raw employee_count, not by the rendered HTML string.
+            // 2026-08-29, explicit follow-up: "ปรับ Column จำนวนพนักงาน Verify Lock ให้ดูง่ายขึ้น และถ้า
+            // ข้อมูลไม่สมบูรณ์ให้มีบอกด้วย ว่าไม่สมบูรณ์กี่คนและมีปุ่ม i ให้คลิกดูรายละเอียดในหน้ารายการได้เลย"
+            // -- redesigned from the previous inline-badge layout into a clearer stacked block (total
+            // count as its own line, verify/lock/error as a wrapped pill row underneath), plus a new
+            // red error_employee_count pill with a clickable "i" that opens #runErrorEmployeesModal
+            // (fetched on demand via api/payroll-run.error-employees -- never pre-fetched per row).
             { data: 'employee_count', className: 'text-end', render: {
                 display: (d, t, row) => {
                     const verified = Number(row.verified_employee_count || 0);
                     const locked = Number(row.locked_employee_count || 0);
-                    const badges = (verified || locked)
-                        ? `<div class="small mt-1">
-                            ${verified ? `<span class="badge bg-success-subtle text-success"><i class="fa-solid fa-check-double me-1"></i>${verified}</span>` : ''}
-                            ${locked ? `<span class="badge bg-secondary-subtle text-secondary ms-1"><i class="fa-solid fa-lock me-1"></i>${locked}</span>` : ''}
-                        </div>` : '';
-                    return `${d}${badges}`;
+                    const errors = Number(row.error_employee_count || 0);
+                    const pills = [];
+                    if (verified) pills.push(`<span class="badge rounded-pill bg-success-subtle text-success" title="${langData['verified'] || 'Verified'}"><i class="fa-solid fa-check-double me-1"></i>${verified}</span>`);
+                    if (locked) pills.push(`<span class="badge rounded-pill bg-secondary-subtle text-secondary" title="${langData['locked'] || 'Locked'}"><i class="fa-solid fa-lock me-1"></i>${locked}</span>`);
+                    if (errors) pills.push(`<button type="button" class="badge rounded-pill bg-danger-subtle text-danger border-0 btn-view-run-errors" data-id="${row.id}" title="${langData['incomplete_data'] || 'Incomplete data'}"><i class="fa-solid fa-triangle-exclamation me-1"></i>${errors}<i class="fa-solid fa-circle-info ms-1"></i></button>`);
+                    const pillRow = pills.length ? `<div class="d-flex gap-1 justify-content-end flex-wrap mt-1">${pills.join('')}</div>` : '';
+                    return `<div class="fw-semibold">${d} <i class="fa-solid fa-users text-muted ms-1 small"></i></div>${pillRow}`;
                 },
                 sort: d => d,
                 filter: d => d,

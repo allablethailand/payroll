@@ -262,7 +262,8 @@ class SyncPayResolver {
                 continue;
             }
             $isDailyBase = $rate['calculation_base'] === 'daily';
-            $amount = $rate['calculation_method'] === 'flat_amount'
+            $isFlat = $rate['calculation_method'] === 'flat_amount';
+            $amount = $isFlat
                 ? round($rate['flat_amount_rate'] * ($isDailyBase ? $hours / self::STANDARD_HOURS_PER_DAY : $hours), 2)
                 : ($isDailyBase
                     ? round($otDailyRate * $rate['multiplier_rate'] * ($hours / self::STANDARD_HOURS_PER_DAY), 2)
@@ -270,6 +271,25 @@ class SyncPayResolver {
             if ($amount <= 0) {
                 continue;
             }
+            // 2026-08-29, explicit request: "OT ก็ให้เห็นสูตรคำนวณเลยว่า คำนวณจากอะไร ฐานเงินเดือนเท่าไหร่ /
+            // กี่วัน และคูณกับอะไร ผลลัพธ์ออกมาเท่าไหร่" -- structured step-by-step calculation trace
+            // (numbers only, formatted client-side for i18n) attached directly to the line so the
+            // Detail page's formula popover can show the REAL numbers used, not a guess reverse-
+            // engineered from the terse `note` string. `type` picks which step template the frontend
+            // renders (see formulaStepsHtml() in detail.js).
+            $formula = $isFlat
+                ? [
+                    'type' => 'ot_flat', 'scope' => $scopeCode, 'is_daily_base' => $isDailyBase,
+                    'flat_rate' => (float)$rate['flat_amount_rate'], 'hours' => $hours,
+                    'hours_divisor' => self::STANDARD_HOURS_PER_DAY, 'result' => $amount,
+                ]
+                : [
+                    'type' => 'ot_multiplier', 'scope' => $scopeCode, 'is_daily_base' => $isDailyBase,
+                    'base_salary' => $baseSalary, 'days_divisor' => self::STANDARD_WORKING_DAYS_PER_MONTH,
+                    'hours_divisor' => self::STANDARD_HOURS_PER_DAY,
+                    'unit_rate' => $isDailyBase ? $otDailyRate : $otHourlyRate,
+                    'multiplier' => (float)$rate['multiplier_rate'], 'hours' => $hours, 'result' => $amount,
+                ];
             $earning[] = [
                 'source' => 'sync',
                 'code' => $otResolved['code'],
@@ -278,6 +298,7 @@ class SyncPayResolver {
                 'amount' => $amount,
                 'note' => "sync_ot_{$scopeCode}_{$hours}hours",
                 'is_custom' => $otResolved['is_custom'],
+                'formula' => $formula,
             ];
         }
 
@@ -346,6 +367,7 @@ class SyncPayResolver {
                     'amount' => $result['amount'],
                     'note' => "sync_{$eventCode}_{$minutes}minutes" . ($isCorrected ? '_corrected' : ''),
                     'is_custom' => $resolved['is_custom'],
+                    'formula' => $result['formula'] ?? null,
                 ];
             }
         }
@@ -376,6 +398,7 @@ class SyncPayResolver {
                 }
             }
             $isCorrected = $overrideAmount !== null;
+            $formula = null;
 
             if ($isCorrected) {
                 $amount = $overrideAmount;
@@ -398,6 +421,9 @@ class SyncPayResolver {
                 }
                 $amount = $this->candidateToAmount($best, $hourlyRate, $dailyRate);
                 $noteSuffix = "{$best['value']}" . ($best['unit'] ?? 'money');
+                // 2026-08-29: trip allowance is a direct passthrough (no rate/multiplier involved) --
+                // still surfaced as a (trivial) formula for the same consistent popover format.
+                $formula = ['type' => 'passthrough', 'raw_value' => $best['value'], 'unit' => $best['unit'], 'result' => $amount];
             }
             if ($amount <= 0) {
                 continue;
@@ -410,6 +436,7 @@ class SyncPayResolver {
                 'amount' => $amount,
                 'note' => "sync_{$sourceEventCode}_{$noteSuffix}",
                 'is_custom' => $resolved['is_custom'],
+                'formula' => $formula,
             ];
             if ($def['kind'] === 'earning') {
                 $earning[] = $line;
@@ -607,9 +634,17 @@ class SyncPayResolver {
         $methodCode = $rule['method_code'] ?? 'percent_of_rate';
         $rateUnit = $rule['rate_unit'] ?? 'minute';
 
+        // 2026-08-29, explicit request: "ให้เป็น Format นี้ทุกสูตรการคำนวณที่แสดงผล" -- same structured
+        // 'formula' trace convention as the OT block above, one shape per method_code (see
+        // formulaStepsHtml() in detail.js for how each type renders).
         if ($methodCode === 'flat_amount') {
             $rate = (float)($rule['rate_per_unit'] ?? 0);
-            return ['amount' => round($rate * $this->minutesToRateUnit($minutes, $rateUnit), 2), 'errors' => []];
+            $quantity = $this->minutesToRateUnit($minutes, $rateUnit);
+            $amount = round($rate * $quantity, 2);
+            return ['amount' => $amount, 'errors' => [], 'formula' => [
+                'type' => 'attendance_flat', 'rate_unit' => $rateUnit, 'rate_per_unit' => $rate,
+                'minutes' => $minutes, 'quantity_in_rate_unit' => $quantity, 'result' => $amount,
+            ]];
         }
 
         if ($methodCode === 'tiered_bracket') {
@@ -622,7 +657,11 @@ class SyncPayResolver {
                 $min = (float)$b['min_units'];
                 $max = $b['max_units'] !== null ? (float)$b['max_units'] : null;
                 if ($quantityInRateUnit >= $min && ($max === null || $quantityInRateUnit <= $max)) {
-                    return ['amount' => round((float)$b['deduction_amount'], 2), 'errors' => []];
+                    $amount = round((float)$b['deduction_amount'], 2);
+                    return ['amount' => $amount, 'errors' => [], 'formula' => [
+                        'type' => 'attendance_bracket', 'rate_unit' => $rateUnit, 'minutes' => $minutes,
+                        'quantity_in_rate_unit' => $quantityInRateUnit, 'bracket_min' => $min, 'bracket_max' => $max, 'result' => $amount,
+                    ]];
                 }
             }
             return ['amount' => 0.0, 'errors' => []]; // fell in a gap between configured brackets -- an intentional grace zone, not an error.
@@ -633,7 +672,11 @@ class SyncPayResolver {
         if ($multiplier <= 0) {
             $multiplier = 1.00;
         }
-        return ['amount' => round(($hourlyRate / 60.0) * $minutes * $multiplier, 2), 'errors' => []];
+        $amount = round(($hourlyRate / 60.0) * $minutes * $multiplier, 2);
+        return ['amount' => $amount, 'errors' => [], 'formula' => [
+            'type' => 'attendance_percent', 'hourly_rate' => $hourlyRate, 'minutes' => $minutes,
+            'multiplier' => $multiplier, 'result' => $amount,
+        ]];
     }
 
     /** @return array{id:?int,method_code:string,rate_per_unit:?float,multiplier_rate:?float} */

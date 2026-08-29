@@ -214,6 +214,43 @@ $(document).on('click', '#aisClearFilterBtn', function () {
     $('#aisFilterStatus').val('').trigger('change');
 });
 
+// 2026-08-29, explicit follow-up: "ยังไม่มีหน้าตั้งค่าการตัดรอบปี" -- quick-access Settings modal on
+// this page's own header. Loads the current value fresh every time the modal opens (not cached
+// from page load) so it's never stale if changed from Company Profile in another tab.
+$(document).on('show.bs.modal', '#aisFiscalYearSettingsModal', function () {
+    $.ajax({
+        url: `${BASE_URL}/api/annual-income-summary.fiscal-year-setting`, method: 'GET', dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                $('#aisFiscalYearStartMonth').val(String((res.data || {}).fiscal_year_start_month || 1)).trigger('change');
+            }
+        }
+    });
+});
+$(document).on('click', '#btnSaveAisFiscalYearSetting', function () {
+    const month = parseInt($('#aisFiscalYearStartMonth').val(), 10) || 1;
+    const $btn = $(this);
+    $btn.prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/annual-income-summary.fiscal-year-setting.save`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({ fiscal_year_start_month: month }),
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('aisFiscalYearSettingsModal')).hide();
+                // The fiscal year boundaries themselves may have just changed (e.g. April -> January)
+                // -- reload the year list AND the currently-displayed summary so the page reflects
+                // the new setting immediately instead of requiring a manual refresh.
+                loadAisFiscalYears();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
+
 $(document).ready(function () {
     if (typeof initSelect2 === 'function') {
         initSelect2('#aisFilterDepartment', { mode: 'ajax', allowClear: true });
@@ -221,6 +258,7 @@ $(document).ready(function () {
         initSelect2('#aisFilterBranch', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterRole', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterStatus', { mode: 'static' });
+        initSelect2('#aisFiscalYearStartMonth', { mode: 'static' });
     }
     loadAisFiscalYears();
 });

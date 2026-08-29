@@ -549,6 +549,19 @@ try {
     checkTrue('OT line present', $otFixedLine !== null);
     check('13,500/30/8=56.25/hr, x1.5 OT rate=84.375/hr, x1.5h = 126.5625 -> 126.56, UNAFFECTED by working_days=22 in the row', $otFixedLine['amount'] ?? null, 126.56);
 
+    // 2026-08-29, explicit request: "OT ก็ให้เห็นสูตรคำนวณเลยว่า คำนวณจากอะไร ฐานเงินเดือนเท่าไหร่ / กี่วัน
+    // และคูณกับอะไร ผลลัพธ์ออกมาเท่าไหร่" -- the structured 'formula' trace attached to this exact line.
+    echo "=== OT line carries a structured 'formula' trace for the Detail page's popover ===\n";
+    checkTrue('OT line has a formula field', isset($otFixedLine['formula']));
+    check('formula type is ot_multiplier (percent-rate OT, not flat_amount)', $otFixedLine['formula']['type'] ?? null, 'ot_multiplier');
+    check('formula base_salary is the real 13500, not affected by working_days=22', $otFixedLine['formula']['base_salary'] ?? null, 13500.0);
+    check('formula days_divisor is the fixed standard 30', $otFixedLine['formula']['days_divisor'] ?? null, 30.0);
+    check('formula hours_divisor is the fixed standard 8', $otFixedLine['formula']['hours_divisor'] ?? null, 8.0);
+    check('formula unit_rate = 13500/30/8 = 56.25/hr', round($otFixedLine['formula']['unit_rate'] ?? 0, 2), 56.25);
+    check('formula multiplier is 1.5', $otFixedLine['formula']['multiplier'] ?? null, 1.5);
+    check('formula hours is 1.5', $otFixedLine['formula']['hours'] ?? null, 1.5);
+    check('formula result matches the line amount', $otFixedLine['formula']['result'] ?? null, 126.56);
+
     echo "=== OT: the SAME row's absence deduction (a DIFFERENT calculation) correctly STILL uses the actual working_days=22, proving the two are properly decoupled, not both accidentally fixed ===\n";
     $mixedOtAbsentRow = $otFixedDivisorRow;
     $mixedOtAbsentRow['absent_days'] = 1.0; // baseSalary(13500)/working_days(22)*1 = 613.64, NOT baseSalary/30*1=450.00

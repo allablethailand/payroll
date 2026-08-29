@@ -63,6 +63,14 @@ try {
     check('employee_amount (capped at 15000 base * 5%, then capped at 750)', $result['employee_amount'], 750.0);
     check('employer_amount', $result['employer_amount'], 750.0);
     check('base_amount clamped to max_base', $result['base_amount'], 15000.0);
+    // 2026-08-29, explicit request: "ประกันสังคม อยากให้เห็นสูตรคำนวณด้วยครับ" -- structured 'formula'
+    // trace attached by computeFlatRate(), for the Detail page's popover.
+    check('flat_rate result carries a formula field', isset($result['formula']), true);
+    check('formula raw_base is the uncapped 20000', $result['formula']['raw_base'] ?? null, 20000.0);
+    check('formula effective_base reflects the max_base clamp (15000)', $result['formula']['effective_base'] ?? null, 15000.0);
+    check('formula employee_rate is 5', $result['formula']['employee_rate'] ?? null, 5.0);
+    check('formula employee_raw_amount (before the contribution cap) = 15000*5% = 750', $result['formula']['employee_raw_amount'] ?? null, 750.0);
+    check('formula employee_capped is false here (raw amount already equals the cap, not truncated by it)', $result['formula']['employee_capped'], false);
 
     echo "=== Scenario 2: TH_SSO flat_rate, salary below min_base (floored) ===\n";
     $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 1000, 'sso_eligible_earnings' => 1000], '2026-07-01');
@@ -137,6 +145,46 @@ try {
     check('calculate() returns 3 line items for TH', count($full['items']), 3);
     check('total_employee_deduction sums all active items', $full['total_employee_deduction'], 750.0 + 900.0 + 17500.0);
     // SSO: 30000 clamped to max_base 15000 * 5% = 750 (also under the 750 cap), PVD: 30000*3% master=900, PIT=17500
+
+    // 2026-08-29, explicit request: "ให้มีการกำหนดเพิ่มได้ว่าปัดเศษ หรือไม่ปัด ถ้าปัดปัดแบบไหน และทศนิยม
+    // ได้กี่ตำแหน่ง แล้วตอนคำนวณให้นำไปใช้ด้วย" -- per-item rounding_mode/decimal_places on
+    // statutory_items, applied by StatutoryCalculationEngine::applyRounding(). TH_SSO's own 5% rate
+    // and 1650-15000 min/max base clamp stay unchanged throughout; only rounding_mode/decimal_places
+    // are varied per scenario via TaxStatutoryModel::save() against the real master item row.
+    echo "=== Scenario 9: per-item rounding_mode/decimal_places config, applied at calc time ===\n";
+    $ssoItem = $taxModel->get($ssoId);
+    check('fixture sanity: TH_SSO default rounding_mode is round/2dp (pre-existing rows, byte-identical to old hardcoded behavior)', [$ssoItem['rounding_mode'], (int)$ssoItem['decimal_places']], ['round', 2]);
+
+    // base=1822 * 5% = 91.1 exactly -- 'up' must ceil past the nearest integer, 'down' must floor short of it.
+    $saveRes = $taxModel->save(array_merge($ssoItem, ['id' => $ssoId, 'rounding_mode' => 'up', 'decimal_places' => 0]), 1);
+    check('save rounding_mode=up, decimal_places=0', $saveRes['status'], true);
+    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 1822, 'sso_eligible_earnings' => 1822], '2026-07-01');
+    check('rounding_mode=up: 91.1 ceils to 92', $result['employee_amount'], 92.0);
+
+    $saveRes = $taxModel->save(array_merge($ssoItem, ['id' => $ssoId, 'rounding_mode' => 'down', 'decimal_places' => 0]), 1);
+    check('save rounding_mode=down, decimal_places=0', $saveRes['status'], true);
+    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 1822, 'sso_eligible_earnings' => 1822], '2026-07-01');
+    check('rounding_mode=down: 91.1 floors to 91', $result['employee_amount'], 91.0);
+
+    // base=1837.2 * 5% = 91.86 -- the dropped 2nd-decimal digit (6) is >=5, so 'round' rounds UP to
+    // 91.9 while 'none' (truncate, no adjustment) must still land on 91.8 -- the one pair of modes
+    // that genuinely differ for a positive value (up/down never differ from round/none by more than
+    // the rounding boundary itself).
+    $saveRes = $taxModel->save(array_merge($ssoItem, ['id' => $ssoId, 'rounding_mode' => 'round', 'decimal_places' => 1]), 1);
+    check('save rounding_mode=round, decimal_places=1', $saveRes['status'], true);
+    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 1837.2, 'sso_eligible_earnings' => 1837.2], '2026-07-01');
+    check('rounding_mode=round, 1dp: 91.86 rounds to 91.9', $result['employee_amount'], 91.9);
+
+    $saveRes = $taxModel->save(array_merge($ssoItem, ['id' => $ssoId, 'rounding_mode' => 'none', 'decimal_places' => 1]), 1);
+    check('save rounding_mode=none, decimal_places=1', $saveRes['status'], true);
+    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 1837.2, 'sso_eligible_earnings' => 1837.2], '2026-07-01');
+    check('rounding_mode=none, 1dp: 91.86 truncates to 91.8 (no round-up)', $result['employee_amount'], 91.8);
+
+    $saveRes = $taxModel->save(array_merge($ssoItem, ['id' => $ssoId, 'rounding_mode' => 'zzz_invalid', 'decimal_places' => 2]), 1);
+    check('save rejects an invalid rounding_mode', $saveRes['status'], false);
+
+    $saveRes = $taxModel->save(array_merge($ssoItem, ['id' => $ssoId, 'rounding_mode' => 'round', 'decimal_places' => 9]), 1);
+    check('save rejects decimal_places out of the 0-4 range', $saveRes['status'], false);
 
 } finally {
     $pdo->rollBack();

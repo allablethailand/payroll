@@ -101,7 +101,13 @@ class PayrollRunModel {
                     (SELECT from_state FROM `payroll_run_audit_logs` WHERE run_id = r.id AND action = 'cancel' ORDER BY id DESC LIMIT 1) AS cancelled_from_state,
                     -- 2026-08-29 ('ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน Lock ข้อมูลแล้วกี่คน')
                     (SELECT COUNT(*) FROM `payroll_run_employee_verifications` WHERE run_id = r.id AND is_verified = 1) AS verified_employee_count,
-                    (SELECT COUNT(*) FROM `payroll_run_employee_verifications` WHERE run_id = r.id AND is_locked = 1) AS locked_employee_count
+                    (SELECT COUNT(*) FROM `payroll_run_employee_verifications` WHERE run_id = r.id AND is_locked = 1) AS locked_employee_count,
+                    -- 2026-08-29, explicit request: 'ถ้าข้อมูลไม่สมบูรณ์ให้มีบอกด้วย ว่าไม่สมบูรณ์กี่คน'
+                    -- (indicate how many employees have incomplete data) -- calc_status='error' on
+                    -- payroll_run_details is the existing per-line marker recalculate() already sets
+                    -- when a line couldn't be fully computed (e.g. no rate configured); this just
+                    -- surfaces the count on the List page instead of only inside Run Detail.
+                    (SELECT COUNT(*) FROM `payroll_run_details` WHERE run_id = r.id AND calc_status = 'error') AS error_employee_count
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `employees` creator ON creator.id = r.created_by
@@ -209,7 +215,9 @@ class PayrollRunModel {
                     COALESCE(v.is_verified, 0) AS is_verified, v.verified_at,
                     vu.name_th AS verified_by_name_th, vu.name_en AS verified_by_name_en,
                     COALESCE(v.is_locked, 0) AS is_locked, v.locked_at,
-                    lu.name_th AS locked_by_name_th, lu.name_en AS locked_by_name_en
+                    lu.name_th AS locked_by_name_th, lu.name_en AS locked_by_name_en,
+                    -- 2026-08-29: comment count shown as a notification badge on the Comment button
+                    (SELECT COUNT(*) FROM `payroll_run_employee_comments` c WHERE c.run_id = d.run_id AND c.employee_id = d.employee_id) AS comment_count
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `payroll_run_employee_verifications` v ON v.run_id = d.run_id AND v.employee_id = d.employee_id
@@ -228,6 +236,27 @@ class PayrollRunModel {
             $row['is_locked'] = (bool)$row['is_locked'];
         }
         return $rows;
+    }
+
+    /**
+     * 2026-08-29, explicit request: "ถ้าข้อมูลไม่สมบูรณ์ให้มีบอกด้วย ว่าไม่สมบูรณ์กี่คนและมีปุ่ม i ให้คลิก
+     * ดูรายละเอียดในหน้ารายการได้เลย" -- backs the List page's "i" info button. Deliberately a
+     * separate, narrow, on-demand lookup (not part of list()'s own per-row query) so viewing the
+     * whole List doesn't have to fetch every erroring employee for every run up front -- only the
+     * one run the admin actually clicked "i" on.
+     */
+    public function errorEmployeesForRun(int $runId, int $compId): array {
+        if (!$this->get($runId, $compId)) {
+            return [];
+        }
+        $sql = "SELECT e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, d.calc_errors
+                FROM `payroll_run_details` d
+                JOIN `employees` e ON e.id = d.employee_id
+                WHERE d.run_id = :run_id AND d.calc_status = 'error'
+                ORDER BY e.employee_no ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':run_id' => $runId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function getAuditLog(int $runId, int $compId): array {
@@ -384,6 +413,18 @@ class PayrollRunModel {
         }
     }
 
+    /**
+     * 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น ไม่สามารถเพิ่ม
+     * แก้ไข ลบได้" -- deliberately NOT the same cutoff as "View Mode" elsewhere on this page
+     * (currentRun.state !== 'draft', which also covers pending_approval/approved/rejected/
+     * need_info) -- comments are a running reminder log meant to stay usable WHILE a run is still
+     * actively moving through approval/back-and-forth ("ไว้เตือนตัวเอง"), so they only actually lock
+     * once the run has genuinely finished: paid (money has moved), locked (sealed), or cancelled
+     * (nothing more will ever happen to it). rejected/need_info are explicitly excluded -- those are
+     * still "in progress" states the run can be resubmitted from.
+     */
+    private const COMMENT_LOCKED_STATES = ['paid', 'locked', 'cancelled'];
+
     /** Verified/locked counts for the run list page ("ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้ว
      *  กี่คน Lock ข้อมูลแล้วกี่คน") -- see list()'s own new subqueries below for the actual per-run count. */
     public function employeeCommentAdd(int $runId, int $compId, int $employeeId, ?string $tag, string $comment, int $userId, bool $isAdmin): array {
@@ -393,6 +434,9 @@ class PayrollRunModel {
         $run = $this->get($runId, $compId);
         if (!$run) {
             return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if (in_array($run['state'], self::COMMENT_LOCKED_STATES, true)) {
+            return ['status' => false, 'message' => 'This payroll run has finished processing -- comments are view-only.'];
         }
         $comment = trim($comment);
         if ($comment === '') {
@@ -410,6 +454,60 @@ class PayrollRunModel {
                 VALUES (:run_id, :employee_id, :tag, :comment, :created_by)")
             ->execute([':run_id' => $runId, ':employee_id' => $employeeId, ':tag' => $tag, ':comment' => $comment, ':created_by' => $userId]);
         return ['status' => true, 'message' => 'Saved successfully.', 'id' => (int)$this->db->lastInsertId()];
+    }
+
+    /** 2026-08-29, explicit follow-up: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย". Not restricted to
+     *  the original author -- same "anyone with can_process_payroll can act" convention as every
+     *  other mutation on this page (no per-row ownership concept exists elsewhere in this class
+     *  either). updated_by/updated_at let the UI show a small "(edited)" marker only when genuinely
+     *  applicable -- a never-edited comment keeps both null. */
+    public function employeeCommentUpdate(int $runId, int $compId, int $commentId, ?string $tag, string $comment, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit comments on this payroll run.'];
+        }
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if (in_array($run['state'], self::COMMENT_LOCKED_STATES, true)) {
+            return ['status' => false, 'message' => 'This payroll run has finished processing -- comments are view-only.'];
+        }
+        $comment = trim($comment);
+        if ($comment === '') {
+            return ['status' => false, 'message' => 'Comment text is required.'];
+        }
+        if ($tag !== null && !in_array($tag, ['in_progress', 'completed', 'error'], true)) {
+            return ['status' => false, 'message' => 'Invalid tag.'];
+        }
+        $stmt = $this->db->prepare("UPDATE `payroll_run_employee_comments`
+            SET tag = :tag, comment = :comment, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id AND run_id = :run_id");
+        $stmt->execute([':tag' => $tag, ':comment' => $comment, ':updated_by' => $userId, ':id' => $commentId, ':run_id' => $runId]);
+        if ($stmt->rowCount() === 0) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        return ['status' => true, 'message' => 'Saved successfully.'];
+    }
+
+    /** Hard delete -- see this table's own migration docblock for why (a lightweight reminder note,
+     *  not compliance/audit data). */
+    public function employeeCommentDelete(int $runId, int $compId, int $commentId, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to delete comments on this payroll run.'];
+        }
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if (in_array($run['state'], self::COMMENT_LOCKED_STATES, true)) {
+            return ['status' => false, 'message' => 'This payroll run has finished processing -- comments are view-only.'];
+        }
+        $stmt = $this->db->prepare("DELETE FROM `payroll_run_employee_comments` WHERE id = :id AND run_id = :run_id");
+        $stmt->execute([':id' => $commentId, ':run_id' => $runId]);
+        if ($stmt->rowCount() === 0) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 
     /** Oldest-first (a chronological timeline read top-to-bottom), unlike the run-level audit log
@@ -3105,6 +3203,12 @@ class PayrollRunModel {
         // in here rather than a separate GET endpoint since this is fetched fresh every time the
         // Raw Sync Data modal opens anyway, same "always pull fresh" convention as everything else.
         $row['exemption'] = $this->getEmployeeExemption($runId, $compId, $employeeId);
+        // 2026-08-29, explicit request: "ให้แสดงในข้อมูลด้วยว่า จำนวนวันในรอบนั้นกี่วัน วันทำงานกี่วัน
+        // วันหยุดนักขัตฤกษ์กี่วัน วันหยุดประจำสัปดาห์กี่วัน" -- computed from THIS app's own company
+        // holiday/shift configuration (not from Origami), shown alongside the raw `working_days`
+        // Origami itself reported so an admin can see both side by side. See
+        // SetupRulesModel::workingDaysBreakdown()'s own docblock.
+        $row['working_days_breakdown'] = $this->setupRulesModel->workingDaysBreakdown($employeeId, $compId, $run['period_start_date'], $run['period_end_date']);
         return $row;
     }
 
