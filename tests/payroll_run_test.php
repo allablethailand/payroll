@@ -891,6 +891,92 @@ try {
     checkTrue('full-period has a PED earning line', count(array_filter($fullDetail['earning_breakdown'], fn($l) => $l['source'] === 'ped')) === 1);
     check('both core employees calculated cleanly', $fullDetail['calc_status'] === 'calculated' && $midDetail['calc_status'] === 'calculated', true);
 
+    // ---------- Employee Verify/Lock/Comments (2026-08-29, explicit request: "อยากให้มีปุ่ม Verify
+    // ของแต่ละคน และสามารถ Lock Unlock ได้ โดยถ้า Lock แล้วข้อมูลจะไม่คำนวณใหม่...รวมถึงเพิ่มให้สามารถใส่
+    // Comment ได้ของแต่ละคน...เป็น Timeline...ใส่ tag ได้") -- this section deliberately restores
+    // $runId/$employeeFullId to byte-identical pre-section state before it ends (unlock + a final
+    // recalculate()), since every section below this one keeps reading $fullDetail/$midDetail/etc.
+    // (already-captured local snapshots, safe either way) plus a few FRESH reads later in the file
+    // that assume $runId is in its normal fully-computed, unlocked state. ----------
+    echo "=== Employee Lock: recalculate() preserves a locked employee's row byte-for-byte ===\n";
+    $preLockGross = (float)$fullDetail['gross_amount'];
+    $lockRes = $runModel->setEmployeeLocked($runId, $compId, $employeeFullId, true, $adminUserId, true);
+    checkTrue('setEmployeeLocked(true) succeeds' . (empty($lockRes['status']) ? " ({$lockRes['message']})" : ''), $lockRes['status']);
+    $detailsRightAfterLock = $runModel->getDetails($runId, $compId);
+    $fullDetailRightAfterLock = current(array_filter($detailsRightAfterLock, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    check('is_locked reflects true right after locking', $fullDetailRightAfterLock['is_locked'] ?? null, true);
+    check('is_verified is independently false (never touched by locking)', $fullDetailRightAfterLock['is_verified'] ?? null, false);
+
+    $directRecalcRes = $runModel->recalculate($runId, $compId, $adminUserId, true);
+    checkTrue('a direct recalculate() call still succeeds with a locked employee present' . (empty($directRecalcRes['status']) ? " ({$directRecalcRes['message']})" : ''), $directRecalcRes['status']);
+    $detailsAfterRecalcWithLock = $runModel->getDetails($runId, $compId);
+    $fullDetailAfterRecalcWithLock = current(array_filter($detailsAfterRecalcWithLock, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    check('LOCKED employee gross_amount is byte-for-byte unchanged after recalculate()', (float)$fullDetailAfterRecalcWithLock['gross_amount'], $preLockGross);
+    check('LOCKED employee is_locked still true after recalculate() (verification row untouched by recalculate itself)', $fullDetailAfterRecalcWithLock['is_locked'] ?? null, true);
+    $midDetailAfterRecalcWithLock = current(array_filter($detailsAfterRecalcWithLock, fn($d) => (int)$d['employee_id'] === $employeeMidId));
+    checkTrue('an UNLOCKED employee (mid-joiner) still recalculates normally alongside a locked one', $midDetailAfterRecalcWithLock !== false && $midDetailAfterRecalcWithLock['calc_status'] === 'calculated');
+
+    echo "=== Employee Lock: blocks every other per-employee mutation entry point ===\n";
+    $blockedManualLineRes = $runModel->addManualLine($runId, $compId, $employeeFullId, $otPedTypeId, 100, $adminUserId, true);
+    check('addManualLine() rejected for a locked employee', $blockedManualLineRes['status'], false);
+    $blockedExemptionRes = $runModel->saveEmployeeExemption($runId, $compId, $employeeFullId, true, false, null, $adminUserId, true);
+    check('saveEmployeeExemption() rejected for a locked employee', $blockedExemptionRes['status'], false);
+
+    echo "=== Employee Verify: independent of Lock, no effect on recalculation ===\n";
+    $verifyRes = $runModel->setEmployeeVerified($runId, $compId, $employeeFullId, true, $adminUserId, true);
+    checkTrue('setEmployeeVerified(true) succeeds on an already-locked employee (independent flags)' . (empty($verifyRes['status']) ? " ({$verifyRes['message']})" : ''), $verifyRes['status']);
+    $detailsAfterVerify = $runModel->getDetails($runId, $compId);
+    $fullDetailAfterVerify = current(array_filter($detailsAfterVerify, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    check('is_verified now true, is_locked still true (both flags coexist)', [$fullDetailAfterVerify['is_verified'] ?? null, $fullDetailAfterVerify['is_locked'] ?? null], [true, true]);
+
+    $unverifyRes = $runModel->setEmployeeVerified($runId, $compId, $employeeFullId, false, $adminUserId, true);
+    checkTrue('setEmployeeVerified(false) succeeds while still locked' . (empty($unverifyRes['status']) ? " ({$unverifyRes['message']})" : ''), $unverifyRes['status']);
+    $detailsAfterUnverify = $runModel->getDetails($runId, $compId);
+    $fullDetailAfterUnverify = current(array_filter($detailsAfterUnverify, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    check('is_verified false again, is_locked UNAFFECTED (still true)', [$fullDetailAfterUnverify['is_verified'] ?? null, $fullDetailAfterUnverify['is_locked'] ?? null], [false, true]);
+
+    echo "=== Employee Lock: list() surfaces verified/locked counts per run ===\n";
+    $runsListForCounts = $runModel->list($compId, ['state' => 'draft']);
+    $thisRunInList = current(array_filter($runsListForCounts, fn($r) => (int)$r['id'] === $runId));
+    check('locked_employee_count reflects the 1 locked employee', (int)($thisRunInList['locked_employee_count'] ?? -1), 1);
+    check('verified_employee_count reflects 0 (verified was set then cleared above)', (int)($thisRunInList['verified_employee_count'] ?? -1), 0);
+
+    echo "=== Employee Lock: unlocking restores normal recomputation ===\n";
+    $unlockRes = $runModel->setEmployeeLocked($runId, $compId, $employeeFullId, false, $adminUserId, true);
+    checkTrue('setEmployeeLocked(false) succeeds' . (empty($unlockRes['status']) ? " ({$unlockRes['message']})" : ''), $unlockRes['status']);
+    $finalRecalcRes = $runModel->recalculate($runId, $compId, $adminUserId, true);
+    checkTrue('recalculate() succeeds again after unlocking', $finalRecalcRes['status']);
+    $detailsAfterFinalRecalc = $runModel->getDetails($runId, $compId);
+    $fullDetailAfterFinalRecalc = current(array_filter($detailsAfterFinalRecalc, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    check('gross_amount recomputed fresh once unlocked (still 31000, same inputs -> same answer)', (float)$fullDetailAfterFinalRecalc['gross_amount'], $preLockGross);
+    check('is_locked/is_verified both false again (verification row fully cleared)', [$fullDetailAfterFinalRecalc['is_verified'] ?? null, $fullDetailAfterFinalRecalc['is_locked'] ?? null], [false, false]);
+    $unblockedManualLineRes = $runModel->addManualLine($runId, $compId, $employeeFullId, $otPedTypeId, 100, $adminUserId, true, 'proves editing works again post-unlock');
+    checkTrue('addManualLine() succeeds again once unlocked' . (empty($unblockedManualLineRes['status']) ? " ({$unblockedManualLineRes['message']})" : ''), $unblockedManualLineRes['status']);
+    // Cleanup: remove the line just added above so $runId's totals are back to their exact
+    // pre-section state (removeManualLine() itself triggers one more recalculate()).
+    $cleanupLines = $runModel->manualLinesForEmployee($compId, $runId, $employeeFullId);
+    $cleanupLine = current(array_filter($cleanupLines, fn($l) => $l['note'] === 'proves editing works again post-unlock'));
+    if ($cleanupLine !== false) {
+        $runModel->removeManualLine($runId, $compId, (int)$cleanupLine['id'], $adminUserId, true);
+    }
+
+    echo "=== Employee Comments: append-only timeline with tags ===\n";
+    $commentRes1 = $runModel->employeeCommentAdd($runId, $compId, $employeeFullId, 'in_progress', 'Checking SSO amount with HR', $adminUserId, true);
+    checkTrue('employeeCommentAdd() with tag=in_progress succeeds' . (empty($commentRes1['status']) ? " ({$commentRes1['message']})" : ''), $commentRes1['status']);
+    $commentRes2 = $runModel->employeeCommentAdd($runId, $compId, $employeeFullId, 'completed', 'Confirmed correct, no action needed', $adminUserId, true);
+    checkTrue('employeeCommentAdd() with tag=completed succeeds', $commentRes2['status']);
+    $commentResNoTag = $runModel->employeeCommentAdd($runId, $compId, $employeeFullId, null, 'Just a plain note, no tag', $adminUserId, true);
+    checkTrue('employeeCommentAdd() with a null tag succeeds (tag is optional)', $commentResNoTag['status']);
+    $badTagRes = $runModel->employeeCommentAdd($runId, $compId, $employeeFullId, 'not_a_real_tag', 'x', $adminUserId, true);
+    check('employeeCommentAdd() rejects an invalid tag', $badTagRes['status'], false);
+    $emptyCommentRes = $runModel->employeeCommentAdd($runId, $compId, $employeeFullId, 'in_progress', '   ', $adminUserId, true);
+    check('employeeCommentAdd() rejects a blank/whitespace-only comment', $emptyCommentRes['status'], false);
+
+    $timeline = $runModel->employeeComments($runId, $compId, $employeeFullId);
+    check('3 comments in the timeline (2 tagged + 1 untagged; the 2 rejected calls above never inserted)', count($timeline), 3);
+    check('timeline is oldest-first (chronological)', [$timeline[0]['tag'], $timeline[1]['tag'], $timeline[2]['tag']], ['in_progress', 'completed', null]);
+    check('each comment records who posted it (created_by)', (int)($timeline[0]['created_by'] ?? 0), $adminUserId);
+
     echo "=== Custom-item PED assignment flows into the real calculation ===\n";
     $customDedLines = array_values(array_filter($fullDetail['deduction_breakdown'], fn($l) => $l['source'] === 'ped' && !empty($l['is_custom'])));
     checkTrue('exactly one custom-item deduction line present (not silently dropped by the PED JOIN)', count($customDedLines) === 1);
@@ -910,6 +996,74 @@ try {
     check('opted-out employee gets 0 SSO deduction', $optOutSso !== null ? (float)$optOutSso['employee_amount'] : null, 0.0);
     check('opted-out employee SSO line is flagged not-enrolled', $optOutSso['note'] ?? null, 'employee_not_enrolled');
     check('opted-out employee gets 0 PVD deduction', $optOutPvd !== null ? (float)$optOutPvd['employee_amount'] : null, 0.0);
+
+    // 2026-08-29, real bug found and fixed (explicit report: "หักประกันสังคมจะไม่ใช่คำนวณจากฐานอย่างเดียว
+    // ต้องมาจากที่เราตั้งค่าในรายได้ ว่ารายการไหนหักประกันสังคม ต้องเอามาคำนวณทั้งหมด") -- every fixture
+    // employee above uses base_salary=30000, already well above the SSO wage ceiling either way
+    // (capped regardless of whether a calc_sso-flagged allowance is added on top), so a dedicated
+    // LOW-salary employee is needed here to actually observe the fix changing the computed amount --
+    // isolated on its own future-dated period (2099) so no real dev-DB employee or other fixture in
+    // this file can possibly leak into its eligibility window.
+    echo "=== SSO/PF base now includes calc_sso/calc_pf-flagged earning items, not just base salary ===\n";
+    $ssoRateRow = $pdo->query("SELECT si.id, rh.employee_rate, rh.max_base_amount, rh.max_employee_contribution
+        FROM statutory_items si JOIN statutory_item_rate_history rh ON rh.statutory_item_id = si.id
+        WHERE si.code = 'TH_SSO' AND rh.deleted_at IS NULL AND rh.effective_date <= CURDATE() AND (rh.end_date IS NULL OR rh.end_date >= CURDATE())
+        ORDER BY rh.effective_date DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    checkTrue('fixture: an active TH_SSO rate is configured (needed to compute an expected number)', $ssoRateRow !== false);
+
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_SSOBASE_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'ฐานประกันสังคม', ':name_en' => 'Test', ':surname_en' => 'SsoBase',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2099-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => 5000, ':salary_effective_date' => '2099-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 0, ':tax_exempt' => 0,
+    ]);
+    $employeeSsoBaseId = (int)$pdo->lastInsertId();
+    $ssoBaseCycleRes = $cycleModel->save($compId, [
+        'cycle_name' => 'SSO Base Fix Test Cycle', 'payroll_frequency' => 'monthly',
+        'period_start_day_of_month' => 1, 'period_end_day_of_month' => 31,
+        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5, 'ot_cutoff_type' => 'same_as_attendance',
+        'bank_file_format_id' => 1, 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('fixture: dedicated cycle for the SSO-base test created', $ssoBaseCycleRes['status']);
+    $ssoBaseRunRes = $runModel->create($compId, [
+        'run_name' => 'SSO Base Fix Test Run', 'cycle_id' => $ssoBaseCycleRes['id'],
+        'period_start_date' => '2099-01-01', 'period_end_date' => '2099-01-31', 'payment_date' => '2099-02-05',
+    ], $adminUserId, true);
+    checkTrue('fixture: dedicated run for the SSO-base test created' . (empty($ssoBaseRunRes['status']) ? " ({$ssoBaseRunRes['message']})" : ''), $ssoBaseRunRes['status']);
+    $ssoBaseRunId = $ssoBaseRunRes['id'];
+    $ssoBaseRecalcRes = $runModel->recalculate($ssoBaseRunId, $compId, $adminUserId, true);
+    checkTrue('fixture: dedicated run recalculated' . (empty($ssoBaseRecalcRes['status']) ? " ({$ssoBaseRecalcRes['message']})" : ''), $ssoBaseRecalcRes['status']);
+
+    $beforeAllowanceDetails = $runModel->getDetails($ssoBaseRunId, $compId);
+    $beforeAllowanceDetail = current(array_filter($beforeAllowanceDetails, fn($d) => (int)$d['employee_id'] === $employeeSsoBaseId));
+    checkTrue('fixture: the low-salary employee is present with no allowance yet', $beforeAllowanceDetail !== false);
+    $ssoBeforeAllowance = array_values(array_filter($beforeAllowanceDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? null;
+    $expectedBeforeRaw = round(5000 * (float)$ssoRateRow['employee_rate'] / 100, 2);
+    $expectedBefore = $ssoRateRow['max_employee_contribution'] !== null ? min($expectedBeforeRaw, (float)$ssoRateRow['max_employee_contribution']) : $expectedBeforeRaw;
+    check('SSO on base salary alone (5000) matches the expected rate-based amount, no allowance yet', (float)($ssoBeforeAllowance['employee_amount'] ?? -1), $expectedBefore);
+
+    // OT is seeded with calc_sso=1 by PayrollEarningDeductionTypeModel::seedDefaults() -- reusing
+    // $otPedTypeId (already resolved earlier in this file) rather than a bespoke fixture PED type.
+    $addAllowanceRes = $runModel->addManualLine($ssoBaseRunId, $compId, $employeeSsoBaseId, $otPedTypeId, 2000, $adminUserId, true, 'calc_sso-flagged allowance for the SSO-base fix test');
+    checkTrue('fixture: calc_sso-flagged manual earning line (+2000) added' . (empty($addAllowanceRes['status']) ? " ({$addAllowanceRes['message']})" : ''), $addAllowanceRes['status']);
+    $afterAllowanceDetails = $runModel->getDetails($ssoBaseRunId, $compId);
+    $afterAllowanceDetail = current(array_filter($afterAllowanceDetails, fn($d) => (int)$d['employee_id'] === $employeeSsoBaseId));
+    $ssoAfterAllowance = array_values(array_filter($afterAllowanceDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? null;
+    $expectedAfterRaw = round(7000 * (float)$ssoRateRow['employee_rate'] / 100, 2);
+    $expectedAfter = $ssoRateRow['max_employee_contribution'] !== null ? min($expectedAfterRaw, (float)$ssoRateRow['max_employee_contribution']) : $expectedAfterRaw;
+    check('SSO now correctly includes the calc_sso-flagged +2000 allowance (base 5000+2000=7000 * rate)', (float)($ssoAfterAllowance['employee_amount'] ?? -1), $expectedAfter);
+    checkTrue('the allowance genuinely increased the SSO deduction versus base-salary-alone (proves the fix, not a coincidence)', ($ssoAfterAllowance['employee_amount'] ?? 0) > ($ssoBeforeAllowance['employee_amount'] ?? 0));
+
+    // A DEDUCTION line (not earning) must never be mistaken for an eligible earning even if its
+    // item_code happens to coincide -- add one and confirm the SSO base is unaffected.
+    $custDeductRes = $runModel->addManualLine($ssoBaseRunId, $compId, $employeeSsoBaseId, null, 500, $adminUserId, true, null, 'Unrelated deduction', 'deduction');
+    checkTrue('fixture: an unrelated custom deduction line added', $custDeductRes['status']);
+    $afterDeductionDetails = $runModel->getDetails($ssoBaseRunId, $compId);
+    $afterDeductionDetail = current(array_filter($afterDeductionDetails, fn($d) => (int)$d['employee_id'] === $employeeSsoBaseId));
+    $ssoAfterDeduction = array_values(array_filter($afterDeductionDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? null;
+    check('a deduction line never affects the SSO earnings base', (float)($ssoAfterDeduction['employee_amount'] ?? -1), $expectedAfter);
 
     echo "=== Mid-period leaver pro-rate fix ===\n";
     checkTrue('mid-period leaver IS prorated', $leaverDetail['prorate_days'] !== null);

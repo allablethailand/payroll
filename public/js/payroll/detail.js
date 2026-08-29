@@ -32,6 +32,15 @@ function toLocalDateOnlyRd(value) {
 function escapeHtmlRd(str) {
     return $('<div>').text(str === null || str === undefined ? '' : str).html();
 }
+// 2026-08-29: escapeHtmlRd() alone is NOT attribute-safe -- a text node's serialized innerHTML
+// escapes <, >, & but NOT " (browsers only need to escape a quote inside an ATTRIBUTE value, not a
+// plain text node), so embedding its output inside a double-quoted HTML attribute (e.g. an employee
+// name containing a literal ") could break out of the attribute. Same bug class already documented
+// elsewhere in this app (see escapeAttrEct() in employment-certificate-template.js) -- fixed the
+// same way, only where an attribute context actually needs it (commentButtonRd()'s data-employee-label).
+function escapeAttrRd(str) {
+    return escapeHtmlRd(str).replace(/"/g, '&quot;');
+}
 function fmtNumRd(n) {
     return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -931,15 +940,96 @@ function removeEmployeeButtonRd(row) {
 // converted to a button-group earlier the same day but with a different btn-outline-* sub-style,
 // left it the one inconsistent holdout after the sitewide sweep standardized everything else to
 // this exact pattern; matched here now).
+// 2026-08-29, explicit request: "อยากให้มีปุ่ม Verify ของแต่ละคน และสามารถ Lock Unlock ได้" -- both
+// available on any draft run only (same gating as manageItemsButtonRd()/removeEmployeeButtonRd()
+// above); the button's own current-state is read back off `data-*` by the click handlers
+// (.btn-verify-employee/.btn-lock-employee) so a toggle click always flips whatever the row is
+// CURRENTLY showing, not a stale value captured at render time.
+function verifyLockButtonsRd(row) {
+    if (!currentRun || currentRun.state !== 'draft') {
+        return '';
+    }
+    const verifyTitle = row.is_verified ? (langData['action_unverify'] || 'Unverify') : (langData['action_verify'] || 'Verify');
+    const verifyCls = row.is_verified ? 'text-success' : 'text-secondary';
+    const lockTitle = row.is_locked ? (langData['action_unlock'] || 'Unlock') : (langData['action_lock'] || 'Lock');
+    const lockCls = row.is_locked ? 'text-danger' : 'text-secondary';
+    return `<button type="button" class="btn btn-link border-start ${verifyCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
+        <button type="button" class="btn btn-link border-start ${lockCls} btn-lock-employee" data-employee-id="${row.employee_id}" data-locked="${row.is_locked ? 'true' : 'false'}" title="${lockTitle}"><i class="fa-solid ${row.is_locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>`;
+}
+// Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
+// destructive, "ไว้เตือนตัวเอง" -- a reminder note is useful regardless of where the run currently is).
+function commentButtonRd(row) {
+    const label = `${escapeAttrRd(row.employee_no)} - ${escapeAttrRd(employeeDisplayNameRd(row))}`;
+    return `<button type="button" class="btn btn-link text-warning border-start btn-comment-employee" data-employee-id="${row.employee_id}" data-employee-label="${label}" title="${langData['action_comments'] || 'Comments'}"><i class="fa-solid fa-comments"></i></button>`;
+}
 function runDetailActionsRd(row) {
     return `<div class="btn-group border rounded-3 bg-white">
         <button type="button" class="btn btn-link text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
         ${rawSyncDataButtonRd(row)}
         ${manageItemsButtonRd(row)}
+        ${verifyLockButtonsRd(row)}
+        ${commentButtonRd(row)}
         ${removeEmployeeButtonRd(row)}
     </div>`;
 }
 
+/* ---------- Formula popover (2026-08-29, explicit request: "ถ้าส่วนไหนที่เป็นสูตรการคำนวณให้มีปุ่มกดดูได้
+   ว่าคำนวณจากอะไรเป็นอะไร แสดงผลสวยๆเป็น popup hover ตอนชี้และกด") -- a small info button next to any
+   earning/deduction/statutory line whose `.note` field is a recognized machine-generated formula
+   trace (SyncPayResolver's own `sync_<event>_<value><unit>` notes, or a few known statutory engine/
+   ThPitCalculator notes) -- opens a Bootstrap popover (trigger "hover click" per the explicit
+   request for both) with a human-readable From -> To breakdown. `.note` is the ONLY calculation-
+   trace data this app's data model actually has (there is no separate audit-of-inputs table), so
+   this is a best-effort parse of that one field, not a full computation-replay system -- a line
+   whose note doesn't match a known pattern (a manually-typed comment, an unrecognized statutory
+   note) gets no button at all rather than a misleading/empty popover. ---------- */
+const FORMULA_EVENT_LABELS_RD = {
+    late: 'formula_event_late', absent: 'formula_event_absent',
+    unpaid_leave: 'formula_event_unpaid_leave', leave_pending: 'formula_event_leave_pending',
+    trip_allowance: 'formula_event_trip_allowance',
+    ot_weekday: 'formula_event_ot_weekday', ot_weekend: 'formula_event_ot_weekend', ot_holiday: 'formula_event_ot_holiday',
+};
+const FORMULA_UNIT_LABELS_RD = { minutes: 'formula_unit_minutes', hours: 'formula_unit_hours', days: 'formula_unit_days', money: null };
+function explainLineNoteRd(note, amount) {
+    if (!note) return null;
+    const syncMatch = note.match(/^sync_(.+?)_([\d.]+)(minutes|hours|days|money)(_corrected)?$/);
+    if (syncMatch) {
+        const [, eventKey, value, unit, corrected] = syncMatch;
+        const eventLabelKey = FORMULA_EVENT_LABELS_RD[eventKey];
+        const eventLabel = eventLabelKey ? (langData[eventLabelKey] || eventKey) : eventKey;
+        const unitLabelKey = FORMULA_UNIT_LABELS_RD[unit];
+        const unitLabel = unitLabelKey ? (langData[unitLabelKey] || unit) : '';
+        const fromText = unit === 'money' ? fmtNumRd(value) : `${value} ${unitLabel}`;
+        const correctedNote = corrected ? `<div class="small text-warning mt-1"><i class="fa-solid fa-pen me-1"></i>${langData['formula_manually_corrected'] || 'Manually corrected from the originally synced value'}</div>` : '';
+        return `<div><strong>${eventLabel}</strong></div>
+            <div class="small text-muted mt-1">${langData['formula_from'] || 'From'}: ${escapeHtmlRd(fromText)}</div>
+            <div class="small text-muted">${langData['formula_to'] || 'To'}: ${fmtNumRd(amount)}</div>
+            ${correctedNote}`;
+    }
+    const knownNotes = {
+        employee_not_enrolled: 'formula_note_not_enrolled',
+        no_rate_configured: 'formula_note_no_rate_configured',
+        no_rate_ever_configured: 'formula_note_no_rate_ever_configured',
+    };
+    if (knownNotes[note]) {
+        return `<div class="small text-muted">${langData[knownNotes[note]] || note}</div>`;
+    }
+    const pitMatch = note.match(/^th_pit_(average|cumulative)_annual_tax_([\d.]+)$/);
+    if (pitMatch) {
+        const methodLabel = pitMatch[1] === 'average' ? (langData['formula_pit_method_average'] || 'Average method (est. annual tax spread evenly)') : (langData['formula_pit_method_cumulative'] || 'Cumulative method (actual tax-to-date)');
+        return `<div><strong>${langData['formula_event_pit'] || 'Personal Income Tax'}</strong></div>
+            <div class="small text-muted mt-1">${methodLabel}</div>
+            <div class="small text-muted">${langData['formula_pit_annual_estimate'] || 'Estimated annual tax'}: ${fmtNumRd(pitMatch[2])}</div>
+            <div class="small text-muted">${langData['formula_to'] || 'To'} (${langData['formula_this_period'] || 'this period'}): ${fmtNumRd(amount)}</div>`;
+    }
+    return null;
+}
+function formulaButtonRd(note, amount) {
+    const content = explainLineNoteRd(note, amount);
+    if (!content) return '';
+    const contentAttr = content.replace(/"/g, '&quot;');
+    return `<button type="button" class="btn btn-sm btn-link p-0 ms-1 text-brand formula-info-btn" data-bs-toggle="popover" data-bs-trigger="hover click" data-bs-html="true" data-bs-placement="top" data-bs-title="${langData['formula_popover_title'] || 'How this was calculated'}" data-bs-content="${contentAttr}"><i class="fa-solid fa-circle-question"></i></button>`;
+}
 /* ---------- Breakdown modal (section 2/3's table doesn't itemize -- it only shows totals): per-
    employee itemized view split into clearly-labeled Earnings / Deductions (Items) / Deductions
    (Statutory) sections, so which line is income vs. a deduction is never ambiguous. ---------- */
@@ -964,7 +1054,7 @@ function breakdownLineRowsRd(lines) {
             : '';
         return `<tr>
             <td>${codeHtml}</td>
-            <td>${escapeHtmlRd(name)}${commentHtml}${payeeHtml}</td>
+            <td>${escapeHtmlRd(name)}${formulaButtonRd(line.note, line.amount)}${commentHtml}${payeeHtml}</td>
             <td class="text-end">${fmtNumRd(line.amount)}</td>
         </tr>`;
     }).join('');
@@ -981,7 +1071,7 @@ function statutoryRowsRd(items) {
         const note = item.note ? ` <span class="text-muted small">(${escapeHtmlRd(item.note)})</span>` : '';
         return `<tr>
             <td><code class="fw-bold text-dark">${escapeHtmlRd(item.code || '-')}</code>${note}</td>
-            <td>${escapeHtmlRd(name)}</td>
+            <td>${escapeHtmlRd(name)}${formulaButtonRd(item.note, item.employee_amount)}</td>
             <td class="text-end">${fmtNumRd(item.employee_amount)}</td>
         </tr>`;
     }).join('');
@@ -1034,6 +1124,15 @@ function renderBreakdownModal(row) {
     // Net Pay lives in the modal-footer now (2026-08-20, explicit request), not the scrollable
     // body -- always visible without scrolling past the itemized sections.
     $('#breakdownModalNetPay').text(fmtNumRd(row.net_amount));
+    // Bootstrap popovers need explicit per-element initialization (no data-attribute auto-init in
+    // this app, see formulaButtonRd()'s own docblock) -- dispose any from a previous employee's
+    // render first (the DOM nodes they were attached to are already gone via .html() above, but the
+    // Popover instances themselves would otherwise leak) before initializing the fresh set.
+    $('#breakdownModalBody .formula-info-btn').each(function () {
+        const existing = bootstrap.Popover.getInstance(this);
+        if (existing) existing.dispose();
+        new bootstrap.Popover(this);
+    });
 }
 $(document).on('click', '.btn-view-breakdown', function () {
     const employeeId = $(this).data('employee-id');
@@ -1204,6 +1303,8 @@ function initRunDetailTable(details) {
         responsive: true,
         data: details,
         columns: [
+            // 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify และ Lock"
+            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => `<input type="checkbox" class="form-check-input run-detail-row-check" data-employee-id="${row.employee_id}">` },
             { data: 'employee_no' },
             { data: null, render: (d, t, row) => escapeHtmlRd(employeeDisplayNameRd(row)) },
             { data: null, className: 'text-center', render: (d, t, row) => dataSourceBadgeRd(row) },
@@ -1213,6 +1314,7 @@ function initRunDetailTable(details) {
             { data: 'net_amount', className: 'text-end fw-bold', render: d => fmtNumRd(d) },
             { data: 'calc_status', render: d => calcStatusBadgeRd(d) },
             { data: 'calc_errors', render: d => calcErrorsRemarkRd(d) },
+            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => verifyLockBadgesRd(row) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, className: 'all', orderable: false, render: (d, t, row) => runDetailActionsRd(row) },
@@ -1221,27 +1323,204 @@ function initRunDetailTable(details) {
         searching: details.length > 10,
         info: false,
         language: getTableLang(),
-        drawCallback: function () { getTableLang(); },
+        drawCallback: function () { getTableLang(); updateRunDetailBulkBar(); },
         // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-        // rollout, client mode (plain `data:` array, no ajax at all). Excludes the actions column (9).
+        // rollout, client mode (plain `data:` array, no ajax at all). Excludes the checkbox (0),
+        // verify/lock (10), and actions (11) columns.
         initComplete: function () {
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'employee_no' },
-                    { index: 1, key: 'name' },
-                    { index: 2, key: 'data_source' },
-                    { index: 3, key: 'base_salary_amount' },
-                    { index: 4, key: 'gross_amount' },
-                    { index: 5, key: 'total_deduction_amount' },
-                    { index: 6, key: 'net_amount' },
-                    { index: 7, key: 'calc_status' },
-                    { index: 8, key: 'calc_errors' },
+                    { index: 1, key: 'employee_no' },
+                    { index: 2, key: 'name' },
+                    { index: 3, key: 'data_source' },
+                    { index: 4, key: 'base_salary_amount' },
+                    { index: 5, key: 'gross_amount' },
+                    { index: 6, key: 'total_deduction_amount' },
+                    { index: 7, key: 'net_amount' },
+                    { index: 8, key: 'calc_status' },
+                    { index: 9, key: 'calc_errors' },
                 ]
             });
         }
     });
 }
+
+/* ==================== Employee Verify / Lock / Comments (2026-08-29) ====================
+   Explicit request: per-employee Verify + Lock/Unlock (single-row buttons + multi-select checkbox
+   bulk actions), surfaced verified/locked counts, and a per-employee comment timeline modal with a
+   status tag. Mirrors this page's own established .btn-group/border/rounded-3/bg-white action-row
+   idiom (runDetailActionsRd()) and showConfirm()/callRunAction() patterns already used for every
+   other mutating action here. ==================== */
+function verifyLockBadgesRd(row) {
+    const verified = row.is_verified
+        ? `<span class="badge bg-success-subtle text-success" title="${(langData['verify_status_verified'] || 'Verified')}"><i class="fa-solid fa-check-double"></i></span>`
+        : '';
+    const locked = row.is_locked
+        ? `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${(langData['lock_status_locked'] || 'Locked')}"><i class="fa-solid fa-lock"></i></span>`
+        : '';
+    return verified + locked || '<span class="text-muted">-</span>';
+}
+function updateRunDetailBulkBar() {
+    const count = $('.run-detail-row-check:checked').length;
+    $('#runDetailBulkCount').text(count);
+    $('#runDetailBulkBar').toggleClass('d-none', count === 0);
+    const total = $('.run-detail-row-check').length;
+    $('#runDetailSelectAll').prop('checked', total > 0 && count === total)
+        .prop('indeterminate', count > 0 && count < total);
+}
+$(document).on('change', '#runDetailSelectAll', function () {
+    $('.run-detail-row-check').prop('checked', $(this).is(':checked'));
+    updateRunDetailBulkBar();
+});
+$(document).on('change', '.run-detail-row-check', function () {
+    updateRunDetailBulkBar();
+});
+function selectedRunDetailEmployeeIds() {
+    return $('.run-detail-row-check:checked').map(function () { return Number($(this).data('employee-id')); }).get();
+}
+function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage) {
+    const employeeIds = selectedRunDetailEmployeeIds();
+    if (!employeeIds.length) return;
+    showConfirm(confirmTitle, confirmMessage, function () {
+        $.ajax({
+            url: `${BASE_URL}${url}`, method: 'POST', contentType: 'application/json', dataType: 'json',
+            data: JSON.stringify(Object.assign({ id: PAYROLL_RUN_ID, employee_ids: employeeIds }, payload)),
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                    loadRunDetail();
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        });
+    });
+}
+$(document).on('click', '#btnBulkVerify', function () {
+    bulkVerifyLockRd('/api/payroll-run.employee-verify.bulk', { verified: true },
+        langData['confirm_bulk_verify_title'] || 'Verify selected employees?',
+        langData['confirm_bulk_verify_message'] || 'Mark all selected employees as verified.');
+});
+$(document).on('click', '#btnBulkLock', function () {
+    bulkVerifyLockRd('/api/payroll-run.employee-lock.bulk', { locked: true },
+        langData['confirm_bulk_lock_title'] || 'Lock selected employees?',
+        langData['confirm_bulk_lock_message'] || 'Locked employees will not be recalculated and cannot be edited until unlocked.');
+});
+$(document).on('click', '#btnBulkUnlock', function () {
+    bulkVerifyLockRd('/api/payroll-run.employee-lock.bulk', { locked: false },
+        langData['confirm_bulk_unlock_title'] || 'Unlock selected employees?',
+        langData['confirm_bulk_unlock_message'] || 'Unlocked employees will be recalculated again normally.');
+});
+function singleVerifyLockRd(url, employeeId, payload, successMsgKey) {
+    $.ajax({
+        url: `${BASE_URL}${url}`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify(Object.assign({ id: PAYROLL_RUN_ID, employee_id: employeeId }, payload)),
+        success: function (res) {
+            if (res.status) {
+                showSuccess(langData[successMsgKey] || res.message || langData['save_success'] || 'Saved successfully.');
+                loadRunDetail();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+}
+$(document).on('click', '.btn-verify-employee', function () {
+    const employeeId = $(this).data('employee-id');
+    const nowVerified = $(this).data('verified') !== true && $(this).data('verified') !== 'true';
+    singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: nowVerified }, 'save_success');
+});
+$(document).on('click', '.btn-lock-employee', function () {
+    const employeeId = $(this).data('employee-id');
+    const nowLocked = !($(this).data('locked') === true || $(this).data('locked') === 'true');
+    if (nowLocked) {
+        showConfirm(langData['confirm_lock_employee_title'] || 'Lock this employee?',
+            langData['confirm_lock_employee_message'] || 'This employee will not be recalculated and cannot be edited until unlocked.',
+            function () { singleVerifyLockRd('/api/payroll-run.employee-lock.save', employeeId, { locked: true }, 'save_success'); });
+    } else {
+        singleVerifyLockRd('/api/payroll-run.employee-lock.save', employeeId, { locked: false }, 'save_success');
+    }
+});
+
+let employeeCommentEmployeeId = null;
+function employeeCommentTagBadge(tag) {
+    const map = {
+        in_progress: { cls: 'bg-warning-subtle text-warning', key: 'employee_comment_tag_in_progress', fallback: 'In Progress' },
+        completed: { cls: 'bg-success-subtle text-success', key: 'employee_comment_tag_completed', fallback: 'Completed' },
+        error: { cls: 'bg-danger-subtle text-danger', key: 'employee_comment_tag_error', fallback: 'Error' },
+    };
+    if (!tag || !map[tag]) return '';
+    const m = map[tag];
+    return `<span class="badge ${m.cls} ms-2">${langData[m.key] || m.fallback}</span>`;
+}
+function renderEmployeeCommentTimeline(comments) {
+    $('#employeeCommentEmpty').toggleClass('d-none', comments.length > 0);
+    if (!comments.length) {
+        $('#employeeCommentTimeline').html('');
+        return;
+    }
+    const html = comments.map(function (c, idx) {
+        const isLast = idx === comments.length - 1;
+        const name = currentLang === 'th' ? (c.created_by_name_th || c.created_by_name_en) : (c.created_by_name_en || c.created_by_name_th);
+        return `<div class="apv-stage${isLast ? ' apv-stage-last' : ''}">
+            <div class="apv-stage-marker">
+                <div class="apv-stage-icon"><i class="fa-solid fa-comment"></i></div>
+                ${isLast ? '' : '<div class="apv-stage-line"></div>'}
+            </div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${escapeHtmlRd(name || '-')}${employeeCommentTagBadge(c.tag)}</span>
+                    <span class="apv-stage-date">${formatDisplayDateTime ? formatDisplayDateTime(c.created_at) : c.created_at}</span>
+                </div>
+                <div class="apv-stage-body">${escapeHtmlRd(c.comment).replace(/\n/g, '<br>')}</div>
+            </div>
+        </div>`;
+    }).join('');
+    $('#employeeCommentTimeline').html(html);
+}
+function loadEmployeeComments() {
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.employee-comment.list`, method: 'GET',
+        data: { id: PAYROLL_RUN_ID, employee_id: employeeCommentEmployeeId }, dataType: 'json',
+        success: function (res) { if (res.status) renderEmployeeCommentTimeline(res.data || []); }
+    });
+}
+$(document).on('click', '.btn-comment-employee', function () {
+    employeeCommentEmployeeId = $(this).data('employee-id');
+    $('#employeeCommentModalEmployeeName').text($(this).data('employee-label') || '');
+    $('#employeeCommentTag').val('').trigger('change');
+    $('#employeeCommentText').val('');
+    loadEmployeeComments();
+    new bootstrap.Modal(document.getElementById('employeeCommentModal')).show();
+});
+$(document).on('click', '#btnAddEmployeeComment', function () {
+    const comment = ($('#employeeCommentText').val() || '').trim();
+    if (!comment) {
+        showWarning(langData['employee_comment_required'] || 'Please write a comment first.');
+        return;
+    }
+    const tag = $('#employeeCommentTag').val() || null;
+    const $btn = $(this);
+    $btn.prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.employee-comment.add`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: employeeCommentEmployeeId, tag: tag, comment: comment }),
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (res.status) {
+                $('#employeeCommentText').val('');
+                $('#employeeCommentTag').val('').trigger('change');
+                loadEmployeeComments();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
 
 function auditActionLabel(action) {
     const map = {
@@ -1561,7 +1840,23 @@ function syncLineOverrideRowHtml(line) {
                 <input type="checkbox" class="form-check-input sync-line-exclude-check" ${isExcluded ? 'checked' : ''}>
                 <label class="form-check-label small">${langData['sync_line_override_action_exclude'] || 'Exclude this run'}</label>
             </div>
-            <button type="button" class="btn btn-sm btn-primary btn-sync-line-save" data-item-code="${escapeHtmlRd(line.code)}">${langData['save'] || 'Save'}</button>
+            <!-- 2026-08-29, real bug found and fixed (explicit report: setting amount to 0 or
+                 checking "exclude" then clicking Save always failed with the generic "required
+                 fields" warning) -- this button used to ALSO carry its own data-item-code
+                 attribute (mirroring the Reset button's, which genuinely needs one -- see that
+                 button's own click handler reading $(this).data('item-code') directly). But THIS
+                 button's own handler reads $(this).closest('[data-item-code]') to find the
+                 wrapping row div, and jQuery's .closest() checks the STARTING element itself
+                 before walking up to ancestors -- since this button matched the selector on its
+                 own, .closest() returned the button itself instead of the row, so
+                 $row.find('.sync-line-exclude-check')/'.sync-line-amount-input' searched INSIDE an
+                 element with no such children and found nothing, making isExcluded always false
+                 and amount always NaN regardless of the row's real state. Confirmed via a direct
+                 jQuery/jsdom simulation of the exact click before writing this fix, not guessed --
+                 EVERY save on this tab was silently broken, not just the 0/excluded cases the user
+                 happened to report. Removing this redundant attribute (never read directly by this
+                 button's own handler) lets .closest() correctly skip past it to the real row div. -->
+            <button type="button" class="btn btn-sm btn-primary btn-sync-line-save">${langData['save'] || 'Save'}</button>
         </div>
     </div>`;
 }
@@ -2109,5 +2404,8 @@ $(document).ready(function () {
         // can leave stale state/duplicate options behind).
         initSelect2('#manualLinePayeeEmployee', { mode: 'ajax', allowClear: true });
         initSelect2('#edit_run_purpose', { mode: 'static' });
+        // 2026-08-29: Comment modal's tag dropdown -- initialized once here (same "not per-modal-open"
+        // precedent as manualLinePayeeEmployee above), not per-open.
+        initSelect2('#employeeCommentTag', { mode: 'static' });
     }
 });

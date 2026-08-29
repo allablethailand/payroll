@@ -48,14 +48,24 @@ try {
     $pitId = $itemIdByCode['TH_PIT'];
     $pvdId = $itemIdByCode['TH_PVD'];
 
+    // 2026-08-29: TH_SSO/TH_PVD's own calc_base now points at sso_eligible_earnings/
+    // pf_eligible_earnings instead of basic_salary (see migrations/
+    // 2026-08-29_sso_pf_eligible_earnings_base.sql + PayrollRunModel::recalculate()'s own new
+    // $calcSsoItemCodes/$calcPfItemCodes aggregation) -- every salaryContext below that exercises
+    // TH_SSO/TH_PVD now sets the matching new key too. These are direct engine-level unit tests
+    // with no earning-line concept at all, so "eligible earnings" is simply set equal to
+    // basic_salary in every scenario here (no additional calc_sso/calc_pf-flagged allowance to add
+    // on top) -- that aggregation itself is covered separately, at the PayrollRunModel level, in
+    // tests/payroll_run_test.php's own "SSO/PF base now includes calc_sso/calc_pf-flagged earning
+    // items" section.
     echo "=== Scenario 1: TH_SSO flat_rate, salary above max_base (capped) ===\n";
-    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 20000], '2026-07-01');
+    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 20000, 'sso_eligible_earnings' => 20000], '2026-07-01');
     check('employee_amount (capped at 15000 base * 5%, then capped at 750)', $result['employee_amount'], 750.0);
     check('employer_amount', $result['employer_amount'], 750.0);
     check('base_amount clamped to max_base', $result['base_amount'], 15000.0);
 
     echo "=== Scenario 2: TH_SSO flat_rate, salary below min_base (floored) ===\n";
-    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 1000], '2026-07-01');
+    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 1000, 'sso_eligible_earnings' => 1000], '2026-07-01');
     check('employee_amount (floored to 1650 base * 5%)', $result['employee_amount'], 82.5);
     check('employer_amount', $result['employer_amount'], 82.5);
 
@@ -67,14 +77,14 @@ try {
         'employer_rate_override' => 4,
     ], 1);
     check('override save status', $saveRes['status'], true);
-    $result = $engine->calculateItem($compId, 'TH_PVD', ['basic_salary' => 30000], '2026-07-01');
+    $result = $engine->calculateItem($compId, 'TH_PVD', ['basic_salary' => 30000, 'pf_eligible_earnings' => 30000], '2026-07-01');
     check('employee_amount uses override 5% not master 3%', $result['employee_amount'], 1500.0);
     check('employer_amount uses override 4% not master 3%', $result['employer_amount'], 1200.0);
     check('rate_source flagged as company_override', $result['rate_source'], 'company_override');
 
     echo "=== Scenario 4: TH_PVD disabled by company ===\n";
     $csModel->save($compId, ['statutory_item_id' => $pvdId, 'is_active' => false], 1);
-    $result = $engine->calculateItem($compId, 'TH_PVD', ['basic_salary' => 30000], '2026-07-01');
+    $result = $engine->calculateItem($compId, 'TH_PVD', ['basic_salary' => 30000, 'pf_eligible_earnings' => 30000], '2026-07-01');
     check('employee_amount is 0 when disabled', $result['employee_amount'], 0.0);
     check('note is disabled', $result['note'], 'disabled');
 
@@ -117,13 +127,13 @@ try {
     check('medicare employer amount (base only, no extra)', $line['employer_amount'], 3625.0);
 
     echo "=== Scenario 7: no rate configured for the calculation date ===\n";
-    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 20000], '2020-01-01');
+    $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 20000, 'sso_eligible_earnings' => 20000], '2020-01-01');
     check('employee_amount is 0 with no applicable rate history', $result['employee_amount'], 0.0);
     check('note is no_rate_configured', $result['note'], 'no_rate_configured');
 
     echo "=== Scenario 8: full calculate() across all active TH items ===\n";
     $csModel->save($compId, ['statutory_item_id' => $pvdId, 'is_active' => true, 'employee_rate_override' => '', 'employer_rate_override' => ''], 1);
-    $full = $engine->calculate($compId, ['basic_salary' => 30000, 'taxable_income' => 400000], '2026-07-01');
+    $full = $engine->calculate($compId, ['basic_salary' => 30000, 'taxable_income' => 400000, 'sso_eligible_earnings' => 30000, 'pf_eligible_earnings' => 30000], '2026-07-01');
     check('calculate() returns 3 line items for TH', count($full['items']), 3);
     check('total_employee_deduction sums all active items', $full['total_employee_deduction'], 750.0 + 900.0 + 17500.0);
     // SSO: 30000 clamped to max_base 15000 * 5% = 750 (also under the 750 cap), PVD: 30000*3% master=900, PIT=17500
