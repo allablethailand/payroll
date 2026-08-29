@@ -8,10 +8,18 @@ class PayrollCycleModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
+    // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" -- ba.*
+    // (account_name/company_code, NOT account_no -- that stays encrypted/PII, not needed for this
+    // display) joined so the cycle list/edit form can show which of the company's own bank
+    // accounts (and its Company/Service Code) this cycle settles from, same "which account" this
+    // migration's bank_account_id column now lets a cycle pin down instead of always falling back
+    // to the company's single is_default account.
     public function list(int $compId): array {
-        $sql = "SELECT pc.*, f.name_th AS bank_file_format_name_th, f.name_en AS bank_file_format_name_en
+        $sql = "SELECT pc.*, f.name_th AS bank_file_format_name_th, f.name_en AS bank_file_format_name_en,
+                    ba.account_name AS bank_account_name, ba.company_code AS bank_account_company_code
                 FROM `payroll_cycles` pc
                 LEFT JOIN `master_bank_file_formats` f ON f.id = pc.bank_file_format_id
+                LEFT JOIN `bank_accounts` ba ON ba.id = pc.bank_account_id
                 WHERE pc.comp_id = :comp_id AND pc.deleted_at IS NULL ORDER BY pc.id ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':comp_id' => $compId]);
@@ -19,9 +27,11 @@ class PayrollCycleModel {
     }
 
     public function get(int $id, int $compId): ?array {
-        $sql = "SELECT pc.*, f.name_th AS bank_file_format_name_th, f.name_en AS bank_file_format_name_en
+        $sql = "SELECT pc.*, f.name_th AS bank_file_format_name_th, f.name_en AS bank_file_format_name_en,
+                    ba.account_name AS bank_account_name, ba.company_code AS bank_account_company_code
                 FROM `payroll_cycles` pc
                 LEFT JOIN `master_bank_file_formats` f ON f.id = pc.bank_file_format_id
+                LEFT JOIN `bank_accounts` ba ON ba.id = pc.bank_account_id
                 WHERE pc.id = :id AND pc.comp_id = :comp_id AND pc.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
@@ -68,6 +78,45 @@ class PayrollCycleModel {
         $totalCount = (int)$totalStmt->fetchColumn();
 
         $sql = "SELECT id, name_th AS text_th, name_en AS text_en FROM `master_bank_file_formats` {$where} ORDER BY sort_order ASC, id ASC LIMIT :offset, :limit";
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return ['items' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'total_count' => $totalCount];
+    }
+
+    /**
+     * 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" --
+     * powers the cycle form's new "Bank Account" dropdown, scoped to THIS company's own active
+     * accounts (unlike bankFileFormatOptions() above, which is global master data every company
+     * shares) -- account_no is intentionally NOT selected/decrypted here, this is a picker label
+     * list only, not a place PII needs to round-trip through.
+     */
+    public function bankAccountOptions(int $compId, string $search, int $page, int $limit): array {
+        $offset = ($page - 1) * $limit;
+        $where = "WHERE ba.comp_id = :comp_id AND ba.deleted_at IS NULL AND ba.status = 'active'";
+        $params = [':comp_id' => $compId];
+        if ($search !== '') {
+            $where .= " AND (ba.account_name LIKE :search1 OR ba.company_code LIKE :search2 OR mb.bank_name_th LIKE :search3 OR mb.bank_name_en LIKE :search4)";
+            $params[':search1'] = "%{$search}%";
+            $params[':search2'] = "%{$search}%";
+            $params[':search3'] = "%{$search}%";
+            $params[':search4'] = "%{$search}%";
+        }
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) FROM `bank_accounts` ba LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id {$where}");
+        $totalStmt->execute($params);
+        $totalCount = (int)$totalStmt->fetchColumn();
+
+        $sql = "SELECT ba.id,
+                    CONCAT(mb.bank_name_th, ' - ', ba.account_name, IF(ba.company_code IS NOT NULL AND ba.company_code != '', CONCAT(' (', ba.company_code, ')'), '')) AS text_th,
+                    CONCAT(mb.bank_name_en, ' - ', ba.account_name, IF(ba.company_code IS NOT NULL AND ba.company_code != '', CONCAT(' (', ba.company_code, ')'), '')) AS text_en
+                FROM `bank_accounts` ba
+                LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
+                {$where} ORDER BY ba.is_default DESC, ba.id ASC LIMIT :offset, :limit";
         $stmt = $this->db->prepare($sql);
         foreach ($params as $key => $val) {
             $stmt->bindValue($key, $val);
@@ -327,6 +376,21 @@ class PayrollCycleModel {
             return ['status' => false, 'message' => 'Invalid bank_file_format_id.'];
         }
 
+        // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" --
+        // OPTIONAL (unlike bank_file_format_id above). NULL means "fall back to the company's own
+        // is_default account" (same behavior as before this column existed) -- see
+        // BankTransferFileReport::resolveCompanyBankAccount()'s own docblock for the actual
+        // resolution order this feeds into. Validated to belong to THIS company (not deleted) when
+        // provided, same "cross-company FK" guard every other optional FK picker in this app uses.
+        $bankAccountId = !empty($data['bank_account_id']) ? (int)$data['bank_account_id'] : null;
+        if ($bankAccountId !== null) {
+            $stmtAccount = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtAccount->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
+            if (!$stmtAccount->fetch()) {
+                return ['status' => false, 'message' => 'Invalid bank_account_id.'];
+            }
+        }
+
         $cutoffDayOfMonth = null;
         $cutoffUseLastDay = 0;
         $cutoffDayOfWeek = null;
@@ -387,6 +451,7 @@ class PayrollCycleModel {
             ':ot_cutoff_day_of_month' => $otCutoffDayOfMonth,
             ':ot_cutoff_use_last_day' => $otCutoffUseLastDay,
             ':bank_file_format_id' => $bankFileFormatId,
+            ':bank_account_id' => $bankAccountId,
             ':status' => $status,
         ];
 
@@ -402,7 +467,7 @@ class PayrollCycleModel {
                             cutoff_day_of_month = :cutoff_day_of_month, cutoff_use_last_day = :cutoff_use_last_day, cutoff_day_of_week = :cutoff_day_of_week,
                             payment_day_of_month = :payment_day_of_month, payment_use_last_day = :payment_use_last_day, payment_day_of_week = :payment_day_of_week,
                             ot_cutoff_type = :ot_cutoff_type, ot_cutoff_day_of_month = :ot_cutoff_day_of_month, ot_cutoff_use_last_day = :ot_cutoff_use_last_day,
-                            bank_file_format_id = :bank_file_format_id, status = :status,
+                            bank_file_format_id = :bank_file_format_id, bank_account_id = :bank_account_id, status = :status,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $params[':updated_by'] = $userId;
@@ -415,11 +480,11 @@ class PayrollCycleModel {
             $sql = "INSERT INTO `payroll_cycles`
                         (comp_id, cycle_name, payroll_frequency, cutoff_day_of_month, cutoff_use_last_day, cutoff_day_of_week,
                          payment_day_of_month, payment_use_last_day, payment_day_of_week,
-                         ot_cutoff_type, ot_cutoff_day_of_month, ot_cutoff_use_last_day, bank_file_format_id, status, created_by)
+                         ot_cutoff_type, ot_cutoff_day_of_month, ot_cutoff_use_last_day, bank_file_format_id, bank_account_id, status, created_by)
                     VALUES
                         (:comp_id, :cycle_name, :payroll_frequency, :cutoff_day_of_month, :cutoff_use_last_day, :cutoff_day_of_week,
                          :payment_day_of_month, :payment_use_last_day, :payment_day_of_week,
-                         :ot_cutoff_type, :ot_cutoff_day_of_month, :ot_cutoff_use_last_day, :bank_file_format_id, :status, :created_by)";
+                         :ot_cutoff_type, :ot_cutoff_day_of_month, :ot_cutoff_use_last_day, :bank_file_format_id, :bank_account_id, :status, :created_by)";
             $params[':comp_id'] = $compId;
             $params[':created_by'] = $userId;
             $stmt = $this->db->prepare($sql);

@@ -883,6 +883,49 @@ try {
     check('full-period employee is not prorated', $fullDetail['prorate_days'], null);
     checkTrue('mid-month joiner IS prorated', $midDetail['prorate_days'] !== null);
     checkTrue('mid-month joiner base salary reduced by proration', (float)$midDetail['base_salary_amount'] < 30000.0);
+
+    // 2026-08-29, explicit request: "กรณีคนเข้า และคนออก การคิดเงินเดือน ต้องจับหาร 30 ตามกฏหมาย...ตอนนี้หาร
+    // จำนวนวันจริงของเดือนครับ" -- proration must divide by companies.prorate_divisor_days (default
+    // 30, the Thai labor law convention), NOT the real number of days in this specific period.
+    // Deliberately runs whatever real calendar month `$today` falls in (per this file's own
+    // established convention of computing period dates dynamically off `$today`, not a fixed
+    // date) -- exercises this fix against the ACTUAL number of days in the current month, which is
+    // exactly the case the old behavior got wrong whenever that number wasn't 30.
+    echo "=== Proration divisor: companies.prorate_divisor_days (Thai labor law: 30, not real days-in-month) ===\n";
+    $prorateDaysExpected = (int)((strtotime($periodEnd) - strtotime($midMonthJoin)) / 86400) + 1;
+    check('prorate_total_days stored is the DEFAULT divisor (30), not the real days-in-month', (int)$midDetail['prorate_total_days'], 30);
+    check('prorate_days stored is the real days actually present (unaffected by the divisor)', (int)$midDetail['prorate_days'], $prorateDaysExpected);
+    $expectedMidBaseDefault = round(30000 * $prorateDaysExpected / 30, 2);
+    check('mid-month joiner base_salary_amount matches salary * days / 30 (default divisor)', (float)$midDetail['base_salary_amount'], $expectedMidBaseDefault);
+    // Only meaningful (proves the divisor is actually read from config, not hardcoded 30 twice
+    // over) when the real current month is NOT itself 30 days long -- skipped with a clear PASS
+    // note otherwise rather than a flaky assertion that can't actually distinguish the two.
+    if ($totalPeriodDaysThisMonth = (int)((strtotime($periodEnd) - strtotime($periodStart)) / 86400) + 1) {
+        if ($totalPeriodDaysThisMonth !== 30) {
+            $wrongOldStyleBase = round(30000 * $prorateDaysExpected / $totalPeriodDaysThisMonth, 2);
+            checkTrue("this month has {$totalPeriodDaysThisMonth} real days (not 30) -- confirms the fix genuinely changed the result vs. the old days-in-month divisor", abs($expectedMidBaseDefault - $wrongOldStyleBase) > 0.001);
+        } else {
+            echo "  (skipped divisor-actually-changed-the-result check: the current real month happens to have exactly 30 days, so old and new behavior are numerically identical here -- covered instead by the explicit divisor-change assertion below)\n";
+        }
+    }
+
+    // Changing the company's own configured divisor must actually change the computed result on
+    // the NEXT recalculate() -- proves this is read live from companies.prorate_divisor_days each
+    // time, not cached/hardcoded. Reverted implicitly by this whole test file's own transaction
+    // rollback at the very end (same "temporary mutation against the real comp_id=1" precedent
+    // already used elsewhere in this file), no manual restore needed.
+    $pdo->prepare("UPDATE `companies` SET prorate_divisor_days = 31 WHERE id = :id")->execute([':id' => $compId]);
+    $recalcWithDivisor31 = $runModel->recalculate($runId, $compId, $adminUserId, true);
+    checkTrue('recalculate() succeeds again after changing prorate_divisor_days' . (empty($recalcWithDivisor31['status']) ? " ({$recalcWithDivisor31['message']})" : ''), $recalcWithDivisor31['status']);
+    $detailsWithDivisor31 = $runModel->getDetails($runId, $compId);
+    $midDetailWithDivisor31 = current(array_filter($detailsWithDivisor31, fn($d) => (int)$d['employee_id'] === $employeeMidId));
+    check('prorate_total_days now reflects the changed divisor (31)', (int)$midDetailWithDivisor31['prorate_total_days'], 31);
+    $expectedMidBaseDivisor31 = round(30000 * $prorateDaysExpected / 31, 2);
+    check('base_salary_amount recomputed using the NEW divisor (31), not still 30', (float)$midDetailWithDivisor31['base_salary_amount'], $expectedMidBaseDivisor31);
+    checkTrue('the two divisor results genuinely differ (31 != 30, so this is not a same-value coincidence)', abs($expectedMidBaseDefault - $expectedMidBaseDivisor31) > 0.001);
+    $pdo->prepare("UPDATE `companies` SET prorate_divisor_days = 30 WHERE id = :id")->execute([':id' => $compId]);
+    $recalcBackTo30 = $runModel->recalculate($runId, $compId, $adminUserId, true);
+    checkTrue('recalculate() succeeds again after restoring the divisor to 30', $recalcBackTo30['status']);
     // 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า และไม่นำไปคำนวณใน
     // เงินเดือน" -- Attendance Bonus/Diligence ledger feature removed entirely (2026-08-29 follow-up:
     // its DB tables/models are gone too, not just the calculation hook -- see PayrollRunModel's own

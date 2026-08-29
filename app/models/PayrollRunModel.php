@@ -1191,6 +1191,19 @@ class PayrollRunModel {
         $periodYear = (int)date('Y', strtotime($periodStart));
         $periodMonth = (int)date('n', strtotime($periodStart));
         $totalPeriodDays = (int)((strtotime($periodEnd) - strtotime($periodStart)) / 86400) + 1;
+        // 2026-08-29, explicit request: "กรณีคนเข้า และคนออก การคิดเงินเดือน ต้องจับหาร 30 ตามกฏหมาย...ตอนนี้
+        // หารจำนวนวันจริงของเดือนครับ" -- a monthly-rate employee's mid-period join/leave proration
+        // used $totalPeriodDays (the REAL number of days in that specific period -- 28/29/30/31)
+        // as its denominator; Thai labor law instead uses a FIXED divisor (30, the same value
+        // regardless of the actual month length) so the daily-equivalent rate doesn't silently
+        // shift between a 28-day February and a 31-day January. Now company-configurable via
+        // companies.prorate_divisor_days (Company Profile, default 30 -- see that column's own
+        // migration comment) -- used ONLY as the denominator below; $totalPeriodDays itself is
+        // still used unchanged as the sanity cap on how many days an employee could possibly have
+        // been present within the real period (a separate concern from which number to divide by).
+        $stmtProrateDivisor = $this->db->prepare("SELECT prorate_divisor_days FROM `companies` WHERE id = :id");
+        $stmtProrateDivisor->execute([':id' => $compId]);
+        $prorateDivisorDays = (int)($stmtProrateDivisor->fetchColumn() ?: 30);
 
         // 2026-08-21, real bug fix: needed to correctly annualize/de-annualize TH_PIT withholding
         // (see ThPitCalculator) -- $run['payroll_frequency'] already comes from get()'s own LEFT
@@ -1586,7 +1599,15 @@ class PayrollRunModel {
                         }
                         $effectiveBase = $baseSalary;
                         if ($effectiveStart > $periodStart || $effectiveEnd < $periodEnd) {
-                            $prorateTotalDays = $totalPeriodDays;
+                            // 2026-08-29: denominator is the company's configured legal divisor
+                            // (default 30), NOT $totalPeriodDays -- see this method's own top-of-
+                            // function comment. $prorateDays (days actually present) is still
+                            // capped against the REAL period length as a sanity bound only, not
+                            // against the divisor -- intentionally uncapped against the divisor
+                            // itself, matching the well-known characteristic of the fixed-30
+                            // convention (e.g. joining on day 2 of a 31-day January yields
+                            // 30/30 = 100% of base salary, same as Thai practice).
+                            $prorateTotalDays = $prorateDivisorDays;
                             $prorateDays = (int)((strtotime($effectiveEnd) - strtotime($effectiveStart)) / 86400) + 1;
                             $prorateDays = max(0, min($prorateDays, $totalPeriodDays));
                             $effectiveBase = $prorateDays > 0 ? round($baseSalary * $prorateDays / $prorateTotalDays, 2) : 0.0;

@@ -58,6 +58,19 @@ class PayrollConfigurationController extends Controller {
         $this->json(['status' => true, 'data' => $this->cycleModel->bankFileFormatOptions($search, $page, $limit)]);
     }
 
+    /** 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย". */
+    public function bankAccountOptions() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['items' => [], 'total_count' => 0]]);
+            return;
+        }
+        $page = intval($_POST['page'] ?? 1);
+        $limit = intval($_POST['limit'] ?? 10);
+        $search = (string)($_POST['searchTerm'] ?? '');
+        $this->json(['status' => true, 'data' => $this->cycleModel->bankAccountOptions((int)$compId, $search, $page, $limit)]);
+    }
+
     public function cycleOptions() {
         $compId = getCompId();
         if (!$compId) {

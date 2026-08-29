@@ -190,6 +190,20 @@
                                             <select class="form-select select2-remote required" id="bank_file_format_id" name="bank_file_format_id" data-api="/api/bank-file-format.options"></select>
                                         </div>
                                     </div>
+                                    <!-- 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ
+                                         แยกบัญชีในการจ่าย" -- optional, unlike Bank Text Format above. Leaving this
+                                         blank falls back to the company's own is_default bank account (unchanged
+                                         behavior from before this field existed) -- see
+                                         BankTransferFileReport::resolveCompanyBankAccount()'s own docblock. -->
+                                    <div class="row mb-3">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-0" data-i18n="modal_cycle_bank_account">Bank Account</label>
+                                        </div>
+                                        <div class="col-sm-9">
+                                            <select class="form-select select2-remote" id="cycle_bank_account_id" name="bank_account_id" data-api="/api/payroll-cycle.bank-account.options"></select>
+                                            <div class="form-text" data-i18n="modal_cycle_bank_account_hint">Leave blank to use the company's default bank account.</div>
+                                        </div>
+                                    </div>
                                     <div class="row mb-3">
                                         <div class="col-sm-3 align-self-center">
                                             <label class="form-label mb-0" data-i18n="status">Status</label>

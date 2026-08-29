@@ -100,6 +100,20 @@
             <div class="col-sm-4 mt-3">
                 <select class="form-select" name="fiscal_year_start_month" id="fiscal_year_start_month" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
             </div>
+            <!-- 2026-08-29, explicit request: "กรณีคนเข้า และคนออก การคิดเงินเดือน ต้องจับหาร 30 ตามกฏหมาย
+                 ช่วยเพิ่มให้ตั้งค่าตัวเลขนี้ได้หน่อยได้ไหมครับ" -- a single company-wide value (same shape
+                 as Fiscal Year Start Month above), governs the divisor PayrollRunModel::recalculate()
+                 uses for a monthly-rate employee's mid-period join/leave proration -- default 30
+                 matches the Thai labor law convention named outright in the request. -->
+            <div class="col-sm-3 mt-3">
+                <label class="form-label">
+                    <span data-i18n="prorate_divisor_days">Proration Divisor (Days)</span>
+                </label>
+            </div>
+            <div class="col-sm-3 mt-3">
+                <input type="number" class="form-control" name="prorate_divisor_days" id="prorate_divisor_days" min="1" max="31" value="30">
+                <div class="form-text" data-i18n="prorate_divisor_days_hint">Used to calculate partial-month pay when an employee joins or leaves mid-period (Thai labor law: 30).</div>
+            </div>
         </div>
         <h6 class="text-secondary fw-bold mb-3 mt-4">
             <label class="label label-head bg-head-first rounded-2 text-white me-2">2</label>
@@ -261,6 +275,7 @@
                     <th data-i18n="bank_name">Bank</th>
                     <th data-i18n="account_no">Account No.</th>
                     <th data-i18n="account_name">Account Name</th>
+                    <th data-i18n="bank_account_company_code">Company/Service Code</th>
                     <th data-i18n="branch_name">Branch</th>
                     <th data-i18n="account_type">Type</th>
                     <th data-i18n="default">Default</th>

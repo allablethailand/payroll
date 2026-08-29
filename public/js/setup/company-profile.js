@@ -289,6 +289,7 @@ function initCompanyData() {
                 $('input[name="company_legal_name"]').val(data.company_legal_name || '');
                 $('input[name="local_name"]').val(data.local_name || '');
                 $('#fiscal_year_start_month').val(data.fiscal_year_start_month || 1).trigger('change');
+                $('#prorate_divisor_days').val(data.prorate_divisor_days || 30);
                 $('input[name="address_line_1"]').val(data.address_line_1 || '');
                 $('input[name="address_line_2"]').val(data.address_line_2 || '');
                 $('input[name="authorized_signatory_name"]').val(data.authorized_signatory_name || '');
@@ -345,6 +346,7 @@ $(document).on('click', '.save-company-profile', function () {
         company_legal_name: $('input[name="company_legal_name"]').val()?.trim() || '',
         local_name: $('input[name="local_name"]').val()?.trim() || '',
         fiscal_year_start_month: parseInt($('#fiscal_year_start_month').val(), 10) || 1,
+        prorate_divisor_days: parseInt($('#prorate_divisor_days').val(), 10) || 30,
         address_line_1: $('input[name="address_line_1"]').val()?.trim() || '',
         address_line_2: $('input[name="address_line_2"]').val()?.trim() || '',
         master_address_id: $('input[name="master_address_id"]').val() || null,
@@ -479,6 +481,9 @@ function initBankAccountTable() {
                 }
             },
             { data: 'account_name' },
+            // orderable:false -- sidesteps BankAccountModel::list()'s own server-side sortColumns
+            // index map entirely rather than risking shifting indices for the columns after it.
+            { data: 'company_code', defaultContent: '-', orderable: false },
             { data: 'branch_name', defaultContent: '-' },
             {
                 data: 'account_type',
@@ -1013,6 +1018,12 @@ const formSchemas = {
             { name: 'bank_id', label: 'bank_name', type: 'select2', required: true, api: '/api/bank.get', apiType: 'bank', displayTextTh: 'bank_name_th', displayTextEn: 'bank_name_en', displayPrefix: 'bank_code' },
             { name: 'account_no', label: 'account_no', type: 'text', required: true },
             { name: 'account_name', label: 'account_name', type: 'text', required: true },
+            // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย"
+            // -- the bank-registered Company/Service Code (Krungsri's own "712" example) is now set
+            // PER ACCOUNT here instead of as a shared constant on the bank file format, so a
+            // company with multiple accounts (and multiple payroll cycles each settling from a
+            // different one) can give each its own code. Optional -- not every bank assigns one.
+            { name: 'company_code', label: 'bank_account_company_code', type: 'text' },
             { name: 'branch_name', label: 'branch_name', type: 'text' },
             { name: 'account_type', label: 'account_type', type: 'select', optionKeys: ['savings', 'current'] },
             { name: 'is_default', label: 'default', type: 'checkbox' },
@@ -1424,10 +1435,19 @@ $(document).on('click', '#bffAddFieldBtn', function () {
 });
 
 $(document).on('click', '.bff-edit-field-btn', function () {
-    const fieldId = $(this).data('id');
+    // 2026-08-29, real bug found and fixed (explicit report: "คลิกแก้ไขไม่ได้ครับ" -- clicking Edit
+    // silently did nothing): PDO returns `id` as a PHP string ("125", not int 125 -- confirmed via
+    // direct query, this project's PDO connection doesn't force native int types), so
+    // json_encode() serializes it as a JSON STRING too. jQuery's $(el).data('id'), reading the raw
+    // data-id="125" DOM attribute, auto-converts a purely-numeric attribute value to a JS NUMBER.
+    // The strict === comparison below was therefore comparing a string "125" (f.id, from the API
+    // response) against a number 125 (fieldId, from jQuery) -- ALWAYS false, so `field` stayed null
+    // for every field and the early `if (!field) return;` silently aborted, no error shown at all.
+    // Fixed by normalizing both sides to Number before comparing.
+    const fieldId = Number($(this).data('id'));
     let field = null;
     ['header', 'detail', 'trailer'].forEach(function (rt) {
-        (bffCurrentDetail.fields[rt] || []).forEach(function (f) { if (f.id === fieldId) field = f; });
+        (bffCurrentDetail.fields[rt] || []).forEach(function (f) { if (Number(f.id) === fieldId) field = f; });
     });
     if (!field) return;
     bffResetFieldModal();
