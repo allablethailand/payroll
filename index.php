@@ -99,6 +99,7 @@
     $router->get('setup/payroll-configuration', 'PayrollConfigurationController@index');
     $router->post('api/payroll-cycle.options', 'PayrollConfigurationController@cycleOptions');
     $router->post('api/bank-file-format.options', 'PayrollConfigurationController@bankFileFormatOptions');
+    $router->post('api/payroll-cycle.bank-account.options', 'PayrollConfigurationController@bankAccountOptions');
     $router->get('api/payroll-cycle.list', 'PayrollConfigurationController@cycleList');
     $router->get('api/payroll-cycle.get', 'PayrollConfigurationController@cycleGet');
     $router->get('api/payroll-cycle.suggest-period', 'PayrollConfigurationController@cycleSuggestPeriod');

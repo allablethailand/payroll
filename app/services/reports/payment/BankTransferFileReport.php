@@ -59,7 +59,7 @@ class BankTransferFileReport implements ReportGeneratorInterface {
     }
 
     /**
-     * @param array $context { comp_id: int, run_id: int }
+     * @param array $context { comp_id: int, run_id: int, language?: 'th'|'en' }
      */
     public function generate(array $context, string $format): array {
         $compId = (int)($context['comp_id'] ?? 0);
@@ -70,6 +70,16 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             throw new LocalizedException('run_id is required and must be a positive integer.', 'run_id_required');
         }
         $runId = (int)$context['run_id'];
+        // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่
+        // ออกมาจะตามนั้นครับ" -- defaults to 'th' (every call site before this change effectively
+        // got Thai, hardcoded), so every existing caller keeps working unchanged. The defaulted
+        // value is captured in its own variable BEFORE the validity check re-reads it -- re-reading
+        // $context['language'] directly inside the ternary's true-branch was a real bug caught once
+        // already in this codebase (PaySlipReport::generate(), see that class's own docblock) when
+        // the key is genuinely absent: 'Undefined array key' + a TypeError downstream. Not repeating
+        // it here.
+        $requestedLanguage = $context['language'] ?? 'th';
+        $language = in_array($requestedLanguage, ['th', 'en'], true) ? $requestedLanguage : 'th';
 
         $dataModel = new PayrollReportDataModel();
         $run = $dataModel->getRun($runId, $compId);
@@ -89,11 +99,58 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             if (!empty($fields)) {
                 $config = $formatModel->getConfig($compId, $bankFileFormatId);
                 $company = $dataModel->getCompany($compId);
-                return $this->renderConfigured($details, $fields, $config, $run, $company, $runId);
+                return $this->renderConfigured($details, $fields, $config, $run, $company, $runId, $compId, $language);
             }
         }
 
         return $this->renderGenericFallback($details, $runId);
+    }
+
+    /**
+     * Company's own settlement/debit account (the source account the bank debits for the whole
+     * payroll batch) -- needed for a header row like Krungsri's own "เลขที่บัญชีตัดเงินของบริษัท" and
+     * "รหัสบริษัท/รหัสบริการ". 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ
+     * แยกบัญชีในการจ่าย" -- a company may run multiple payroll cycles that each settle from a
+     * DIFFERENT bank_accounts row (each with its own bank-registered Company/Service Code, see
+     * migrations/2026-08-29_5_payroll_cycle_bank_account_and_company_code.sql's own header
+     * comment). Resolution order: 1) the run's own cycle's `bank_account_id` if the cycle has one
+     * pinned, 2) else the company's single `is_default=1` account (unchanged fallback -- every
+     * cycle that predates this feature, or was simply never given a specific account, keeps
+     * working exactly as before). account_no decrypted the same way BankAccountModel itself
+     * decrypts it (EncryptionService::decrypt() keyed by that row's own key_version) -- NOT
+     * EmployeePiiTrait, which is scoped to per-employee PII, not the company's own account.
+     * Returns ['account_no'=>'', 'company_code'=>''] (never throws) when nothing resolves -- a
+     * missing constant/blank field in the rendered output is a config problem for the company to
+     * notice and fix, not a reason to hard-fail the whole file.
+     * @return array{account_no: string, company_code: string}
+     */
+    private function resolveCompanyBankAccount(int $compId, ?int $cycleBankAccountId): array {
+        $pdo = Database::getInstance()->pdo;
+        $row = null;
+        if ($cycleBankAccountId !== null && $cycleBankAccountId > 0) {
+            $stmt = $pdo->prepare(
+                "SELECT account_no, key_version, company_code FROM `bank_accounts`
+                 WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active'"
+            );
+            $stmt->execute([':id' => $cycleBankAccountId, ':comp_id' => $compId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+        if ($row === null) {
+            $stmt = $pdo->prepare(
+                "SELECT account_no, key_version, company_code FROM `bank_accounts`
+                 WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' AND is_default = 1
+                 ORDER BY id ASC LIMIT 1"
+            );
+            $stmt->execute([':comp_id' => $compId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+        if (!$row) {
+            return ['account_no' => '', 'company_code' => ''];
+        }
+        $accountNo = !empty($row['account_no'])
+            ? (string)(EncryptionService::decrypt($row['account_no'], $row['key_version'] !== null ? (int)$row['key_version'] : null) ?? '')
+            : '';
+        return ['account_no' => $accountNo, 'company_code' => (string)($row['company_code'] ?? '')];
     }
 
     /* ---------- Original generic fallback (unchanged shape) ---------- */
@@ -153,7 +210,7 @@ class BankTransferFileReport implements ReportGeneratorInterface {
 
     /* ---------- Configured (company-defined) rendering ---------- */
 
-    private function renderConfigured(array $details, array $fieldRows, array $config, array $run, ?array $company, int $runId): array {
+    private function renderConfigured(array $details, array $fieldRows, array $config, array $run, ?array $company, int $runId, int $compId, string $language): array {
         $rowsByType = ['header' => [], 'detail' => [], 'trailer' => []];
         foreach ($fieldRows as $f) {
             $rowType = $f['row_type'] ?? 'detail';
@@ -185,25 +242,40 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         $delimiterChar = (string)($config['delimiter_char'] ?? ',');
         $encoding = ($config['text_encoding'] ?? 'utf8') === 'tis620' ? 'TIS-620' : null;
         $lineEnding = ($config['line_ending'] ?? 'crlf') === 'lf' ? "\n" : "\r\n";
+        // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ" --
+        // company_name now follows the requested $language (was always company_legal_name, i.e.
+        // always the English/legal name regardless of what was asked for) same as employee_name in
+        // rawValueForField() below. "มีส่วนไหนที่ยังไม่มีให้ตั้งค่าเรื่องบัญชี" -- company_account_no/
+        // payment_date are genuinely new: the header row previously had NO way at all to pull the
+        // company's own settlement account or the run's real disbursement date (see
+        // BankFileFormatModel::SOURCE_FIELDS' own comment on both).
+        // 2026-08-29, explicit follow-up: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" -- resolved
+        // from the RUN's own cycle (run['bank_account_id'], from PayrollReportDataModel::getRun()'s
+        // own new join) when that cycle has a specific account pinned, else the company's single
+        // default account -- see resolveCompanyBankAccount()'s own docblock.
+        $companyBankAccount = $this->resolveCompanyBankAccount($compId, isset($run['bank_account_id']) ? (int)$run['bank_account_id'] : null);
         $aggregateContext = [
-            'company_name' => $company['company_legal_name'] ?? ($company['local_name'] ?? ''),
+            'company_name' => $language === 'en' ? ($company['company_legal_name'] ?? ($company['local_name'] ?? '')) : ($company['local_name'] ?? ($company['company_legal_name'] ?? '')),
             'pay_period' => !empty($run['period_start_date']) ? date('Ymd', strtotime((string)$run['period_start_date'])) : '',
+            'payment_date' => !empty($run['payment_date']) ? date('Ymd', strtotime((string)$run['payment_date'])) : '',
+            'company_account_no' => $companyBankAccount['account_no'],
+            'company_service_code' => $companyBankAccount['company_code'],
             'total_amount' => $total,
             'total_count' => count($included),
         ];
 
         $lines = [];
         if (!empty($config['has_header_row']) && !empty($rowsByType['header'])) {
-            $lines[] = $this->renderRow($rowsByType['header'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding);
+            $lines[] = $this->renderRow($rowsByType['header'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language);
         }
         $seq = 0;
         foreach ($included as $d) {
             $seq++;
             $aggregateContext['sequence_no'] = $seq;
-            $lines[] = $this->renderRow($rowsByType['detail'], $d, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding);
+            $lines[] = $this->renderRow($rowsByType['detail'], $d, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language);
         }
         if (!empty($config['has_trailer_row']) && !empty($rowsByType['trailer'])) {
-            $lines[] = $this->renderRow($rowsByType['trailer'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding);
+            $lines[] = $this->renderRow($rowsByType['trailer'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language);
         }
 
         $content = implode($lineEnding, $lines) . $lineEnding;
@@ -225,11 +297,11 @@ class BankTransferFileReport implements ReportGeneratorInterface {
 
     /** Renders one line (header/detail/trailer) from its field definitions. $employeeRow is null
      *  for header/trailer rows (they only ever pull from $context, constants, or blanks). */
-    private function renderRow(array $fields, ?array $employeeRow, array $context, bool $isFixedWidth, string $delimiterChar, ?string $encoding): string {
+    private function renderRow(array $fields, ?array $employeeRow, array $context, bool $isFixedWidth, string $delimiterChar, ?string $encoding, string $language): string {
         $cells = [];
         foreach ($fields as $field) {
-            $raw = $this->rawValueForField($field, $employeeRow, $context);
-            $formatted = $this->applyDataType($raw, $field);
+            $raw = $this->rawValueForField($field, $employeeRow, $context, $language);
+            $formatted = $this->applyDataType($raw, $field, $isFixedWidth);
             if ($encoding !== null) {
                 $formatted = $this->toFileEncoding($formatted, $encoding);
             }
@@ -263,7 +335,13 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         return $direction === 'left' ? $pad . $value : $value . $pad;
     }
 
-    private function rawValueForField(array $field, ?array $d, array $context): string {
+    /** $language: 'th'|'en' -- 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือ
+     *  ภาษาอังกฤษ ข้อมูลที่ออกมาจะตามนั้นครับ". Applied everywhere a th/en pair actually exists in the
+     *  underlying data (employee_name, bank_name, company_name in renderConfigured()'s own
+     *  aggregateContext) -- bank_account_name is deliberately NOT included, since that's a single
+     *  free-text field as registered with the bank (not a th/en pair the system tracks), and
+     *  id_card_no/employee_no/amounts have no language concept at all. */
+    private function rawValueForField(array $field, ?array $d, array $context, string $language = 'th'): string {
         if (($field['source_type'] ?? 'employee_field') === 'blank') {
             return '';
         }
@@ -275,9 +353,9 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             case 'bank_account_no': return $d !== null ? (string)$this->decryptEmployeeField($d, 'bank_account_no') : '';
             case 'bank_account_name': return $d !== null ? (string)($d['bank_account_name'] ?? '') : '';
             case 'bank_code': return $d !== null ? (string)($d['bank_code'] ?? '') : '';
-            case 'bank_name': return $d !== null ? (string)($d['bank_name_th'] ?? $d['bank_name_en'] ?? '') : '';
+            case 'bank_name': return $d !== null ? (string)($language === 'en' ? ($d['bank_name_en'] ?? $d['bank_name_th'] ?? '') : ($d['bank_name_th'] ?? $d['bank_name_en'] ?? '')) : '';
             case 'employee_no': return $d !== null ? (string)($d['employee_no'] ?? '') : '';
-            case 'employee_name': return $d !== null ? $this->employeeDisplayName($d, 'th') : '';
+            case 'employee_name': return $d !== null ? $this->employeeDisplayName($d, $language) : '';
             case 'id_card_no': return $d !== null ? (string)$this->decryptEmployeeField($d, 'id_card_no') : '';
             case 'net_amount': return $d !== null ? (string)((float)($d['net_amount'] ?? 0)) : '';
             case 'sequence_no': return (string)($context['sequence_no'] ?? '');
@@ -285,16 +363,34 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             case 'total_count': return (string)($context['total_count'] ?? 0);
             case 'company_name': return (string)($context['company_name'] ?? '');
             case 'pay_period': return (string)($context['pay_period'] ?? '');
+            case 'payment_date': return (string)($context['payment_date'] ?? '');
+            case 'company_account_no': return (string)($context['company_account_no'] ?? '');
+            case 'company_service_code': return (string)($context['company_service_code'] ?? '');
             default: return '';
         }
     }
 
-    private function applyDataType(string $raw, array $field): string {
+    /**
+     * 2026-08-29, real gap found and fixed while implementing Krungsri's real spec (explicit
+     * request: "ปรับ Format นี้ให้เป็น Format มาตรฐานของกรุงศรี"): a fixed-width numeric field in a
+     * bank/government machine format is virtually always "implied decimal, zero-padded, no literal
+     * separator character" -- e.g. Krungsri's own total-amount example `00000008873025` (14 digits)
+     * IS 88,730.25, with the last 2 digits being the decimal places, not a `.` character consuming
+     * one of the 14 column positions. The previous number_format($num, $decimals, '.', '') always
+     * inserted a literal '.', which would have silently shortened every fixed-width numeric field
+     * by one character and shifted everything after it out of position -- exactly the kind of
+     * corruption a byte-exact bank file can't tolerate. Delimited/CSV output (human/Excel-facing)
+     * keeps the literal '.' unchanged, since that's what a person reading a CSV expects.
+     */
+    private function applyDataType(string $raw, array $field, bool $isFixedWidth = false): string {
         switch ($field['data_type'] ?? 'text') {
             case 'number':
                 $num = is_numeric($raw) ? (float)$raw : 0.0;
-                $decimals = $field['decimal_places'] ?? 2;
-                return number_format($num, (int)$decimals, '.', '');
+                $decimals = (int)($field['decimal_places'] ?? 2);
+                if ($isFixedWidth && !empty($field['width'])) {
+                    return $this->padNumber($num, (int)$field['width'], $decimals);
+                }
+                return number_format($num, $decimals, '.', '');
             case 'date':
                 if ($raw === '') return '';
                 $ts = strtotime($raw);

@@ -24,7 +24,12 @@ class PayrollReportDataModel {
     public function getRun(int $runId, int $compId): ?array {
         // c.bank_file_format_id (2026-08-29) -- lets BankTransferFileReport resolve which company-
         // configured bank file layout (BankFileFormatModel) to render this run's transfer file with.
-        $sql = "SELECT r.*, c.cycle_name, c.bank_file_format_id FROM `payroll_runs` r
+        // c.bank_account_id (2026-08-29, explicit follow-up: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยก
+        // บัญชีในการจ่าย") -- lets that same report resolve WHICH of the company's own bank accounts
+        // (and its own Company/Service Code) this run's cycle settles from, instead of always the
+        // company's single is_default account -- see
+        // BankTransferFileReport::resolveCompanyBankAccount()'s own docblock.
+        $sql = "SELECT r.*, c.cycle_name, c.bank_file_format_id, c.bank_account_id FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 WHERE r.id = :id AND r.comp_id = :comp_id AND r.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);

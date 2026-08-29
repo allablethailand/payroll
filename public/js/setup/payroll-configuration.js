@@ -324,6 +324,7 @@ $(document).ready(function () {
         initSelect2('#cutoff_day_of_week', { mode: 'static' });
         initSelect2('#payment_day_of_week', { mode: 'static' });
         initSelect2('#bank_file_format_id', { mode: 'ajax' });
+        initSelect2('#cycle_bank_account_id', { mode: 'ajax', allowClear: true });
         initSelect2('#cycle_status', { mode: 'static' });
     }
     // 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า" -- Attendance
@@ -582,6 +583,7 @@ function resetCycleForm() {
     $('#cutoff_day_of_week').val('').trigger('change');
     $('#payment_day_of_week').val('').trigger('change');
     $('#bank_file_format_id').val('').trigger('change');
+    $('#cycle_bank_account_id').val('').trigger('change');
     $('#cycle_status').val('active').trigger('change');
     $('#cutoff_day_of_month, #payment_day_of_month, #ot_cutoff_day_of_month').prop('disabled', false);
     applyFrequencyFields('');
@@ -617,6 +619,19 @@ function populateCycleForm(row) {
     } else {
         $('#bank_file_format_id').val('').trigger('change');
     }
+    // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" --
+    // same preload-a-single-Option pattern as bank_file_format_id above (avoids the select2-remote-
+    // empty-preload gotcha this app has hit before -- see CLAUDE.md). Optional, so a cycle with no
+    // bank_account_id set (falls back to the company's default account) just clears the field.
+    if (row.bank_account_id) {
+        const bankAccountLabel = row.bank_account_name
+            ? `${row.bank_account_name}${row.bank_account_company_code ? ' (' + row.bank_account_company_code + ')' : ''}`
+            : `#${row.bank_account_id}`;
+        const acctOpt = new Option(bankAccountLabel, row.bank_account_id, true, true);
+        $('#cycle_bank_account_id').append(acctOpt).trigger('change');
+    } else {
+        $('#cycle_bank_account_id').val('').trigger('change');
+    }
     $('#cycle_status').val(row.status).trigger('change');
 }
 function validateCycleForm() {
@@ -642,6 +657,7 @@ function collectCycleFormData() {
         payroll_frequency: freq,
         ot_cutoff_type: $('input[name="ot_cutoff_type"]:checked').val(),
         bank_file_format_id: $('#bank_file_format_id').val(),
+        bank_account_id: $('#cycle_bank_account_id').val() || null,
         status: $('#cycle_status').val()
     };
     if (freq === 'weekly') {

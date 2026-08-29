@@ -91,7 +91,12 @@ class ReportsController extends Controller {
         }
 
         $context = [];
-        foreach (['year', 'month', 'run_id', 'employee_id'] as $key) {
+        // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่
+        // ออกมาจะตามนั้น" -- 'language' whitelisted here so BankTransferFileReport (currently the
+        // only consumer, see its own generate()) can pick th/en for the employee name field; any
+        // report that doesn't read context['language'] simply ignores it, same as an unused
+        // year/month/employee_id already does today.
+        foreach (['year', 'month', 'run_id', 'employee_id', 'language'] as $key) {
             if (isset($_GET[$key]) && $_GET[$key] !== '') {
                 $context[$key] = $_GET[$key];
             }
