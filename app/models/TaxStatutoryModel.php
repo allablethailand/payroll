@@ -4,7 +4,20 @@ class TaxStatutoryModel {
     private $db;
     private const CATEGORIES = ['tax', 'social_insurance', 'provident_fund', 'other'];
     private const CALC_METHODS = ['flat_rate', 'progressive_bracket', 'fixed_amount', 'formula'];
-    private const CALC_BASES = ['basic_salary', 'gross_salary', 'taxable_income', 'net_income', 'custom'];
+    // 2026-08-29, real bug found while adding rounding config (below): this list was never
+    // updated when migrations/2026-08-29_sso_pf_eligible_earnings_base.sql widened the DB enum
+    // and repointed TH_SSO/TH_PVD's own calc_base at these 2 new values -- meaning save() on
+    // EITHER of those 2 items (through the Tax & Statutory settings UI, or this file's own test)
+    // has been unconditionally rejected with "Invalid calc_base." ever since that migration ran.
+    private const CALC_BASES = ['basic_salary', 'gross_salary', 'taxable_income', 'net_income', 'sso_eligible_earnings', 'pf_eligible_earnings', 'custom'];
+    /**
+     * 2026-08-29, explicit request: "ให้มีการกำหนดเพิ่มได้ว่าปัดเศษ หรือไม่ปัด ถ้าปัดปัดแบบไหน และทศนิยม
+     * ได้กี่ตำแหน่ง แล้วตอนคำนวณให้นำไปใช้ด้วย" -- 'round' = standard round-half-up (unchanged
+     * behavior), 'up'/'down' = always ceiling/floor, 'none' = truncate toward zero with no
+     * adjustment. Applied by StatutoryCalculationEngine::applyRounding(), not here -- this model
+     * only validates and persists the config.
+     */
+    public const ROUNDING_MODES = ['round', 'up', 'down', 'none'];
 
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
@@ -106,6 +119,15 @@ class TaxStatutoryModel {
         $statusInput = $data['status'] ?? 'active';
         $status = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : 'active';
 
+        $roundingModeInput = $data['rounding_mode'] ?? 'round';
+        if (!in_array($roundingModeInput, self::ROUNDING_MODES, true)) {
+            return ['status' => false, 'message' => 'Invalid rounding_mode.'];
+        }
+        $decimalPlaces = isset($data['decimal_places']) && is_numeric($data['decimal_places']) ? (int)$data['decimal_places'] : 2;
+        if ($decimalPlaces < 0 || $decimalPlaces > 4) {
+            return ['status' => false, 'message' => 'decimal_places must be between 0 and 4.'];
+        }
+
         $params = [
             ':country_code' => $countryCode,
             ':code' => $code,
@@ -120,6 +142,8 @@ class TaxStatutoryModel {
             ':is_company_rate_editable' => $isCompanyRateEditable,
             ':sort_order' => $sortOrder,
             ':status' => $status,
+            ':rounding_mode' => $roundingModeInput,
+            ':decimal_places' => $decimalPlaces,
         ];
 
         try {
@@ -134,7 +158,8 @@ class TaxStatutoryModel {
                             category = :category, calc_method = :calc_method, calc_base = :calc_base,
                             is_employee_applicable = :is_employee_applicable, is_employer_applicable = :is_employer_applicable,
                             default_is_active = :default_is_active, is_company_rate_editable = :is_company_rate_editable,
-                            sort_order = :sort_order, status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+                            sort_order = :sort_order, status = :status, rounding_mode = :rounding_mode,
+                            decimal_places = :decimal_places, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $params[':updated_by'] = $userId;
                 $params[':id'] = $id;
@@ -146,11 +171,11 @@ class TaxStatutoryModel {
             $sql = "INSERT INTO `statutory_items`
                         (country_code, code, name_th, name_en, category, calc_method, calc_base,
                          is_employee_applicable, is_employer_applicable, default_is_active, is_company_rate_editable,
-                         sort_order, status, created_by)
+                         sort_order, status, rounding_mode, decimal_places, created_by)
                     VALUES
                         (:country_code, :code, :name_th, :name_en, :category, :calc_method, :calc_base,
                          :is_employee_applicable, :is_employer_applicable, :default_is_active, :is_company_rate_editable,
-                         :sort_order, :status, :created_by)";
+                         :sort_order, :status, :rounding_mode, :decimal_places, :created_by)";
             $params[':created_by'] = $userId;
             $stmt = $this->db->prepare($sql);
             $stmt->execute($params);

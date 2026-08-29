@@ -940,6 +940,27 @@ try {
     $thisRunInList = current(array_filter($runsListForCounts, fn($r) => (int)$r['id'] === $runId));
     check('locked_employee_count reflects the 1 locked employee', (int)($thisRunInList['locked_employee_count'] ?? -1), 1);
     check('verified_employee_count reflects 0 (verified was set then cleared above)', (int)($thisRunInList['verified_employee_count'] ?? -1), 0);
+    check('error_employee_count is 0 -- no incomplete-data rows in this fixture yet', (int)($thisRunInList['error_employee_count'] ?? -1), 0);
+
+    // 2026-08-29, explicit follow-up: "ถ้าข้อมูลไม่สมบูรณ์ให้มีบอกด้วย ว่าไม่สมบูรณ์กี่คนและมีปุ่ม i ให้คลิก
+    // ดูรายละเอียดในหน้ารายการได้เลย" -- directly forces one row's calc_status to 'error' (simplest
+    // deterministic way to exercise this without engineering a genuinely broken calc scenario),
+    // confirms both list()'s new error_employee_count subquery and the new
+    // errorEmployeesForRun() lookup that backs the List page's "i" info button, then restores the
+    // row so nothing downstream in this shared-fixture file sees a stray error.
+    echo "=== List page 'incomplete data' indicator: error_employee_count + errorEmployeesForRun() ===\n";
+    $stmtForceError = $pdo->prepare("UPDATE `payroll_run_details` SET calc_status = 'error', calc_errors = 'no_rate_configured' WHERE run_id = :run_id AND employee_id = :employee_id");
+    $stmtForceError->execute([':run_id' => $runId, ':employee_id' => $employeeFullId]);
+    $runsListAfterForcedError = $runModel->list($compId, ['state' => 'draft']);
+    $thisRunAfterForcedError = current(array_filter($runsListAfterForcedError, fn($r) => (int)$r['id'] === $runId));
+    check('error_employee_count now reflects the 1 forced-error row', (int)($thisRunAfterForcedError['error_employee_count'] ?? -1), 1);
+    $errorEmployees = $runModel->errorEmployeesForRun($runId, $compId);
+    check('errorEmployeesForRun() returns exactly 1 row', count($errorEmployees), 1);
+    check('errorEmployeesForRun() row is the correct employee', (int)($errorEmployees[0]['employee_no'] ?? 0) > 0 || !empty($errorEmployees[0]['employee_no']), true);
+    check('errorEmployeesForRun() surfaces the calc_errors text for the "i" button detail view', $errorEmployees[0]['calc_errors'] ?? null, 'no_rate_configured');
+    check('errorEmployeesForRun() on a nonexistent run returns empty (same not-found guard as getDetails())', $runModel->errorEmployeesForRun(999999999, $compId), []);
+    $stmtRestoreError = $pdo->prepare("UPDATE `payroll_run_details` SET calc_status = 'calculated', calc_errors = NULL WHERE run_id = :run_id AND employee_id = :employee_id");
+    $stmtRestoreError->execute([':run_id' => $runId, ':employee_id' => $employeeFullId]);
 
     echo "=== Employee Lock: unlocking restores normal recomputation ===\n";
     $unlockRes = $runModel->setEmployeeLocked($runId, $compId, $employeeFullId, false, $adminUserId, true);
@@ -1209,6 +1230,28 @@ try {
     check('daily employee without a shift has_shift_pattern is false', $expectedPayableNoShift['has_shift_pattern'], false);
     check('no-shift daily employee base_salary_amount = rate * payable_days (holiday-only exclusion)', (float)$noShiftDetail['base_salary_amount'], round($noShiftRate * $expectedPayableNoShift['payable_days'], 2));
 
+    // 2026-08-29, explicit request: "ให้แสดงในข้อมูลด้วยว่า จำนวนวันในรอบนั้นกี่วัน วันทำงานกี่วัน วันหยุด
+    // นักขัตฤกษ์กี่วัน วันหยุดประจำสัปดาห์กี่วัน" -- workingDaysBreakdown() is a richer companion to
+    // payableDaysForEmployee() just exercised above, reusing the exact same shift/holiday fixtures
+    // (employeeDailyId has a real assigned shift; employeeDailyNoShiftId deliberately has none).
+    echo "=== SetupRulesModel::workingDaysBreakdown() -- richer companion to payableDaysForEmployee() ===\n";
+    $breakdownWithShift = $setupRulesModelForTest->workingDaysBreakdown($employeeDailyId, $compId, $periodStart, $periodEnd);
+    check('total_days matches payableDaysForEmployee()\'s own total_days for the same employee/period', $breakdownWithShift['total_days'], $expectedPayableDaily['total_days']);
+    check('working_days + holiday_days + weekly_off_days sums to total_days (mutually exclusive categorization)',
+        $breakdownWithShift['working_days'] + $breakdownWithShift['holiday_days'] + $breakdownWithShift['weekly_off_days'], $breakdownWithShift['total_days']);
+    check('working_days matches payableDaysForEmployee()\'s own payable_days (same "scheduled work day, not a holiday" definition)', $breakdownWithShift['working_days'], $expectedPayableDaily['payable_days']);
+    check('has_shift_pattern is true (this employee has a real assigned shift)', $breakdownWithShift['has_shift_pattern'], true);
+
+    $breakdownNoShift = $setupRulesModelForTest->workingDaysBreakdown($employeeDailyNoShiftId, $compId, $periodStart, $periodEnd);
+    check('has_shift_pattern is false for the no-shift employee', $breakdownNoShift['has_shift_pattern'], false);
+    check('no-shift employee: weekly_off_days is 0 (no shift pattern to derive a weekly off day from)', $breakdownNoShift['weekly_off_days'], 0);
+    check('no-shift employee: working_days + holiday_days still sums to total_days', $breakdownNoShift['working_days'] + $breakdownNoShift['holiday_days'], $breakdownNoShift['total_days']);
+
+    echo "=== Raw Sync Data viewer surfaces working_days_breakdown (sync-based run only) ===\n";
+    $rawSyncWithBreakdown = $runModel->rawSyncDataForEmployee($compId, $pulledRunId, $employeeFullId);
+    checkTrue('rawSyncDataForEmployee() on a sync-based run includes working_days_breakdown', isset($rawSyncWithBreakdown['working_days_breakdown']));
+    checkTrue('working_days_breakdown has all 4 count fields', isset($rawSyncWithBreakdown['working_days_breakdown']['total_days'], $rawSyncWithBreakdown['working_days_breakdown']['working_days'], $rawSyncWithBreakdown['working_days_breakdown']['holiday_days'], $rawSyncWithBreakdown['working_days_breakdown']['weekly_off_days']));
+
     echo "=== Per-run earning/deduction item selection (two-panel, per-type) ===\n";
     // A second earning PED type + standing assignment on the same full-period employee, so
     // restricting to just $pedTypeId (transport allowance) has something else to visibly exclude.
@@ -1427,6 +1470,19 @@ try {
 
     $illegalLockAgain = $runModel->lock($runId, $compId, $adminUserId, true);
     check('locking an already-locked run is blocked', $illegalLockAgain['status'], false);
+
+    // 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น ไม่สามารถเพิ่ม
+    // แก้ไข ลบได้" -- $runId is now 'locked' (just above), so employeeCommentAdd()/Update()/Delete()
+    // must all refuse from this point on. employeeComments() (the read path) is deliberately NOT
+    // gated -- "ดูได้เท่านั้น" (viewable only) means reads must keep working.
+    echo "=== Comments become view-only once the run has finished (state=locked) ===\n";
+    $lockedCommentAddRes = $runModel->employeeCommentAdd($runId, $compId, $employeeFullId, null, 'Trying to add after locked', $adminUserId, true);
+    check('employeeCommentAdd() rejected once the run is locked', $lockedCommentAddRes['status'], false);
+    $lockedCommentUpdateRes = $runModel->employeeCommentUpdate($runId, $compId, $commentRes2['id'], 'error', 'Trying to edit after locked', $adminUserId, true);
+    check('employeeCommentUpdate() rejected once the run is locked', $lockedCommentUpdateRes['status'], false);
+    $lockedCommentDeleteRes = $runModel->employeeCommentDelete($runId, $compId, $commentRes2['id'], $adminUserId, true);
+    check('employeeCommentDelete() rejected once the run is locked', $lockedCommentDeleteRes['status'], false);
+    checkTrue('the comment from earlier (created while still draft) still reads back fine -- view-only means reads keep working', count($runModel->employeeComments($runId, $compId, $employeeFullId)) > 0);
 
     echo "=== Delete only allowed in draft ===\n";
     $secondRun = $runModel->create($compId, [

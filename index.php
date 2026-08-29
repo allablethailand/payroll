@@ -81,6 +81,7 @@
     $router->get('api/payroll-run.employee-comment.list', 'PayrollController@employeeCommentList');
     $router->post('api/payroll-run.employee-comment.update', 'PayrollController@employeeCommentUpdate');
     $router->post('api/payroll-run.employee-comment.delete', 'PayrollController@employeeCommentDelete');
+    $router->get('api/payroll-run.error-employees', 'PayrollController@errorEmployees');
     $router->post('api/payroll-run.submit', 'PayrollController@submit');
     $router->post('api/payroll-run.revert', 'PayrollController@revert');
     $router->post('api/payroll-run.approve', 'PayrollController@approve');
@@ -288,6 +289,8 @@
     $router->get('reports/annual-summary', 'AnnualIncomeSummaryController@index');
     $router->get('api/annual-income-summary.years', 'AnnualIncomeSummaryController@years');
     $router->get('api/annual-income-summary.summary', 'AnnualIncomeSummaryController@summary');
+    $router->get('api/annual-income-summary.fiscal-year-setting', 'AnnualIncomeSummaryController@fiscalYearSetting');
+    $router->post('api/annual-income-summary.fiscal-year-setting.save', 'AnnualIncomeSummaryController@saveFiscalYearSetting');
     $router->get('api/report.list', 'ReportsController@list');
     $router->get('api/report.cycle-runs', 'ReportsController@cycleRuns');
     $router->get('api/report.generate', 'ReportsController@generate');

@@ -177,6 +177,8 @@ function resetItemForm() {
     $('#item_is_employee_applicable, #item_is_employer_applicable, #item_default_is_active, #item_status').prop('checked', true);
     $('#item_is_company_rate_editable').prop('checked', false);
     $('#item_sort_order').val(0);
+    $('#item_rounding_mode').val('round').trigger('change');
+    $('#item_decimal_places').val(2);
 }
 function populateItemForm(row) {
     $('#item_id').val(row.id);
@@ -192,6 +194,8 @@ function populateItemForm(row) {
     $('#item_is_company_rate_editable').prop('checked', Number(row.is_company_rate_editable) === 1);
     $('#item_sort_order').val(row.sort_order || 0);
     $('#item_status').prop('checked', row.status === 'active');
+    $('#item_rounding_mode').val(row.rounding_mode || 'round').trigger('change');
+    $('#item_decimal_places').val(row.decimal_places !== undefined && row.decimal_places !== null ? row.decimal_places : 2);
 }
 function validateItemForm() {
     let firstInvalid = null;
@@ -223,7 +227,9 @@ function collectItemFormData() {
         default_is_active: $('#item_default_is_active').is(':checked'),
         is_company_rate_editable: $('#item_is_company_rate_editable').is(':checked'),
         sort_order: $('#item_sort_order').val() || 0,
-        status: $('#item_status').is(':checked') ? 'active' : 'inactive'
+        status: $('#item_status').is(':checked') ? 'active' : 'inactive',
+        rounding_mode: $('#item_rounding_mode').val() || 'round',
+        decimal_places: $('#item_decimal_places').val() || 0
     };
 }
 
@@ -868,6 +874,7 @@ $(document).ready(function () {
         initSelect2('#item_category', { mode: 'static' });
         initSelect2('#item_calc_method', { mode: 'static' });
         initSelect2('#item_calc_base', { mode: 'static' });
+        initSelect2('#item_rounding_mode', { mode: 'static' });
     }
     if (typeof initDatepicker === 'function') {
         initDatepicker('#rate_effective_date');

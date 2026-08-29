@@ -147,7 +147,7 @@ class StatutoryCalculationEngine {
                     $line['note'] = 'no_brackets_configured';
                     return $line;
                 }
-                $tax = $this->computeProgressiveBracket($brackets, $base);
+                $tax = $this->computeProgressiveBracket($brackets, $base, $item);
                 $line['employee_amount'] = $item['is_employee_applicable'] ? $tax : 0.0;
                 $line['employer_amount'] = 0.0;
                 return $line;
@@ -162,6 +162,32 @@ class StatutoryCalculationEngine {
             default:
                 $line['note'] = 'unknown_calc_method';
                 return $line;
+        }
+    }
+
+    /**
+     * 2026-08-29, explicit request: "ให้มีการกำหนดเพิ่มได้ว่าปัดเศษ หรือไม่ปัด ถ้าปัดปัดแบบไหน และทศนิยม
+     * ได้กี่ตำแหน่ง แล้วตอนคำนวณให้นำไปใช้ด้วย" -- replaces every previously-hardcoded round($x, 2)
+     * inside the per-item compute methods below. `$item` is the row from
+     * CompanyStatutorySettingModel::list() (or ::get()), which now carries rounding_mode/
+     * decimal_places straight from statutory_items -- missing keys (old cached/test fixtures)
+     * default to 'round'/2, i.e. byte-identical to the pre-fix hardcoded behavior.
+     */
+    private function applyRounding(float $value, array $item): float {
+        $decimals = isset($item['decimal_places']) ? (int)$item['decimal_places'] : 2;
+        $mode = $item['rounding_mode'] ?? 'round';
+        $factor = 10 ** $decimals;
+        switch ($mode) {
+            case 'up':
+                return ceil($value * $factor) / $factor;
+            case 'down':
+                return floor($value * $factor) / $factor;
+            case 'none':
+                // Truncate toward zero -- drop excess digits with no rounding adjustment either way.
+                return ($value >= 0 ? floor($value * $factor) : ceil($value * $factor)) / $factor;
+            case 'round':
+            default:
+                return round($value, $decimals);
         }
     }
 
@@ -214,7 +240,7 @@ class StatutoryCalculationEngine {
         $employeeRawAmount = null;
         $employeeCapped = false;
         if ($item['is_employee_applicable'] && $employeeRate !== null) {
-            $employeeRawAmount = round($effBase * (float)$employeeRate / 100, 2);
+            $employeeRawAmount = $this->applyRounding($effBase * (float)$employeeRate / 100, $item);
             $employeeAmount = $employeeRawAmount;
             if ($rateRow['max_employee_contribution'] !== null) {
                 $employeeAmount = min($employeeAmount, (float)$rateRow['max_employee_contribution']);
@@ -222,7 +248,7 @@ class StatutoryCalculationEngine {
             }
         }
         if ($item['is_employer_applicable'] && $employerRate !== null) {
-            $employerAmount = round($effBase * (float)$employerRate / 100, 2);
+            $employerAmount = $this->applyRounding($effBase * (float)$employerRate / 100, $item);
             if ($rateRow['max_employer_contribution'] !== null) {
                 $employerAmount = min($employerAmount, (float)$rateRow['max_employer_contribution']);
             }
@@ -247,12 +273,12 @@ class StatutoryCalculationEngine {
     private function computeFixedAmount(array $item, array $rateRow): array {
         $employeeAmount = $item['employee_amount_override'] ?? $rateRow['employee_amount'];
         $employerAmount = $item['employer_amount_override'] ?? $rateRow['employer_amount'];
-        $employeeAmount = ($item['is_employee_applicable'] && $employeeAmount !== null) ? round((float)$employeeAmount, 2) : 0.0;
-        $employerAmount = ($item['is_employer_applicable'] && $employerAmount !== null) ? round((float)$employerAmount, 2) : 0.0;
+        $employeeAmount = ($item['is_employee_applicable'] && $employeeAmount !== null) ? $this->applyRounding((float)$employeeAmount, $item) : 0.0;
+        $employerAmount = ($item['is_employer_applicable'] && $employerAmount !== null) ? $this->applyRounding((float)$employerAmount, $item) : 0.0;
         return [$employeeAmount, $employerAmount];
     }
 
-    private function computeProgressiveBracket(array $brackets, float $base): float {
+    private function computeProgressiveBracket(array $brackets, float $base, array $item): float {
         $tax = 0.0;
         foreach ($brackets as $b) {
             $min = (float)$b['min_amount'];
@@ -267,7 +293,7 @@ class StatutoryCalculationEngine {
                 break;
             }
         }
-        return round($tax, 2);
+        return $this->applyRounding($tax, $item);
     }
 
     /**
@@ -283,12 +309,12 @@ class StatutoryCalculationEngine {
         if (!is_array($config)) {
             return [0.0, 0.0, 'invalid_formula_config'];
         }
-        $employeeAmount = $item['is_employee_applicable'] ? $this->applyThresholdFormula($config['employee'] ?? null, $base) : 0.0;
-        $employerAmount = $item['is_employer_applicable'] ? $this->applyThresholdFormula($config['employer'] ?? null, $base) : 0.0;
+        $employeeAmount = $item['is_employee_applicable'] ? $this->applyThresholdFormula($config['employee'] ?? null, $base, $item) : 0.0;
+        $employerAmount = $item['is_employer_applicable'] ? $this->applyThresholdFormula($config['employer'] ?? null, $base, $item) : 0.0;
         return [$employeeAmount, $employerAmount, null];
     }
 
-    private function applyThresholdFormula(?array $sideConfig, float $base): float {
+    private function applyThresholdFormula(?array $sideConfig, float $base, array $item): float {
         if ($sideConfig === null || !isset($sideConfig['base_rate'])) {
             return 0.0;
         }
@@ -297,6 +323,6 @@ class StatutoryCalculationEngine {
             $extraBase = max(0.0, $base - (float)$sideConfig['extra_threshold']);
             $amount += $extraBase * (float)$sideConfig['extra_rate'] / 100;
         }
-        return round($amount, 2);
+        return $this->applyRounding($amount, $item);
     }
 }

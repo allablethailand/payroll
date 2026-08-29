@@ -120,6 +120,13 @@
                 <h6 class="text-secondary fw-bold mb-0">
                     <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">3</label>
                     <span data-i18n="employee_breakdown">Employee Breakdown</span>
+                    <!-- 2026-08-29, explicit request: "ตอน View Mode...อยากให้ปรับให้ดูเป็น View อยากเดียว
+                         ...จะได้ดูแตกต่างจากตอนสร้างและแก้ไข" -- shown whenever currentRun.state !== 'draft'
+                         (applyRunDetailViewMode() in detail.js), the one always-visible cue that this
+                         run's Employee Breakdown is read-only, on top of the individual controls
+                         (checkboxes, bulk bar, Verify/Lock, Manage Items) that already disable/hide
+                         themselves per-control. -->
+                    <span class="badge bg-secondary-subtle text-secondary ms-2 d-none" id="runDetailViewModeBadge"><i class="fa-solid fa-eye me-1"></i><span data-i18n="view_mode">View Mode</span></span>
                 </h6>
                 <div id="runRecalculateButtonWrap"></div>
             </div>
@@ -174,19 +181,28 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkLock"><i class="fa-solid fa-lock me-1"></i><span data-i18n="action_lock">Lock</span></button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkUnlock"><i class="fa-solid fa-lock-open me-1"></i><span data-i18n="action_unlock">Unlock</span></button>
             </div>
+            <!-- 2026-08-29, explicit request: "ตารางตรงพนักงาน ปรับให้แสดงเป็น 2 แถวแบบไม่ hide column
+                 ไหมครับ เพราะ expand ดูไม่สะดวก" -- was 12 separate DataTables Responsive columns
+                 (collapsing behind an expand-row toggle on narrower widths, per the user's own
+                 report inconvenient). Employee (No.+Name) and Calculation (status+Remark) stay
+                 consolidated into 2-line cells; Base Salary/Gross/Deduction/Net were split back into
+                 their own columns in a same-day follow-up ("ตรงเงินได้เงินหักสุทธิ์...แยก Column ไปเลย")
+                 since the combined version wasn't clear enough. responsive:false in detail.js's own
+                 initRunDetailTable() means NOTHING ever hides behind an expand arrow either way; a
+                 .table-responsive wrapper below gives a plain horizontal scrollbar as the only
+                 narrow-viewport fallback, same as every other wide DataTable in this app. -->
+            <div class="table-responsive">
             <table class="table table-hover table-border align-middle w-100" id="tb_run_detail">
                 <thead class="table-light text-secondary">
                     <tr>
                         <th class="text-center"><input type="checkbox" class="form-check-input" id="runDetailSelectAll"></th>
-                        <th data-i18n="table_code">Code</th>
-                        <th data-i18n="table_name">Name</th>
-                        <th class="text-center" data-i18n="table_source">Source</th>
+                        <th data-i18n="table_employee">Employee</th>
+                        <th data-i18n="table_source">Source</th>
                         <th class="text-end" data-i18n="table_base_salary">Base Salary</th>
                         <th class="text-end" data-i18n="table_gross_amount">Gross</th>
                         <th class="text-end" data-i18n="table_deduction_amount">Deductions</th>
                         <th class="text-end" data-i18n="table_net_pay">Net Pay</th>
-                        <th data-i18n="table_calc_status">Calculation</th>
-                        <th data-i18n="table_remark">Remark</th>
+                        <th data-i18n="table_calculation">Calculation</th>
                         <th class="text-center" data-i18n="table_verify_lock">Verify / Lock</th>
                         <!-- 2026-08-27, explicit request: blank out any "Action(s)" header, matches
                              the empty-header convention every other Actions column already uses. -->
@@ -195,6 +211,7 @@
                 </thead>
                 <tbody></tbody>
             </table>
+            </div>
           </div>
         </div>
 
@@ -212,6 +229,14 @@
                     <div class="modal-body">
                         <div id="employeeCommentTimeline" class="apv-timeline mb-3"></div>
                         <div id="employeeCommentEmpty" class="text-center text-muted small py-3 d-none" data-i18n="employee_comment_timeline_empty">No comments yet.</div>
+                        <!-- 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น
+                             ไม่สามารถเพิ่ม แก้ไข ลบได้" -- shown instead of the form area below once
+                             commentsReadOnlyRd() (detail.js) is true, i.e. the run has reached a
+                             genuinely finished state (paid/locked/cancelled -- see
+                             PayrollRunModel::COMMENT_LOCKED_STATES's own docblock for why that's a
+                             different, narrower cutoff than this page's general View Mode). -->
+                        <div id="employeeCommentReadOnlyNotice" class="text-center text-muted small py-2 d-none"><i class="fa-solid fa-lock me-1"></i><span data-i18n="employee_comment_read_only">This payroll run has finished processing. Comments are view-only.</span></div>
+                        <div id="employeeCommentFormArea">
                         <hr>
                         <!-- 2026-08-29, explicit request: "ตรงใส่ Comment Tag ให้กดเลือกเป็น radio" -- was a
                              select2-static dropdown, now Bootstrap's btn-check/btn-outline-* radio-as-
@@ -233,6 +258,7 @@
                         </div>
                         <div class="mb-2">
                             <textarea class="form-control form-control-sm" id="employeeCommentText" rows="3" data-i18n="employee_comment_placeholder" placeholder="Write a comment..."></textarea>
+                        </div>
                         </div>
                     </div>
                     <div class="modal-footer">
