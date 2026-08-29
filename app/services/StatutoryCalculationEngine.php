@@ -95,6 +95,7 @@ class StatutoryCalculationEngine {
             'employer_amount' => 0.0,
             'rate_source' => 'master',
             'note' => null,
+            'formula' => null,
         ];
 
         if ($item['effective_status'] !== 'active') {
@@ -122,7 +123,7 @@ class StatutoryCalculationEngine {
                     return $line;
                 }
                 $isOverride = $item['employee_rate_override'] !== null || $item['employer_rate_override'] !== null;
-                [$line['employee_amount'], $line['employer_amount'], $line['base_amount']] = $this->computeFlatRate($item, $rateRow, $base);
+                [$line['employee_amount'], $line['employer_amount'], $line['base_amount'], $line['formula']] = $this->computeFlatRate($item, $rateRow, $base);
                 $line['rate_source'] = $isOverride ? 'company_override' : 'master';
                 return $line;
 
@@ -195,7 +196,7 @@ class StatutoryCalculationEngine {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /** @return array{0:float,1:float,2:float} [employee_amount, employer_amount, effective_base] */
+    /** @return array{0:float,1:float,2:float,3:array} [employee_amount, employer_amount, effective_base, formula] */
     private function computeFlatRate(array $item, array $rateRow, float $base): array {
         $employeeRate = $item['employee_rate_override'] ?? $rateRow['employee_rate'];
         $employerRate = $item['employer_rate_override'] ?? $rateRow['employer_rate'];
@@ -210,10 +211,14 @@ class StatutoryCalculationEngine {
 
         $employeeAmount = 0.0;
         $employerAmount = 0.0;
+        $employeeRawAmount = null;
+        $employeeCapped = false;
         if ($item['is_employee_applicable'] && $employeeRate !== null) {
-            $employeeAmount = round($effBase * (float)$employeeRate / 100, 2);
+            $employeeRawAmount = round($effBase * (float)$employeeRate / 100, 2);
+            $employeeAmount = $employeeRawAmount;
             if ($rateRow['max_employee_contribution'] !== null) {
                 $employeeAmount = min($employeeAmount, (float)$rateRow['max_employee_contribution']);
+                $employeeCapped = $employeeAmount < $employeeRawAmount;
             }
         }
         if ($item['is_employer_applicable'] && $employerRate !== null) {
@@ -222,7 +227,20 @@ class StatutoryCalculationEngine {
                 $employerAmount = min($employerAmount, (float)$rateRow['max_employer_contribution']);
             }
         }
-        return [$employeeAmount, $employerAmount, $effBase];
+        // 2026-08-29, explicit request: "ประกันสังคม อยากให้เห็นสูตรคำนวณด้วยครับ...ให้เป็น Format นี้ทุก
+        // สูตรการคำนวณที่แสดงผล" -- structured trace covering TH_SSO/TH_PVD's own flat_rate calc_method
+        // (and any future item using the same method): raw eligible base -> min/max base clamping ->
+        // rate% -> raw amount -> max contribution cap -> final result. Same convention as
+        // SyncPayResolver's own 'formula' field on earning/deduction lines.
+        $formula = [
+            'type' => 'flat_rate',
+            'raw_base' => $base, 'min_base' => $rateRow['min_base_amount'] !== null ? (float)$rateRow['min_base_amount'] : null,
+            'max_base' => $rateRow['max_base_amount'] !== null ? (float)$rateRow['max_base_amount'] : null,
+            'effective_base' => $effBase, 'employee_rate' => $employeeRate !== null ? (float)$employeeRate : null,
+            'employee_raw_amount' => $employeeRawAmount, 'max_employee_contribution' => $rateRow['max_employee_contribution'] !== null ? (float)$rateRow['max_employee_contribution'] : null,
+            'employee_capped' => $employeeCapped, 'result' => $employeeAmount,
+        ];
+        return [$employeeAmount, $employerAmount, $effBase, $formula];
     }
 
     /** @return array{0:float,1:float} [employee_amount, employer_amount] */

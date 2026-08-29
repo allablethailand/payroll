@@ -538,6 +538,32 @@ class PayrollController extends Controller {
         $this->json(['status' => true, 'data' => $this->model->employeeComments($id, (int)$compId, $employeeId)]);
     }
 
+    public function employeeCommentUpdate() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $commentId = (is_array($data) && isset($data['comment_id'])) ? (int)$data['comment_id'] : 0;
+        $tag = (is_array($data) && !empty($data['tag'])) ? (string)$data['tag'] : null;
+        $comment = (is_array($data) && isset($data['comment'])) ? (string)$data['comment'] : '';
+        if (!$compId || $id <= 0 || $commentId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->employeeCommentUpdate($id, (int)$compId, $commentId, $tag, $comment, $this->userId(), $this->isAdmin()));
+    }
+
+    public function employeeCommentDelete() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $commentId = (is_array($data) && isset($data['comment_id'])) ? (int)$data['comment_id'] : 0;
+        if (!$compId || $id <= 0 || $commentId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->employeeCommentDelete($id, (int)$compId, $commentId, $this->userId(), $this->isAdmin()));
+    }
+
     public function submit() {
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);

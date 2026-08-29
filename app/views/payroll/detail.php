@@ -213,17 +213,32 @@
                         <div id="employeeCommentTimeline" class="apv-timeline mb-3"></div>
                         <div id="employeeCommentEmpty" class="text-center text-muted small py-3 d-none" data-i18n="employee_comment_timeline_empty">No comments yet.</div>
                         <hr>
+                        <!-- 2026-08-29, explicit request: "ตรงใส่ Comment Tag ให้กดเลือกเป็น radio" -- was a
+                             select2-static dropdown, now Bootstrap's btn-check/btn-outline-* radio-as-
+                             button component (real <input type="radio"> underneath, styled as a
+                             segmented toggle) so each tag's own color is visible without opening a
+                             dropdown first. -->
                         <div class="mb-2">
                             <label class="form-label small text-muted mb-1" data-i18n="employee_comment_tag">Tag</label>
-                            <select class="form-select form-select-sm select2-static" id="employeeCommentTag" data-option-keys="employee_comment_tag_none,employee_comment_tag_in_progress,employee_comment_tag_completed,employee_comment_tag_error" data-option-values=",in_progress,completed,error"></select>
+                            <div class="btn-group w-100" role="group" id="employeeCommentTagGroup">
+                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagNone" value="" checked>
+                                <label class="btn btn-outline-secondary btn-sm" for="employeeCommentTagNone" data-i18n="employee_comment_tag_none">No tag</label>
+                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagInProgress" value="in_progress">
+                                <label class="btn btn-outline-warning btn-sm" for="employeeCommentTagInProgress" data-i18n="employee_comment_tag_in_progress">In Progress</label>
+                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagCompleted" value="completed">
+                                <label class="btn btn-outline-success btn-sm" for="employeeCommentTagCompleted" data-i18n="employee_comment_tag_completed">Completed</label>
+                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagError" value="error">
+                                <label class="btn btn-outline-danger btn-sm" for="employeeCommentTagError" data-i18n="employee_comment_tag_error">Error</label>
+                            </div>
                         </div>
                         <div class="mb-2">
                             <textarea class="form-control form-control-sm" id="employeeCommentText" rows="3" data-i18n="employee_comment_placeholder" placeholder="Write a comment..."></textarea>
                         </div>
                     </div>
                     <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnCancelEditEmployeeComment" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                        <button type="button" class="btn btn-primary btn-sm" id="btnAddEmployeeComment"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee_comment_add">Add Comment</span></button>
+                        <button type="button" class="btn btn-primary btn-sm" id="btnAddEmployeeComment"><i class="fa-solid fa-plus me-1"></i><span id="btnAddEmployeeCommentLabel" data-i18n="employee_comment_add">Add Comment</span></button>
                     </div>
                 </div>
             </div>

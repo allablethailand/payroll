@@ -79,6 +79,8 @@
     $router->post('api/payroll-run.employee-lock.bulk', 'PayrollController@employeeLockBulk');
     $router->post('api/payroll-run.employee-comment.add', 'PayrollController@employeeCommentAdd');
     $router->get('api/payroll-run.employee-comment.list', 'PayrollController@employeeCommentList');
+    $router->post('api/payroll-run.employee-comment.update', 'PayrollController@employeeCommentUpdate');
+    $router->post('api/payroll-run.employee-comment.delete', 'PayrollController@employeeCommentDelete');
     $router->post('api/payroll-run.submit', 'PayrollController@submit');
     $router->post('api/payroll-run.revert', 'PayrollController@revert');
     $router->post('api/payroll-run.approve', 'PayrollController@approve');
