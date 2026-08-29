@@ -264,23 +264,59 @@ class PayrollSyncModel {
         return $id !== false ? (int)$id : null;
     }
 
+    /** Loose YYYY-MM-DD check -- same defensive posture as the rest of this class's own field
+     *  parsing (never trust an external payload's shape blindly), null passthrough for an absent/
+     *  blank/malformed date rather than throwing (these 3 fields are new, additive, and per
+     *  PAYROLL_SYNC_API.md's own 2026-08-28 revision note "null if not set yet" is a valid, expected
+     *  state -- not an error). */
+    private function nullableDate(mixed $value): ?string {
+        if (empty($value) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$value)) {
+            return null;
+        }
+        return (string)$value;
+    }
+
+    /** 2026-08-29, per PAYROLL_SYNC_API.md's own 2026-08-28 revision note: "This field name and its
+     *  intended use on the receiving side are explicitly NOT confirmed with the Payroll team yet."
+     *  Defensively defaulted to 'regular' (today's existing, unchanged behavior) for anything
+     *  missing/unrecognized rather than rejecting the whole ingest over one still-draft field --
+     *  same "don't trust external input blindly" posture as the rest of this class. */
+    private function normalizeRunKind(mixed $value): string {
+        return $value === 'supplemental' ? 'supplemental' : 'regular';
+    }
+
     private function upsertProcess(int $compId, array $p): int {
         $stmt = $this->db->prepare("SELECT id FROM payroll_sync_processes WHERE origami_process_id = :pid LIMIT 1");
         $stmt->execute([':pid' => (int)$p['process_id']]);
         $existingId = $stmt->fetchColumn();
 
         $rawPayload = json_encode($p, JSON_UNESCAPED_UNICODE);
+        // process_subject/process_description (2026-08-28 revision): this specific cycle's own
+        // label/note, distinct from period_name (the recurring schedule template) -- "" normalized
+        // to null, same rule PAYROLL_SYNC_API.md documents for its other free-text fields.
+        $processSubject = !empty($p['process_subject']) ? trim((string)$p['process_subject']) : null;
+        $processDescription = !empty($p['process_description']) ? trim((string)$p['process_description']) : null;
+        $processStart = $this->nullableDate($p['process_start'] ?? null);
+        $processEnd = $this->nullableDate($p['process_end'] ?? null);
+        $processPaid = $this->nullableDate($p['process_paid'] ?? null);
+        $runKind = $this->normalizeRunKind($p['run_kind'] ?? null);
 
         if ($existingId !== false) {
             $id = (int)$existingId;
             $stmt = $this->db->prepare("UPDATE payroll_sync_processes SET
-                    comp_id = :comp_id, process_no = :process_no, origami_report_id = :report_id,
+                    comp_id = :comp_id, process_no = :process_no, process_subject = :process_subject,
+                    process_description = :process_description, process_start = :process_start,
+                    process_end = :process_end, process_paid = :process_paid, run_kind = :run_kind,
+                    origami_report_id = :report_id,
                     origami_comp_code = :comp_code, origami_comp_name = :comp_name,
                     origami_period_id = :period_id, period_name = :period_name, frequency_type = :frequency_type,
                     schema_version = :schema_version, raw_payload = :raw_payload, updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id");
             $stmt->execute([
-                ':comp_id' => $compId, ':process_no' => (string)$p['process_no'], ':report_id' => $p['report_id'] ?? null,
+                ':comp_id' => $compId, ':process_no' => (string)$p['process_no'],
+                ':process_subject' => $processSubject, ':process_description' => $processDescription,
+                ':process_start' => $processStart, ':process_end' => $processEnd, ':process_paid' => $processPaid,
+                ':run_kind' => $runKind, ':report_id' => $p['report_id'] ?? null,
                 ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
                 ':period_id' => $p['period_id'] ?? null, ':period_name' => $p['period_name'] ?? null,
                 ':frequency_type' => (string)$p['frequency_type'], ':schema_version' => (int)$p['schema_version'],
@@ -292,13 +328,17 @@ class PayrollSyncModel {
         }
 
         $stmt = $this->db->prepare("INSERT INTO payroll_sync_processes
-                (comp_id, origami_process_id, process_no, origami_report_id, origami_comp_code, origami_comp_name,
+                (comp_id, origami_process_id, process_no, process_subject, process_description,
+                 process_start, process_end, process_paid, run_kind, origami_report_id, origami_comp_code, origami_comp_name,
                  origami_period_id, period_name, frequency_type, schema_version, raw_payload)
-            VALUES (:comp_id, :pid, :process_no, :report_id, :comp_code, :comp_name,
+            VALUES (:comp_id, :pid, :process_no, :process_subject, :process_description,
+                 :process_start, :process_end, :process_paid, :run_kind, :report_id, :comp_code, :comp_name,
                  :period_id, :period_name, :frequency_type, :schema_version, :raw_payload)");
         $stmt->execute([
             ':comp_id' => $compId, ':pid' => (int)$p['process_id'], ':process_no' => (string)$p['process_no'],
-            ':report_id' => $p['report_id'] ?? null, ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
+            ':process_subject' => $processSubject, ':process_description' => $processDescription,
+            ':process_start' => $processStart, ':process_end' => $processEnd, ':process_paid' => $processPaid,
+            ':run_kind' => $runKind, ':report_id' => $p['report_id'] ?? null, ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
             ':period_id' => $p['period_id'] ?? null, ':period_name' => $p['period_name'] ?? null,
             ':frequency_type' => (string)$p['frequency_type'], ':schema_version' => (int)$p['schema_version'],
             ':raw_payload' => $rawPayload,
@@ -1008,6 +1048,13 @@ class PayrollSyncModel {
 
         if (!empty($row['id_card_no'])) {
             $plain['id_card_no'] = EncryptionService::decrypt($row['id_card_no'], $sourceKeyVersion);
+            // SSO number (2026-08-29 explicit request): Origami's sync payload carries no separate
+            // SSO-number field at all -- Thai law has equated the national ID card number with the
+            // Social Security number since ~2011, so default sso_no to the same value whenever this
+            // pull refreshes id_card_no. Same "this pull is the source of truth, overwrite every
+            // time" policy already applied to bank_account_no/spouse_id_card_no elsewhere in this
+            // method (see class docblock) -- not a fill-only-if-currently-empty default.
+            $plain['sso_no'] = $plain['id_card_no'];
             $touchedEncrypted = true;
         }
         if (!empty($row['id_card_issue_date'])) {
@@ -1292,7 +1339,13 @@ class PayrollSyncModel {
             $where .= " AND p.received_at <= :date_to";
             $params[':date_to'] = $filters['date_to'] . ' 23:59:59';
         }
-        $stmt = $this->db->prepare("SELECT p.id, p.origami_process_id, p.process_no, p.origami_comp_name, p.period_name, p.frequency_type,
+        // process_subject/process_start/process_end/process_paid/run_kind (2026-08-29, see
+        // PAYROLL_SYNC_API.md's own 2026-08-28 revision) -- surfaced here so the Payroll Process
+        // page's "Pull to Run" action can pre-fill the run's own name/period/pay date directly from
+        // what Origami sent, per explicit request, instead of the admin re-entering it by hand.
+        $stmt = $this->db->prepare("SELECT p.id, p.origami_process_id, p.process_no, p.process_subject,
+                p.process_start, p.process_end, p.process_paid, p.run_kind,
+                p.origami_comp_name, p.period_name, p.frequency_type,
                 p.item_count, p.unmapped_item_count, p.received_at
             FROM payroll_sync_processes p
             LEFT JOIN payroll_runs r ON r.sync_process_id = p.id

@@ -246,6 +246,181 @@ class EmployeeSyncModel {
         return ['status' => true, 'batch_id' => $batchId, 'total' => count($selectedRefIds), 'success' => $success, 'error' => count($errors), 'errors' => $errors];
     }
 
+    /**
+     * 2026-08-28, explicit request: "เพิ่มปุ่ม Re Sync รายบุคคลของพนักงาน" -- a single-employee
+     * re-sync from Employee Detail, without going through the List picker's browse/filter/select
+     * flow. Confirmed via AskUserQuestion: this is Employee Sync (Origami HR), not Payroll Sync.
+     *
+     * 2026-08-28, same-day follow-up ("ถ้าบางคนเป็นการ Manual สร้างจะไม่มีปุ่ม Sync เกิดขึ้น...หรือ
+     * สามารถส่ง emp code ไปเช็คในฝั่ง origami ได้ไหม จะได้มีปุ่มทุกคน") -- originally required
+     * origami_ref_id to already be set, so a manually-created employee could never use this at all.
+     * Now falls back to matching by employee_no ("payroll code") against Origami's own candidate
+     * list when origami_ref_id is null -- same 2-step ref_id-then-employee_no precedence
+     * EmployeeSyncer::applyOne()/findLocalMatch() already use elsewhere in this file, just run in
+     * the OPPOSITE direction (matching a known local employee_no out TO Origami, instead of matching
+     * an incoming Origami candidate back to a local row). A successful employee_no match "maps" the
+     * employee going forward: applyOne() -> upsertItem()'s UPDATE branch now writes origami_ref_id
+     * on that same call (see EmployeeSyncer's own 2026-08-28 fix), so a second re-sync of the same
+     * employee resolves by the faster/more precise ref_id path from then on.
+     *
+     * `fetchCandidates()` has no ref_id/employee_no filter of its own (only department/position/
+     * team/type, per the API guide), so this always fetches the FULL unfiltered candidate list and
+     * finds the one matching row -- same "always re-fetch fresh, never trust a cached row" rule
+     * apply() already follows, just without a filter to narrow it first.
+     */
+    public function resyncOne(int $compId, int $employeeId, int $userId): array {
+        if ($err = $this->requireConnected()) {
+            return $err;
+        }
+        $origamiCompanyId = $this->origamiCompanyRefId($compId);
+        if ($origamiCompanyId === null) {
+            return ['status' => false, 'message' => 'This company is not linked to an Origami HR company yet. Set the Origami reference ID in Company Profile first.'];
+        }
+        $employee = $this->employeeForMatch($compId, $employeeId);
+        if ($employee === null) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+
+        try {
+            $rows = (new OrigamiEmployeeCandidateClient($this->db))->fetchCandidates($origamiCompanyId, []);
+        } catch (Throwable $e) {
+            return ['status' => false, 'message' => $e->getMessage()];
+        }
+
+        $matchResult = $this->findMatch($rows, $employee);
+        if (!$matchResult['status']) {
+            return $matchResult;
+        }
+        $match = $matchResult['match'];
+
+        $batchModel = new SyncBatchModel($this->db);
+        $batchId = $batchModel->start($compId, 'employee', 'sync', 'manual', $userId);
+        $syncer = new EmployeeSyncer($this->db);
+        try {
+            $syncer->applyOne($compId, $match, $batchId, $userId);
+            $batchModel->complete($batchId, 1, 1, 0, []);
+            $message = $employee['refId'] === null ? 'Matched and linked to Origami HR successfully.' : 'Re-synced successfully.';
+            return ['status' => true, 'message' => $message, 'batch_id' => $batchId];
+        } catch (Throwable $e) {
+            $batchModel->complete($batchId, 1, 0, 1, [['ref_id' => $match['ref_id'] ?? null, 'message' => $e->getMessage()]]);
+            return ['status' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /** @return array{refId:?int, employeeNo:string}|null */
+    private function employeeForMatch(int $compId, int $employeeId): ?array {
+        $stmt = $this->db->prepare("SELECT origami_ref_id, employee_no FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $employee = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($employee === false) {
+            return null;
+        }
+        return [
+            'refId' => $employee['origami_ref_id'] !== null ? (int)$employee['origami_ref_id'] : null,
+            'employeeNo' => trim((string)($employee['employee_no'] ?? '')),
+        ];
+    }
+
+    /** Same ref_id-then-employee_no precedence resyncOne() always used, extracted so
+     *  resyncMany() (2026-08-29) can run it against ONE already-fetched candidate list for every
+     *  selected employee instead of re-fetching per employee.
+     *  @param array{refId:?int, employeeNo:string} $employee
+     *  @return array{status:bool, message?:string, match?:array} */
+    private function findMatch(array $rows, array $employee): array {
+        $refId = $employee['refId'];
+        $employeeNo = $employee['employeeNo'];
+        if ($refId !== null) {
+            foreach ($rows as $row) {
+                if ((int)$row['ref_id'] === $refId) {
+                    return ['status' => true, 'match' => $row];
+                }
+            }
+            return ['status' => false, 'message' => 'This employee (Origami ref_id ' . $refId . ') was not found in Origami\'s current candidate list -- they may have been removed or reassigned there.'];
+        }
+        if ($employeeNo === '') {
+            return ['status' => false, 'message' => 'This employee has no Origami reference id and no employee number to match by -- there is nothing to re-sync against.'];
+        }
+        foreach ($rows as $row) {
+            if (trim((string)($row['employee_no'] ?? '')) === $employeeNo) {
+                return ['status' => true, 'match' => $row];
+            }
+        }
+        return ['status' => false, 'message' => 'No Origami HR record with employee number "' . $employeeNo . '" was found -- this employee may not exist in Origami HR, or uses a different code there.'];
+    }
+
+    /**
+     * 2026-08-29, explicit request: "ในหน้า List เพิ่ม checkbox ด้านหน้า เพื่อให้เลือกหลายรายการแล้วกด Sync
+     * ได้หลายคนพร้อมกัน" -- bulk version of resyncOne(), same ref_id-then-employee_no matching per
+     * employee (via the shared findMatch()/employeeForMatch() helpers extracted above), but fetches
+     * Origami's candidate list ONCE for the whole batch instead of once per employee, and rolls
+     * every employee's result into a SINGLE sync_batches row -- same "one audit row per bulk
+     * action, not N" convention apply() (the List page's own browse-and-pick picker) already
+     * established, rather than N separate rows one resyncOne() call at a time would produce.
+     * Per-employee failures (no match found, an individual applyOne() throwing) are collected into
+     * $errors and do NOT stop the rest of the batch, same as apply()'s own per-item error isolation.
+     */
+    public function resyncMany(int $compId, array $employeeIds, int $userId): array {
+        if ($err = $this->requireConnected()) {
+            return $err;
+        }
+        $origamiCompanyId = $this->origamiCompanyRefId($compId);
+        if ($origamiCompanyId === null) {
+            return ['status' => false, 'message' => 'This company is not linked to an Origami HR company yet. Set the Origami reference ID in Company Profile first.'];
+        }
+        $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
+        if (empty($employeeIds)) {
+            return ['status' => false, 'message' => 'No records selected.'];
+        }
+
+        try {
+            $rows = (new OrigamiEmployeeCandidateClient($this->db))->fetchCandidates($origamiCompanyId, []);
+        } catch (Throwable $e) {
+            return ['status' => false, 'message' => $e->getMessage()];
+        }
+
+        $batchModel = new SyncBatchModel($this->db);
+        $batchId = $batchModel->start($compId, 'employee', 'sync', 'manual', $userId);
+        $syncer = new EmployeeSyncer($this->db);
+        $success = 0;
+        $errors = [];
+        foreach ($employeeIds as $employeeId) {
+            $employee = $this->employeeForMatch($compId, $employeeId);
+            if ($employee === null) {
+                $errors[] = ['employee_id' => $employeeId, 'message' => 'Record not found.'];
+                continue;
+            }
+            $matchResult = $this->findMatch($rows, $employee);
+            if (!$matchResult['status']) {
+                $errors[] = ['employee_id' => $employeeId, 'message' => $matchResult['message']];
+                continue;
+            }
+            try {
+                $syncer->applyOne($compId, $matchResult['match'], $batchId, $userId);
+                $success++;
+            } catch (Throwable $e) {
+                $errors[] = ['employee_id' => $employeeId, 'message' => $e->getMessage()];
+            }
+        }
+        $batchModel->complete($batchId, count($employeeIds), $success, count($errors), $errors);
+
+        return ['status' => true, 'batch_id' => $batchId, 'total' => count($employeeIds), 'success' => $success, 'error' => count($errors), 'errors' => $errors];
+    }
+
+    /** 2026-08-28, same request as resyncOne() -- "last synced" summary card on Employee Detail.
+     *  Confirmed via AskUserQuestion: latest-only, no new history table -- employees.sync_batch_id
+     *  already tracks "last batch to touch this row" (updates on every touch per its own
+     *  established convention, independent of data_source which tracks origin only), so joining it
+     *  to sync_batches gives an accurate "last synced at / outcome" without any new schema. */
+    public function lastSyncSummary(int $compId, int $employeeId): ?array {
+        $stmt = $this->db->prepare("SELECT e.data_source, e.origami_ref_id, b.id AS batch_id, b.status, b.started_at, b.success_count, b.error_count
+            FROM employees e
+            LEFT JOIN sync_batches b ON b.id = e.sync_batch_id
+            WHERE e.id = :id AND e.comp_id = :comp_id AND e.deleted_at IS NULL");
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
     public function log(int $compId, int $limit = 50): array {
         $limit = max(1, min(200, $limit));
         $stmt = $this->db->prepare("SELECT b.*, e.name_th AS triggered_by_name_th, e.surname_th AS triggered_by_surname_th,

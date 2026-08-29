@@ -29,9 +29,18 @@
                 <i class="fa-solid fa-building me-2"></i><span data-i18n="tab_company_setting">Company Settings</span>
             </button>
         </li>
+        <!-- 2026-08-29, follow-up to Bank File Format: "ส่วน Format เอกสารของการนำส่งสรรพากร และ
+             ประกันสังคม ก็อยากให้มีการตั้งค่าเหมือนกัน" -- a VERSION SELECTOR (pick which known format
+             version to file), not a field editor like Bank File Format -- see
+             StatutoryFormatVersionModel's own docblock for why. -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link setup-menu" id="document-format-tab" data-bs-toggle="tab" data-bs-target="#document-format-pane" type="button" role="tab" aria-controls="document-format-pane" aria-selected="false">
+                <i class="fa-solid fa-file-lines me-2"></i><span data-i18n="tab_document_format">Document Format</span>
+            </button>
+        </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
-    <div class="tab-pane fade show active p-3 p-md-4" id="master-rate-pane" role="tabpanel" aria-labelledby="master-rate-tab" tabindex="0">
+    <div class="tab-pane fade show active" id="master-rate-pane" role="tabpanel" aria-labelledby="master-rate-tab" tabindex="0">
         <!-- 2026-08-28, explicit request: "แสดงผลเฉพาะตามประเทศที่ตัวเองตั้งค่า...ให้รองรับเฉพาะ
              ประเทศไทยก่อน" -- the interactive country filter (which defaulted to blank, showing
              every country's items mixed together -- a real gap, see TaxStatutoryController's own
@@ -61,7 +70,7 @@
             <tbody></tbody>
         </table>
     </div>
-    <div class="tab-pane fade p-3 p-md-4" id="company-setting-pane" role="tabpanel" aria-labelledby="company-setting-tab" tabindex="0">
+    <div class="tab-pane fade" id="company-setting-pane" role="tabpanel" aria-labelledby="company-setting-tab" tabindex="0">
         <p class="text-muted small" data-i18n="company_setting_description">Enable/disable statutory items for your company and adjust rates where the law permits, based on your company's registered country.</p>
         <table class="table table-hover table-border align-middle w-100" id="tb_company_setting">
             <thead class="table-light text-secondary">
@@ -78,6 +87,10 @@
             </thead>
             <tbody></tbody>
         </table>
+    </div>
+    <div class="tab-pane fade" id="document-format-pane" role="tabpanel" aria-labelledby="document-format-tab" tabindex="0">
+        <p class="text-muted small" data-i18n="document_format_description">Choose which known submission format version to use for each statutory document. Adding a new version in the future needs no code change here -- it's picked from this list.</p>
+        <div id="statutoryFormatCards" class="row g-3"></div>
     </div>
     </div>
 

@@ -77,7 +77,14 @@ function lastEditedCellTs(row, dateField) {
     }
     const name = (currentLang === 'th' ? row.last_edited_by_name_th : row.last_edited_by_name_en)
         || row.last_edited_by_name_th || row.last_edited_by_name_en;
-    const dateStr = typeof formatDisplayDate === 'function' ? formatDisplayDate(raw) : raw;
+    // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น UTC การ
+    // แสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- dateField here is a real UTC timestamp
+    // (updated_at/last_edited_at, both set via CURRENT_TIMESTAMP), not a plain calendar date, but
+    // this was using formatDisplayDate() (the DATE-ONLY formatter -- raw substring, no timezone
+    // conversion at all) instead of the UTC-aware formatDisplayDateTime(). Same day-boundary risk
+    // as every other fix in this pass: a raw UTC date extracted before conversion can be off by a
+    // full calendar day for a viewer far from UTC.
+    const dateStr = typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(raw).split(' ')[0] : raw;
     return `<div class="small">${escapeHtmlTs(dateStr)}</div>${name ? `<div class="text-muted small">${escapeHtmlTs(name)}</div>` : ''}`;
 }
 function actionButtonsTs(row) {
@@ -122,7 +129,9 @@ function initStatutoryItemTable() {
             { data: null, render: (d, t, row) => currentRateCellTs(row) },
             { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
             { data: 'status', render: d => statusBadgeTs(d) },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => actionButtonsTs(row) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtonsTs(row) }
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
@@ -266,7 +275,9 @@ function initRateHistoryTable() {
             { data: 'end_date', render: { display: d => d ? formatDisplayDate(d) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`, sort: d => d || '', filter: d => d || '' } },
             { data: null, render: (d, t, row) => rateSummaryTs(row) },
             { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => rateHistoryActionButtonsTs(row) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => rateHistoryActionButtonsTs(row) }
         ],
         language: getTableLang(),
         drawCallback: function () { getTableLang(); },
@@ -703,7 +714,9 @@ function initCompanySettingTable() {
             { data: 'effective_status', render: d => csEffectiveStatusBadgeTs(d) },
             { data: null, render: (d, t, row) => csAdjustableCellTs(row) },
             { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row, 'last_edited_at') },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => csActionButtonsTs(row) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => csActionButtonsTs(row) }
         ],
         language: getTableLang(),
         drawCallback: function () { getTableLang(); },
@@ -865,6 +878,125 @@ $(document).ready(function () {
         if (tabId === 'company-setting-tab') {
             initCompanySettingTable();
         }
+        if (tabId === 'document-format-tab') {
+            loadStatutoryFormatSettings();
+        }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+    });
+});
+
+/* ---------- Document Format (statutory format version selector, 2026-08-29) ----------
+ * See StatutoryFormatVersionModel's own docblock: a version PICKER (which known layout to file),
+ * not a field editor -- ภ.ง.ด./สปส. byte layouts are government-mandated, not something a company
+ * should freely edit the way Bank File Format lets them edit a bank's bulk-transfer layout. */
+function statutoryFormLabel(formCode) {
+    const key = 'statutory_form_' + formCode.toLowerCase();
+    return langData[key] || formCode;
+}
+function statutoryVersionLabel(v) {
+    return (currentLang === 'th' ? v.name_th : v.name_en) || v.name_th || v.name_en || v.version_code;
+}
+function loadStatutoryFormatSettings() {
+    const $container = $('#statutoryFormatCards').html(`<div class="text-center text-secondary py-3"><i class="fa-solid fa-spinner fa-spin"></i></div>`);
+    $.ajax({
+        url: `${BASE_URL}/api/statutory-format-version.settings`,
+        method: 'GET',
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                $container.html(`<div class="text-danger small">${res.message || langData['save_failed'] || 'An error occurred while loading the data.'}</div>`);
+                return;
+            }
+            renderStatutoryFormatCards(res.data || []);
+        },
+        error: function () {
+            $container.html(`<div class="text-danger small">${langData['save_failed'] || 'An error occurred while loading the data.'}</div>`);
+        }
+    });
+}
+function renderStatutoryFormatCards(forms) {
+    const $container = $('#statutoryFormatCards').empty();
+    if (!forms.length) {
+        $container.html(`<div class="text-secondary small">${langData['no_statutory_formats'] || 'No document formats are available yet.'}</div>`);
+        return;
+    }
+    window.__statutoryFormVersionsCache = {};
+    forms.forEach(function (form) {
+        window.__statutoryFormVersionsCache[form.form_code] = form.versions;
+        // 2026-08-29, real bug found and fixed (spotted from a live screenshot): the seed
+        // name_th/name_en for a DRAFT version already spell out "ยังไม่ยืนยัน..." in the label
+        // itself, and this used to ALSO append "(DRAFT — not verified)" after it -- redundant,
+        // cluttered text ("...ยังไม่ยืนยันกับกรมสรรพากรอย่างเป็นทางการ) (ฉบับร่าง — ยังไม่ยืนยัน)"). The
+        // colored badge below the dropdown already conveys verified/draft status clearly on its
+        // own -- the option text now shows just the plain name.
+        const options = form.versions.map(function (v) {
+            const selected = v.id === form.selected_version_id ? 'selected' : '';
+            return `<option value="${v.id}" ${selected}>${escapeHtmlTaxStatutory(statutoryVersionLabel(v))}</option>`;
+        }).join('');
+        const selectedVersion = form.versions.find(v => v.id === form.selected_version_id);
+        const verifiedBadge = selectedVersion && !selectedVersion.is_verified
+            ? `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`
+            : (selectedVersion ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>` : '');
+        const $card = $(`
+            <div class="col-md-6">
+                <div class="card-surface p-3 h-100 d-flex flex-column">
+                    <h6 class="fw-bold mb-2">${escapeHtmlTaxStatutory(statutoryFormLabel(form.form_code))}</h6>
+                    <select class="form-select statutory-format-version-select mb-2" data-form-code="${form.form_code}"></select>
+                    <div class="statutory-format-badge-wrap">${verifiedBadge}</div>
+                    <div class="text-end mt-auto pt-2">
+                        <button type="button" class="btn btn-warning btn-sm statutory-format-save-btn" data-form-code="${form.form_code}">
+                            <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">${langData['save'] || 'Save'}</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `);
+        $card.find('.statutory-format-version-select').html(options);
+        $container.append($card);
+    });
+    updateText($container[0]);
+}
+function escapeHtmlTaxStatutory(str) {
+    return $('<div>').text(str === null || str === undefined ? '' : str).html();
+}
+$(document).on('change', '.statutory-format-version-select', function () {
+    const $card = $(this).closest('.card-surface');
+    const versions = window.__statutoryFormVersionsCache && window.__statutoryFormVersionsCache[$(this).data('form-code')];
+    // Toggle the verified/draft badge live as the selection changes -- avoids a full re-fetch just
+    // to reflect a client-side dropdown change before Save is even clicked.
+    if (!versions) return;
+    const selected = versions.find(v => String(v.id) === String($(this).val()));
+    const $badgeWrap = $card.find('.statutory-format-badge-wrap');
+    if (selected) {
+        $badgeWrap.html(selected.is_verified
+            ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>`
+            : `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`);
+    }
+});
+$(document).on('click', '.statutory-format-save-btn', function () {
+    const formCode = $(this).data('form-code');
+    const $select = $(`.statutory-format-version-select[data-form-code="${formCode}"]`);
+    const versionId = $select.val();
+    if (!versionId) return;
+    const $btn = $(this);
+    $btn.prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/statutory-format-version.save`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({ form_code: formCode, version_id: versionId }),
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            $btn.prop('disabled', false);
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
     });
 });

@@ -416,6 +416,21 @@ try {
     }
     checkTrue('PND1 blocked for a draft run', $pnd1DraftBlocked);
 
+    // 2026-08-29, explicit bug report: "PDF ใน Report ไม่รองรับภาษาไทย" -- real root cause was every
+    // report's own generated HTML hardcoding font-family:'DejaVu Sans' (zero Thai glyphs) directly
+    // in its <style> block, which overrides PdfRendererTrait's own defaultFont option entirely --
+    // fixing the trait alone was not enough. Locks in the fix at the actual PDF-byte level (the
+    // embedded font must be a real TH Sarabun New subset, not Times/Helvetica/DejaVu) so this
+    // can't silently regress the next time a report's own HTML is touched.
+    $pnd1Pdf = $pnd1Report->generate(['comp_id' => $compId, 'run_id' => $runId], 'pdf');
+    checkTrue('PND1 PDF starts with %PDF header', str_starts_with($pnd1Pdf['content'], '%PDF'));
+    preg_match_all('/\/BaseFont\s*\/([A-Za-z0-9+,-]+)/', $pnd1Pdf['content'], $pnd1FontMatches);
+    $pnd1EmbedsThaiFont = false;
+    foreach (array_unique($pnd1FontMatches[1]) as $bf) {
+        if (str_contains($bf, 'THSarabun')) { $pnd1EmbedsThaiFont = true; }
+    }
+    checkTrue('PND1 PDF embeds a real TH Sarabun font (not a Thai-blind fallback like DejaVu/Times)', $pnd1EmbedsThaiFont);
+
     // ---------- SSO 1-10 ----------
     echo "=== Sso110Report (statutory) ===\n";
     $sso110Report = ReportRegistry::get('TH_SSO110');
@@ -485,6 +500,13 @@ try {
     $bankCsv = $bankReport->generate(['comp_id' => $compId, 'run_id' => $runId], 'csv');
     check('mime type is csv', $bankCsv['mime_type'], 'text/csv');
     checkTrue('CSV contains the decrypted bank account number', strpos($bankCsv['content'], $bankAccountNo) !== false);
+    // 2026-08-29, explicit bug report: "excel csv...ไม่รองรับภาษาไทย" -- a plain UTF-8 CSV opened
+    // directly in Excel (the realistic way this file gets viewed) very often gets misdetected as
+    // the system's legacy Thai codepage without a BOM, turning every Thai header/value into
+    // mojibake. A leading UTF-8 BOM fixes that; this fixture's own Thai header row proves it's
+    // still valid content right after the BOM, not corrupted by it.
+    checkTrue('CSV starts with a UTF-8 BOM (fixes Excel Thai-encoding mojibake on open)', str_starts_with($bankCsv['content'], "\xEF\xBB\xBF"));
+    checkTrue('Thai header row still immediately follows the BOM intact', strpos($bankCsv['content'], "\xEF\xBB\xBF" . 'เลขที่บัญชี') === 0);
     $bankDraftBlocked = false;
     try {
         $bankReport->generate(['comp_id' => $compId, 'run_id' => $draftRunId], 'csv');
@@ -520,8 +542,16 @@ try {
     checkTrue('filter by payroll_run_id returns only that run\'s log', count($filteredByRun) === 1 && (int)$filteredByRun[0]['payroll_run_id'] === $runId);
     $filteredByYear = $logModel->list($compId, ['period_year' => $periodYearBe]);
     checkTrue('filter by period_year returns only the PND1K log', count($filteredByYear) === 1 && (int)$filteredByYear[0]['period_year'] === $periodYearBe);
+    // 2026-08-29: this comp_id's dev DB now has a REAL pdf report_export_logs row from actual
+    // manual testing of the Print Reports buttons added to the Payroll Process pages today (a
+    // genuine SSO110 pdf generated outside this test's own transaction) -- asserting an exact
+    // total count of 1 is fragile to that (see feedback_dev_db_shared_state_test_fragility).
+    // Scoped down to this fixture's own log id instead, same isolation pattern already used
+    // elsewhere in this project for a comp_id with real concurrent data.
     $filteredByFormat = $logModel->list($compId, ['format' => 'pdf']);
-    checkTrue('filter by format returns only pdf logs', count($filteredByFormat) === 1 && $filteredByFormat[0]['format'] === 'pdf');
+    $matchesFixture = array_filter($filteredByFormat, fn($l) => (int)$l['id'] === $logs2);
+    checkTrue('filter by format returns this fixture\'s own pdf log entry', count($matchesFixture) === 1);
+    checkTrue('every row filter by format returns is genuinely format=pdf', count(array_filter($filteredByFormat, fn($l) => $l['format'] !== 'pdf')) === 0);
 
 } finally {
     $pdo->rollBack();

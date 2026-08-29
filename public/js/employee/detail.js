@@ -230,6 +230,10 @@ function jumpToField($el) {
 // state (currentEmployeeId, breadcrumb, profile header, first-save tab unlock). Extracted so both
 // call sites stay in sync instead of duplicating this bookkeeping.
 function applyEmployeeSaveSuccess(res, wasNew) {
+    // 2026-08-28, explicit request: Employee List should reload itself once a save happens over
+    // here in Detail (opened in a separate browser tab, see list.js's own watchTabDirty() call) --
+    // see markTabDirty()/watchTabDirty() in app.js for the shared cross-tab mechanism this reuses.
+    markTabDirty('employee_list_dirty');
     if (res.id) {
         currentEmployeeId = res.id;
         $('#report_to_id').attr('data-exclude-id', currentEmployeeId);
@@ -422,8 +426,79 @@ function renderProfileHeader(data) {
             .css('background-color', completenessColor(tabPercent));
     });
 
+    updateOrigamiSyncSummary(data);
+
     $('#employeeProfileHeader').removeClass('d-none');
 }
+// 2026-08-28, explicit request: "เพิ่มปุ่ม Re Sync รายบุคคลของพนักงาน และมีประวัติการ Sync โชว์ในหน้า
+// พนักงานด้วย" -- called from renderProfileHeader() so it stays in sync everywhere that already
+// runs (initial load AND after every tab's Save).
+//
+// Same-day follow-up ("ถ้าบางคนเป็นการ Manual สร้างจะไม่มีปุ่ม Sync เกิดขึ้น...หรือสามารถส่ง emp code
+// ไปเช็คในฝั่ง origami ได้ไหม จะได้มีปุ่มทุกคน") -- previously ALSO required data.origami_ref_id to be
+// truthy, so a manually-created employee never got a Sync button at all. Now shown for EVERY
+// employee once this company is Origami-HR-linked (IS_ORIGAMI_HR_LINKED, set once in
+// layout/header.php, same gating convention already used for the Sync buttons on Employee List/
+// Organizational Structure) -- an employee with no origami_ref_id yet gets a "Sync from Origami"
+// button that matches by employee_no instead (see EmployeeSyncModel::resyncOne()'s own 2026-08-28
+// fallback), which links them (writes origami_ref_id) on first success.
+function updateOrigamiSyncSummary(data) {
+    const $section = $('#employeeOrigamiSyncSummary');
+    if (typeof IS_ORIGAMI_HR_LINKED === 'undefined' || !IS_ORIGAMI_HR_LINKED) {
+        $section.addClass('d-none');
+        return;
+    }
+    $section.removeClass('d-none');
+    const $label = $('#btnResyncOneEmployeeLabel');
+    if (!data.origami_ref_id) {
+        $label.text(langData['employee_sync_link_one_button'] || 'Sync from Origami');
+        $('#profileLastSyncedText').text(langData['employee_sync_not_linked_hint'] || 'Not linked to Origami HR yet -- click Sync to match by employee number');
+        return;
+    }
+    $label.text(langData['employee_sync_resync_one_button'] || 'Re-Sync from Origami');
+    $('#profileLastSyncedText').text(langData['loading'] || 'Loading...');
+    $.getJSON(`${BASE_URL}/api/employee-sync.last-sync-summary`, { employee_id: data.id }, function (res) {
+        const summary = (res && res.status) ? res.data : null;
+        if (summary && summary.started_at) {
+            const dateStr = typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(summary.started_at) : summary.started_at;
+            const statusCls = summary.status === 'completed' ? 'text-success' : (summary.status === 'failed' ? 'text-danger' : 'text-warning');
+            $('#profileLastSyncedText').html(`<span class="${statusCls}">${escapeHtml(dateStr)}</span>`);
+        } else {
+            $('#profileLastSyncedText').text(langData['employee_sync_never_synced'] || 'Never synced from Origami');
+        }
+    }).fail(function () {
+        $('#profileLastSyncedText').text(langData['employee_sync_never_synced'] || 'Never synced from Origami');
+    });
+}
+// 2026-08-29, explicit request: "การกด Sync ข้อมูลพนักงานใหม่ให้ขึ้น Confirm ก่อนทั้งในหน้า List และ
+// Detail" -- confirm before running, same showConfirm() pattern as list.js's own
+// .sync-one-employee handler.
+$(document).on('click', '#btnResyncOneEmployee', function () {
+    if (!currentEmployeeId) return;
+    const $btn = $(this);
+    const title = langData['confirm_sync_title'] || 'Confirm Sync';
+    const message = langData['confirm_sync_one_message'] || 'Re-sync this employee from Origami?';
+    showConfirm(title, message, function () {
+        $btn.prop('disabled', true);
+        $.ajax({
+            url: `${BASE_URL}/api/employee-sync.resync-one`, method: 'POST',
+            data: { employee_id: currentEmployeeId }, dataType: 'json',
+            success: function (res) {
+                $btn.prop('disabled', false);
+                if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                // Re-syncing may have changed HR-owned fields (name/DOB/gender/email/mobile/
+                // employment date+status) -- full reload, same as opening this employee fresh, so
+                // the form isn't left showing stale values next to a "just synced" success toast.
+                loadEmployeeIfEditing();
+            },
+            error: function () {
+                $btn.prop('disabled', false);
+                showWarning(langData['save_failed'] || 'An error occurred while saving.');
+            }
+        });
+    });
+});
 function refreshProfileHeader() {
     const employeeNo = $('#employee_no').val();
     if (!employeeNo) return;
@@ -1114,7 +1189,9 @@ function eedTableColumns() {
         { data: null, className: 'text-center', render: (d, t, row) => eedInstallmentProgressCell(row) },
         { data: 'effective_date', render: d => toDisplayDate(d) },
         { data: null, render: (d, t, row) => eedStatusBadge(row) },
-        { data: null, orderable: false, className: 'text-center', render: (d, t, row) => eedActionButtons(row) }
+        // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+        // Responsive expand row.
+        { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => eedActionButtons(row) }
     ];
 }
 let tbEarning, tbDeduction;
@@ -1174,7 +1251,17 @@ function eedInstallmentStatusBadge(status, processedAt) {
         skipped: { cls: 'bg-warning-subtle text-warning', key: 'installment_status_skipped', fallback: 'Skipped' }
     };
     const cfg = map[status] || map.pending;
-    const dateSuffix = (status === 'processed' && processedAt) ? ` <span class="text-muted small">${toDisplayDate(String(processedAt).substring(0, 10))}</span>` : '';
+    // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น UTC การ
+    // แสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- processedAt is a real UTC timestamp
+    // (employee_earning_deduction_installments.processed_at), but this only ever shows its DATE,
+    // truncated from the raw string BEFORE any timezone conversion -- can show the wrong calendar
+    // day for a viewer far from UTC (e.g. a payment processed at 23:xx UTC is already the next day
+    // in Bangkok). Fixed by converting first (formatDisplayDateTime(), same UTC-aware technique as
+    // app.js's own reference fix) and keeping only its date portion.
+    const processedDateOnly = processedAt
+        ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(processedAt).split(' ')[0] : toDisplayDate(String(processedAt).substring(0, 10)))
+        : '';
+    const dateSuffix = (status === 'processed' && processedAt) ? ` <span class="text-muted small">${processedDateOnly}</span>` : '';
     return `<span class="badge ${cfg.cls}">${langData[cfg.key] || cfg.fallback}</span>${dateSuffix}`;
 }
 // Always-visible, always-editable installment schedule table (2026-08-20, replaces the old
@@ -1627,7 +1714,9 @@ function initRecurringEarningUI() {
             { data: null, render: (d, t, row) => recurringEarningSuspendPeriodCell(row) },
             { data: null, render: (d, t, row) => recurringEarningStatusBadge(row) },
             {
-                data: null, orderable: false, className: 'text-center',
+                // 2026-08-28: className:'all' keeps this last actions column from collapsing into
+                // the Responsive expand row.
+                data: null, orderable: false, className: 'text-center all',
                 render: (d, t, row) => `
                     <button type="button" class="btn btn-sm btn-link text-primary btn-edit-recurring-earning" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
                     <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-earning" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>

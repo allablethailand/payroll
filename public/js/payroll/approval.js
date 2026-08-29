@@ -186,7 +186,7 @@ function apvApproverSubstepHtmlAp(a) {
             <span class="apv-substep-label">${apvAvatarHtmlAp(name, 22)}${escapeHtmlAp(name)}</span>
             ${apvBadgeHtmlAp(tone, apvApproverLabelAp(a.status))}
         </div>
-        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${escapeHtmlAp(a.acted_at)}</div>` : ''}
+        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtmlAp(a.acted_at)}</div>` : ''}
         ${a.note ? `<div class="apv-substep-remark">${escapeHtmlAp(a.note)}</div>` : ''}
     </div>`;
 }
@@ -230,7 +230,7 @@ function apvPaidStageHtmlAp(run) {
                     <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
                     ${apvBadgeHtmlAp(tone, label)}
                 </div>
-                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${escapeHtmlAp(run.paid_at)}</div>` : ''}
+                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtmlAp(run.paid_at)}</div>` : ''}
                 <div class="apv-stage-body">
                     <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
                 </div>
@@ -248,7 +248,7 @@ function apvCreatedStageHtmlAp(run) {
                     <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
                     ${apvBadgeHtmlAp('done', langData['stage_created'] || 'Created')}
                 </div>
-                <div class="apv-stage-date">${escapeHtmlAp(run.created_at || '')}</div>
+                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtmlAp(run.created_at)) : ''}</div>
                 <div class="apv-stage-body">${apvPersonLineHtmlAp(creator)}</div>
             </div>
         </div>
@@ -276,7 +276,7 @@ function renderAuditTimelineAp(logs) {
         if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtmlAp(l.ip_address)}`);
         if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtmlAp(l.user_agent)}`);
         return `<div class="apv-log-entry">
-            <div class="apv-log-date">${escapeHtmlAp(l.performed_at)}</div>
+            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtmlAp(l.performed_at)}</div>
             <div class="apv-log-action">${escapeHtmlAp(auditActionLabelAp(l.action))} <span class="text-secondary fw-normal">(${escapeHtmlAp(actor)})</span></div>
             ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
             ${l.note ? `<div class="apv-log-note">${escapeHtmlAp(l.note)}</div>` : ''}
@@ -428,7 +428,12 @@ function initPayrollApprovalTable() {
             { data: 'employee_count', className: 'text-end' },
             { data: 'total_net_amount', className: 'text-end', render: d => fmtNumAp(d) },
             { data: null, render: (d, t, row) => escapeHtmlAp(submitterNameAp(row)) },
-            { data: 'submitted_at', render: d => d ? toDisplayDateAp(d.substring(0, 10)) + ' ' + d.substring(11, 16) : '-' },
+            // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น
+            // UTC การแสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- was displaying the raw UTC time
+            // straight from the DB string with no timezone conversion at all. Reuses
+            // formatDisplayDateTime() (app.js) -- already UTC-aware, no need for a local copy of
+            // the same technique here.
+            { data: 'submitted_at', render: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-' },
             // "Last Updated" = updated_at, same column/semantics as the Process List page's own
             // (2026-08-23, explicit request: "หน้า Process List และ Approval List ให้แสดงวันที่ของ
             // Status ล่าสุดด้วย") -- every state transition (submit/approve/reject/request-info/
@@ -437,9 +442,15 @@ function initPayrollApprovalTable() {
             // CURRENT status was reached, not just "last touched" (which for a draft run tracks the
             // last edit/recalculate -- also correct, since a draft doesn't have a "status date" of
             // its own beyond that).
-            { data: 'updated_at', render: d => d ? toDisplayDateAp(d.substring(0, 10)) + ' ' + d.substring(11, 16) : '-' },
-            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => renderApprovalViewActions(row) },
-            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => renderApprovalDecisionActions(row) },
+            { data: 'updated_at', render: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-' },
+            // 2026-08-28, explicit request: "ตาราง Responsive ทุกตาราง Column ท้ายสุดต้องเป็นปุ่ม
+            // ดำเนินการ แล้วไป hidden ส่วนอื่นเป็นตัว expand แทน" -- these 2 action-button columns
+            // are already positioned last; `className: 'all'` (per DataTables Responsive's own
+            // dtr-all convention, NOT 'never' -- see employee/list.js's own 2026-08-27 fix for why)
+            // keeps them from ever collapsing into the expand row on a narrow viewport, letting
+            // every OTHER column collapse there instead.
+            { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderApprovalViewActions(row) },
+            { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderApprovalDecisionActions(row) },
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
@@ -685,6 +696,13 @@ $(document).on('submit', '#requestInfoRunForm', function (e) {
     });
 });
 
+// 2026-08-28, explicit request: reload this Approval Queue once Process Detail (opened in a
+// separate browser tab) changes the run -- see markTabDirty()/watchTabDirty() in app.js.
+if (typeof watchTabDirty === 'function') {
+    watchTabDirty('payroll_run_list_dirty', function () {
+        if (tb_payroll_approval) tb_payroll_approval.ajax.reload(null, false);
+    });
+}
 $(document).ready(function () {
     registerApprovalStationSearchFilter();
     initPayrollApprovalTable();

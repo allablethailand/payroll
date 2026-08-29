@@ -279,6 +279,10 @@ try {
     check('transfer employee sso_enrolled overwritten to 1 (deduct_sso=true)', (int)($mappedEmpRow['sso_enrolled'] ?? -1), 1);
     $decIdCard = EncryptionService::decrypt($mappedEmpRow['id_card_no'], (int)$mappedEmpRow['key_version']);
     check('transfer employee id_card_no decrypts to the synced value', $decIdCard, '1234567890123');
+    // SSO number defaults to ID card number (2026-08-29 explicit request) -- Origami's payload has
+    // no separate SSO field, and Thai law has equated the two numbers since ~2011.
+    $decSsoNo = EncryptionService::decrypt($mappedEmpRow['sso_no'], (int)$mappedEmpRow['key_version']);
+    check('transfer employee sso_no defaulted to the same value as id_card_no', $decSsoNo, '1234567890123');
     check('transfer employee id_card_issue_date overwritten', $mappedEmpRow['id_card_issue_date'] ?? null, '2018-05-01');
     check('transfer employee id_card_expire_date overwritten', $mappedEmpRow['id_card_expire_date'] ?? null, '2028-05-01');
     $decTaxId = EncryptionService::decrypt($mappedEmpRow['tax_id_no'], (int)$mappedEmpRow['key_version']);

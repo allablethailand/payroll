@@ -1,6 +1,5 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/AttendanceBonusLedgerModel.php';
 require_once __DIR__ . '/EmployeeModel.php';
 require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
 require_once __DIR__ . '/../services/ThPitCalculator.php';
@@ -27,7 +26,6 @@ require_once __DIR__ . '/EmployeeRecurringEarningModel.php';
  */
 class PayrollRunModel {
     private PDO $db;
-    private AttendanceBonusLedgerModel $ledgerModel;
     private StatutoryCalculationEngine $engine;
     private ThPitCalculator $thPitCalculator;
     private SyncPayResolver $syncPayResolver;
@@ -36,7 +34,6 @@ class PayrollRunModel {
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
-        $this->ledgerModel = new AttendanceBonusLedgerModel();
         $this->engine = new StatutoryCalculationEngine($this->db);
         $this->thPitCalculator = new ThPitCalculator($this->db, $this->engine);
         $this->syncPayResolver = new SyncPayResolver($this->db);
@@ -174,11 +171,21 @@ class PayrollRunModel {
     }
 
     public function get(int $id, int $compId): ?array {
+        // sp.run_kind/process_subject/process_start/process_end/process_paid (2026-08-29, see
+        // PAYROLL_SYNC_API.md) -- exposed here so the Detail page can (a) show which Origami cycle
+        // this run was pulled from and what it actually said, and (b) know whether this specific
+        // sync-linked run is 'supplemental' (eligible to edit run_purpose/compute_statutory/
+        // include_base_salary/include_standing_items, same as a genuine off-cycle run) or 'regular'
+        // (always full payroll, not editable) -- see update()'s own use of sync_run_kind below.
         $sql = "SELECT r.*, c.cycle_name, c.payroll_frequency,
+                    sp.run_kind AS sync_run_kind, sp.process_subject AS sync_process_subject,
+                    sp.process_start AS sync_process_start, sp.process_end AS sync_process_end,
+                    sp.process_paid AS sync_process_paid,
                     creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
+                LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
                 LEFT JOIN `employees` creator ON creator.id = r.created_by
                 LEFT JOIN `employees` submitter ON submitter.id = r.submitted_by
                 WHERE r.id = :id AND r.comp_id = :comp_id AND r.deleted_at IS NULL";
@@ -627,28 +634,41 @@ class PayrollRunModel {
         // links it via sync_process_id so it drops out of that station afterward. Validated here
         // (not just left to the DB's UNIQUE constraint) for a clear error message instead of a
         // raw constraint-violation surfacing to the user.
+        //
+        // 2026-08-29, explicit request referencing PAYROLL_SYNC_API.md's own run_kind field
+        // ("regular"/"supplemental", added there 2026-08-28): a supplemental sync process (a
+        // standalone/ad-hoc Origami cycle -- e.g. OT-only or Trip-only, hand-built roster, not
+        // tied to a period auto-match) is NOT "real payroll by definition" the way a regular
+        // sync-pulled cycle is, so it must NOT be forced into requiring a payroll cycle or into
+        // always including base salary/standing items -- confirmed via AskUserQuestion. A regular
+        // sync process keeps today's existing behavior unchanged (cycle_id required, always full
+        // payroll) -- this is purely additive for the supplemental case.
         $syncProcessId = null;
+        $syncIsSupplemental = false;
         if (!empty($data['sync_process_id'])) {
             $syncProcessId = (int)$data['sync_process_id'];
-            $stmtSync = $this->db->prepare("SELECT p.id FROM `payroll_sync_processes` p
+            $stmtSync = $this->db->prepare("SELECT p.id, p.run_kind FROM `payroll_sync_processes` p
                 LEFT JOIN `payroll_runs` r ON r.sync_process_id = p.id
                 WHERE p.id = :id AND p.comp_id = :comp_id AND r.id IS NULL");
             $stmtSync->execute([':id' => $syncProcessId, ':comp_id' => $compId]);
-            if (!$stmtSync->fetch()) {
+            $syncRow = $stmtSync->fetch(PDO::FETCH_ASSOC);
+            if (!$syncRow) {
                 return ['status' => false, 'message' => 'Invalid or already-pulled sync process.'];
             }
-            if ($cycleId === null) {
-                return ['status' => false, 'message' => 'A payroll cycle is required when pulling from a sync process.'];
+            $syncIsSupplemental = ($syncRow['run_kind'] ?? 'regular') === 'supplemental';
+            if ($cycleId === null && !$syncIsSupplemental) {
+                return ['status' => false, 'message' => 'A payroll cycle is required when pulling from a regular sync process.'];
             }
         }
 
         // "Incentive/Other Payment" run purpose (per explicit request, 2026-08-19): a special
         // payment (e.g. a one-off incentive) that BY DEFAULT does not involve base salary or the
         // employee's standing earning/deduction setup -- only whatever specific earning/deduction
-        // items the admin picks per employee (see joinEmployees()/addManualLine() below). Only
-        // makes sense for a genuine off-cycle run (same gate as the manual employee roster) -- a
-        // cycle-based or Pending-Pull run is real payroll by definition, so 'incentive' is
-        // rejected there rather than silently ignored.
+        // items the admin picks per employee (see joinEmployees()/addManualLine() below). Makes
+        // sense for a genuine off-cycle run (same gate as the manual employee roster) OR a
+        // supplemental sync pull (see the block above this one, 2026-08-29) -- a genuinely regular
+        // cycle-based or Pending-Pull run is real payroll by definition, so 'incentive' is rejected
+        // there rather than silently ignored.
         // compute_statutory/include_base_salary/include_standing_items are all the admin's own
         // per-run opt-in choice (compute_statutory confirmed explicit 2026-08-19; the other two
         // 2026-08-27, explicit request: "การทำงานจ่ายนอกรอบ สามารถเลือกได้ว่าจะนำเงินเดือนหรือค่า
@@ -659,8 +679,9 @@ class PayrollRunModel {
         // regardless of what the request sent, not just hidden in the UI. See recalculate()'s own
         // docblock (search $includeBaseSalary/$includeStandingItems) for what each actually changes.
         $runPurpose = (string)($data['run_purpose'] ?? 'payroll') === 'incentive' ? 'incentive' : 'payroll';
-        if ($runPurpose === 'incentive' && ($cycleId !== null || $syncProcessId !== null)) {
-            return ['status' => false, 'message' => 'Incentive/Other Payment is only available for an off-cycle run with no payroll cycle selected.'];
+        $isGenuineOffCycle = $cycleId === null && $syncProcessId === null;
+        if ($runPurpose === 'incentive' && !$isGenuineOffCycle && !$syncIsSupplemental) {
+            return ['status' => false, 'message' => 'Incentive/Other Payment is only available for an off-cycle run or a supplemental sync pull.'];
         }
         $computeStatutory = $runPurpose === 'incentive' ? (!empty($data['compute_statutory']) ? 1 : 0) : 1;
         $includeBaseSalary = $runPurpose === 'incentive' ? (!empty($data['include_base_salary']) ? 1 : 0) : 1;
@@ -755,19 +776,23 @@ class PayrollRunModel {
         }
         $notes = array_key_exists('notes', $data) ? (trim((string)$data['notes']) ?: null) : $run['notes'];
 
-        // Run type (compute full payroll vs. an off-cycle Incentive/Other Payment pull) is editable
-        // on a draft run, same forcing rules as create() -- only meaningful for a genuine off-cycle
-        // run (no cycle_id/sync_process_id, both immutable after creation). A cycle-based/Pending-
-        // Pull run keeps whatever create() already forced (always run_purpose='payroll' with all
-        // three flags on) regardless of what the request sends, since real payroll can't opt out of
-        // base salary/statutory/standing items. 2026-08-28, explicit request: "ในหน้า Process Detail
-        // สามารถแก้ไขได้ด้วยว่าคำนวณเงินเดือนหรือรายรับรายหักอื่นไหม หรือเป็นการดึงมาทำจ่ายแยก".
+        // Run type (compute full payroll vs. an off-cycle/supplemental Incentive/Other Payment
+        // pull) is editable on a draft run, same forcing rules as create() -- meaningful for a
+        // genuine off-cycle run (no cycle_id/sync_process_id) OR a sync-linked run pulled from a
+        // 'supplemental' Origami process (see get()'s own sync_run_kind, and create()'s matching
+        // 2026-08-29 relaxation -- PAYROLL_SYNC_API.md's run_kind field). A regular cycle-based/
+        // Pending-Pull run keeps whatever create() already forced (always run_purpose='payroll'
+        // with all three flags on) regardless of what the request sends, since real payroll can't
+        // opt out of base salary/statutory/standing items. 2026-08-28, explicit request: "ในหน้า
+        // Process Detail สามารถแก้ไขได้ด้วยว่าคำนวณเงินเดือนหรือรายรับรายหักอื่นไหม หรือเป็นการดึงมาทำจ่าย
+        // แยก".
         $runPurpose = $run['run_purpose'];
         $computeStatutory = (int)$run['compute_statutory'];
         $includeBaseSalary = (int)$run['include_base_salary'];
         $includeStandingItems = (int)$run['include_standing_items'];
         $isOffCycle = $run['cycle_id'] === null && $run['sync_process_id'] === null;
-        if ($isOffCycle && array_key_exists('run_purpose', $data)) {
+        $isSupplementalSync = $run['sync_process_id'] !== null && ($run['sync_run_kind'] ?? 'regular') === 'supplemental';
+        if (($isOffCycle || $isSupplementalSync) && array_key_exists('run_purpose', $data)) {
             $runPurpose = (string)($data['run_purpose'] ?? 'payroll') === 'incentive' ? 'incentive' : 'payroll';
             $computeStatutory = $runPurpose === 'incentive' ? (!empty($data['compute_statutory']) ? 1 : 0) : 1;
             $includeBaseSalary = $runPurpose === 'incentive' ? (!empty($data['include_base_salary']) ? 1 : 0) : 1;
@@ -790,6 +815,15 @@ class PayrollRunModel {
         return ['status' => true, 'message' => 'Updated successfully.'];
     }
 
+    // 2026-08-28, explicit request: "Process ที่ Cancel ให้สามารถลบข้อมูลออกไปได้" -- a cancelled run
+    // used to be a dead end (state='cancelled' forever, no way to remove it from the list). Now
+    // deletable the same way a draft is -- state itself is untouched by delete() (still whatever it
+    // was, 'draft' or 'cancelled'), this only ever flips the SEPARATE soft-delete `status` column
+    // (active/deleted), same as before. Deliberately still NOT extended to any other state
+    // (pending_approval/approved/rejected/need_info/paid/locked) -- those either have money in
+    // flight or already moved, same reasoning cancel() itself already applies when deciding which
+    // states are even cancellable in the first place; a run must be cancelled (or never left draft)
+    // before it can be deleted, there is no way to jump straight from e.g. approved to deleted.
     public function delete(int $id, int $compId, int $userId, bool $isAdmin): array {
         if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to delete this payroll run.'];
@@ -798,9 +832,10 @@ class PayrollRunModel {
         if (!$run) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
-        if ($run['state'] !== 'draft') {
-            return ['status' => false, 'message' => 'Only a draft payroll run can be deleted.'];
+        if (!in_array($run['state'], ['draft', 'cancelled'], true)) {
+            return ['status' => false, 'message' => 'Only a draft or cancelled payroll run can be deleted.'];
         }
+        $fromState = $run['state'];
         $ownTransaction = !$this->db->inTransaction();
         try {
             if ($ownTransaction) { $this->db->beginTransaction(); }
@@ -810,10 +845,11 @@ class PayrollRunModel {
             // payroll_runs row currently references this sync process", so clearing the FK here is
             // enough to make it reappear on the Pending Pull station, ready to be pulled again. Also
             // required to free up the UNIQUE constraint on sync_process_id for a future re-pull. A
-            // no-op (NULL -> NULL) for a run that was never pulled from a sync process.
+            // no-op (NULL -> NULL) for a run that was never pulled from a sync process (or already
+            // NULL'd out by cancel() itself, for a cancelled run reaching this point).
             $stmt = $this->db->prepare("UPDATE `payroll_runs` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by, sync_process_id = NULL WHERE id = :id");
             $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
-            $this->logAudit($id, 'draft', 'draft', 'delete', $userId);
+            $this->logAudit($id, $fromState, $fromState, 'delete', $userId);
             if ($ownTransaction) { $this->db->commit(); }
             return ['status' => true, 'message' => 'Deleted successfully.'];
         } catch (PDOException $e) {
@@ -833,7 +869,7 @@ class PayrollRunModel {
      *
      * KNOWN SIMPLIFICATIONS (no Time & Leave module exists yet):
      *  - No real attendance/OT sync data source; only employee_earning_deductions (PED
-     *    assignments) and attendance_bonus_ledger feed earnings/deductions beyond base pay.
+     *    assignments) and recurring earnings feed earnings/deductions beyond base pay.
      *  - taxable_income context for the statutory engine is estimated as gross * 12
      *    (annualized), not the employee's actual tax_calculation_method (average/actual).
      *  - Pro-rate accounts for both mid-period joiners (employment_date) and mid-period
@@ -1359,26 +1395,19 @@ class PayrollRunModel {
                         ];
                     }
 
-                    // Attendance bonus (only passed/locked entries for this period).
-                    $stmtBonus = $this->db->prepare("SELECT l.id AS ledger_id, l.amount, s.scheme_name
-                        FROM `attendance_bonus_ledger` l
-                        JOIN `attendance_bonus_schemes` s ON s.id = l.scheme_id
-                        WHERE l.employee_id = :employee_id AND l.period_year = :year AND l.period_month = :month
-                        AND l.status = 'passed'");
-                    $stmtBonus->execute([':employee_id' => $employeeId, ':year' => $periodYear, ':month' => $periodMonth]);
-                    foreach ($stmtBonus->fetchAll(PDO::FETCH_ASSOC) as $bonus) {
-                        if ((float)$bonus['amount'] <= 0) {
-                            continue;
-                        }
-                        $earningLines[] = [
-                            'source' => 'attendance_bonus',
-                            'ledger_id' => (int)$bonus['ledger_id'],
-                            'code' => 'ATTENDANCE_BONUS',
-                            'name_th' => $bonus['scheme_name'],
-                            'name_en' => $bonus['scheme_name'],
-                            'amount' => (float)$bonus['amount'],
-                        ];
-                    }
+                    // 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า และไม่
+                    // นำไปคำนวณในเงินเดือน แต่ใน Income ยังคงมีไว้ เพราะจะเชื่อมมาจาก Origami แทน" -- the
+                    // Attendance Bonus/Ledger feature (settings UI, controller endpoints,
+                    // AttendanceBonusSchemeModel/AttendanceBonusLedgerModel, and the
+                    // attendance_bonus_schemes/attendance_bonus_ledger tables themselves) is removed
+                    // entirely as of the same-day follow-up (explicit: "ถ้ามีลบเพิ่มไฟล์ .sql ให้ด้วยครับ" --
+                    // see database/migrations/2026-08-29_drop_attendance_bonus_tables.sql) -- there is
+                    // nothing left anywhere in this codebase that can produce a `source==='attendance_bonus'`
+                    // earning line. The DILIGENCE catalog item stays available in the Income tab as a
+                    // pure sync target instead -- Origami will push it as a regular item_values line
+                    // during a normal sync-based run, resolved by SyncPayResolver's existing generic
+                    // item_code matching (the same path already handles any catalog item with no
+                    // source_event_code mapping), no special-casing needed here.
 
                     // Ad-hoc per-employee adjustments (payroll_run_manual_lines) -- additive on top
                     // of the standing PED assignments/attendance bonus above, added via the "Items"
@@ -3312,14 +3341,10 @@ class PayrollRunModel {
             $stmtDetails = $this->db->prepare("SELECT earning_breakdown, deduction_breakdown FROM `payroll_run_details` WHERE run_id = :id");
             $stmtDetails->execute([':id' => $id]);
             $installmentIds = [];
-            $ledgerIds = [];
             foreach ($stmtDetails->fetchAll(PDO::FETCH_ASSOC) as $detail) {
                 foreach (array_merge(json_decode((string)$detail['earning_breakdown'], true) ?? [], json_decode((string)$detail['deduction_breakdown'], true) ?? []) as $line) {
                     if (($line['source'] ?? '') === 'ped' && !empty($line['installment_id'])) {
                         $installmentIds[] = (int)$line['installment_id'];
-                    }
-                    if (($line['source'] ?? '') === 'attendance_bonus' && !empty($line['ledger_id'])) {
-                        $ledgerIds[] = (int)$line['ledger_id'];
                     }
                 }
             }
@@ -3344,10 +3369,6 @@ class PayrollRunModel {
                     }
                 }
             }
-            foreach (array_unique($ledgerIds) as $ledgerId) {
-                $this->ledgerModel->lock($ledgerId, $compId, $userId);
-            }
-
             $stmt = $this->db->prepare("UPDATE `payroll_runs` SET state = 'paid', paid_at = CURRENT_TIMESTAMP, paid_by = :paid_by,
                 payment_method = :payment_method, payment_reference = :payment_reference, payment_date = :payment_date,
                 updated_by = :paid_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");

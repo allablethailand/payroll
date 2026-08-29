@@ -121,7 +121,9 @@ function renderAttendance() {
             { data: null, render: (d, t, row) => row.actual_work_minutes ? (row.actual_work_minutes / 60).toFixed(1) : '-' },
             { data: 'status', className: 'text-center', render: (d) => attendanceStatusBadge(d) },
             { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtnsMe(`openAttendanceModal(${row.id})`, `askDeleteMe('attendance', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.work_date))}')`) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openAttendanceModal(${row.id})`, `askDeleteMe('attendance', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.work_date))}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_attendance_yet'] || 'No attendance records have been added yet.' },
@@ -237,7 +239,9 @@ function renderLeave() {
             { data: 'total_days', className: 'text-end' },
             { data: 'status', className: 'text-center', render: (d) => leaveStatusBadge(d) },
             { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtnsMe(`openLeaveModal(${row.id})`, `askDeleteMe('leave', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.start_date))}')`) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openLeaveModal(${row.id})`, `askDeleteMe('leave', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.start_date))}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_leave_yet'] || 'No leave records have been added yet.' },
@@ -349,7 +353,9 @@ function renderOvertime() {
             { data: null, className: 'text-end', render: (d, t, row) => row.amount !== null ? Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' },
             { data: 'status', className: 'text-center', render: (d) => overtimeStatusBadge(d) },
             { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtnsMe(`openOvertimeModal(${row.id})`, `askDeleteMe('overtime', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.ot_date))}')`) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openOvertimeModal(${row.id})`, `askDeleteMe('overtime', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.ot_date))}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_overtime_yet'] || 'No overtime records have been added yet.' },

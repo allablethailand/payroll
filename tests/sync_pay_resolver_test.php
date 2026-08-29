@@ -438,6 +438,41 @@ try {
     $noOvLine = findLine($rNoOv['deduction'], 'LATE_DEDUCT');
     check('late_mins untouched by an override array that never mentions it: (100/60)*30 = 50.00', $noOvLine['amount'] ?? null, 50.0);
 
+    // 2026-08-29, real bug found and fixed (explicit report: "ค่าเที่ยวยังแสดงผลอยู่ครับ ทั้งๆที่ไม่ได้
+    // กด Sync มาจาก Origami เพราะติ๊กส่วนนั้นออกไป" -- deactivating the Trip Allowance Earning Type in
+    // Payroll Configuration had NO effect on calculation at all; the line still showed under a
+    // hardcoded fallback label). Root cause was pedTypeBySourceEvent() treating "deactivated" and
+    // "never configured" identically (both returned null, both fell through to the same hardcoded
+    // default) -- see that method's own docblock. Reuses whatever real payroll_earning_deduction_types
+    // row (if any) already maps comp_id=1's 'trip_allowance' source event, so this exercises the
+    // REAL row this dev DB has, not a synthetic one that might not match how the bug actually
+    // manifested -- inserts one only if comp_id=1 genuinely has none configured yet.
+    echo "=== Admin deactivates a source_event_code-mapped catalog type -- must be excluded entirely, not silently fall back to a hardcoded default ===\n";
+    $stmtTripType = $pdo->prepare("SELECT id, status FROM payroll_earning_deduction_types WHERE comp_id = :c AND source_event_code = 'trip_allowance' AND deleted_at IS NULL LIMIT 1");
+    $stmtTripType->execute([':c' => $compId]);
+    $tripType = $stmtTripType->fetch(PDO::FETCH_ASSOC);
+    if ($tripType === false) {
+        $insTripType = $pdo->prepare("INSERT INTO payroll_earning_deduction_types
+            (comp_id, item_code, item_name_th, item_name_en, item_type, calculation_method, tax_treatment, source_event_code, is_sync_only, status, created_by)
+            VALUES (:comp_id, 'TRIP_ALLOW_TEST_FIXTURE', 'ค่าเที่ยวทดสอบ', 'Test Trip Allowance', 'earning', 'manual_entry', 'taxable', 'trip_allowance', 1, 'active', :user_id)");
+        $insTripType->execute([':comp_id' => $compId, ':user_id' => $userId]);
+        $tripTypeId = (int)$pdo->lastInsertId();
+    } else {
+        $tripTypeId = (int)$tripType['id'];
+    }
+    $pdo->prepare("UPDATE payroll_earning_deduction_types SET status = 'inactive' WHERE id = :id")->execute([':id' => $tripTypeId]);
+
+    $deactivatedTripRow = $blankRow;
+    $deactivatedTripRow['trip_allowance'] = 350.5;
+    $rDeactivatedTrip = $resolver->resolve($compId, $deactivatedTripRow, $baseSalary);
+    $leakedTripLine = array_filter($rDeactivatedTrip['earning'], fn($l) => stripos((string)($l['note'] ?? ''), 'sync_trip_allowance') !== false);
+    check('trip_allowance produces ZERO earning lines once its catalog type is deactivated (no fallback leak)', count($leakedTripLine), 0);
+
+    $pdo->prepare("UPDATE payroll_earning_deduction_types SET status = 'active' WHERE id = :id")->execute([':id' => $tripTypeId]);
+    $rReactivatedTrip = $resolver->resolve($compId, $deactivatedTripRow, $baseSalary);
+    $restoredTripLine = array_filter($rReactivatedTrip['earning'], fn($l) => stripos((string)($l['note'] ?? ''), 'sync_trip_allowance') !== false);
+    check('re-activating the same type immediately makes trip_allowance compute again (fix is reversible, not a one-way regression)', count($restoredTripLine), 1);
+
 } finally {
     $pdo->rollBack();
 }

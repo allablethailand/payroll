@@ -80,7 +80,9 @@ function initPayslipDeliveryLogTable() {
             { data: 'sent_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
             { data: null, render: (d, t, row) => escapeHtmlDlog((currentLang === 'th' ? row.sent_by_name_th : row.sent_by_name_en) || '-') },
             {
-                data: null, orderable: false, className: 'text-center',
+                // 2026-08-28: className:'all' keeps this last actions column from collapsing into
+                // the Responsive expand row.
+                data: null, orderable: false, className: 'text-center all',
                 render: (d, t, row) => {
                     if (row.document_type === 'employment_certificate') {
                         return row.status === 'success'

@@ -107,10 +107,24 @@
                                  addition (see CLAUDE.md's Team section) -- EmployeeModel::list()'s
                                  own `sortColumns` map and list.js's column defs were updated to match. -->
                             <th></th>
+                            <!-- 2026-08-29, explicit request: "เพิ่ม checkbox ด้านหน้า เพื่อให้เลือกหลาย
+                                 รายการแล้วกด Sync ได้หลายคนพร้อมกัน" -- master "select all" checkbox,
+                                 see list.js's own bulk-sync-selection code for how selection state is
+                                 tracked across pages (this is a serverSide table, so a page change
+                                 replaces every row in the DOM). -->
+                            <th style="width:36px;"><input type="checkbox" id="employeeSelectAllCheckbox"></th>
                             <th></th>
                             <th scope="col" data-i18n="employee_no">Employee No.</th>
+                            <th scope="col" data-i18n="source">Source</th>
                             <th scope="col" data-i18n="name">Name</th>
                             <th scope="col" data-i18n="mobile_no">Mobile No.</th>
+                            <!-- 2026-08-29, explicit request: "เพิ่ม Email ในหน้า List ของพนักงานด้วยครับ" --
+                                 already selected server-side (EmployeeModel::list()'s own `e.personal_email
+                                 AS email`, added long before this for the Detail page/other consumers),
+                                 just never rendered as a column here. Reuses the existing personal_email
+                                 i18n key (same label already used on Employee Detail's own Contact tab)
+                                 rather than adding a new one for the same concept. -->
+                            <th scope="col" data-i18n="personal_email">Personal Email Address</th>
                             <th scope="col" data-i18n="role">Role</th>
                             <th scope="col" data-i18n="position">Position</th>
                             <th scope="col" data-i18n="department">Department</th>
@@ -131,8 +145,15 @@
 
     <!-- Sync Employee from Origami (2026-08-28, explicit request) -- picker modal. Real Origami
          HTTP client (OrigamiEmployeeCandidateClient) as of the same day, see its own docblock. -->
+    <!-- 2026-08-29, explicit request: "ตารางที่แสดงผลอยู่ดูแน่นมาก ช่วยปรับให้สวยขึ้นหน่อยครับ" (the table
+         looks very cramped, please make it nicer) -- modal-xl (~1140px) split into two side-by-side
+         panels left each one with barely enough room for 4 columns; upgraded to modal-fullscreen for
+         real breathing room, same lever this project's own other data-dense pickers/canvases already
+         reached for when they needed more room (see CLAUDE.md's Payslip Template fullscreen-modal
+         precedent). Table/panel styling itself reworked too -- see .es-sync-* rules in style.css and
+         employee-sync.js's esRenderEmployeeCell()/esRenderDeptPositionCell() for the rest. -->
     <div class="modal fade" id="employeeSyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="employeeSyncModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <!-- 2026-08-28, explicit request: "ย้ายปุ่มประวัติการ Sync ให้หน่อยครับ ตอนนี้ดู
                      สะเปะสะปะ" -- the Sync Log button used to live here, squeezed between the title
@@ -210,19 +231,23 @@
                          instead of a flat spreadsheet row -- see esRenderEmployeeCell()/
                          esTypeBadgeHtml() in employee-sync.js. -->
                     <div id="employeeSyncResultArea" class="d-none">
-                        <div class="row g-3">
+                        <div class="row g-4">
                             <div class="col-lg-6">
-                                <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="syncNewCount">0</span></h6>
+                                <div class="es-sync-panel-header es-sync-panel-header-new">
+                                    <div class="es-sync-panel-header-icon"><i class="fa-solid fa-user-plus"></i></div>
+                                    <div class="es-sync-panel-header-body">
+                                        <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span></h6>
+                                        <div class="text-muted small" data-i18n="employee_sync_tab_new_hint">Not in this system yet</div>
+                                    </div>
+                                    <span class="badge rounded-pill bg-success" id="syncNewCount">0</span>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
-                                    <table class="table table-hover table-sm align-middle w-100 mb-0 es-sync-table" id="tb_sync_new">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                <div class="es-sync-scroll-box">
+                                    <table class="table table-hover align-middle w-100 mb-0 es-sync-table" id="tb_sync_new">
+                                        <thead class="table-light text-secondary">
                                             <tr>
-                                                <th style="width:3%;"><input type="checkbox" id="syncNewSelectAll"></th>
+                                                <th class="es-sync-th-check"><input type="checkbox" id="syncNewSelectAll"></th>
                                                 <th data-i18n="employee">Employee</th>
                                                 <th data-i18n="employee_sync_dept_position">Department / Position</th>
-                                                <th data-i18n="employee_sync_filter_type">Type</th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -230,17 +255,21 @@
                                 </div>
                             </div>
                             <div class="col-lg-6">
-                                <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="syncExistingCount">0</span></h6>
+                                <div class="es-sync-panel-header es-sync-panel-header-existing">
+                                    <div class="es-sync-panel-header-icon"><i class="fa-solid fa-user-check"></i></div>
+                                    <div class="es-sync-panel-header-body">
+                                        <h6 class="mb-0"><span data-i18n="employee_sync_tab_existing">Already Exists</span></h6>
+                                        <div class="text-muted small" data-i18n="employee_sync_tab_existing_hint">Already in this system</div>
+                                    </div>
+                                    <span class="badge rounded-pill bg-secondary" id="syncExistingCount">0</span>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
-                                    <table class="table table-hover table-sm align-middle w-100 mb-0 es-sync-table" id="tb_sync_existing">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                <div class="es-sync-scroll-box">
+                                    <table class="table table-hover align-middle w-100 mb-0 es-sync-table" id="tb_sync_existing">
+                                        <thead class="table-light text-secondary">
                                             <tr>
-                                                <th style="width:3%;"><input type="checkbox" id="syncExistingSelectAll"></th>
+                                                <th class="es-sync-th-check"><input type="checkbox" id="syncExistingSelectAll"></th>
                                                 <th data-i18n="employee">Employee</th>
                                                 <th data-i18n="department">Department</th>
-                                                <th data-i18n="employee_sync_filter_type">Type</th>
                                                 <th data-i18n="employee_sync_update_col">Update Available</th>
                                             </tr>
                                         </thead>
@@ -276,20 +305,15 @@
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
+                <!-- 2026-08-29, explicit request: "Employee Sync Log ปรับจากตารางให้เป็น Card และดูได้ว่า
+                     Failed จากอะไร" -- was a plain table with just Total/Success/Error COUNTS, never
+                     showing the actual failure reason(s) (EmployeeSyncModel::log() already decodes
+                     sync_batches.error_detail into an array server-side, this view just never
+                     rendered it). Now one card per batch (esRenderSyncLogCard() in
+                     employee-sync.js) with the error message(s) listed inline whenever
+                     error_count > 0, instead of only ever showing a bare number. -->
                 <div class="modal-body">
-                    <table class="table table-hover table-sm align-middle w-100" id="tb_sync_log">
-                        <thead class="table-light text-secondary">
-                            <tr>
-                                <th data-i18n="employee_sync_log_col_date">Date</th>
-                                <th data-i18n="employee_sync_log_col_triggered_by">By</th>
-                                <th data-i18n="employee_sync_log_col_status">Status</th>
-                                <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
-                                <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
-                                <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
+                    <div id="syncLogCards"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>

@@ -38,6 +38,10 @@ if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
     ini_set('session.cookie_secure', '1');
 }
 ini_set('session.cookie_samesite', 'Lax');
+// 2026-08-29 session-timeout extension -- see index.php's own comment on this same ini_set pair
+// for the full root-cause explanation ("Session หลุดบ่อยกลับไปที่ Origami").
+ini_set('session.gc_maxlifetime', '28800');
+ini_set('session.cookie_lifetime', '28800');
 session_start();
 
 require_once __DIR__ . '/../vendor/autoload.php';

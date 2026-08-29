@@ -17,6 +17,17 @@ function toDisplayDatePr(isoVal) {
     const [yyyy, mm, dd] = parts;
     return `${dd}/${mm}/${yyyy}`;
 }
+// 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น UTC การ
+// แสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้"). Same fix as payroll/detail.js's own
+// toLocalDateOnlyRd() (see that file for the full reasoning) -- the mini-timeline dots below show
+// just a DATE per step from a real UTC timestamp (created_at/submitted_at/approved_at/paid_at/
+// locked_at), truncated to its first 10 chars BEFORE any timezone conversion, which can show the
+// wrong calendar day for a viewer far from UTC.
+function toLocalDateOnlyPr(value) {
+    if (!value) return '';
+    if (typeof formatDisplayDateTime !== 'function') return toDisplayDatePr(String(value).substring(0, 10));
+    return formatDisplayDateTime(value).split(' ')[0];
+}
 function escapeHtmlPr(str) {
     return $('<div>').text(str === null || str === undefined ? '' : str).html();
 }
@@ -175,7 +186,7 @@ function renderMiniTimelineDots(row) {
             cls = 'current';
         }
         const dateVal = row[step.dateField];
-        const dateText = (cls === 'done' || cls === 'current' || isBranchHere) && dateVal ? toDisplayDatePr(String(dateVal).substring(0, 10)) : '';
+        const dateText = (cls === 'done' || cls === 'current' || isBranchHere) && dateVal ? toLocalDateOnlyPr(dateVal) : '';
         const title = escapeHtmlPr(`${label}${dateText ? ` (${dateText})` : ''}`);
         dotsHtml += `<li class="mt-step ${cls}"><span class="mt-dot" title="${title}"><i class="fa-solid ${icon}"></i></span></li>`;
         if (i < MINI_TIMELINE_STEPS.length - 1) {
@@ -230,8 +241,11 @@ function workflowTimelineButtonHtml(row) {
 }
 function renderStatusTimelineCell(row) {
     const dateVal = row.updated_at;
+    // 2026-08-29, real bug found and fixed: was displaying the raw UTC time straight from the DB
+    // string with no timezone conversion at all -- see formatDisplayDateTime()'s own docblock in
+    // app.js (the reference fix this now reuses) for the full reasoning.
     const dateHtml = dateVal
-        ? `<span class="stc-date"><i class="fa-regular fa-clock"></i>${toDisplayDatePr(dateVal.substring(0, 10))} ${dateVal.substring(11, 16)}</span>`
+        ? `<span class="stc-date"><i class="fa-regular fa-clock"></i>${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(dateVal) : dateVal}</span>`
         : '';
     const quickActionHtml = miniTimelineQuickActionHtml(row);
     const workflowBtnHtml = workflowTimelineButtonHtml(row);
@@ -287,7 +301,7 @@ function apvApproverSubstepHtmlPr(a) {
             <span class="apv-substep-label">${apvAvatarHtmlPr(name, 22)}${escapeHtmlPr(name)}</span>
             ${apvBadgeHtmlPr(apvApproverTonePr(a.status), apvApproverLabelPr(a.status))}
         </div>
-        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${escapeHtmlPr(a.acted_at)}</div>` : ''}
+        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtmlPr(a.acted_at)}</div>` : ''}
         ${a.note ? `<div class="apv-substep-remark">${escapeHtmlPr(a.note)}</div>` : ''}
     </div>`;
 }
@@ -331,7 +345,7 @@ function apvPaidStageHtmlPr(run) {
                     <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
                     ${apvBadgeHtmlPr(tone, label)}
                 </div>
-                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${escapeHtmlPr(run.paid_at)}</div>` : ''}
+                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtmlPr(run.paid_at)}</div>` : ''}
                 <div class="apv-stage-body">
                     <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
                 </div>
@@ -349,7 +363,7 @@ function apvCreatedStageHtmlPr(run) {
                     <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
                     ${apvBadgeHtmlPr('done', langData['stage_created'] || 'Created')}
                 </div>
-                <div class="apv-stage-date">${escapeHtmlPr(run.created_at || '')}</div>
+                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtmlPr(run.created_at)) : ''}</div>
                 <div class="apv-stage-body">${apvPersonLineHtmlPr(creator)}</div>
             </div>
         </div>
@@ -377,7 +391,7 @@ function renderAuditTimelinePr(logs) {
         if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtmlPr(l.ip_address)}`);
         if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtmlPr(l.user_agent)}`);
         return `<div class="apv-log-entry">
-            <div class="apv-log-date">${escapeHtmlPr(l.performed_at)}</div>
+            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtmlPr(l.performed_at)}</div>
             <div class="apv-log-action">${escapeHtmlPr(auditActionLabelPr(l.action))} <span class="text-secondary fw-normal">(${escapeHtmlPr(actor)})</span></div>
             ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
             ${l.note ? `<div class="apv-log-note">${escapeHtmlPr(l.note)}</div>` : ''}
@@ -425,14 +439,55 @@ $(document).on('click', '.btn-view-run-workflow', function (e) {
 // own edit modal, not a separate one here. Delete only makes sense for draft
 // (PayrollRunModel::delete() rejects any other state); Cancel for anything not yet paid (matches
 // PayrollRunModel::cancel()'s own allowed-state check).
+// 2026-08-29, explicit request: "เพิ่มให้สามารถปริ้น Report จากหน้า Process ได้ ทั้งจากหน้า List และ Detail
+// ส่งประกันสังคม ส่งสรรพากร ขึ้นธนาคาร" -- one-click shortcuts straight to the 3 named reports for THIS
+// row's run, reusing the same GET /api/report.generate endpoint (+ generateReport(), moved to
+// app.js) the Reports page itself uses -- same report codes (TH_SSO110/TH_PND1/BANK_TRANSFER_FILE)
+// registered in ReportRegistry, no new generation logic. Gated on the SAME allowed-state set
+// ReportsController::CYCLE_REPORT_STATES/every individual report's own ALLOWED_STATES already
+// enforce server-side (approved/paid/locked) -- a disabled button here is just a head start on
+// that same rule, not a new one; the endpoint itself would refuse anyway if this check were ever
+// bypassed. Each report opens with its single most-useful default format (pdf for the two
+// statutory documents, csv for the bank transfer file -- that report only ever supports csv, see
+// BankTransferFileReport::supportedFormats()) rather than a nested format sub-menu, matching the
+// "print" framing of the request (one click, not a picker) -- the full Reports page still offers
+// every supported format/other report types for anyone who needs those.
+const PR_REPORT_SHORTCUTS = [
+    { code: 'TH_SSO110', format: 'pdf', icon: 'fa-file-shield', labelKey: 'report_shortcut_sso110' },
+    { code: 'TH_PND1', format: 'pdf', icon: 'fa-file-invoice', labelKey: 'report_shortcut_pnd1' },
+    { code: 'BANK_TRANSFER_FILE', format: 'csv', icon: 'fa-building-columns', labelKey: 'report_shortcut_bank_transfer' },
+];
+const PR_REPORT_ALLOWED_STATES = ['approved', 'paid', 'locked'];
+function renderRunReportsDropdown(row) {
+    if (!PR_REPORT_ALLOWED_STATES.includes(row.state)) {
+        return `<button type="button" class="btn btn-link text-secondary border-start" disabled title="${langData['reports_available_after_approval'] || 'Reports are available once this run is approved.'}"><i class="fa-solid fa-file-export"></i></button>`;
+    }
+    const items = PR_REPORT_SHORTCUTS.map(r => `<li><a class="dropdown-item pr-report-btn" href="#" data-code="${r.code}" data-format="${r.format}" data-run-id="${row.id}"><i class="fa-solid ${r.icon} me-2"></i><span data-i18n="${r.labelKey}">${langData[r.labelKey] || r.code}</span></a></li>`).join('');
+    return `<div class="dropdown d-inline-block">
+        <button type="button" class="btn btn-link text-secondary border-start dropdown-toggle" data-bs-toggle="dropdown" title="${langData['print_reports'] || 'Print Reports'}"><i class="fa-solid fa-file-export"></i></button>
+        <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
+    </div>`;
+}
+$(document).on('click', '.pr-report-btn', function (e) {
+    e.preventDefault();
+    const params = new URLSearchParams();
+    params.set('report_code', $(this).data('code'));
+    params.set('format', $(this).data('format'));
+    params.set('run_id', $(this).data('run-id'));
+    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
+});
 function renderRunActionsPr(row) {
     const isDraft = row.state === 'draft';
+    // 2026-08-28, explicit request: "Process ที่ Cancel ให้สามารถลบข้อมูลออกไปได้" -- delete is now
+    // also allowed for a cancelled run, not just draft (see PayrollRunModel::delete()'s own docblock).
+    const isDeletable = isDraft || row.state === 'cancelled';
     let html = '<div class="btn-group border rounded-3 bg-white row-actions" role="group">';
     html += `<a href="${BASE_URL}/payroll-process/${row.public_id}" target="_blank" rel="noopener" class="btn ${isDraft ? 'btn-link text-warning' : 'btn-link text-info'}" title="${langData[isDraft ? 'action_edit' : 'view'] || (isDraft ? 'Edit' : 'View')}"><i class="fa-solid ${isDraft ? 'fa-pen-to-square' : 'fa-eye'}"></i></a>`;
+    html += renderRunReportsDropdown(row);
     if (['draft', 'pending_approval', 'approved', 'rejected'].includes(row.state)) {
         html += `<button type="button" class="btn btn-link text-danger border-start btn-cancel-run" data-id="${row.id}" title="${langData['action_cancel'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
     }
-    if (isDraft) {
+    if (isDeletable) {
         html += `<button type="button" class="btn btn-link text-danger border-start btn-delete-run" data-id="${row.id}" title="${langData['action_delete'] || 'Delete'}"><i class="fa-solid fa-trash-alt"></i></button>`;
     }
     html += '</div>';
@@ -509,7 +564,11 @@ function initPayrollRunTable() {
             { data: 'employee_count', className: 'text-end' },
             { data: 'total_net_amount', className: 'text-end', render: d => fmtNumPr(d) },
             { data: null, render: (d, t, row) => escapeHtmlPr(employeeNamePr(row)) },
-            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => renderRunActionsPr(row) },
+            // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น
+            // ตัว expand แทน" -- className:'all' (dtr-all) keeps this last, already-actions column
+            // from ever collapsing into the Responsive expand row, same fix as employee/list.js's
+            // own 2026-08-27 precedent.
+            { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderRunActionsPr(row) },
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
@@ -604,17 +663,42 @@ function initPendingSyncTable() {
         },
         columns: [
             { data: 'id', orderable: false, className: 'text-center', render: d => `<input type="checkbox" class="pending-sync-checkbox" value="${d}">` },
-            { data: 'process_no', render: d => `<strong class="text-dark">${escapeHtmlPr(d)}</strong>` },
+            {
+                // 2026-08-29, see PAYROLL_SYNC_API.md's own run_kind field -- small badge next to
+                // the process number so it's obvious at a glance which pending items are a normal
+                // period-matched pull vs a standalone/ad-hoc one (e.g. OT-only, Trip-only).
+                data: 'process_no', render: (d, t, row) => {
+                    const isSupplemental = row.run_kind === 'supplemental';
+                    const badge = isSupplemental
+                        ? `<span class="badge bg-warning-subtle text-warning ms-1">${langData['sync_run_kind_supplemental'] || 'Supplemental'}</span>`
+                        : '';
+                    return `<strong class="text-dark">${escapeHtmlPr(d)}</strong>${badge}`;
+                }
+            },
             { data: 'period_name', render: d => escapeHtmlPr(d || '-') },
             { data: 'frequency_type', render: d => escapeHtmlPr(frequencyLabelPr(d)) },
             { data: 'item_count', className: 'text-end' },
             { data: 'unmapped_item_count', className: 'text-end', render: d => Number(d) > 0 ? `<span class="text-danger fw-semibold">${d}</span>` : d },
-            { data: 'received_at', render: d => d ? toDisplayDatePr(d.substring(0, 10)) + ' ' + d.substring(11, 16) : '-' },
+            // 2026-08-29, real bug found and fixed: raw UTC time with no timezone conversion, see
+            // renderStatusTimelineCell()'s own comment above for the full reasoning.
+            { data: 'received_at', render: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-' },
             {
-                data: null, orderable: false, className: 'text-center',
+                // 2026-08-28: className:'all' keeps this last actions column from collapsing into
+                // the Responsive expand row (dtr-all convention).
+                data: null, orderable: false, className: 'text-center all',
+                // 2026-08-29, see PAYROLL_SYNC_API.md -- data-subject/start/end/paid/run-kind carry
+                // this row's own Origami cycle identity through to .btn-pull-sync's click handler,
+                // which pre-fills (regular) or unlocks run_purpose (supplemental) from them --
+                // explicit request: use what Origami already sent instead of re-entering by hand.
                 render: (d, t, row) => `
                     <div class="btn-group rounded-3 row-actions" role="group">
-                        <button type="button" class="btn btn-warning btn-pull-sync" data-id="${row.id}" data-label="${escapeHtmlPr(row.process_no)}" title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">${langData['btn_pull_to_run'] || 'Pull to Run'}</span></button>
+                        <button type="button" class="btn btn-warning btn-pull-sync" data-id="${row.id}"
+                            data-label="${escapeHtmlPr(row.process_subject || row.process_no)}"
+                            data-subject="${escapeHtmlPr(row.process_subject || '')}"
+                            data-description="${escapeHtmlPr(row.process_description || '')}"
+                            data-start="${row.process_start || ''}" data-end="${row.process_end || ''}" data-paid="${row.process_paid || ''}"
+                            data-run-kind="${row.run_kind || 'regular'}"
+                            title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">${langData['btn_pull_to_run'] || 'Pull to Run'}</span></button>
                         <button type="button" class="btn btn-outline-info btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
                     </div>
                 `
@@ -809,7 +893,9 @@ function syncSummaryFieldPr(icon, i18nKey, fallback, value) {
 function renderSyncDetail(data) {
     const items = data.items || [];
     const statusRows = data.employee_status || [];
-    const receivedAt = data.received_at ? toDisplayDatePr(data.received_at.substring(0, 10)) + ' ' + data.received_at.substring(11, 16) : '-';
+    // 2026-08-29, real bug found and fixed: raw UTC time with no timezone conversion, see
+    // renderStatusTimelineCell()'s own comment for the full reasoning.
+    const receivedAt = data.received_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(data.received_at) : data.received_at) : '-';
     const unmapped = Number(data.unmapped_item_count) || 0;
     const html = `
         <div class="sync-summary-card row g-3 mb-4">
@@ -940,9 +1026,21 @@ function validateRunForm() {
 }
 function collectRunFormData() {
     const isOffCycle = $('#run_is_offcycle').is(':checked');
-    const runPurpose = isOffCycle ? ($('#run_purpose').val() || 'payroll') : 'payroll';
+    // 2026-08-29: run_purpose used to be forced to 'payroll' whenever the manual off-cycle
+    // checkbox wasn't ticked -- but setSupplementalPullMode() now also shows #run_purpose_row
+    // (Payroll/Incentive-Other-Payment) for a supplemental sync pull, which never touches that
+    // checkbox at all. Read the select whenever its row is actually visible, not just for the
+    // manual off-cycle path, so a chosen "Incentive/Other Payment" on a supplemental pull is
+    // actually submitted instead of silently reverting to 'payroll'.
+    const purposeSelectable = isOffCycle || !$('#run_purpose_row').hasClass('d-none');
+    const runPurpose = purposeSelectable ? ($('#run_purpose').val() || 'payroll') : 'payroll';
     return {
-        cycle_id: isOffCycle ? null : $('#run_cycle_id').val(),
+        // #run_cycle_row itself is only ever hidden for the manual off-cycle path -- a
+        // supplemental sync pull keeps it visible (cycle becomes optional there, not gone), so
+        // reading its value directly (rather than forcing null off isOffCycle alone) is correct
+        // for both a normal add and a supplemental pull; only the manual off-cycle path needs the
+        // explicit null (its own field is hidden and may hold a stale prior selection).
+        cycle_id: $('#run_cycle_row').hasClass('d-none') ? null : ($('#run_cycle_id').val() || null),
         run_purpose: runPurpose,
         compute_statutory: runPurpose === 'incentive' && $('#run_compute_statutory').is(':checked') ? 1 : 0,
         include_base_salary: runPurpose === 'incentive' && $('#run_include_base_salary').is(':checked') ? 1 : 0,
@@ -1018,13 +1116,61 @@ $(document).on('click', '.btn-add-run', function () {
     resetRunForm();
     new bootstrap.Modal(document.getElementById('payrollRunModal')).show();
 });
+// 2026-08-29, explicit request referencing PAYROLL_SYNC_API.md's own run_kind field
+// ("regular"/"supplemental", 2026-08-28 revision there): a supplemental sync process (a
+// standalone/ad-hoc Origami cycle -- e.g. OT-only or Trip-only) is NOT tied to a period
+// auto-match the way a regular sync-matched pull is, so run_purpose becomes choosable (same
+// Payroll/Incentive-Other-Payment choice a genuine off-cycle run already offers, confirmed via
+// AskUserQuestion) and the payroll cycle becomes optional rather than required. Deliberately does
+// NOT touch #run_cycle_row's own visibility or #run_is_offcycle's checked state -- a supplemental
+// sync pull is still sync-linked (sync_process_id set), never truly "off-cycle" the way the
+// standalone Add-flow toggle means it; the cycle field just stops being mandatory.
+function setSupplementalPullMode(isSupplemental) {
+    $('#run_cycle_id').toggleClass('required', !isSupplemental);
+    $('#run_purpose_row').toggleClass('d-none', !isSupplemental);
+    if (!isSupplemental) {
+        $('#run_purpose').val('payroll').trigger('change');
+    }
+    updateComputeStatutoryVisibility();
+}
 $(document).on('click', '.btn-pull-sync', function () {
     resetRunForm();
-    // Pulling from a sync process is inherently cycle-based data -- the off-cycle option doesn't
-    // apply here, so hide it entirely rather than just leaving it unchecked.
+    const $btn = $(this);
+    const runKind = $btn.data('run-kind') || 'regular';
+    const subject = ($btn.data('subject') || '').toString();
+    const description = ($btn.data('description') || '').toString();
+    const start = ($btn.data('start') || '').toString();
+    const end = ($btn.data('end') || '').toString();
+    const paid = ($btn.data('paid') || '').toString();
+
+    // Pulling from a sync process is inherently cycle-based data -- the manual off-cycle toggle
+    // (a DIFFERENT concept, see setSupplementalPullMode()'s own comment) doesn't apply here, so
+    // hide it entirely rather than just leaving it unchecked -- unchanged from before.
     $('#run_offcycle_row').addClass('d-none');
-    $('#run_sync_process_id').val($(this).data('id'));
-    $('#run_name').val($(this).data('label'));
+    $('#run_sync_process_id').val($btn.data('id'));
+    $('#run_name').val(subject || $btn.data('label'));
+    if (description) {
+        $('#run_notes').val(description);
+    }
+
+    // A REGULAR sync process now carries its own real period dates (process_start/process_end/
+    // process_paid) -- pre-fill them directly (still editable afterward, confirmed via
+    // AskUserQuestion) instead of leaving the admin to re-enter what Origami already sent. A
+    // SUPPLEMENTAL sync process has no period to auto-match, so there's nothing to pre-fill here --
+    // setSupplementalPullMode() below is what makes that case usable instead.
+    if (start && end) {
+        $('#run_period_start').val(toDisplayDatePr(start));
+        $('#run_period_end').val(toDisplayDatePr(end));
+        $('#run_period_start, #run_period_end').removeClass('is-invalid');
+    }
+    if (paid) {
+        $('#run_payment_date').val(toDisplayDatePr(paid));
+        $('#run_payment_date').removeClass('is-invalid');
+    } else if (end) {
+        $('#run_payment_date').val(toDisplayDatePr(end));
+    }
+
+    setSupplementalPullMode(runKind === 'supplemental');
     new bootstrap.Modal(document.getElementById('payrollRunModal')).show();
 });
 $(document).on('change', '#run_is_offcycle', function () {
@@ -1076,7 +1222,7 @@ $(document).on('click', '#btnBulkPull', function () {
                 <div class="fw-bold mb-2">${escapeHtmlPr(row.process_no)} <span class="text-muted small">(${escapeHtmlPr(row.period_name || '-')})</span></div>
                 <div class="row g-2">
                     <div class="col-sm-4">
-                        <label class="form-label mb-1">${langData['modal_cycle'] || 'Payroll Cycle'} <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1">${langData['modal_cycle'] || 'Payroll Schedule'} <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote bulk-cycle-select required" data-api="/api/payroll-cycle.options"></select>
                     </div>
                     <div class="col-sm-8">
@@ -1270,12 +1416,12 @@ $(document).on('submit', '#cancelRunForm', function (e) {
     });
 });
 
-/* ---------- Row "Delete" action (draft only) ---------- */
+/* ---------- Row "Delete" action (draft or cancelled, see PayrollRunModel::delete()) ---------- */
 $(document).on('click', '.btn-delete-run', function (e) {
     e.stopPropagation();
     const id = $(this).data('id');
     const title = langData['confirm_delete_title'] || 'Confirm Delete';
-    const message = langData['confirm_delete_run_message'] || 'Delete this draft payroll run? This cannot be undone.';
+    const message = langData['confirm_delete_run_message'] || 'Delete this payroll run? This cannot be undone.';
     showConfirm(title, message, function () {
         $.ajax({
             url: `${BASE_URL}/api/payroll-run.delete`,
@@ -1416,6 +1562,14 @@ function applyOrigamiPayrollLinkGating() {
     }
 }
 
+// 2026-08-28, explicit request: reload this Process List once Process Detail (opened in a
+// separate browser tab via .btn-view-run/etc's window.open(...'_blank')) changes the run -- see
+// markTabDirty()/watchTabDirty() in app.js and detail.js's own loadRunDetail() which marks dirty.
+if (typeof watchTabDirty === 'function') {
+    watchTabDirty('payroll_run_list_dirty', function () {
+        if (tb_payroll_run) tb_payroll_run.ajax.reload(null, false);
+    });
+}
 $(document).ready(function () {
     applyOrigamiPayrollLinkGating();
     registerStationSearchFilter();

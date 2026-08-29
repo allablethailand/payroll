@@ -71,15 +71,17 @@ function renderDashboard(data) {
     $('#dashActiveEmployees').text((stats.active_count || 0).toLocaleString());
     $('#dashNewHires').text((stats.new_this_month || 0).toLocaleString());
 
-    if (data.can_view_payroll && data.payroll) {
-        renderPayrollWidgets(data.payroll);
-    } else {
-        $('#dashStatPendingApprovalCol, #dashStatUpcomingPayCol, #dashPipelineSection, #dashRecentRunsSection').addClass('d-none');
-    }
+    // 2026-08-28, explicit request: "อยากให้เห็นเหมือนกันทั้งหมด แต่ตรงตัวเลขเงินเดือนให้เป็นไปตาม Role
+    // ที่ Set ไว้" -- the payroll widgets themselves (run counts/dates/Recent Runs list) now always
+    // render for every employee regardless of role; only the money AMOUNT within Recent Runs is
+    // conditionally shown, via can_view_payroll (see renderRecentRuns()) -- the backend
+    // (DashboardController::summary()) already strips the money fields entirely from the JSON when
+    // this is false, so this flag here is purely about whether to render an amount element at all,
+    // not a client-side "hide the real number" -- there is no real number in the payload to hide.
+    renderPayrollWidgets(data.payroll || {}, !!data.can_view_payroll);
 }
 
-function renderPayrollWidgets(payroll) {
-    $('#dashStatPendingApprovalCol, #dashStatUpcomingPayCol, #dashPipelineSection, #dashRecentRunsSection').removeClass('d-none');
+function renderPayrollWidgets(payroll, canViewAmounts) {
     $('#dashPendingApproval').text((payroll.pending_my_approval || 0).toLocaleString());
     $('#dashUpcomingPayDate').text(payroll.upcoming_run && payroll.upcoming_run.payment_date
         ? dashToDisplayDate(payroll.upcoming_run.payment_date)
@@ -90,10 +92,10 @@ function renderPayrollWidgets(payroll) {
         $(`#dashStationRow .station-card[data-state="${state}"] .station-count`).text(counts[state] || 0);
     });
 
-    renderRecentRuns(payroll.recent_runs || []);
+    renderRecentRuns(payroll.recent_runs || [], canViewAmounts);
 }
 
-function renderRecentRuns(rows) {
+function renderRecentRuns(rows, canViewAmounts) {
     const $list = $('#dashRecentRunsList').empty();
     if (!rows.length) {
         $list.append(`<div class="text-muted small text-center py-4">${langData['dash_no_recent_runs'] || 'No payroll runs yet.'}</div>`);
@@ -102,6 +104,7 @@ function renderRecentRuns(rows) {
     rows.forEach(function (row) {
         const url = `${BASE_URL}/payroll-process/${row.public_id}`;
         const period = `${dashToDisplayDate(row.period_start_date)} - ${dashToDisplayDate(row.period_end_date)}`;
+        const amountHtml = canViewAmounts ? `<div class="dash-run-row-amount">${dashFmtNum(row.total_net_amount)}</div>` : '';
         $list.append(`
             <a href="${url}" class="dash-run-row">
                 <div class="dash-run-row-main">
@@ -109,7 +112,7 @@ function renderRecentRuns(rows) {
                     <div class="dash-run-row-period">${period}</div>
                 </div>
                 <div class="dash-run-row-meta">
-                    <div class="dash-run-row-amount">${dashFmtNum(row.total_net_amount)}</div>
+                    ${amountHtml}
                     ${dashStateBadge(row.state)}
                 </div>
             </a>

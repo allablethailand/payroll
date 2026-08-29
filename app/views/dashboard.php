@@ -34,7 +34,12 @@
                 </div>
             </div>
         </div>
-        <div class="col-6 col-lg-3 d-none" id="dashStatPendingApprovalCol">
+        <!-- 2026-08-28, explicit request: "อยากให้เห็นเหมือนกันทั้งหมด แต่ตรงตัวเลขเงินเดือนให้เป็นไปตาม
+             Role ที่ Set ไว้" -- this whole widget block used to start d-none and only get shown by
+             dashboard.js when the acting employee had a payroll role at all; now always visible for
+             everyone, the money figure inside Recent Runs is the only part still role-gated (see
+             DashboardController::summary()'s own docblock). -->
+        <div class="col-6 col-lg-3" id="dashStatPendingApprovalCol">
             <a href="<?=BASE_URL?>/payroll-approval" class="text-decoration-none">
                 <div class="stat-card stat-card-danger h-100">
                     <div class="stat-card-icon"><i class="fa-solid fa-clipboard-check"></i></div>
@@ -45,7 +50,7 @@
                 </div>
             </a>
         </div>
-        <div class="col-6 col-lg-3 d-none" id="dashStatUpcomingPayCol">
+        <div class="col-6 col-lg-3" id="dashStatUpcomingPayCol">
             <div class="stat-card stat-card-primary h-100">
                 <div class="stat-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
                 <div>
@@ -58,7 +63,7 @@
 
     <div class="row g-4">
         <div class="col-lg-8">
-            <div class="dash-section-card mb-4 d-none" id="dashPipelineSection">
+            <div class="dash-section-card mb-4" id="dashPipelineSection">
                 <div class="dash-section-card-header">
                     <h6 class="mb-0"><i class="fa-solid fa-diagram-project me-2 text-warning"></i><span data-i18n="dash_payroll_pipeline">Payroll Pipeline</span></h6>
                     <a href="<?=BASE_URL?>/payroll-process" class="dash-section-link" data-i18n="dash_view_all">View All</a>
@@ -72,7 +77,7 @@
                 </div>
             </div>
 
-            <div class="dash-section-card d-none" id="dashRecentRunsSection">
+            <div class="dash-section-card" id="dashRecentRunsSection">
                 <div class="dash-section-card-header">
                     <h6 class="mb-0"><i class="fa-solid fa-clock-rotate-left me-2 text-warning"></i><span data-i18n="dash_recent_payroll_runs">Recent Payroll Runs</span></h6>
                     <a href="<?=BASE_URL?>/payroll-process" class="dash-section-link" data-i18n="dash_view_all">View All</a>

@@ -214,7 +214,7 @@
                             <div class="col-sm-9 offset-sm-3">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="run_is_offcycle">
-                                    <label class="form-check-label" for="run_is_offcycle" data-i18n="offcycle_run_label">Off-cycle run (no payroll cycle needed -- e.g. an out-of-cycle payment)</label>
+                                    <label class="form-check-label" for="run_is_offcycle" data-i18n="offcycle_run_label">Off-schedule run (no payroll schedule needed -- e.g. an out-of-schedule payment)</label>
                                 </div>
                             </div>
                         </div>
@@ -254,13 +254,13 @@
                             <div class="col-sm-9 offset-sm-3">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="run_include_standing_items">
-                                    <label class="form-check-label" for="run_include_standing_items" data-i18n="include_standing_items_label">Include configured earning/deduction items (standing PED assignments + Recurring Allowances)</label>
+                                    <label class="form-check-label" for="run_include_standing_items" data-i18n="include_standing_items_label">Include configured income/deduction items (standing PED assignments + Recurring Allowances)</label>
                                 </div>
                             </div>
                         </div>
                         <div class="row mb-3" id="run_cycle_row">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Cycle</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Schedule</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
                                 <select class="form-select select2-remote required" id="run_cycle_id" name="cycle_id" data-api="/api/payroll-cycle.options"></select>

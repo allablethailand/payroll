@@ -28,6 +28,16 @@ class Sso110Exporter implements StatutoryExportInterface {
     private const HEADER_ROW_LENGTH = 135;
     private const DETAIL_ROW_LENGTH = 135;
 
+    /** 2026-08-29 -- the ONE version_code this class actually implements (matches
+     *  master_statutory_format_versions' seed row for TH_SSO110, see that migration's own
+     *  comment). StatutoryFormatVersionModel::resolveVersionCode() is what a company's selection
+     *  ultimately resolves to; Sso110Report passes it through as context['version_code']. When a
+     *  real 2nd version is ever coded (e.g. once the actual pre/post-Jan-2026 SSO layout is
+     *  confirmed), add it here and branch on it inside generate() -- this const/check is what
+     *  stops a future unimplemented version from silently generating THIS layout's output under
+     *  the wrong label. */
+    public const SUPPORTED_VERSION_CODES = ['v1_current'];
+
     public function code(): string {
         return 'TH_SSO110';
     }
@@ -58,6 +68,14 @@ class Sso110Exporter implements StatutoryExportInterface {
      * }
      */
     public function generate(array $context): string {
+        // 2026-08-29 -- only enforced when the caller actually supplies a version_code (backward
+        // compatible with any existing call site/test that doesn't pass one at all); a
+        // company-selected version this class doesn't implement must fail loudly rather than
+        // silently produce output under the wrong version's label.
+        $versionCode = $context['version_code'] ?? null;
+        if ($versionCode !== null && !in_array($versionCode, self::SUPPORTED_VERSION_CODES, true)) {
+            throw new RuntimeException("Sso110Exporter does not implement format version '{$versionCode}'.");
+        }
         $company = $context['company'] ?? [];
         $period = $context['period'] ?? [];
         $employees = $context['employees'] ?? [];

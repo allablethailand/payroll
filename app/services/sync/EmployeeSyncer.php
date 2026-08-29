@@ -309,19 +309,31 @@ class EmployeeSyncer implements MasterDataSyncerInterface {
         }
 
         if ($existingId !== null) {
+            // 2026-08-28, real gap found and fixed (explicit follow-up: "มีข้อมูลส่งมา Map ทีหลัง...จะ
+            // ได้มีปุ่มทุกคน" -- a manually-created employee matched here via findByEmployeeNo()
+            // fallback, not findByRefId(), never had origami_ref_id written on this UPDATE branch at
+            // all (only the INSERT branch below did) -- so they'd never actually become "linked",
+            // permanently stuck re-resolving by employee_no on every future sync instead of the
+            // faster/more precise ref_id path, and Employee Detail's Re-Sync button (which checks
+            // origami_ref_id to decide whether to even show) would never light up for them. Safe to
+            // write unconditionally here: applyOne()'s own findByRefId()-then-findByEmployeeNo()
+            // precedence already guarantees $refId doesn't already belong to a DIFFERENT row by the
+            // time execution reaches this employee_no fallback branch (if it did, findByRefId()
+            // would have resolved $existingId to that row instead), so this can never collide with
+            // the uq_employees_origami_ref unique key.
             $stmt = $this->db->prepare("UPDATE employees SET
                     employee_no = :employee_no, name_th = :name_th, surname_th = :surname_th, name_en = :name_en, surname_en = :surname_en,
                     date_of_birth = :dob, gender = :gender, personal_email = :email, mobile_no = :mobile,
                     department_id = :department_id, position_id = :position_id, shift_id = :shift_id,
                     employment_date = :employment_date, employment_status = :employment_status,
-                    sync_batch_id = :batch_id, updated_by = :user, updated_at = CURRENT_TIMESTAMP
+                    origami_ref_id = :ref_id, sync_batch_id = :batch_id, updated_by = :user, updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id");
             $stmt->execute([
                 ':employee_no' => $employeeNo, ':name_th' => $nameTh, ':surname_th' => $surnameTh, ':name_en' => $nameEn, ':surname_en' => $surnameEn,
                 ':dob' => $dob, ':gender' => $gender, ':email' => $personalEmail, ':mobile' => $mobileNo,
                 ':department_id' => $links['department_id'], ':position_id' => $links['position_id'], ':shift_id' => $links['shift_id'],
                 ':employment_date' => $employmentDate, ':employment_status' => $employmentStatus,
-                ':batch_id' => $batchId, ':user' => $triggeredBy, ':id' => $existingId,
+                ':ref_id' => $refId, ':batch_id' => $batchId, ':user' => $triggeredBy, ':id' => $existingId,
             ]);
             return;
         }

@@ -86,6 +86,20 @@
             <div class="col-sm-4 mt-3">
                 <input type="text" class="form-control required" name="local_name">
             </div>
+            <!-- 2026-08-29, follow-up to the Annual Income Summary report request: "การตั้งค่ารอบปี
+                 ให้เอาไปไว้ในส่วนของการตั้งค่า" -- a single company-wide value (like registered_country
+                 above), so it lives here in Company Information rather than a new settings section
+                 of its own. Governs which calendar month a "fiscal year" starts on for that report's
+                 own year grouping/filter (1=January, the default, is a plain calendar year -- so a
+                 company that never touches this sees no behavior change at all). -->
+            <div class="col-sm-2 mt-3">
+                <label class="form-label">
+                    <span data-i18n="fiscal_year_start_month">Fiscal Year Start Month</span>
+                </label>
+            </div>
+            <div class="col-sm-4 mt-3">
+                <select class="form-select" name="fiscal_year_start_month" id="fiscal_year_start_month" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
+            </div>
         </div>
         <h6 class="text-secondary fw-bold mb-3 mt-4">
             <label class="label label-head bg-head-first rounded-2 text-white me-2">2</label>
@@ -218,7 +232,29 @@
     </div>
 </template>
 <template id="tmpl-bank-pane">
-    <div class="mt-5 mb-5 table-responsive">
+    <div class="mt-5 mb-5">
+        <!-- 2026-08-29, explicit request: "เอาไปไว้ในส่วนของหน้าจัดการธนาคารให้สามารถจัดการ Format เพื่อนำ
+             ส่งธนาคารได้" -- 2nd sub-tab alongside the existing Bank Accounts list, same
+             .structure-tabs pill convention as Organizational Structure's Branch/Role/Department/etc. -->
+        <div class="bg-light rounded-3 p-2 mb-4 structure-tabs-wrap">
+            <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link structure-menu active" id="bank-sub-tab-accounts" type="button" role="tab" aria-controls="bank-sub-pane" aria-selected="true" data-bank-page="accounts">
+                        <i class="fa-solid fa-credit-card me-2"></i><span data-i18n="bank_accounts">Bank Accounts</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link structure-menu" id="bank-sub-tab-format" type="button" role="tab" aria-controls="bank-sub-pane" aria-selected="false" data-bank-page="format">
+                        <i class="fa-solid fa-file-lines me-2"></i><span data-i18n="bank_file_format">Bank File Format</span>
+                    </button>
+                </li>
+            </ul>
+        </div>
+        <div id="bank-sub-pane"></div>
+    </div>
+</template>
+<template id="tmpl-bank-accounts-subpane">
+    <div class="table-responsive">
         <table class="table table-striped table-hover" id="tb_bank_account">
             <thead>
                 <tr>
@@ -235,6 +271,202 @@
         </table>
     </div>
 </template>
+<template id="tmpl-bank-format-subpane">
+    <p class="text-secondary small mb-3" data-i18n="bank_file_format_hint">
+        Configure how the bank transfer file is laid out for each bank format — no code changes needed. A format with no customization yet uses the system-provided starting template.
+    </p>
+    <div class="row">
+        <div class="col-lg-4 mb-3">
+            <div class="card-surface p-3">
+                <h6 class="fw-bold mb-3" data-i18n="bank_file_format_list">Bank Formats</h6>
+                <div id="bffFormatList" class="d-flex flex-column gap-2"></div>
+            </div>
+        </div>
+        <div class="col-lg-8 mb-3">
+            <div id="bffDetailEmpty" class="card-surface p-4 text-center text-secondary">
+                <i class="fa-solid fa-arrow-left me-2"></i><span data-i18n="bank_file_format_select_hint">Select a bank format on the left to view or edit its file layout.</span>
+            </div>
+            <div id="bffDetailPanel" class="d-none">
+                <div class="card-surface p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+                        <div>
+                            <h6 class="fw-bold mb-0"><span id="bffDetailFormatName"></span></h6>
+                            <span class="badge bg-warning-subtle text-warning" id="bffDraftBadge" data-i18n="draft_not_verified">DRAFT — not verified</span>
+                        </div>
+                        <div class="btn-group border rounded-3 bg-white">
+                            <button type="button" class="btn btn-link btn-sm" id="bffViewLogBtn"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="edit_log">Edit Log</span></button>
+                            <button type="button" class="btn btn-link btn-sm text-danger border-start" id="bffResetBtn"><i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="reset_to_default">Reset to Default</span></button>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-sm-3">
+                            <label class="form-label small" data-i18n="delimiter_type">Layout Type</label>
+                            <select class="form-select form-select-sm" id="bffDelimiterType">
+                                <option value="delimited" data-i18n="delimited">Delimited (CSV)</option>
+                                <option value="fixed_width" data-i18n="fixed_width">Fixed-Width</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-2" id="bffDelimiterCharWrap">
+                            <label class="form-label small" data-i18n="delimiter_char">Delimiter</label>
+                            <input type="text" class="form-control form-control-sm" id="bffDelimiterChar" maxlength="5" value=",">
+                        </div>
+                        <div class="col-sm-2">
+                            <label class="form-label small" data-i18n="line_ending">Line Ending</label>
+                            <select class="form-select form-select-sm" id="bffLineEnding">
+                                <option value="crlf">CRLF</option>
+                                <option value="lf">LF</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-2">
+                            <label class="form-label small" data-i18n="text_encoding">Encoding</label>
+                            <select class="form-select form-select-sm" id="bffTextEncoding">
+                                <option value="utf8">UTF-8</option>
+                                <option value="tis620">TIS-620</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-3 d-flex align-items-end gap-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="bffHasHeaderRow">
+                                <label class="form-check-label small" for="bffHasHeaderRow" data-i18n="has_header_row">Header row</label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="bffHasTrailerRow">
+                                <label class="form-check-label small" for="bffHasTrailerRow" data-i18n="has_trailer_row">Trailer row</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="bffIsVerified">
+                                <label class="form-check-label small" for="bffIsVerified" data-i18n="format_is_verified_label">I've confirmed this layout against our bank / RM</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-end mt-3">
+                        <button type="button" class="btn btn-warning btn-sm" id="bffSaveConfigBtn"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
+                    </div>
+                </div>
+                <div class="card-surface p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="fw-bold mb-0" data-i18n="bank_file_format_fields">Fields</h6>
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="bffAddFieldBtn"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_field">Add Field</span></button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light text-secondary">
+                                <tr>
+                                    <th data-i18n="row_type">Row</th>
+                                    <th data-i18n="order">Order</th>
+                                    <th data-i18n="field_label">Label</th>
+                                    <th data-i18n="source">Source</th>
+                                    <th data-i18n="width">Width</th>
+                                    <th style="width:90px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="bffFieldsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+<div class="modal fade" id="bffFieldModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" data-i18n="add_field">Add Field</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="bffFieldId">
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="field_label_th">Label (Thai)</label>
+                        <input type="text" class="form-control required" id="bffFieldLabelTh">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="field_label_en">Label (English)</label>
+                        <input type="text" class="form-control required" id="bffFieldLabelEn">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="row_type">Row</label>
+                        <select class="form-select" id="bffFieldRowType">
+                            <option value="detail" data-i18n="row_type_detail">Detail (per employee)</option>
+                            <option value="header" data-i18n="row_type_header">Header</option>
+                            <option value="trailer" data-i18n="row_type_trailer">Trailer</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="order">Order</label>
+                        <input type="number" class="form-control" id="bffFieldSortOrder" min="0" value="0">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="source_type">Source Type</label>
+                        <select class="form-select" id="bffFieldSourceType">
+                            <option value="employee_field" data-i18n="source_type_employee_field">Payroll Field</option>
+                            <option value="constant" data-i18n="source_type_constant">Fixed Value</option>
+                            <option value="blank" data-i18n="source_type_blank">Blank</option>
+                        </select>
+                    </div>
+                    <div class="col-6" id="bffFieldSourceFieldWrap">
+                        <label class="form-label" data-i18n="source">Source</label>
+                        <select class="form-select" id="bffFieldSourceField"></select>
+                    </div>
+                    <div class="col-6 d-none" id="bffFieldConstantWrap">
+                        <label class="form-label" data-i18n="constant_value">Fixed Value</label>
+                        <input type="text" class="form-control" id="bffFieldConstantValue">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" data-i18n="data_type">Data Type</label>
+                        <select class="form-select" id="bffFieldDataType">
+                            <option value="text" data-i18n="data_type_text">Text</option>
+                            <option value="number" data-i18n="data_type_number">Number</option>
+                            <option value="date" data-i18n="data_type_date">Date</option>
+                        </select>
+                    </div>
+                    <div class="col-6" id="bffFieldDecimalWrap">
+                        <label class="form-label" data-i18n="decimal_places">Decimal Places</label>
+                        <input type="number" class="form-control" id="bffFieldDecimalPlaces" min="0" max="6" value="2">
+                    </div>
+                    <div class="col-6 d-none" id="bffFieldDateFormatWrap">
+                        <label class="form-label" data-i18n="date_format">Date Format</label>
+                        <input type="text" class="form-control" id="bffFieldDateFormat" value="Ymd" placeholder="Ymd">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label" data-i18n="width">Width</label>
+                        <input type="number" class="form-control" id="bffFieldWidth" min="1">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label" data-i18n="pad_char">Pad Char</label>
+                        <input type="text" class="form-control" id="bffFieldPadChar" maxlength="1" value=" ">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label" data-i18n="pad_direction">Pad Direction</label>
+                        <select class="form-select" id="bffFieldPadDirection">
+                            <option value="right" data-i18n="pad_direction_right">Right</option>
+                            <option value="left" data-i18n="pad_direction_left">Left</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-warning" id="bffFieldSaveBtn"><span data-i18n="save">Save</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="bffLogModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" data-i18n="edit_log">Edit Log</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="bffLogModalBody"></div>
+        </div>
+    </div>
+</div>
 <template id="tmpl-structure-pane">
     <div class="mt-5 mb-5">
         <div class="bg-light rounded-3 p-2 mb-4 structure-tabs-wrap">

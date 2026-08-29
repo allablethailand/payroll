@@ -36,14 +36,22 @@ function esTypeLabel(type) {
 // real record instead of a flat spreadsheet line) and Department+Position merged into one stacked
 // cell (New tab only -- Existing tab dropped Position entirely to make room for its own Type
 // column, since "has_update" -- not org placement -- is the decision that matters there).
-function esRenderEmployeeCell(row, employeeNo) {
+//
+// 2026-08-29, same-day follow-up ("ตารางที่แสดงผลอยู่ดูแน่นมาก ช่วยปรับให้สวยขึ้นหน่อยครับ" -- the table
+// looks very cramped) -- the Type badge that used to be its own column (barely wide enough for its
+// label in a half-modal-width panel) now renders INLINE in this same identity cell instead, next to
+// the name, freeing a whole column's worth of width for Department/Position to actually be
+// readable. `.es-sync-avatar` (size/shadow) moved into style.css instead of inline styles, matching
+// this app's own convention of not hand-rolling one-off inline CSS for anything reused.
+function esRenderEmployeeCell(row, employeeNo, type) {
     const name = esCandidateName(row) || '-';
     const letter = name.trim().charAt(0).toUpperCase() || '?';
+    const typeBadge = type ? ` ${esTypeBadgeHtml(type)}` : '';
     return `
         <div class="d-flex align-items-center gap-2 py-1">
-            <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0" style="width:32px;height:32px;font-size:.78rem;background-color:#007aff;">${esEscapeHtml(letter)}</div>
+            <div class="es-sync-avatar rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0" style="background-color:#007aff;">${esEscapeHtml(letter)}</div>
             <div class="lh-sm">
-                <div class="fw-semibold">${esEscapeHtml(name)}</div>
+                <div class="fw-semibold">${esEscapeHtml(name)}${typeBadge}</div>
                 <div class="text-muted small">${esEscapeHtml(employeeNo || '-')}</div>
             </div>
         </div>
@@ -122,9 +130,8 @@ function renderSyncTables() {
         language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
         columns: [
             { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
-            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.employee_no) },
+            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.employee_no, row.type) },
             { data: null, render: (d, t, row) => esRenderDeptPositionCell(row) },
-            { data: 'type', render: d => esTypeBadgeHtml(d) },
         ],
     });
     $('#tb_sync_existing').DataTable({
@@ -133,9 +140,8 @@ function renderSyncTables() {
         language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
         columns: [
             { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
-            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.existing_employee_no || row.employee_no) },
+            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.existing_employee_no || row.employee_no, row.type) },
             { data: null, render: (d, t, row) => esEscapeHtml(esCandidateDepartment(row)) },
-            { data: 'type', render: d => esTypeBadgeHtml(d) },
             { data: null, render: (d, t, row) => esUpdateBadgeHtml(row) },
         ],
     });
@@ -317,8 +323,56 @@ function esSyncLogStatusBadge(status) {
     return `<span class="badge ${cls}">${text}</span>`;
 }
 
+// 2026-08-29, explicit request: "Employee Sync Log ปรับจากตารางให้เป็น Card และดูได้ว่า Failed จาก
+// อะไร" (change from a table to Cards, and make the failure reason visible). The old table only
+// ever showed Total/Success/Error as bare NUMBERS -- EmployeeSyncModel::log() already
+// json_decode()s sync_batches.error_detail server-side into a real array of
+// {employee_id|ref_id, message} entries, this view just never rendered any of it. Each error
+// entry's identifier is whichever one that particular sync path actually recorded (resyncMany()
+// stores employee_id, apply()'s bulk picker stores ref_id) -- esErrorEntryLabel() below shows
+// whichever is present rather than assuming one shape for both.
+function esErrorEntryLabel(entry) {
+    if (entry && entry.employee_id) {
+        return (langData['employee_sync_log_error_employee_prefix'] || 'Employee #{id}').replace('{id}', entry.employee_id);
+    }
+    if (entry && entry.ref_id) {
+        return (langData['employee_sync_log_error_ref_prefix'] || 'Origami ref #{id}').replace('{id}', entry.ref_id);
+    }
+    return langData['employee_sync_log_error_unknown'] || 'Unknown record';
+}
+function esRenderSyncLogCard(r) {
+    const byName = (currentLang === 'th' ? r.triggered_by_name_th : r.triggered_by_name_en) || r.triggered_by_name_th || r.triggered_by_name_en || '-';
+    const dateStr = typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(r.started_at) : r.started_at;
+    const errors = Array.isArray(r.error_detail) ? r.error_detail : [];
+    const errorListHtml = errors.length ? `
+        <div class="sync-log-card-errors">
+            <div class="sync-log-card-errors-title"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['employee_sync_log_errors_label'] || 'Failure reason(s)'}</div>
+            <ul class="sync-log-card-error-list">
+                ${errors.map(e => `<li><span class="fw-semibold">${esEscapeHtml(esErrorEntryLabel(e))}:</span> ${esEscapeHtml(e && e.message || '-')}</li>`).join('')}
+            </ul>
+        </div>
+    ` : '';
+    return `
+        <div class="sync-log-card">
+            <div class="sync-log-card-top">
+                <div class="sync-log-card-when">
+                    <i class="fa-regular fa-calendar me-1 text-muted"></i>${esEscapeHtml(dateStr)}
+                    <span class="text-muted mx-1">&middot;</span>
+                    <i class="fa-regular fa-user me-1 text-muted"></i>${esEscapeHtml(byName)}
+                </div>
+                ${esSyncLogStatusBadge(r.status)}
+            </div>
+            <div class="sync-log-card-stats">
+                <div class="sync-log-stat"><span class="sync-log-stat-value">${esEscapeHtml(r.total_count)}</span><span class="sync-log-stat-label">${langData['employee_sync_log_col_total'] || 'Total'}</span></div>
+                <div class="sync-log-stat sync-log-stat-success"><span class="sync-log-stat-value">${esEscapeHtml(r.success_count)}</span><span class="sync-log-stat-label">${langData['employee_sync_log_col_success'] || 'Success'}</span></div>
+                <div class="sync-log-stat ${Number(r.error_count) > 0 ? 'sync-log-stat-error' : ''}"><span class="sync-log-stat-value">${esEscapeHtml(r.error_count)}</span><span class="sync-log-stat-label">${langData['employee_sync_log_col_error'] || 'Error'}</span></div>
+            </div>
+            ${errorListHtml}
+        </div>
+    `;
+}
 function esLoadSyncLog() {
-    $('#tb_sync_log tbody').html(`<tr><td colspan="6" class="text-center text-muted py-3"><i class="fa-solid fa-spinner fa-spin me-1"></i>${langData['loading'] || 'Loading...'}</td></tr>`);
+    $('#syncLogCards').html(`<div class="text-center text-muted py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i>${langData['loading'] || 'Loading...'}</div>`);
     $.ajax({
         url: `${BASE_URL}/api/employee-sync.log`,
         method: 'GET',
@@ -326,26 +380,13 @@ function esLoadSyncLog() {
         success: function (res) {
             const rows = (res && res.status) ? (res.data || []) : [];
             if (!rows.length) {
-                $('#tb_sync_log tbody').html(`<tr><td colspan="6" class="text-center text-muted py-3">${langData['employee_sync_log_empty'] || 'No sync history yet.'}</td></tr>`);
+                $('#syncLogCards').html(`<div class="text-center text-muted py-4">${langData['employee_sync_log_empty'] || 'No sync history yet.'}</div>`);
                 return;
             }
-            $('#tb_sync_log tbody').html(rows.map(function (r) {
-                const byName = (currentLang === 'th' ? r.triggered_by_name_th : r.triggered_by_name_en) || r.triggered_by_name_th || r.triggered_by_name_en || '-';
-                const dateStr = typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(r.started_at) : r.started_at;
-                return `
-                    <tr>
-                        <td>${esEscapeHtml(dateStr)}</td>
-                        <td>${esEscapeHtml(byName)}</td>
-                        <td>${esSyncLogStatusBadge(r.status)}</td>
-                        <td class="text-end">${esEscapeHtml(r.total_count)}</td>
-                        <td class="text-end text-success">${esEscapeHtml(r.success_count)}</td>
-                        <td class="text-end ${Number(r.error_count) > 0 ? 'text-danger' : ''}">${esEscapeHtml(r.error_count)}</td>
-                    </tr>
-                `;
-            }).join(''));
+            $('#syncLogCards').html(rows.map(esRenderSyncLogCard).join(''));
         },
         error: function () {
-            $('#tb_sync_log tbody').html(`<tr><td colspan="6" class="text-center text-danger py-3">${langData['employee_sync_fetch_failed'] || 'Failed to load.'}</td></tr>`);
+            $('#syncLogCards').html(`<div class="text-center text-danger py-4">${langData['employee_sync_fetch_failed'] || 'Failed to load.'}</div>`);
         }
     });
 }

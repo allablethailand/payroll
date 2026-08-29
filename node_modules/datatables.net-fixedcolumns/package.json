@@ -1,0 +1,34 @@
+{
+    "name": "datatables.net-fixedcolumns",
+    "description": "FixedColumns for DataTables",
+    "main": "js/dataTables.fixedColumns.js",
+    "module": "js/dataTables.fixedColumns.mjs",
+    "types": "./types/types.d.ts",
+    "version": "6.0.0",
+    "files": [
+        "js/**/*.js",
+        "js/**/*.mjs",
+        "types/**/*.d.ts"
+    ],
+    "keywords": [
+        "FixedColumns",
+        "Datatables",
+        "table",
+        "filter",
+        "sort"
+    ],
+    "dependencies": {
+        "datatables.net": "^3"
+    },
+    "author": {
+        "name": "SpryMedia Ltd",
+        "url": "http://datatables.net"
+    },
+    "homepage": "https://datatables.net",
+    "bugs": "https://datatables.net/forums",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/DataTables/FixedColumns.git"
+    }
+}

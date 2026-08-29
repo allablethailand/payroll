@@ -137,6 +137,21 @@ html, body {
     padding: 0;
     padding-right: 0 !important;
 }
+/* 2026-08-29, explicit request: per-user Font Size setting (S/M/L). Every Bootstrap component in
+   this app sizes itself in `rem`, which resolves against THIS root font-size -- the existing
+   12px above already establishes that (it's why the whole app doesn't render at the browser's
+   16px default), so scaling it per-user cascades through the entire UI (text, spacing, icons,
+   form controls) automatically, with no per-component overrides needed. "m" (Medium) is
+   deliberately just the unchanged 12px default above -- a user who never opens the Settings
+   modal, or explicitly picks Medium, sees byte-identical sizing to before this feature existed.
+   Set via `data-font-size` on <html> by applyFontSize() in app.js (from the saved preference on
+   load, or live while dragging the modal's slider before Save is even clicked). */
+html[data-font-size="s"], html[data-font-size="s"] body {
+    font-size: 10px;
+}
+html[data-font-size="l"], html[data-font-size="l"] body {
+    font-size: 14px;
+}
 :root {
     --sidebar-width: 250px;
     --navbar-height: 70px;
@@ -385,6 +400,88 @@ html, body {
 .nav-hub-menu::-webkit-scrollbar-thumb:hover {
     background: #e68a00;
 }
+/* 2026-08-29, explicit request: profile icon -> Settings dropdown -- same active-class-toggle
+   dropdown shape as .nav-hub-dropdown/.nav-lang-dropdown right above it, reusing that same visual
+   language (white card, subtle shadow, hover row) instead of inventing a new dropdown style. */
+.nav-profile-dropdown {
+    position: relative;
+}
+.nav-profile-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+.nav-profile-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    list-style: none;
+    padding: 6px 0;
+    margin: 0;
+    min-width: 160px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+    z-index: 1010;
+}
+.nav-profile-menu.active {
+    display: block;
+}
+.nav-profile-menu li a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    color: #4a5568;
+    text-decoration: none;
+    font-weight: 400;
+    transition: background-color 0.15s ease;
+}
+.nav-profile-menu li a:hover {
+    background-color: #f1f5f9;
+    color: #1a202c;
+}
+.nav-profile-menu li a i {
+    width: 16px;
+    text-align: center;
+    color: #FF9900;
+}
+/* Settings modal -- Font Size slider + preview, Language flag-pair */
+.user-settings-font-slider-wrap {
+    padding: 0 4px;
+}
+.user-settings-font-slider-wrap .form-range::-webkit-slider-thumb {
+    background: #FF9900;
+}
+.user-settings-font-slider-wrap .form-range::-moz-range-thumb {
+    background: #FF9900;
+}
+.user-settings-font-slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: #718096;
+    margin-top: 2px;
+}
+.user-settings-font-preview {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    background-color: #f8fafc;
+    color: #2d3748;
+    text-align: center;
+}
+/* .user-settings-lang-* rules removed 2026-08-29 (same-day follow-up: "ตัวเปลี่ยนภาษาตัดออกจากใน
+   modal setting ครับ เพราะมีใน header อยู่แล้ว") -- the language picker markup that used these
+   classes was removed from #userSettingsModal in header.php; the top-right nav-lang-dropdown is
+   the only language control now. */
 .nav-hub-tile {
     min-width: 0;
 }
@@ -4796,3 +4893,211 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
         grid-template-columns: repeat(3, 1fr);
     }
 }
+/* 2026-08-29, explicit request: "Sync from Origami...ตารางที่แสดงผลอยู่ดูแน่นมาก ช่วยปรับให้สวยขึ้นหน่อย
+   ครับ" -- the New/Already-Exists picker panels (public/js/employee/employee-sync.js,
+   app/views/employee/list.php's #employeeSyncModal). Modal itself went modal-fullscreen (see that
+   view's own comment); this is the panel/table polish half -- a card-style header per panel
+   (colored icon badge + title + live count pill, same visual language .page-header-card already
+   uses elsewhere in this app) instead of a bare <h6>, a taller rounded/shadowed scroll box instead
+   of a plain 1px border, and a bigger identity-cell avatar now that the "Type" column was folded
+   into that same cell as an inline pill (see esRenderEmployeeCell() in employee-sync.js) to free up
+   real column width for Department/Position instead of a whole separate cramped column for it. */
+.es-sync-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px 12px 0 0;
+    border: 1px solid #e2e8f0;
+    border-bottom: none;
+    background: #ffffff;
+}
+.es-sync-panel-header-icon {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+    color: #ffffff;
+}
+.es-sync-panel-header-new .es-sync-panel-header-icon {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+.es-sync-panel-header-existing .es-sync-panel-header-icon {
+    background: linear-gradient(135deg, #64748b, #475569);
+}
+.es-sync-panel-header-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.es-sync-scroll-box {
+    max-height: 560px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 0 0 12px 12px;
+    box-shadow: 0 6px 16px -8px rgba(15, 23, 42, .12);
+}
+.es-sync-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.es-sync-th-check {
+    width: 44px;
+}
+.es-sync-table > tbody > tr > td {
+    padding-top: .65rem;
+    padding-bottom: .65rem;
+}
+.es-sync-avatar {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    font-size: .85rem;
+    box-shadow: 0 2px 6px -1px rgba(0, 122, 255, .45);
+}
+/* 2026-08-29, explicit request: "Employee Sync Log ปรับจากตารางให้เป็น Card และดูได้ว่า Failed จาก
+   อะไร" -- one card per sync_batches row (#employeeSyncLogModal, employee-sync.js's
+   esRenderSyncLogCard()) instead of a table row that only ever showed bare Total/Success/Error
+   counts; a failed batch now expands into its own tinted section listing every actual error
+   message underneath the stats row. */
+.sync-log-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    background: #ffffff;
+}
+.sync-log-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.sync-log-card-when {
+    font-size: .85rem;
+    color: #475569;
+}
+.sync-log-card-stats {
+    display: flex;
+    gap: 22px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed #e2e8f0;
+}
+.sync-log-stat {
+    display: flex;
+    flex-direction: column;
+}
+.sync-log-stat-value {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #1e293b;
+}
+.sync-log-stat-success .sync-log-stat-value {
+    color: #16a34a;
+}
+.sync-log-stat-error .sync-log-stat-value {
+    color: #dc2626;
+}
+.sync-log-stat-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #94a3b8;
+}
+.sync-log-card-errors {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+}
+.sync-log-card-errors-title {
+    font-weight: 600;
+    font-size: .82rem;
+    color: #b91c1c;
+    margin-bottom: 4px;
+}
+.sync-log-card-error-list {
+    margin: 0;
+    padding-left: 20px;
+    font-size: .82rem;
+    color: #7f1d1d;
+}
+.sync-log-card-error-list li {
+    margin-bottom: 2px;
+}
+
+/* ==================== Annual Income Summary (2026-08-29) ====================
+   Explicit request: "อยากให้ Column ที่เป็นพนักงาน Fixed อยู่กับที่ แล้วลากดู Column ฝั่งขวา และขวาสุดที่
+   เป็นสรุป ให้ fiexd ขวาสุด...และตารางให้เป็น datatable" -- a real DataTable (public/js/reports/
+   annual-summary.js) using the FixedColumns extension (public/node_modules/
+   datatables.net-fixedcolumns*, added as an npm dependency for this) for the frozen employee
+   (left)/annual-total (right) columns while scrolling both axes -- FixedColumns clones those
+   columns into their own positioned tables via JS, so unlike the original hand-rolled version of
+   this page, freezing itself needs no position:sticky CSS here; only visual styling (colors,
+   fonts, month-state header colors) is this file's job now. */
+.ais-table-wrap .dataTables_wrapper {
+    font-size: .88rem;
+}
+.ais-table th, .ais-table td {
+    white-space: nowrap;
+}
+.ais-table thead th {
+    background: #f8f9fb;
+    color: #475569;
+    text-align: right;
+}
+.ais-table thead th:first-child, .ais-table td:first-child {
+    text-align: left;
+}
+.ais-employee-no { font-weight: 700; color: #1e293b; }
+.ais-employee-name { color: #64748b; font-size: .8rem; }
+.ais-cell-net { font-weight: 600; }
+.ais-cell-sub { font-size: .72rem; color: #94a3b8; display: block; }
+.ais-cell-sub.ais-cell-deduction { color: #dc3545; }
+.ais-total-value { font-weight: 700; color: #b45f00; }
+.ais-table td:last-child { background: #fffaf1; }
+.ais-table thead th:last-child { background: #fff1db; }
+
+/* Month header state colors -- past_done (processed, neutral), past_missing (past with no
+   finalized run at all that month -- a gap worth flagging), current (highlighted), future (muted). */
+.ais-table thead th.ais-month-past_done { background: #eef2f7; color: #475569; }
+.ais-table thead th.ais-month-past_missing { background: #fdecec; color: #b42318; }
+.ais-table thead th.ais-month-current { background: #dbeafe; color: #1e40af; }
+.ais-table thead th.ais-month-future { background: #f8fafc; color: #94a3b8; }
+
+.ais-table tfoot td {
+    background: #fff7ec;
+    border-top: 2px solid #FF9900;
+    font-weight: 700;
+    color: #b45f00;
+}
+
+.ais-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.ais-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .8rem;
+    color: #64748b;
+}
+.ais-legend-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+}
+.ais-legend-swatch.ais-month-past_done { background: #eef2f7; border: 1px solid #cbd5e1; }
+.ais-legend-swatch.ais-month-past_missing { background: #fdecec; border: 1px solid #f3b4ac; }
+.ais-legend-swatch.ais-month-current { background: #dbeafe; border: 1px solid #93c5fd; }
+.ais-legend-swatch.ais-month-future { background: #f8fafc; border: 1px solid #e2e8f0; }
