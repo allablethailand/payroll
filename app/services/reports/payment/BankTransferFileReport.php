@@ -280,18 +280,40 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             'total_count' => count($included),
         ];
 
+        // 2026-08-29, explicit report: "มันมีตรงชื่อที่ติดกันกับตัวเลขในลำดับต่อไปครับ" -- a name (or any
+        // other variable-content field) that happens to be exactly as wide, or WIDER, than its
+        // fixed-width column has no padding space left before the next field starts, so it visually
+        // runs into whatever follows. When the source content is only exactly as wide as the column
+        // (this report's own trigger case: "จักรกฤษณ์ สุวรรณภูมิ" is genuinely 20 bytes in TIS-620, its
+        // real complete name, nothing lost), that's harmless -- Cashlink and any other fixed-width
+        // parser reads every field by its fixed byte POSITION, never by scanning for a whitespace
+        // gap, so the file itself is still 100% correct. But if the source content is WIDER than the
+        // column, padByte() genuinely truncates it -- silent data loss (a chopped name) that a bank
+        // transfer file can't tolerate (wrong/incomplete legal name reaching the bank). $widthOverflows
+        // collects only the genuine-overflow case (checked BEFORE padByte() ever truncates anything,
+        // comparing the real formatted-but-unpadded byte length against the column width) so this
+        // report can hard-block the download and name exactly which employee/field is affected,
+        // rather than silently shipping a file with a chopped legal name to the bank -- same "ห้าม
+        // generate ไฟล์เปล่าเงียบๆ" standing convention as the "no valid accounts" check above.
+        $widthOverflows = [];
         $lines = [];
         if (!empty($config['has_header_row']) && !empty($rowsByType['header'])) {
-            $lines[] = $this->renderRow($rowsByType['header'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language);
+            $lines[] = $this->renderRow($rowsByType['header'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language, $widthOverflows, null);
         }
         $seq = 0;
         foreach ($included as $d) {
             $seq++;
             $aggregateContext['sequence_no'] = $seq;
-            $lines[] = $this->renderRow($rowsByType['detail'], $d, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language);
+            $lines[] = $this->renderRow($rowsByType['detail'], $d, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language, $widthOverflows, $d['employee_no'] ?? ('#' . $seq));
         }
         if (!empty($config['has_trailer_row']) && !empty($rowsByType['trailer'])) {
-            $lines[] = $this->renderRow($rowsByType['trailer'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language);
+            $lines[] = $this->renderRow($rowsByType['trailer'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language, $widthOverflows, null);
+        }
+        if (!empty($widthOverflows)) {
+            throw new LocalizedException(
+                'The following values are too long for their fixed-width column and would be cut off in the file: ' . implode('; ', $widthOverflows) . '. Widen the field in Bank File Format settings, or shorten the source data, before exporting.',
+                'bank_transfer_width_overflow'
+            );
         }
 
         $content = implode($lineEnding, $lines) . $lineEnding;
@@ -312,8 +334,15 @@ class BankTransferFileReport implements ReportGeneratorInterface {
     }
 
     /** Renders one line (header/detail/trailer) from its field definitions. $employeeRow is null
-     *  for header/trailer rows (they only ever pull from $context, constants, or blanks). */
-    private function renderRow(array $fields, ?array $employeeRow, array $context, bool $isFixedWidth, string $delimiterChar, ?string $encoding, string $language): string {
+     *  for header/trailer rows (they only ever pull from $context, constants, or blanks).
+     *  $widthOverflows (by reference) collects a human-readable note for any field whose real,
+     *  formatted-but-not-yet-padded content is wider than its column -- see the "มันมีตรงชื่อที่ติดกัน"
+     *  docblock on the caller (renderConfigured()) for why this check has to happen HERE, before
+     *  padByte() truncates it, rather than after. $rowLabel identifies which row this is in a
+     *  message (an employee_no for a detail row, null for header/trailer -- those have no genuine
+     *  variable-length content in this format today, but the check stays generic rather than
+     *  detail-row-only in case a future company config adds one). */
+    private function renderRow(array $fields, ?array $employeeRow, array $context, bool $isFixedWidth, string $delimiterChar, ?string $encoding, string $language, array &$widthOverflows, ?string $rowLabel): string {
         $cells = [];
         foreach ($fields as $field) {
             $raw = $this->rawValueForField($field, $employeeRow, $context, $language);
@@ -322,7 +351,14 @@ class BankTransferFileReport implements ReportGeneratorInterface {
                 $formatted = $this->toFileEncoding($formatted, $encoding);
             }
             if ($isFixedWidth && !empty($field['width'])) {
-                $formatted = $this->padByte($formatted, (int)$field['width'], (string)($field['pad_char'] ?? ' '), (string)($field['pad_direction'] ?? 'right'), $encoding === null);
+                $width = (int)$field['width'];
+                if (strlen($formatted) > $width) {
+                    $label = $rowLabel !== null
+                        ? (($field['field_label_th'] ?? $field['source_field'] ?? 'field') . " (พนักงาน {$rowLabel})")
+                        : (string)($field['field_label_th'] ?? $field['source_field'] ?? 'field');
+                    $widthOverflows[] = $label;
+                }
+                $formatted = $this->padByte($formatted, $width, (string)($field['pad_char'] ?? ' '), (string)($field['pad_direction'] ?? 'right'), $encoding === null);
             }
             $cells[] = $formatted;
         }
