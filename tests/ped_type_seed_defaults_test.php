@@ -46,11 +46,11 @@ try {
 
     echo "=== seedDefaults() on a fresh company ===\n";
     $firstRes = $model->seedDefaults($compId, 1);
-    check('all 14 defaults inserted on a fresh company', $firstRes['inserted'], 14);
+    check('all 15 defaults inserted on a fresh company', $firstRes['inserted'], 15);
     check('nothing skipped on a fresh company', $firstRes['skipped'], 0);
 
     $rows = $pdo->query("SELECT item_code, item_type, calculation_method, status, is_sync_only FROM payroll_earning_deduction_types WHERE comp_id = {$compId} ORDER BY item_code")->fetchAll(PDO::FETCH_ASSOC);
-    check('14 rows actually exist for this company', count($rows), 14);
+    check('15 rows actually exist for this company', count($rows), 15);
     checkTrue('every seeded row is active', array_reduce($rows, fn($carry, $r) => $carry && $r['status'] === 'active', true));
     checkTrue('every seeded row is is_sync_only=0 (not protected, deletable like any other row)', array_reduce($rows, fn($carry, $r) => $carry && (int)$r['is_sync_only'] === 0, true));
 
@@ -64,9 +64,9 @@ try {
     echo "=== seedDefaults() is idempotent (safe to click \"Load Default Items\" again) ===\n";
     $secondRes = $model->seedDefaults($compId, 1);
     check('nothing new inserted the second time', $secondRes['inserted'], 0);
-    check('all 14 reported as already existing', $secondRes['skipped'], 14);
+    check('all 15 reported as already existing', $secondRes['skipped'], 15);
     $rowsAfterSecond = (int)$pdo->query("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = {$compId}")->fetchColumn();
-    check('still exactly 14 rows (no duplicates created)', $rowsAfterSecond, 14);
+    check('still exactly 15 rows (no duplicates created)', $rowsAfterSecond, 15);
 
     echo "=== Seeded items are soft-deletable like any other item, and stay deleted on re-seed ===\n";
     $otId = (int)$pdo->query("SELECT id FROM payroll_earning_deduction_types WHERE comp_id = {$compId} AND item_code = 'OT'")->fetchColumn();
@@ -77,12 +77,12 @@ try {
     checkTrue('deleted seeded item has deleted_at stamped', !empty($otAfterDelete['deleted_at']));
 
     $thirdRes = $model->seedDefaults($compId, 1);
-    check('re-seeding after a manual delete does not resurrect the deleted item (still counted as existing/skipped)', $thirdRes['skipped'], 14);
+    check('re-seeding after a manual delete does not resurrect the deleted item (still counted as existing/skipped)', $thirdRes['skipped'], 15);
     check('re-seeding after a manual delete inserts nothing', $thirdRes['inserted'], 0);
     $otStillDeleted = $pdo->query("SELECT status FROM payroll_earning_deduction_types WHERE id = {$otId}")->fetch(PDO::FETCH_ASSOC);
     check('the deliberately-deleted item is still deleted after re-seeding (admin\'s deletion is respected)', $otStillDeleted['status'] ?? null, 'deleted');
     $activeCount = (int)$pdo->query("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = {$compId} AND status != 'deleted'")->fetchColumn();
-    check('13 items remain active after deleting 1 of the 14', $activeCount, 13);
+    check('14 items remain active after deleting 1 of the 15', $activeCount, 14);
 } catch (Throwable $e) {
     $failures++;
     echo "  FAIL  uncaught exception: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

@@ -473,6 +473,74 @@ try {
     $restoredTripLine = array_filter($rReactivatedTrip['earning'], fn($l) => stripos((string)($l['note'] ?? ''), 'sync_trip_allowance') !== false);
     check('re-activating the same type immediately makes trip_allowance compute again (fix is reversible, not a one-way regression)', count($restoredTripLine), 1);
 
+    // 2026-08-29, real bugs found and fixed (explicit report: "Leave Approved ต้องไม่นำมาบวกเป็นเงินได้
+    // ลาไม่รับเงิน และลารออนุมัติ ถึงจะเอามาคำนวณเป็นเงินหัก...มีส่ง หักเงินคำประกันการทำงานมา แต่ไม่นำไปคิดเป็น
+    // รายการหัก...OT ยังคำนวณไม่ถูกต้อง").
+    echo "=== INFO-typed item (e.g. Leave Approved) with no catalog mapping produces NO line at all -- must not silently default to income ===\n";
+    $leaveApprovedRow = $blankRow;
+    $leaveApprovedRow['item_values'] = [
+        ['item_id' => 200, 'item_code' => 'LEAVE_APPROVED', 'item_name' => 'Leave Approved', 'item_type' => 'INFO', 'unit_type' => 'days', 'value' => 2.0, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $leaveApprovedRow, $baseSalary);
+    checkTrue('no earning line for an INFO-typed item', findLine($r['earning'], 'CUSTOM:Leave Approved') === null);
+    checkTrue('no deduction line for an INFO-typed item either', findLine($r['deduction'], 'CUSTOM:Leave Approved') === null);
+    check('zero earning lines produced at all', count($r['earning']), 0);
+    check('zero deduction lines produced at all', count($r['deduction']), 0);
+
+    echo "=== Leave pending approval: new rule-driven deduction event, no rule configured -- default formula, item_code matched via alias only (no structured column) ===\n";
+    $leavePendingRow = $blankRow;
+    $leavePendingRow['item_values'] = [
+        ['item_id' => 201, 'item_code' => 'LEAVE_PENDING', 'item_name' => 'Leave Pending', 'item_type' => 'INFO', 'unit_type' => 'days', 'value' => 1.0, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $leavePendingRow, $baseSalary);
+    $leavePendingLine = findLine($r['deduction'], 'LEAVE_PENDING_DEDUCT');
+    checkTrue('LEAVE_PENDING_DEDUCT line present despite the payload itself being tagged INFO, not DEDUCTION', $leavePendingLine !== null);
+    check('1 day pending leave -> minutes(480)*(100/60)*1.0 = 800.00, same default formula as unpaid leave', $leavePendingLine['amount'] ?? null, 800.0);
+
+    echo "=== Leave pending approval: company-configured rule (percent_of_rate 0.5x, half-pay policy) ===\n";
+    $pdo->prepare("INSERT INTO attendance_deduction_rules (comp_id, event_code, method_code, multiplier_rate, created_by) VALUES (?, 'leave_pending', 'percent_of_rate', 0.5, ?)")
+        ->execute([$compId, $userId]);
+    $r = $resolver->resolve($compId, $leavePendingRow, $baseSalary);
+    $leavePendingHalfLine = findLine($r['deduction'], 'LEAVE_PENDING_DEDUCT');
+    check('percent_of_rate @ 0.5x: (100/60)*480*0.5 = 400.00', $leavePendingHalfLine['amount'] ?? null, 400.0);
+    $pdo->prepare("DELETE FROM attendance_deduction_rules WHERE comp_id = ? AND event_code = 'leave_pending'")->execute([$compId]);
+
+    echo "=== Leave pending approval: zero value produces no line (no leave currently pending) ===\n";
+    $leavePendingZeroRow = $blankRow;
+    $leavePendingZeroRow['item_values'] = [
+        ['item_id' => 201, 'item_code' => 'LEAVE_PENDING', 'item_name' => 'Leave Pending', 'item_type' => 'INFO', 'unit_type' => 'days', 'value' => 0.0, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $leavePendingZeroRow, $baseSalary);
+    checkTrue('no LEAVE_PENDING_DEDUCT line when the reported value is 0', findLine($r['deduction'], 'LEAVE_PENDING_DEDUCT') === null);
+
+    echo "=== Generic custom deduction item sent with a NEGATIVE value (Origami's own real payload shape for a deduction -- e.g. a guarantee-money installment sent as -500.00) -- must still deduct 500.00, not be silently dropped ===\n";
+    $negDeductionRow = $blankRow;
+    $negDeductionRow['item_values'] = [
+        ['item_id' => 202, 'item_code' => 'CUSTOM_ITEM_5', 'item_name' => 'หักเงินค้ำประกันการทำงาน', 'item_type' => 'DEDUCTION', 'unit_type' => null, 'value' => -500.0, 'remark' => 'งวดที่ 1/10'],
+    ];
+    $r = $resolver->resolve($compId, $negDeductionRow, $baseSalary);
+    $negDeductionLine = findLine($r['deduction'], 'CUSTOM:หักเงินค้ำประกันการทำงาน');
+    checkTrue('a DEDUCTION-typed item sent with a negative raw value still produces a line', $negDeductionLine !== null);
+    check('amount is the positive magnitude 500.00, not dropped and not stored as -500.00', $negDeductionLine['amount'] ?? null, 500.0);
+
+    echo "=== A DEDUCTION-typed item with a POSITIVE raw value still works exactly as before (no regression from the abs() normalization) ===\n";
+    $posDeductionRow = $blankRow;
+    $posDeductionRow['item_values'] = [
+        ['item_id' => 203, 'item_code' => 'CUSTOM_ITEM_6', 'item_name' => 'Positive Deduction', 'item_type' => 'DEDUCTION', 'unit_type' => null, 'value' => 250.0, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $posDeductionRow, $baseSalary);
+    $posDeductionLine = findLine($r['deduction'], 'CUSTOM:Positive Deduction');
+    check('positive deduction value unaffected: 250.00', $posDeductionLine['amount'] ?? null, 250.0);
+
+    echo "=== An INCOME-typed item with a negative value is still correctly skipped (abs() normalization is scoped to DEDUCTION only) ===\n";
+    $negIncomeRow = $blankRow;
+    $negIncomeRow['item_values'] = [
+        ['item_id' => 204, 'item_code' => 'CUSTOM_ITEM_7', 'item_name' => 'Negative Income', 'item_type' => 'INCOME', 'unit_type' => null, 'value' => -100.0, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $negIncomeRow, $baseSalary);
+    checkTrue('a negative-valued INCOME item is still skipped, not turned into a 100.00 earning line', findLine($r['earning'], 'CUSTOM:Negative Income') === null);
+    check('zero earning lines', count($r['earning']), 0);
+
 } finally {
     $pdo->rollBack();
 }

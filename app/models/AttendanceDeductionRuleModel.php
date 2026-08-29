@@ -27,11 +27,16 @@ declare(strict_types=1);
 class AttendanceDeductionRuleModel {
     private PDO $db;
 
-    private const EVENT_CODES = ['late', 'absent', 'unpaid_leave'];
+    // 2026-08-29, explicit request ("ลาไม่รับเงิน และลารออนุมัติ ถึงจะเอามาคำนวณเป็นเงินหัก") -- leave still
+    // awaiting approval is provisionally deducted like unpaid leave until it's actually approved (at
+    // which point it stops appearing in payroll_sync_items as pending), same reasoning/company-
+    // configurable rule mechanism as late/absent/unpaid_leave. See SyncPayResolver's own
+    // RULE_DRIVEN_ITEM_DEFS['leave_pending'].
+    private const EVENT_CODES = ['late', 'absent', 'unpaid_leave', 'leave_pending'];
     private const RATE_UNITS = ['minute', 'hour', 'day'];
     /** Sensible starting point per event when no rule has been saved yet -- late naturally reads as
-     *  "per minute", absent/unpaid_leave as "per day"; freely changeable once a rule is saved. */
-    private const DEFAULT_RATE_UNIT = ['late' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day'];
+     *  "per minute", absent/unpaid_leave/leave_pending as "per day"; freely changeable once a rule is saved. */
+    private const DEFAULT_RATE_UNIT = ['late' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day', 'leave_pending' => 'day'];
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;

@@ -796,7 +796,7 @@ let currentAttendanceRules = {};
 let currentAttendanceEvent = 'late';
 let currentAttendanceBrackets = [];
 
-const ATTENDANCE_DEFAULT_RATE_UNIT = { late: 'minute', absent: 'day', unpaid_leave: 'day' };
+const ATTENDANCE_DEFAULT_RATE_UNIT = { late: 'minute', absent: 'day', unpaid_leave: 'day', leave_pending: 'day' };
 
 const ATTENDANCE_RATE_UNIT_LABELS = {
     minute: {
@@ -817,7 +817,7 @@ const ATTENDANCE_RATE_UNIT_LABELS = {
 };
 
 function attendanceEventLabel(eventCode) {
-    const map = { late: 'attendance_deduction_event_late', absent: 'attendance_deduction_event_absent', unpaid_leave: 'attendance_deduction_event_unpaid_leave' };
+    const map = { late: 'attendance_deduction_event_late', absent: 'attendance_deduction_event_absent', unpaid_leave: 'attendance_deduction_event_unpaid_leave', leave_pending: 'attendance_deduction_event_leave_pending' };
     return langData[map[eventCode]] || eventCode;
 }
 
@@ -966,8 +966,11 @@ function attendanceDeductionCardSummary(eventCode) {
     return `<span class="badge bg-success-subtle text-success">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'}</span> <div class="text-muted small mt-1">${mult}x</div>`;
 }
 function renderAttendanceDeductionCards() {
-    const events = ['late', 'absent', 'unpaid_leave'];
-    const icons = { late: 'fa-user-clock', absent: 'fa-user-slash', unpaid_leave: 'fa-calendar-xmark' };
+    // 2026-08-29: leave_pending added alongside the original 3 (explicit request -- leave still
+    // awaiting approval is provisionally deducted like unpaid leave until approved, see
+    // AttendanceDeductionRuleModel's own docblock).
+    const events = ['late', 'absent', 'unpaid_leave', 'leave_pending'];
+    const icons = { late: 'fa-user-clock', absent: 'fa-user-slash', unpaid_leave: 'fa-calendar-xmark', leave_pending: 'fa-hourglass-half' };
     $('#attendanceDeductionCards').html(events.map(eventCode => `
         <div class="col-md-4">
             <div class="card h-100 shadow-sm">

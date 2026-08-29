@@ -281,6 +281,11 @@ async function changeLanguage(lang) {
     persistUserPreferences(lang, localStorage.getItem('preferred_font_size') || 'm');
     await loadLang(lang);
     reloadAllTablesForLanguageChange();
+    // Dashboard's greeting title/description are JS-templated (employee name + today's date
+    // interpolated into a langData string) and no longer carry data-i18n for exactly that reason
+    // -- only defined when dashboard.js is loaded (dashboard page only), so this is a no-op
+    // everywhere else. See dashboard.js's own renderDashboard() docblock.
+    if (typeof loadDashboardSummary === 'function') loadDashboardSummary();
 }
 // 2026-08-29, explicit request: per-user Font Size (S/M/L) + Language, persisted server-side (see
 // UserPreferenceModel's own docblock) -- FONT_SIZE_STEPS maps the Settings modal's 0-2 slider

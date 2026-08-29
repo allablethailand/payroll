@@ -1,7 +1,8 @@
 <?php
 /**
  * Lightweight verification script for Attendance Deduction Rule CRUD
- * (AttendanceDeductionRuleModel), covering all 3 events (late/absent/unpaid_leave). Not PHPUnit --
+ * (AttendanceDeductionRuleModel), covering all 4 events (late/absent/unpaid_leave/leave_pending --
+ * the last one added 2026-08-29). Not PHPUnit --
  * see tests/statutory_engine_test.php for why. Runs against the real dev DB inside a transaction
  * that is always rolled back.
  * Run with: php tests/attendance_deduction_rule_test.php
@@ -53,9 +54,9 @@ try {
 
     echo "=== Default (no rows saved yet) -- one shape per event ===\n";
     $all = $model->ruleGetAll($compId);
-    check('all 3 events present in ruleGetAll()', array_keys($all), ['late', 'absent', 'unpaid_leave']);
-    $defaultRateUnit = ['late' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day'];
-    foreach (['late', 'absent', 'unpaid_leave'] as $eventCode) {
+    check('all 4 events present in ruleGetAll()', array_keys($all), ['late', 'absent', 'unpaid_leave', 'leave_pending']);
+    $defaultRateUnit = ['late' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day', 'leave_pending' => 'day'];
+    foreach (['late', 'absent', 'unpaid_leave', 'leave_pending'] as $eventCode) {
         check("{$eventCode}: default method_code is percent_of_rate", $all[$eventCode]['method_code'], 'percent_of_rate');
         check("{$eventCode}: default multiplier_rate is 1.00", (float)$all[$eventCode]['multiplier_rate'], 1.0);
         check("{$eventCode}: default has no id (not persisted)", $all[$eventCode]['id'], null);
