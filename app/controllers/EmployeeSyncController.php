@@ -93,6 +93,18 @@ class EmployeeSyncController extends Controller {
         $this->json($this->model->resyncOne((int)$compId, $employeeId, $this->userId()));
     }
 
+    /** 2026-08-29, explicit request: checkbox multi-select + bulk "Sync Selected" on Employee List. */
+    public function resyncMany() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $employeeIds = is_array($_POST['employee_ids'] ?? null) ? $_POST['employee_ids'] : [];
+        $this->json($this->model->resyncMany((int)$compId, $employeeIds, $this->userId()));
+    }
+
     /** 2026-08-28, same request -- "last synced" summary shown on Employee Detail. */
     public function lastSyncSummary() {
         if (!$this->requirePermission('employee.manage')) return;

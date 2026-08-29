@@ -89,6 +89,25 @@ try {
     check('one cutoff month forward (end)', $res['period_end_date'] ?? null, '2026-03-25');
     check('payment in the month AFTER period end, on payment_day', $res['payment_date'] ?? null, '2026-04-05');
 
+    // ---------- Monthly, payment day AFTER cutoff day in the same month (2026-08-28, real bug
+    // found and fixed -- explicit report against this exact real dev-DB cycle: cutoff 21, payment
+    // 25, named "รอบวันที่ 25"). The section above (cutoff=25, payment=5) only ever exercised the
+    // "payment day is NUMERICALLY LESS than cutoff day" case, where rolling into next month is
+    // correct -- it never caught this bug because that case happened to already work. Here
+    // payment_day_of_month (25) comes AFTER cutoff_day_of_month (21) within the same calendar
+    // month, so the suggested payment date must stay in the SAME month the period just ended in,
+    // not next month -- the old code's unconditional `modify('first day of next month')` got this
+    // wrong (suggested 2026-09-25 for a period ending 2026-08-21, a full month off). See
+    // PayrollCycleModel::resolvePaymentDate()'s own docblock for the fix. ----------
+    echo "=== Monthly, cutoff_day_of_month=21, payment_day_of_month=25 (payment AFTER cutoff, same-month payment) ===\n";
+    $cSameMonthPay = makeCycle($pdo, $compId, ['cutoff_day_of_month' => 21, 'payment_day_of_month' => 25]);
+    makeFixtureRun($pdo, $compId, $cSameMonthPay, '2026-06-22', '2026-07-21', '2026-07-25');
+    $res = $model->suggestNextPeriod($cSameMonthPay, $compId);
+    checkTrue('status true', $res['status']);
+    check('next period starts the day after the last one ended', $res['period_start_date'] ?? null, '2026-07-22');
+    check('next period ends on this month\'s cutoff day', $res['period_end_date'] ?? null, '2026-08-21');
+    check('payment stays in the SAME month as period end (not next month)', $res['payment_date'] ?? null, '2026-08-25');
+
     // ---------- Monthly, cutoff_use_last_day, crossing Mar(31) -> Apr(30) -- the exact
     // "+1 month" overflow trap (naive PHP: Mar 31 + 1 month = May 1, skipping April) ----------
     echo "=== Monthly, cutoff_use_last_day, Mar(31) -> Apr(30) overflow trap ===\n";

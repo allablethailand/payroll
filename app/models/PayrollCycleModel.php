@@ -120,12 +120,10 @@ class PayrollCycleModel {
         try {
             if ($frequency === 'monthly') {
                 [$start, $end] = $this->nextMonthlyPeriod($lastEnd, $today, (int)($cycle['cutoff_day_of_month'] ?? 0), (bool)$cycle['cutoff_use_last_day']);
-                $paymentMonthRef = (clone $end)->modify('first day of next month');
-                $payment = $this->resolveDayInMonth($paymentMonthRef, (int)($cycle['payment_day_of_month'] ?? 0), (bool)$cycle['payment_use_last_day']);
+                $payment = $this->resolvePaymentDate($end, (int)($cycle['payment_day_of_month'] ?? 0), (bool)$cycle['payment_use_last_day']);
             } elseif ($frequency === 'semi_monthly') {
                 [$start, $end] = $this->nextSemiMonthlyPeriod($lastEnd, $today, (int)($cycle['cutoff_day_of_month'] ?? 0));
-                $paymentMonthRef = (clone $end)->modify('first day of next month');
-                $payment = $this->resolveDayInMonth($paymentMonthRef, (int)($cycle['payment_day_of_month'] ?? 0), (bool)$cycle['payment_use_last_day']);
+                $payment = $this->resolvePaymentDate($end, (int)($cycle['payment_day_of_month'] ?? 0), (bool)$cycle['payment_use_last_day']);
             } elseif ($frequency === 'weekly' || $frequency === 'bi_weekly') {
                 $lengthDays = $frequency === 'weekly' ? 7 : 14;
                 [$start, $end] = $this->nextWeekBasedPeriod($lastEnd, $today, (string)($cycle['cutoff_day_of_week'] ?? ''), $lengthDays);
@@ -154,6 +152,34 @@ class PayrollCycleModel {
             throw new InvalidArgumentException('Day of month not configured.');
         }
         return (clone $monthRef)->setDate((int)$monthRef->format('Y'), (int)$monthRef->format('n'), $day);
+    }
+
+    /**
+     * 2026-08-28, real bug found and fixed (explicit report: cycle cutoff day 21, payment day 25 --
+     * selecting this cycle suggested a payment date of NEXT month (e.g. period ending 2026-08-21
+     * suggested payment 2026-09-25) instead of the same month (2026-08-25). Root cause, confirmed
+     * by tracing suggestNextPeriod()'s old inline logic and reproducing it directly via reflection
+     * against the real cycle in this dev DB: it unconditionally computed
+     * `(clone $end)->modify('first day of next month')` before resolving the payment day, with no
+     * check for whether the configured payment day actually falls before or after the cutoff day
+     * within the same calendar month. That's only correct for a cycle where payment happens the
+     * FOLLOWING month (e.g. cutoff day 25, paid on the 5th of next month) -- for a cycle like this
+     * one, where payment_day_of_month (25) comes AFTER cutoff_day_of_month (21) in the same month,
+     * payment should land in the SAME month the period just ended in, not a month later.
+     *
+     * Fixed by resolving the payment day within the period-end's OWN month first, then only rolling
+     * forward to next month if that candidate falls BEFORE the period end (i.e. the payment day has
+     * already passed within this month relative to the cutoff, so it must mean next month's
+     * occurrence) -- comparing actual resolved DateTime values rather than raw day-of-month integers
+     * so `payment_use_last_day` and month-length differences (Feb 30 not existing, etc.) are handled
+     * correctly automatically, without a separate branch for them.
+     */
+    private function resolvePaymentDate(DateTime $periodEnd, int $paymentDay, bool $useLastDay): DateTime {
+        $sameMonthCandidate = $this->resolveDayInMonth($periodEnd, $paymentDay, $useLastDay);
+        if ($sameMonthCandidate >= $periodEnd) {
+            return $sameMonthCandidate;
+        }
+        return $this->resolveDayInMonth($this->addMonthsAnchored($periodEnd, 1), $paymentDay, $useLastDay);
     }
 
     /** @return array{0: DateTime, 1: DateTime} [periodStart, periodEnd] */

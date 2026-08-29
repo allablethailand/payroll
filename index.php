@@ -5,6 +5,16 @@
         ini_set('session.cookie_secure', 1);
     }
     ini_set('session.cookie_samesite', 'Lax');
+    // 2026-08-29, explicit bug report: "Session หลุดบ่อยกลับไปที่ Origami" -- PHP's stock
+    // session.gc_maxlifetime (1440s/24min) meant any idle gap over ~24 minutes risked the session
+    // file being garbage-collected, and session.cookie_lifetime=0 (session-only cookie) meant a
+    // closed browser/tab lost it too; either way ensure_login() then bounces to /auth with no
+    // Origami token (a normal page revisit, not a fresh SSO redirect), which auth/index.php shows
+    // as its "เข้าสู่ระบบไม่สำเร็จ...กลับไปหน้า Origami" failure page -- exactly this report. Extended
+    // both to match a full workday; must be set before session_start() (same as index.php/
+    // auth/index.php/auth/switch.php, the 3 standalone entry points that call it).
+    ini_set('session.gc_maxlifetime', '28800');
+    ini_set('session.cookie_lifetime', '28800');
     session_start();
     require_once __DIR__ . '/vendor/autoload.php';
     $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
@@ -33,6 +43,8 @@
     $router->get('/', 'DashboardController@index'); 
     $router->get('dashboard', 'DashboardController@index');
     $router->get('api/dashboard.summary', 'DashboardController@summary');
+    $router->get('api/user-preference.get', 'UserPreferenceController@get');
+    $router->post('api/user-preference.save', 'UserPreferenceController@save');
     $router->get('employees', 'EmployeeController@index');
     $router->get('/payroll-process', 'PayrollController@index');
     $router->get('/payroll-process/{id}', 'PayrollController@detail');
@@ -83,16 +95,6 @@
     $router->get('api/payroll-cycle.suggest-period', 'PayrollConfigurationController@cycleSuggestPeriod');
     $router->post('api/payroll-cycle.save', 'PayrollConfigurationController@cycleSave');
     $router->post('api/payroll-cycle.delete', 'PayrollConfigurationController@cycleDelete');
-    $router->get('api/attendance-bonus.list', 'PayrollConfigurationController@attendanceBonusList');
-    $router->get('api/attendance-bonus.get', 'PayrollConfigurationController@attendanceBonusGet');
-    $router->post('api/attendance-bonus.save', 'PayrollConfigurationController@attendanceBonusSave');
-    $router->post('api/attendance-bonus.delete', 'PayrollConfigurationController@attendanceBonusDelete');
-    $router->post('api/attendance-bonus.scheme-options', 'PayrollConfigurationController@bonusSchemeOptions');
-    $router->get('api/attendance-bonus.ledger.list', 'PayrollConfigurationController@bonusLedgerList');
-    $router->get('api/attendance-bonus.ledger.get', 'PayrollConfigurationController@bonusLedgerGet');
-    $router->post('api/attendance-bonus.ledger.save', 'PayrollConfigurationController@bonusLedgerSave');
-    $router->post('api/attendance-bonus.ledger.lock', 'PayrollConfigurationController@bonusLedgerLock');
-    $router->post('api/attendance-bonus.ledger.delete', 'PayrollConfigurationController@bonusLedgerDelete');
     $router->post('api/ped-type.source-event-options', 'PayrollConfigurationController@pedSourceEventOptions');
     $router->post('api/ped-type.list', 'PayrollConfigurationController@pedTypeList');
     $router->post('api/ped-type.column-values', 'PayrollConfigurationController@pedTypeColumnValues');
@@ -116,6 +118,9 @@
     $router->get('api/company-statutory-setting.get', 'TaxStatutoryController@companySettingGet');
     $router->post('api/company-statutory-setting.save', 'TaxStatutoryController@companySettingSave');
     $router->post('api/company-statutory-setting.reset', 'TaxStatutoryController@companySettingReset');
+    // Statutory document format version selector (2026-08-29) -- Tax & Statutory settings, 3rd tab.
+    $router->get('api/statutory-format-version.settings', 'StatutoryFormatVersionController@settings');
+    $router->post('api/statutory-format-version.save', 'StatutoryFormatVersionController@save');
     $router->get('setup/document-approval', 'DocumentApprovalController@index');
     $router->get('api/document-numbering.list', 'DocumentNumberingController@list');
     $router->post('api/document-numbering.save', 'DocumentNumberingController@save');
@@ -270,6 +275,11 @@
     $router->get('api/org-structure-sync.log', 'OrgStructureSyncController@log');
     $router->post('api/shift.options', 'MasterController@getMaster');
     $router->get('reports', 'ReportsController@index');
+    // Annual Income Summary (2026-08-29) -- separate interactive page (live filter/scroll table,
+    // not a generate-and-download document like the rest of the Reports module).
+    $router->get('reports/annual-summary', 'AnnualIncomeSummaryController@index');
+    $router->get('api/annual-income-summary.years', 'AnnualIncomeSummaryController@years');
+    $router->get('api/annual-income-summary.summary', 'AnnualIncomeSummaryController@summary');
     $router->get('api/report.list', 'ReportsController@list');
     $router->get('api/report.cycle-runs', 'ReportsController@cycleRuns');
     $router->get('api/report.generate', 'ReportsController@generate');
@@ -281,6 +291,7 @@
     $router->post('api/employee-sync.candidates', 'EmployeeSyncController@candidates');
     $router->post('api/employee-sync.apply', 'EmployeeSyncController@apply');
     $router->post('api/employee-sync.resync-one', 'EmployeeSyncController@resyncOne');
+    $router->post('api/employee-sync.resync-many', 'EmployeeSyncController@resyncMany');
     $router->get('api/employee-sync.last-sync-summary', 'EmployeeSyncController@lastSyncSummary');
     $router->get('api/employee-sync.log', 'EmployeeSyncController@log');
     $router->get('/employees/create', 'EmployeeController@create');
@@ -325,6 +336,14 @@
     $router->post('api/bank_account.column-values', 'BankAccountController@columnValues');
     $router->post('api/bank_account.save', 'BankAccountController@save');
     $router->post('api/bank_account.delete', 'BankAccountController@delete');
+    // Bank File Format settings (2026-08-29) -- sub-tab of the same Bank Accounts settings page.
+    $router->get('api/bank-file-format.list', 'BankFileFormatController@list');
+    $router->get('api/bank-file-format.get', 'BankFileFormatController@get');
+    $router->post('api/bank-file-format.save-config', 'BankFileFormatController@saveConfig');
+    $router->post('api/bank-file-format.save-field', 'BankFileFormatController@saveField');
+    $router->post('api/bank-file-format.delete-field', 'BankFileFormatController@deleteField');
+    $router->post('api/bank-file-format.reset', 'BankFileFormatController@resetToDefault');
+    $router->get('api/bank-file-format.edit-logs', 'BankFileFormatController@editLogs');
     $router->get('api/employee.get', 'EmployeeController@get');
     $router->post('api/employee.save', 'EmployeeController@save');
     $router->post('api/employee.upload-signature', 'EmployeeController@uploadSignature');

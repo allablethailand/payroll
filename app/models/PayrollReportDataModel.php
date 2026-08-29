@@ -22,7 +22,9 @@ class PayrollReportDataModel {
     }
 
     public function getRun(int $runId, int $compId): ?array {
-        $sql = "SELECT r.*, c.cycle_name FROM `payroll_runs` r
+        // c.bank_file_format_id (2026-08-29) -- lets BankTransferFileReport resolve which company-
+        // configured bank file layout (BankFileFormatModel) to render this run's transfer file with.
+        $sql = "SELECT r.*, c.cycle_name, c.bank_file_format_id FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 WHERE r.id = :id AND r.comp_id = :comp_id AND r.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
@@ -63,7 +65,7 @@ class PayrollReportDataModel {
     /** @return array<int,array> decoded payroll_run_details rows keyed by nothing in particular, joined with employee info. */
     public function getRunDetails(int $runId): array {
         $sql = "SELECT d.*, e.employee_no, e.title, e.name_th, e.surname_th, e.name_en, e.surname_en,
-                    e.tax_id_no, e.sso_no, e.key_version, e.department_id, e.branch_id, e.position_id,
+                    e.tax_id_no, e.sso_no, e.id_card_no, e.key_version, e.department_id, e.branch_id, e.position_id,
                     e.bank_id, e.bank_account_no, e.bank_account_name, e.payment_type,
                     dep.department_name_th, dep.department_name_en,
                     br.branch_name_th, br.branch_name_en,

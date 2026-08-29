@@ -207,6 +207,9 @@ function initProfilePane() {
     renderCountrySpecificForm(defaultCountry);
     updateText($pane[0]);
     initSelect2Remote('.select2-remote');
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#fiscal_year_start_month', { mode: 'static' });
+    }
     initCompanyData();
 }
 function renderCountrySpecificForm(countryCode) {
@@ -285,6 +288,7 @@ function initCompanyData() {
                 $('input[name="global_tax_id"]').val(data.global_tax_id || '');
                 $('input[name="company_legal_name"]').val(data.company_legal_name || '');
                 $('input[name="local_name"]').val(data.local_name || '');
+                $('#fiscal_year_start_month').val(data.fiscal_year_start_month || 1).trigger('change');
                 $('input[name="address_line_1"]').val(data.address_line_1 || '');
                 $('input[name="address_line_2"]').val(data.address_line_2 || '');
                 $('input[name="authorized_signatory_name"]').val(data.authorized_signatory_name || '');
@@ -340,6 +344,7 @@ $(document).on('click', '.save-company-profile', function () {
         global_tax_id: $('input[name="global_tax_id"]').val()?.trim() || '',
         company_legal_name: $('input[name="company_legal_name"]').val()?.trim() || '',
         local_name: $('input[name="local_name"]').val()?.trim() || '',
+        fiscal_year_start_month: parseInt($('#fiscal_year_start_month').val(), 10) || 1,
         address_line_1: $('input[name="address_line_1"]').val()?.trim() || '',
         address_line_2: $('input[name="address_line_2"]').val()?.trim() || '',
         master_address_id: $('input[name="master_address_id"]').val() || null,
@@ -403,11 +408,36 @@ $(document).on('click', '.cancel-company-profile', function () {
         }
     );
 });
+let activeBankSubPage = 'accounts';
 function initBankPane() {
     $pane.html($('#tmpl-bank-pane').html());
     updateText($pane[0]);
-    initBankAccountTable();
+    activeBankSubPage = 'accounts';
+    initBankSubPage('accounts');
 }
+/** 2026-08-29: 2nd sub-tab ("Bank File Format") added alongside the existing Bank Accounts list --
+ *  see tmpl-bank-format-subpane's own comment. Mirrors initStructurePane()'s own sub-tab dispatch
+ *  pattern (data-page attribute + a small switch), just scoped with its own data-bank-page
+ *  attribute/id prefix so it doesn't collide with Organizational Structure's identical-looking
+ *  pill markup elsewhere on this same page. */
+function initBankSubPage(page) {
+    activeBankSubPage = page;
+    const $subPane = $('#bank-sub-pane');
+    if (page === 'format') {
+        $subPane.html($('#tmpl-bank-format-subpane').html());
+        updateText($subPane[0]);
+        initBffFormatList();
+    } else {
+        $subPane.html($('#tmpl-bank-accounts-subpane').html());
+        updateText($subPane[0]);
+        initBankAccountTable();
+    }
+}
+$(document).on('click', '#bank-sub-tab-accounts, #bank-sub-tab-format', function () {
+    $('#bank-sub-tab-accounts, #bank-sub-tab-format').removeClass('active').attr('aria-selected', 'false');
+    $(this).addClass('active').attr('aria-selected', 'true');
+    initBankSubPage($(this).data('bank-page'));
+});
 function maskAccountNo(accountNo) {
     if (!accountNo) return '-';
     const digits = String(accountNo).replace(/\D/g, '');
@@ -473,9 +503,11 @@ function initBankAccountTable() {
                 }
             },
             {
+                // 2026-08-28: className:'all' keeps this last actions column from collapsing into
+                // the Responsive expand row.
                 data: null,
                 orderable: false,
-                className: 'text-center',
+                className: 'text-center all',
                 render: (data, type, row) => `
                     <div class="btn-group border rounded-3 bg-white">
                         <button class="btn btn-link text-warning btn-open-modal manage-bank_account" data-action="edit" data-type="bank_account" data-id="${row.id}" data-i18n-title="edit">
@@ -546,7 +578,22 @@ function initStructurePane() {
     initStructure('p1');
 }
 $(document).on('click', '#setup-pane .structure-menu', function () {
+    // 2026-08-29, real bug found and fixed (explicit bug report: "คลิกแล้วไม่เห็นธนาคารครับ" -- Bank
+    // File Format sub-tab showed no data on click): this handler is delegated on `document` and
+    // scoped only to `#setup-pane .structure-menu` -- Bank File Format's own sub-tab pills
+    // (#bank-sub-tab-accounts/#bank-sub-tab-format) intentionally reuse the SAME .structure-menu
+    // class for styling (per this app's own Tab convention -- reuse the class, don't invent a new
+    // one) and also live inside #setup-pane, so BOTH this handler and Bank's own dedicated one
+    // fired on every click. This one used to call initStructure($(this).data('page')) unconditionally
+    // -- Bank's buttons carry data-bank-page, not data-page, so `page` came through undefined; that
+    // alone didn't crash (initStructure() bails out early when #structure-pane-content isn't in the
+    // DOM), but it was still doing pointless work and toggling .active/aria-selected on Bank's own
+    // buttons a beat before Bank's real handler ran. Guarded so this Organizational-Structure-only
+    // handler only ever reacts to an element that's actually one of ITS OWN tabs (real data-page).
     const page = $(this).data('page');
+    if (page === undefined) {
+        return;
+    }
     $('#setup-pane .structure-menu').removeClass('active').attr('aria-selected', 'false');
     $(this).addClass('active').attr('aria-selected', 'true');
     initStructure(page);
@@ -760,11 +807,11 @@ function getStructureColumns(type) {
                     }
                 },
                 { data: "status", render: statusRender },
-                { 
-                    data: null, 
-                    orderable: false, 
-                    className: "text-center",
-                    render: (data, type, row) => getActionButtons(row, 'branch') 
+                {
+                    data: null,
+                    orderable: false,
+                    className: "text-center all",
+                    render: (data, type, row) => getActionButtons(row, 'branch')
                 }
             ];
         case 'role':
@@ -784,11 +831,11 @@ function getStructureColumns(type) {
                     }
                 },
                 { data: "status", render: statusRender },
-                { 
-                    data: null, 
-                    orderable: false, 
-                    className: "text-center",
-                    render: (data, type, row) => getActionButtons(row, 'role') 
+                {
+                    data: null,
+                    orderable: false,
+                    className: "text-center all",
+                    render: (data, type, row) => getActionButtons(row, 'role')
                 }
             ];
         case 'department':
@@ -800,11 +847,11 @@ function getStructureColumns(type) {
                 },
                 { data: "cost_center", defaultContent: "-" },
                 { data: "status", render: statusRender },
-                { 
-                    data: null, 
-                    orderable: false, 
-                    className: "text-center",
-                    render: (data, type, row) => getActionButtons(row, 'department') 
+                {
+                    data: null,
+                    orderable: false,
+                    className: "text-center all",
+                    render: (data, type, row) => getActionButtons(row, 'department')
                 }
             ];
         case 'position':
@@ -823,11 +870,11 @@ function getStructureColumns(type) {
                     }
                 },
                 { data: "status", render: statusRender },
-                { 
-                    data: null, 
-                    orderable: false, 
-                    className: "text-center",
-                    render: (data, type, row) => getActionButtons(row, 'position') 
+                {
+                    data: null,
+                    orderable: false,
+                    className: "text-center all",
+                    render: (data, type, row) => getActionButtons(row, 'position')
                 }
             ];
         case 'rank':
@@ -856,7 +903,7 @@ function getStructureColumns(type) {
                 {
                     data: null,
                     orderable: false,
-                    className: "text-center",
+                    className: "text-center all",
                     render: (data, type, row) => getActionButtons(row, 'rank')
                 }
             ];
@@ -875,7 +922,7 @@ function getStructureColumns(type) {
                 {
                     data: null,
                     orderable: false,
-                    className: "text-center",
+                    className: "text-center all",
                     render: (data, type, row) => getActionButtons(row, 'team')
                 }
             ];
@@ -1130,5 +1177,421 @@ $(document).on('click', '.btn-delete-item', function () {
                 showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
             }
         });
+    });
+});
+
+/* ---------- Bank File Format settings (2026-08-29) ----------
+ * See tmpl-bank-format-subpane's own comment for the feature context. Deliberately a plain
+ * sidebar-list + detail-panel layout (not a DataTable) -- the format count is small and fixed
+ * (master_bank_file_formats, ~16 rows), same "fixed set, not a paginated record list" reasoning
+ * the Permission Matrix grid already uses elsewhere in this app. */
+let bffFormats = [];
+let bffSelectedFormatId = null;
+let bffCurrentDetail = null;
+
+function escapeHtmlBff(str) {
+    return $('<div>').text(str === null || str === undefined ? '' : str).html();
+}
+function bffFormatLabel(f) {
+    const bankName = (currentLang === 'th' ? f.bank_name_th : f.bank_name_en) || f.bank_name_th || f.bank_name_en || '';
+    const formatName = (currentLang === 'th' ? f.name_th : f.name_en) || f.name_th || f.name_en || f.code;
+    return bankName ? `${bankName} — ${formatName}` : formatName;
+}
+
+function initBffFormatList() {
+    $('#bffFormatList').html(`<div class="text-center text-secondary py-3"><i class="fa-solid fa-spinner fa-spin"></i></div>`);
+    $.ajax({
+        url: `${BASE_URL}/api/bank-file-format.list`,
+        method: 'GET',
+        dataType: 'json',
+        success: function (res) {
+            // 2026-08-29: a permission/company-context failure used to `return` here silently,
+            // leaving the loading spinner frozen forever with no explanation -- found while
+            // investigating "คลิกแล้วไม่เห็นธนาคารครับ" (empty-looking panel on click).
+            if (!res.status) {
+                $('#bffFormatList').html(`<div class="text-danger small">${res.message || langData['save_failed'] || 'An error occurred while loading the data.'}</div>`);
+                return;
+            }
+            // PDO returns every column as a string (e.g. id:"9"), but default_format_id comes back
+            // as a real PHP int -- Number()-normalize both sides before comparing so the default
+            // star badge / auto-preselect actually match instead of failing every strict `===`.
+            bffFormats = (res.data || []).map(f => Object.assign({}, f, { id: Number(f.id) }));
+            const defaultFormatId = res.default_format_id !== null && res.default_format_id !== undefined ? Number(res.default_format_id) : null;
+            if (!bffFormats.length) {
+                $('#bffFormatList').html(`<div class="text-secondary small">${langData['no_bank_file_formats'] || 'No bank formats are available.'}</div>`);
+                return;
+            }
+            bffRenderFormatList(defaultFormatId);
+            const preselect = defaultFormatId !== null && bffFormats.some(f => f.id === defaultFormatId)
+                ? defaultFormatId
+                : bffFormats[0].id;
+            bffSelectFormat(preselect);
+        },
+        error: function () {
+            $('#bffFormatList').html(`<div class="text-danger small">${langData['save_failed'] || 'An error occurred while loading the data.'}</div>`);
+        }
+    });
+}
+
+function bffRenderFormatList(defaultFormatId) {
+    const $list = $('#bffFormatList').empty();
+    bffFormats.forEach(function (f) {
+        const isDefault = defaultFormatId && f.id === defaultFormatId;
+        const isActive = f.id === bffSelectedFormatId;
+        const verifiedBadge = f.has_own_override
+            ? (f.is_verified
+                ? `<span class="badge bg-success-subtle text-success" data-i18n="verified">Verified</span>`
+                : `<span class="badge bg-warning-subtle text-warning" data-i18n="draft_not_verified">DRAFT — not verified</span>`)
+            : `<span class="badge bg-secondary-subtle text-secondary" data-i18n="using_default_template">Using default template</span>`;
+        const $item = $(`
+            <button type="button" class="btn btn-light text-start bff-format-item ${isActive ? 'active border-warning' : ''}" data-id="${f.id}">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold small">${escapeHtmlBff(bffFormatLabel(f))}</span>
+                    ${isDefault ? `<i class="fa-solid fa-star text-warning ms-1" title="${langData['default'] || 'Default'}"></i>` : ''}
+                </div>
+                <div class="mt-1">${verifiedBadge}</div>
+            </button>
+        `);
+        $list.append($item);
+    });
+    updateText($list[0]);
+}
+
+$(document).on('click', '.bff-format-item', function () {
+    bffSelectFormat($(this).data('id'));
+});
+
+function bffSelectFormat(id) {
+    bffSelectedFormatId = id;
+    $('.bff-format-item').removeClass('active border-warning');
+    $(`.bff-format-item[data-id="${id}"]`).addClass('active border-warning');
+    $.ajax({
+        url: `${BASE_URL}/api/bank-file-format.get`,
+        method: 'GET',
+        dataType: 'json',
+        data: { bank_file_format_id: id },
+        success: function (res) {
+            if (!res.status) {
+                showWarning(res.message || (langData['save_failed'] || 'An error occurred while loading the data.'));
+                return;
+            }
+            bffCurrentDetail = res.data;
+            const f = bffFormats.find(x => x.id === id);
+            $('#bffDetailFormatName').text(f ? bffFormatLabel(f) : '');
+            $('#bffDraftBadge').toggleClass('d-none', !!res.data.config.is_verified);
+            bffPopulateConfigForm(res.data.config);
+            bffRenderFieldsTable(res.data.fields);
+            $('#bffDetailEmpty').addClass('d-none');
+            $('#bffDetailPanel').removeClass('d-none');
+        },
+        error: function () {
+            showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
+        }
+    });
+}
+
+function bffPopulateConfigForm(config) {
+    $('#bffDelimiterType').val(config.delimiter_type);
+    $('#bffDelimiterChar').val(config.delimiter_char || ',');
+    $('#bffLineEnding').val(config.line_ending);
+    $('#bffTextEncoding').val(config.text_encoding);
+    $('#bffHasHeaderRow').prop('checked', !!config.has_header_row);
+    $('#bffHasTrailerRow').prop('checked', !!config.has_trailer_row);
+    $('#bffIsVerified').prop('checked', !!config.is_verified);
+    $('#bffDelimiterCharWrap').toggleClass('d-none', config.delimiter_type === 'fixed_width');
+}
+$(document).on('change', '#bffDelimiterType', function () {
+    $('#bffDelimiterCharWrap').toggleClass('d-none', $(this).val() === 'fixed_width');
+});
+
+$(document).on('click', '#bffSaveConfigBtn', function () {
+    if (!bffSelectedFormatId) return;
+    const payload = {
+        bank_file_format_id: bffSelectedFormatId,
+        delimiter_type: $('#bffDelimiterType').val(),
+        delimiter_char: $('#bffDelimiterChar').val(),
+        line_ending: $('#bffLineEnding').val(),
+        text_encoding: $('#bffTextEncoding').val(),
+        has_header_row: $('#bffHasHeaderRow').is(':checked'),
+        has_trailer_row: $('#bffHasTrailerRow').is(':checked'),
+        is_verified: $('#bffIsVerified').is(':checked'),
+    };
+    $.ajax({
+        url: `${BASE_URL}/api/bank-file-format.save-config`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify(payload),
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                bffSelectFormat(bffSelectedFormatId);
+                initBffFormatList();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
+    });
+});
+
+function bffRowTypeBadge(rowType) {
+    const map = { header: 'bg-info-subtle text-info', detail: 'bg-primary-subtle text-primary', trailer: 'bg-secondary-subtle text-secondary' };
+    return `<span class="badge ${map[rowType] || 'bg-light text-dark'}" data-i18n="row_type_${rowType}">${langData['row_type_' + rowType] || rowType}</span>`;
+}
+function bffSourceSummary(field) {
+    if (field.source_type === 'constant') {
+        return `<span class="text-secondary small" data-i18n="source_type_constant">Fixed Value</span>: "${escapeHtmlBff(field.constant_value || '')}"`;
+    }
+    if (field.source_type === 'blank') {
+        return `<span class="text-secondary small" data-i18n="source_type_blank">Blank</span>`;
+    }
+    const label = bffCurrentDetail && bffCurrentDetail.source_fields && bffCurrentDetail.source_fields[field.source_field]
+        ? bffCurrentDetail.source_fields[field.source_field][currentLang === 'en' ? 'en' : 'th']
+        : field.source_field;
+    return escapeHtmlBff(label || field.source_field || '');
+}
+
+function bffRenderFieldsTable(fieldsGrouped) {
+    const $body = $('#bffFieldsBody').empty();
+    ['header', 'detail', 'trailer'].forEach(function (rowType) {
+        (fieldsGrouped[rowType] || []).forEach(function (field) {
+            const label = currentLang === 'en' ? field.field_label_en : field.field_label_th;
+            const $tr = $(`
+                <tr>
+                    <td>${bffRowTypeBadge(rowType)}</td>
+                    <td>${field.sort_order}</td>
+                    <td>${escapeHtmlBff(label)}</td>
+                    <td>${bffSourceSummary(field)}</td>
+                    <td>${field.width || '-'}</td>
+                    <td class="text-end">
+                        <button type="button" class="btn btn-sm btn-link bff-edit-field-btn" data-id="${field.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="btn btn-sm btn-link text-danger bff-delete-field-btn" data-id="${field.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `);
+            $body.append($tr);
+        });
+    });
+    if (!$body.children().length) {
+        $body.append(`<tr><td colspan="6" class="text-center text-secondary py-3">${langData['no_fields_configured'] || 'No fields configured yet.'}</td></tr>`);
+    }
+    updateText($body[0]);
+}
+
+function bffPopulateSourceFieldSelect() {
+    const $select = $('#bffFieldSourceField').empty();
+    const sourceFields = (bffCurrentDetail && bffCurrentDetail.source_fields) || {};
+    Object.keys(sourceFields).forEach(function (key) {
+        const label = sourceFields[key][currentLang === 'en' ? 'en' : 'th'] || key;
+        $select.append(new Option(label, key));
+    });
+}
+function bffToggleFieldModalSections() {
+    const sourceType = $('#bffFieldSourceType').val();
+    $('#bffFieldSourceFieldWrap').toggleClass('d-none', sourceType !== 'employee_field');
+    $('#bffFieldConstantWrap').toggleClass('d-none', sourceType !== 'constant');
+    const dataType = $('#bffFieldDataType').val();
+    $('#bffFieldDecimalWrap').toggleClass('d-none', dataType !== 'number');
+    $('#bffFieldDateFormatWrap').toggleClass('d-none', dataType !== 'date');
+}
+$(document).on('change', '#bffFieldSourceType, #bffFieldDataType', bffToggleFieldModalSections);
+
+function bffResetFieldModal() {
+    $('#bffFieldId').val('');
+    $('#bffFieldLabelTh').val('').removeClass('is-invalid');
+    $('#bffFieldLabelEn').val('').removeClass('is-invalid');
+    $('#bffFieldRowType').val('detail');
+    $('#bffFieldSortOrder').val(0);
+    $('#bffFieldSourceType').val('employee_field');
+    bffPopulateSourceFieldSelect();
+    $('#bffFieldConstantValue').val('');
+    $('#bffFieldDataType').val('text');
+    $('#bffFieldDecimalPlaces').val(2);
+    $('#bffFieldDateFormat').val('Ymd');
+    $('#bffFieldWidth').val('');
+    $('#bffFieldPadChar').val(' ');
+    $('#bffFieldPadDirection').val('right');
+    bffToggleFieldModalSections();
+}
+
+$(document).on('click', '#bffAddFieldBtn', function () {
+    bffResetFieldModal();
+    $('#bffFieldModal .modal-title').attr('data-i18n', 'add_field').text(langData['add_field'] || 'Add Field');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('bffFieldModal')).show();
+});
+
+$(document).on('click', '.bff-edit-field-btn', function () {
+    const fieldId = $(this).data('id');
+    let field = null;
+    ['header', 'detail', 'trailer'].forEach(function (rt) {
+        (bffCurrentDetail.fields[rt] || []).forEach(function (f) { if (f.id === fieldId) field = f; });
+    });
+    if (!field) return;
+    bffResetFieldModal();
+    $('#bffFieldModal .modal-title').attr('data-i18n', 'edit_field').text(langData['edit_field'] || 'Edit Field');
+    $('#bffFieldId').val(field.id);
+    $('#bffFieldLabelTh').val(field.field_label_th);
+    $('#bffFieldLabelEn').val(field.field_label_en);
+    $('#bffFieldRowType').val(field.row_type);
+    $('#bffFieldSortOrder').val(field.sort_order);
+    $('#bffFieldSourceType').val(field.source_type);
+    if (field.source_type === 'employee_field') $('#bffFieldSourceField').val(field.source_field);
+    $('#bffFieldConstantValue').val(field.constant_value || '');
+    $('#bffFieldDataType').val(field.data_type);
+    $('#bffFieldDecimalPlaces').val(field.decimal_places !== null && field.decimal_places !== undefined ? field.decimal_places : 2);
+    $('#bffFieldDateFormat').val(field.date_format || 'Ymd');
+    $('#bffFieldWidth').val(field.width || '');
+    $('#bffFieldPadChar').val(field.pad_char || ' ');
+    $('#bffFieldPadDirection').val(field.pad_direction || 'right');
+    bffToggleFieldModalSections();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('bffFieldModal')).show();
+});
+
+$(document).on('click', '#bffFieldSaveBtn', function () {
+    if (!bffSelectedFormatId) return;
+    const labelTh = $('#bffFieldLabelTh').val().trim();
+    const labelEn = $('#bffFieldLabelEn').val().trim();
+    $('#bffFieldLabelTh').toggleClass('is-invalid', !labelTh);
+    $('#bffFieldLabelEn').toggleClass('is-invalid', !labelEn);
+    if (!labelTh || !labelEn) {
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    const payload = {
+        bank_file_format_id: bffSelectedFormatId,
+        id: $('#bffFieldId').val() || undefined,
+        row_type: $('#bffFieldRowType').val(),
+        sort_order: $('#bffFieldSortOrder').val(),
+        field_label_th: labelTh,
+        field_label_en: labelEn,
+        source_type: $('#bffFieldSourceType').val(),
+        source_field: $('#bffFieldSourceField').val(),
+        constant_value: $('#bffFieldConstantValue').val(),
+        data_type: $('#bffFieldDataType').val(),
+        decimal_places: $('#bffFieldDecimalPlaces').val(),
+        date_format: $('#bffFieldDateFormat').val(),
+        width: $('#bffFieldWidth').val(),
+        pad_char: $('#bffFieldPadChar').val() || ' ',
+        pad_direction: $('#bffFieldPadDirection').val(),
+    };
+    $.ajax({
+        url: `${BASE_URL}/api/bank-file-format.save-field`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify(payload),
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('bffFieldModal')).hide();
+                bffSelectFormat(bffSelectedFormatId);
+                initBffFormatList();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
+    });
+});
+
+$(document).on('click', '.bff-delete-field-btn', function () {
+    const fieldId = $(this).data('id');
+    showConfirm(
+        langData['confirm_delete_title'] || 'Confirm Delete',
+        langData['confirm_delete_message'] || 'Are you sure you want to delete this record?',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/bank-file-format.delete-field`,
+                method: 'POST',
+                contentType: 'application/json',
+                dataType: 'json',
+                data: JSON.stringify({ bank_file_format_id: bffSelectedFormatId, id: fieldId }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(res.message || langData['delete_success'] || 'Deleted successfully.');
+                        bffSelectFormat(bffSelectedFormatId);
+                        initBffFormatList();
+                    } else {
+                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
+                    }
+                },
+                error: function () {
+                    showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
+                }
+            });
+        }
+    );
+});
+
+$(document).on('click', '#bffResetBtn', function () {
+    if (!bffSelectedFormatId) return;
+    showConfirm(
+        langData['reset_to_default'] || 'Reset to Default',
+        langData['confirm_reset_format_message'] || 'This discards your customization for this format and reverts to the system default template. Continue?',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/bank-file-format.reset`,
+                method: 'POST',
+                contentType: 'application/json',
+                dataType: 'json',
+                data: JSON.stringify({ bank_file_format_id: bffSelectedFormatId }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                        bffSelectFormat(bffSelectedFormatId);
+                        initBffFormatList();
+                    } else {
+                        showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                    }
+                },
+                error: function () {
+                    showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+                }
+            });
+        }
+    );
+});
+
+$(document).on('click', '#bffViewLogBtn', function () {
+    if (!bffSelectedFormatId) return;
+    $('#bffLogModalBody').html(`<div class="text-center text-secondary py-3"><i class="fa-solid fa-spinner fa-spin me-1"></i>${langData['loading'] || 'Loading...'}</div>`);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('bffLogModal')).show();
+    $.ajax({
+        url: `${BASE_URL}/api/bank-file-format.edit-logs`,
+        method: 'GET',
+        dataType: 'json',
+        data: { bank_file_format_id: bffSelectedFormatId },
+        success: function (res) {
+            if (!res.status || !res.data || !res.data.length) {
+                $('#bffLogModalBody').html(`<div class="text-center text-secondary py-3">${langData['no_export_history'] || 'No history yet.'}</div>`);
+                return;
+            }
+            let html = `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light text-secondary"><tr>
+                    <th>${langData['table_generated_at'] || 'Date/Time'}</th>
+                    <th>${langData['action'] || 'Action'}</th>
+                    <th>${langData['table_generated_by'] || 'By'}</th>
+                </tr></thead><tbody>`;
+            res.data.forEach(function (row) {
+                const by = (currentLang === 'th' ? row.changed_by_name_th : row.changed_by_name_en) || row.changed_by_name_th || row.changed_by_name_en || '-';
+                const actionKey = 'bff_action_' + row.action;
+                html += `<tr>
+                    <td>${formatDisplayDateTime(row.changed_at)}</td>
+                    <td><span data-i18n="${actionKey}">${langData[actionKey] || row.action}</span></td>
+                    <td>${escapeHtmlBff(by)}</td>
+                </tr>`;
+            });
+            html += '</tbody></table></div>';
+            $('#bffLogModalBody').html(html);
+            updateText($('#bffLogModalBody')[0]);
+        },
+        error: function () {
+            $('#bffLogModalBody').html(`<div class="text-center text-danger py-3">${langData['save_failed'] || 'An error occurred while loading the data.'}</div>`);
+        }
     });
 });

@@ -92,14 +92,16 @@ function initEarningTypeTable() {
             { data: 'calc_sso', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
             { data: 'calc_pf', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
             { data: null, render: (d, t, row) => statusBadge(row) },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => actionButtons(row) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
             const self = this.api();
-            injectAddButton(self, 'earning', 'earning_type', 'Earning Type');
+            injectAddButton(self, 'earning', 'earning_type', 'Income Type');
             injectSeedDefaultsButton(self);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, server mode. Excludes the composite item-name+tags cell (1), the boolean
@@ -162,7 +164,9 @@ function initDeductionTypeTable() {
                     : `<span class="badge bg-secondary-subtle text-secondary">${langData['impact_after_tax'] || 'After Tax'}</span>`
             },
             { data: null, render: (d, t, row) => statusBadge(row) },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => actionButtons(row) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
@@ -234,7 +238,7 @@ function resetPedTypeForm(itemType) {
     applyItemTypeFields(itemType);
     applyCalculationMethodFields('');
     const titleText = itemType === 'earning' 
-        ? (langData['earning_type'] || 'Earning Type') 
+        ? (langData['earning_type'] || 'Income Type') 
         : (langData['deduction_type'] || 'Deduction Type');
     $('#pedTypeModalLabel').html(`<i class="fa-solid fa-pen-to-square me-2"></i>${titleText}`);
 }
@@ -265,7 +269,7 @@ function populatePedTypeForm(row) {
     $('#ped_status').val(row.status || 'active').trigger('change');
     applyCalculationMethodFields(row.calculation_method);
     const titleText = row.item_type === 'earning' 
-        ? (langData['earning_type'] || 'Earning Type') 
+        ? (langData['earning_type'] || 'Income Type') 
         : (langData['deduction_type'] || 'Deduction Type');
     $('#pedTypeModalLabel').html(`<i class="fa-solid fa-pen-to-square me-2"></i>${titleText}`);
 }
@@ -321,14 +325,13 @@ $(document).ready(function () {
         initSelect2('#payment_day_of_week', { mode: 'static' });
         initSelect2('#bank_file_format_id', { mode: 'ajax' });
         initSelect2('#cycle_status', { mode: 'static' });
-        initSelect2('#reset_cycle_start_month', { mode: 'static' });
-        initSelect2('#bonus_status', { mode: 'static' });
-        initSelect2('#ledger_filter_scheme', { mode: 'ajax' });
-        initSelect2('#ledger_filter_month', { mode: 'static', selectedValue: String(new Date().getMonth() + 1) });
-        initSelect2('#ledger_employee_id', { mode: 'ajax' });
     }
-    initAttendanceBonusUI();
-    initBonusLedgerUI();
+    // 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า" -- Attendance
+    // Bonus/Ledger UI init removed along with their tabs/modals (see the removal comment on
+    // #companySetupTabs in payroll-configuration.php). initAttendanceBonusUI()/initBonusLedgerUI()/
+    // initAttendanceBonusTable()/initBonusLedgerTable() and every function they alone called are
+    // gone too, not just uncalled -- see this file's own git history if any of it is ever needed
+    // again.
     $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function (e) {
         const tabId = $(e.target).attr('id');
         if (tabId === 'deductions-tab') {
@@ -336,12 +339,6 @@ $(document).ready(function () {
         }
         if (tabId === 'attendance-deduction-tab') {
             loadAttendanceDeductionCards();
-        }
-        if (tabId === 'attendance-bonus-tab') {
-            initAttendanceBonusTable();
-        }
-        if (tabId === 'bonus-ledger-tab') {
-            initBonusLedgerTable();
         }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
     });
@@ -523,7 +520,9 @@ function initPayrollCycleTable() {
             { data: null, render: (d, t, row) => cyclePaymentCell(row) },
             { data: null, render: (d, t, row) => escapeHtmlPc((currentLang === 'th' ? row.bank_file_format_name_th : row.bank_file_format_name_en) || row.bank_file_format_name_th || row.bank_file_format_name_en || '') },
             { data: 'status', render: d => cycleStatusBadge(d) },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => cycleActionButtons(row) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => cycleActionButtons(row) }
         ],
         pageLength: pageLength,
         lengthMenu: lengthMenu,
@@ -535,7 +534,7 @@ function initPayrollCycleTable() {
             if ($searchDiv.find('.btn-add-cycle').length === 0) {
                 $searchDiv.append(`
                     <button type="button" class="btn btn-primary ms-1 btn-add-cycle">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="cycle">${langData['cycle'] || 'Cycle'}</span>
+                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="cycle">${langData['cycle'] || 'Schedule'}</span>
                     </button>
                 `);
             }
@@ -762,555 +761,20 @@ function initPayrollCycleUI() {
         });
     });
 }
-let tb_attendance_bonus;
-function conditionsBadges(row) {
-    const conds = [];
-    if (Number(row.condition_no_absent)) conds.push(langData['condition_no_absent'] || 'No absences');
-    if (Number(row.condition_no_late)) conds.push(langData['condition_no_late'] || 'No late arrivals');
-    if (Number(row.condition_no_leave)) conds.push(langData['condition_no_leave'] || 'No leave taken');
-    if (Number(row.condition_no_time_adjust)) conds.push(langData['condition_no_time_adjust'] || 'No time clock adjustments');
-    return conds.map(c => `<span class="badge bg-light text-dark border mb-1 me-1">${c}</span>`).join('');
-}
-function bonusAmountSummary(row) {
-    const start = parseFloat(row.starting_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const inc = parseFloat(row.increment_amount || 0);
-    let html = `<div>${start}</div>`;
-    if (inc > 0) {
-        html += `<div class="text-muted small">+${inc.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${langData['per_month'] || '/month'}</div>`;
-    }
-    if (row.max_amount !== null && row.max_amount !== undefined) {
-        const cap = parseFloat(row.max_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        html += `<div class="text-muted small">${langData['max_amount'] || 'Max'}: ${cap}</div>`;
-    } else {
-        html += `<div class="text-muted small">${langData['no_cap'] || 'No cap'}</div>`;
-    }
-    return html;
-}
-function bonusResetCycleSummary(row) {
-    const months = row.reset_cycle_months;
-    let basisText;
-    if (row.reset_cycle_basis === 'fixed_month') {
-        const monthKey = 'month_' + row.reset_cycle_start_month;
-        basisText = langData[monthKey] || row.reset_cycle_start_month;
-    } else {
-        basisText = langData['basis_employee_anniversary'] || "From employee's first eligible month";
-    }
-    return `<div>${months} ${langData['months_unit'] || 'months'}</div><div class="text-muted small">${basisText}</div>`;
-}
-function bonusStatusBadge(status) {
-    const isActive = status === 'active';
-    const cls = isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary';
-    const text = isActive ? (langData['active'] || 'Active') : (langData['inactive'] || 'Inactive');
-    return `<span class="badge ${cls}">${text}</span>`;
-}
-function bonusActionButtons(row) {
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-warning btn-edit-bonus" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-bonus" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
-    </div>`;
-}
-function initAttendanceBonusTable() {
-    if ($.fn.DataTable.isDataTable('#tb_attendance_bonus')) {
-        $('#tb_attendance_bonus').DataTable().ajax.reload(null, false);
-        return;
-    }
-    tb_attendance_bonus = $('#tb_attendance_bonus').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/attendance-bonus.list`,
-            dataSrc: 'data'
-        },
-        columns: [
-            { data: 'scheme_name', render: d => `<strong class="text-dark">${escapeHtmlPc(d)}</strong>` },
-            { data: null, render: (d, t, row) => conditionsBadges(row) },
-            { data: null, render: (d, t, row) => bonusAmountSummary(row) },
-            { data: null, render: (d, t, row) => bonusResetCycleSummary(row) },
-            { data: 'status', render: d => bonusStatusBadge(d) },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => bonusActionButtons(row) }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $searchDiv = $wrapper.find('.dt-search');
-            if ($searchDiv.find('.btn-add-bonus').length === 0) {
-                $searchDiv.append(`
-                    <button type="button" class="btn text-white ms-1 btn-add-bonus" style="background-color:#FF9900;border-color:#FF9900;">
-                        <i class="fa-solid fa-plus me-2"></i><span data-i18n="add_attendance_bonus">${langData['add_attendance_bonus'] || 'Attendance Bonus Scheme'}</span>
-                    </button>
-                `);
-            }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the multi-value condition badges (1) and the two
-            // multi-line computed summary columns (2, 3, no single filterable value), plus actions (5).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'scheme_name' },
-                    { index: 4, key: 'status' },
-                ]
-            });
-        },
-        drawCallback: function () { getTableLang(); }
-    });
-}
-function applyResetBasisFields(basis) {
-    const isFixed = basis === 'fixed_month';
-    $('#reset_start_month_wrapper').toggleClass('d-none', !isFixed);
-    $('#reset_cycle_start_month').toggleClass('required', isFixed);
-}
-function resetBonusForm() {
-    $('#attendanceBonusForm')[0].reset();
-    $('#bonus_id').val('');
-    $('.is-invalid').removeClass('is-invalid');
-    $('#reset_cycle_start_month').val('').trigger('change');
-    $('#bonus_status').val('active').trigger('change');
-    applyResetBasisFields('employee_anniversary');
-    $('#attendanceBonusModalLabel').text(langData['add_attendance_bonus'] || 'Attendance Bonus Scheme');
-}
-function populateBonusForm(row) {
-    $('#bonus_id').val(row.id);
-    $('#scheme_name').val(row.scheme_name);
-    $('#condition_no_absent').prop('checked', Number(row.condition_no_absent) === 1);
-    $('#condition_no_late').prop('checked', Number(row.condition_no_late) === 1);
-    $('#condition_no_leave').prop('checked', Number(row.condition_no_leave) === 1);
-    $('#condition_no_time_adjust').prop('checked', Number(row.condition_no_time_adjust) === 1);
-    $('#starting_amount').val(row.starting_amount);
-    $('#increment_amount').val(row.increment_amount);
-    $('#max_amount').val(row.max_amount !== null && row.max_amount !== undefined ? row.max_amount : '');
-    $('#reset_cycle_months').val(row.reset_cycle_months);
-    $(`input[name="reset_cycle_basis"][value="${row.reset_cycle_basis}"]`).prop('checked', true);
-    applyResetBasisFields(row.reset_cycle_basis);
-    if (row.reset_cycle_basis === 'fixed_month') {
-        $('#reset_cycle_start_month').val(row.reset_cycle_start_month).trigger('change');
-    }
-    $('#bonus_status').val(row.status).trigger('change');
-    $('#attendanceBonusModalLabel').text(langData['edit_attendance_bonus'] || 'Edit Attendance Bonus Scheme');
-}
-function validateBonusForm() {
-    let firstInvalid = null;
-    $('#attendanceBonusModal .required').each(function () {
-        const $el = $(this);
-        if ($el.closest('.d-none').length > 0) return;
-        const value = ($el.val() || '').toString().trim();
-        if (!value) {
-            $el.addClass('is-invalid');
-            if (!firstInvalid) firstInvalid = $el;
-        } else {
-            $el.removeClass('is-invalid');
-        }
-    });
-    if (!firstInvalid) {
-        const anyCondition = $('#condition_no_absent, #condition_no_late, #condition_no_leave, #condition_no_time_adjust').is(':checked');
-        if (!anyCondition) {
-            showWarning(langData['conditions_hint'] || 'Select at least one condition.');
-            firstInvalid = $('#condition_no_absent');
-        }
-    }
-    return firstInvalid;
-}
-function collectBonusFormData() {
-    return {
-        id: $('#bonus_id').val() || undefined,
-        scheme_name: $('#scheme_name').val().trim(),
-        condition_no_absent: $('#condition_no_absent').is(':checked'),
-        condition_no_late: $('#condition_no_late').is(':checked'),
-        condition_no_leave: $('#condition_no_leave').is(':checked'),
-        condition_no_time_adjust: $('#condition_no_time_adjust').is(':checked'),
-        starting_amount: $('#starting_amount').val(),
-        increment_amount: $('#increment_amount').val() || 0,
-        max_amount: $('#max_amount').val(),
-        reset_cycle_months: $('#reset_cycle_months').val(),
-        reset_cycle_basis: $('input[name="reset_cycle_basis"]:checked').val(),
-        reset_cycle_start_month: $('#reset_cycle_start_month').val(),
-        status: $('#bonus_status').val()
-    };
-}
-function initAttendanceBonusUI() {
-    $(document).on('click', '.btn-add-bonus', function () {
-        resetBonusForm();
-        new bootstrap.Modal(document.getElementById('attendanceBonusModal')).show();
-    });
-    $(document).on('click', '.btn-edit-bonus', function () {
-        const id = $(this).data('id');
-        $.ajax({
-            url: `${BASE_URL}/api/attendance-bonus.get`,
-            method: 'GET',
-            data: { id: id },
-            dataType: 'json',
-            success: function (res) {
-                if (res.status) {
-                    resetBonusForm();
-                    populateBonusForm(res.data);
-                    new bootstrap.Modal(document.getElementById('attendanceBonusModal')).show();
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
-                }
-            },
-            error: function () {
-                showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
-            }
-        });
-    });
-    $(document).on('change', 'input[name="reset_cycle_basis"]', function () {
-        applyResetBasisFields($(this).val());
-    });
-    $(document).on('submit', '#attendanceBonusForm', function (e) {
-        e.preventDefault();
-        const invalidEl = validateBonusForm();
-        if (invalidEl) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
-        }
-        const payload = collectBonusFormData();
-        const $btn = $('#attendanceBonusForm button[type="submit"]');
-        const originalHtml = $btn.html();
-        $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>Saving...</span>');
-        $.ajax({
-            url: `${BASE_URL}/api/attendance-bonus.save`,
-            method: 'POST',
-            contentType: 'application/json',
-            dataType: 'json',
-            data: JSON.stringify(payload),
-            success: function (res) {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                if (res.status) {
-                    showSuccess(langData['save_success'] || 'Saved successfully.');
-                    bootstrap.Modal.getInstance(document.getElementById('attendanceBonusModal')).hide();
-                    if (tb_attendance_bonus) tb_attendance_bonus.ajax.reload(null, false);
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-                }
-            },
-            error: function () {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-            }
-        });
-    });
-    $(document).on('click', '.btn-delete-bonus', function () {
-        const id = $(this).data('id');
-        const title = langData['confirm_delete_title'] || 'Confirm Delete';
-        const message = langData['confirm_delete_message'] || 'Are you sure you want to delete this item?';
-        showConfirm(title, message, function () {
-            $.ajax({
-                url: `${BASE_URL}/api/attendance-bonus.delete`,
-                method: 'POST',
-                contentType: 'application/json',
-                dataType: 'json',
-                data: JSON.stringify({ id: id }),
-                success: function (res) {
-                    if (res.status) {
-                        showSuccess(langData['delete_success'] || 'Deleted successfully.');
-                        if (tb_attendance_bonus) tb_attendance_bonus.ajax.reload(null, false);
-                    } else {
-                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
-                    }
-                },
-                error: function () {
-                    showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
-                }
-            });
-        });
-    });
-}
-let tb_bonus_ledger;
-function ledgerStatusBadge(status) {
-    const map = {
-        passed: { cls: 'bg-success-subtle text-success', key: 'status_passed', fallback: 'Passed' },
-        failed: { cls: 'bg-danger-subtle text-danger', key: 'status_failed', fallback: 'Failed' },
-        pending_data: { cls: 'bg-secondary-subtle text-secondary', key: 'pending_data', fallback: 'Pending Data' }
-    };
-    const cfg = map[status] || map.pending_data;
-    return `<span class="badge ${cfg.cls}">${langData[cfg.key] || cfg.fallback}</span>`;
-}
-function ledgerLockedBadge(row) {
-    if (row.locked_at) {
-        return `<span class="badge bg-primary-subtle text-primary"><i class="fa-solid fa-lock me-1"></i>${langData['locked'] || 'Locked'}</span>`;
-    }
-    return `<span class="badge bg-light text-dark border">${langData['unlocked'] || 'Unlocked'}</span>`;
-}
-function ledgerActionButtons(row) {
-    const isLocked = !!row.locked_at;
-    // No buttons at all once locked -- return '' rather than an empty .btn-group wrapper (2026-08-21:
-    // an empty bordered/bg-white group would show as a visible blank box in the cell, unlike the
-    // old plain flex div which was invisible when empty).
-    if (isLocked) {
-        return '';
-    }
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-warning btn-edit-ledger" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>
-        <button type="button" class="btn btn-link text-primary border-start btn-lock-ledger" data-id="${row.id}" title="${langData['lock_entry'] || 'Lock'}"><i class="fa-solid fa-lock"></i></button>
-        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-ledger" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
-    </div>`;
-}
-function currentLedgerFilter() {
-    return {
-        schemeId: $('#ledger_filter_scheme').val(),
-        year: $('#ledger_filter_year').val(),
-        month: $('#ledger_filter_month').val()
-    };
-}
-function initBonusLedgerTable() {
-    if ($.fn.DataTable.isDataTable('#tb_bonus_ledger')) {
-        $('#tb_bonus_ledger').DataTable().ajax.reload(null, false);
-        return;
-    }
-    tb_bonus_ledger = $('#tb_bonus_ledger').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/attendance-bonus.ledger.list`,
-            data: function (d) {
-                const f = currentLedgerFilter();
-                d.scheme_id = f.schemeId;
-                d.year = f.year;
-                d.month = f.month;
-            },
-            dataSrc: 'data'
-        },
-        columns: [
-            { data: null, render: (d, t, row) => escapeHtmlPc(currentLang === 'th' ? row.employee_name_th : row.employee_name_en) },
-            { data: 'status', render: d => ledgerStatusBadge(d) },
-            { data: 'streak_count' },
-            { data: 'cycle_count' },
-            { data: 'amount', render: d => parseFloat(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
-            { data: null, render: (d, t, row) => ledgerLockedBadge(row) },
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => ledgerActionButtons(row) }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $searchDiv = $wrapper.find('.dt-search');
-            if ($searchDiv.find('.btn-add-ledger').length === 0) {
-                $searchDiv.append(`
-                    <button type="button" class="btn text-white ms-1 btn-add-ledger" style="background-color:#FF9900;border-color:#FF9900;">
-                        <i class="fa-solid fa-plus me-2"></i><span data-i18n="add_ledger_entry">${langData['add_ledger_entry'] || 'Ledger Entry'}</span>
-                    </button>
-                `);
-            }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes actions (6).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'employee' },
-                    { index: 1, key: 'status' },
-                    { index: 2, key: 'streak_count' },
-                    { index: 3, key: 'cycle_count' },
-                    { index: 4, key: 'amount' },
-                    { index: 5, key: 'locked' },
-                ]
-            });
-        },
-        drawCallback: function () { getTableLang(); }
-    });
-}
-function reloadLedgerTable() {
-    if ($.fn.DataTable.isDataTable('#tb_bonus_ledger')) {
-        $('#tb_bonus_ledger').DataTable().ajax.reload(null, false);
-    }
-}
-function updateLedgerPeriodDisplay() {
-    const f = currentLedgerFilter();
-    const schemeText = $('#ledger_filter_scheme option:selected').text() || $('#ledger_filter_scheme').val();
-    const monthKey = 'month_' + f.month;
-    const monthText = langData[monthKey] || f.month;
-    $('#ledger_period_display').text(`${schemeText} — ${monthText} ${f.year}`);
-}
-function resetLedgerForm() {
-    $('#ledgerEntryForm')[0].reset();
-    $('#ledger_id').val('');
-    $('.is-invalid').removeClass('is-invalid');
-    $('#ledger_employee_id').val(null).trigger('change');
-    $('#ledger_status_passed').prop('checked', true);
-    $('#ledger_fail_reasons_wrapper').addClass('d-none');
-    $('.fail-reason-check').prop('checked', false);
-    $('#fail_reasons').val('');
-    const f = currentLedgerFilter();
-    $('#ledger_scheme_id').val(f.schemeId);
-    $('#ledger_period_year').val(f.year);
-    $('#ledger_period_month').val(f.month);
-    updateLedgerPeriodDisplay();
-    $('#ledgerEntryModalLabel').text(langData['add_ledger_entry'] || 'Ledger Entry');
-}
-function populateLedgerForm(row) {
-    $('#ledger_id').val(row.id);
-    const opt = new Option(currentLang === 'th' ? row.employee_name_th : row.employee_name_en, row.employee_id, true, true);
-    $('#ledger_employee_id').empty().append(opt).trigger('change');
-    $('#ledger_employee_id').prop('disabled', true);
-    $('#ledger_scheme_id').val(row.scheme_id);
-    $('#ledger_period_year').val(row.period_year);
-    $('#ledger_period_month').val(row.period_month);
-    const monthKey = 'month_' + row.period_month;
-    $('#ledger_period_display').text(`${row.scheme_name} — ${langData[monthKey] || row.period_month} ${row.period_year}`);
-    $(`input[name="ledger_status"][value="${row.status}"]`).prop('checked', true);
-    $('#ledger_fail_reasons_wrapper').toggleClass('d-none', row.status !== 'failed');
-    $('#fail_reasons').val(row.fail_reasons || '');
-    $('#ledgerEntryModalLabel').text(langData['edit_ledger_entry'] || 'Edit Ledger Entry');
-}
-function collectLedgerFormData() {
-    return {
-        id: $('#ledger_id').val() || undefined,
-        employee_id: $('#ledger_employee_id').val(),
-        scheme_id: $('#ledger_scheme_id').val(),
-        period_year: $('#ledger_period_year').val(),
-        period_month: $('#ledger_period_month').val(),
-        status: $('input[name="ledger_status"]:checked').val(),
-        fail_reasons: $('#fail_reasons').val().trim()
-    };
-}
-function initBonusLedgerUI() {
-    $(document).on('change', '#ledger_filter_scheme, #ledger_filter_year, #ledger_filter_month', function () {
-        reloadLedgerTable();
-    });
-    $(document).on('click', '.btn-add-ledger', function () {
-        const f = currentLedgerFilter();
-        if (!f.schemeId || !f.year || !f.month) {
-            showWarning(langData['select_scheme_and_period_first'] || 'Please select a scheme, year, and month first.');
-            return;
-        }
-        resetLedgerForm();
-        $('#ledger_employee_id').prop('disabled', false);
-        new bootstrap.Modal(document.getElementById('ledgerEntryModal')).show();
-    });
-    $(document).on('click', '.btn-edit-ledger', function () {
-        const id = $(this).data('id');
-        $.ajax({
-            url: `${BASE_URL}/api/attendance-bonus.ledger.get`,
-            method: 'GET',
-            data: { id: id },
-            dataType: 'json',
-            success: function (res) {
-                if (res.status) {
-                    resetLedgerForm();
-                    populateLedgerForm(res.data);
-                    new bootstrap.Modal(document.getElementById('ledgerEntryModal')).show();
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
-                }
-            },
-            error: function () {
-                showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
-            }
-        });
-    });
-    $(document).on('change', 'input[name="ledger_status"]', function () {
-        $('#ledger_fail_reasons_wrapper').toggleClass('d-none', $(this).val() !== 'failed');
-    });
-    $(document).on('change', '.fail-reason-check', function () {
-        const labels = [];
-        $('.fail-reason-check:checked').each(function () {
-            const key = $(this).data('label-key');
-            labels.push(langData[key] || key);
-        });
-        if (labels.length > 0) {
-            $('#fail_reasons').val(labels.join(', '));
-        }
-    });
-    $(document).on('submit', '#ledgerEntryForm', function (e) {
-        e.preventDefault();
-        const invalidEl = (function () {
-            let firstInvalid = null;
-            $('#ledgerEntryModal .required').each(function () {
-                const $el = $(this);
-                const value = ($el.val() || '').toString().trim();
-                if (!value) {
-                    $el.addClass('is-invalid');
-                    if (!firstInvalid) firstInvalid = $el;
-                } else {
-                    $el.removeClass('is-invalid');
-                }
-            });
-            return firstInvalid;
-        })();
-        if (invalidEl) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
-        }
-        const payload = collectLedgerFormData();
-        const $btn = $('#ledgerEntryForm button[type="submit"]');
-        const originalHtml = $btn.html();
-        $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>Saving...</span>');
-        $.ajax({
-            url: `${BASE_URL}/api/attendance-bonus.ledger.save`,
-            method: 'POST',
-            contentType: 'application/json',
-            dataType: 'json',
-            data: JSON.stringify(payload),
-            success: function (res) {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                if (res.status) {
-                    showSuccess(langData['save_success'] || 'Saved successfully.');
-                    bootstrap.Modal.getInstance(document.getElementById('ledgerEntryModal')).hide();
-                    reloadLedgerTable();
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-                }
-            },
-            error: function () {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-            }
-        });
-    });
-    $(document).on('click', '.btn-lock-ledger', function () {
-        const id = $(this).data('id');
-        showConfirm(langData['confirm_lock_title'] || 'Lock this entry?', langData['confirm_lock_message'] || 'Once locked, this entry can no longer be edited or deleted.', function () {
-            $.ajax({
-                url: `${BASE_URL}/api/attendance-bonus.ledger.lock`,
-                method: 'POST',
-                contentType: 'application/json',
-                dataType: 'json',
-                data: JSON.stringify({ id: id }),
-                success: function (res) {
-                    if (res.status) {
-                        showSuccess(langData['save_success'] || 'Saved successfully.');
-                        reloadLedgerTable();
-                    } else {
-                        showWarning(res.message || langData['save_failed'] || 'Failed to lock entry.');
-                    }
-                },
-                error: function () {
-                    showWarning(langData['save_failed'] || 'An error occurred.');
-                }
-            });
-        });
-    });
-    $(document).on('click', '.btn-delete-ledger', function () {
-        const id = $(this).data('id');
-        const title = langData['confirm_delete_title'] || 'Confirm Delete';
-        const message = langData['confirm_delete_message'] || 'Are you sure you want to delete this item?';
-        showConfirm(title, message, function () {
-            $.ajax({
-                url: `${BASE_URL}/api/attendance-bonus.ledger.delete`,
-                method: 'POST',
-                contentType: 'application/json',
-                dataType: 'json',
-                data: JSON.stringify({ id: id }),
-                success: function (res) {
-                    if (res.status) {
-                        showSuccess(langData['delete_success'] || 'Deleted successfully.');
-                        reloadLedgerTable();
-                    } else {
-                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
-                    }
-                },
-                error: function () {
-                    showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
-                }
-            });
-        });
-    });
-}
+// 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า และไม่นำไปคำนวณในเงินเดือน แต่ใน Income ยังคงมีไว้ เพราะจะเชื่อมมาจาก Origami แทน" -- the whole
+// Attendance Bonus (scheme config) and Ledger (streak recording) feature -- 20 functions
+// (bonusAmountSummary/initAttendanceBonusTable/initAttendanceBonusUI/ledgerStatusBadge/
+// initBonusLedgerTable/initBonusLedgerUI/etc), their table inits, and every CRUD handler --
+// removed entirely along with the view-side tabs/modals (see the removal comment on
+// #companySetupTabs in payroll-configuration.php). PayrollRunModel::recalculate() no longer
+// pulls attendance_bonus_ledger into payroll lines either (see that model's own comment).
+// The DILIGENCE catalog row in the Income tab itself is untouched -- it becomes a pure sync
+// target now, matched by item_code the same generic way ค่าเที่ยว/TRIP_ALLOW already is (see
+// SyncPayResolver's generic item-matching loop). 2026-08-29 same-day follow-up, explicit:
+// "ถ้ามีลบเพิ่มไฟล์ .sql ให้ด้วยครับ" -- backend model classes (AttendanceBonusSchemeModel/
+// AttendanceBonusLedgerModel), their controller endpoints/routes, and the
+// attendance_bonus_schemes/attendance_bonus_ledger tables themselves are now fully removed
+// too, not left in place -- see database/migrations/2026-08-29_drop_attendance_bonus_tables.sql.
 
 /* ==================== ATTENDANCE DEDUCTION RULES (Late / Absent / Unpaid Leave) ====================
  * 2026-08-21: moved from a button+shared-modal-with-pill-switcher on the Deductions tab to its own

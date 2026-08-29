@@ -19,6 +19,10 @@
                 <div class="text-danger small mt-2 d-none" id="rejectReasonBox"></div>
                 <div class="text-muted small mt-2 d-none" id="cancelReasonBox"></div>
             </div>
+            <!-- 2026-08-29, explicit request: "เพิ่มให้สามารถปริ้น Report จากหน้า Process ได้...จากหน้า List
+                 และ Detail" -- same shortcut buttons as the List page's own row dropdown, see
+                 renderRunReportsButtons() in detail.js. -->
+            <div id="runReportsButtonWrap"></div>
         </div>
         <div class="process-timeline-wrap" id="runProcessTimeline"></div>
         <div id="nextStepBanner" class="next-step-banner"></div>
@@ -50,7 +54,7 @@
             </div>
             <div class="row g-4">
                 <div class="col-6 col-md-3">
-                    <div class="text-muted small" data-i18n="modal_cycle">Payroll Cycle</div>
+                    <div class="text-muted small" data-i18n="modal_cycle">Payroll Schedule</div>
                     <div class="fw-bold" id="infoCycle">-</div>
                 </div>
                 <div class="col-6 col-md-3">
@@ -73,13 +77,20 @@
                     <div class="text-muted small" data-i18n="run_type_label">Run Type</div>
                     <div class="fw-bold" id="infoRunType">-</div>
                 </div>
+                <!-- 2026-08-29, explicit request: referencing PAYROLL_SYNC_API.md -- shown only for
+                     a run pulled from an Origami sync process (sync_process_id set), so it's
+                     traceable which Origami cycle/dates this run actually came from. -->
+                <div class="col-6 col-md-3 d-none" id="infoSyncSourceWrap">
+                    <div class="text-muted small" data-i18n="sync_source_label">Origami Source</div>
+                    <div class="fw-bold" id="infoSyncSource">-</div>
+                </div>
             </div>
           </div>
           <div class="detail-section d-none" id="pedTypeSettingsSection">
             <div class="mb-3">
                 <h6 class="text-secondary fw-bold mb-1">
                     <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
-                    <span data-i18n="ped_type_settings_title">Earning/Deduction Items Used</span>
+                    <span data-i18n="ped_type_settings_title">Income/Deduction Items Used</span>
                 </h6>
                 <div class="text-muted small" data-i18n="ped_type_settings_hint">The items currently used to calculate this run. Click "Edit" on either side to tick items in or out.</div>
             </div>
@@ -87,7 +98,7 @@
                 <div class="col-md-6">
                     <div class="ped-type-panel border rounded-3 p-3 h-100">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="text-success fw-bold mb-0"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Earnings</span></h6>
+                            <h6 class="text-success fw-bold mb-0"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Income</span></h6>
                             <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-ped-type-panel d-none" data-item-type="earning"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">Edit</span></button>
                         </div>
                         <div id="pedTypePanelEarning" class="ped-type-chip-list"></div>
@@ -275,7 +286,7 @@
                                 <div class="col-sm-9 offset-sm-3">
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="edit_run_include_standing_items">
-                                        <label class="form-check-label" for="edit_run_include_standing_items" data-i18n="include_standing_items_label">Include configured earning/deduction items (standing PED assignments + Recurring Allowances)</label>
+                                        <label class="form-check-label" for="edit_run_include_standing_items" data-i18n="include_standing_items_label">Include configured income/deduction items (standing PED assignments + Recurring Allowances)</label>
                                     </div>
                                 </div>
                             </div>
@@ -353,7 +364,7 @@
                                 </div>
                                 <div class="row g-2 align-items-end" id="manualLineCatalogFields">
                                     <div class="col-12">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="select_item_placeholder">Select an earning/deduction item</label>
+                                        <label class="form-label mb-1 small text-muted" data-i18n="select_item_placeholder">Select an income/deduction item</label>
                                         <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options"></select>
                                     </div>
                                 </div>
@@ -398,7 +409,7 @@
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <div class="ped-type-panel border rounded-3 p-3 h-100 d-flex flex-column">
-                                        <h6 class="text-success fw-bold mb-2"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Earnings</span></h6>
+                                        <h6 class="text-success fw-bold mb-2"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Income</span></h6>
                                         <ul class="list-group list-group-flush flex-grow-1" id="manualLinesEarningList"></ul>
                                         <div class="d-flex justify-content-between fw-bold text-success border-top pt-2 mt-1">
                                             <span data-i18n="manual_line_subtotal_label">Total</span><span id="manualLinesEarningTotal">0.00</span>
@@ -610,7 +621,7 @@
                              รอบเงินเดือนได้ด้วย") -- filters by the employee's own standing payroll
                              cycle (employees.cycle_id), not this run's own cycle. -->
                         <div class="col-sm-3">
-                            <label class="form-label mb-1" data-i18n="payroll_cycle">Payroll Cycle</label>
+                            <label class="form-label mb-1" data-i18n="payroll_cycle">Payroll Schedule</label>
                             <select class="form-select select2-remote" id="joinFilterCycle" data-api="/api/payroll-cycle.options"></select>
                         </div>
                         <div class="col-sm-1 d-flex align-items-end">
@@ -639,7 +650,7 @@
                                 <th data-i18n="department">Department</th>
                                 <th data-i18n="team">Team</th>
                                 <th data-i18n="position">Position</th>
-                                <th data-i18n="payroll_cycle">Payroll Cycle</th>
+                                <th data-i18n="payroll_cycle">Payroll Schedule</th>
                             </tr>
                         </thead>
                         <tbody></tbody>

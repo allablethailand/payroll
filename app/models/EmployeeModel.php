@@ -122,11 +122,17 @@ class EmployeeModel {
     // after grepping PayrollRunModel/app/services/* and finding neither ever read (attendance/HR-
     // tracking fields only, not payroll-calc-relevant, same shape as report_to_id/date_contract_
     // expire/holiday_calendar_id/driver_license_no already hidden alongside them).
+    // 2026-08-28, explicit request: "ตรง Role อาจจะไม่ต้อง Require Field เพราะระบบนี้เข้ามาใช้งานได้แค่
+    // บางส่วน" -- role_id removed from this list (was between department_id and position_id) since
+    // it governs Payroll's own system PERMISSIONS (PermissionModel), not payroll eligibility -- same
+    // "optional, excluded from required/completeness entirely" precedent this file already
+    // established for team_id (see detail.php's own Team section comment). Still nullable in schema
+    // either way (`role_id int(11) DEFAULT NULL`), so no migration was needed.
     private function requiredColumns(): array {
         return [
             'employee_no', 'employee_type', 'employee_status', 'title', 'gender', 'name_th', 'surname_th', 'name_en', 'surname_en',
             'date_of_birth', 'nationality', 'personal_email', 'mobile_no',
-            'department_id', 'role_id', 'position_id', 'branch_id',
+            'department_id', 'position_id', 'branch_id',
             'employment_date', 'employment_status', 'employment_type', 'payment_type',
             'salary_type', 'base_salary_amount', 'salary_effective_date', 'tax_calculation_method',
         ];
@@ -148,7 +154,7 @@ class EmployeeModel {
             'employee_type', 'title', 'gender', 'name_th', 'surname_th', 'name_en', 'surname_en',
             'date_of_birth', 'nationality', 'id_card_no', 'tax_id_no', 'passport_no', 'work_permit_no',
             'personal_email', 'mobile_no', 'line_id',
-            'department_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id',
+            'department_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id',
             'employment_date', 'payment_type', 'bank_id', 'bank_account_no',
             'salary_type', 'base_salary_amount', 'salary_effective_date', 'tax_calculation_method',
             'sso_enrolled', 'sso_no', 'has_spouse', 'spouse_name',
@@ -226,7 +232,7 @@ class EmployeeModel {
             ? ($this->isCompletenessValueFilled($e['bank_id'] ?? null) && $this->isCompletenessValueFilled($e['bank_account_no'] ?? null))
             : true;
         $tabs['employment'] = $this->scoreChecklist([
-            !empty($e['department_id']), !empty($e['role_id']), !empty($e['position_id']), !empty($e['branch_id']),
+            !empty($e['department_id']), !empty($e['position_id']), !empty($e['branch_id']),
             !empty($e['work_location_id']), !empty($e['shift_id']),
             $this->isCompletenessValueFilled($e['employment_date'] ?? null),
             $bankOk,
@@ -262,7 +268,7 @@ class EmployeeModel {
             'date_of_birth' => 'info', 'nationality' => 'info', 'id_card_no' => 'info',
             'tax_id_no' => 'info', 'passport_no' => 'info', 'work_permit_no' => 'info',
             'personal_email' => 'contact', 'mobile_no' => 'contact',
-            'department_id' => 'employment', 'role_id' => 'employment', 'position_id' => 'employment', 'branch_id' => 'employment',
+            'department_id' => 'employment', 'position_id' => 'employment', 'branch_id' => 'employment',
             'employment_date' => 'employment', 'employment_status' => 'employment', 'employment_type' => 'employment',
             'payment_type' => 'employment', 'bank_id' => 'employment', 'bank_account_no' => 'employment',
             'salary_type' => 'salary', 'base_salary_amount' => 'salary', 'salary_effective_date' => 'salary', 'tax_calculation_method' => 'salary',
@@ -346,10 +352,25 @@ class EmployeeModel {
         $shiftCol = $lang === 'en' ? 'shift_name_en' : 'shift_name_th';
         $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
         $positionCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
+        // 2026-08-29, real bug found and fixed (explicit report: "แสดง ชื่อ และข้อมูลอื่นๆตามภาษาที่เลือก
+        // Auto เปลี่ยนโดยไม่ต้อง Reload หน้า" -- Name specifically never actually followed $lang at
+        // all, unlike every other bilingual column here (role/position/department/team/shift/
+        // branch all correctly branch on $lang via *Col above) -- this one was hardcoded to
+        // name_th/surname_th regardless. Switching the language dropdown to EN never changed the
+        // Name column, only the column HEADERS (those are separate i18n text via data-i18n,
+        // unrelated to this SQL expression). Fixed to branch on $lang the same way as everything
+        // else in this map, with a fallback to the Thai name when name_en/surname_en are BOTH
+        // blank (NULLIF against a literal single space catches "both concatenated to empty" --
+        // CONCAT('', ' ', '') = ' ', not NULL) -- same "graceful EN fallback" precedent this app's
+        // own client-side name-display helpers already use (e.g. dashEmployeeDisplayName()).
+        $nameExpr = $lang === 'en'
+            ? "COALESCE(NULLIF(TRIM(CONCAT(e.name_en, ' ', e.surname_en)), ''), CONCAT(e.name_th, ' ', e.surname_th))"
+            : "CONCAT(e.name_th, ' ', e.surname_th)";
         return [
             'employee_no' => 'e.employee_no',
-            'name' => "CONCAT(e.name_th, ' ', e.surname_th)",
+            'name' => $nameExpr,
             'phone' => 'e.mobile_no',
+            'email' => 'e.personal_email',
             'role' => "r.{$nameCol}",
             'position' => "p.{$positionCol}",
             'department' => "d.{$deptCol}",
@@ -458,18 +479,28 @@ class EmployeeModel {
         // 2026-08-27, shifted by +1 again: "ปุ่มที่ expand ตารางเพื่อดูข้อมูลของ column ที่ซ่อน ควรแยกมาเป็น
         // column แรก" -- a new dedicated Responsive expand-control column was inserted at index 0 on
         // the frontend (list.js), pushing every column below down by one again.
+        // 2026-08-28, shifted by +1 again from index 4 onward: a new "Source" column (data_source
+        // badge, orderable:false) was inserted right after Employee No. -- a non-orderable column
+        // still occupies a real slot in DataTables' own column-index numbering (order[0][column]
+        // counts ALL columns, not just sortable ones), so every sortable index below it still had
+        // to shift even though this new column itself never appears in this map.
+        // 2026-08-29, shifted AGAIN: a checkbox column (orderable:false, bulk sync selection) was
+        // inserted right after the expand-control column (index 0 -> pushes everything below down
+        // by 1), and an Email column (orderable:false, e.personal_email -- already selected, just
+        // not previously rendered) was inserted right after Phone (pushes role-onward down by 1
+        // MORE, since it lands strictly before them in column order).
         $sortColumns = [
-            2 => '`e`.`employee_no`',
-            3 => '`e`.`name_th`',
-            4 => '`e`.`mobile_no`',
-            5 => "`r`.`" . $this->langNameCol($lang, 'role_name') . "`",
-            6 => "`p`.`" . $this->langNameCol($lang, 'position_name') . "`",
-            7 => "`d`.`" . $this->langNameCol($lang, 'department_name') . "`",
-            8 => "`tm`.`" . $this->langNameCol($lang, 'team_name') . "`",
-            9 => "`sh`.`" . $this->langNameCol($lang, 'shift_name') . "`",
-            10 => "`b`.`" . $this->langNameCol($lang, 'branch_name') . "`",
-            11 => '`e`.`employment_date`',
-            12 => '`e`.`employee_status`',
+            3 => '`e`.`employee_no`',
+            5 => '`e`.`name_th`',
+            6 => '`e`.`mobile_no`',
+            8 => "`r`.`" . $this->langNameCol($lang, 'role_name') . "`",
+            9 => "`p`.`" . $this->langNameCol($lang, 'position_name') . "`",
+            10 => "`d`.`" . $this->langNameCol($lang, 'department_name') . "`",
+            11 => "`tm`.`" . $this->langNameCol($lang, 'team_name') . "`",
+            12 => "`sh`.`" . $this->langNameCol($lang, 'shift_name') . "`",
+            13 => "`b`.`" . $this->langNameCol($lang, 'branch_name') . "`",
+            14 => '`e`.`employment_date`',
+            15 => '`e`.`employee_status`',
         ];
         $sortColumn = $sortColumns[$colIndex] ?? '`e`.`id`';
         $orderDir = strtoupper($orderDir) === 'DESC' ? 'DESC' : 'ASC';
@@ -495,7 +526,7 @@ class EmployeeModel {
         // tax_id_no/passport_no/bank_account_no/sso_no), never the plaintext, so no per-row
         // decryption cost is paid just to render this list (see completenessColumns()'s docblock).
         $completenessSelect = implode(', ', array_map(fn($c) => "e.`{$c}`", $this->completenessColumns()));
-        $dataSql = "SELECT e.id, e.employee_no, e.data_source,
+        $dataSql = "SELECT e.id, e.employee_no, e.data_source, e.origami_ref_id,
                         {$exprMap['name']} AS name,
                         e.personal_email AS email,
                         {$exprMap['phone']} AS phone,

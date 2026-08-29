@@ -140,20 +140,33 @@
                     <span class="fw-bold fs-5" id="profileCompletenessPercent">0%</span>
                 </div>
             </div>
-            <!-- 2026-08-28, explicit request: "เพิ่มปุ่ม Re Sync รายบุคคลของพนักงาน และมีประวัติการ Sync
-                 โชว์ในหน้าพนักงานด้วย" -- Employee Sync (Origami HR), confirmed via AskUserQuestion,
-                 latest-summary only (employees.sync_batch_id already tracks "last batch to touch
-                 this row", no new history table). Whole block starts d-none -- only ever shown once
-                 populateEmployeeForm() confirms this employee actually has origami_ref_id set (see
-                 detail.js's own updateOrigamiSyncSummary()) AND IS_ORIGAMI_HR_LINKED is true; a
-                 manually-entered employee with no Origami link at all has nothing to re-sync. -->
-            <div class="employee-origami-sync-summary text-sm-end d-none" id="employeeOrigamiSyncSummary">
-                <div class="text-muted small mb-1" data-i18n="origami_sync_summary_title">Origami Sync</div>
-                <div class="small mb-1" id="profileLastSyncedText">-</div>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnResyncOneEmployee">
-                    <i class="fa-solid fa-rotate me-1"></i><span data-i18n="employee_sync_resync_one_button">Re-Sync from Origami</span>
-                </button>
+        </div>
+        <!-- 2026-08-28, explicit request: "เพิ่มปุ่ม Re Sync รายบุคคลของพนักงาน และมีประวัติการ Sync โชว์
+             ในหน้าพนักงานด้วย"; repositioned same-day follow-up ("ปรับปุ่ม Sync ใหม่ในตำแหน่งที่ดูดีขึ้น")
+             -- moved OUT of the cramped avatar/verify-status/completeness stat row above (a 4th
+             text-sm-end column there fought the other 3 for space, especially on medium screens) and
+             into its own full-width strip along the bottom edge of the header card instead, separated
+             by a border like a card footer -- room to breathe, and reads as a distinct "integration
+             status" line rather than another stat crammed among the others.
+             Whole strip starts d-none -- only ever shown once populateEmployeeForm() confirms
+             IS_ORIGAMI_HR_LINKED is true (this company is connected to Origami HR at all); no longer
+             ALSO gated on this employee already having origami_ref_id set (see detail.js's own
+             updateOrigamiSyncSummary() docblock for why -- manually-created employees now get a
+             working Sync button too, matched by employee_no against Origami instead of ref_id). -->
+        <div class="employee-origami-sync-summary d-flex flex-wrap align-items-center justify-content-between gap-2 border-top pt-3 mt-3 d-none" id="employeeOrigamiSyncSummary">
+            <div class="d-flex align-items-center gap-2 text-muted small">
+                <i class="fa-solid fa-arrows-rotate"></i>
+                <span class="fw-semibold" data-i18n="origami_sync_summary_title">Origami Sync</span>
+                <span>&middot;</span>
+                <span id="profileLastSyncedText">-</span>
             </div>
+            <!-- 2026-08-29, explicit request: "ปุ่ม Sync ให้เปลี่ยนเป็นสีฟ้าทั้งในหน้า List และ Detail" --
+                 btn-outline-info specifically, not btn-outline-primary (this app's own --bs-primary
+                 override repoints that at brand orange, see style.css's ".btn-primary" section; --bs-info
+                 was never touched, so it's still Bootstrap's real cyan-blue). -->
+            <button type="button" class="btn btn-outline-info btn-sm" id="btnResyncOneEmployee">
+                <i class="fa-solid fa-rotate me-1"></i><span id="btnResyncOneEmployeeLabel" data-i18n="employee_sync_resync_one_button">Re-Sync from Origami</span>
+            </button>
         </div>
     </div>
     <ul class="nav nav-tabs" id="employeeTabs" role="tablist">
@@ -182,7 +195,7 @@
              participates in the completeness score at all (items here are optional/variable per
              employee, same reasoning as why dependents/parents were never counted either). -->
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="earningDeduction-tab" data-bs-toggle="tab" data-bs-target="#earningDeduction-pane" type="button" role="tab" aria-controls="earningDeduction-pane" aria-selected="false"><i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="earning_deduction_assignments">Earnings & Deductions</span></button>
+            <button class="nav-link text-secondary" id="earningDeduction-tab" data-bs-toggle="tab" data-bs-target="#earningDeduction-pane" type="button" role="tab" aria-controls="earningDeduction-pane" aria-selected="false"><i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="earning_deduction_assignments">Income & Deductions</span></button>
         </li>
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
             <button class="nav-link text-secondary" id="social-tab" data-bs-toggle="tab" data-bs-target="#social-pane" type="button" role="tab" aria-controls="social-pane" aria-selected="false"><i class="fa-solid fa-hospital-user me-1"></i><span data-i18n="social_security">Social Security</span><span class="completeness-tab-badge d-none" data-tab-key="social"></span></button>
@@ -199,7 +212,7 @@
         </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-5" id="employeeTabsContent">
-        <div class="tab-pane fade show active p-3 p-md-4" id="info-pane" role="tabpanel" aria-labelledby="info-tab" tabindex="0">
+        <div class="tab-pane fade show active" id="info-pane" role="tabpanel" aria-labelledby="info-tab" tabindex="0">
             <div class="d-flex justify-content-center mb-4">
                 <div class="position-relative">
                     <label for="profile_photo_input" class="d-flex flex-column align-items-center justify-content-center rounded-circle bg-light border profile-upload-circle" style="width:100px;height:100px;">
@@ -730,11 +743,23 @@
                     <select class="form-select select2-remote required" name="department_id" id="department_id" data-api="/api/department.get" data-type="department">
                     </select>
                 </div>
+                <!-- 2026-08-28, explicit request: "ตรง Role อาจจะไม่ต้อง Require Field เพราะระบบนี้เข้ามา
+                     ใช้งานได้แค่บางส่วน อยากให้ใส่ Role เฉพาะที่ต้องการ Set สิทธิ์ให้ดำนินการได้เท่านั้น" --
+                     Role now governs system PERMISSIONS (PermissionModel::checkPermission() joins
+                     employees.role_id -> structure_roles -> role_permissions), not payroll
+                     eligibility -- most employees in this app never log into Payroll themselves at
+                     all, so forcing every one of them to have a role was requiring something
+                     unrelated to being "ready for payroll". Same optional treatment already
+                     established for Team just below (not .required, excluded from
+                     requiredColumns()/completenessColumns()/requiredFieldTabs() in
+                     EmployeeModel.php) -- an empty Role no longer blocks save or dents completeness,
+                     it now purely means "this person has no system permissions", which is correct
+                     for the common case. -->
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="role">Role</span> <span class="text-danger">*</span></label>
+                    <label class="form-label"><span data-i18n="role">Role</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <select class="form-select select2-remote required" name="role_id" id="role_id" data-api="/api/role.get" data-type="role">
+                    <select class="form-select select2-remote" name="role_id" id="role_id" data-api="/api/role.get" data-type="role">
                     </select>
                 </div>
             </div>
@@ -1039,7 +1064,7 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="modal_cycle">Payroll Cycle</span></label>
+                    <label class="form-label"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="cycle_id" id="cycle_id" data-api="/api/payroll-cycle.options">
@@ -1118,7 +1143,7 @@
             <div class="bg-light rounded-3 p-2 mb-4 structure-tabs-wrap">
                 <ul class="nav nav-pills flex-nowrap structure-tabs" id="eedSubTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="eedEarningSub-tab" data-bs-toggle="pill" data-bs-target="#eedEarningSub-pane" type="button" role="tab" aria-controls="eedEarningSub-pane" aria-selected="true"><i class="fa-solid fa-arrow-trend-up me-2"></i><span data-i18n="earning_singular">Earning</span></button>
+                        <button class="nav-link active" id="eedEarningSub-tab" data-bs-toggle="pill" data-bs-target="#eedEarningSub-pane" type="button" role="tab" aria-controls="eedEarningSub-pane" aria-selected="true"><i class="fa-solid fa-arrow-trend-up me-2"></i><span data-i18n="earning_singular">Income</span></button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="eedDeductionSub-tab" data-bs-toggle="pill" data-bs-target="#eedDeductionSub-pane" type="button" role="tab" aria-controls="eedDeductionSub-pane" aria-selected="false"><i class="fa-solid fa-arrow-trend-down me-2"></i><span data-i18n="deduction_singular">Deduction</span></button>
@@ -1532,7 +1557,7 @@
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold text-secondary" id="eedModalLabel">
-                    <span data-i18n="add_earning_deduction">Add Earning / Deduction</span>
+                    <span data-i18n="add_earning_deduction">Add Income / Deduction</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>

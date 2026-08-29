@@ -52,7 +52,9 @@ function initEcrRequestTable() {
             // 'sort'/'filter' must stay on the raw ISO string.
             { data: 'created_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
             {
-                data: null, orderable: false, className: 'text-center',
+                // 2026-08-28: className:'all' keeps this last actions column from collapsing into
+                // the Responsive expand row.
+                data: null, orderable: false, className: 'text-center all',
                 render: (d, t, row) => {
                     let html = '';
                     if (row.approval_request_id) {
