@@ -20,7 +20,12 @@ const REPORT_META = {
     TH_SSO110: { frequency: 'cycle', extra: [] },
     TH_SLF: { frequency: 'cycle', extra: [] },
     PAY_SLIP: { frequency: 'cycle', extra: ['employee'] },
-    BANK_TRANSFER_FILE: { frequency: 'cycle', extra: [] },
+    // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่ออกมา
+    // จะตามนั้นครับ" -- BANK_TRANSFER_FILE is the only cycle report with a language choice today
+    // (BankTransferFileReport::generate()'s new context.language); 'language' as an `extra` value
+    // is new, handled only in cycleExportCellHtml() below (annual cards' buildReportCard() has no
+    // report using it yet, so that path is untouched).
+    BANK_TRANSFER_FILE: { frequency: 'cycle', extra: ['language'] },
     PAYROLL_REGISTER: { frequency: 'cycle', extra: [] },
     TH_PND1K_SUMMARY: { frequency: 'annual', extra: [] },
     TH_KOR20KOR: { frequency: 'annual', extra: [] },
@@ -205,8 +210,9 @@ function cycleReportsByType(type) {
 }
 
 /** One Export cell per report column -- a plain button (single format, run-level), a dropdown
- *  (multiple formats, run-level), or (a report scoped to one employee, e.g. Pay Slip -- there's
- *  no run-level version of it to export) a button that opens the employee-picker modal instead. */
+ *  (multiple formats, run-level), a Thai/English language dropdown (BANK_TRANSFER_FILE), or (a
+ *  report scoped to one employee, e.g. Pay Slip -- there's no run-level version of it to export)
+ *  a button that opens the employee-picker modal instead. */
 function cycleExportCellHtml(report, run) {
     const meta = REPORT_META[report.code] || { frequency: 'cycle', extra: [] };
     const formats = report.supported_formats || [];
@@ -215,6 +221,21 @@ function cycleExportCellHtml(report, run) {
         return `<button type="button" class="btn btn-sm btn-outline-secondary cycle-export-employee-btn"
             data-report-code="${report.code}" data-run-id="${run.id}" title="${escapeHtmlReports(label)}">
             <i class="fa-solid fa-file-export"></i></button>`;
+    }
+    // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ" -- always the
+    // report's own single format (BANK_TRANSFER_FILE only ever supports 'csv', see that class's own
+    // supportedFormats()), just a language choice instead of a format choice in the dropdown.
+    if (meta.extra.includes('language')) {
+        const fmt = formats[0] || 'csv';
+        return `<div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" title="${escapeHtmlReports(label)}">
+                <i class="fa-solid fa-file-export"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item cycle-export-btn" href="#" data-report-code="${report.code}" data-run-id="${run.id}" data-format="${fmt}" data-language="th"><img src="${BASE_URL}/public/flags/th.png" class="me-1" style="width:16px;"> ${langData['language_th'] || 'Thai'}</a></li>
+                <li><a class="dropdown-item cycle-export-btn" href="#" data-report-code="${report.code}" data-run-id="${run.id}" data-format="${fmt}" data-language="en"><img src="${BASE_URL}/public/flags/gb.png" class="me-1" style="width:16px;"> ${langData['language_en'] || 'English'}</a></li>
+            </ul>
+        </div>`;
     }
     if (formats.length <= 1) {
         const fmt = formats[0] || 'pdf';
@@ -336,6 +357,13 @@ $(document).on('click', '.cycle-export-btn', function (e) {
     params.set('report_code', $(this).data('report-code'));
     params.set('format', $(this).data('format'));
     params.set('run_id', $(this).data('run-id'));
+    // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ" -- only
+    // present on BANK_TRANSFER_FILE's own language-dropdown items (see cycleExportCellHtml()); a
+    // plain export button/format-dropdown item has no data-language attribute at all, so this is a
+    // no-op for every other report, same "unused key is simply ignored" pattern
+    // ReportsController::generate()'s own context-building already relies on.
+    const language = $(this).data('language');
+    if (language) params.set('language', language);
     generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
 });
 

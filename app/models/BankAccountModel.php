@@ -178,6 +178,12 @@ class BankAccountModel {
         $isDefault = !empty($data['is_default']) ? 1 : 0;
         $branchName = !empty($data['branch_name']) ? trim((string)$data['branch_name']) : null;
         $accountName = trim((string)$data['account_name']);
+        // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" --
+        // the bank-registered Company/Service Code (e.g. Krungsri's own "712" example) now lives
+        // PER ACCOUNT instead of as a single shared constant on the bank file format -- see this
+        // migration's own header comment (2026-08-29_5_payroll_cycle_bank_account_and_company_code.sql).
+        // Free text, nullable (not every bank assigns one, no format validated per bank).
+        $companyCode = !empty($data['company_code']) ? trim((string)$data['company_code']) : null;
 
         try {
             if ($id !== null) {
@@ -192,6 +198,7 @@ class BankAccountModel {
                             account_no_hash = :account_no_hash,
                             key_version = :key_version,
                             account_name = :account_name,
+                            company_code = :company_code,
                             branch_name = :branch_name,
                             account_type = :account_type,
                             currency_code = :currency_code,
@@ -207,6 +214,7 @@ class BankAccountModel {
                     ':account_no_hash' => $accountNoHash,
                     ':key_version' => $keyVersion,
                     ':account_name' => $accountName,
+                    ':company_code' => $companyCode,
                     ':branch_name' => $branchName,
                     ':account_type' => $accountType,
                     ':currency_code' => $currencyCode,
@@ -219,9 +227,9 @@ class BankAccountModel {
             }
 
             $sql = "INSERT INTO `bank_accounts`
-                        (comp_id, bank_id, account_no, account_no_hash, key_version, account_name, branch_name, account_type, currency_code, is_default, status, created_by)
+                        (comp_id, bank_id, account_no, account_no_hash, key_version, account_name, company_code, branch_name, account_type, currency_code, is_default, status, created_by)
                     VALUES
-                        (:comp_id, :bank_id, :account_no, :account_no_hash, :key_version, :account_name, :branch_name, :account_type, :currency_code, :is_default, :status, :created_by)";
+                        (:comp_id, :bank_id, :account_no, :account_no_hash, :key_version, :account_name, :company_code, :branch_name, :account_type, :currency_code, :is_default, :status, :created_by)";
             $stmt = $this->db->prepare($sql);
             $stmt->execute([
                 ':comp_id' => $compId,
@@ -230,6 +238,7 @@ class BankAccountModel {
                 ':account_no_hash' => $accountNoHash,
                 ':key_version' => $keyVersion,
                 ':account_name' => $accountName,
+                ':company_code' => $companyCode,
                 ':branch_name' => $branchName,
                 ':account_type' => $accountType,
                 ':currency_code' => $currencyCode,

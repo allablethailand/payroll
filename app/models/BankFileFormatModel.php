@@ -54,6 +54,25 @@ class BankFileFormatModel {
         'total_count' => ['th' => 'จำนวนรายการทั้งหมด', 'en' => 'Total Record Count (header/trailer only)'],
         'company_name' => ['th' => 'ชื่อบริษัท', 'en' => 'Company Name'],
         'pay_period' => ['th' => 'งวดการจ่าย', 'en' => 'Pay Period (YYYYMMDD)'],
+        // 2026-08-29, explicit request: "มีส่วนไหนที่ยังไม่มีให้ตั้งค่าเรื่องบัญชี หรือการใส่รหัสอะไรไหมครับ" --
+        // the company's own settlement/debit account (source account the bank pulls the whole
+        // payroll batch from) was NOT previously exposed as a header-row source field at all, even
+        // though the underlying data already exists (`bank_accounts` where is_default=1 for this
+        // company -- the same "Bank Accounts" record already used to resolve bank_code/bank_name
+        // for every DETAIL row). Auto-resolved + decrypted (see BankTransferFileReport's own
+        // companyAccountNo()), not something a company has to retype as a constant every time.
+        'company_account_no' => ['th' => 'เลขที่บัญชีตัดเงินของบริษัท', 'en' => "Company's Own Debit Account No. (header/trailer only)"],
+        // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" --
+        // replaces the earlier "constant, company must retype the same value on every field" design
+        // for this specific code -- now resolved from bank_accounts.company_code on the SAME
+        // account row company_account_no above resolves (the run's own cycle's bank_account_id if
+        // pinned, else the company's default account), so a company with multiple accounts/codes
+        // never has to keep 2+ places in sync by hand.
+        'company_service_code' => ['th' => 'รหัสบริษัท/รหัสบริการที่ลงทะเบียนกับธนาคาร', 'en' => "Company/Service Code Registered with the Bank (header/trailer only)"],
+        // Distinct from pay_period (period_start_date) -- this is the run's actual disbursement
+        // date (payroll_runs.payment_date), which is what a bank's own "transaction date" field
+        // means (Krungsri's spec example: "วันที่ทำรายการจ่าย").
+        'payment_date' => ['th' => 'วันที่ทำรายการจ่าย', 'en' => 'Payment/Transaction Date'],
     ];
 
     public function __construct(?PDO $pdo = null) {
@@ -161,10 +180,37 @@ class BankFileFormatModel {
             $row['has_trailer_row'] = (bool)$row['has_trailer_row'];
             return $row;
         }
+        // 2026-08-29, real gap found while wiring up Krungsri's real layout: a virtual default of
+        // delimiter_type='delimited'/has_header_row=false is a reasonable BLANK-SLATE default, but
+        // it silently ignored whatever the format's own seeded/default fields actually look like --
+        // a company picking BAY (which now has real header fields + every field carrying a `width`)
+        // would see nothing of that until they ALSO separately remembered to flip 2 checkboxes in
+        // settings, with no clue anything was configured at all. Inferred here from the fields
+        // themselves instead (every field has a width -> this looks like a fixed-width layout;
+        // header/trailer fields exist -> default to showing that row) -- a general, non-hardcoded-
+        // per-bank heuristic (works the same for ANY format seeded this way, not "if BAY then..."),
+        // still just a DEFAULT the company can turn back off, never persisted until they save.
+        $fields = $this->fieldsForRender($compId, $bankFileFormatId);
+        $hasFields = !empty($fields);
+        $allFieldsHaveWidth = $hasFields && !array_filter($fields, fn($f) => $f['width'] === null || $f['width'] === '');
+        $hasHeaderFields = (bool)array_filter($fields, fn($f) => ($f['row_type'] ?? '') === 'header');
+        $hasTrailerFields = (bool)array_filter($fields, fn($f) => ($f['row_type'] ?? '') === 'trailer');
+        // 2026-08-29, real bug found and fixed while testing the Krungsri layout end-to-end: a
+        // byte-width fixed_width field is virtually ALWAYS meant for single-byte TIS-620 Thai text
+        // in a real bank/government machine format (same "Thai fixed-width specs are historically
+        // byte-width... TIS-620/CP874 is 1 byte/char" precedent FixedWidthHelperTrait's own
+        // docblock already documents for the statutory exports) -- leaving text_encoding defaulted
+        // to 'utf8' here meant a genuinely Thai name (3 bytes/char in UTF-8) would silently get
+        // MID-CHARACTER-truncated inside a byte-width field sized for TIS-620, producing a
+        // corrupted/invalid byte sequence instead of a readable (if shortened) name -- caught by
+        // this exact failure in tests/bank_file_format_test.php before shipping. The company's own
+        // config settings still let them switch back to utf8 explicitly if their bank genuinely
+        // wants that (rare, but the field exists) -- this only changes the un-saved DEFAULT.
         return [
             'id' => null, 'comp_id' => $compId, 'bank_file_format_id' => $bankFileFormatId,
-            'delimiter_type' => 'delimited', 'delimiter_char' => ',', 'line_ending' => 'crlf',
-            'has_header_row' => false, 'has_trailer_row' => false, 'text_encoding' => 'utf8',
+            'delimiter_type' => $allFieldsHaveWidth ? 'fixed_width' : 'delimited', 'delimiter_char' => ',', 'line_ending' => 'crlf',
+            'has_header_row' => $hasHeaderFields, 'has_trailer_row' => $hasTrailerFields,
+            'text_encoding' => $allFieldsHaveWidth ? 'tis620' : 'utf8',
             'is_verified' => false, 'status' => 'active',
         ];
     }

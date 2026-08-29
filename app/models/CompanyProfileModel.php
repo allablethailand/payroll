@@ -114,6 +114,7 @@ class CompanyProfileModel {
                         company_legal_name = :company_legal_name,
                         local_name = :local_name,
                         fiscal_year_start_month = :fiscal_year_start_month,
+                        prorate_divisor_days = :prorate_divisor_days,
                         registered_country = :registered_country,
                         global_tax_id = :global_tax_id,
                         address_line_1 = :address_line_1,
@@ -132,6 +133,12 @@ class CompanyProfileModel {
                 ':company_legal_name' => $data['company_legal_name'] ?? null,
                 ':local_name' => $data['local_name'] ?? null,
                 ':fiscal_year_start_month' => (isset($data['fiscal_year_start_month']) && (int)$data['fiscal_year_start_month'] >= 1 && (int)$data['fiscal_year_start_month'] <= 12) ? (int)$data['fiscal_year_start_month'] : 1,
+                // 2026-08-29, explicit request: "การคิดเงินเดือน ต้องจับหาร 30 ตามกฏหมาย...ช่วยเพิ่มให้ตั้งค่า
+                // ตัวเลขนี้ได้หน่อย" -- fixed divisor for mid-period join/leave proration (see
+                // PayrollRunModel::recalculate()'s own use of this same value). Bounded 1-31 (a
+                // real month never has more than 31 days) -- default/fallback 30 matches the legal
+                // convention this request names outright, not an arbitrary placeholder.
+                ':prorate_divisor_days' => (isset($data['prorate_divisor_days']) && (int)$data['prorate_divisor_days'] >= 1 && (int)$data['prorate_divisor_days'] <= 31) ? (int)$data['prorate_divisor_days'] : 30,
                 ':registered_country' => $data['registered_country'] ?? null,
                 ':global_tax_id' => $data['global_tax_id'] ?? null,
                 ':address_line_1' => $data['address_line_1'] ?? null,
