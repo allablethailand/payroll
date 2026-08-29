@@ -396,15 +396,43 @@ try {
         'has_header_row' => true, 'is_verified' => 1,
     ], $userId);
     checkTrue('saveConfig() to text_encoding=utf8 succeeds' . (empty($utf8ConfigRes['status']) ? " ({$utf8ConfigRes['message']})" : ''), $utf8ConfigRes['status']);
-    $utf8Result = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
-    $utf8Lines = explode("\r\n", rtrim($utf8Result['content'], "\r\n"));
-    check('header + detail lines both rendered (2 lines)', count($utf8Lines), 2);
-    $utf8DetailLine = $utf8Lines[1];
-    check('detail line is still exactly 80 bytes (no field-shift corruption from the truncation fix)', strlen($utf8DetailLine), 80);
-    $utf8NameField = substr($utf8DetailLine, 16, 20);
-    checkTrue('name field is exactly 20 bytes wide (padded back out after character-safe truncation)', strlen($utf8NameField) === 20);
-    checkTrue('name field is valid UTF-8 (not a character split in half mid-sequence)', mb_check_encoding(rtrim($utf8NameField), 'UTF-8'));
-    checkTrue('the readable part of the truncated name is still a genuine PREFIX of the real name (no corruption before the cut point)', str_starts_with('ทดสอบ ไฟล์ธนาคาร', rtrim($utf8NameField)));
+    // 2026-08-29, real follow-up found and fixed (explicit report: "มันมีตรงชื่อที่ติดกันกับตัวเลขในลำดับต่อไป
+    // ครับ") -- a fixed-width column that's genuinely NARROWER than the real content (this fixture's
+    // own case: 'ทดสอบ ไฟล์ธนาคาร' needs ~46 UTF-8 bytes, the column is only 20) used to truncate
+    // SILENTLY (safely, post the mb_strcut() fix above -- no more split characters -- but still a
+    // genuinely shortened legal name reaching the bank file with no signal to the admin at all).
+    // generate() now detects this BEFORE padByte() ever truncates anything (comparing the real
+    // formatted-but-unpadded byte length against the column width) and hard-blocks the whole
+    // export with a LocalizedException naming exactly which field/employee overflowed, rather than
+    // shipping a file with a chopped name -- same "ห้าม generate ไฟล์เปล่าเงียบๆ" standing convention
+    // as the "no valid accounts" check elsewhere in this class.
+    $utf8OverflowCaught = false;
+    $utf8OverflowMessage = '';
+    try {
+        $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
+    } catch (LocalizedException $e) {
+        $utf8OverflowCaught = true;
+        $utf8OverflowMessage = $e->getMessage();
+    }
+    checkTrue('generate() throws instead of silently shipping a file with a truncated name', $utf8OverflowCaught);
+    $overflowEmployeeNo = (string)$pdo->query("SELECT employee_no FROM employees WHERE id = {$employeeId}")->fetchColumn();
+    checkTrue('the exception names the overflowing employee', str_contains($utf8OverflowMessage, $overflowEmployeeNo));
+    checkTrue('the exception names the overflowing field', str_contains($utf8OverflowMessage, 'ชื่อ-นามสกุลพนักงาน'));
+
+    // The underlying padByte() character-boundary safety (the ORIGINAL "เลือกเป็น UTF-8 แล้วแต่่ยังอ่าน
+    // ไม่ออก" bug fix) is still real, load-bearing behavior -- generate() no longer exercises it for
+    // THIS fixture (it's blocked earlier now), but the method itself must still never split a
+    // multi-byte character if it's ever reached (e.g. a future caller, or this exact overflow guard
+    // being bypassed/removed later). Covered directly via Reflection so this guarantee doesn't
+    // silently lose its only test coverage now that generate() itself no longer reaches it.
+    $padByteMethod = new ReflectionMethod(BankTransferFileReport::class, 'padByte');
+    $padByteMethod->setAccessible(true);
+    $longUtf8Name = 'ทดสอบ ไฟล์ธนาคาร'; // same fixture name, ~46 UTF-8 bytes
+    $truncated = $padByteMethod->invoke($report, $longUtf8Name, 20, ' ', 'right', true);
+    checkTrue('padByte() still pads the truncated result back out to exactly the requested width', strlen($truncated) === 20);
+    checkTrue('padByte() truncation is still valid UTF-8 (no character split mid-sequence)', mb_check_encoding(rtrim($truncated), 'UTF-8'));
+    checkTrue('padByte() truncated text is still a genuine PREFIX of the real name (no corruption before the cut point)', str_starts_with($longUtf8Name, rtrim($truncated)));
+
     // Restore to the tis620 + has_header_row=true the rest of this file's own fixtures assume.
     $model->saveConfig($compId, $BAY_FORMAT_ID, [
         'delimiter_type' => 'fixed_width', 'line_ending' => 'crlf', 'text_encoding' => 'tis620',
