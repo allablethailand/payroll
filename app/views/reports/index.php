@@ -12,7 +12,7 @@
         <div class="page-header-card-icon"><i class="fa-solid fa-file-invoice"></i></div>
         <div class="page-header-card-body">
             <h5 class="page-header-card-title" data-i18n="reports">Reports</h5>
-            <p class="page-header-card-desc" data-i18n="reports_description">Split into per-cycle reports (pulled from a payroll run) and annual reports (issued once a year) -- pick the period once, then generate whichever reports you need for it.</p>
+            <p class="page-header-card-desc" data-i18n="reports_description">Split into per-schedule reports (pulled from a payroll run) and annual reports (issued once a year) -- pick the period once, then generate whichever reports you need for it.</p>
         </div>
     </div>
 
@@ -36,7 +36,7 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="reportsTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
-                <i class="fa-solid fa-calendar-check me-2"></i><span data-i18n="tab_cycle_reports">Per-Cycle Reports</span>
+                <i class="fa-solid fa-calendar-check me-2"></i><span data-i18n="tab_cycle_reports">Per-Schedule Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -51,7 +51,7 @@
         </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
-        <div class="tab-pane fade show active p-3 p-md-4" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
+        <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
             <div class="bg-light rounded-3 p-2 mb-3 structure-tabs-wrap">
                 <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="cycleReportTypeTabs" role="tablist">
                     <li class="nav-item" role="presentation">
@@ -86,7 +86,7 @@
                 </div>
             </div>
         </div>
-        <div class="tab-pane fade p-3 p-md-4" id="annual-pane" role="tabpanel" aria-labelledby="annual-tab" tabindex="0">
+        <div class="tab-pane fade" id="annual-pane" role="tabpanel" aria-labelledby="annual-tab" tabindex="0">
             <div class="reports-period-bar mb-4">
                 <div class="reports-period-bar-icon"><i class="fa-solid fa-calendar-days"></i></div>
                 <div class="reports-period-bar-body">
@@ -108,7 +108,7 @@
             </div>
             <div class="text-center text-secondary py-4 d-none" id="noReports_annual"><span data-i18n="no_reports_available">No reports are registered in this category yet.</span></div>
         </div>
-        <div class="tab-pane fade p-3 p-md-4" id="history-pane" role="tabpanel" aria-labelledby="history-tab" tabindex="0">
+        <div class="tab-pane fade" id="history-pane" role="tabpanel" aria-labelledby="history-tab" tabindex="0">
             <div class="row mb-3">
                 <div class="col-sm-4 col-md-3">
                     <label class="form-label mb-1"><span data-i18n="filter_report_type">Report Type</span></label>

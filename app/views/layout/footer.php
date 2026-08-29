@@ -9,6 +9,12 @@
      `responsive: true` options actually work, with zero changes needed in any of those JS files. -->
 <script src="<?=BASE_URL?>/node_modules/datatables.net-responsive/js/dataTables.responsive.js"></script>
 <script src="<?=BASE_URL?>/node_modules/datatables.net-responsive-bs5/js/responsive.bootstrap5.js"></script>
+<!-- 2026-08-29, added for the Annual Income Summary page's frozen employee/total columns
+     (explicit request: "Column ที่เป็นพนักงาน Fixed อยู่กับที่...ขวาสุดที่เป็นสรุป ให้ fiexd ขวาสุด") --
+     loaded globally alongside the other DataTables extensions above, same convention this project
+     already follows (e.g. Responsive), even though only this one page uses it so far. -->
+<script src="<?=BASE_URL?>/node_modules/datatables.net-fixedcolumns/js/dataTables.fixedColumns.js"></script>
+<script src="<?=BASE_URL?>/node_modules/datatables.net-fixedcolumns-bs5/js/fixedColumns.bootstrap5.js"></script>
 <script src="<?=BASE_URL?>/node_modules/select2/dist/js/select2.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/locales/bootstrap-datepicker.th.min.js"></script>

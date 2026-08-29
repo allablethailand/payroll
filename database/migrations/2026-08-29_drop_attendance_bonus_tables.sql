@@ -1,0 +1,31 @@
+-- 2026-08-29, same-day follow-up to the Diligence Allowance removal (explicit request earlier
+-- today: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า และไม่นำไปคำนวณในเงินเดือน") -- that round
+-- removed the Attendance Bonus (scheme config)/Ledger (streak recording) settings UI, its
+-- controller endpoints, and PayrollRunModel::recalculate()'s pull of attendance_bonus_ledger into
+-- payroll lines, but deliberately LEFT the underlying `attendance_bonus_schemes`/
+-- `attendance_bonus_ledger` tables (1+1 real rows existed in this dev DB) and their
+-- AttendanceBonusSchemeModel/AttendanceBonusLedgerModel PHP classes in place, reasoning it was
+-- safer not to destroy data for a "stop using this going forward" request.
+--
+-- Explicit follow-up: "ตารางเกี่ยวกับ[เบี้ยขยัน]ไม่มีลบเลยหรอครับ ถ้ามีลบเพิ่มไฟล์ .sql ให้ด้วยครับ" -- the
+-- user pointed out that removing the settings UI left these 2 tables with NO way to view/manage/
+-- delete their contents through the app at all anymore (orphaned, unreachable). Confirmed via
+-- AskUserQuestion: drop the tables entirely now, rather than re-adding a bare cleanup UI -- the
+-- feature is fully retired, not paused.
+--
+-- PHP-side cleanup done alongside this migration (same commit): AttendanceBonusSchemeModel.php/
+-- AttendanceBonusLedgerModel.php deleted outright; PayrollConfigurationController's
+-- attendanceBonus*/bonusLedger*/bonusSchemeOptions methods + their require_once/constructor
+-- wiring removed; the matching 10 routes removed from index.php; PayrollRunModel's
+-- $ledgerModel property/constructor init and markPaid()'s now-permanently-unreachable
+-- ledger-locking branch removed (it referenced a property that no longer exists, so leaving it
+-- would have been a live crash bug, not harmless dead code, once these classes are gone).
+--
+-- Child table (has the FK to the parent) dropped first so no FK-constraint-violation ordering
+-- issue, even without needing to touch foreign_key_checks.
+--
+-- Run with: mysql --default-character-set=utf8mb4 -u <user> -p <database> < 2026-08-29_drop_attendance_bonus_tables.sql
+-- (see CLAUDE.md -- mysql CLI without --default-character-set=utf8mb4 silently corrupts Thai text)
+
+DROP TABLE IF EXISTS `attendance_bonus_ledger`;
+DROP TABLE IF EXISTS `attendance_bonus_schemes`;

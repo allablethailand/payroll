@@ -15,6 +15,20 @@ function toDisplayDateRd(isoVal) {
     const [yyyy, mm, dd] = parts;
     return `${dd}/${mm}/${yyyy}`;
 }
+// 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น UTC การ
+// แสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้"). The process timeline below shows just a DATE per
+// step (created_at/submitted_at/approved_at/paid_at/locked_at -- all real UTC timestamps), by
+// truncating the raw string to its first 10 chars BEFORE any timezone conversion. That's not just
+// imprecise, it can show the WRONG CALENDAR DAY: a timestamp like "2026-08-28 23:30:00" UTC is
+// already "2026-08-29" in Bangkok (+7), but truncating the raw UTC string still reads "28". Fixed
+// by running the full UTC-aware conversion first (formatDisplayDateTime(), same technique as
+// app.js's own reference fix -- marks the string as UTC, then reads it back via local-timezone
+// Date getters) and keeping only its date portion, instead of truncating the UTC string first.
+function toLocalDateOnlyRd(value) {
+    if (!value) return '';
+    if (typeof formatDisplayDateTime !== 'function') return toDisplayDateRd(String(value).substring(0, 10));
+    return formatDisplayDateTime(value).split(' ')[0];
+}
 function escapeHtmlRd(str) {
     return $('<div>').text(str === null || str === undefined ? '' : str).html();
 }
@@ -296,7 +310,7 @@ function renderProcessTimeline(run) {
         }
         const dateVal = run[step.dateField];
         const dateHtml = (cls === 'done' || cls === 'current') && dateVal
-            ? `<span class="tl-date"><i class="fa-regular fa-clock"></i> ${toDisplayDateRd(String(dateVal).substring(0, 10))}</span>`
+            ? `<span class="tl-date"><i class="fa-regular fa-clock"></i> ${toLocalDateOnlyRd(dateVal)}</span>`
             : '';
         const actionsHtml = timelineStepActionsHtml(i, run, currentIndex);
         html += `<li class="tl-step ${cls}">
@@ -316,6 +330,39 @@ function renderProcessTimeline(run) {
    so it's obvious which part of the page each button touches. Button ids stay #btnEditRun/
    #btnRecalculate; the existing $(document).on(...) delegated handlers don't care where in the
    DOM they live. */
+// 2026-08-29, explicit request: "เพิ่มให้สามารถปริ้น Report จากหน้า Process ได้ ทั้งจากหน้า List และ Detail
+// ส่งประกันสังคม ส่งสรรพากร ขึ้นธนาคาร" -- same 3 report shortcuts + same allowed-state gate as the
+// List page's own row dropdown (public/js/payroll/index.js's PR_REPORT_SHORTCUTS/renderRunReportsDropdown) --
+// kept as its own small copy here rather than a shared cross-file function, since the two pages
+// don't share a common included JS file to put it in besides app.js, and this is small/simple
+// enough that factoring it out isn't worth the indirection.
+const RD_REPORT_SHORTCUTS = [
+    { code: 'TH_SSO110', format: 'pdf', icon: 'fa-file-shield', labelKey: 'report_shortcut_sso110' },
+    { code: 'TH_PND1', format: 'pdf', icon: 'fa-file-invoice', labelKey: 'report_shortcut_pnd1' },
+    { code: 'BANK_TRANSFER_FILE', format: 'csv', icon: 'fa-building-columns', labelKey: 'report_shortcut_bank_transfer' },
+];
+const RD_REPORT_ALLOWED_STATES = ['approved', 'paid', 'locked'];
+function renderRunReportsButtons(run) {
+    const $wrap = $('#runReportsButtonWrap').empty();
+    if (!RD_REPORT_ALLOWED_STATES.includes(run.state)) {
+        $wrap.html(`<button type="button" class="btn btn-sm btn-outline-secondary" disabled title="${langData['reports_available_after_approval'] || 'Reports are available once this run is approved.'}"><i class="fa-solid fa-file-export me-1"></i><span data-i18n="print_reports">${langData['print_reports'] || 'Print Reports'}</span></button>`);
+        return;
+    }
+    const items = RD_REPORT_SHORTCUTS.map(r => `<li><a class="dropdown-item rd-report-btn" href="#" data-code="${r.code}" data-format="${r.format}"><i class="fa-solid ${r.icon} me-2"></i><span data-i18n="${r.labelKey}">${langData[r.labelKey] || r.code}</span></a></li>`).join('');
+    $wrap.html(`<div class="dropdown">
+        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="fa-solid fa-file-export me-1"></i><span data-i18n="print_reports">${langData['print_reports'] || 'Print Reports'}</span></button>
+        <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
+    </div>`);
+}
+$(document).on('click', '.rd-report-btn', function (e) {
+    e.preventDefault();
+    if (!PAYROLL_RUN_ID) return;
+    const params = new URLSearchParams();
+    params.set('report_code', $(this).data('code'));
+    params.set('format', $(this).data('format'));
+    params.set('run_id', PAYROLL_RUN_ID);
+    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
+});
 function renderSectionButtons(run) {
     const $editWrap = $('#runEditButtonWrap').empty();
     const $recalcWrap = $('#runRecalculateButtonWrap').empty();
@@ -428,12 +475,18 @@ $(document).on('click', '#btnSavePedTypeEdit', function () {
     });
 });
 
-// A run pulled from a cycle or a sync process is always full payroll -- editable only for a
-// genuine off-cycle run (see PayrollRunModel::update()'s own off-cycle gate). cycle_id/
-// sync_process_id come back from api/payroll-run.get as either a real value or null/empty string
-// depending on how PDO happened to cast that row, so both are checked loosely on purpose.
+// A run pulled from a cycle or a REGULAR sync process is always full payroll -- editable for a
+// genuine off-cycle run OR a sync-linked run pulled from a 'supplemental' Origami process (2026-
+// 08-29, see PayrollRunModel::update()'s own matching gate -- PAYROLL_SYNC_API.md's run_kind
+// field, "regular"/"supplemental": a standalone/ad-hoc cycle like OT-only or Trip-only is NOT
+// real payroll by definition the way a regular cycle-matched pull is). cycle_id/sync_process_id/
+// sync_run_kind come back from api/payroll-run.get as either a real value or null/empty string
+// depending on how PDO happened to cast that row, so all three are checked loosely on purpose.
 function isOffCycleRunRd(run) {
-    return !run.cycle_id && !run.sync_process_id;
+    if (!run.cycle_id && !run.sync_process_id) {
+        return true;
+    }
+    return !!run.sync_process_id && run.sync_run_kind === 'supplemental';
 }
 function runTypeLabelRd(run) {
     if (run.run_purpose !== 'incentive') {
@@ -458,7 +511,7 @@ function renderRunHeader(run) {
     $('#bcRunName').text(run.run_name);
     $('#runNameHeading').text(run.run_name);
     $('#runStateBadge').html(stateBadgeRd(run.state));
-    $('#infoCycle').text(run.cycle_name || langData['offcycle_run_short'] || 'Off-cycle');
+    $('#infoCycle').text(run.cycle_name || langData['offcycle_run_short'] || 'Off-schedule');
     $('#infoPeriod').text(`${toDisplayDateRd(run.period_start_date)} - ${toDisplayDateRd(run.period_end_date)}`);
     $('#infoPaymentDate').text(toDisplayDateRd(run.payment_date));
     $('#infoEmployeeCount').text(run.employee_count);
@@ -468,6 +521,20 @@ function renderRunHeader(run) {
     const creatorName = (currentLang === 'th' ? run.created_by_name_th : run.created_by_name_en) || run.created_by_name_th || run.created_by_name_en || '-';
     $('#infoCreatedBy').text(creatorName);
     $('#infoRunType').text(runTypeLabelRd(run));
+    if (run.sync_process_id) {
+        const kindLabel = run.sync_run_kind === 'supplemental'
+            ? (langData['sync_run_kind_supplemental'] || 'Supplemental')
+            : (langData['sync_run_kind_regular'] || 'Regular');
+        const subject = run.sync_process_subject || (langData['sync_no_subject'] || 'Untitled');
+        let range = '';
+        if (run.sync_process_start && run.sync_process_end) {
+            range = ` (${toDisplayDateRd(run.sync_process_start)} - ${toDisplayDateRd(run.sync_process_end)})`;
+        }
+        $('#infoSyncSource').text(`${subject}${range} — ${kindLabel}`);
+        $('#infoSyncSourceWrap').removeClass('d-none');
+    } else {
+        $('#infoSyncSourceWrap').addClass('d-none');
+    }
 
     if (run.state === 'rejected' && run.reject_reason) {
         $('#rejectReasonBox').removeClass('d-none').html(`<i class="fa-solid fa-circle-exclamation me-1"></i><strong>${langData['reject_reason_display'] || 'Reject Reason'}:</strong> ${escapeHtmlRd(run.reject_reason)}`);
@@ -496,6 +563,7 @@ function renderRunHeader(run) {
 
     renderProcessTimeline(run);
     renderSectionButtons(run);
+    renderRunReportsButtons(run);
     renderPedTypeSettings(run);
 }
 
@@ -554,7 +622,7 @@ function apvApproverSubstepHtmlRd(a) {
             <span class="apv-substep-label">${apvAvatarHtmlRd(name, 22)}${escapeHtmlRd(name)}</span>
             ${apvBadgeHtmlRd(apvApproverToneRd(a.status), apvApproverLabelRd(a.status))}
         </div>
-        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${escapeHtmlRd(a.acted_at)}</div>` : ''}
+        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtmlRd(a.acted_at)}</div>` : ''}
         ${a.note ? `<div class="apv-substep-remark">${escapeHtmlRd(a.note)}</div>` : ''}
     </div>`;
 }
@@ -598,7 +666,7 @@ function apvPaidStageHtmlRd(run) {
                     <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
                     ${apvBadgeHtmlRd(tone, label)}
                 </div>
-                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${escapeHtmlRd(run.paid_at)}</div>` : ''}
+                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtmlRd(run.paid_at)}</div>` : ''}
                 <div class="apv-stage-body">
                     <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
                 </div>
@@ -616,7 +684,7 @@ function apvCreatedStageHtmlRd(run) {
                     <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
                     ${apvBadgeHtmlRd('done', langData['stage_created'] || 'Created')}
                 </div>
-                <div class="apv-stage-date">${escapeHtmlRd(run.created_at || '')}</div>
+                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtmlRd(run.created_at)) : ''}</div>
                 <div class="apv-stage-body">${apvPersonLineHtmlRd(creator)}</div>
             </div>
         </div>
@@ -633,7 +701,7 @@ function renderAuditTimelineRd(logs) {
         if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtmlRd(l.ip_address)}`);
         if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtmlRd(l.user_agent)}`);
         return `<div class="apv-log-entry">
-            <div class="apv-log-date">${escapeHtmlRd(l.performed_at)}</div>
+            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtmlRd(l.performed_at)}</div>
             <div class="apv-log-action">${escapeHtmlRd(auditActionLabel(l.action))} <span class="text-secondary fw-normal">(${escapeHtmlRd(actor)})</span></div>
             ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
             ${l.note ? `<div class="apv-log-note">${escapeHtmlRd(l.note)}</div>` : ''}
@@ -851,7 +919,10 @@ function removeEmployeeButtonRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
         return '';
     }
-    return `<button type="button" class="btn btn-link py-1 text-danger border-start btn-remove-manual-employee" data-employee-id="${row.employee_id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-user-minus"></i></button>`;
+    // 2026-08-28, explicit request: "ปรับ icon ให้เป็นรูปถังขยะ" -- trash-can, matching the delete-
+    // button icon convention already used everywhere else in this app (Employee List, DataTables
+    // row actions, etc.) instead of the previous user-minus icon.
+    return `<button type="button" class="btn btn-link py-1 text-danger border-start btn-remove-manual-employee" data-employee-id="${row.employee_id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-trash-can"></i></button>`;
 }
 // Breakdown button always shows (any state) -- it's read-only, unlike the other buttons which only
 // make sense while draft. Grouped into one Bootstrap button-group -- same
@@ -1142,7 +1213,9 @@ function initRunDetailTable(details) {
             { data: 'net_amount', className: 'text-end fw-bold', render: d => fmtNumRd(d) },
             { data: 'calc_status', render: d => calcStatusBadgeRd(d) },
             { data: 'calc_errors', render: d => calcErrorsRemarkRd(d) },
-            { data: null, orderable: false, render: (d, t, row) => runDetailActionsRd(row) },
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, className: 'all', orderable: false, render: (d, t, row) => runDetailActionsRd(row) },
         ],
         paging: false,
         searching: details.length > 10,
@@ -1256,6 +1329,14 @@ function loadRunDetail() {
                 renderRunHeader(res.data);
                 initRunDetailTable(res.data.details || []);
                 renderAuditHistoryTimelineRd(res.data.audit_log || []);
+                // 2026-08-28, explicit request: Process List/Approval Queue (opened in a SEPARATE
+                // browser tab, see index.js/approval.js's own window.open(...'_blank')) should
+                // reload once this run's data changes -- every mutating action on this page
+                // (submit/approve/reject/recalculate/markPaid/cancel/join employees/line overrides/
+                // etc) already funnels back through loadRunDetail() itself, so marking dirty here
+                // covers all of them from one place instead of duplicating it at every action's own
+                // success handler. See markTabDirty()/watchTabDirty() in app.js.
+                if (typeof markTabDirty === 'function') markTabDirty('payroll_run_list_dirty');
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
             }
@@ -1620,7 +1701,7 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
     } else if (currentRun.include_base_salary || currentRun.include_standing_items) {
         hint = langData['manage_items_hint_incentive_partial'] || 'Added on top of this run\'s own settings (base salary and/or standing earning/deduction items, as configured for this run), for this employee only.';
     } else {
-        hint = langData['manage_items_hint_incentive'] || 'These are the only items counted for this employee -- no base salary, no standing earning/deduction assignments.';
+        hint = langData['manage_items_hint_incentive'] || 'These are the only items counted for this employee -- no base salary, no standing income/deduction assignments.';
     }
     $('#manageLinesHint').text(hint);
     resetManualLineFormRd();

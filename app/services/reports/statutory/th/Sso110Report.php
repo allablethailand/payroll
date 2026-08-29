@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../PdfRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../export/th/Sso110Exporter.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../../../models/StatutoryFormatVersionModel.php';
 require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
@@ -103,8 +104,13 @@ class Sso110Report implements ReportGeneratorInterface {
         ];
 
         if ($format === 'txt') {
+            // 2026-08-29 -- resolves this company's chosen document format version (Tax &
+            // Statutory settings' "Document Format" tab), falling back to the form's default
+            // version when the company never set one. See StatutoryFormatVersionModel's own
+            // docblock; Sso110Exporter validates this against what it actually implements.
+            $versionCode = (new StatutoryFormatVersionModel())->resolveVersionCode($compId, $this->code());
             $exporter = new Sso110Exporter();
-            $content = $exporter->generate(['company' => $companyContext, 'period' => $periodContext, 'employees' => $employees]);
+            $content = $exporter->generate(['company' => $companyContext, 'period' => $periodContext, 'employees' => $employees, 'version_code' => $versionCode]);
             return ['content' => $content, 'file_name' => $exporter->fileName(['period' => $periodContext]), 'mime_type' => 'text/plain'];
         }
 
@@ -128,7 +134,7 @@ class Sso110Report implements ReportGeneratorInterface {
         $periodLabel = "{$periodContext['month']}/{$periodContext['year']}";
         $html = <<<HTML
 <html><head><style>
-body { font-family: 'DejaVu Sans', sans-serif; font-size: 11px; }
+body { font-family: 'TH Sarabun New', 'DejaVu Sans', sans-serif; font-size: 14px; }
 table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
 th { background: #f0f0f0; }

@@ -121,33 +121,9 @@ function loadReportList() {
     });
 }
 
-function generateReport(url) {
-    fetch(url, { method: 'GET' })
-        .then(async res => {
-            const contentType = res.headers.get('Content-Type') || '';
-            if (contentType.indexOf('application/json') !== -1) {
-                const data = await res.json();
-                showWarning(data.message || langData['generate_failed'] || 'Failed to generate the report.');
-                return;
-            }
-            const disposition = res.headers.get('Content-Disposition') || '';
-            const match = disposition.match(/filename="?([^"]+)"?/);
-            const fileName = match ? match[1] : 'report';
-            const blob = await res.blob();
-            const blobUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(blobUrl);
-            showSuccess(langData['generate_success'] || 'Report generated successfully.');
-        })
-        .catch(function () {
-            showWarning(langData['generate_failed'] || 'Failed to generate the report.');
-        });
-}
+// generateReport(url) moved to public/js/app.js (2026-08-29) -- loaded on every page now so the
+// Payroll Process List/Detail pages' own report shortcut buttons can reuse it too, not just this
+// page. See app.js for the implementation (unchanged).
 
 // Annual Reports tab only (Per-Cycle Reports moved to a matrix table, own handlers further below).
 $(document).on('submit', '.report-generate-form', function (e) {
@@ -288,11 +264,14 @@ function renderCycleReportTable(type) {
             render: (d, t, row) => cycleExportCellHtml(report, row)
         });
     });
+    // 2026-08-28: className:'all' keeps this LAST column (the audit-log action button) from
+    // collapsing into the Responsive expand row -- the per-report export columns pushed above stay
+    // free to collapse there as normal, only the final action column is protected.
     columns.push({
         data: null,
         title: langData['export_audit_log'] || 'Audit Log',
         orderable: false,
-        className: 'text-center',
+        className: 'text-center all',
         render: (d, t, row) => `<button type="button" class="btn btn-sm btn-link cycle-audit-log-btn" data-run-id="${row.id}" title="${langData['export_audit_log'] || 'Audit Log'}"><i class="fa-solid fa-clock-rotate-left"></i></button>`
     });
 

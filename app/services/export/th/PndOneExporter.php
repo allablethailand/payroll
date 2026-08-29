@@ -15,6 +15,10 @@ require_once __DIR__ . '/../StatutoryExportInterface.php';
  * point this class should be edited independently of PndOneKorExporter.
  */
 class PndOneExporter implements StatutoryExportInterface {
+    /** 2026-08-29 -- see Sso110Exporter::SUPPORTED_VERSION_CODES's own docblock for the full
+     *  reasoning; same pattern here (matches master_statutory_format_versions' seed row). */
+    public const SUPPORTED_VERSION_CODES = ['v1_current'];
+
     public function code(): string {
         return 'TH_PND1';
     }
@@ -45,6 +49,10 @@ class PndOneExporter implements StatutoryExportInterface {
      * }
      */
     public function generate(array $context): string {
+        $versionCode = $context['version_code'] ?? null;
+        if ($versionCode !== null && !in_array($versionCode, self::SUPPORTED_VERSION_CODES, true)) {
+            throw new RuntimeException("PndOneExporter does not implement format version '{$versionCode}'.");
+        }
         $lines = [];
         foreach ($context['employees'] ?? [] as $emp) {
             $lines[] = implode('|', [

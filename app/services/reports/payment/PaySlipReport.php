@@ -163,7 +163,7 @@ class PaySlipReport implements ReportGeneratorInterface {
         return <<<HTML
 <html>
 <head><style>
-body { font-family: 'DejaVu Sans', sans-serif; font-size: 11px; }
+body { font-family: 'TH Sarabun New', 'DejaVu Sans', sans-serif; font-size: 14px; }
 h2 { font-size: 14px; margin-bottom: 2px; }
 table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; }

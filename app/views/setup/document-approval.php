@@ -67,7 +67,7 @@
         </ul>
       </div>
 
-      <div class="card-surface p-3 p-md-4">
+      <div class="card-surface">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div class="awf-flow-status-wrap">
             <span class="badge" id="flowStatusBadge"></span>

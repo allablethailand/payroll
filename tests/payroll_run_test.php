@@ -14,8 +14,6 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/models/PayrollCycleModel.php';
 require_once __DIR__ . '/../app/models/PayrollEarningDeductionTypeModel.php';
-require_once __DIR__ . '/../app/models/AttendanceBonusSchemeModel.php';
-require_once __DIR__ . '/../app/models/AttendanceBonusLedgerModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunModel.php';
 require_once __DIR__ . '/../app/models/EmployeeEarningDeductionModel.php';
 require_once __DIR__ . '/../app/models/SetupRulesModel.php';
@@ -206,23 +204,6 @@ try {
     $pdo->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, status)
         VALUES (:assignment_id, 1, 200, 'pending')")->execute([':assignment_id' => $customAssignmentId]);
     checkTrue('fixture: custom-item PED assignment created', $customAssignmentId > 0);
-
-    // An attendance bonus scheme + a passed ledger entry for this period
-    $schemeModel = new AttendanceBonusSchemeModel();
-    $schemeRes = $schemeModel->save($compId, [
-        'scheme_name' => 'TEST_SCHEME_' . uniqid(), 'condition_no_absent' => true,
-        'starting_amount' => 500, 'increment_amount' => 0, 'reset_cycle_months' => 12, 'reset_cycle_basis' => 'employee_anniversary',
-    ], $adminUserId);
-    checkTrue('fixture: bonus scheme created', $schemeRes['status']);
-    $schemeId = $schemeRes['id'];
-
-    $ledgerModel = new AttendanceBonusLedgerModel();
-    $ledgerRes = $ledgerModel->save($compId, [
-        'employee_id' => $employeeFullId, 'scheme_id' => $schemeId,
-        'period_year' => (int)date('Y', strtotime($periodStart)), 'period_month' => (int)date('n', strtotime($periodStart)),
-        'status' => 'passed',
-    ], $adminUserId);
-    checkTrue('fixture: bonus ledger entry created' . (empty($ledgerRes['status']) ? " ({$ledgerRes['message']})" : ''), $ledgerRes['status']);
 
     // ---------- Actual state machine tests ----------
     $runModel = new PayrollRunModel($pdo);
@@ -888,9 +869,12 @@ try {
     check('full-period employee is not prorated', $fullDetail['prorate_days'], null);
     checkTrue('mid-month joiner IS prorated', $midDetail['prorate_days'] !== null);
     checkTrue('mid-month joiner base salary reduced by proration', (float)$midDetail['base_salary_amount'] < 30000.0);
-    check('full-period gross = base(30000) + allowance(1000) + bonus(500)', (float)$fullDetail['gross_amount'], 31500.0);
+    // 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า และไม่นำไปคำนวณใน
+    // เงินเดือน" -- Attendance Bonus/Diligence ledger feature removed entirely (2026-08-29 follow-up:
+    // its DB tables/models are gone too, not just the calculation hook -- see PayrollRunModel's own
+    // recalculate()/markPaid() comments). Gross is just base + the recurring allowance now.
+    check('full-period gross = base(30000) + allowance(1000)', (float)$fullDetail['gross_amount'], 31000.0);
     checkTrue('full-period has a PED earning line', count(array_filter($fullDetail['earning_breakdown'], fn($l) => $l['source'] === 'ped')) === 1);
-    checkTrue('full-period has an attendance_bonus earning line', count(array_filter($fullDetail['earning_breakdown'], fn($l) => $l['source'] === 'attendance_bonus')) === 1);
     check('both core employees calculated cleanly', $fullDetail['calc_status'] === 'calculated' && $midDetail['calc_status'] === 'calculated', true);
 
     echo "=== Custom-item PED assignment flows into the real calculation ===\n";
@@ -1234,9 +1218,6 @@ try {
     check('PED installment flipped to processed', $inst['status'], 'processed');
     check('PED installment tagged with this run_id', (int)$inst['payroll_run_id'], $runId);
 
-    $ledgerCheck = $ledgerModel->get($ledgerRes['id'], $compId);
-    checkTrue('attendance bonus ledger entry got locked', $ledgerCheck['locked_at'] !== null);
-
     $lockRes = $runModel->lock($runId, $compId, $adminUserId, true);
     checkTrue('lock succeeds', $lockRes['status']);
     check('state is locked', $runModel->get($runId, $compId)['state'], 'locked');
@@ -1281,6 +1262,25 @@ try {
     // so cancel() must refuse it regardless of reason.
     $cancelLockedRes = $runModel->cancel($runId, $compId, $adminUserId, true, 'Trying to cancel a locked run.');
     check('cancelling a locked (already-paid) run is rejected', $cancelLockedRes['status'], false);
+
+    // 2026-08-28, explicit request: "Process ที่ Cancel ให้สามารถลบข้อมูลออกไปได้" -- a cancelled run
+    // used to be a permanent dead end (delete() only ever accepted state='draft'). Uses its own
+    // fixture run (not $cancelTargetId above) since later assertions in this file still read
+    // $cancelTargetId's own state/cancelled_from_state after this point.
+    echo "=== Delete a cancelled run (2026-08-28) ===\n";
+    $cancelThenDeleteRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_CANCEL_THEN_DELETE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +40 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +40 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +40 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('cancel-then-delete fixture run created' . (empty($cancelThenDeleteRes['status']) ? " ({$cancelThenDeleteRes['message']})" : ''), $cancelThenDeleteRes['status']);
+    $cancelThenDeleteId = $cancelThenDeleteRes['id'];
+    $runModel->cancel($cancelThenDeleteId, $compId, $adminUserId, true, 'Cancelling so it can be deleted.');
+    check('state is cancelled before delete', $runModel->get($cancelThenDeleteId, $compId)['state'], 'cancelled');
+    $deleteCancelledRes = $runModel->delete($cancelThenDeleteId, $compId, $adminUserId, true);
+    checkTrue('delete succeeds on a cancelled run' . (empty($deleteCancelledRes['status']) ? " ({$deleteCancelledRes['message']})" : ''), $deleteCancelledRes['status']);
+    check('deleted cancelled run no longer retrievable', $runModel->get($cancelThenDeleteId, $compId), null);
 
     echo "=== list()'s cancelled_from_state column (2026-08-22, feeds the Process List mini-timeline) ===\n";
     $listAfterDraftCancel = $runModel->list($compId, []);

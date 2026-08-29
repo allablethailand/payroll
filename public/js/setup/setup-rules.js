@@ -36,6 +36,20 @@ function fmtDate(d) {
     const dt = new Date(d + "T00:00:00");
     return dt.toLocaleDateString(currentLang === 'th' ? 'th-TH' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
+// 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น UTC การ
+// แสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- the Shift table's "Last Updated" column feeds a
+// real UTC timestamp (updated_at/created_at) straight into fmtDate() via `.slice(0, 10)`, extracting
+// the raw date portion BEFORE any timezone conversion -- can show the wrong calendar day for a
+// viewer far from UTC (same bug class already fixed in payroll/detail.js's own
+// toLocalDateOnlyRd()). Converts via formatDisplayDateTime() (UTC-aware, app.js) first, then
+// re-extracts just the date in the YYYY-MM-DD shape fmtDate() itself expects, so fmtDate()'s own
+// genuinely-date-only callers (holiday_date below) are completely unaffected.
+function localDateOnlyFromUtcSr(value) {
+    if (!value) return '';
+    if (typeof formatDisplayDateTime !== 'function') return String(value).slice(0, 10);
+    const [dd, mm, yyyy] = formatDisplayDateTime(value).split(' ')[0].split('/');
+    return `${yyyy}-${mm}-${dd}`;
+}
 function addButtonInitComplete(btnClass, iconClass, labelKey, labelFallback, onClickFnName) {
     return function () {
         const $wrapper = $(this.api().table().container());
@@ -104,9 +118,11 @@ function renderShift() {
             { data: null, render: (d, t, row) => `<span class="text-faint"><i class="fa-regular fa-clock me-1"></i>${(row.start_time || '').slice(0, 5)} - ${(row.end_time || '').slice(0, 5)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${shiftWorkDaysSummary(row)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${row.location_name_th ? escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en) : '-'}</span>` },
-            { data: null, render: (d, t, row) => `<span class="text-faint">${row.updated_at ? fmtDate(row.updated_at.slice(0, 10)) : fmtDate(row.created_at.slice(0, 10))}</span>` },
+            { data: null, render: (d, t, row) => `<span class="text-faint">${row.updated_at ? fmtDate(localDateOnlyFromUtcSr(row.updated_at)) : fmtDate(localDateOnlyFromUtcSr(row.created_at))}</span>` },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleShiftStatus(${row.id})`) },
-            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtnsShift(`openShiftModal(${row.id})`, `openShiftAssignModal(${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`, `askDelete('shift', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsShift(`openShiftModal(${row.id})`, `openShiftAssignModal(${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`, `askDelete('shift', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
@@ -270,7 +286,9 @@ function renderHoliday() {
             { data: null, render: (d, t, row) => parseInt(row.is_recurring) === 1 ? `<span class="badge-soft badge-paid">${langData['recurring_every_year'] || 'Recurring'}</span>` : `<span class="badge-soft badge-unpaid">${langData['one_time_only'] || 'One-time'}</span>` },
             { data: null, render: (d, t, row) => holidayScopeSummary(row) },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleHolidayStatus(${row.id})`) },
-            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtns(`openHolidayModal(${row.id})`, `askDelete('holiday', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openHolidayModal(${row.id})`, `askDelete('holiday', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
@@ -417,7 +435,9 @@ function renderWorkLocation() {
             { data: 'location_code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
             { data: 'address', render: d => `<span class="text-faint">${d ? escapeHtmlSr(d) : '-'}</span>` },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleWorkLocationStatus(${row.id})`) },
-            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },
@@ -514,7 +534,9 @@ function renderLeave() {
             { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="badge-soft badge-paid">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="badge-soft badge-unpaid">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-success me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleLeaveStatus(${row.id})`) },
-            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtns(`openLeaveModal(${row.id})`, `askDelete('leave', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openLeaveModal(${row.id})`, `askDelete('leave', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
@@ -693,7 +715,9 @@ function renderOt() {
             { data: null, render: (d, t, row) => `<span class="badge-soft badge-weekday">${escapeHtmlSr(currentLang === 'th' ? row.scope_name_th : row.scope_name_en)}</span>` },
             { data: null, render: (d, t, row) => otRateBadge(row) },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleOtStatus(${row.id})`) },
-            { data: null, orderable: false, className: 'text-end', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}')`) }
+            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+            // Responsive expand row.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_ot_rates_yet'] || 'No OT rates have been added yet.' },

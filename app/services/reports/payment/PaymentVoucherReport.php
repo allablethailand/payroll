@@ -114,7 +114,7 @@ class PaymentVoucherReport implements ReportGeneratorInterface {
         $employeeNo = htmlspecialchars($employeeDetail['employee_no']);
         $html = <<<HTML
 <html><head><style>
-body { font-family: 'DejaVu Sans', sans-serif; font-size: 11px; }
+body { font-family: 'TH Sarabun New', 'DejaVu Sans', sans-serif; font-size: 14px; }
 h1 { font-size: 15px; }
 table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; }

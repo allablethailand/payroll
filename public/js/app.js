@@ -7,10 +7,84 @@ const langInfo = {
     en: { flag: 'gb', label: 'EN', full: 'English' },
     th: { flag: 'th', label: 'TH', full: 'ไทย' }
 };
+// 2026-08-29, real bug found and fixed (explicit report: "อยากให้แสดง ชื่อ และข้อมูลอื่นๆตามภาษาที่เลือก
+// Auto เปลี่ยนโดยไม่ต้อง Reload หน้า") -- this is much bigger than just the Employee List's Name
+// column. Several controllers (BankAccountController/CompanyProfileController/
+// PayrollConfigurationController/PayrollController/EmployeeController, 17 call sites total) already
+// resolve which language to render bilingual SERVER-SIDE data in via
+// `$_SESSION['lang'] ?? $_COOKIE['lang'] ?? 'th'` -- but grepping the ENTIRE codebase found that
+// `$_SESSION['lang']`/a `lang` cookie is never actually SET anywhere, by anything. That fallback
+// chain was permanently dead code -- every one of those 17 call sites always silently fell through
+// to the hardcoded 'th' default, regardless of what the language switcher showed, because the
+// client never had any way to tell the server what language was selected in the first place (the
+// switcher only ever updated localStorage/langData for STATIC i18n text, which is a completely
+// separate mechanism from these controllers' own per-request $lang resolution for DYNAMIC data).
+// Fixed at the root with ONE change: syncLangCookie() sets a real `lang` cookie matching
+// currentLang, sent automatically on every future request (including plain page navigations, not
+// just ajax) -- since `$_COOKIE['lang']` was ALREADY the exact fallback every affected controller
+// checks, this alone makes all 17 of them start working correctly with zero PHP changes needed.
+// Called once on initial load (so the very first request of a fresh page already carries the right
+// language) and again every time changeLanguage() runs.
+function syncLangCookie(lang) {
+    document.cookie = `lang=${lang}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+}
+// The "Auto เปลี่ยนโดยไม่ต้อง Reload หน้า" (auto-change without reloading the page) half of the same
+// request -- setting the cookie only affects FUTURE requests, so an already-rendered DataTable
+// wouldn't pick up the new language until its next unrelated reload (pagination, a filter change,
+// etc). Reloading every currently-initialized DataTable on the page right after a language change
+// makes that happen immediately instead. `$.fn.dataTable.tables({ api: true })` covers every table
+// on the page in one call, so this works for any current or future page with no per-page wiring --
+// a table with no `ajax` option configured (fully static data) just silently no-ops.
+function reloadAllTablesForLanguageChange() {
+    if (typeof $.fn.dataTable === 'undefined') return;
+    try {
+        $.fn.dataTable.tables({ visible: true, api: true }).ajax.reload(null, false);
+    } catch (e) { /* no ajax-backed tables on this page -- nothing to reload */ }
+}
+
+/** 2026-08-29: moved here from public/js/reports/index.js (unchanged) so any page can trigger a
+ *  report download through the existing GET /api/report.generate endpoint -- originally only the
+ *  Reports page itself loaded that file, but the Payroll Process List/Detail pages' own "print"
+ *  shortcuts (SSO/RD/Bank Transfer for a specific run) need the exact same fetch+blob+download
+ *  flow without pulling in the rest of reports/index.js's page-specific state. */
+function generateReport(url) {
+    fetch(url, { method: 'GET' })
+        .then(async res => {
+            const contentType = res.headers.get('Content-Type') || '';
+            if (contentType.indexOf('application/json') !== -1) {
+                const data = await res.json();
+                showWarning(data.message || langData['generate_failed'] || 'Failed to generate the report.');
+                return;
+            }
+            const disposition = res.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            const fileName = match ? match[1] : 'report';
+            const blob = await res.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(blobUrl);
+            showSuccess(langData['generate_success'] || 'Report generated successfully.');
+        })
+        .catch(function () {
+            showWarning(langData['generate_failed'] || 'Failed to generate the report.');
+        });
+}
 $(document).ready(async function() {
     currentLang = localStorage.getItem('preferred_language') || 'en';
+    syncLangCookie(currentLang);
     await loadLang(currentLang);
     buildLanguageMenu();
+    // 2026-08-29, explicit request: per-user Font Size, applied from localStorage immediately (no
+    // network round trip needed for first paint) -- reconciled against the server-saved value
+    // (which wins if different, e.g. on a brand-new device/browser) by loadUserPreferences() below,
+    // same "fast local default, then server reconciles" pattern the language switcher already used.
+    applyFontSize(localStorage.getItem('preferred_font_size') || 'm');
+    loadUserPreferences();
     $('.nav-lang-btn').on('click', function(e) {
         e.stopPropagation();
         $('#languageMenu').toggleClass('active');
@@ -25,9 +99,14 @@ $(document).ready(async function() {
         e.stopPropagation();
         $('#hubMenu').toggleClass('active');
     });
+    $('.nav-profile-btn').on('click', function(e) {
+        e.stopPropagation();
+        $('#profileMenu').toggleClass('active');
+    });
     $(document).on('click', function() {
         $('#languageMenu').removeClass('active');
         $('#hubMenu').removeClass('active');
+        $('#profileMenu').removeClass('active');
     });
     $('.nav-btn-hamberger').on('click', function(e) {
         e.stopPropagation();
@@ -150,19 +229,154 @@ function formatDisplayDate(value) {
 // formatDisplayDateTime: a full timestamp ('YYYY-MM-DD HH:mm:ss' or 'YYYY-MM-DDTHH:mm:ss') ->
 // 'DD/MM/YYYY HH:mm' (seconds dropped -- matches the existing toDisplayDateAp()/toDisplayDatePr()
 // precedent of showing HH:mm only, not HH:mm:ss).
+//
+// 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น UTC การ
+// แสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- confirmed the premise first, not assumed:
+// index.php calls date_default_timezone_set('UTC') and Database.php's PDO init command runs
+// `SET time_zone = '+00:00'` on every connection, and a live query against this dev DB confirmed a
+// real employees.updated_at row matches MySQL's own UTC_TIMESTAMP() exactly (not the +7 Bangkok
+// offset it would show if the DB were actually storing local time) -- every DATETIME/TIMESTAMP
+// value this app returns really is UTC. This function was doing PURE STRING SLICING with no
+// timezone awareness at all, so a UTC timestamp was displayed VERBATIM as if it were already the
+// viewer's local time -- correct only for a viewer whose own clock happens to be UTC+0, wrong (by
+// exactly their UTC offset) for everyone else, e.g. Bangkok (+7) always saw times 7 hours behind
+// reality. Fixed by explicitly marking the string as UTC before parsing it (`Date` parses a bare
+// 'YYYY-MM-DD HH:mm:ss' as LOCAL time otherwise, which would silently re-introduce this exact bug
+// -- the 'Z' suffix is what makes the difference) and reading it back via the normal local-timezone
+// getters, which is what actually performs the UTC->local conversion.
+//
+// Deliberately does NOT touch formatDisplayDate() above -- a DATE-ONLY value (employment_date,
+// period_start_date, date_of_birth, ...) has no time-of-day/timezone component to begin with (it's
+// a calendar date, the same one everywhere on Earth), so converting it through a timezone would be
+// WRONG, not a fix -- could shift it a day in either direction depending on the viewer's offset.
+// This function only ever applies the conversion when a real time component is present.
 function formatDisplayDateTime(value) {
     if (!value) return '';
-    const str = String(value);
-    const datePart = formatDisplayDate(str.substring(0, 10));
-    const timePart = str.substring(11, 16);
-    return timePart ? `${datePart} ${timePart}` : datePart;
+    const str = String(value).trim();
+    if (str.length <= 10) {
+        return formatDisplayDate(str); // date-only value -- no time component, nothing to convert
+    }
+    let isoUtc = str.replace(' ', 'T');
+    if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(isoUtc)) {
+        isoUtc += 'Z'; // no timezone marker already present -- mark explicitly as UTC before parsing
+    }
+    const d = new Date(isoUtc);
+    if (isNaN(d.getTime())) {
+        return value; // unparseable -- fail safe with the raw value rather than showing 'Invalid Date'
+    }
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 async function changeLanguage(lang) {
     if (currentLang === lang) return;
     currentLang = lang;
     localStorage.setItem('preferred_language', lang);
+    syncLangCookie(lang);
+    // 2026-08-29, explicit request: "ภาษาล่าสุดที่ใช้งานก็ต้องเก็บเหมือนกัน" (the language last used
+    // must be saved the same way [as font size, server-side]) -- fires from EVERY language change
+    // regardless of which control triggered it (the top-right switcher's .dropdown-lang-item
+    // handler, or the Settings modal's own language buttons both call this same function), so
+    // there's exactly one place this needs to be wired in. Best-effort/fire-and-forget: localStorage
+    // above already has it as the fast-path fallback if this request fails.
+    persistUserPreferences(lang, localStorage.getItem('preferred_font_size') || 'm');
     await loadLang(lang);
+    reloadAllTablesForLanguageChange();
 }
+// 2026-08-29, explicit request: per-user Font Size (S/M/L) + Language, persisted server-side (see
+// UserPreferenceModel's own docblock) -- FONT_SIZE_STEPS maps the Settings modal's 0-2 slider
+// position to the 3 saved values; `html[data-font-size]` drives the actual CSS scaling (see
+// style.css's own comment on the `html, body { font-size: 12px }` rule this overrides).
+const FONT_SIZE_STEPS = ['s', 'm', 'l'];
+function applyFontSize(size) {
+    document.documentElement.setAttribute('data-font-size', FONT_SIZE_STEPS.includes(size) ? size : 'm');
+}
+// Always sends BOTH values together, never just the one that changed -- UserPreferenceModel::save()
+// is a full replace of both columns per call, so persisting only `language` (leaving `ui_font_size`
+// undefined -> the controller's own 'm' default) would silently reset a user's saved font size back
+// to Medium the next time they merely switched language. Every call site above/below reads the
+// OTHER value fresh from localStorage first for exactly this reason.
+async function persistUserPreferences(language, fontSize) {
+    try {
+        await fetch(`${BASE_URL}/api/user-preference.save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ui_language: language, ui_font_size: fontSize }),
+        });
+    } catch (e) { /* best-effort -- localStorage already has both values as a fallback */ }
+}
+// Reconciles this device's local defaults against whatever was last saved server-side -- the
+// server wins when it differs (e.g. a brand-new browser/device with empty localStorage, or the
+// user changed a preference somewhere else since), so switching devices/browsers now actually
+// carries the preference over instead of always falling back to English/Medium.
+async function loadUserPreferences() {
+    try {
+        const res = await fetch(`${BASE_URL}/api/user-preference.get`);
+        const json = await res.json();
+        if (!json || !json.status || !json.data) return;
+        const pref = json.data;
+        if (pref.ui_language && pref.ui_language !== currentLang) {
+            await changeLanguage(pref.ui_language);
+        }
+        const savedFontSize = pref.ui_font_size || 'm';
+        if (savedFontSize !== (localStorage.getItem('preferred_font_size') || 'm')) {
+            localStorage.setItem('preferred_font_size', savedFontSize);
+            applyFontSize(savedFontSize);
+        }
+    } catch (e) { /* not logged in yet (public page) or a transient network error -- local defaults stand */ }
+}
+// Settings modal (profile icon -> Settings) -- Font Size only (Language was removed from this
+// modal same-day, see the comment right above the Save handler further down for why). Live-
+// previews the WHOLE page as the slider is dragged (applyFontSize() sets the
+// attribute on <html>, which every page's CSS already scales from), same as changing it would
+// look once actually saved; a Cancel/X/Esc/backdrop close reverts back to whatever was active
+// when the modal opened (userSettingsJustSaved distinguishes "closing because Save was just
+// clicked" from every other way the modal can close, all of which fire the same
+// 'hidden.bs.modal' event) -- a slider benefits from this deliberate confirm step so dragging
+// through several ticks doesn't fire a save per tick.
+let userSettingsOriginalFontSize = 'm';
+let userSettingsJustSaved = false;
+// Delegated via $(document).on(event, selector, fn) rather than $('#userSettingsModal').on(...) --
+// this script tag loads near the very top of <body>, before the modal markup further down the
+// page has been parsed, so a direct element lookup here would silently bind to nothing (real bug
+// caught before shipping, not guessed -- same class of gotcha this file's own $(document).ready()
+// block already exists to avoid for everything inside it, but these 2 lines were originally written
+// outside that block). Bootstrap's own modal events bubble up to document just like a native DOM
+// event, so delegation works identically to direct binding once the element does exist.
+$(document).on('show.bs.modal', '#userSettingsModal', function () {
+    userSettingsJustSaved = false;
+    const current = localStorage.getItem('preferred_font_size') || 'm';
+    userSettingsOriginalFontSize = current;
+    const idx = FONT_SIZE_STEPS.indexOf(current);
+    $('#userSettingsFontSizeSlider').val(idx >= 0 ? idx : 1);
+});
+$(document).on('hidden.bs.modal', '#userSettingsModal', function () {
+    if (!userSettingsJustSaved) {
+        applyFontSize(userSettingsOriginalFontSize);
+    }
+});
+$(document).on('input', '#userSettingsFontSizeSlider', function () {
+    applyFontSize(FONT_SIZE_STEPS[Number($(this).val())] || 'm');
+});
+// 2026-08-29, same-day follow-up: "ตัวเปลี่ยนภาษาตัดออกจากใน modal setting ครับ เพราะมีใน header อยู่
+// แล้ว" -- the language picker that used to live in this modal (.user-settings-lang-option click
+// handler) was removed; the top-right nav-lang-dropdown switcher (.dropdown-lang-item, above) is
+// the only language control now. Save below still sends `currentLang` alongside the font size --
+// UserPreferenceModel::save() persists both columns together on every call (see its own
+// docblock), so this Save button still correctly keeps whatever language is currently active,
+// it just never CHANGES it anymore.
+$(document).on('click', '#btnSaveUserSettings', function () {
+    const size = FONT_SIZE_STEPS[Number($('#userSettingsFontSizeSlider').val())] || 'm';
+    localStorage.setItem('preferred_font_size', size);
+    applyFontSize(size);
+    persistUserPreferences(currentLang, size);
+    userSettingsJustSaved = true;
+    if (typeof bootstrap !== 'undefined') {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('userSettingsModal')).hide();
+    }
+    if (typeof showSuccess === 'function') {
+        showSuccess(langData['save_success'] || 'Saved successfully.');
+    }
+});
 async function loadLang(lang) {
     try {
         const res = await fetch(`${BASE_URL}/public/lang/${lang}.json?v=${Date.now()}`);
@@ -326,6 +540,35 @@ function updateText(root = document) {
         if (value !== undefined) {
             $el.attr('title', value);
         }
+    });
+}
+// 2026-08-28, explicit request: "หน้า Employee มีการแก้ไขในหน้า Detail แต่ใน List ไม่ Reload เอง...
+// ให้เป็นกับทุกตารางที่มีการเปิดเข้าไปแก้ไขอีก Tab ได้" -- generalizes the localStorage cross-tab
+// "dirty" signal Payslip Template/Employment Certificate Template's own canvas editors already
+// established (see employment-certificate-template.js's own docblock on this) into 2 shared
+// helpers, so every OTHER list-that-opens-its-editor-in-a-new-tab pair (Employee List <->
+// Employee Detail, Payroll Process List/Approval Queue <-> Process Detail) can reuse the exact
+// same mechanism instead of re-deriving it. A `key` is just an arbitrary localStorage key shared
+// by one list+editor pair (e.g. 'employee_list_dirty') -- pick one unique per pair so unrelated
+// tabs don't cross-trigger each other's reloads.
+// markTabDirty(): call from the EDITOR tab right after a save actually succeeds. Writing to
+// localStorage fires a native 'storage' event in every OTHER tab of the same origin (never in the
+// tab that wrote it) -- wrapped in try/catch since some contexts (private browsing, storage
+// blocked) throw on write; the list just won't auto-refresh in that case, not a hard failure.
+function markTabDirty(key) {
+    try { localStorage.setItem(key, String(Date.now())); } catch (e) { /* private browsing etc. */ }
+}
+// watchTabDirty(): call from the LIST tab once, at page init. `reloadFn` should reload that list's
+// own DataTable in place (e.g. `() => tb_employee.ajax.reload(null, false)`). Two independent
+// signals, same as the pattern this generalizes: the 'storage' event (fires immediately, but only
+// while this tab is in the background/inactive in some browsers) plus a 'visibilitychange' fallback
+// (catches the case of coming back to this tab after the editor tab already saved and closed).
+function watchTabDirty(key, reloadFn) {
+    window.addEventListener('storage', function (e) {
+        if (e.key === key) reloadFn();
+    });
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') reloadFn();
     });
 }
 function refreshAllTables() {

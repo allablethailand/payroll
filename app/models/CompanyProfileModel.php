@@ -113,6 +113,7 @@ class CompanyProfileModel {
             $sql = "UPDATE companies SET
                         company_legal_name = :company_legal_name,
                         local_name = :local_name,
+                        fiscal_year_start_month = :fiscal_year_start_month,
                         registered_country = :registered_country,
                         global_tax_id = :global_tax_id,
                         address_line_1 = :address_line_1,
@@ -130,6 +131,7 @@ class CompanyProfileModel {
                 ':id' => $companyId,
                 ':company_legal_name' => $data['company_legal_name'] ?? null,
                 ':local_name' => $data['local_name'] ?? null,
+                ':fiscal_year_start_month' => (isset($data['fiscal_year_start_month']) && (int)$data['fiscal_year_start_month'] >= 1 && (int)$data['fiscal_year_start_month'] <= 12) ? (int)$data['fiscal_year_start_month'] : 1,
                 ':registered_country' => $data['registered_country'] ?? null,
                 ':global_tax_id' => $data['global_tax_id'] ?? null,
                 ':address_line_1' => $data['address_line_1'] ?? null,

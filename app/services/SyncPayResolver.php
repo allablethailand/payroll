@@ -204,10 +204,16 @@ class SyncPayResolver {
         // OT: unchanged, dedicated scope-split handling -- a generic item_values 'OT' row carries
         // no scope information to merge with the 3 scope-specific structured columns, so it stays
         // structured-column-only. Its item_values group is dropped (not double-processed below).
-        $otResolved = $this->pedTypeBySourceEvent($compId, 'ot_hours')
-            ?? ['code' => 'OT', 'name_th' => 'ค่าล่วงเวลา', 'name_en' => 'Overtime Pay', 'is_custom' => true];
-        $this->pullKnownEventCandidates($groupedByCode, 'ot_hours', $otResolved['code']); // discarded -- no scope info to merge, structured columns only.
-        foreach (self::OT_SCOPE_COLUMNS as $column => $scopeCode) {
+        // 2026-08-29: pedTypeBySourceEvent() can now also return ['disabled'=>true] (the admin
+        // explicitly deactivated/deleted the catalog OT type) -- see that method's own docblock.
+        // The scope loop below is skipped entirely in that case; the item_values discard call still
+        // runs regardless so an OT-tagged generic item_values row doesn't leak through and get
+        // double-counted as a "generic/custom item" later in this same method.
+        $otMapped = $this->pedTypeBySourceEvent($compId, 'ot_hours');
+        $otDisabled = is_array($otMapped) && !empty($otMapped['disabled']);
+        $otResolved = $otDisabled ? null : ($otMapped ?? ['code' => 'OT', 'name_th' => 'ค่าล่วงเวลา', 'name_en' => 'Overtime Pay', 'is_custom' => true]);
+        $this->pullKnownEventCandidates($groupedByCode, 'ot_hours', $otDisabled ? 'OT' : $otResolved['code']); // discarded -- no scope info to merge, structured columns only.
+        foreach (($otDisabled ? [] : self::OT_SCOPE_COLUMNS) as $column => $scopeCode) {
             // 2026-08-21: an active attendance-data override wins outright -- no candidate pool
             // involved for OT hours at all (item_values OT rows are already always excluded, see
             // above), so this is a pure, safe substitution of the input.
@@ -247,8 +253,16 @@ class SyncPayResolver {
         // RULE_DRIVEN_ITEM_DEFS's own docblock) and run through the company's configurable
         // attendance_deduction_rules instead of a fixed formula.
         foreach (self::RULE_DRIVEN_ITEM_DEFS as $eventCode => $def) {
-            $resolved = $this->pedTypeBySourceEvent($compId, $eventCode)
-                ?? ['code' => $def['default_code'], 'name_th' => $def['name_th'], 'name_en' => $def['name_en'], 'is_custom' => true];
+            // 2026-08-29: the admin explicitly deactivated/deleted the catalog type for this event
+            // -- skip it entirely (see pedTypeBySourceEvent()'s own docblock). Still discard any
+            // item_values rows tagged with its code first, so they don't leak through as a generic/
+            // custom item further down in this same method.
+            $mapped = $this->pedTypeBySourceEvent($compId, $eventCode);
+            if (is_array($mapped) && !empty($mapped['disabled'])) {
+                $this->pullKnownEventCandidates($groupedByCode, $eventCode, $def['default_code']);
+                continue;
+            }
+            $resolved = $mapped ?? ['code' => $def['default_code'], 'name_th' => $def['name_th'], 'name_en' => $def['name_en'], 'is_custom' => true];
 
             // 2026-08-21: an active attendance-data override for ANY of this event's structured
             // columns bypasses pickBestCandidate()/pullKnownEventCandidates() ENTIRELY -- see this
@@ -306,8 +320,18 @@ class SyncPayResolver {
         // Trip allowance -- candidate pool = structured column(s) + any item_values rows sharing
         // that item's catalog code, pick exactly one representation.
         foreach (self::KNOWN_ITEM_DEFS as $sourceEventCode => $def) {
-            $resolved = $this->pedTypeBySourceEvent($compId, $sourceEventCode)
-                ?? ['code' => $def['default_code'], 'name_th' => $def['name_th'], 'name_en' => $def['name_en'], 'is_custom' => true];
+            // 2026-08-29, real bug found and fixed (explicit report: "ค่าเที่ยวยังแสดงผลอยู่ครับ ทั้งๆที่
+            // ไม่ได้กด Sync มาจาก Origami เพราะติ๊กส่วนนั้นออกไป" -- deactivating Trip Allowance in
+            // Payroll Configuration had no effect at all, the line still computed and showed). Skip
+            // this event entirely when the admin explicitly deactivated/deleted its catalog type --
+            // see pedTypeBySourceEvent()'s own docblock. Still discard any item_values rows tagged
+            // with its code first, so they don't leak through as a generic/custom item below.
+            $mapped = $this->pedTypeBySourceEvent($compId, $sourceEventCode);
+            if (is_array($mapped) && !empty($mapped['disabled'])) {
+                $this->pullKnownEventCandidates($groupedByCode, $sourceEventCode, $def['default_code']);
+                continue;
+            }
+            $resolved = $mapped ?? ['code' => $def['default_code'], 'name_th' => $def['name_th'], 'name_en' => $def['name_en'], 'is_custom' => true];
 
             // 2026-08-21: an active attendance-data override on this item's structured column wins
             // outright, bypassing the candidate pool -- same reasoning as the rule-driven loop above.
@@ -653,15 +677,48 @@ class SyncPayResolver {
         ];
     }
 
-    /** @return array{code:string,name_th:string,name_en:string,item_type:string,is_custom:bool}|null */
+    /**
+     * 2026-08-29, real bug found and fixed (explicit report: "ค่าเที่ยวยังแสดงผลอยู่ครับ ทั้งๆที่ไม่ได้
+     * กด Sync มาจาก Origami เพราะติ๊กส่วนนั้นออกไป" -- Trip Allowance still showed even after the
+     * admin turned that Earning Type off in Payroll Configuration). Root cause, confirmed by
+     * tracing every one of this method's 3 call sites (OT, the Late/Absent/Unpaid-Leave
+     * rule-driven loop, and Trip Allowance): each one does
+     * `pedTypeBySourceEvent(...) ?? [hardcoded default definition]` -- this method used to filter
+     * `status = 'active' AND deleted_at IS NULL` in its own WHERE clause, so a DEACTIVATED (or
+     * deleted) catalog row looked EXACTLY like "no catalog row was ever configured for this source
+     * event" to every caller -- both cases returned null, and both fell through to the SAME
+     * hardcoded fallback definition (KNOWN_ITEM_DEFS/RULE_DRIVEN_ITEM_DEFS's own 'default_code'/
+     * 'name_th'/'name_en'), which still computes and includes the line. Deactivating the type was
+     * silently a no-op for this whole sync-derived-item pipeline -- the ONLY thing it actually
+     * changed was which item_code/label got used (a hardcoded fallback instead of the real catalog
+     * row), not whether the amount got computed and added to the run at all.
+     *
+     * Fixed by querying the row WITHOUT a status/deleted_at filter, then telling those two cases
+     * apart explicitly: no row at all (this company genuinely never mapped a PED type to this
+     * source event) still returns null, preserving the existing "fall back to a sensible hardcoded
+     * default so sync data isn't silently dropped" behavior for a company that hasn't configured
+     * Payroll Configuration yet -- but a row that EXISTS and is inactive/deleted now returns
+     * `['disabled' => true]` instead, an explicit signal each call site checks for and `continue`s
+     * past entirely (skips computing this source event's contribution at all), correctly honoring
+     * the admin's actual decision to turn that item off rather than silently reverting to a
+     * default. See this method's own return type and every one of its 3 call sites for how the
+     * signal is consumed.
+     *
+     * @return array{code:string,name_th:string,name_en:string,item_type:string,is_custom:bool}|array{disabled:true}|null
+     */
     private function pedTypeBySourceEvent(int $compId, string $sourceEventCode): ?array {
-        $stmt = $this->db->prepare("SELECT item_code, item_name_th, item_name_en, item_type
+        $stmt = $this->db->prepare("SELECT item_code, item_name_th, item_name_en, item_type, status, deleted_at
             FROM `payroll_earning_deduction_types`
-            WHERE comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL
-                AND source_event_code = :code LIMIT 1");
+            WHERE comp_id = :comp_id AND source_event_code = :code LIMIT 1");
         $stmt->execute([':comp_id' => $compId, ':code' => $sourceEventCode]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ? $this->rowToResolved($row) : null;
+        if (!$row) {
+            return null;
+        }
+        if ($row['status'] !== 'active' || $row['deleted_at'] !== null) {
+            return ['disabled' => true];
+        }
+        return $this->rowToResolved($row);
     }
 
     /** @return array{code:string,name_th:string,name_en:string,item_type:string,is_custom:bool}|null */

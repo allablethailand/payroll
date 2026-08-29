@@ -210,6 +210,57 @@ try {
     check('department_id resolved to the internal id', (int)$emp1['department_id'], $engId);
     check('data_source is sync', $emp1['data_source'], 'sync');
 
+    // 2026-08-28, real bug found and fixed: EmployeeSyncer::upsertItem()'s UPDATE branch never wrote
+    // origami_ref_id -- so a manually-created employee matched via the employee_no fallback (not the
+    // ref_id path) never actually got "linked" to Origami. Confirms the fix directly: clone a manual
+    // row from employee 1's own just-created row (comp_id/name/dob/etc copied, origami_ref_id left
+    // NULL, data_source forced to 'manual'), then sync a fresh candidate sharing that SAME
+    // employee_no but a NEW ref_id -- the manual row must be UPDATED in place (not duplicated) and
+    // must come out of it with origami_ref_id set to the new candidate's ref_id.
+    // Clone employee 1's own just-created row wholesale (every NOT NULL column already has a valid
+    // value since EmployeeSyncer's INSERT branch put it there) rather than hand-listing employees'
+    // many NOT NULL columns (title/nationality/address/emergency-contact/employment_type/etc) here.
+    $sourceStmt = $pdo->prepare("SELECT * FROM employees WHERE origami_ref_id = 11001 AND comp_id = :c");
+    $sourceStmt->execute([':c' => $compId]);
+    $cloneRow = $sourceStmt->fetch(PDO::FETCH_ASSOC);
+    unset($cloneRow['id'], $cloneRow['created_at'], $cloneRow['updated_at']);
+    $cloneRow['employee_no'] = 'MDS_EMP_3';
+    $cloneRow['origami_ref_id'] = null;
+    $cloneRow['data_source'] = 'manual';
+    $cloneRow['personal_email'] = 'mds3@test.local';
+    $cloneRow['mobile_no'] = '0833333333';
+    $cloneRow['sync_batch_id'] = null;
+    $cols = array_keys($cloneRow);
+    $insertSql = "INSERT INTO employees (`" . implode('`,`', $cols) . "`) VALUES (:" . implode(',:', $cols) . ")";
+    $pdo->prepare($insertSql)->execute($cloneRow);
+    $manualStmt = $pdo->prepare("SELECT id, origami_ref_id FROM employees WHERE employee_no = 'MDS_EMP_3' AND comp_id = :c");
+    $manualStmt->execute([':c' => $compId]);
+    $manualBefore = $manualStmt->fetch(PDO::FETCH_ASSOC);
+    checkTrue('manual employee fixture created with no origami_ref_id', $manualBefore !== false && $manualBefore['origami_ref_id'] === null);
+
+    // NOTE: exercised via EmployeeSyncer::applyOne() directly, NOT $orch->syncEntity() -- the bulk
+    // sync() path (what syncEntity() actually calls) only ever matches by findByRefId(), with no
+    // employee_no fallback at all (a separate, pre-existing gap, out of scope here). applyOne() is
+    // the one actually used by the production code this fix targets: EmployeeSyncModel::resyncOne()
+    // (Employee Detail's "Re-Sync"/"Sync from Origami" button, and the same List-page per-row
+    // action), and EmployeeSyncModel::apply() (the List page's bulk picker).
+    $linkBatchId = (new SyncBatchModel($pdo))->start($compId, 'employee', 'sync', 'manual', $adminUserId);
+    $candidate3 = [
+        'ref_id' => 11003, 'employee_no' => 'MDS_EMP_3', 'name_th' => 'ทดสอบ', 'surname_th' => 'พนักงานสาม',
+        'name_en' => 'Test', 'surname_en' => 'EmployeeThree', 'date_of_birth' => '1997-01-01', 'gender' => 'male',
+        'department_ref_id' => null, 'position_ref_id' => null, 'shift_ref_id' => null,
+        'employment_date' => '2024-03-01', 'employment_status' => 'permanent',
+        'personal_email' => 'mds3@test.local', 'mobile_no' => '0833333333', 'is_active' => true,
+    ];
+    $employeeSyncer = new EmployeeSyncer($pdo);
+    $linkResult = $employeeSyncer->applyOne($compId, $candidate3, $linkBatchId, $adminUserId);
+    check('applyOne() reports "updated" (matched the manual row, not a fresh insert)', $linkResult['action'], 'updated');
+    $manualStmt->execute([':c' => $compId]);
+    $manualRows = $manualStmt->fetchAll(PDO::FETCH_ASSOC);
+    check('exactly one row for MDS_EMP_3 after linking (matched+updated, not duplicated)', count($manualRows), 1);
+    check('manually-created employee is now linked via employee_no fallback', (int)$manualRows[0]['origami_ref_id'], 11003);
+    check('same local id preserved across the link (updated in place, not re-inserted)', (int)$manualRows[0]['id'], (int)$manualBefore['id']);
+
     // Deactivation: employee 1 removed from a non-empty feed -> employee_status becomes resigned.
     $fake->employees = [$fake->employees[1]]; // keep only employee 2 (which still errors on department, so total=1, success=0)
     // Give employee 2 a resolvable department this time so the feed is non-empty AND has a success.

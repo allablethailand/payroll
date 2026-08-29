@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../ExcelRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../export/th/PndOneExporter.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../../../models/StatutoryFormatVersionModel.php';
 require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
@@ -86,8 +87,10 @@ class PndOneReport implements ReportGeneratorInterface {
         $monthNum = (int)date('n', strtotime($run['period_start_date']));
 
         if ($format === 'txt') {
+            // 2026-08-29 -- see Sso110Report's own comment on the same call pattern.
+            $versionCode = (new StatutoryFormatVersionModel())->resolveVersionCode($compId, $this->code());
             $exporter = new PndOneExporter();
-            $content = $exporter->generate(['period' => ['tax_year' => $yearBe, 'tax_month' => $monthNum], 'employees' => $employeeList]);
+            $content = $exporter->generate(['period' => ['tax_year' => $yearBe, 'tax_month' => $monthNum], 'employees' => $employeeList, 'version_code' => $versionCode]);
             return ['content' => $content, 'file_name' => $exporter->fileName(['period' => ['tax_year' => $yearBe, 'tax_month' => $monthNum]]), 'mime_type' => 'text/plain'];
         }
 
@@ -111,7 +114,7 @@ class PndOneReport implements ReportGeneratorInterface {
         }
         $html = <<<HTML
 <html><head><style>
-body { font-family: 'DejaVu Sans', sans-serif; font-size: 11px; }
+body { font-family: 'TH Sarabun New', 'DejaVu Sans', sans-serif; font-size: 14px; }
 table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
 th { background: #f0f0f0; }
