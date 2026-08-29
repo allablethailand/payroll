@@ -408,12 +408,30 @@ try {
     checkTrue('year with no approved runs rejected with a clear error', $noDataForYear);
 
     // ---------- PND1 (monthly) ----------
+    // 2026-08-29, rewritten against a structural field-order description the user gave directly
+    // -- see PndOneExporter/PndOneReport's own docblocks for the full 20-field layout and the
+    // one flagged data gap (no structured house-no./moo/building/soi/road columns exist).
     echo "=== PndOneReport (statutory, monthly) ===\n";
     $pnd1Report = ReportRegistry::get('TH_PND1');
     $pnd1Txt = $pnd1Report->generate(['comp_id' => $compId, 'run_id' => $runId], 'txt');
     $pnd1Lines = explode("\r\n", rtrim($pnd1Txt['content'], "\r\n"));
     check('monthly txt has 1 employee line', count($pnd1Lines), 1);
-    check('monthly txt tax_id matches decrypted value', explode('|', $pnd1Lines[0])[0], $taxId);
+    $pnd1Fields = explode('|', $pnd1Lines[0]);
+    check('field 1: form type code is the constant 401N', $pnd1Fields[0], '401N');
+    check('field 2: sequence number starts at 1', $pnd1Fields[1], '1');
+    // insured_id is the employee's id_card_no (matches SSO110's own same-week convention), not
+    // tax_id_no -- see PndOneReport's own docblock.
+    check('field 3: id_card_no matches decrypted value', $pnd1Fields[2], $idCardNo);
+    check('field 4: prefix is the Thai text นาย (mr), not a numeric code', $pnd1Fields[3], 'นาย');
+    check('20 total pipe-delimited fields per row', count($pnd1Fields), 20);
+
+    // "รองรับ 2 ภาษาเหมือนกัน" -- employee/company name + prefix follow the requested language.
+    $pnd1TxtEn = $pnd1Report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'en'], 'txt');
+    $pnd1FieldsEn = explode('|', explode("\r\n", rtrim($pnd1TxtEn['content'], "\r\n"))[0]);
+    check('en language: prefix is the English text Mr.', $pnd1FieldsEn[3], 'Mr.');
+    checkTrue('en language produces a different row than th (name/prefix change)', $pnd1Fields !== $pnd1FieldsEn);
+    check('en language: id_card_no field identical regardless of language', $pnd1FieldsEn[2], $pnd1Fields[2]);
+
     $pnd1DraftBlocked = false;
     try {
         $pnd1Report->generate(['comp_id' => $compId, 'run_id' => $draftRunId], 'txt');

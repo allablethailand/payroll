@@ -377,6 +377,40 @@ try {
     $invalidLangDetailLine = explode("\r\n", rtrim($invalidLangResult['content'], "\r\n"))[1];
     check('an invalid language value falls back to th (not a hard error)', trim((string)iconv('TIS-620', 'UTF-8', substr($invalidLangDetailLine, 16, 20))), 'ทดสอบ ไฟล์ธนาคาร');
 
+    /* ---------- Real bug: UTF-8 truncation corrupting a name mid-character ---------- */
+    // 2026-08-29, real bug found and fixed (explicit report: "เลือกเป็น UTF-8 แล้วแต่่ยังอ่านไม่ออก" --
+    // selected UTF-8 encoding, Thai text still unreadable). Root cause: this fixture's own Thai
+    // name 'ทดสอบ ไฟล์ธนาคาร' is ~46 bytes in UTF-8 (3 bytes/char) but only 20 bytes in TIS-620
+    // (1 byte/char) -- the 20-byte detail name column truncates it either way, but a byte-based
+    // substr() (correct for TIS-620) can slice a multi-byte UTF-8 character IN HALF, producing
+    // invalid UTF-8 bytes -- exactly the "ไอ¸—ไอ¸´"-style garbage the report described. Switching
+    // this company's own BAY config to text_encoding=utf8 (still fixed_width) reproduces the
+    // exact code path that used to corrupt this field.
+    echo "=== UTF-8 encoding: truncation must not split a multi-byte character (real bug fix) ===\n";
+    // has_header_row must be passed explicitly here (true) -- saveConfig() defaults any OMITTED
+    // boolean field to false, which would otherwise silently turn the header row back off (a real
+    // mistake caught while writing this exact test, not a product bug -- see the debug trail this
+    // assertion block replaced).
+    $utf8ConfigRes = $model->saveConfig($compId, $BAY_FORMAT_ID, [
+        'delimiter_type' => 'fixed_width', 'line_ending' => 'crlf', 'text_encoding' => 'utf8',
+        'has_header_row' => true, 'is_verified' => 1,
+    ], $userId);
+    checkTrue('saveConfig() to text_encoding=utf8 succeeds' . (empty($utf8ConfigRes['status']) ? " ({$utf8ConfigRes['message']})" : ''), $utf8ConfigRes['status']);
+    $utf8Result = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
+    $utf8Lines = explode("\r\n", rtrim($utf8Result['content'], "\r\n"));
+    check('header + detail lines both rendered (2 lines)', count($utf8Lines), 2);
+    $utf8DetailLine = $utf8Lines[1];
+    check('detail line is still exactly 80 bytes (no field-shift corruption from the truncation fix)', strlen($utf8DetailLine), 80);
+    $utf8NameField = substr($utf8DetailLine, 16, 20);
+    checkTrue('name field is exactly 20 bytes wide (padded back out after character-safe truncation)', strlen($utf8NameField) === 20);
+    checkTrue('name field is valid UTF-8 (not a character split in half mid-sequence)', mb_check_encoding(rtrim($utf8NameField), 'UTF-8'));
+    checkTrue('the readable part of the truncated name is still a genuine PREFIX of the real name (no corruption before the cut point)', str_starts_with('ทดสอบ ไฟล์ธนาคาร', rtrim($utf8NameField)));
+    // Restore to the tis620 + has_header_row=true the rest of this file's own fixtures assume.
+    $model->saveConfig($compId, $BAY_FORMAT_ID, [
+        'delimiter_type' => 'fixed_width', 'line_ending' => 'crlf', 'text_encoding' => 'tis620',
+        'has_header_row' => true, 'is_verified' => 1,
+    ], $userId);
+
     /* ---------- Per-cycle bank account override ---------- */
     // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" -- a
     // SECOND bank account for the SAME company, with its own account_no/company_code, pinned to
@@ -433,6 +467,28 @@ try {
     $resultUnpinned = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
     $headerLineUnpinned = explode("\r\n", rtrim($resultUnpinned['content'], "\r\n"))[0];
     check("header company_account_no falls back to the company's is_default account again after unpinning", substr($headerLineUnpinned, 12, 10), '1112223334');
+
+    /* ---------- Real bug: reference code's MMYY must follow payment_date, not period_start_date ---------- */
+    // 2026-08-29, real bug found and fixed (explicit report: "0726 ไม่ใช่ครับต้องเป็น 0826 ตามเดือนที่จ่าย")
+    // -- a pay period and its actual disbursement date routinely land in different calendar
+    // months (e.g. period ends July 31, paid Aug 5th); the reference code's own MMYY portion (both
+    // header and detail) must track WHEN THE MONEY WAS ACTUALLY PAID, same as the header's own
+    // separate "Payment Date" field right next to it -- not the period's start date. This
+    // fixture's own run has payment_date == period_end_date (same month, see this file's own
+    // period/payment setup above), which would NOT distinguish the bug -- temporarily moves
+    // payment_date one calendar month later (still rolled back by this whole file's own enclosing
+    // transaction) to genuinely exercise the fix.
+    echo "=== Reference code MMYY follows payment_date, not period_start_date (real bug fix) ===\n";
+    $shiftedPaymentDate = (new DateTime($periodEnd))->modify('+1 month')->format('Y-m-d');
+    $pdo->prepare("UPDATE `payroll_runs` SET payment_date = :pd WHERE id = :id")->execute([':pd' => $shiftedPaymentDate, ':id' => $runId]);
+    $resultShiftedPayment = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
+    $linesShiftedPayment = explode("\r\n", rtrim($resultShiftedPayment['content'], "\r\n"));
+    $expectedShiftedMy = date('my', strtotime($shiftedPaymentDate));
+    check('header reference code MMYY (bytes 77-80) matches the SHIFTED payment_date, not period_start_date', substr($linesShiftedPayment[0], 76, 4), $expectedShiftedMy);
+    check('header Payment Date field (DDMMYY, bytes 7-12) also reflects the shifted payment_date', substr($linesShiftedPayment[0], 6, 6), date('dmy', strtotime($shiftedPaymentDate)));
+    check('detail reference code MMYY (last 4 bytes of the row) matches the SAME shifted payment_date', substr($linesShiftedPayment[1], -4), $expectedShiftedMy);
+    // Restore payment_date so nothing downstream in this shared-fixture file is affected.
+    $pdo->prepare("UPDATE `payroll_runs` SET payment_date = :pd WHERE id = :id")->execute([':pd' => $periodEnd, ':id' => $runId]);
 
     echo "\n--------------------------------------------------\n";
     echo "Passed: {$passes}, Failed: {$failures}\n";

@@ -15,20 +15,16 @@ const cycleDataReady = { reports: false, runs: false };
  * New report = one line here, same "new report type = one entry" convention the old
  * REPORT_CONTEXT_FIELDS map already had.
  */
+// 2026-08-29: `extra` no longer needs a 'language' value -- cycleExportCellHtml() now offers a
+// Thai/English choice unconditionally for every cycle report (see that function's own docblock).
+// `extra` here is only for report-specific ADDITIONAL fields beyond format+language: 'employee'
+// (Pay Slip has no run-level export, opens an employee picker instead).
 const REPORT_META = {
     TH_PND1: { frequency: 'cycle', extra: [] },
-    // 2026-08-29, explicit request: "รองรับ 2 ภาษาเหมือนกัน" (matching BANK_TRANSFER_FILE's own
-    // same-day language dropdown) -- TH_SSO110 has 3 formats (txt/excel/pdf), so this renders as
-    // a 6-item format x language dropdown, see cycleExportCellHtml()'s own comment.
-    TH_SSO110: { frequency: 'cycle', extra: ['language'] },
+    TH_SSO110: { frequency: 'cycle', extra: [] },
     TH_SLF: { frequency: 'cycle', extra: [] },
     PAY_SLIP: { frequency: 'cycle', extra: ['employee'] },
-    // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่ออกมา
-    // จะตามนั้นครับ" -- BANK_TRANSFER_FILE is the only cycle report with a language choice today
-    // (BankTransferFileReport::generate()'s new context.language); 'language' as an `extra` value
-    // is new, handled only in cycleExportCellHtml() below (annual cards' buildReportCard() has no
-    // report using it yet, so that path is untouched).
-    BANK_TRANSFER_FILE: { frequency: 'cycle', extra: ['language'] },
+    BANK_TRANSFER_FILE: { frequency: 'cycle', extra: [] },
     PAYROLL_REGISTER: { frequency: 'cycle', extra: [] },
     TH_PND1K_SUMMARY: { frequency: 'annual', extra: [] },
     TH_KOR20KOR: { frequency: 'annual', extra: [] },
@@ -107,6 +103,10 @@ function renderReportCards(reports) {
             const values = ($(this).attr('data-report-formats') || '').split(',').filter(Boolean);
             initSelect2(this, { mode: 'static', keys: keys, values: values });
         });
+        $('.field-language-input').each(function () {
+            initSelect2(this, { mode: 'static' });
+            $(this).val('th').trigger('change');
+        });
     }
 }
 
@@ -172,6 +172,7 @@ $(document).on('submit', '.report-generate-form', function (e) {
     if (!$form.find('.field-employee').hasClass('d-none')) {
         params.set('employee_id', $form.find('.field-employee-input').val());
     }
+    params.set('language', $form.find('.field-language-input').val() || 'th');
 
     generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
 });
@@ -212,10 +213,23 @@ function cycleReportsByType(type) {
     });
 }
 
-/** One Export cell per report column -- a plain button (single format, run-level), a dropdown
- *  (multiple formats, run-level), a Thai/English language dropdown (BANK_TRANSFER_FILE), or (a
- *  report scoped to one employee, e.g. Pay Slip -- there's no run-level version of it to export)
- *  a button that opens the employee-picker modal instead. */
+const REPORT_LANGUAGES = [
+    { code: 'th', flag: 'th.png', key: 'language_th', fallback: 'Thai' },
+    { code: 'en', flag: 'gb.png', key: 'language_en', fallback: 'English' },
+];
+
+/** One Export cell per report column -- a Thai/English x format dropdown for every report (a
+ *  single format just skips showing the format name in the item label), or (a report scoped to
+ *  one employee, e.g. Pay Slip -- there's no run-level version of it to export) a button that
+ *  opens the employee-picker modal instead (that modal's own confirm button carries a language
+ *  choice too, see its own markup/handler).
+ *  2026-08-29, explicit follow-up request: "ตัวออกรายงาน ที่เลือกได้ว่า en หรือ th ต้องออกได้จากทุกหน้าที่มี
+ *  ปุ่ม Export ครับ ตอนนี้เหมือนยังเลือกไม่ได้ครับ" -- was opt-in per report via REPORT_META's own
+ *  `extra: ['language']` (only BANK_TRANSFER_FILE/TH_SSO110 had it); now unconditional for every
+ *  cycle report. A report whose own generate() never reads context.language (most of them, still)
+ *  just silently ignores the extra query param -- same "unused key" tolerance
+ *  ReportsController::generate()'s own context-building already relies on for year/month/
+ *  employee_id today, so this is safe to turn on everywhere without auditing each report first. */
 function cycleExportCellHtml(report, run) {
     const meta = REPORT_META[report.code] || { frequency: 'cycle', extra: [] };
     const formats = report.supported_formats || [];
@@ -225,44 +239,18 @@ function cycleExportCellHtml(report, run) {
             data-report-code="${report.code}" data-run-id="${run.id}" title="${escapeHtmlReports(label)}">
             <i class="fa-solid fa-file-export"></i></button>`;
     }
-    // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ" -- one
-    // dropdown item per format x language combination (BANK_TRANSFER_FILE only ever has 1 format
-    // so this is 2 items; TH_SSO110 -- added same round -- has 3 formats so this is 6). A single
-    // format just skips showing the format name in the label, matching BANK_TRANSFER_FILE's own
-    // original simpler look.
-    if (meta.extra.includes('language')) {
-        const langs = [
-            { code: 'th', flag: 'th.png', key: 'language_th', fallback: 'Thai' },
-            { code: 'en', flag: 'gb.png', key: 'language_en', fallback: 'English' },
-        ];
-        const items = [];
-        formats.forEach(function (fmt) {
-            langs.forEach(function (lng) {
-                const fmtLabel = formats.length > 1 ? `${formatLabel(fmt)} - ` : '';
-                items.push(`<li><a class="dropdown-item cycle-export-btn" href="#" data-report-code="${report.code}" data-run-id="${run.id}" data-format="${fmt}" data-language="${lng.code}"><img src="${BASE_URL}/public/flags/${lng.flag}" class="me-1" style="width:16px;"> ${fmtLabel}${langData[lng.key] || lng.fallback}</a></li>`);
-            });
+    const items = [];
+    formats.forEach(function (fmt) {
+        REPORT_LANGUAGES.forEach(function (lng) {
+            const fmtLabel = formats.length > 1 ? `${formatLabel(fmt)} - ` : '';
+            items.push(`<li><a class="dropdown-item cycle-export-btn" href="#" data-report-code="${report.code}" data-run-id="${run.id}" data-format="${fmt}" data-language="${lng.code}"><img src="${BASE_URL}/public/flags/${lng.flag}" class="me-1" style="width:16px;"> ${fmtLabel}${langData[lng.key] || lng.fallback}</a></li>`);
         });
-        return `<div class="dropdown">
-            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" title="${escapeHtmlReports(label)}">
-                <i class="fa-solid fa-file-export"></i>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">${items.join('')}</ul>
-        </div>`;
-    }
-    if (formats.length <= 1) {
-        const fmt = formats[0] || 'pdf';
-        return `<button type="button" class="btn btn-sm btn-outline-secondary cycle-export-btn"
-            data-report-code="${report.code}" data-run-id="${run.id}" data-format="${fmt}" title="${escapeHtmlReports(label)}">
-            <i class="fa-solid fa-file-export"></i></button>`;
-    }
-    const items = formats.map(function (f) {
-        return `<li><a class="dropdown-item cycle-export-btn" href="#" data-report-code="${report.code}" data-run-id="${run.id}" data-format="${f}">${formatLabel(f)}</a></li>`;
-    }).join('');
+    });
     return `<div class="dropdown">
         <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" title="${escapeHtmlReports(label)}">
             <i class="fa-solid fa-file-export"></i>
         </button>
-        <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
+        <ul class="dropdown-menu dropdown-menu-end">${items.join('')}</ul>
     </div>`;
 }
 
@@ -386,6 +374,7 @@ $(document).on('click', '.cycle-export-employee-btn', function () {
     cycleExportEmployeeContext = { reportCode: reportCode, runId: $(this).data('run-id') };
     $('#cycleExportEmployeeModalTitle').text(report ? reportLabel(report) : (langData['input_employee'] || 'Employee'));
     $('#cycleExportEmployeeSelect').val(null).trigger('change');
+    $('#cycleExportEmployeeLanguage').val('th').trigger('change');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('cycleExportEmployeeModal')).show();
 });
 $(document).on('click', '#cycleExportEmployeeConfirmBtn', function () {
@@ -402,6 +391,7 @@ $(document).on('click', '#cycleExportEmployeeConfirmBtn', function () {
     params.set('format', format);
     params.set('run_id', cycleExportEmployeeContext.runId);
     params.set('employee_id', employeeId);
+    params.set('language', $('#cycleExportEmployeeLanguage').val() || 'th');
     generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
     bootstrap.Modal.getInstance(document.getElementById('cycleExportEmployeeModal')).hide();
 });
@@ -512,6 +502,7 @@ $(document).ready(function () {
     if (typeof initSelect2 === 'function') {
         initSelect2('#filter_export_report_type', { mode: 'static', allowClear: true });
         initSelect2('#cycleExportEmployeeSelect', { mode: 'ajax' });
+        initSelect2('#cycleExportEmployeeLanguage', { mode: 'static' });
     }
     // Default the shared Annual year picker to the current B.E. year -- the vast majority of the
     // time an admin opens this tab it's to issue this year's (or the one that just ended's) annual
