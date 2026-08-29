@@ -292,14 +292,28 @@ class BankFileFormatModel {
             ':user_id' => $userId,
         ];
         if ($existingId) {
-            $params[':id'] = $existingId;
+            // 2026-08-29, real bug found and fixed (surfaced while adding new test coverage --
+            // this UPDATE path had never actually been exercised by any test before, only the
+            // very first-ever saveConfig() call for a given comp_id+format, which always takes
+            // the INSERT branch below): this UPDATE statement's own placeholders don't include
+            // :comp_id/:fmt at all (the row is identified by :id instead) -- but $params (built
+            // above for the INSERT branch) still carries both. PDO throws "SQLSTATE[HY093]:
+            // Invalid parameter number" when execute() is given bound values for placeholders
+            // that don't exist in the prepared statement. Scoped to only the columns this UPDATE
+            // actually sets, same "build a fresh scoped array, don't reuse the INSERT one"
+            // pattern saveField()'s own UPDATE branch already uses in this same class.
+            $updateParams = [
+                ':delimiter_type' => $delimiterType, ':delimiter_char' => $delimiterChar, ':line_ending' => $lineEnding,
+                ':has_header_row' => $hasHeaderRow, ':has_trailer_row' => $hasTrailerRow, ':text_encoding' => $textEncoding,
+                ':is_verified' => $isVerified, ':user_id' => $userId, ':id' => $existingId,
+            ];
             $this->db->prepare(
                 "UPDATE bank_file_format_configs SET delimiter_type = :delimiter_type, delimiter_char = :delimiter_char,
                     line_ending = :line_ending, has_header_row = :has_header_row, has_trailer_row = :has_trailer_row,
                     text_encoding = :text_encoding, is_verified = :is_verified, status = 'active',
                     updated_by = :user_id, updated_at = CURRENT_TIMESTAMP
                  WHERE id = :id"
-            )->execute($params);
+            )->execute($updateParams);
         } else {
             $this->db->prepare(
                 "INSERT INTO bank_file_format_configs

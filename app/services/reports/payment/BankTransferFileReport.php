@@ -322,7 +322,7 @@ class BankTransferFileReport implements ReportGeneratorInterface {
                 $formatted = $this->toFileEncoding($formatted, $encoding);
             }
             if ($isFixedWidth && !empty($field['width'])) {
-                $formatted = $this->padByte($formatted, (int)$field['width'], (string)($field['pad_char'] ?? ' '), (string)($field['pad_direction'] ?? 'right'));
+                $formatted = $this->padByte($formatted, (int)$field['width'], (string)($field['pad_char'] ?? ' '), (string)($field['pad_direction'] ?? 'right'), $encoding === null);
             }
             $cells[] = $formatted;
         }
@@ -339,13 +339,42 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         return $value;
     }
 
-    /** Byte-length pad/truncate honoring the field's own pad_char/pad_direction -- same byte-based
-     *  reasoning as FixedWidthHelperTrait::padText()/padNumber(), generalized to a configurable
-     *  direction/character instead of those methods' fixed conventions. */
-    private function padByte(string $value, int $width, string $padChar, string $direction): string {
+    /**
+     * Byte-length pad/truncate honoring the field's own pad_char/pad_direction -- same byte-based
+     * reasoning as FixedWidthHelperTrait::padText()/padNumber(), generalized to a configurable
+     * direction/character instead of those methods' fixed conventions.
+     *
+     * 2026-08-29, real bug found and fixed (explicit report: "เลือกเป็น UTF-8 แล้วแต่่ยังอ่านไม่ออก" --
+     * selected UTF-8 encoding, Thai text still unreadable): when $isUtf8Content is true (the
+     * company picked text_encoding=utf8, so toFileEncoding()/TIS-620 conversion never ran and the
+     * string is still genuine multi-byte UTF-8), a plain substr($value, 0, $width) truncation --
+     * correct and safe for single-byte TIS-620 content, which is what this method was written and
+     * tested against first -- can slice a multi-byte UTF-8 character IN HALF whenever a real name
+     * is longer than its column width in bytes (routine for Thai text: 3 bytes/char in UTF-8 vs 1
+     * byte/char in TIS-620, so a name that fit a 30-byte TIS-620 column can easily be 60-90+ bytes
+     * in UTF-8). The truncated tail byte(s) of that split character are what actually produced the
+     * "ไอ¸—ไอ¸´"-style garbage the report described -- not a viewer/encoding-detection problem, a
+     * genuinely corrupted, invalid UTF-8 byte sequence baked into the file itself. Fixed by using
+     * mb_strcut() (a byte-LIMIT truncation that still respects character boundaries) instead of
+     * substr() specifically for the UTF-8 case; TIS-620 content keeps the original safe substr()
+     * path unchanged, since 1-byte-per-char makes byte-position truncation inherently safe there.
+     */
+    private function padByte(string $value, int $width, string $padChar, string $direction, bool $isUtf8Content = false): string {
         $bytes = strlen($value);
         if ($bytes >= $width) {
-            return substr($value, 0, $width);
+            $value = $isUtf8Content ? mb_strcut($value, 0, $width, 'UTF-8') : substr($value, 0, $width);
+            // mb_strcut() only cuts on whole-character boundaries, so it can legitimately return
+            // FEWER than $width bytes (whenever the byte limit falls in the middle of a
+            // multi-byte character -- that whole character is dropped rather than split). Pad
+            // the shortfall back out with spaces so this field still occupies exactly $width
+            // bytes -- otherwise every field after it in the row would silently shift left,
+            // corrupting the fixed-width alignment of the rest of the line, not just this field.
+            $shortfall = $width - strlen($value);
+            if ($shortfall > 0) {
+                $pad = str_repeat(' ', $shortfall);
+                $value = $direction === 'left' ? $pad . $value : $value . $pad;
+            }
+            return $value;
         }
         $pad = str_repeat($padChar !== '' ? $padChar[0] : ' ', $width - $bytes);
         return $direction === 'left' ? $pad . $value : $value . $pad;

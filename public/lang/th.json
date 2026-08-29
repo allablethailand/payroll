@@ -1280,6 +1280,7 @@
     "input_year_be": "ปี (พ.ศ.)",
     "input_payroll_run": "รอบเงินเดือน",
     "input_employee": "พนักงาน",
+    "report_language": "ภาษา",
     "btn_generate": "ออกรายงาน",
     "generate_success": "ออกรายงานสำเร็จ",
     "generate_failed": "ออกรายงานไม่สำเร็จ",
