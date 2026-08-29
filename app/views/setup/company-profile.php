@@ -105,12 +105,12 @@
                  as Fiscal Year Start Month above), governs the divisor PayrollRunModel::recalculate()
                  uses for a monthly-rate employee's mid-period join/leave proration -- default 30
                  matches the Thai labor law convention named outright in the request. -->
-            <div class="col-sm-3 mt-3">
+            <div class="col-sm-2 mt-3">
                 <label class="form-label">
                     <span data-i18n="prorate_divisor_days">Proration Divisor (Days)</span>
                 </label>
             </div>
-            <div class="col-sm-3 mt-3">
+            <div class="col-sm-4 mt-3">
                 <input type="number" class="form-control" name="prorate_divisor_days" id="prorate_divisor_days" min="1" max="31" value="30">
                 <div class="form-text" data-i18n="prorate_divisor_days_hint">Used to calculate partial-month pay when an employee joins or leaves mid-period (Thai labor law: 30).</div>
             </div>
