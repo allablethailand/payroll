@@ -27,6 +27,7 @@
     "attendance_deduction_event_late": "Late",
     "attendance_deduction_event_absent": "Absent",
     "attendance_deduction_event_unpaid_leave": "Unpaid Leave",
+    "attendance_deduction_event_leave_pending": "Leave Pending Approval",
     "attendance_deduction_method": "Deduction Method",
     "attendance_deduction_method_percent_of_rate": "Percent of Rate",
     "attendance_deduction_method_flat_amount": "Flat Amount",

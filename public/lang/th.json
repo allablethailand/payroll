@@ -27,6 +27,7 @@
     "attendance_deduction_event_late": "มาสาย",
     "attendance_deduction_event_absent": "ขาดงาน",
     "attendance_deduction_event_unpaid_leave": "ลาไม่รับเงินเดือน",
+    "attendance_deduction_event_leave_pending": "ลารออนุมัติ",
     "attendance_deduction_method": "วิธีการหัก",
     "attendance_deduction_method_percent_of_rate": "เปอร์เซ็นต์ของอัตรา",
     "attendance_deduction_method_flat_amount": "จำนวนเงินคงที่",

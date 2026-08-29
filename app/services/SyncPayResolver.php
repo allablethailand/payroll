@@ -101,6 +101,10 @@ class SyncPayResolver {
         'late' => ['LATE'],
         'absent' => ['ABSENT', 'ABSENCE'],
         'unpaid_leave' => ['UNPAIDLEAVE', 'LEAVEWITHOUTPAY', 'LEAVENOPAY'],
+        // 2026-08-29, explicit request ("ลารออนุมัติ ถึงจะเอามาคำนวณเป็นเงินหัก") -- Origami's own
+        // real item_code for this is 'LEAVE_PENDING' (normalizes to 'LEAVEPENDING', already covered
+        // by the primary alias below), PENDINGLEAVE kept as a defensive secondary spelling only.
+        'leave_pending' => ['LEAVEPENDING', 'PENDINGLEAVE'],
     ];
 
     /**
@@ -149,6 +153,18 @@ class SyncPayResolver {
         'unpaid_leave' => [
             'default_code' => 'LEAVE_NO_PAY_DEDUCT', 'name_th' => 'หักลาไม่รับเงินเดือน', 'name_en' => 'Unpaid Leave Deduction',
             'structured' => [['column' => 'leave_without_pay_days', 'unit' => 'days']],
+        ],
+        // 2026-08-29, explicit bug report: "Leave Approved ต้องไม่นำมาบวกเป็นเงินได้ ลาไม่รับเงิน และ
+        // ลารออนุมัติ ถึงจะเอามาคำนวณเป็นเงินหัก" -- leave that's still awaiting approval isn't
+        // confirmed as paid leave yet, so (like unpaid leave) it's provisionally deducted until it's
+        // actually approved -- at which point Origami stops reporting it as pending and it simply
+        // stops appearing here. No structured payroll_sync_items column exists for this (unlike
+        // late/absent/unpaid_leave) -- it only ever arrives via the generic item_values[] array
+        // (item_code 'LEAVE_PENDING'), matched purely through EVENT_ALIASES/the company's own
+        // catalog source_event_code below.
+        'leave_pending' => [
+            'default_code' => 'LEAVE_PENDING_DEDUCT', 'name_th' => 'หักลารออนุมัติ', 'name_en' => 'Pending Leave Deduction',
+            'structured' => [],
         ],
     ];
 
@@ -387,8 +403,40 @@ class SyncPayResolver {
 
         // Whatever item_code groups are left are genuinely generic/custom items -- still may carry
         // more than one unit_type row for the same item_code, same candidate-pool treatment.
+        //
+        // 2026-08-29, two real bugs found and fixed here (explicit report: "Leave Approved ต้องไม่
+        // นำมาบวกเป็นเงินได้...มีส่ง หักเงินคำประกันการทำงานมา แต่ไม่นำไปคิดเป็นรายการหัก"):
+        //
+        // 1. A DEDUCTION-typed item can legitimately arrive with a NEGATIVE `value` (Origami already
+        //    communicates direction via item_type; the number itself is the raw signed amount --
+        //    confirmed with a real example, a guarantee-money installment sent as value=-500.00) but
+        //    pickBestCandidate()/the old `$amount <= 0` check below both silently discard anything
+        //    non-positive, since every OTHER caller of those two methods (OT/trip allowance/rule-
+        //    driven attendance events) only ever deals in positive magnitudes. Normalizing a
+        //    DEDUCTION-typed group's candidate values to their absolute magnitude up front, before
+        //    they ever reach that shared positive-only filtering, fixes this without touching
+        //    pickBestCandidate()/candidateToAmount() themselves (where a negative input should stay
+        //    invalid, since it's never legitimate for any of their other callers).
+        //
+        // 2. A payload item_type that is neither INCOME nor DEDUCTION (e.g. Origami's own 'INFO' --
+        //    Leave Approved/Leave Pending are both sent this way) used to fall through to the
+        //    `else` branch below and get added as INCOME by default, since the old code only ever
+        //    checked "is it literally DEDUCTION" and treated every other value as earning. An
+        //    approved leave day is neither an extra payment nor something to withhold -- it's purely
+        //    informational (the employee's regular pay already covers it) -- so it must produce NO
+        //    line at all. This is a general fix (any future INFO-typed item behaves the same way),
+        //    not a hardcoded special case for these 2 item_codes specifically.
         foreach ($groupedByCode as $group) {
-            $candidates = array_map(fn($iv) => ['unit' => $iv['unit_type'] ?? null, 'value' => (float)($iv['value'] ?? 0)], $group);
+            $first = $group[0];
+            $itemCode = (string)($first['item_code'] ?? '');
+            $payloadType = strtoupper((string)($first['item_type'] ?? ''));
+            $payloadIsDeduction = $payloadType === 'DEDUCTION';
+            $payloadIsIncome = $payloadType === 'INCOME';
+
+            $candidates = array_map(function ($iv) use ($payloadIsDeduction) {
+                $value = (float)($iv['value'] ?? 0);
+                return ['unit' => $iv['unit_type'] ?? null, 'value' => $payloadIsDeduction ? abs($value) : $value];
+            }, $group);
             $best = $this->pickBestCandidate($candidates);
             if ($best === null) {
                 continue;
@@ -398,11 +446,10 @@ class SyncPayResolver {
                 continue;
             }
 
-            $first = $group[0];
-            $itemCode = (string)($first['item_code'] ?? '');
             $catalog = $this->pedTypeByItemCode($compId, $itemCode);
-            $payloadIsDeduction = strtoupper((string)($first['item_type'] ?? '')) === 'DEDUCTION';
             if ($catalog !== null) {
+                // A company-configured catalog mapping always wins outright (it's an explicit admin
+                // decision), regardless of whatever item_type Origami tagged the payload with.
                 $line = [
                     'source' => 'sync',
                     'code' => $catalog['code'],
@@ -417,22 +464,26 @@ class SyncPayResolver {
                 } else {
                     $deduction[] = $line;
                 }
+                continue;
+            }
+
+            if (!$payloadIsDeduction && !$payloadIsIncome) {
+                continue; // INFO or any other/unrecognized type -- informational only, no line produced.
+            }
+            $itemName = (string)($first['item_name'] ?? $itemCode);
+            $line = [
+                'source' => 'sync',
+                'code' => 'CUSTOM:' . $itemName,
+                'name_th' => $itemName,
+                'name_en' => $itemName,
+                'amount' => $amount,
+                'note' => $first['remark'] ?? null,
+                'is_custom' => true,
+            ];
+            if ($payloadIsDeduction) {
+                $deduction[] = $line;
             } else {
-                $itemName = (string)($first['item_name'] ?? $itemCode);
-                $line = [
-                    'source' => 'sync',
-                    'code' => 'CUSTOM:' . $itemName,
-                    'name_th' => $itemName,
-                    'name_en' => $itemName,
-                    'amount' => $amount,
-                    'note' => $first['remark'] ?? null,
-                    'is_custom' => true,
-                ];
-                if ($payloadIsDeduction) {
-                    $deduction[] = $line;
-                } else {
-                    $earning[] = $line;
-                }
+                $earning[] = $line;
             }
         }
 

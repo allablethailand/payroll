@@ -4856,10 +4856,9 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 
 .dash-run-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 4px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 4px;
     text-decoration: none;
     border-bottom: 1px solid #f2f2f2;
 }
@@ -4868,6 +4867,12 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 }
 .dash-run-row:hover {
     background: #fffaf1;
+}
+.dash-run-row-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
 }
 .dash-run-row-name {
     font-weight: 600;
@@ -4888,6 +4893,124 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     color: #212529;
     margin-bottom: 2px;
 }
+
+/* 2026-08-29, explicit request: "แถบสเตตัส ภาพรวมกระบวนการเงินเดือน ใส่สีให้สวยๆ" -- unlike Payroll
+   Process's own #stationRow (where .station-card stays neutral grey until clicked as a filter,
+   .active being the ONE currently-selected filter), every one of these 5 dashboard cards is always
+   "on" at once (they're simultaneous counts, not a single-select filter -- nothing here ever
+   toggles .active), so each gets its own permanent, distinct tint instead of relying on that
+   click-to-highlight mechanism. Colors intentionally echo dashStateBadge()'s own Bootstrap
+   subtle-badge family (draft=secondary/pending=warning/approved=info/paid=success/locked=dark) so
+   the palette reads as one consistent "this is what each state means" language across the whole
+   page, including the mini per-run timeline below. Scoped to #dashStationRow so Payroll Process's
+   real interactive filter row elsewhere in the app is untouched. */
+#dashStationRow .station-card {
+    cursor: default;
+}
+#dashStationRow .station-card[data-state="draft"] { background: #e2e3e5; color: #41464b; }
+#dashStationRow .station-card[data-state="draft"]::after { border-left-color: #e2e3e5; }
+#dashStationRow .station-card[data-state="pending_approval"] { background: #fff3cd; color: #92720c; }
+#dashStationRow .station-card[data-state="pending_approval"]::after { border-left-color: #fff3cd; }
+#dashStationRow .station-card[data-state="approved"] { background: #cff4fc; color: #055160; }
+#dashStationRow .station-card[data-state="approved"]::after { border-left-color: #cff4fc; }
+#dashStationRow .station-card[data-state="paid"] { background: #d1e7dd; color: #0f5132; }
+#dashStationRow .station-card[data-state="paid"]::after { border-left-color: #d1e7dd; }
+#dashStationRow .station-card[data-state="locked"] { background: #e0e7ff; color: #3730a3; }
+#dashStationRow .station-card[data-state="locked"]::after { border-left-color: #e0e7ff; }
+#dashStationRow .station-count {
+    background: rgba(0, 0, 0, .08);
+    color: inherit;
+}
+
+/* Mini per-run pipeline (public/js/dashboard.js's dashRunTimelineHtml()) -- same chevron-notch
+   technique as the full-size .station-card above, just scaled down to fit inline in a compact list
+   row; deliberately its own small parallel rule set rather than reusing .station-card at a smaller
+   font-size, since the chevron shape itself is drawn from height-dependent border-triangle math
+   that has to be resized as a unit. */
+.station-row-sm {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+}
+.station-card-sm {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 62px;
+    height: 24px;
+    margin-left: 3px;
+    padding: 0 10px 0 13px;
+    background: #f8fafc;
+    color: #b0b8c4;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.station-card-sm:first-child {
+    margin-left: 0;
+}
+.station-card-sm::before,
+.station-card-sm::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 0;
+    height: 0;
+    margin-top: -12px;
+    border-top: 12px solid transparent;
+    border-bottom: 12px solid transparent;
+}
+.station-card-sm::before {
+    left: 0;
+    border-left: 6px solid #ffffff;
+}
+.station-card-sm::after {
+    left: 100%;
+    border-left: 6px solid #f8fafc;
+    z-index: 1;
+}
+/* completed stage -- soft green "done", distinct from both the dim not-yet-reached default above
+   and the solid highlighted current stage below, so progress reads left-to-right at a glance */
+.station-card-sm--done {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+.station-card-sm--done::after {
+    border-left-color: #d1e7dd;
+}
+/* skipped -- the flow already branched off (reject/cancel/need-info) before reaching this stage, so
+   unlike a plain not-yet-reached stage it will never happen for this run; barely-there instead of
+   the neutral default so it doesn't read as "still pending" */
+.station-card-sm--skipped {
+    background: #fbfcfd;
+    color: #e2e8f0;
+}
+.station-card-sm--skipped::after {
+    border-left-color: #fbfcfd;
+}
+.station-card-sm.active[data-state="draft"] { background: #64748b; color: #fff; }
+.station-card-sm.active[data-state="draft"]::after { border-left-color: #64748b; }
+.station-card-sm.active[data-state="pending_approval"] { background: #f59e0b; color: #fff; }
+.station-card-sm.active[data-state="pending_approval"]::after { border-left-color: #f59e0b; }
+.station-card-sm.active[data-state="approved"] { background: #0ea5e9; color: #fff; }
+.station-card-sm.active[data-state="approved"]::after { border-left-color: #0ea5e9; }
+.station-card-sm.active[data-state="paid"] { background: #16a34a; color: #fff; }
+.station-card-sm.active[data-state="paid"]::after { border-left-color: #16a34a; }
+.station-card-sm.active[data-state="locked"] { background: #4f46e5; color: #fff; }
+.station-card-sm.active[data-state="locked"]::after { border-left-color: #4f46e5; }
+/* Branch outcomes (rejected/cancelled/need_info) -- same red/grey/blue family as the full-size
+   .station-card--reject/--cancel/--needinfo elsewhere in this file, kept consistent rather than
+   invented fresh, just applied via an explicit class here instead of rotated .active state since
+   these 3 states aren't part of DASH_RUN_STAGES. */
+.station-card-sm.active.station-card-sm--danger { background: #dc3545; color: #fff; }
+.station-card-sm.active.station-card-sm--danger::after { border-left-color: #dc3545; }
+.station-card-sm.active.station-card-sm--muted { background: #6c757d; color: #fff; }
+.station-card-sm.active.station-card-sm--muted::after { border-left-color: #6c757d; }
+.station-card-sm.active.station-card-sm--info { background: #0d6efd; color: #fff; }
+.station-card-sm.active.station-card-sm--info::after { border-left-color: #0d6efd; }
+
 @media (max-width: 991px) {
     .dash-quick-links {
         grid-template-columns: repeat(3, 1fr);
