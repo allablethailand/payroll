@@ -227,6 +227,15 @@
                         <i class="fas fa-camera"></i>
                     </span>
                     <input type="file" id="profile_photo_input" name="profile_photo" accept="image/*" class="d-none">
+                    <!-- 2026-08-29: the file input above only ever fed a local FileReader preview --
+                         nothing actually uploaded it or included it in saveEmployee()'s JSON payload
+                         (a <input type="file"> can never survive JSON.stringify), so the photo always
+                         reverted to nothing after a real save/reload. Same upload-then-hidden-field
+                         convention as #emp_signature_path below: this hidden field is the real value
+                         that travels with the form (collectEmployeeFormData() reads it generically,
+                         populateEmployeeForm() sets it generically), set by uploadEmpPhotoBlob()'s
+                         own AJAX call the moment a file is chosen -- not deferred until Save. -->
+                    <input type="hidden" id="emp_profile_photo_path" name="profile_photo_path" value="">
                 </div>
             </div>
             <h6 class="text-secondary fw-bold mb-3 mt-2">

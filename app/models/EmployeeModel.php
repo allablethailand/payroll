@@ -17,6 +17,15 @@ class EmployeeModel {
         return (bool)preg_match($pattern, $path);
     }
 
+    /** Same pattern as isValidSignaturePath() above, own folder (employee_photos, not signatures). */
+    public static function isValidPhotoPath(?string $path, int $compId): bool {
+        if ($path === null || $path === '') {
+            return true;
+        }
+        $pattern = '#^public/uploads/employee_photos/' . $compId . '/[a-f0-9]{32}\.(jpg|png|svg)$#';
+        return (bool)preg_match($pattern, $path);
+    }
+
     /**
      * Decrypts employees.base_salary_amount, tolerating a row that was never actually encrypted (a
      * raw INSERT bypassing save() -- e.g. every test fixture in tests/*.php that inserts directly
@@ -795,6 +804,9 @@ class EmployeeModel {
         }
         if (!empty($data['signature_path']) && !self::isValidSignaturePath((string)$data['signature_path'], $compId)) {
             return ['status' => false, 'message' => 'Invalid signature path.'];
+        }
+        if (!empty($data['profile_photo_path']) && !self::isValidPhotoPath((string)$data['profile_photo_path'], $compId)) {
+            return ['status' => false, 'message' => 'Invalid photo path.'];
         }
 
         $fkChecks = [
