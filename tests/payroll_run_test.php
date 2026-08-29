@@ -411,6 +411,20 @@ try {
     check('2 line_override_save entries logged (LATE_DEDUCT override + LEAVE_NO_PAY_DEDUCT exclude)', count($overrideSaveEntries), 2);
     check('2 line_override_remove entries logged (LATE_DEDUCT reset + LEAVE_NO_PAY_DEDUCT cleanup)', count($overrideRemoveEntries), 2);
 
+    // 2026-08-29, explicit bug report: "ปรับรายการหัก ใส่ยอดเป็น 0...แล้วกด Save ไม่ได้" -- override_amount=0
+    // was never covered by this test file before (only a non-zero override, 10.00, above). Reproducing
+    // directly against the model to isolate whether this is a real backend bug or a client-side-only
+    // issue. Placed here (after the audit-log-count assertions above, before the "both overrides from
+    // the section above were cleaned up" assumption the next block already documents) and cleaned up
+    // immediately after itself so it doesn't perturb either of those.
+    echo "=== Line overrides: override_amount = 0 (zero out a deduction entirely, distinct from exclude) ===\n";
+    $zeroOverrideRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', 0.00, 'waived entirely', $adminUserId, true);
+    checkTrue('lineOverrideSave() override_amount=0 succeeds' . (empty($zeroOverrideRes['status']) ? " ({$zeroOverrideRes['message']})" : ''), $zeroOverrideRes['status']);
+    $afterZeroDetails = $runModel->getDetails($pulledRunId, $compId);
+    $lateLineAfterZero = current(array_filter($afterZeroDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    check('LATE_DEDUCT amount is now 0.00 (zeroed, not removed/reverted to computed)', (float)($lateLineAfterZero['amount'] ?? -1), 0.0);
+    $runModel->lineOverrideRemove($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', $adminUserId, true);
+
     // ---------- Attendance data overrides (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบที่ Sync
     // มา ไม่ใช่แค่ยอดเงิน") -- distinct from the $-amount line overrides just above: corrects the RAW
     // number Origami sent so the deduction recomputes from it. Reuses $pulledRunId/$employeeFullId,
