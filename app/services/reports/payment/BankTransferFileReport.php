@@ -150,7 +150,23 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         $accountNo = !empty($row['account_no'])
             ? (string)(EncryptionService::decrypt($row['account_no'], $row['key_version'] !== null ? (int)$row['key_version'] : null) ?? '')
             : '';
-        return ['account_no' => $accountNo, 'company_code' => (string)($row['company_code'] ?? '')];
+        return ['account_no' => $this->digitsOnlyAccountNo($accountNo), 'company_code' => (string)($row['company_code'] ?? '')];
+    }
+
+    /**
+     * 2026-08-29, real bug found and fixed (explicit report: "เลขบัญชีต้องมีขีดหรือไม่ใส่ขีดช่วยปรับให้
+     * ด้วยครับ"): both BankAccountModel::save() (the company's own settlement account) and
+     * employees.bank_account_no (an employee's own account, entered free-text with no format
+     * validation at all) allow dashes as a human-readable display convention (e.g.
+     * "168-1-52209-0") -- a fixed-width machine field must never contain them: at best they
+     * silently eat digit positions the account number itself needs (a 10-digit account formatted
+     * with 3 dashes is 13 characters, so padByte()'s own truncate-to-width would cut off the
+     * LAST 3 real digits to make room for punctuation that was never meant to be there), at worst
+     * they just confuse the receiving bank's own parser, which expects digits only. Strips
+     * everything but digits before the field is ever padded/truncated.
+     */
+    private function digitsOnlyAccountNo(string $value): string {
+        return preg_replace('/\D/', '', $value) ?? '';
     }
 
     /* ---------- Original generic fallback (unchanged shape) ---------- */
@@ -350,7 +366,7 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         }
         $sourceField = (string)($field['source_field'] ?? '');
         switch ($sourceField) {
-            case 'bank_account_no': return $d !== null ? (string)$this->decryptEmployeeField($d, 'bank_account_no') : '';
+            case 'bank_account_no': return $d !== null ? $this->digitsOnlyAccountNo((string)$this->decryptEmployeeField($d, 'bank_account_no')) : '';
             case 'bank_account_name': return $d !== null ? (string)($d['bank_account_name'] ?? '') : '';
             case 'bank_code': return $d !== null ? (string)($d['bank_code'] ?? '') : '';
             case 'bank_name': return $d !== null ? (string)($language === 'en' ? ($d['bank_name_en'] ?? $d['bank_name_th'] ?? '') : ($d['bank_name_th'] ?? $d['bank_name_en'] ?? '')) : '';

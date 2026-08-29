@@ -17,7 +17,10 @@ const cycleDataReady = { reports: false, runs: false };
  */
 const REPORT_META = {
     TH_PND1: { frequency: 'cycle', extra: [] },
-    TH_SSO110: { frequency: 'cycle', extra: [] },
+    // 2026-08-29, explicit request: "รองรับ 2 ภาษาเหมือนกัน" (matching BANK_TRANSFER_FILE's own
+    // same-day language dropdown) -- TH_SSO110 has 3 formats (txt/excel/pdf), so this renders as
+    // a 6-item format x language dropdown, see cycleExportCellHtml()'s own comment.
+    TH_SSO110: { frequency: 'cycle', extra: ['language'] },
     TH_SLF: { frequency: 'cycle', extra: [] },
     PAY_SLIP: { frequency: 'cycle', extra: ['employee'] },
     // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่ออกมา
@@ -222,19 +225,28 @@ function cycleExportCellHtml(report, run) {
             data-report-code="${report.code}" data-run-id="${run.id}" title="${escapeHtmlReports(label)}">
             <i class="fa-solid fa-file-export"></i></button>`;
     }
-    // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ" -- always the
-    // report's own single format (BANK_TRANSFER_FILE only ever supports 'csv', see that class's own
-    // supportedFormats()), just a language choice instead of a format choice in the dropdown.
+    // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ" -- one
+    // dropdown item per format x language combination (BANK_TRANSFER_FILE only ever has 1 format
+    // so this is 2 items; TH_SSO110 -- added same round -- has 3 formats so this is 6). A single
+    // format just skips showing the format name in the label, matching BANK_TRANSFER_FILE's own
+    // original simpler look.
     if (meta.extra.includes('language')) {
-        const fmt = formats[0] || 'csv';
+        const langs = [
+            { code: 'th', flag: 'th.png', key: 'language_th', fallback: 'Thai' },
+            { code: 'en', flag: 'gb.png', key: 'language_en', fallback: 'English' },
+        ];
+        const items = [];
+        formats.forEach(function (fmt) {
+            langs.forEach(function (lng) {
+                const fmtLabel = formats.length > 1 ? `${formatLabel(fmt)} - ` : '';
+                items.push(`<li><a class="dropdown-item cycle-export-btn" href="#" data-report-code="${report.code}" data-run-id="${run.id}" data-format="${fmt}" data-language="${lng.code}"><img src="${BASE_URL}/public/flags/${lng.flag}" class="me-1" style="width:16px;"> ${fmtLabel}${langData[lng.key] || lng.fallback}</a></li>`);
+            });
+        });
         return `<div class="dropdown">
             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" title="${escapeHtmlReports(label)}">
                 <i class="fa-solid fa-file-export"></i>
             </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item cycle-export-btn" href="#" data-report-code="${report.code}" data-run-id="${run.id}" data-format="${fmt}" data-language="th"><img src="${BASE_URL}/public/flags/th.png" class="me-1" style="width:16px;"> ${langData['language_th'] || 'Thai'}</a></li>
-                <li><a class="dropdown-item cycle-export-btn" href="#" data-report-code="${report.code}" data-run-id="${run.id}" data-format="${fmt}" data-language="en"><img src="${BASE_URL}/public/flags/gb.png" class="me-1" style="width:16px;"> ${langData['language_en'] || 'English'}</a></li>
-            </ul>
+            <ul class="dropdown-menu dropdown-menu-end">${items.join('')}</ul>
         </div>`;
     }
     if (formats.length <= 1) {

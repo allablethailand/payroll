@@ -74,18 +74,18 @@ try {
     $bay = null;
     foreach ($formats as $f) { if ((int)$f['id'] === $BAY_FORMAT_ID) $bay = $f; }
     checkTrue('BAY format is in the active list', $bay !== null);
-    // 2026-08-29: 21 fields (13 header + 8 detail), replacing the earlier honestly-guessed 4-field
-    // detail-only draft with the real Krungsri layout the user supplied directly (see
-    // database/migrations/2026-08-29_4_krungsri_bank_transfer_real_layout.sql's own header comment
-    // for exactly how every width was derived, not guessed).
-    check('BAY field_count reflects the real Krungsri layout (13 header + 8 detail = 21)', $bay['field_count'] ?? null, 21);
+    // 2026-08-29: 20 fields (12 header + 8 detail) -- was 21 (13 header) until a real bug fix the
+    // same day removed a stray 1-byte blank field between total_count and total_amount in the
+    // header (explicit report: "ตรง head มันมีช่องว่างก่อนข้อมูลชุดสุดท้าย แต่ไฟล์ต้นฉบับจะต่อกันเลย" -- see
+    // migrations/2026-08-29_8_krungsri_header_no_gap_before_total_amount.sql's own header comment).
+    check('BAY field_count reflects the real Krungsri layout (12 header + 8 detail = 20)', $bay['field_count'] ?? null, 20);
     checkFalse('BAY has_own_override is false before this company edits anything', $bay['has_own_override'] ?? true);
 
     /* ---------- getFormatDetail() default template ---------- */
     echo "=== getFormatDetail() (system default) ===\n";
     $detail = $model->getFormatDetail($compId, $BAY_FORMAT_ID);
     checkTrue('detail found', $detail !== null);
-    check('13 header-row fields in the default template', count($detail['fields']['header']), 13);
+    check('12 header-row fields in the default template', count($detail['fields']['header']), 12);
     check('8 detail-row fields in the default template', count($detail['fields']['detail']), 8);
     checkFalse('none of the default fields are company-owned yet', $detail['fields']['detail'][0]['is_company_owned']);
     // 2026-08-29: getConfig()'s virtual default is now inferred from the fields themselves (every
@@ -112,7 +112,7 @@ try {
     checkTrue('saveField (new company field) succeeds' . (empty($saveField1['status']) ? " ({$saveField1['message']})" : ''), $saveField1['status']);
     $detailAfterFork = $model->getFormatDetail($compId, $BAY_FORMAT_ID);
     check('company now has 9 of its own detail fields (8 forked + 1 new)', count($detailAfterFork['fields']['detail']), 9);
-    check('header fields (13) were forked too, untouched by this detail-only edit', count($detailAfterFork['fields']['header']), 13);
+    check('header fields (12) were forked too, untouched by this detail-only edit', count($detailAfterFork['fields']['header']), 12);
     checkTrue('every field is now company-owned (forked from default)', $detailAfterFork['fields']['detail'][0]['is_company_owned']);
 
     $formatsAfterFork = $model->listFormats($compId);
@@ -121,7 +121,7 @@ try {
     checkTrue('has_own_override is now true', $bayAfterFork['has_own_override'] ?? false);
 
     $stillOriginalCount = $pdo->query("SELECT COUNT(*) FROM bank_file_format_fields WHERE bank_file_format_id = " . $BAY_FORMAT_ID . " AND comp_id IS NULL")->fetchColumn();
-    check('the shared system-default template is untouched (still 21 rows)', (int)$stillOriginalCount, 21);
+    check('the shared system-default template is untouched (still 20 rows)', (int)$stillOriginalCount, 20);
 
     $badField = $model->saveField($compId, $BAY_FORMAT_ID, [
         'row_type' => 'detail', 'source_type' => 'employee_field', 'source_field' => 'not_a_real_field',
@@ -187,8 +187,14 @@ try {
     checkTrue('test cycle create succeeds' . (empty($cycleSave['status']) ? " ({$cycleSave['message']})" : ''), $cycleSave['status']);
     $cycleId = $cycleSave['id'];
 
+    // 2026-08-29, real bug found and fixed (explicit report: "เลขบัญชีต้องมีขีดหรือไม่ใส่ขีดช่วยปรับให้ด้วย
+    // ครับ") -- stored WITH dashes (employees.bank_account_no is free-text, no format validation
+    // at all) -- $empAccountNo is the digits-only value the rendered fixed-width field must
+    // actually contain (used in every assertion below); $empAccountNoDashed is what's genuinely
+    // stored, proving the render path strips dashes rather than just happening to already be clean.
     $empAccountNo = '9998887770';
-    $empEnc = EncryptionService::encrypt($empAccountNo);
+    $empAccountNoDashed = '999-8-88777-0';
+    $empEnc = EncryptionService::encrypt($empAccountNoDashed);
     $insEmp = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          bank_id, bank_account_no, bank_account_name, key_version,
@@ -247,6 +253,62 @@ try {
     $expectedLine = '9998887770' . $expectedAmountField;
     checkTrue("configured fixed-width line matches account_no(10) + amount(8, zero-padded left, NO literal decimal point, real net_amount={$netAmount})", strpos($result['content'], $expectedLine) !== false);
 
+    /* ---------- Real bug: editing a DEFAULT field for the very first time ---------- */
+    // 2026-08-29, real bug found and fixed (explicit report, screenshot: editing the seeded
+    // default "รหัสอ้างอิงงวดจ่าย" field for the first time on a company that had never customized
+    // this format yet failed with "Field not found." even though the field was right there in the
+    // UI). Root cause: saveField() ran forkDefaultIfNeeded() (which clones the default template
+    // into BRAND NEW company-owned rows with fresh auto-increment ids) BEFORE checking whether the
+    // incoming `id` belonged to this company -- but that incoming `id` is the DEFAULT template
+    // row's own id (the id bffCurrentDetail actually holds before this company has ever forked),
+    // which no longer matches anything once the fork has happened. A FRESH company (never touched
+    // BAY before) is required to reproduce this -- the earlier sections in this file already
+    // forked comp_id's own copy, so this needs its own isolated company to genuinely exercise the
+    // "very first edit, id still points at a default row" code path.
+    echo "=== saveField() editing a DEFAULT field for the first time (real bug fix) ===\n";
+    $insComp2 = $pdo->prepare("INSERT INTO companies (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name, setup_status)
+        VALUES (:name, :name, 'TH', '1234567890123', 'Test Address', 'Tester', 'active')");
+    $insComp2->execute([':name' => 'BFF Test Co2 ' . uniqid()]);
+    $compId2 = (int)$pdo->lastInsertId();
+    $insBank3 = $pdo->prepare("INSERT INTO bank_accounts (comp_id, bank_id, account_no, account_no_hash, key_version, account_name, account_type, currency_code, is_default, status, created_by)
+        VALUES (:comp_id, 8, :acct, :hash, :kv, 'Co2 Account', 'current', 'THB', 1, 'active', :uid)");
+    $acct3 = '2223334445';
+    $enc3 = EncryptionService::encrypt($acct3);
+    $insBank3->execute([':comp_id' => $compId2, ':acct' => $enc3['value'], ':hash' => EncryptionService::hash($acct3), ':kv' => $enc3['key_version'], ':uid' => $userId]);
+
+    $fieldsBeforeFork = $model->fieldsForRender($compId2, $BAY_FORMAT_ID);
+    checkTrue('fixture: comp2 has never forked BAY before this test (fields still comp_id IS NULL)', $fieldsBeforeFork[0]['comp_id'] === null);
+    $defaultDetail = $model->getFormatDetail($compId2, $BAY_FORMAT_ID);
+    $defaultRefField = null;
+    foreach ($defaultDetail['fields']['header'] as $f) {
+        if ($f['source_type'] === 'constant' && $f['sort_order'] == 9) { $defaultRefField = $f; }
+    }
+    checkTrue('found the seeded default "reference prefix" header field (sort_order=9)', $defaultRefField !== null);
+    checkFalse('that field is NOT yet company-owned (comp2 never forked)', $defaultRefField['is_company_owned']);
+    $defaultFieldId = (int)$defaultRefField['id'];
+
+    // Same payload shape the real Edit modal sends: the field's CURRENT id (still the shared
+    // default template's own id at this point) plus the edited constant_value.
+    $editDefaultRes = $model->saveField($compId2, $BAY_FORMAT_ID, [
+        'id' => $defaultFieldId, 'row_type' => 'header', 'sort_order' => 9,
+        'field_label_th' => $defaultRefField['field_label_th'], 'field_label_en' => $defaultRefField['field_label_en'],
+        'source_type' => 'constant', 'constant_value' => '001', 'data_type' => 'text', 'width' => 3,
+        'pad_char' => ' ', 'pad_direction' => 'right',
+    ], $userId);
+    checkTrue('saveField() succeeds editing a default field on the very first edit' . (empty($editDefaultRes['status']) ? " ({$editDefaultRes['message']})" : ''), $editDefaultRes['status']);
+
+    $detailAfterFirstEdit = $model->getFormatDetail($compId2, $BAY_FORMAT_ID);
+    $editedField = null;
+    foreach ($detailAfterFirstEdit['fields']['header'] as $f) {
+        if ($f['sort_order'] == 9) { $editedField = $f; }
+    }
+    checkTrue('field is now company-owned (forked)', $editedField['is_company_owned']);
+    check('constant_value was genuinely updated to 001, not left at XXX', $editedField['constant_value'], '001');
+    // The shared system-default template itself must be completely untouched by this.
+    $stillDefaultUnchanged = $pdo->prepare("SELECT constant_value FROM bank_file_format_fields WHERE id = :id");
+    $stillDefaultUnchanged->execute([':id' => $defaultFieldId]);
+    check('the shared default template row itself keeps its original placeholder (XXX), never mutated', $stillDefaultUnchanged->fetchColumn(), 'XXX');
+
     /* ---------- Full real Krungsri header+detail layout, language selection ---------- */
     // 2026-08-29, explicit request: "ปรับ Format นี้ให้เป็น Format มาตรฐานของกรุงศรี และตอน Export ให้เลือก
     // เพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่ออกมาจะตามนั้นครับ" -- resetToDefault() restores this
@@ -276,8 +338,12 @@ try {
     check('header company_service_code (bytes 43-45) resolves the company\'s own bank account.company_code', substr($headerLine, 42, 3), '712');
     check('header payment type constant "A" at byte 73', substr($headerLine, 72, 1), 'A');
     check('header total record count (bytes 81-87) is 0000001 (1 employee)', substr($headerLine, 80, 7), '0000001');
-    $expectedTotalAmountField = str_pad((string)(int)round($netAmount * 100), 14, '0', STR_PAD_LEFT);
-    check('header total amount (bytes 89-102, implied decimal, no literal point) matches the real net_amount', substr($headerLine, 88, 14), $expectedTotalAmountField);
+    // 2026-08-29, real bug found and fixed (explicit report: "ตรง head มันมีช่องว่างก่อนข้อมูลชุดสุดท้าย แต่
+    // ไฟล์ต้นฉบับจะต่อกันเลย") -- the 1-byte blank gap that used to sit between total_count and
+    // total_amount was a transcription slip in the original hand-typed sample, not real; removed,
+    // and total_amount widened 14->15 bytes to absorb it (bytes 88-102 now, was 89-102/14 wide).
+    $expectedTotalAmountField = str_pad((string)(int)round($netAmount * 100), 15, '0', STR_PAD_LEFT);
+    check('header total amount (bytes 88-102, no gap before it, implied decimal, no literal point) matches the real net_amount', substr($headerLine, 87, 15), $expectedTotalAmountField);
     check('detail starts with record type 0000 + 2 blanks', substr($detailLineTh, 0, 6), '0000  ');
     check('detail employee bank account no (bytes 7-16)', substr($detailLineTh, 6, 10), '9998887770');
     $expectedDetailAmountField = str_pad((string)(int)round($netAmount * 100), 11, '0', STR_PAD_LEFT);
@@ -317,11 +383,19 @@ try {
     // THIS run's cycle via bank_account_id -- the header must now resolve THIS account instead of
     // the company's is_default one.
     echo "=== Per-cycle bank_account_id overrides the company default ===\n";
+    // 2026-08-29, real bug found and fixed (explicit report: "เลขบัญชีต้องมีขีดหรือไม่ใส่ขีดช่วยปรับให้
+    // ด้วยครับ") -- stored WITH dashes (a valid, allowed display format per BankAccountModel::
+    // save()'s own regex, and a real risk for any employee/company account entered this way): the
+    // rendered fixed-width field must strip them down to plain digits, matching what a real
+    // Krungsri submission expects -- see BankTransferFileReport::digitsOnlyAccountNo()'s own
+    // docblock for why a dash left in place would silently truncate real trailing digits instead
+    // of just looking cosmetically wrong.
     $insBank2 = $pdo->prepare("INSERT INTO bank_accounts (comp_id, bank_id, account_no, account_no_hash, key_version, account_name, company_code, account_type, currency_code, is_default, status, created_by)
         VALUES (:comp_id, 8, :acct, :hash, :kv, 'Regional Office Account', '999', 'current', 'THB', 0, 'active', :uid)");
-    $secondAccountNo = '5556667778';
-    $enc2 = EncryptionService::encrypt($secondAccountNo);
-    $insBank2->execute([':comp_id' => $compId, ':acct' => $enc2['value'], ':hash' => EncryptionService::hash($secondAccountNo), ':kv' => $enc2['key_version'], ':uid' => $userId]);
+    $secondAccountNoDashed = '555-6-66777-8';
+    $secondAccountNo = '5556667778'; // the digits-only value the rendered file must actually contain
+    $enc2 = EncryptionService::encrypt($secondAccountNoDashed);
+    $insBank2->execute([':comp_id' => $compId, ':acct' => $enc2['value'], ':hash' => EncryptionService::hash($secondAccountNoDashed), ':kv' => $enc2['key_version'], ':uid' => $userId]);
     $secondBankAccountId = (int)$pdo->lastInsertId();
 
     $optionsCheck = $cycleModel->bankAccountOptions($compId, '', 1, 10);
@@ -345,7 +419,7 @@ try {
 
     $resultPinned = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
     $headerLinePinned = explode("\r\n", rtrim($resultPinned['content'], "\r\n"))[0];
-    check("header company_account_no now resolves the PINNED account (not the company's is_default one)", substr($headerLinePinned, 12, 10), $secondAccountNo);
+    check("header company_account_no resolves the PINNED account, digits only (dashes stripped from the stored '{$secondAccountNoDashed}')", substr($headerLinePinned, 12, 10), $secondAccountNo);
     check('header company_service_code now resolves the PINNED account\'s own code (999, not the default account\'s 712)', substr($headerLinePinned, 42, 3), '999');
 
     $unpinRes = $cycleModel->save($compId, [

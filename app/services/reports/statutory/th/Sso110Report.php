@@ -11,11 +11,28 @@ require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
  * สปส.1-10 monthly contribution report — one payroll run = one month's submission. Delegates
- * 'txt' format to the DRAFT/unverified Sso110Exporter from the Tax & Statutory export module
- * (see that class's docblock: field layout from a third-party blog, not the official SSO
- * spec, and SSO changed this form's layout 2026-01-01 which may supersede it entirely).
- * 'pdf'/'excel' are a human-readable summary of this system's own data, not a form
- * reproduction. Requires the run to be Approved/Paid/Locked, same as other statutory reports.
+ * 'txt' format to Sso110Exporter (2026-08-29, rewritten against a real sample the user supplied
+ * directly — see that class's own docblock for the full field-layout derivation and its one
+ * unresolved sample discrepancy). 'pdf'/'excel' are a human-readable summary of this system's
+ * own data, not a form reproduction. Requires the run to be Approved/Paid/Locked, same as other
+ * statutory reports.
+ *
+ * 2026-08-29, explicit follow-up: "รองรับ 2 ภาษาเหมือนกัน และเช็คตรงข้อมูลบริษัทมี Filed เก็บครบหรือยัง" --
+ * 'txt' format now takes an optional context.language ('th'/'en', default 'th', same convention
+ * BankTransferFileReport's own generate() established the same day) covering employer name and
+ * employee first/last name. Company-field completeness check (as of this same round):
+ *   - Employer SSO account no. (companies.statutory_data.th_sso_id) -- ALREADY existed (a
+ *     required field on the Company Profile form's own country-specific section), just never
+ *     actually consumed by this report before now.
+ *   - SSO agency/branch code -- resolved from structure_branches.sso_branch_code (ALREADY
+ *     existed, Organizational Structure's own Branch tab) for the company's own is_default=1
+ *     branch. Genuinely new consumer, not a new field.
+ *   - Branch sequence number (the sample's own "0001") -- resolved from that SAME default
+ *     branch's branch_code if it looks like a short numeric code, else falls back to a "0001"
+ *     constant (a single-branch company's own SSO filing is virtually always sequence 1) -- no
+ *     dedicated field exists for this specific 4-digit sequence concept, and the sample alone
+ *     doesn't distinguish "always 0001" from "this company's own real branch sequence", so this
+ *     is a best-effort default, not a confirmed mapping.
  */
 class Sso110Report implements ReportGeneratorInterface {
     use ExcelRendererTrait;
@@ -56,6 +73,8 @@ class Sso110Report implements ReportGeneratorInterface {
             throw new LocalizedException('run_id is required and must be a positive integer.', 'run_id_required');
         }
         $runId = (int)$context['run_id'];
+        $requestedLanguage = $context['language'] ?? 'th';
+        $language = in_array($requestedLanguage, ['th', 'en'], true) ? $requestedLanguage : 'th';
 
         $dataModel = new PayrollReportDataModel();
         $run = $dataModel->getRun($runId, $compId);
@@ -65,23 +84,42 @@ class Sso110Report implements ReportGeneratorInterface {
         $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
         $details = $dataModel->getRunDetails($runId);
 
+        // 2026-08-29: SSO's own prefix-code convention (widely-used Thai government-form
+        // standard, matching the sample's own confirmed "03 = นาย") -- see Sso110Exporter's own
+        // docblock for which of these 3 the sample itself actually confirms.
+        $prefixCodeMap = ['mr' => '03', 'mrs' => '04', 'ms' => '05'];
+
         $employees = [];
         foreach ($details as $d) {
             $ssoAmount = 0.0;
+            // 2026-08-29, real correctness gap found and fixed while wiring this up: this used to
+            // report base_salary_amount as "wage" regardless of the SSO min/max base clamp
+            // (min_base 1,650 / max_base 15,000, see StatutoryCalculationEngine::computeFlatRate())
+            // -- an employee earning above the ceiling would have their FULL uncapped salary
+            // reported here even though only the CAPPED amount was actually used to compute their
+            // contribution. statutory_breakdown's own TH_SSO line already carries the real,
+            // effective (clamped) base as base_amount -- use that instead so the wage figure
+            // reported to SSO always matches what the contribution was actually calculated from.
+            $ssoWageBase = (float)$d['base_salary_amount'];
             foreach ($d['statutory_breakdown'] as $item) {
                 if ($item['code'] === 'TH_SSO') {
                     $ssoAmount = (float)$item['employee_amount'];
+                    if (isset($item['base_amount'])) {
+                        $ssoWageBase = (float)$item['base_amount'];
+                    }
                 }
             }
             if ($ssoAmount <= 0) {
                 continue; // not SSO-enrolled this period, excluded from the submission
             }
             $employees[] = [
-                'insured_id' => $this->decryptEmployeeField($d, 'sso_no') ?? '',
-                'prefix_code' => $d['title'] ?? '',
-                'first_name' => $d['name_th'] ?? '',
-                'last_name' => $d['surname_th'] ?? '',
-                'wage' => (float)$d['base_salary_amount'],
+                'insured_id' => $this->decryptEmployeeField($d, 'id_card_no') ?? '',
+                'prefix_code' => $prefixCodeMap[$d['title'] ?? ''] ?? '',
+                'first_name_th' => $d['name_th'] ?? '',
+                'last_name_th' => $d['surname_th'] ?? '',
+                'first_name_en' => $d['name_en'] ?? '',
+                'last_name_en' => $d['surname_en'] ?? '',
+                'wage' => $ssoWageBase,
                 'contribution' => $ssoAmount,
             ];
         }
@@ -91,11 +129,25 @@ class Sso110Report implements ReportGeneratorInterface {
 
         $company = $dataModel->getCompany($compId);
         $statutoryData = json_decode((string)($company['statutory_data'] ?? '{}'), true) ?: [];
+        // 2026-08-29: company's own default branch (structure_branches.is_default=1) -- see this
+        // class's own top-of-file docblock for exactly what's resolved from it and why.
+        $defaultBranch = null;
+        $stmtBranch = Database::getInstance()->pdo->prepare(
+            "SELECT branch_code, sso_branch_code FROM `structure_branches`
+             WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' AND is_default = 1
+             ORDER BY id ASC LIMIT 1"
+        );
+        $stmtBranch->execute([':comp_id' => $compId]);
+        $defaultBranch = $stmtBranch->fetch(PDO::FETCH_ASSOC) ?: null;
+        $branchCode = (string)($defaultBranch['branch_code'] ?? '');
+        $branchSeq = (ctype_digit($branchCode) && strlen($branchCode) <= 4) ? $branchCode : '0001';
+
         $companyContext = [
             'employer_account' => $statutoryData['th_sso_id'] ?? '',
-            'branch_no' => $statutoryData['th_branch_code'] ?? '0',
-            'name' => $company['local_name'] ?? $company['company_legal_name'] ?? '',
-            'contribution_rate' => 5.0,
+            'branch_seq' => $branchSeq,
+            'sso_agency_code' => $defaultBranch['sso_branch_code'] ?? '',
+            'name_th' => $company['local_name'] ?? $company['company_legal_name'] ?? '',
+            'name_en' => $company['company_legal_name'] ?? $company['local_name'] ?? '',
         ];
         $periodContext = [
             'year' => (int)date('Y', strtotime($run['period_start_date'])),
@@ -110,13 +162,13 @@ class Sso110Report implements ReportGeneratorInterface {
             // docblock; Sso110Exporter validates this against what it actually implements.
             $versionCode = (new StatutoryFormatVersionModel())->resolveVersionCode($compId, $this->code());
             $exporter = new Sso110Exporter();
-            $content = $exporter->generate(['company' => $companyContext, 'period' => $periodContext, 'employees' => $employees, 'version_code' => $versionCode]);
+            $content = $exporter->generate(['company' => $companyContext, 'period' => $periodContext, 'employees' => $employees, 'version_code' => $versionCode, 'language' => $language]);
             return ['content' => $content, 'file_name' => $exporter->fileName(['period' => $periodContext]), 'mime_type' => 'text/plain'];
         }
 
         if ($format === 'excel') {
             $headers = ['เลขประกันสังคม', 'คำนำหน้า', 'ชื่อ', 'นามสกุล', 'ค่าจ้าง', 'เงินสมทบ'];
-            $rows = array_map(fn($e) => [$e['insured_id'], $e['prefix_code'], $e['first_name'], $e['last_name'], $e['wage'], $e['contribution']], $employees);
+            $rows = array_map(fn($e) => [$e['insured_id'], $e['prefix_code'], $language === 'en' ? $e['first_name_en'] : $e['first_name_th'], $language === 'en' ? $e['last_name_en'] : $e['last_name_th'], $e['wage'], $e['contribution']], $employees);
             $content = $this->renderExcelFromRows($headers, $rows, "SSO110 {$periodContext['year']}-{$periodContext['month']}");
             return ['content' => $content, 'file_name' => "SSO110_Summary_{$periodContext['year']}{$periodContext['month']}.xlsx", 'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
         }
@@ -128,9 +180,11 @@ class Sso110Report implements ReportGeneratorInterface {
         foreach ($employees as $e) {
             $totalWage += $e['wage'];
             $totalContribution += $e['contribution'];
-            $rowsHtml .= '<tr><td>' . htmlspecialchars($e['insured_id']) . '</td><td>' . htmlspecialchars($e['prefix_code'] . ' ' . $e['first_name'] . ' ' . $e['last_name']) . '</td><td class="amount">' . number_format($e['wage'], 2) . '</td><td class="amount">' . number_format($e['contribution'], 2) . '</td></tr>';
+            $displayFirst = $language === 'en' ? $e['first_name_en'] : $e['first_name_th'];
+            $displayLast = $language === 'en' ? $e['last_name_en'] : $e['last_name_th'];
+            $rowsHtml .= '<tr><td>' . htmlspecialchars($e['insured_id']) . '</td><td>' . htmlspecialchars($e['prefix_code'] . ' ' . $displayFirst . ' ' . $displayLast) . '</td><td class="amount">' . number_format($e['wage'], 2) . '</td><td class="amount">' . number_format($e['contribution'], 2) . '</td></tr>';
         }
-        $companyName = htmlspecialchars($companyContext['name']);
+        $companyName = htmlspecialchars($language === 'en' ? $companyContext['name_en'] : $companyContext['name_th']);
         $periodLabel = "{$periodContext['month']}/{$periodContext['year']}";
         $html = <<<HTML
 <html><head><style>
