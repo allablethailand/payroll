@@ -389,6 +389,19 @@ class TaxStatutoryModel {
                         WHERE id = :id";
                 $params[':updated_by'] = $userId;
                 $params[':id'] = $id;
+                // 2026-08-29, real bug found and fixed (explicit report: "Database operation failed"
+                // when editing an existing rate version, e.g. the SSO contribution ceiling --
+                // reproduced directly via this model, not guessed) -- $params (built once above for
+                // both the UPDATE and INSERT branches) always carries `:statutory_item_id`, but only
+                // the INSERT query below actually references that placeholder; the UPDATE query here
+                // never did (statutory_item_id never changes on an edit). PDO's emulated-prepare mode
+                // throws "SQLSTATE[HY093]: Invalid parameter number: number of bound variables does
+                // not match number of tokens" whenever MORE parameters are bound than placeholders
+                // exist in the query -- so every edit of an EXISTING row (the INSERT path was never
+                // affected) threw a PDOException here, caught by this method's own generic catch
+                // block below and surfaced only as "Database operation failed.". Confirmed via a
+                // direct reproduction against this exact query+params before writing this fix.
+                unset($params[':statutory_item_id']);
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute($params);
                 $rateHistoryId = $id;

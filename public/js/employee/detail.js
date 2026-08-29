@@ -621,12 +621,15 @@ $(function () {
     $('#profile_photo_input').on('change', function (e) {
         const file = e.target.files[0];
         if (!file) return;
+        // Instant local preview (unchanged) while the real upload below is in flight.
         const reader = new FileReader();
         reader.onload = function (ev) {
             $('#profilePreview').attr('src', ev.target.result).removeClass('d-none');
             $('#profilePlaceholder').addClass('d-none');
         };
         reader.readAsDataURL(file);
+        uploadEmpPhotoBlob(file);
+        $(this).val('');
     });
     $('#id_card_no').on('input', function () {
         this.value = this.value.replace(/\D/g, '').slice(0, 13);
@@ -1026,6 +1029,20 @@ function loadAllChildTables() {
     });
     loadParentSlots();
     loadEarningDeductions();
+    // 2026-08-29, real bug found and fixed (explicit urgent report: a newly-added Recurring
+    // Allowance would disappear again shortly after saving, and reliably came back empty on a fresh
+    // page load even though the rows genuinely existed in the DB) -- tbRecurringEarning's own
+    // DataTable (initRecurringEarningUI(), called at page load before this async employee-load
+    // response ever comes back) fires an automatic FIRST ajax fetch with `employee_id` still null/
+    // undefined at that point (currentEmployeeId is only set inside THIS success callback). That
+    // stale, wrongly-parameterized request can resolve AFTER a later, correctly-parameterized
+    // .ajax.reload() (e.g. right after adding an allowance), silently clobbering the correct data
+    // with the stale request's empty result -- and on a fresh page load, nothing ever re-triggered a
+    // corrective reload afterward at all, same as tbEarning/tbDeduction would have had this same bug
+    // if loadEarningDeductions() above didn't already exist for exactly this reason. Adding the same
+    // reload here closes the gap: one deliberate, correctly-parameterized reload once
+    // currentEmployeeId is genuinely known, same pattern as every other child table on this page.
+    if ($.fn.DataTable.isDataTable('#tableRecurringEarning')) $('#tableRecurringEarning').DataTable().ajax.reload(null, false);
 }
 function initChildTables() {
     $('#hasChildrenToggle button').on('click', function () {
@@ -1202,6 +1219,13 @@ let tbEarning, tbDeduction;
 function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangFallback) {
     return $(tableSelector).DataTable({
         responsive: true,
+        // 2026-08-29: deferLoading:0 -- see tbRecurringEarning's own comment on this exact race
+        // (loadAllChildTables()). This table happened not to get reported as broken (loadEarningDeductions()
+        // already re-triggers a correct reload once currentEmployeeId is known), but the underlying
+        // race -- this table's automatic FIRST ajax fetch firing before currentEmployeeId is set, then
+        // possibly resolving AFTER that later correct reload and clobbering it with stale/empty data
+        // -- is identical, so it gets the same real fix here rather than just relying on timing luck.
+        deferLoading: 0,
         ajax: {
             url: `${BASE_URL}/api/employee.earning-deduction.list`,
             data: function (d) { d.employee_id = currentEmployeeId; d.item_type = itemType; },
@@ -1702,6 +1726,19 @@ function recurringEarningSuspendPeriodCell(row) {
 function initRecurringEarningUI() {
     tbRecurringEarning = $('#tableRecurringEarning').DataTable({
         responsive: true,
+        // 2026-08-29, real bug found and fixed (explicit urgent report -- a newly-added allowance
+        // would disappear again shortly after saving, and reliably came back empty on a fresh page
+        // load) -- this table used to fetch automatically on init, but currentEmployeeId is only set
+        // later, inside loadEmployeeIfEditing()'s async success callback (initRecurringEarningUI()
+        // runs synchronously well before that resolves). That first, wrongly-parameterized (null
+        // employee_id) request could resolve AFTER a later, correctly-parameterized .ajax.reload()
+        // (e.g. right after adding an allowance), silently clobbering the correct data with an empty
+        // result. deferLoading:0 tells DataTables to skip that automatic first fetch entirely -- no
+        // stale request is ever sent, so it can never race a later, deliberate reload. The ONE real
+        // fetch now happens only via the explicit .ajax.reload() calls (loadAllChildTables(), and
+        // every add/edit/delete success handler below), always AFTER currentEmployeeId is genuinely
+        // known.
+        deferLoading: 0,
         ajax: {
             url: `${BASE_URL}/api/employee.recurring-earning.list`,
             data: function (d) { d.employee_id = currentEmployeeId; },
@@ -1929,6 +1966,47 @@ function showEmpSignaturePreview(path) {
 $(document).on('change', '#emp_signature_path', function () {
     showEmpSignaturePreview($(this).val() || null);
 });
+
+// 2026-08-29, real bug found and fixed (explicit report: "ใส่รูปพนักงาน กดบันทึกแล้ว ไม่มาแสดงผล") --
+// same upload-then-hidden-field convention as the signature functions above. showEmpPhotoPreview()
+// is what populateEmployeeForm() ends up triggering (via #emp_profile_photo_path's generic 'change'
+// listener below) when loading an EXISTING employee's already-saved photo -- the old code only ever
+// showed a photo you had JUST picked in the current browser session via FileReader, never one loaded
+// back from the server.
+function showEmpPhotoPreview(path) {
+    if (path) {
+        $('#profilePreview').attr('src', `${BASE_URL}/${path}`).removeClass('d-none');
+        $('#profilePlaceholder').addClass('d-none');
+    } else {
+        $('#profilePreview').attr('src', '').addClass('d-none');
+        $('#profilePlaceholder').removeClass('d-none');
+    }
+}
+$(document).on('change', '#emp_profile_photo_path', function () {
+    showEmpPhotoPreview($(this).val() || null);
+});
+function uploadEmpPhotoBlob(blob) {
+    const formData = new FormData();
+    formData.append('file', blob, 'photo.png');
+    $.ajax({
+        url: `${BASE_URL}/api/employee.upload-photo`,
+        method: 'POST', data: formData, processData: false, contentType: false, dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                $('#emp_profile_photo_path').val(res.profile_photo_path).trigger('change');
+                // Also refreshes the top-right nav photo live, without waiting for the next full page
+                // navigation, when the employee being edited is the currently logged-in user
+                // themselves (the only case the header photo could possibly be showing right now).
+                if (typeof SESSION_EMPLOYEE_ID !== 'undefined' && currentEmployeeId === SESSION_EMPLOYEE_ID) {
+                    $('#navProfilePhoto').attr('src', `${BASE_URL}/${res.profile_photo_path}`);
+                }
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Upload failed.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'Upload failed.'); }
+    });
+}
 function uploadEmpSignatureBlob(blob) {
     const formData = new FormData();
     formData.append('file', blob, 'signature.png');

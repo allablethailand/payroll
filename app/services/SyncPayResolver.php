@@ -203,6 +203,23 @@ class SyncPayResolver {
 
         $dailyRate = $this->dailyRate($baseSalary, $syncItemRow);
         $hourlyRate = $this->hourlyRate($baseSalary, $syncItemRow);
+        // 2026-08-29, real bug found and fixed (explicit report with the exact expected math worked
+        // out by hand: baseSalary(13,500) / 30 / 8 = 56.25/hr, x1.5 OT multiplier = 84.375/hr, x1.5
+        // hours = 126.5625 -> 126.56) -- OT premium pay must always be computed off the FIXED
+        // standard 30-day/8-hour monthly-to-hourly conversion (the standard Thai OT formula for a
+        // monthly-rate employee), never off `$hourlyRate`/`$dailyRate` above, which intentionally use
+        // the period's ACTUAL working_days/working_mins when Origami sends them (a correctness fix
+        // for absence/late/unpaid-leave DEDUCTIONS specifically -- see dailyRate()'s own 2026-08-20
+        // docblock: "ถ้าขาดงานเท่ากับวันทำงาน ต้องหักเท่าเงินเดือนหรือเปล่า"). Reusing that same
+        // variable-divisor rate for OT was never correct -- OT premium is a legally fixed conversion,
+        // not "how many days did this employee actually have scheduled this period" -- so any period
+        // where Origami's payload happened to include a non-standard working_days/working_mins (a
+        // real month rarely has exactly 30 days worth of standard 8h shifts) silently produced a
+        // wrong OT amount. otHourlyRate/otDailyRate below are used ONLY for the OT block immediately
+        // following; every other calculation in this method (Late/Absent/Unpaid Leave/Trip
+        // Allowance/generic items) is UNCHANGED, still correctly using the variable-divisor rate.
+        $otHourlyRate = $baseSalary / self::STANDARD_WORKING_DAYS_PER_MONTH / self::STANDARD_HOURS_PER_DAY;
+        $otDailyRate = $baseSalary / self::STANDARD_WORKING_DAYS_PER_MONTH;
 
         // Group item_values by item_code up front so every code (known or generic) is handled as
         // one candidate pool, not once per row -- see the class docblock's "MULTI-UNIT
@@ -248,8 +265,8 @@ class SyncPayResolver {
             $amount = $rate['calculation_method'] === 'flat_amount'
                 ? round($rate['flat_amount_rate'] * ($isDailyBase ? $hours / self::STANDARD_HOURS_PER_DAY : $hours), 2)
                 : ($isDailyBase
-                    ? round($dailyRate * $rate['multiplier_rate'] * ($hours / self::STANDARD_HOURS_PER_DAY), 2)
-                    : round($hourlyRate * $rate['multiplier_rate'] * $hours, 2));
+                    ? round($otDailyRate * $rate['multiplier_rate'] * ($hours / self::STANDARD_HOURS_PER_DAY), 2)
+                    : round($otHourlyRate * $rate['multiplier_rate'] * $hours, 2));
             if ($amount <= 0) {
                 continue;
             }

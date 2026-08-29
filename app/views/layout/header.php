@@ -28,6 +28,11 @@
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";
+    // 2026-08-29: the logged-in user's own employee id, exposed so a page editing an employee record
+    // (Employee Detail) can tell whether it's currently editing the LOGGED-IN USER's own record --
+    // used to live-refresh the nav profile photo (#navProfilePhoto above) right after a photo
+    // upload, without waiting for the next full page navigation to re-render it server-side.
+    const SESSION_EMPLOYEE_ID = <?=(int)($_SESSION['user']['employee_id'] ?? 0)?>;
     <?php
     // 2026-08-28, explicit request: "ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น รวมถึงใน
     // Process ด้วย จะไม่มีข้อมูลรอบที่ดึงมา" -- every Sync-from-Origami button (Employee/Holiday/
@@ -74,6 +79,19 @@ if ($compIdForOrigamiFlags > 0) {
     $menuUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
     $menuIsAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
     $canViewApprovalWorkflowMenu = (new PermissionModel())->checkPermission($menuUserId, 'approval_workflow.view', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
+}
+
+// 2026-08-29, explicit request: "ให้ดึงรูปไปแสดงที่ header ด้วยครับ" -- the logged-in user's own profile
+// photo (employees.profile_photo_path) shown in the top-right nav dropdown, which previously always
+// hardcoded the generic placeholder (userNoImage.jpg) regardless of who was logged in. A direct,
+// lightweight query here (same inline-model-in-this-file convention as $canViewApprovalWorkflowMenu
+// just above) rather than a full EmployeeModel::get() call, which pulls a lot more than one column.
+$navProfilePhotoPath = null;
+$navUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
+if ($navUserId > 0) {
+    $navPhotoStmt = Database::getInstance()->pdo->prepare("SELECT profile_photo_path FROM `employees` WHERE id = :id AND deleted_at IS NULL");
+    $navPhotoStmt->execute([':id' => $navUserId]);
+    $navProfilePhotoPath = $navPhotoStmt->fetchColumn() ?: null;
 }
 ?>
 </head>
@@ -164,7 +182,7 @@ if ($compIdForOrigamiFlags > 0) {
             <div class="nav-profile-dropdown">
                 <button class="nav-profile-btn" type="button">
                     <div class="profile-img-box">
-                        <img src="<?=BASE_URL?>/public/images/userNoImage.jpg" alt="User Profile">
+                        <img id="navProfilePhoto" src="<?=$navProfilePhotoPath ? BASE_URL . '/' . $navProfilePhotoPath : BASE_URL . '/public/images/userNoImage.jpg'?>" alt="User Profile">
                     </div>
                 </button>
                 <ul class="nav-profile-menu" id="profileMenu">

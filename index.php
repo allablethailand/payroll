@@ -347,6 +347,7 @@
     $router->get('api/employee.get', 'EmployeeController@get');
     $router->post('api/employee.save', 'EmployeeController@save');
     $router->post('api/employee.upload-signature', 'EmployeeController@uploadSignature');
+    $router->post('api/employee.upload-photo', 'EmployeeController@uploadPhoto');
     $router->post('api/employee.delete', 'EmployeeController@delete');
     $router->get('api/employee.dependent.list', 'EmployeeController@dependentList');
     $router->post('api/employee.dependent.save', 'EmployeeController@dependentSave');

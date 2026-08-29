@@ -532,6 +532,32 @@ try {
     $posDeductionLine = findLine($r['deduction'], 'CUSTOM:Positive Deduction');
     check('positive deduction value unaffected: 250.00', $posDeductionLine['amount'] ?? null, 250.0);
 
+    echo "=== OT: premium pay uses the FIXED standard 30-day/8-hour divisor, never the period's actual working_days/working_mins (real bug report, exact hand-worked example: baseSalary 13,500, 1.5h OT at 1.5x -> 126.56) ===\n";
+    $insOtRateFixed = $pdo->prepare("INSERT INTO `ot_rates` (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate, calculation_base, status, created_by)
+        VALUES (?, \"OT ทดสอบ 1.5x คงที่\", \"Test Fixed-Divisor OT\", ?, 1.50, \"hourly\", \"active\", ?)");
+    $insOtRateFixed->execute([$compId, $weekdayScopeId, $userId]);
+    $otFixedDivisorRow = $blankRow;
+    $otFixedDivisorRow['ot_req_working_day_hrs'] = 1.5;
+    // Deliberately a NON-standard working_days/working_mins for this period (22 real working days,
+    // not the standard 30) -- if OT wrongly reused the variable-divisor hourlyRate() (as it did
+    // before this fix), this would silently change the OT result away from the user's own hand-
+    // verified expectation below, exactly as they reported happening in production.
+    $otFixedDivisorRow['working_days'] = 22;
+    $otFixedDivisorRow['working_mins'] = 22 * 8 * 60;
+    $r = $resolver->resolve($compId, $otFixedDivisorRow, 13500.0);
+    $otFixedLine = findLine($r['earning'], 'OT');
+    checkTrue('OT line present', $otFixedLine !== null);
+    check('13,500/30/8=56.25/hr, x1.5 OT rate=84.375/hr, x1.5h = 126.5625 -> 126.56, UNAFFECTED by working_days=22 in the row', $otFixedLine['amount'] ?? null, 126.56);
+
+    echo "=== OT: the SAME row's absence deduction (a DIFFERENT calculation) correctly STILL uses the actual working_days=22, proving the two are properly decoupled, not both accidentally fixed ===\n";
+    $mixedOtAbsentRow = $otFixedDivisorRow;
+    $mixedOtAbsentRow['absent_days'] = 1.0; // baseSalary(13500)/working_days(22)*1 = 613.64, NOT baseSalary/30*1=450.00
+    $r = $resolver->resolve($compId, $mixedOtAbsentRow, 13500.0);
+    $mixedOtLine = findLine($r['earning'], 'OT');
+    check('OT amount in the same row is still the fixed-divisor 126.56 (unaffected by the absence line existing too)', $mixedOtLine['amount'] ?? null, 126.56);
+    $mixedAbsentLine = findLine($r['deduction'], 'ABSENT_DEDUCT');
+    check("absence deduction in the SAME row correctly still uses the period's real working_days(22): 13500/22*1 = 613.64", $mixedAbsentLine['amount'] ?? null, 613.64);
+
     echo "=== An INCOME-typed item with a negative value is still correctly skipped (abs() normalization is scoped to DEDUCTION only) ===\n";
     $negIncomeRow = $blankRow;
     $negIncomeRow['item_values'] = [
