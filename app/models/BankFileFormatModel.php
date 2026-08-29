@@ -402,9 +402,40 @@ class BankFileFormatModel {
             return ['status' => false, 'message' => $clean['error']];
         }
 
-        $this->forkDefaultIfNeeded($compId, $bankFileFormatId, $userId);
-
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
+        // 2026-08-29, real bug found and fixed (explicit report: editing one of the SEEDED DEFAULT
+        // fields for the very first time -- i.e. before this company has ever customized this
+        // format -- always failed with "Field not found." even though the field was clearly right
+        // there in the UI): the editor's Edit button carries whatever id the field currently has
+        // in bffCurrentDetail, which (before this company's first-ever edit) IS the shared
+        // comp_id-IS-NULL default template row's own id. forkDefaultIfNeeded() below clones that
+        // whole template into BRAND NEW company-owned rows with FRESH auto-increment ids -- so
+        // looking up the ORIGINAL id scoped to `comp_id = :comp_id` immediately afterward can
+        // never match anything (that id still only exists on the comp_id-IS-NULL row). row_type +
+        // sort_order survive the fork verbatim (forkDefaultIfNeeded() copies them unchanged), so
+        // that pair is used here as the stable identity to re-resolve $id onto the newly-forked
+        // company-owned copy -- but only when $id demonstrably pointed at a same-format DEFAULT
+        // row before forking; an id that's already this company's own (the normal case on every
+        // edit AFTER the first) is left untouched.
+        if ($id !== null) {
+            $stmtDefaultRef = $this->db->prepare("SELECT row_type, sort_order FROM bank_file_format_fields WHERE id = :id AND bank_file_format_id = :fmt AND comp_id IS NULL");
+            $stmtDefaultRef->execute([':id' => $id, ':fmt' => $bankFileFormatId]);
+            $defaultRef = $stmtDefaultRef->fetch(PDO::FETCH_ASSOC);
+            if ($defaultRef) {
+                $this->forkDefaultIfNeeded($compId, $bankFileFormatId, $userId);
+                $stmtRemap = $this->db->prepare("SELECT id FROM bank_file_format_fields WHERE bank_file_format_id = :fmt AND comp_id = :comp_id AND row_type = :row_type AND sort_order = :sort_order LIMIT 1");
+                $stmtRemap->execute([':fmt' => $bankFileFormatId, ':comp_id' => $compId, ':row_type' => $defaultRef['row_type'], ':sort_order' => $defaultRef['sort_order']]);
+                $remappedId = $stmtRemap->fetchColumn();
+                if ($remappedId !== false) {
+                    $id = (int)$remappedId;
+                }
+            } else {
+                $this->forkDefaultIfNeeded($compId, $bankFileFormatId, $userId);
+            }
+        } else {
+            $this->forkDefaultIfNeeded($compId, $bankFileFormatId, $userId);
+        }
+
         $before = null;
         if ($id !== null) {
             $stmtCheck = $this->db->prepare("SELECT * FROM bank_file_format_fields WHERE id = :id AND bank_file_format_id = :fmt AND comp_id = :comp_id");

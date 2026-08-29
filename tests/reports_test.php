@@ -97,20 +97,26 @@ try {
 
     $taxId = '1234567890123';
     $ssoNo = '9876543210987';
+    // 2026-08-29, explicit follow-up: Sso110Report now reports the employee's national ID card
+    // number (id_card_no) as SSO's own "insured person ID", not sso_no -- see that class's own
+    // docblock (matches the real sample the user supplied, which explicitly labels this field
+    // "เลขประจำตัวประชาชน 13 หลัก", the national ID, not a separate SSO-specific number).
+    $idCardNo = '1012990570210';
     $bankAccountNo = '1112223334';
     $encTax = EncryptionService::encrypt($taxId);
     $encSso = EncryptionService::encrypt($ssoNo);
+    $encIdCard = EncryptionService::encrypt($idCardNo);
     $encBank = EncryptionService::encrypt($bankAccountNo);
     $insEmp = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
-         tax_id_no, sso_no, bank_id, bank_account_no, bank_account_name, key_version,
+         tax_id_no, sso_no, id_card_no, bank_id, bank_account_no, bank_account_name, key_version,
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
          payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, department_id)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
-         :tax_id_no, :sso_no, 1, :bank_account_no, :bank_account_name, :key_version,
+         :tax_id_no, :sso_no, :id_card_no, 1, :bank_account_no, :bank_account_name, :key_version,
          :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
@@ -119,7 +125,7 @@ try {
     $insEmp->execute([
         ':comp_id' => $compId, ':employee_no' => 'RPT_TEST_' . uniqid(),
         ':name_th' => 'ทดสอบ', ':surname_th' => 'รายงาน', ':name_en' => 'Test', ':surname_en' => 'Report',
-        ':sso_no' => $encSso['value'], ':bank_account_no' => $encBank['value'], ':bank_account_name' => 'ทดสอบ รายงาน',
+        ':sso_no' => $encSso['value'], ':id_card_no' => $encIdCard['value'], ':bank_account_no' => $encBank['value'], ':bank_account_name' => 'ทดสอบ รายงาน',
         ':tax_id_no' => $encTax['value'], ':key_version' => $encTax['key_version'],
         ':email' => uniqid() . '@test.local', ':base_salary' => 30000,
     ]);
@@ -432,14 +438,27 @@ try {
     checkTrue('PND1 PDF embeds a real TH Sarabun font (not a Thai-blind fallback like DejaVu/Times)', $pnd1EmbedsThaiFont);
 
     // ---------- SSO 1-10 ----------
+    // 2026-08-29, rewritten against a real user-supplied sample -- see Sso110Exporter/Sso110Report's
+    // own docblocks. Header=135 bytes, detail=108 bytes (genuinely different row lengths).
     echo "=== Sso110Report (statutory) ===\n";
     $sso110Report = ReportRegistry::get('TH_SSO110');
     $sso110Txt = $sso110Report->generate(['comp_id' => $compId, 'run_id' => $runId], 'txt');
     $sso110Rows = explode("\r\n", rtrim($sso110Txt['content'], "\r\n"));
     check('SSO110 has 1 header + 1 detail row', count($sso110Rows), 2);
     check('SSO110 header row is 135 bytes', strlen($sso110Rows[0]), 135);
-    check('SSO110 detail row is 135 bytes', strlen($sso110Rows[1]), 135);
-    check('SSO110 detail insured_id matches decrypted sso_no', substr($sso110Rows[1], 1, 13), $ssoNo);
+    check('SSO110 detail row is 108 bytes', strlen($sso110Rows[1]), 108);
+    // insured_id is now the employee's id_card_no (bytes 3-15, after the 2-byte record type "25"),
+    // not sso_no -- see Sso110Report's own docblock for why.
+    check('SSO110 detail insured_id matches decrypted id_card_no', substr($sso110Rows[1], 2, 13), $idCardNo);
+    check('SSO110 detail prefix_code matches mr->03 mapping', substr($sso110Rows[1], 15, 2), '03');
+
+    // 2026-08-29, explicit request: "รองรับ 2 ภาษาเหมือนกัน" -- employee name follows the requested
+    // language; the fixture's own name_en/surname_en ('Test'/'Report') differ from name_th/
+    // surname_th ('ทดสอบ'/'รายงาน'), so this genuinely exercises the language switch.
+    $sso110TxtEn = $sso110Report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'en'], 'txt');
+    $sso110RowsEn = explode("\r\n", rtrim($sso110TxtEn['content'], "\r\n"));
+    checkTrue('SSO110 en language produces a different detail row (employee name changes)', $sso110Rows[1] !== $sso110RowsEn[1]);
+    check('SSO110 en detail id_card_no/prefix/amount fields identical regardless of language', [substr($sso110Rows[1], 2, 13), substr($sso110Rows[1], 82, 26)], [substr($sso110RowsEn[1], 2, 13), substr($sso110RowsEn[1], 82, 26)]);
 
     // ---------- SSO 6-09 ----------
     echo "=== Sso609Report (statutory) ===\n";
