@@ -1279,6 +1279,7 @@
     "input_year_be": "Year (B.E.)",
     "input_payroll_run": "Payroll Run",
     "input_employee": "Employee",
+    "report_language": "Language",
     "btn_generate": "Generate",
     "generate_success": "Report generated successfully.",
     "generate_failed": "Failed to generate the report.",

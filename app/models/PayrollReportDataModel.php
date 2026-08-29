@@ -69,19 +69,30 @@ class PayrollReportDataModel {
 
     /** @return array<int,array> decoded payroll_run_details rows keyed by nothing in particular, joined with employee info. */
     public function getRunDetails(int $runId): array {
+        // 2026-08-29, explicit request: PND1's real pipe-delimited e-Filing spec needs the
+        // employee's registered address (subdistrict/district/province/postal code, via
+        // master_addresses -- same table/join pattern Company Profile's own address already
+        // uses) -- see PndOneReport's own docblock for the address-completeness gap this only
+        // partially closes (house no./moo/building/soi/road have no structured columns at all,
+        // just free-text address_line_1_register/address_line_2_register).
         $sql = "SELECT d.*, e.employee_no, e.title, e.name_th, e.surname_th, e.name_en, e.surname_en,
                     e.tax_id_no, e.sso_no, e.id_card_no, e.key_version, e.department_id, e.branch_id, e.position_id,
                     e.bank_id, e.bank_account_no, e.bank_account_name, e.payment_type,
+                    e.address_line_1_register, e.address_line_2_register,
                     dep.department_name_th, dep.department_name_en,
                     br.branch_name_th, br.branch_name_en,
                     pos.position_name_th, pos.position_name_en,
-                    mb.bank_code, mb.bank_name_th, mb.bank_name_en
+                    mb.bank_code, mb.bank_name_th, mb.bank_name_en,
+                    ma.level_1 AS address_postcode, ma.level_2_th AS address_province_th, ma.level_2_en AS address_province_en,
+                    ma.level_3_th AS address_district_th, ma.level_3_en AS address_district_en,
+                    ma.level_4_th AS address_subdistrict_th, ma.level_4_en AS address_subdistrict_en
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `structure_departments` dep ON dep.id = e.department_id
                 LEFT JOIN `structure_branches` br ON br.id = e.branch_id
                 LEFT JOIN `structure_positions` pos ON pos.id = e.position_id
                 LEFT JOIN `master_banks` mb ON mb.id = e.bank_id
+                LEFT JOIN `master_addresses` ma ON ma.id = e.master_address_id_register
                 WHERE d.run_id = :run_id
                 ORDER BY e.employee_no ASC";
         $stmt = $this->db->prepare($sql);

@@ -151,6 +151,14 @@
                         <label class="form-label mb-1 small"><span data-i18n="report_format_label">Format</span></label>
                         <select class="form-select form-select-sm select2-static required field-format-input"></select>
                     </div>
+                    <!-- 2026-08-29, explicit follow-up request: "ตัวออกรายงาน ที่เลือกได้ว่า en หรือ th ต้องออก
+                         ได้จากทุกหน้าที่มีปุ่ม Export ครับ" -- always shown (unlike field-month/
+                         field-employee, which are per-report conditional), same context.language every
+                         other Export entry point on this page now sends. -->
+                    <div class="mb-3 field-language">
+                        <label class="form-label mb-1 small" data-i18n="report_language">Language</label>
+                        <select class="form-select form-select-sm select2-static field-language-input" data-option-keys="language_th,language_en" data-option-values="th,en"></select>
+                    </div>
                     <button type="submit" class="btn btn-primary btn-sm mt-auto">
                         <i class="fa-solid fa-file-export me-1"></i><span data-i18n="btn_generate">Generate</span>
                     </button>
@@ -172,6 +180,11 @@
                 <div class="modal-body">
                     <label class="form-label mb-1"><span data-i18n="input_employee">Employee</span></label>
                     <select class="form-select select2-remote" id="cycleExportEmployeeSelect" data-api="/api/employee.report_to.get"></select>
+                    <!-- 2026-08-29, explicit follow-up request: "ตัวออกรายงาน ที่เลือกได้ว่า en หรือ th ต้อง
+                         ออกได้จากทุกหน้าที่มีปุ่ม Export ครับ" -- same context.language every other Export
+                         entry point on this page now sends. -->
+                    <label class="form-label mb-1 mt-3" data-i18n="report_language">Language</label>
+                    <select class="form-select select2-static" id="cycleExportEmployeeLanguage" data-option-keys="language_th,language_en" data-option-values="th,en"></select>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">Cancel</span></button>
