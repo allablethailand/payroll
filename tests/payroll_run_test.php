@@ -977,6 +977,41 @@ try {
     check('timeline is oldest-first (chronological)', [$timeline[0]['tag'], $timeline[1]['tag'], $timeline[2]['tag']], ['in_progress', 'completed', null]);
     check('each comment records who posted it (created_by)', (int)($timeline[0]['created_by'] ?? 0), $adminUserId);
 
+    $detailsWithCommentCount = $runModel->getDetails($runId, $compId);
+    $fullDetailCommentCount = current(array_filter($detailsWithCommentCount, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    check('getDetails() surfaces comment_count for the Comment button badge', (int)($fullDetailCommentCount['comment_count'] ?? -1), 3);
+
+    // 2026-08-29, explicit follow-up: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย"
+    echo "=== Employee Comments: edit and delete ===\n";
+    $firstCommentId = (int)$timeline[0]['id'];
+    checkTrue('fixture: first comment has no updated_at yet (never edited)', $timeline[0]['updated_at'] === null);
+    $updateRes = $runModel->employeeCommentUpdate($runId, $compId, $firstCommentId, 'error', 'Actually there was a mistake in the SSO base', $adminUserId, true);
+    checkTrue('employeeCommentUpdate() succeeds' . (empty($updateRes['status']) ? " ({$updateRes['message']})" : ''), $updateRes['status']);
+    $timelineAfterUpdate = $runModel->employeeComments($runId, $compId, $employeeFullId);
+    $updatedComment = current(array_filter($timelineAfterUpdate, fn($c) => (int)$c['id'] === $firstCommentId));
+    check('comment text updated', $updatedComment['comment'] ?? null, 'Actually there was a mistake in the SSO base');
+    check('comment tag updated to error', $updatedComment['tag'] ?? null, 'error');
+    checkTrue('updated_at is now set (edit tracked)', !empty($updatedComment['updated_at']));
+    check('updated_by records who edited it', (int)($updatedComment['updated_by'] ?? 0), $adminUserId);
+    check('still exactly 3 comments (update, not a new insert)', count($timelineAfterUpdate), 3);
+
+    $updateBadTagRes = $runModel->employeeCommentUpdate($runId, $compId, $firstCommentId, 'not_a_real_tag', 'x', $adminUserId, true);
+    check('employeeCommentUpdate() rejects an invalid tag', $updateBadTagRes['status'], false);
+    $updateMissingRes = $runModel->employeeCommentUpdate($runId, $compId, 999999999, 'error', 'x', $adminUserId, true);
+    check('employeeCommentUpdate() rejects a non-existent comment id', $updateMissingRes['status'], false);
+
+    $deleteRes = $runModel->employeeCommentDelete($runId, $compId, $firstCommentId, $adminUserId, true);
+    checkTrue('employeeCommentDelete() succeeds' . (empty($deleteRes['status']) ? " ({$deleteRes['message']})" : ''), $deleteRes['status']);
+    $timelineAfterDelete = $runModel->employeeComments($runId, $compId, $employeeFullId);
+    check('2 comments remain after delete', count($timelineAfterDelete), 2);
+    checkTrue('the deleted comment is genuinely gone', current(array_filter($timelineAfterDelete, fn($c) => (int)$c['id'] === $firstCommentId)) === false);
+    $deleteMissingRes = $runModel->employeeCommentDelete($runId, $compId, $firstCommentId, $adminUserId, true);
+    check('employeeCommentDelete() on an already-deleted id fails cleanly', $deleteMissingRes['status'], false);
+
+    $detailsAfterCommentDelete = $runModel->getDetails($runId, $compId);
+    $fullDetailAfterCommentDelete = current(array_filter($detailsAfterCommentDelete, fn($d) => (int)$d['employee_id'] === $employeeFullId));
+    check('comment_count reflects the delete (3 -> 2)', (int)($fullDetailAfterCommentDelete['comment_count'] ?? -1), 2);
+
     echo "=== Custom-item PED assignment flows into the real calculation ===\n";
     $customDedLines = array_values(array_filter($fullDetail['deduction_breakdown'], fn($l) => $l['source'] === 'ped' && !empty($l['is_custom'])));
     checkTrue('exactly one custom-item deduction line present (not silently dropped by the PED JOIN)', count($customDedLines) === 1);

@@ -209,7 +209,9 @@ class PayrollRunModel {
                     COALESCE(v.is_verified, 0) AS is_verified, v.verified_at,
                     vu.name_th AS verified_by_name_th, vu.name_en AS verified_by_name_en,
                     COALESCE(v.is_locked, 0) AS is_locked, v.locked_at,
-                    lu.name_th AS locked_by_name_th, lu.name_en AS locked_by_name_en
+                    lu.name_th AS locked_by_name_th, lu.name_en AS locked_by_name_en,
+                    -- 2026-08-29: comment count shown as a notification badge on the Comment button
+                    (SELECT COUNT(*) FROM `payroll_run_employee_comments` c WHERE c.run_id = d.run_id AND c.employee_id = d.employee_id) AS comment_count
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `payroll_run_employee_verifications` v ON v.run_id = d.run_id AND v.employee_id = d.employee_id
@@ -410,6 +412,52 @@ class PayrollRunModel {
                 VALUES (:run_id, :employee_id, :tag, :comment, :created_by)")
             ->execute([':run_id' => $runId, ':employee_id' => $employeeId, ':tag' => $tag, ':comment' => $comment, ':created_by' => $userId]);
         return ['status' => true, 'message' => 'Saved successfully.', 'id' => (int)$this->db->lastInsertId()];
+    }
+
+    /** 2026-08-29, explicit follow-up: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย". Not restricted to
+     *  the original author -- same "anyone with can_process_payroll can act" convention as every
+     *  other mutation on this page (no per-row ownership concept exists elsewhere in this class
+     *  either). updated_by/updated_at let the UI show a small "(edited)" marker only when genuinely
+     *  applicable -- a never-edited comment keeps both null. */
+    public function employeeCommentUpdate(int $runId, int $compId, int $commentId, ?string $tag, string $comment, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit comments on this payroll run.'];
+        }
+        if (!$this->get($runId, $compId)) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $comment = trim($comment);
+        if ($comment === '') {
+            return ['status' => false, 'message' => 'Comment text is required.'];
+        }
+        if ($tag !== null && !in_array($tag, ['in_progress', 'completed', 'error'], true)) {
+            return ['status' => false, 'message' => 'Invalid tag.'];
+        }
+        $stmt = $this->db->prepare("UPDATE `payroll_run_employee_comments`
+            SET tag = :tag, comment = :comment, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id AND run_id = :run_id");
+        $stmt->execute([':tag' => $tag, ':comment' => $comment, ':updated_by' => $userId, ':id' => $commentId, ':run_id' => $runId]);
+        if ($stmt->rowCount() === 0) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        return ['status' => true, 'message' => 'Saved successfully.'];
+    }
+
+    /** Hard delete -- see this table's own migration docblock for why (a lightweight reminder note,
+     *  not compliance/audit data). */
+    public function employeeCommentDelete(int $runId, int $compId, int $commentId, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to delete comments on this payroll run.'];
+        }
+        if (!$this->get($runId, $compId)) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $stmt = $this->db->prepare("DELETE FROM `payroll_run_employee_comments` WHERE id = :id AND run_id = :run_id");
+        $stmt->execute([':id' => $commentId, ':run_id' => $runId]);
+        if ($stmt->rowCount() === 0) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 
     /** Oldest-first (a chronological timeline read top-to-bottom), unlike the run-level audit log

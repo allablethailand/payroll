@@ -63,6 +63,14 @@ try {
     check('employee_amount (capped at 15000 base * 5%, then capped at 750)', $result['employee_amount'], 750.0);
     check('employer_amount', $result['employer_amount'], 750.0);
     check('base_amount clamped to max_base', $result['base_amount'], 15000.0);
+    // 2026-08-29, explicit request: "ประกันสังคม อยากให้เห็นสูตรคำนวณด้วยครับ" -- structured 'formula'
+    // trace attached by computeFlatRate(), for the Detail page's popover.
+    check('flat_rate result carries a formula field', isset($result['formula']), true);
+    check('formula raw_base is the uncapped 20000', $result['formula']['raw_base'] ?? null, 20000.0);
+    check('formula effective_base reflects the max_base clamp (15000)', $result['formula']['effective_base'] ?? null, 15000.0);
+    check('formula employee_rate is 5', $result['formula']['employee_rate'] ?? null, 5.0);
+    check('formula employee_raw_amount (before the contribution cap) = 15000*5% = 750', $result['formula']['employee_raw_amount'] ?? null, 750.0);
+    check('formula employee_capped is false here (raw amount already equals the cap, not truncated by it)', $result['formula']['employee_capped'], false);
 
     echo "=== Scenario 2: TH_SSO flat_rate, salary below min_base (floored) ===\n";
     $result = $engine->calculateItem($compId, 'TH_SSO', ['basic_salary' => 1000, 'sso_eligible_earnings' => 1000], '2026-07-01');
