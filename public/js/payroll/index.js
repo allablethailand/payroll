@@ -561,7 +561,24 @@ function initPayrollRunTable() {
             } },
             { data: null, render: (d, t, row) => `${toDisplayDatePr(row.period_start_date)} - ${toDisplayDatePr(row.period_end_date)}` },
             { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
-            { data: 'employee_count', className: 'text-end' },
+            // 2026-08-29, explicit request: "ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน Lock
+            // ข้อมูลแล้วกี่คน" -- object-form render (display/sort/filter split, same DataTables sort-
+            // safety convention this app already uses for formatted date/badge columns) so sorting by
+            // this column still sorts numerically by the raw employee_count, not by the rendered HTML string.
+            { data: 'employee_count', className: 'text-end', render: {
+                display: (d, t, row) => {
+                    const verified = Number(row.verified_employee_count || 0);
+                    const locked = Number(row.locked_employee_count || 0);
+                    const badges = (verified || locked)
+                        ? `<div class="small mt-1">
+                            ${verified ? `<span class="badge bg-success-subtle text-success"><i class="fa-solid fa-check-double me-1"></i>${verified}</span>` : ''}
+                            ${locked ? `<span class="badge bg-secondary-subtle text-secondary ms-1"><i class="fa-solid fa-lock me-1"></i>${locked}</span>` : ''}
+                        </div>` : '';
+                    return `${d}${badges}`;
+                },
+                sort: d => d,
+                filter: d => d,
+            } },
             { data: 'total_net_amount', className: 'text-end', render: d => fmtNumPr(d) },
             { data: null, render: (d, t, row) => escapeHtmlPr(employeeNamePr(row)) },
             // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น

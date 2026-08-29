@@ -165,9 +165,19 @@
                 <i class="fa-solid fa-calculator fa-2x mb-3 text-secondary opacity-50"></i>
                 <span data-i18n="no_details_yet">No employees calculated yet. Click "Recalculate" to compute this run.</span>
             </div>
+            <!-- 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify และ Lock"
+                 -- same visual language as .bulk-pull-bar elsewhere in this app (warning/amber tint),
+                 hidden until at least one row checkbox is checked. -->
+            <div class="bulk-pull-bar d-none d-inline-flex" id="runDetailBulkBar">
+                <span class="bulk-pull-bar-count"><span id="runDetailBulkCount">0</span> <span data-i18n="employees_selected">employee(s) selected</span></span>
+                <button type="button" class="btn btn-sm btn-outline-success" id="btnBulkVerify"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify">Verify</span></button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkLock"><i class="fa-solid fa-lock me-1"></i><span data-i18n="action_lock">Lock</span></button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkUnlock"><i class="fa-solid fa-lock-open me-1"></i><span data-i18n="action_unlock">Unlock</span></button>
+            </div>
             <table class="table table-hover table-border align-middle w-100" id="tb_run_detail">
                 <thead class="table-light text-secondary">
                     <tr>
+                        <th class="text-center"><input type="checkbox" class="form-check-input" id="runDetailSelectAll"></th>
                         <th data-i18n="table_code">Code</th>
                         <th data-i18n="table_name">Name</th>
                         <th class="text-center" data-i18n="table_source">Source</th>
@@ -177,6 +187,7 @@
                         <th class="text-end" data-i18n="table_net_pay">Net Pay</th>
                         <th data-i18n="table_calc_status">Calculation</th>
                         <th data-i18n="table_remark">Remark</th>
+                        <th class="text-center" data-i18n="table_verify_lock">Verify / Lock</th>
                         <!-- 2026-08-27, explicit request: blank out any "Action(s)" header, matches
                              the empty-header convention every other Actions column already uses. -->
                         <th class="text-center"></th>
@@ -185,6 +196,37 @@
                 <tbody></tbody>
             </table>
           </div>
+        </div>
+
+        <!-- 2026-08-29, explicit request: "ใส่ Comment ได้ของแต่ละคน กดแล้วเปิดเป็น Modal ให้ใส่ Comment
+             เรื่อยๆ เป็น Timeline...ให้มีใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด" -- same
+             .apv-stage timeline component already used for Action History on this same page (see the
+             comment above #tb_run_detail), oldest-first (matches employeeComments()'s own ORDER BY). -->
+        <div class="modal fade" id="employeeCommentModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fa-solid fa-comments me-2 text-brand"></i><span data-i18n="employee_comment_timeline_title">Comments</span> - <span id="employeeCommentModalEmployeeName"></span></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="employeeCommentTimeline" class="apv-timeline mb-3"></div>
+                        <div id="employeeCommentEmpty" class="text-center text-muted small py-3 d-none" data-i18n="employee_comment_timeline_empty">No comments yet.</div>
+                        <hr>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted mb-1" data-i18n="employee_comment_tag">Tag</label>
+                            <select class="form-select form-select-sm select2-static" id="employeeCommentTag" data-option-keys="employee_comment_tag_none,employee_comment_tag_in_progress,employee_comment_tag_completed,employee_comment_tag_error" data-option-values=",in_progress,completed,error"></select>
+                        </div>
+                        <div class="mb-2">
+                            <textarea class="form-control form-control-sm" id="employeeCommentText" rows="3" data-i18n="employee_comment_placeholder" placeholder="Write a comment..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="btnAddEmployeeComment"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee_comment_add">Add Comment</span></button>
+                    </div>
+                </div>
+            </div>
         </div>
         <!-- 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น
              Timeline สวยๆ" -- was a plain DataTable (5 columns: Date/Time, Action, Status Change,

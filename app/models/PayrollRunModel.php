@@ -98,7 +98,10 @@ class PayrollRunModel {
                     creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
                     submitter.department_id AS submitted_by_department_id,
-                    (SELECT from_state FROM `payroll_run_audit_logs` WHERE run_id = r.id AND action = 'cancel' ORDER BY id DESC LIMIT 1) AS cancelled_from_state
+                    (SELECT from_state FROM `payroll_run_audit_logs` WHERE run_id = r.id AND action = 'cancel' ORDER BY id DESC LIMIT 1) AS cancelled_from_state,
+                    -- 2026-08-29 ('ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน Lock ข้อมูลแล้วกี่คน')
+                    (SELECT COUNT(*) FROM `payroll_run_employee_verifications` WHERE run_id = r.id AND is_verified = 1) AS verified_employee_count,
+                    (SELECT COUNT(*) FROM `payroll_run_employee_verifications` WHERE run_id = r.id AND is_locked = 1) AS locked_employee_count
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `employees` creator ON creator.id = r.created_by
@@ -199,9 +202,19 @@ class PayrollRunModel {
         if (!$this->get($runId, $compId)) {
             return [];
         }
-        $sql = "SELECT d.*, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.department_id
+        // 2026-08-29: is_verified/is_locked + who/when, LEFT JOINed since most employees have no row
+        // in payroll_run_employee_verifications at all (see that table's own docblock -- a row only
+        // exists while at least one flag is true) -- COALESCE to 0/false for everyone else.
+        $sql = "SELECT d.*, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.department_id,
+                    COALESCE(v.is_verified, 0) AS is_verified, v.verified_at,
+                    vu.name_th AS verified_by_name_th, vu.name_en AS verified_by_name_en,
+                    COALESCE(v.is_locked, 0) AS is_locked, v.locked_at,
+                    lu.name_th AS locked_by_name_th, lu.name_en AS locked_by_name_en
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
+                LEFT JOIN `payroll_run_employee_verifications` v ON v.run_id = d.run_id AND v.employee_id = d.employee_id
+                LEFT JOIN `employees` vu ON vu.id = v.verified_by
+                LEFT JOIN `employees` lu ON lu.id = v.locked_by
                 WHERE d.run_id = :run_id
                 ORDER BY e.employee_no ASC";
         $stmt = $this->db->prepare($sql);
@@ -211,6 +224,8 @@ class PayrollRunModel {
             $row['earning_breakdown'] = json_decode((string)$row['earning_breakdown'], true) ?? [];
             $row['deduction_breakdown'] = json_decode((string)$row['deduction_breakdown'], true) ?? [];
             $row['statutory_breakdown'] = json_decode((string)$row['statutory_breakdown'], true) ?? [];
+            $row['is_verified'] = (bool)$row['is_verified'];
+            $row['is_locked'] = (bool)$row['is_locked'];
         }
         return $rows;
     }
@@ -225,6 +240,190 @@ class PayrollRunModel {
                 WHERE a.run_id = :run_id ORDER BY a.id ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':run_id' => $runId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /* ==================== EMPLOYEE VERIFY / LOCK / COMMENTS (2026-08-29) ====================
+       Explicit request: "อยากให้มีปุ่ม Verify ของแต่ละคน และสามารถ Lock Unlock ได้ โดยถ้า Lock แล้วข้อมูล
+       จะไม่คำนวณใหม่...สามารถมี checkbox เลือกได้ทีละหลายคน...รวมถึงเพิ่มให้สามารถใส่ Comment ได้ของแต่ละคน...
+       เป็น Timeline...ใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด". Verify and Lock are
+       INDEPENDENT flags (confirmed via AskUserQuestion) living in `payroll_run_employee_verifications`
+       (one row per run_id+employee_id, deleted outright once both flags are false -- same "no
+       all-zero row" convention as payroll_run_employee_exemptions). Locking additionally means:
+       recalculate() preserves that employee's payroll_run_details row byte-for-byte instead of
+       recomputing it (see recalculate()'s own new prefetch/branch), AND every other per-employee
+       mutation entry point on this page refuses to edit a locked employee at all (confirmed via
+       AskUserQuestion) -- see isEmployeeLockedForRun()'s callers below. Comments
+       (`payroll_run_employee_comments`) are a separate, append-only per-employee timeline, NOT
+       gated by run state (a reminder note is useful regardless of where the run currently is). ==================== */
+
+    /** Shared guard used by every per-employee mutation entry point on a draft run (manual lines,
+     *  line overrides, attendance overrides, per-run exemptions) -- a locked employee's numbers must
+     *  stay frozen exactly as they are, so nothing that would trigger a recompute is allowed to touch
+     *  them at all. */
+    private function isEmployeeLockedForRun(int $runId, int $employeeId): bool {
+        $stmt = $this->db->prepare("SELECT is_locked FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND employee_id = :employee_id");
+        $stmt->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    private function employeeVerifyLockRow(int $runId, int $employeeId): array {
+        $stmt = $this->db->prepare("SELECT is_verified, is_locked FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND employee_id = :employee_id");
+        $stmt->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ? ['is_verified' => (bool)$row['is_verified'], 'is_locked' => (bool)$row['is_locked']] : ['is_verified' => false, 'is_locked' => false];
+    }
+
+    public function setEmployeeVerified(int $runId, int $compId, int $employeeId, bool $verified, int $userId, bool $isAdmin): array {
+        return $this->setEmployeeVerifyLockFlag($runId, $compId, $employeeId, 'verified', $verified, $userId, $isAdmin);
+    }
+
+    public function setEmployeeLocked(int $runId, int $compId, int $employeeId, bool $locked, int $userId, bool $isAdmin): array {
+        return $this->setEmployeeVerifyLockFlag($runId, $compId, $employeeId, 'locked', $locked, $userId, $isAdmin);
+    }
+
+    /** @param array<int> $employeeIds */
+    public function bulkSetEmployeeVerified(int $runId, int $compId, array $employeeIds, bool $verified, int $userId, bool $isAdmin): array {
+        return $this->bulkSetEmployeeVerifyLockFlag($runId, $compId, $employeeIds, 'verified', $verified, $userId, $isAdmin);
+    }
+
+    /** @param array<int> $employeeIds */
+    public function bulkSetEmployeeLocked(int $runId, int $compId, array $employeeIds, bool $locked, int $userId, bool $isAdmin): array {
+        return $this->bulkSetEmployeeVerifyLockFlag($runId, $compId, $employeeIds, 'locked', $locked, $userId, $isAdmin);
+    }
+
+    private function bulkSetEmployeeVerifyLockFlag(int $runId, int $compId, array $employeeIds, string $flag, bool $value, int $userId, bool $isAdmin): array {
+        $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
+        if (empty($employeeIds)) {
+            return ['status' => false, 'message' => 'No employees selected.'];
+        }
+        $own = !$this->db->inTransaction();
+        $succeeded = 0;
+        $failed = [];
+        try {
+            if ($own) { $this->db->beginTransaction(); }
+            foreach ($employeeIds as $employeeId) {
+                $res = $this->setEmployeeVerifyLockFlag($runId, $compId, $employeeId, $flag, $value, $userId, $isAdmin);
+                if (!empty($res['status'])) {
+                    $succeeded++;
+                } else {
+                    $failed[] = ['employee_id' => $employeeId, 'message' => $res['message'] ?? 'Failed.'];
+                }
+            }
+            if ($own) { $this->db->commit(); }
+        } catch (PDOException $e) {
+            if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+        return [
+            'status' => $succeeded > 0,
+            'message' => "{$succeeded} employee(s) updated" . (empty($failed) ? '.' : ('; ' . count($failed) . ' failed.')),
+            'succeeded' => $succeeded, 'failed' => $failed,
+        ];
+    }
+
+    /**
+     * $flag identifies which of the 2 independent columns this call targets ('verified' or
+     * 'locked') -- the OTHER flag is read from whatever the row already has and carried through
+     * unchanged via ON DUPLICATE KEY UPDATE only ever touching this flag's own 3 columns, so setting
+     * one never clobbers the other. Re-setting a flag to the value it already has still refreshes
+     * verified_at/locked_at + the *_by column to the current user/time -- treated as "re-confirming",
+     * not a no-op, which is simpler than tracking "did this actually change" and matches how the
+     * user would read clicking the button again anyway.
+     */
+    private function setEmployeeVerifyLockFlag(int $runId, int $compId, int $employeeId, string $flag, bool $value, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if ($run['state'] !== 'draft') {
+            return ['status' => false, 'message' => 'Only a draft payroll run\'s employees can be verified or locked.'];
+        }
+        $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $employeeNo = $stmtEmp->fetchColumn();
+        if ($employeeNo === false) {
+            return ['status' => false, 'message' => 'Employee not found.'];
+        }
+
+        $own = !$this->db->inTransaction();
+        try {
+            if ($own) { $this->db->beginTransaction(); }
+            $current = $this->employeeVerifyLockRow($runId, $employeeId);
+            $newVerified = $flag === 'verified' ? $value : $current['is_verified'];
+            $newLocked = $flag === 'locked' ? $value : $current['is_locked'];
+
+            if (!$newVerified && !$newLocked) {
+                $this->db->prepare("DELETE FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND employee_id = :employee_id")
+                    ->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+            } else {
+                $col = $flag === 'verified' ? 'is_verified' : 'is_locked';
+                $byCol = $flag === 'verified' ? 'verified_by' : 'locked_by';
+                $atCol = $flag === 'verified' ? 'verified_at' : 'locked_at';
+                $stmt = $this->db->prepare("INSERT INTO `payroll_run_employee_verifications`
+                        (run_id, employee_id, is_verified, verified_by, verified_at, is_locked, locked_by, locked_at)
+                    VALUES (:run_id, :employee_id, :is_verified, :verified_by, :verified_at, :is_locked, :locked_by, :locked_at)
+                    ON DUPLICATE KEY UPDATE {$col} = VALUES({$col}), {$byCol} = VALUES({$byCol}), {$atCol} = VALUES({$atCol})");
+                $stmt->execute([
+                    ':run_id' => $runId, ':employee_id' => $employeeId,
+                    ':is_verified' => $newVerified ? 1 : 0, ':verified_by' => $newVerified ? $userId : null, ':verified_at' => $newVerified ? date('Y-m-d H:i:s') : null,
+                    ':is_locked' => $newLocked ? 1 : 0, ':locked_by' => $newLocked ? $userId : null, ':locked_at' => $newLocked ? date('Y-m-d H:i:s') : null,
+                ]);
+            }
+
+            $actionWord = $flag === 'verified' ? ($value ? 'verified' : 'unverified') : ($value ? 'locked' : 'unlocked');
+            $this->logAudit($runId, 'draft', 'draft', "employee_{$actionWord}", $userId, "Employee {$employeeNo}: {$actionWord}.");
+            if ($own) { $this->db->commit(); }
+            return ['status' => true, 'message' => 'Saved successfully.'];
+        } catch (PDOException $e) {
+            if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    /** Verified/locked counts for the run list page ("ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้ว
+     *  กี่คน Lock ข้อมูลแล้วกี่คน") -- see list()'s own new subqueries below for the actual per-run count. */
+    public function employeeCommentAdd(int $runId, int $compId, int $employeeId, ?string $tag, string $comment, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to comment on this payroll run.'];
+        }
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $comment = trim($comment);
+        if ($comment === '') {
+            return ['status' => false, 'message' => 'Comment text is required.'];
+        }
+        if ($tag !== null && !in_array($tag, ['in_progress', 'completed', 'error'], true)) {
+            return ['status' => false, 'message' => 'Invalid tag.'];
+        }
+        $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        if ($stmtEmp->fetchColumn() === false) {
+            return ['status' => false, 'message' => 'Employee not found.'];
+        }
+        $this->db->prepare("INSERT INTO `payroll_run_employee_comments` (run_id, employee_id, tag, comment, created_by)
+                VALUES (:run_id, :employee_id, :tag, :comment, :created_by)")
+            ->execute([':run_id' => $runId, ':employee_id' => $employeeId, ':tag' => $tag, ':comment' => $comment, ':created_by' => $userId]);
+        return ['status' => true, 'message' => 'Saved successfully.', 'id' => (int)$this->db->lastInsertId()];
+    }
+
+    /** Oldest-first (a chronological timeline read top-to-bottom), unlike the run-level audit log
+     *  which reads newest-last too -- kept consistent with that same convention. */
+    public function employeeComments(int $runId, int $compId, int $employeeId): array {
+        if (!$this->get($runId, $compId)) {
+            return [];
+        }
+        $stmt = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en
+            FROM `payroll_run_employee_comments` c
+            LEFT JOIN `employees` e ON e.id = c.created_by
+            WHERE c.run_id = :run_id AND c.employee_id = :employee_id
+            ORDER BY c.id ASC");
+        $stmt->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -1038,6 +1237,32 @@ class PayrollRunModel {
             $exemptionsByEmployee[(int)$row['employee_id']] = $row;
         }
 
+        // 2026-08-29, real bug found and fixed (explicit report: "หักประกันสังคมจะไม่ใช่คำนวณจากฐาน
+        // อย่างเดียวต้องมาจากที่เราตั้งค่าในรายได้ ว่ารายการไหนหักประกันสังคม ต้องเอามาคำนวณทั้งหมด") --
+        // payroll_earning_deduction_types.calc_sso/calc_pf ("Include in SSO contribution base"/
+        // "Include in Provident Fund base", set in Payroll Configuration) were being saved but never
+        // actually READ anywhere in the calculation engine -- TH_SSO/TH_PVD's own calc_base was
+        // hardcoded to 'basic_salary' (see migrations/2026-08-29_sso_pf_eligible_earnings_base.sql),
+        // so every allowance/earning item an admin had explicitly flagged as SSO/PF-eligible (e.g.
+        // Position Allowance, Commission -- both seeded with calc_sso=calc_pf=1 by
+        // PayrollEarningDeductionTypeModel::seedDefaults()) was silently excluded from the actual
+        // contribution base regardless of that setting. Prefetched once per run (company-wide, not
+        // per-employee) into two item_code sets, checked against each employee's own $earningLines
+        // in Pass 2 below (right before the statutory engine call) to build the real eligible-
+        // earnings sum. Base salary itself always counts toward both (it's not one of these flagged
+        // "earning items" -- it's the foundation both bases start from), matching Thai SSO/PF law's
+        // own "total wages" concept rather than base-salary-only.
+        $calcSsoItemCodes = [];
+        $calcPfItemCodes = [];
+        $stmtCalcFlags = $this->db->prepare("SELECT item_code, calc_sso, calc_pf FROM `payroll_earning_deduction_types`
+            WHERE comp_id = :comp_id AND item_type = 'earning' AND status = 'active' AND deleted_at IS NULL AND (calc_sso = 1 OR calc_pf = 1)");
+        $stmtCalcFlags->execute([':comp_id' => $compId]);
+        foreach ($stmtCalcFlags->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $code = strtoupper((string)$row['item_code']);
+            if ($row['calc_sso']) { $calcSsoItemCodes[$code] = true; }
+            if ($row['calc_pf']) { $calcPfItemCodes[$code] = true; }
+        }
+
         // "Incentive/Other Payment" runs (see create()'s docblock for the full reasoning) skip
         // base salary/proration, standing PED assignments, and attendance bonus entirely by
         // default -- only the manually-picked payroll_run_manual_lines for each employee count.
@@ -1118,6 +1343,26 @@ class PayrollRunModel {
             . $buildTypeCondition('earning', $earningRestrictIds) . ' OR '
             . $buildTypeCondition('deduction', $deductionRestrictIds) . ')';
 
+        // 2026-08-29, explicit request ("ถ้า Lock แล้วข้อมูลจะไม่คำนวณใหม่") -- fetched BEFORE the DELETE
+        // below wipes the table, so a locked employee's existing row can be re-inserted verbatim
+        // instead of recomputed. Keyed by employee_id and consumed inside the main per-employee loop
+        // further down (checked FIRST, before any of that employee's business logic runs, so locking
+        // genuinely means "don't touch this employee's numbers at all" -- not just "compute the same
+        // thing again and happen to land on the same answer").
+        $lockedPreservedRows = [];
+        $stmtLockedIds = $this->db->prepare("SELECT employee_id FROM `payroll_run_employee_verifications` WHERE run_id = :id AND is_locked = 1");
+        $stmtLockedIds->execute([':id' => $id]);
+        $lockedEmployeeIds = array_map('intval', $stmtLockedIds->fetchAll(PDO::FETCH_COLUMN));
+        if (!empty($lockedEmployeeIds)) {
+            $stmtPreserved = $this->db->prepare("SELECT * FROM `payroll_run_details` WHERE run_id = :id");
+            $stmtPreserved->execute([':id' => $id]);
+            foreach ($stmtPreserved->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                if (in_array((int)$row['employee_id'], $lockedEmployeeIds, true)) {
+                    $lockedPreservedRows[(int)$row['employee_id']] = $row;
+                }
+            }
+        }
+
         $ownTransaction = !$this->db->inTransaction();
         try {
             if ($ownTransaction) { $this->db->beginTransaction(); }
@@ -1144,6 +1389,28 @@ class PayrollRunModel {
             $perEmployeeData = [];
             foreach ($employees as $emp) {
                 $employeeId = (int)$emp['id'];
+
+                // 2026-08-29: a locked employee's earning/deduction lines are stashed AS-IS from the
+                // preserved row instead of being reassembled from scratch -- still stashed into
+                // $perEmployeeData (not skipped outright) so that if this employee has a transfer-
+                // deduction line paying ANOTHER (unlocked) employee, that other employee's own
+                // transfer-credit earning line further down still resolves correctly against this
+                // employee's frozen amount. Pass 2 below has its own, separate bypass that skips
+                // recomputing THIS employee's own totals/statutory/insert entirely.
+                if (isset($lockedPreservedRows[$employeeId])) {
+                    $preserved = $lockedPreservedRows[$employeeId];
+                    $perEmployeeData[$employeeId] = [
+                        'emp' => $emp,
+                        'effectiveBase' => (float)$preserved['base_salary_amount'],
+                        'prorateDays' => $preserved['prorate_days'] !== null ? (int)$preserved['prorate_days'] : null,
+                        'prorateTotalDays' => $preserved['prorate_total_days'] !== null ? (int)$preserved['prorate_total_days'] : null,
+                        'earningLines' => json_decode((string)$preserved['earning_breakdown'], true) ?? [],
+                        'deductionLines' => json_decode((string)$preserved['deduction_breakdown'], true) ?? [],
+                        'errors' => $preserved['calc_errors'] ? explode(', ', (string)$preserved['calc_errors']) : [],
+                    ];
+                    continue;
+                }
+
                 $baseSalary = (float)$emp['base_salary_amount'];
                 $employmentDate = $emp['employment_date'];
                 $employmentEndDate = $emp['employment_end_date'];
@@ -1528,6 +1795,40 @@ class PayrollRunModel {
             // for this employee above.
             foreach ($employees as $emp) {
                 $employeeId = (int)$emp['id'];
+
+                // 2026-08-29: a locked employee's row is re-inserted byte-for-byte from what was
+                // preserved before the DELETE above -- no statutory recompute, no transfer-credit
+                // merge, nothing. This is the actual "don't touch this employee's numbers at all"
+                // guarantee ("ถ้า Lock แล้วข้อมูลจะไม่คำนวณใหม่"); Pass 1's own bypass above only
+                // exists so an OTHER (unlocked) employee receiving a transfer credit FROM this one
+                // still resolves correctly.
+                if (isset($lockedPreservedRows[$employeeId])) {
+                    $preserved = $lockedPreservedRows[$employeeId];
+                    $insStmt->execute([
+                        ':run_id' => $id, ':employee_id' => $employeeId,
+                        ':base_salary_amount' => $preserved['base_salary_amount'],
+                        ':prorate_days' => $preserved['prorate_days'],
+                        ':prorate_total_days' => $preserved['prorate_total_days'],
+                        ':earning_breakdown' => $preserved['earning_breakdown'],
+                        ':deduction_breakdown' => $preserved['deduction_breakdown'],
+                        ':statutory_breakdown' => $preserved['statutory_breakdown'],
+                        ':gross_amount' => $preserved['gross_amount'],
+                        ':total_deduction_amount' => $preserved['total_deduction_amount'],
+                        ':net_amount' => $preserved['net_amount'],
+                        ':employer_cost_amount' => $preserved['employer_cost_amount'],
+                        ':calc_status' => $preserved['calc_status'],
+                        ':calc_errors' => $preserved['calc_errors'],
+                        ':data_source' => $preserved['data_source'],
+                    ]);
+                    $totalGross += (float)$preserved['gross_amount'];
+                    $totalDeduction += (float)$preserved['total_deduction_amount'];
+                    $totalNet += (float)$preserved['net_amount'];
+                    if ($preserved['calc_status'] === 'error') {
+                        $anyError = true;
+                    }
+                    continue;
+                }
+
                 $pdata = $perEmployeeData[$employeeId];
                 $effectiveBase = $pdata['effectiveBase'];
                 $prorateDays = $pdata['prorateDays'];
@@ -1556,6 +1857,31 @@ class PayrollRunModel {
                 $pedDeductionTotal = array_sum(array_column($deductionLines, 'amount'));
                 $grossAmount = round($effectiveBase + $earningTotal, 2);
 
+                // 2026-08-29: SSO/PF-eligible earnings base -- base salary always counts, plus any
+                // earning line whose catalog item_code is flagged calc_sso/calc_pf (see the
+                // $calcSsoItemCodes/$calcPfItemCodes prefetch above for the full reasoning). A
+                // transfer-credit line (source='transfer_in') is deliberately excluded from BOTH --
+                // it's money credited from a DIFFERENT employee's deduction, not wages paid to this
+                // employee for their own work, so it was never a candidate for this employee's own
+                // SSO/PF base regardless of what the paying employee's own item is flagged.
+                $ssoEligibleBase = $effectiveBase;
+                $pfEligibleBase = $effectiveBase;
+                foreach ($earningLines as $eLine) {
+                    if (($eLine['source'] ?? null) === 'transfer_in') {
+                        continue;
+                    }
+                    $lineCode = strtoupper((string)($eLine['code'] ?? ''));
+                    if ($lineCode === '') {
+                        continue;
+                    }
+                    if (isset($calcSsoItemCodes[$lineCode])) {
+                        $ssoEligibleBase += (float)$eLine['amount'];
+                    }
+                    if (isset($calcPfItemCodes[$lineCode])) {
+                        $pfEligibleBase += (float)$eLine['amount'];
+                    }
+                }
+
                 // Statutory engine — see class docblock for the taxable_income simplification.
                 // Skipped entirely for an incentive run that opted out (compute_statutory=0): every
                 // line is then exactly what was manually picked, nothing withheld automatically.
@@ -1569,9 +1895,16 @@ class PayrollRunModel {
                         // taxable_income here is only a rough placeholder for the TH_PIT line --
                         // it gets recomputed properly by ThPitCalculator below (2026-08-21, real
                         // bug fix). Left as-is for every OTHER statutory item, which doesn't read
-                        // this key at all (TH_SSO/TH_PVD use basic_salary, per statutory_items.calc_base).
+                        // this key at all.
                         'taxable_income' => round($grossAmount * 12, 2),
                         'net_income' => $grossAmount,
+                        // 2026-08-29: TH_SSO/TH_PVD's own calc_base now points here instead of
+                        // 'basic_salary' (see migrations/2026-08-29_sso_pf_eligible_earnings_base.sql)
+                        // -- any OTHER country's future analogous item (SG CPF, MY SOCSO/EPF, etc.)
+                        // can opt into the same "total eligible wages, not just base" concept simply
+                        // by pointing its own calc_base at one of these two keys, no engine change needed.
+                        'sso_eligible_earnings' => round($ssoEligibleBase, 2),
+                        'pf_eligible_earnings' => round($pfEligibleBase, 2),
                     ];
                     $statutoryResult = $this->engine->calculate($compId, $salaryContext, $paymentDate, $employeeFlags);
 
@@ -2173,6 +2506,12 @@ class PayrollRunModel {
         if ($run['state'] !== 'draft') {
             return [null, 'Only a draft payroll run can have its earning/deduction items adjusted.'];
         }
+        // 2026-08-29: a locked employee's numbers must stay frozen -- see isEmployeeLockedForRun()'s
+        // own docblock for why this must block every per-employee mutation entry point, not just
+        // recalculate() itself.
+        if ($this->isEmployeeLockedForRun($id, $employeeId)) {
+            return [null, 'This employee is locked for this run and cannot be edited. Unlock first.'];
+        }
         if (($run['run_purpose'] ?? 'payroll') !== 'incentive') {
             $stmtMember = $this->db->prepare("SELECT 1 FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
             $stmtMember->execute([':run_id' => $id, ':employee_id' => $employeeId]);
@@ -2337,7 +2676,7 @@ class PayrollRunModel {
         // Fetched BEFORE the delete (2026-08-21, explicit request: audit log needs to say what was
         // removed, which is no longer readable once the row is gone) -- same reasoning as
         // addManualLine()'s new logAudit() call just above this method.
-        $stmtLine = $this->db->prepare("SELECT pml.amount, pml.custom_item_name, pt.item_code, e.employee_no
+        $stmtLine = $this->db->prepare("SELECT pml.employee_id, pml.amount, pml.custom_item_name, pt.item_code, e.employee_no
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             JOIN `employees` e ON e.id = pml.employee_id
@@ -2346,6 +2685,10 @@ class PayrollRunModel {
         $lineInfo = $stmtLine->fetch(PDO::FETCH_ASSOC);
         if (!$lineInfo) {
             return ['status' => false, 'message' => 'Record not found.'];
+        }
+        // 2026-08-29: same lock guard as assertManualLinesEditable() -- see that method's own comment.
+        if ($this->isEmployeeLockedForRun($id, (int)$lineInfo['employee_id'])) {
+            return ['status' => false, 'message' => 'This employee is locked for this run and cannot be edited. Unlock first.'];
         }
 
         $this->db->prepare("DELETE FROM `payroll_run_manual_lines` WHERE id = :line_id AND run_id = :run_id")
@@ -2408,6 +2751,9 @@ class PayrollRunModel {
         }
         if ($run['sync_process_id'] === null) {
             return ['status' => false, 'message' => 'This adjustment only applies to a run pulled from synced attendance data.'];
+        }
+        if ($this->isEmployeeLockedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is locked for this run and cannot be edited. Unlock first.'];
         }
         if (!in_array($action, ['override_amount', 'exclude'], true)) {
             return ['status' => false, 'message' => 'Invalid action.'];
@@ -2588,6 +2934,9 @@ class PayrollRunModel {
         }
         if ($run['sync_process_id'] === null) {
             return ['status' => false, 'message' => 'This adjustment only applies to a run pulled from synced attendance data.'];
+        }
+        if ($this->isEmployeeLockedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is locked for this run and cannot be edited. Unlock first.'];
         }
 
         $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
@@ -2795,6 +3144,9 @@ class PayrollRunModel {
         }
         if ($run['state'] !== 'draft') {
             return ['status' => false, 'message' => 'Only a draft payroll run can have its employee exemptions adjusted.'];
+        }
+        if ($this->isEmployeeLockedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is locked for this run and cannot be edited. Unlock first.'];
         }
         $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);

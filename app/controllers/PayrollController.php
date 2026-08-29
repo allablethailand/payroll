@@ -459,6 +459,85 @@ class PayrollController extends Controller {
         $this->json($this->model->saveEmployeeExemption($id, (int)$compId, $employeeId, $exemptTax, $exemptSso, $note, $this->userId(), $this->isAdmin()));
     }
 
+    /* ==================== Employee Verify / Lock / Comments (2026-08-29) ==================== */
+
+    public function employeeVerifySave() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $verified = is_array($data) && !empty($data['verified']);
+        if (!$compId || $id <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->setEmployeeVerified($id, (int)$compId, $employeeId, $verified, $this->userId(), $this->isAdmin()));
+    }
+
+    public function employeeLockSave() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $locked = is_array($data) && !empty($data['locked']);
+        if (!$compId || $id <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->setEmployeeLocked($id, (int)$compId, $employeeId, $locked, $this->userId(), $this->isAdmin()));
+    }
+
+    public function employeeVerifyBulk() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $employeeIds = (is_array($data) && is_array($data['employee_ids'] ?? null)) ? array_map('intval', $data['employee_ids']) : [];
+        $verified = is_array($data) && !empty($data['verified']);
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->bulkSetEmployeeVerified($id, (int)$compId, $employeeIds, $verified, $this->userId(), $this->isAdmin()));
+    }
+
+    public function employeeLockBulk() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $employeeIds = (is_array($data) && is_array($data['employee_ids'] ?? null)) ? array_map('intval', $data['employee_ids']) : [];
+        $locked = is_array($data) && !empty($data['locked']);
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->bulkSetEmployeeLocked($id, (int)$compId, $employeeIds, $locked, $this->userId(), $this->isAdmin()));
+    }
+
+    public function employeeCommentAdd() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $tag = (is_array($data) && !empty($data['tag'])) ? (string)$data['tag'] : null;
+        $comment = (is_array($data) && isset($data['comment'])) ? (string)$data['comment'] : '';
+        if (!$compId || $id <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->employeeCommentAdd($id, (int)$compId, $employeeId, $tag, $comment, $this->userId(), $this->isAdmin()));
+    }
+
+    public function employeeCommentList() {
+        $compId = getCompId();
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $id <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->employeeComments($id, (int)$compId, $employeeId)]);
+    }
+
     public function submit() {
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
