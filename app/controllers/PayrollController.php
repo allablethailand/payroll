@@ -527,6 +527,16 @@ class PayrollController extends Controller {
         $this->json($this->model->employeeCommentAdd($id, (int)$compId, $employeeId, $tag, $comment, $this->userId(), $this->isAdmin()));
     }
 
+    public function errorEmployees() {
+        $compId = getCompId();
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->errorEmployeesForRun($id, (int)$compId)]);
+    }
+
     public function employeeCommentList() {
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;

@@ -27,6 +27,27 @@ class AnnualIncomeSummaryModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
+    /**
+     * 2026-08-29, explicit follow-up: "ยังไม่มีหน้าตั้งค่าการตัดรอบปี ที่เอาไปเป็นเงื่อนไขในการแสดงผล
+     * Report ประจำปี" -- companies.fiscal_year_start_month already existed (set from Company
+     * Profile's own "Company Information" section, the field's original/canonical home) but wasn't
+     * reachable from anywhere near the report that actually uses it, so it read as "there's no
+     * settings page for this at all" from this report's own context. This is a second, narrow save
+     * path scoped to JUST this one column -- reusing CompanyProfileController's own full save()
+     * would require resubmitting every other required company field (address, tax id, etc.) just to
+     * change one month, which is both unnecessary and risky (a stale/incomplete payload could
+     * silently blank other fields). A quick-access "Settings" button on the Annual Income Summary
+     * page itself now opens a single-field modal calling this method directly.
+     */
+    public function saveFiscalYearStartMonth(int $compId, int $month): array {
+        if ($month < 1 || $month > 12) {
+            return ['status' => false, 'message' => 'Invalid month.'];
+        }
+        $stmt = $this->db->prepare("UPDATE `companies` SET fiscal_year_start_month = :month WHERE id = :id");
+        $stmt->execute([':month' => $month, ':id' => $compId]);
+        return ['status' => true, 'message' => 'Saved successfully.'];
+    }
+
     private function fiscalYearBounds(int $fiscalYear, int $fiscalStartMonth): array {
         $start = sprintf('%04d-%02d-01', $fiscalYear, $fiscalStartMonth);
         $endYear = $fiscalStartMonth === 1 ? $fiscalYear : $fiscalYear + 1;

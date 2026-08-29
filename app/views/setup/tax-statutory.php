@@ -167,7 +167,24 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_calc_base">Calculation Base</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
-                                <select class="form-select select2-static required" id="item_calc_base" name="calc_base" data-option-keys="calc_base_basic_salary,calc_base_gross_salary,calc_base_taxable_income,calc_base_net_income,calc_base_custom" data-option-values="basic_salary,gross_salary,taxable_income,net_income,custom"></select>
+                                <select class="form-select select2-static required" id="item_calc_base" name="calc_base" data-option-keys="calc_base_basic_salary,calc_base_gross_salary,calc_base_taxable_income,calc_base_net_income,calc_base_sso_eligible_earnings,calc_base_pf_eligible_earnings,calc_base_custom" data-option-values="basic_salary,gross_salary,taxable_income,net_income,sso_eligible_earnings,pf_eligible_earnings,custom"></select>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0"><span data-i18n="modal_rounding_mode">Rounding</span></label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-static" id="item_rounding_mode" name="rounding_mode" data-option-keys="rounding_mode_round,rounding_mode_up,rounding_mode_down,rounding_mode_none" data-option-values="round,up,down,none"></select>
+                                <div class="form-text" data-i18n="modal_rounding_mode_hint">How to handle decimals left over after calculation.</div>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0"><span data-i18n="modal_decimal_places">Decimal Places</span></label>
+                            </div>
+                            <div class="col-sm-3">
+                                <input type="number" min="0" max="4" class="form-control" id="item_decimal_places" name="decimal_places" value="2">
                             </div>
                         </div>
                         <div class="row mb-3">

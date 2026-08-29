@@ -5224,3 +5224,37 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .ais-legend-swatch.ais-month-past_missing { background: #fdecec; border: 1px solid #f3b4ac; }
 .ais-legend-swatch.ais-month-current { background: #dbeafe; border: 1px solid #93c5fd; }
 .ais-legend-swatch.ais-month-future { background: #f8fafc; border: 1px solid #e2e8f0; }
+
+/* Payroll Run Detail: Employee Breakdown table (2026-08-29, explicit follow-up request:
+   "รายการให้แสดงให้ต่างกับรายการที่ยังไม่ Verify หรือ Lock ตรงเงินได้เงินหักสุทธิ์ ปรับการแสดงผลให้ชัดขึ้น") --
+   a verified and/or locked row gets its own background tint (set via createdRow in
+   public/js/payroll/detail.js) so it reads as visually distinct from a plain, not-yet-actioned row
+   at a glance; a row that is BOTH verified and locked gets locked's tint (locked is the "further
+   along" / more final state of the two, so it should visually win when both apply) plus a solid
+   left border in verified's own green as a secondary cue that both are true. .rd-net-pill makes the
+   Net Pay column read clearly as the one figure people scan for first, distinct from the plain-text
+   Base Salary/Gross/Deduction cells beside it. */
+/* --bs-table-hover-bg is overridden per-row too (not just background-color) -- Bootstrap 5's
+   .table-hover paints the hover tint on the <td>/<th> cells themselves (via that CSS variable),
+   which sits on top of a plain background-color set on the <tr>, so without this override the
+   default gray hover tint would mask these custom colors the moment the row is hovered. */
+#tb_run_detail tbody tr.rd-row-verified {
+    --bs-table-hover-bg: #e3faea;
+    background-color: #f0fdf4;
+}
+#tb_run_detail tbody tr.rd-row-locked {
+    --bs-table-hover-bg: #eef2f7;
+    background-color: #f8fafc;
+    border-left: 3px solid #64748b;
+}
+#tb_run_detail tbody tr.rd-row-verified.rd-row-locked {
+    border-left: 3px solid #16a34a;
+}
+.rd-net-pill {
+    display: inline-block;
+    font-weight: 700;
+    color: #FF9900;
+    background: rgba(255, 153, 0, 0.1);
+    border-radius: 6px;
+    padding: 2px 10px;
+}

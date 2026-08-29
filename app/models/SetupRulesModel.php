@@ -224,6 +224,73 @@ class SetupRulesModel {
         return ['total_days' => $totalDays, 'payable_days' => $payableDays, 'has_shift_pattern' => $workDays !== null];
     }
 
+    /**
+     * 2026-08-29, explicit request: "การคิดจำนวนวันทำงาน ตอนนี้มีส่งมาจาก Origami ว่าทำงานทั้งหมดกี่วัน
+     * ให้แสดงในข้อมูลด้วยว่า จำนวนวันในรอบนั้นกี่วัน วันทำงานกี่วัน วันหยุดนักขัตฤกษ์กี่วัน วันหยุดประจำสัปดาห์กี่วัน"
+     * -- a richer companion to payableDaysForEmployee() above (that method stays untouched, still
+     * feeds real payroll proration -- this one is purely informational, for the "Raw Sync Data"
+     * viewer to show alongside Origami's own reported working_days number). Every calendar day in
+     * range is categorized into EXACTLY ONE bucket (never double-counted): a holiday day counts as
+     * `holiday_days` regardless of whether it also happens to fall on a scheduled work day or an
+     * already-off weekly day (same "holiday wins" priority payableDaysForEmployee() already uses);
+     * a non-holiday day that isn't a scheduled work day counts as `weekly_off_days`; everything else
+     * counts as `working_days`. total_days always equals the sum of the other three.
+     * @return array{total_days:int,working_days:int,holiday_days:int,weekly_off_days:int,has_shift_pattern:bool}
+     */
+    public function workingDaysBreakdown(int $employeeId, int $compId, string $dateFrom, string $dateTo): array {
+        $stmtE = $this->db->prepare("SELECT shift_id FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtE->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $emp = $stmtE->fetch(PDO::FETCH_ASSOC);
+        $shiftId = $emp['shift_id'] ?? null;
+
+        $workDays = null;
+        if ($shiftId !== null) {
+            $stmtS = $this->db->prepare("SELECT works_monday, works_tuesday, works_wednesday, works_thursday, works_friday, works_saturday, works_sunday
+                FROM shifts WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtS->execute([':id' => $shiftId, ':comp_id' => $compId]);
+            $shift = $stmtS->fetch(PDO::FETCH_ASSOC);
+            if ($shift) {
+                $workDays = [
+                    1 => (bool)$shift['works_monday'], 2 => (bool)$shift['works_tuesday'], 3 => (bool)$shift['works_wednesday'],
+                    4 => (bool)$shift['works_thursday'], 5 => (bool)$shift['works_friday'], 6 => (bool)$shift['works_saturday'],
+                    7 => (bool)$shift['works_sunday'],
+                ];
+            }
+        }
+
+        $holidays = $this->resolveHolidaysForEmployee($employeeId, $compId, $dateFrom, $dateTo);
+        $holidayDates = array_flip(array_column($holidays, 'date'));
+
+        $from = new DateTime($dateFrom);
+        $to = new DateTime($dateTo);
+        $totalDays = 0;
+        $workingDaysCount = 0;
+        $holidayDaysCount = 0;
+        $weeklyOffDaysCount = 0;
+        $cursor = clone $from;
+        while ($cursor <= $to) {
+            $totalDays++;
+            $dateStr = $cursor->format('Y-m-d');
+            $dow = (int)$cursor->format('N');
+            $isScheduledWorkDay = $workDays === null ? true : ($workDays[$dow] ?? true);
+            $isHoliday = isset($holidayDates[$dateStr]);
+            if ($isHoliday) {
+                $holidayDaysCount++;
+            } elseif (!$isScheduledWorkDay) {
+                $weeklyOffDaysCount++;
+            } else {
+                $workingDaysCount++;
+            }
+            $cursor->modify('+1 day');
+        }
+
+        return [
+            'total_days' => $totalDays, 'working_days' => $workingDaysCount,
+            'holiday_days' => $holidayDaysCount, 'weekly_off_days' => $weeklyOffDaysCount,
+            'has_shift_pattern' => $workDays !== null,
+        ];
+    }
+
     public function shiftToggleStatus(int $id, int $compId, int $userId): array {
         $stmt = $this->db->prepare("SELECT status FROM shifts WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);

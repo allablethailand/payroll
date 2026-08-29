@@ -60,6 +60,35 @@ class AnnualIncomeSummaryController extends Controller {
         $this->json(['status' => true, 'data' => $this->model->availableFiscalYears($compId, $fsm), 'fiscal_year_start_month' => $fsm]);
     }
 
+    /** 2026-08-29: quick-access read of the current setting for the modal (same value years()
+     *  already returns, but a dedicated endpoint means opening the settings modal doesn't need to
+     *  wait on/depend on the fiscal-years list call). */
+    public function fiscalYearSetting() {
+        if (!$this->requireView()) return;
+        $compId = (int)getCompId();
+        $this->json(['status' => true, 'data' => ['fiscal_year_start_month' => $compId ? $this->fiscalStartMonth($compId) : 1]]);
+    }
+
+    /** Gated by company_profile.manage, NOT annual_income_summary.view -- this writes
+     *  companies.fiscal_year_start_month, the same column/permission Company Profile's own save()
+     *  already requires to edit it there; annual_income_summary.view only ever grants read access
+     *  to the report itself. See AnnualIncomeSummaryModel::saveFiscalYearStartMonth()'s own docblock. */
+    public function saveFiscalYearSetting() {
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->userId(), 'company_profile.manage', $this->isAdmin(), $compId);
+        if (!$check['allowed']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to edit this setting.']);
+            return;
+        }
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $month = (is_array($data) && isset($data['fiscal_year_start_month'])) ? (int)$data['fiscal_year_start_month'] : 0;
+        $this->json($this->model->saveFiscalYearStartMonth($compId, $month));
+    }
+
     public function summary() {
         if (!$this->requireView()) return;
         $compId = (int)getCompId();

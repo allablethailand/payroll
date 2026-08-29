@@ -25,6 +25,7 @@ class CompanyStatutorySettingModel {
         // edit time (that would misleadingly read as "this company changed something").
         $sql = "SELECT si.id AS statutory_item_id, si.code, si.name_th, si.name_en, si.category, si.calc_method, si.calc_base,
                     si.is_employee_applicable, si.is_employer_applicable, si.default_is_active, si.is_company_rate_editable,
+                    si.rounding_mode, si.decimal_places,
                     rh.employee_rate AS master_employee_rate, rh.employer_rate AS master_employer_rate,
                     rh.employee_amount AS master_employee_amount, rh.employer_amount AS master_employer_amount,
                     css.id AS setting_id, css.status AS setting_status,
