@@ -14,22 +14,37 @@ function dashToDisplayDate(isoVal) {
     return `${dd}/${mm}/${yyyy}`;
 }
 
-// Same state -> badge-class map as public/js/payroll/index.js's own stateBadgePr() -- duplicated
-// rather than shared, matching this app's existing per-page self-contained JS convention.
-function dashStateBadge(state) {
-    const map = {
-        draft: 'bg-secondary-subtle text-secondary',
-        pending_approval: 'bg-warning-subtle text-warning',
-        approved: 'bg-info-subtle text-info',
-        paid: 'bg-success-subtle text-success',
-        locked: 'bg-dark-subtle text-dark',
-        rejected: 'bg-danger-subtle text-danger',
-        cancelled: 'bg-dark-subtle text-muted',
-        need_info: 'bg-primary-subtle text-primary',
-    };
-    const cls = map[state] || 'bg-light text-dark';
-    const text = langData['state_' + state] || state;
-    return `<span class="badge ${cls}">${text}</span>`;
+// 2026-08-29, explicit request: "รายการเงินเดือนล่าสุด ใส่ timeline ให้เห็นว่าปัจจุบันถึงไหนแล้ว ขอ Design
+// เดียวกับหน้าทำเงินเดือน" -- replaces the old plain state badge (dashStateBadge(), removed) with a
+// mini version of the SAME chevron pipeline component Payroll Process's own station-row uses
+// (.station-card/.station-card--reject etc., see style.css), scaled down (.station-card-sm) so it
+// fits inline per-row in a compact list instead of the full-size interactive filter bar. Draft ->
+// Pending Approval -> Approved -> Paid -> Locked is the canonical forward order; a run currently
+// sitting in one of those 5 shows every earlier stage as "done" (soft green) and that one stage
+// highlighted in its own color, with the stages still ahead left dim/neutral -- literally "how far
+// along it currently is". A run that got rejected/cancelled/need-info branched OFF the forward flow
+// at Pending Approval, so those states render as one extra highlighted segment appended right after
+// Pending Approval instead of continuing along Approved/Paid/Locked, which are left visibly
+// "skipped" (very light, not the same low-key grey as a not-yet-reached step, since -- unlike an
+// upcoming step -- they were never going to happen for this run).
+const DASH_RUN_STAGES = ['draft', 'pending_approval', 'approved', 'paid', 'locked'];
+const DASH_RUN_BRANCH_CLASS = { rejected: 'station-card-sm--danger', cancelled: 'station-card-sm--muted', need_info: 'station-card-sm--info' };
+function dashRunTimelineHtml(state) {
+    const branchClass = DASH_RUN_BRANCH_CLASS[state];
+    const currentIdx = branchClass ? 1 : DASH_RUN_STAGES.indexOf(state);
+    let html = '<div class="station-row-sm">';
+    DASH_RUN_STAGES.forEach(function (stage, idx) {
+        let cls = 'station-card-sm';
+        if (!branchClass && idx === currentIdx) cls += ' active';
+        else if (idx < currentIdx || (branchClass && idx <= 1)) cls += ' station-card-sm--done';
+        else if (branchClass) cls += ' station-card-sm--skipped';
+        html += `<div class="${cls}" data-state="${dashEscapeHtml(stage)}">${dashEscapeHtml(langData['state_' + stage] || stage)}</div>`;
+        if (branchClass && idx === 1) {
+            html += `<div class="station-card-sm active ${branchClass}">${dashEscapeHtml(langData['state_' + state] || state)}</div>`;
+        }
+    });
+    html += '</div>';
+    return html;
 }
 
 function dashEmployeeDisplayName(emp) {
@@ -58,6 +73,15 @@ function loadDashboardSummary() {
     });
 }
 
+// 2026-08-29, real bug found and fixed: #dashGreetingTitle/#dashGreetingDesc used to carry
+// data-i18n too (in dashboard.php) -- applyLanguage()'s generic updateText() sweep (public/js/
+// app.js) runs on every language switch and just does .text(rawLangValue) for any data-i18n
+// element, with no knowledge that this particular template still has an un-interpolated {date}
+// placeholder in it. Since nothing re-ran renderDashboard() afterward, switching language (or even
+// the very first loadLang() call racing this file's own ajax callback) could leave the raw
+// "...{date}..." string on screen permanently instead of a real date. Fixed by removing data-i18n
+// from both elements in the view (this function is now their ONLY writer) and by hooking this
+// function back into every language change (see app.js's changeLanguage()) instead.
 function renderDashboard(data) {
     const name = dashEmployeeDisplayName(data.employee);
     const greetPrefix = langData[dashGreetingKey()] || langData['dashboard_greeting_default'] || 'Welcome';
@@ -107,14 +131,14 @@ function renderRecentRuns(rows, canViewAmounts) {
         const amountHtml = canViewAmounts ? `<div class="dash-run-row-amount">${dashFmtNum(row.total_net_amount)}</div>` : '';
         $list.append(`
             <a href="${url}" class="dash-run-row">
-                <div class="dash-run-row-main">
-                    <div class="dash-run-row-name">${dashEscapeHtml(row.run_name)}</div>
-                    <div class="dash-run-row-period">${period}</div>
+                <div class="dash-run-row-top">
+                    <div class="dash-run-row-main">
+                        <div class="dash-run-row-name">${dashEscapeHtml(row.run_name)}</div>
+                        <div class="dash-run-row-period">${period}</div>
+                    </div>
+                    <div class="dash-run-row-meta">${amountHtml}</div>
                 </div>
-                <div class="dash-run-row-meta">
-                    ${amountHtml}
-                    ${dashStateBadge(row.state)}
-                </div>
+                ${dashRunTimelineHtml(row.state)}
             </a>
         `);
     });

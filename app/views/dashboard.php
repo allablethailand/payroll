@@ -10,8 +10,8 @@
     <div class="page-header-card mb-4">
         <div class="page-header-card-icon"><i class="fa-solid fa-gauge-high"></i></div>
         <div class="page-header-card-body">
-            <h5 class="page-header-card-title" id="dashGreetingTitle" data-i18n="dashboard_greeting_default">Welcome</h5>
-            <p class="page-header-card-desc small" id="dashGreetingDesc" data-i18n="dashboard_greeting_description">Here is an overview of your payroll workspace.</p>
+            <h5 class="page-header-card-title" id="dashGreetingTitle">Welcome</h5>
+            <p class="page-header-card-desc small" id="dashGreetingDesc">Here is an overview of your payroll workspace.</p>
         </div>
     </div>
 
