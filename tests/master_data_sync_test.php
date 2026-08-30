@@ -408,6 +408,36 @@ try {
     $children4After->execute([':id' => $emp4['id']]);
     check('child rows removed (whole-set replace, not diff-and-patch)', (int)$children4After->fetchColumn(), 0);
 
+    echo "--- 2026-08-30, real production bug: title/marital_status/nationality can arrive as a raw INT (numeric code), not a string -- must not TypeError under strict_types ---\n";
+    // Reported live: "EmployeeSyncer::normalizeMaritalStatus(): Argument #1 ($raw) must be of type
+    // ?string, int given" -- Origami's own field notes for this legacy data already say title/
+    // gender/marital_status are "sometimes human-readable text, sometimes an internal numeric code"
+    // (see PayrollSyncModel's identical docblock on the SAME field family, a different Origami
+    // integration hitting the same source data), but the numeric case arrives as a genuine JSON int,
+    // not a numeric string -- the ?string param type rejected it outright under strict_types before
+    // the "don't guess, leave unmapped" logic in the function body ever got a chance to run.
+    $candidate5 = $candidate4;
+    $candidate5['ref_id'] = 11005;
+    $candidate5['employee_no'] = 'MDS_EMP_5';
+    $candidate5['branch_ref_id'] = null;
+    $candidate5['title'] = 2;
+    $candidate5['marital_status'] = 1;
+    $candidate5['nationality'] = 99;
+    $candidate5['spouse'] = null;
+    $candidate5['children'] = [];
+    $employeeSyncer->applyOne($compId, $candidate5, $batch4, $adminUserId);
+    $emp5Stmt = $pdo->prepare("SELECT * FROM employees WHERE origami_ref_id = 11005 AND comp_id = :c");
+    $emp5Stmt->execute([':c' => $compId]);
+    $emp5 = $emp5Stmt->fetch(PDO::FETCH_ASSOC);
+    checkTrue('employee 5 created despite int-typed title/marital_status/nationality (no TypeError thrown)', $emp5 !== false);
+    // title/nationality are NOT NULL columns -- on INSERT (unlike UPDATE), an unresolved value falls
+    // back to a safe default ('mr'/'TH') rather than staying unmapped, same as an unresolved string
+    // value already did before this fix (see upsertItem()'s own docblock) -- only marital_status is
+    // nullable, so IT is the one that stays genuinely unmapped for a code with no known meaning.
+    check('unrecognized numeric title code falls back to the NOT NULL default (mr), not guessed at', $emp5['title'] ?? null, 'mr');
+    checkTrue('unrecognized numeric marital_status code left unmapped (null), not guessed', ($emp5['marital_status'] ?? null) === null);
+    check('unrecognized numeric nationality code falls back to the NOT NULL default (TH), not guessed at', $emp5['nationality'] ?? null, 'TH');
+
     echo "--- downloadPhoto() guard clauses (no real network call -- non-http(s)/blank input rejected) ---\n";
     $photoReflection = new ReflectionMethod(EmployeeSyncer::class, 'downloadPhoto');
     $photoReflection->setAccessible(true);

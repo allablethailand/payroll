@@ -260,6 +260,27 @@ class ApprovalWorkflowController extends Controller {
         }
         $row = $this->requestModel->get((int)$compId, $requestId);
         if ($row) {
+            // 2026-08-30, real access-control gap found and fixed (same class this project's own
+            // PayrollRunModel::canApproveThisRun() fix already addressed for the Payroll-specific
+            // Approval Queue -- see project memory -- but never ported to this GENERIC engine's own
+            // consumers): every caller of this endpoint (the Monitor page's own modal in
+            // approval-workflow.js, AND the shared #requestDetailModal in approval-request-detail.js
+            // used by Payslip Requests + Employment Certificate Requests) only ever gated its
+            // Approve/Reject/Cancel buttons on `status === 'pending'`, never on whether the CURRENT
+            // user is actually an eligible, currently-unlocked approver -- `act()` itself already
+            // refuses correctly (`actionableRowFor()`, no admin bypass anywhere in this engine, see
+            // ApprovalRequestModel::act()'s own code), so this was a UI-only exposure (a wrong click
+            // just got a clear error back), not a data-integrity hole -- but still a real gap: anyone
+            // with `approval_workflow.view` could see an Approve button on a request they have no
+            // eligibility for at all. `can_act_now` is the SAME canActOnRequestNow() check the
+            // Payroll-specific fix already uses, now surfaced generically so every consumer of this
+            // endpoint can gate its own buttons correctly without duplicating the eligibility logic.
+            $row['can_act_now'] = $this->requestModel->canActOnRequestNow((int)$compId, $requestId, $this->actingUserId());
+            // Cancel is a SEPARATE permission from Approve/Reject (`act()` itself checks
+            // `requested_by === $userId`, unrelated to approver-eligibility) -- computed here rather
+            // than left for the frontend to guess from a client-side "who am I" global, so it's
+            // driven by the exact same source of truth `act()` will enforce.
+            $row['is_requester'] = (int)($row['requested_by'] ?? 0) === $this->actingUserId();
             $this->json(['status' => true, 'data' => $row]);
         } else {
             $this->json(['status' => false, 'message' => 'Record not found.']);
