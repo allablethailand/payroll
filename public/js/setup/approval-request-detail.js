@@ -134,7 +134,18 @@ function openApprovalRequestDetail(id, onActed) {
             }
             request = res.data;
             renderRequestSummary(res.data);
-            $('#requestActionArea').toggleClass('d-none', res.data.status !== 'pending');
+            // 2026-08-30, real access-control gap found and fixed: this only ever checked
+            // `status === 'pending'`, never whether the CURRENT user is actually allowed to act at
+            // all -- anyone with view access to this modal saw Approve/Reject/Cancel buttons
+            // regardless of eligibility. `can_act_now` (real approver eligibility, same
+            // canActOnRequestNow() check the Payroll-specific Approval Queue already used) and
+            // `is_requester` (Cancel is a SEPARATE permission -- requester-only, unrelated to
+            // approver eligibility, exactly what act() itself checks) are both new fields on this
+            // same endpoint's response, see ApprovalWorkflowController::requestGet()'s own docblock.
+            const isPending = res.data.status === 'pending';
+            $('#requestActionArea').toggleClass('d-none', !isPending || (!res.data.can_act_now && !res.data.is_requester));
+            $('#btnApproveRequest, #btnRejectRequest').toggleClass('d-none', !(isPending && res.data.can_act_now));
+            $('#btnCancelRequest').toggleClass('d-none', !(isPending && res.data.is_requester));
             $('#requestActionNote').val('');
             new bootstrap.Modal(document.getElementById('requestDetailModal')).show();
             renderTimelineIfReady();
