@@ -705,6 +705,13 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    /* 2026-08-30, explicit report ("หัวหลุดวงกลม" -- head cut off the circle): object-fit:cover's
+       default object-position (50% 50%, dead center) crops a typical portrait/ID photo around the
+       chest/shoulders, cutting the head off the top -- a real headshot's subject sits in the UPPER
+       portion of the frame, not the vertical center. Biasing the crop toward the top keeps the face
+       in frame instead. Same fix applied to every other circular photo display in the app -- see
+       .profile-upload-circle/.employee-avatar-lg img/.employee-list-avatar-img. */
+    object-position: center top;
 }
 .origami-sidebar {
     position: fixed;
@@ -1162,10 +1169,28 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .profile-upload-circle {
     cursor: pointer;
+    /* `object-fit` only affects a replaced element (img/video) -- this class sits on the <label>
+       wrapper (see employee/detail.php's #profile_photo_input label), not on #profilePreview itself,
+       so this was always a no-op here. #profilePreview's own rule below is the one that actually
+       matters. Left here unchanged in case another page ever puts this class directly on an <img>. */
     object-fit: cover;
     border: 2px dashed rgba(255, 153, 0, .35) !important;
     background: linear-gradient(135deg, #fff8ee, #fff1dc) !important;
     transition: border-color .15s ease, box-shadow .15s ease;
+}
+/* 2026-08-30, real bug found and fixed (explicit report: "หัวหลุดวงกลมครับ และภาพไม่ชัดครับ" -- head
+   cut off the circle, image not clear/well-framed) -- #profilePreview (the Personal tab's own
+   upload-preview <img>, inside the .profile-upload-circle label above) never had object-fit set AT
+   ALL (only `.rounded-circle w-100 h-100`, and the .profile-upload-circle rule above never actually
+   reached it -- see that rule's own updated comment) -- w-100/h-100 alone leaves object-fit at its
+   CSS default of `fill`, which STRETCHES/DISTORTS a non-square photo to exactly 100x100 instead of
+   cropping it, which is what actually read as "not clear" (a distorted portrait). `cover` crops
+   instead of stretching, and `object-position: center top` (same fix as every other circular photo
+   display in the app -- .profile-img-box img/.employee-avatar-lg img/.employee-list-avatar-img)
+   keeps the head in frame instead of centering on the chest/shoulders. */
+#profilePreview {
+    object-fit: cover;
+    object-position: center top;
 }
 .profile-upload-circle:hover {
     border-color: #FF9900 !important;

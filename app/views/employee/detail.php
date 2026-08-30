@@ -25,6 +25,10 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    /* 2026-08-30, explicit follow-up report ("หัวหลุดวงกลม"): bias the crop toward the top of the
+       frame instead of dead-center, same fix applied to every other circular photo display in the
+       app (see style.css's .profile-img-box img/#profilePreview and this page's own list.php). */
+    object-position: center top;
 }
 .employee-completeness-summary {
     min-width: 220px;

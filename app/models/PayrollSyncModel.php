@@ -369,7 +369,7 @@ class PayrollSyncModel {
     /** @return int number of rows whose payroll_code did not match any employee */
     private function replaceItems(int $processRowId, int $compId, array $items): int {
         $stmt = $this->db->prepare("INSERT INTO payroll_sync_items
-                (process_id, employee_id, payroll_code, emp_code, mapping_status, origami_report_item_id,
+                (process_id, employee_id, payroll_code, emp_code, emp_name, mapping_status, origami_report_item_id,
                  dept_description, position_name, origami_branch_id, branch_name,
                  origami_shift_working_id, shift_working_name,
                  pay_type, origami_pay_bank_id, pay_bank_code, pay_bank_name, pay_bank_no, deduct_sso,
@@ -382,7 +382,7 @@ class PayrollSyncModel {
                  support_team_id, support_team_text,
                  spouse_data, children_data, signature_drawing)
             VALUES
-                (:process_id, :employee_id, :payroll_code, :emp_code, :mapping_status, :report_item_id,
+                (:process_id, :employee_id, :payroll_code, :emp_code, :emp_name, :mapping_status, :report_item_id,
                  :dept_description, :position_name, :branch_id, :branch_name,
                  :shift_working_id, :shift_working_name,
                  :pay_type, :pay_bank_id, :pay_bank_code, :pay_bank_name, :pay_bank_no, :deduct_sso,
@@ -430,7 +430,14 @@ class PayrollSyncModel {
             $signatureEnc = !empty($item['signature_drawing']) ? EncryptionService::encrypt((string)$item['signature_drawing']) : null;
             $stmt->execute([
                 ':process_id' => $processRowId, ':employee_id' => $employeeId, ':payroll_code' => $payrollCode,
-                ':emp_code' => $item['emp_code'] ?? null, ':mapping_status' => $mappingStatus,
+                ':emp_code' => $item['emp_code'] ?? null,
+                // 2026-08-30 rev 2: items[].emp_name (PAYROLL_SYNC_API.md) -- display/verification
+                // only, matching how payroll_sync_employee_status.emp_name is already handled;
+                // trimmed to blank-string-becomes-null since an empty string and "not sent" should
+                // read identically to every consumer (createPlaceholderEmployeesForUnmapped()'s own
+                // fallback chain in particular).
+                ':emp_name' => (isset($item['emp_name']) && trim((string)$item['emp_name']) !== '') ? trim((string)$item['emp_name']) : null,
+                ':mapping_status' => $mappingStatus,
                 ':report_item_id' => $item['report_item_id'] ?? null,
                 ':dept_description' => $item['dept_description'] ?? null, ':position_name' => $item['position_name'] ?? null,
                 ':branch_id' => $item['branch_id'] ?? null, ':branch_name' => $item['branch_name'] ?? null,
@@ -527,22 +534,28 @@ class PayrollSyncModel {
      * Auto-creates a minimal placeholder `employees` row for every payroll_sync_items row still
      * unmapped after remapUnmappedItems() -- per explicit request (2026-08-19): "Sync ข้อมูล
      * Employee" here means pulling the employee IN from whatever this already-received sync
-     * payload knows about them (payroll_code + payroll_sync_employee_status.emp_name/emp_start_date),
-     * NOT calling out to the real Origami HR API (that's MasterDataSyncOrchestrator/EmployeeSyncer,
-     * a separate, still-future feature -- this method never touches it). Mirrors the exact
-     * placeholder-provisioning pattern already established in auth/index.php for SSO first-login
-     * (is_payroll_ready=0, dummy-but-NOT-NULL contact/emergency fields) with one difference:
-     * employee_no is set to payroll_code verbatim rather than a generated code, because
-     * resolveEmployeeId() (and the rest of this class) matches payroll_code against
-     * employees.employee_no directly -- a generated code would make the row unmatchable forever.
-     * data_source='sync' (not 'manual' like the SSO placeholder) so it's visibly distinguishable
-     * as sync-originated once HR fills in the rest via the normal Employee edit form (which flips
-     * is_payroll_ready back to 1, same as any other placeholder profile in this app).
+     * payload knows about them (payroll_code + a name + emp_start_date), NOT calling out to the real
+     * Origami HR API (that's MasterDataSyncOrchestrator/EmployeeSyncer, a separate, still-future
+     * feature -- this method never touches it). Mirrors the exact placeholder-provisioning pattern
+     * already established in auth/index.php for SSO first-login (is_payroll_ready=0, dummy-but-NOT-
+     * NULL contact/emergency fields) with one difference: employee_no is set to payroll_code
+     * verbatim rather than a generated code, because resolveEmployeeId() (and the rest of this class)
+     * matches payroll_code against employees.employee_no directly -- a generated code would make the
+     * row unmatchable forever. data_source='sync' (not 'manual' like the SSO placeholder) so it's
+     * visibly distinguishable as sync-originated once HR fills in the rest via the normal Employee
+     * edit form (which flips is_payroll_ready back to 1, same as any other placeholder profile in
+     * this app).
+     * Name source, 2026-08-30 rev 2: `payroll_sync_items.emp_name` (PAYROLL_SYNC_API.md's
+     * items[].emp_name, sent on EVERY employee row every cycle) is tried FIRST, falling back to
+     * `payroll_sync_employee_status.emp_name` (only ever covers new-hire/resigned-this-period rows --
+     * the ORIGINAL, and until now only, source) when the items row itself doesn't have one. Before
+     * this, an ordinary unmapped employee who wasn't flagged new-hire/resigned this period got no
+     * name at all -- the payroll_code repeated as both first/last name, a genuinely bad placeholder.
      * @return int number of employees newly created (rows merely re-resolved to an
      *   already-existing employee via the race-safety fallback below do NOT count here)
      */
     public function createPlaceholderEmployeesForUnmapped(int $processRowId, int $compId, ?int $triggeredBy): int {
-        $stmt = $this->db->prepare("SELECT id, payroll_code FROM payroll_sync_items WHERE process_id = :process_id AND mapping_status = 'unmapped' AND employee_id IS NULL");
+        $stmt = $this->db->prepare("SELECT id, payroll_code, emp_name FROM payroll_sync_items WHERE process_id = :process_id AND mapping_status = 'unmapped' AND employee_id IS NULL");
         $stmt->execute([':process_id' => $processRowId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (empty($rows)) {
@@ -590,17 +603,25 @@ class PayrollSyncModel {
                     continue;
                 }
 
+                // employee_status[] is still the only source for emp_start_date (items[] carries no
+                // equivalent) -- always looked up regardless of where the name itself comes from.
                 $statusStmt->execute([':process_id' => $processRowId, ':payroll_code' => $payrollCode]);
                 $status = $statusStmt->fetch(PDO::FETCH_ASSOC);
-                $empName = trim((string)($status['emp_name'] ?? ''));
+                // Name: prefer items[].emp_name (2026-08-30 rev 2, sent on every row every cycle)
+                // over payroll_sync_employee_status.emp_name (only ever covers new-hire/resigned-
+                // this-period rows -- the original, and until now only, source).
+                $empName = trim((string)($row['emp_name'] ?? ''));
+                if ($empName === '') {
+                    $empName = trim((string)($status['emp_name'] ?? ''));
+                }
                 if ($empName !== '') {
                     $parts = preg_split('/\s+/', $empName, 2);
                     $firstName = $parts[0];
                     $lastName = $parts[1] ?? $parts[0];
                 } else {
-                    // No employee_status row (or no name on it) for this payroll_code -- still
-                    // create the row so the pull isn't blocked, using the code itself as a visible
-                    // "needs a real name" placeholder rather than leaving NOT NULL columns empty.
+                    // No name from either source for this payroll_code -- still create the row so
+                    // the pull isn't blocked, using the code itself as a visible "needs a real name"
+                    // placeholder rather than leaving NOT NULL columns empty.
                     $firstName = $payrollCode;
                     $lastName = $payrollCode;
                 }
