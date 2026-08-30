@@ -384,7 +384,16 @@ function renderProfileHeader(data) {
         return;
     }
     const name = (currentLang === 'th' ? `${data.name_th || ''} ${data.surname_th || ''}` : `${data.name_en || ''} ${data.surname_en || ''}`).trim() || data.employee_no || '-';
-    $('#profileHeaderAvatar').text((name.charAt(0) || '?').toUpperCase());
+    // 2026-08-30, real gap found and fixed (explicit report: "รูปพนักงานที่ Sync มาแล้วต้องนำไปแสดงบน
+    // header ด้วยครับ") -- this header card's own avatar always rendered just the initial letter,
+    // even though `data.profile_photo_path` (plain e.* passthrough from api/employee.get) has been
+    // available here the whole time; only the separate upload-widget preview inside the Personal tab
+    // (#profilePreview, fixed 2026-08-29) ever actually showed the real photo.
+    if (data.profile_photo_path) {
+        $('#profileHeaderAvatar').html(`<img src="${BASE_URL}/${data.profile_photo_path}" alt="">`).addClass('has-photo');
+    } else {
+        $('#profileHeaderAvatar').text((name.charAt(0) || '?').toUpperCase()).removeClass('has-photo');
+    }
     $('#profileHeaderName').text(name);
     const positionLabel = (currentLang === 'th' ? data.position_name_th : data.position_name_en) || data.position_name_th || data.position_name_en;
     $('#profileHeaderMeta').text([data.employee_no, positionLabel].filter(Boolean).join(' · ') || '-');
@@ -2169,6 +2178,13 @@ function uploadEmpPhotoBlob(blob) {
                 if (typeof SESSION_EMPLOYEE_ID !== 'undefined' && currentEmployeeId === SESSION_EMPLOYEE_ID) {
                     $('#navProfilePhoto').attr('src', `${BASE_URL}/${res.profile_photo_path}`);
                 }
+                // 2026-08-30: this endpoint (api/employee.upload-photo) is separate from the tab
+                // Save button's api/employee.save, so it never went through applyEmployeeSaveSuccess()
+                // -- now that Employee List renders this same photo (see list.js's own avatar column
+                // fix), a manual upload here needs to mark the List dirty too, same as every other
+                // profile change.
+                if (typeof markTabDirty === 'function') markTabDirty('employee_list_dirty');
+                refreshProfileHeader();
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Upload failed.');
             }

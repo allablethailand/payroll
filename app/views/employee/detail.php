@@ -15,6 +15,16 @@
     justify-content: center;
     font-weight: 700;
     font-size: 1.25rem;
+    overflow: hidden;
+}
+/* 2026-08-30, real photo (synced or uploaded) shown here instead of the initial letter once
+   renderProfileHeader() finds a profile_photo_path -- .has-photo drops the gradient background so
+   it doesn't show through a transparent PNG's edges, object-fit:cover fills the circle cleanly. */
+.employee-avatar-lg.has-photo { background: #eef0f2; }
+.employee-avatar-lg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 .employee-completeness-summary {
     min-width: 220px;

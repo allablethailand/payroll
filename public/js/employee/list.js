@@ -190,6 +190,14 @@ function initEmployeeTable() {
                 className: 'text-center',
                 responsivePriority: 8,
                 render: function (data, type, row) {
+                    // 2026-08-30, real gap found and fixed (explicit report: "Sync รูปมาแล้ว ในหน้า
+                    // Employee List ยังไม่แสดง") -- profile_photo_path was never selected by
+                    // EmployeeModel::list() at all (see that method's own SELECT list), so this
+                    // column always fell back to the plain initial-letter circle even for an
+                    // employee with a real synced/uploaded photo on file.
+                    if (row.profile_photo_path) {
+                        return `<img src="${BASE_URL}/${row.profile_photo_path}" class="employee-list-avatar-img" alt="">`;
+                    }
                     const letter = (row.name || '').trim().charAt(0).toUpperCase() || '?';
                     return `<div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px; min-width: 38px; background-color: #007aff;">${letter}</div>`;
                 }
