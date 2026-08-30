@@ -55,6 +55,16 @@
              routes, and the attendance_bonus_schemes/attendance_bonus_ledger tables themselves,
              including the 1+1 real rows that were in this dev DB) is now fully removed too, not just
              left in place unreachable -- see database/migrations/2026-08-29_drop_attendance_bonus_tables.sql. -->
+        <!-- 2026-08-30, explicit request: "เพิ่มอีก Tab เป็น Tab ตั้งค่าในหน้าตั้งค่าเงินเดือนเลย เดี๋ยวมีอีก
+             หลายหัวข้อครับ" -- a home for company-wide payroll POLICIES/RULES (as opposed to the other
+             tabs' own catalog/schedule CONFIGURATION) -- starts with the reopen-window setting, more
+             sections land here over time as later requests arrive (see PayrollPolicyModel's own
+             docblock). -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link setup-menu" id="policies-tab" data-bs-toggle="tab" data-bs-target="#policies-pane" type="button" role="tab" aria-controls="policies-pane" aria-selected="false">
+                <i class="fa-solid fa-shield-halved me-2"></i><span data-i18n="payroll_policies">Payroll Policies</span>
+            </button>
+        </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
         <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
@@ -75,152 +85,7 @@
                         <tbody></tbody>
                     </table>
                 </div>
-                <div class="modal fade" id="payrollCycleModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="payrollCycleModalLabel" aria-hidden="true">
-                    <div class="modal-dialog modal-lg modal-dialog-centered">
-                        <div class="modal-content border-0 shadow">
-                            <div class="modal-header">
-                                <h5 class="modal-title text-secondary">
-                                    <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="cycle">Schedule</span>
-                                </h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                            </div>
-                            <form id="payrollCycleForm" novalidate>
-                                <input type="hidden" name="id" id="cycle_id">
-                                <div class="modal-body">
-                                    <h6 class="text-secondary fw-bold mb-3 mt-2">
-                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
-                                        <span data-i18n="modal_sec_general">Schedule Information</span>
-                                    </h6>
-                                    <div class="row mb-3">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_cycle_name">Schedule Name</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-9">
-                                            <input type="text" class="form-control required" id="cycle_name" name="cycle_name" data-i18n="cycle_name_placeholder" placeholder="e.g., Office Staff Schedule / Part-time Weekly">
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_frequency">Payroll Frequency</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-9">
-                                            <select class="form-select select2-static required" id="payroll_frequency" name="payroll_frequency" data-option-keys="freq_monthly,freq_semi_monthly,freq_weekly,freq_bi_weekly" data-option-values="monthly,semi_monthly,weekly,bi_weekly"></select>
-                                        </div>
-                                    </div>
-                                    <hr class="my-4 text-muted opacity-25">
-                                    <h6 class="text-secondary fw-bold mb-3">
-                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
-                                        <span data-i18n="modal_sec_dates">Cut-off & Payment Settings</span>
-                                    </h6>
-                                    <div class="row mb-3" id="cutoff_dom_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-3">
-                                            <input type="number" min="1" max="28" class="form-control required" id="cutoff_day_of_month" name="cutoff_day_of_month">
-                                        </div>
-                                        <div class="col-sm-6 pt-2">
-                                            <input type="checkbox" class="me-2" id="cutoff_use_last_day" name="cutoff_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3 d-none" id="cutoff_dow_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-9">
-                                            <select class="form-select select2-static" id="cutoff_day_of_week" name="cutoff_day_of_week" data-option-keys="dow_monday,dow_tuesday,dow_wednesday,dow_thursday,dow_friday,dow_saturday,dow_sunday" data-option-values="monday,tuesday,wednesday,thursday,friday,saturday,sunday"></select>
-                                        </div>
-                                    </div>
-                                    <p class="text-muted small ms-0 mb-3" data-i18n="day_of_month_hint">*Day must be between 1-28 so it exists in every month, or use "last day of the month".</p>
-                                    <div class="row mb-3" id="payment_dom_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-3">
-                                            <input type="number" min="1" max="28" class="form-control required" id="payment_day_of_month" name="payment_day_of_month">
-                                        </div>
-                                        <div class="col-sm-6 pt-2">
-                                            <input type="checkbox" class="me-2" id="payment_use_last_day" name="payment_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3 d-none" id="payment_dow_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-9">
-                                            <select class="form-select select2-static" id="payment_day_of_week" name="payment_day_of_week" data-option-keys="dow_monday,dow_tuesday,dow_wednesday,dow_thursday,dow_friday,dow_saturday,dow_sunday" data-option-values="monday,tuesday,wednesday,thursday,friday,saturday,sunday"></select>
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3">
-                                        <div class="col-sm-3">
-                                            <label class="form-label pt-1"><span data-i18n="modal_ot_cutoff">OT Cut-off Type</span></label>
-                                        </div>
-                                        <div class="col-sm-9">
-                                            <div class="form-check form-check-inline mt-1">
-                                                <input class="form-check-input" type="radio" name="ot_cutoff_type" id="ot_same" value="same_as_attendance" checked>
-                                                <label class="form-check-label" for="ot_same" data-i18n="same_as_attendance">Same as Attendance</label>
-                                            </div>
-                                            <div class="form-check form-check-inline mt-1">
-                                                <input class="form-check-input" type="radio" name="ot_cutoff_type" id="ot_custom" value="custom">
-                                                <label class="form-check-label" for="ot_custom" data-i18n="custom_definition">Custom Definition</label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3 d-none" id="ot_custom_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_ot_cutoff_day">OT Cut-off Day</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-3">
-                                            <input type="number" min="1" max="28" class="form-control" id="ot_cutoff_day_of_month" name="ot_cutoff_day_of_month">
-                                        </div>
-                                        <div class="col-sm-6 pt-2">
-                                            <input type="checkbox" class="me-2" id="ot_cutoff_use_last_day" name="ot_cutoff_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
-                                        </div>
-                                    </div>
-                                    <hr class="my-4 text-muted opacity-25">
-                                    <h6 class="text-secondary fw-bold mb-3">
-                                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">3</label>
-                                        <span data-i18n="modal_sec_bank">Bank File Configuration</span>
-                                    </h6>
-                                    <div class="row mb-3">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0"><span data-i18n="modal_bank_format">Bank Text Format</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-9">
-                                            <select class="form-select select2-remote required" id="bank_file_format_id" name="bank_file_format_id" data-api="/api/bank-file-format.options"></select>
-                                        </div>
-                                    </div>
-                                    <!-- 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ
-                                         แยกบัญชีในการจ่าย" -- optional, unlike Bank Text Format above. Leaving this
-                                         blank falls back to the company's own is_default bank account (unchanged
-                                         behavior from before this field existed) -- see
-                                         BankTransferFileReport::resolveCompanyBankAccount()'s own docblock. -->
-                                    <div class="row mb-3">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0" data-i18n="modal_cycle_bank_account">Bank Account</label>
-                                        </div>
-                                        <div class="col-sm-9">
-                                            <select class="form-select select2-remote" id="cycle_bank_account_id" name="bank_account_id" data-api="/api/payroll-cycle.bank-account.options"></select>
-                                            <div class="form-text" data-i18n="modal_cycle_bank_account_hint">Leave blank to use the company's default bank account.</div>
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-0" data-i18n="status">Status</label>
-                                        </div>
-                                        <div class="col-sm-3">
-                                            <select class="form-select select2-static" id="cycle_status" name="status" data-option-keys="active,inactive"></select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="modal-footer">
-                                    <button type="submit" class="btn btn-warning px-4" data-i18n="save">Save</button>
-                                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
+                <!-- payrollCycleModal moved to app/views/layout/modals.php (2026-08-30, modal consolidation). -->
             </div>
         </div>
         <div class="tab-pane fade" id="earnings-pane" role="tabpanel" aria-labelledby="earnings-tab" tabindex="0">
@@ -262,237 +127,149 @@
         <div class="tab-pane fade" id="attendance-deduction-pane" role="tabpanel" aria-labelledby="attendance-deduction-tab" tabindex="0">
             <div class="mt-5 mb-5">
                 <p class="text-muted small mb-4" data-i18n="attendance_deduction_rule_description">Choose how each deduction is calculated, and set your own condition(s) per item. This is used automatically the next time payroll is calculated from synced attendance data.</p>
-                <div class="row g-3" id="attendanceDeductionCards"></div>
+                <!-- 2026-08-30, explicit follow-up: "กฎการหักตามข้อมูลเข้างาน ก็ให้เป็น Card เหมือนกัน แต่แยกสี
+                     ตามกลุ่มการหักครับ" -- reverted from a table (this same day's earlier "อยากให้ปรับให้เป็น
+                     ตาราง" request) back to cards, one per EVENT, color-coded by deduction group (same
+                     rt-1/rt-3/rt-4/rt-5 palette .row-type-icon already uses for late/absent/
+                     unpaid_leave/leave_pending). Each event card's own body lists that event's rule
+                     variants (company-wide default + any team/department-scoped overrides added via
+                     Clone) as compact rows, not nested cards. See payroll-configuration.js's
+                     renderAttendanceDeductionCards()/attendanceDeductionEventCardHtml(). -->
+                <div id="attendanceDeductionCardsContainer"></div>
             </div>
         </div>
-    </div>
-</div>
-<!-- #ledgerEntryModal removed 2026-08-29 along with the Attendance Bonus/Ledger tabs above (see the
-     removal comment on #companySetupTabs) -- was only ever opened from the now-gone Ledger tab's
-     own "Add Ledger Entry" button. -->
-<div class="modal fade" id="itemModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="pedTypeModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-               <h5 class="modal-title fw-bold text-secondary" id="pedTypeModalLabel">
-                    <i class="fa-solid fa-pen-to-square me-2" id="pedTypeModalIcon"></i>
-                    <span data-i18n="earning_type">Income Type</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="pedTypeForm" novalidate>
-                <input type="hidden" id="ped_type_id" name="id">
-                <div class="modal-body">
-                    <h6 class="text-secondary fw-bold mb-3 mt-2">
-                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
-                        <span data-i18n="sec_general_info">General Information</span>
-                    </h6>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_type">Item Type</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <div class="form-check form-check-inline mt-1">
-                                <input class="form-check-input" type="radio" name="item_type" id="type_earning" value="earning" checked>
-                                <label class="form-check-label" for="type_earning" data-i18n="earning_singular">Income</label>
-                            </div>
-                            <div class="form-check form-check-inline mt-1">
-                                <input class="form-check-input" type="radio" name="item_type" id="type_deduction" value="deduction">
-                                <label class="form-check-label" for="type_deduction" data-i18n="deduction_singular">Deduction</label>
-                            </div>
+        <div class="tab-pane fade" id="policies-pane" role="tabpanel" aria-labelledby="policies-tab" tabindex="0">
+            <!-- 2026-08-30, explicit request: "นโยบายการทำเงินเดือน Design ดูแปลกๆไม่เป็นระเบียบ" --
+                 rewrapped every card from a plain, undifferentiated .card-surface into
+                 .settings-info-card (new shared component, style.css -- same one Company Profile's
+                 Signatory & Branding tab uses) so each topic has a real gradient-header title+
+                 description strip instead of a bare <h6>, fixing the "one lonely small field floating
+                 in a big empty card" look the Reopen card had (its own description moved INTO the
+                 header, which now carries real visual weight, instead of sitting as a thin caption
+                 line above the field). ONE shared Save button for the whole tab (below), not one per
+                 card -- PayrollPolicyModel::save() writes every column together on a single row per
+                 company, so a per-card Save would silently reset whichever OTHER card's fields it
+                 didn't send back to their defaults (same "must preserve the rest of the payload" bug
+                 class already caught and fixed once in this same session, see
+                 saveAttendanceDeductionRule()'s own comment). -->
+            <div class="mt-5 mb-5">
+                <!-- 2026-08-30, explicit follow-up: "นโยบายการทำเงินเดือน ปรับให้เป็น card ละแถวเหมือนเดิม
+                     ครับ" -- reverted from the 3-column row (col-lg-4 each) back to one full-width
+                     card per row, stacked -- same .settings-info-card visual language kept (gradient
+                     header etc.), only the LAYOUT (row/col-lg-4 -> plain stacked mb-4) changed. -->
+                <div class="settings-info-card mb-4" id="policyReopenCard">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="policy_reopen_title">Reopen Window</p>
+                            <p class="settings-info-card-desc" data-i18n="policy_reopen_description">How many days after a payroll run is closed (locked, or paid if never locked) it can still be reopened for editing. Leave blank for no limit.</p>
                         </div>
                     </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_code">Item Code</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="text" class="form-control required" id="item_code" name="item_code" data-i18n="item_code_placeholder" placeholder="E003 / D002">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name_en">Item Name (EN)</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="item_name_en" name="item_name_en">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name_th">Item Name (TH)</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="item_name_th" name="item_name_th">
-                        </div>
-                    </div>
-                    <hr class="my-4 text-muted opacity-25">
-                    <h6 class="text-secondary fw-bold mb-3">
-                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
-                        <span data-i18n="sec_calculation_rules">Calculation & Legal Settings</span>
-                    </h6>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="calculation_method">Calculation Method</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-static required" id="calculation_method" name="calculation_method" data-option-keys="fixed_amount,percent_of_base_salary,manual_entry"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3 d-none" id="fixed_amount_wrapper">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="fixed_amount">Fixed Amount</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="fixed_amount" name="fixed_amount">
-                        </div>
-                    </div>
-                    <div class="row mb-3 d-none" id="percent_rate_wrapper">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="percent_rate">Percent of Base Salary</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <div class="input-group">
-                                <input type="number" step="0.01" min="0" max="100" class="form-control" id="percent_rate" name="percent_rate">
-                                <span class="input-group-text">%</span>
+                    <div class="settings-info-card-body">
+                        <div class="row">
+                            <div class="col-sm-5 col-md-4">
+                                <label class="form-label mb-2" data-i18n="policy_reopen_days_label">Reopen Window (days)</label>
+                                <div class="input-group">
+                                    <input type="number" min="0" step="1" class="form-control" id="policyReopenWindowDays" data-i18n="policy_reopen_days_placeholder" placeholder="Unlimited">
+                                    <span class="input-group-text" data-i18n="days_suffix">days</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div id="earnings_fields_wrapper">
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="tax_treatment">Tax Treatment</span> <span class="text-danger">*</span></label>
+                </div>
+                <!-- 2026-08-30, explicit follow-up: "พื้นฐานการจ่ายเงินเดือน ที่ตั้งจะนำไปคำนวณแค่พนักงานที่
+                     ทดลองงานใช่ไหม ถ้าไม่ใช่ช่วยปรับให้เป็นเงื่อนไขของการทดลองงานเท่านั้น" -- confirmed: it was
+                     NOT probation-gated before this (applied to every monthly-rate employee, company-
+                     wide) -- now IS, matching every other setting in this card. PayrollRunModel::
+                     recalculate() only takes the schedule_based branch when
+                     employees.employment_status === 'probation' (same real HR-maintained status gate
+                     every other field here already uses) -- see that method's own comment at the
+                     $payBasisSettings read site. Since EVERYTHING in this card is now probation-only,
+                     collapsed back from 2 labeled sub-sections (Pay Basis / Probation Pay Conditions)
+                     into ONE flowing "Probation Pay Conditions" card -- the sub-section split existed
+                     specifically to flag that Pay Basis had a DIFFERENT (broader) scope than the rest,
+                     which is no longer true, so keeping the split would now be misleading rather than
+                     clarifying.
+                     Same-message layout request: "ปรับให้ ระยะเวลาทดลองงานมาตรฐาน (วัน) และ อัตราส่วนฐานเงิน
+                     เดือนช่วงทดลองงาน เป็น column ซ้ายขวา เพราะฝั่งขวามีพื้นที่ว่าง" -- both fields widened
+                     from col-md-3 (leaving half the row empty) to col-md-6 (even left/right split);
+                     Base Salary Basis + its sub-options follow the same col-md-6/col-md-6 rhythm right
+                     below, for a consistent 2-column layout throughout the whole card. -->
+                <div class="settings-info-card mb-4" id="policyProbationCard">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-user-clock"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="policy_probation_title">Probation Pay Conditions</p>
+                            <p class="settings-info-card-desc" data-i18n="policy_probation_description">Applies only to employees whose Employment Status is currently "Probation" -- switches back to normal automatically the moment their status changes.</p>
+                        </div>
+                    </div>
+                    <div class="settings-info-card-body">
+                        <!-- 2026-08-30, explicit follow-up: "การจัดวางข้อมูลในแต่ละ Card ช่วยปรับให้หน่อยครับ
+                             ตอนนี้ดูแน่นไปหมด ไม่เป็นระเบียบ" -- 3 logical field groups now get real
+                             breathing room (g-4 gutters, mb-4/mb-5 between groups instead of g-3/mb-3),
+                             and the trailing 2 checkboxes (previously loose, felt like an afterthought)
+                             are now their own labeled .settings-subgroup panel so the card reads as 3
+                             clearly separated sections instead of one dense block. -->
+                        <div class="row g-4 mb-5">
+                            <div class="col-md-6">
+                                <label class="form-label mb-2" data-i18n="policy_probation_period_days_label">Standard Probation Period (days)</label>
+                                <div class="input-group">
+                                    <input type="number" min="0" step="1" class="form-control" id="policyProbationPeriodDays" data-i18n="policy_probation_period_days_placeholder" placeholder="Not set">
+                                    <span class="input-group-text" data-i18n="days_suffix">days</span>
+                                </div>
+                                <div class="form-text mt-2" data-i18n="policy_probation_period_days_hint">Reference only, e.g. 119 -- for display/planning. Does not by itself change any calculation below; those are always driven by the employee's actual Employment Status.</div>
                             </div>
-                            <div class="col-sm-9">
-                                <select class="form-select select2-static" id="tax_treatment" name="tax_treatment" data-option-keys="taxable,non_taxable" data-option-values="taxable,non_taxable"></select>
+                            <div class="col-md-6">
+                                <label class="form-label mb-2" data-i18n="policy_probation_base_salary_ratio_label">Base Salary Ratio During Probation</label>
+                                <div class="input-group">
+                                    <input type="number" min="1" max="100" step="0.01" class="form-control" id="policyProbationBaseSalaryRatio" data-i18n="policy_probation_base_salary_ratio_placeholder" placeholder="100 (no reduction)">
+                                    <span class="input-group-text">%</span>
+                                </div>
                             </div>
                         </div>
-                        <div class="row mb-3">
-                            <div class="col-sm-3">
-                                <label class="form-label pt-1" data-i18n="statutory_calculations">Statutory Calculations</label>
+                        <div class="row g-4 mb-5">
+                            <div class="col-md-6">
+                                <label class="form-label mb-2" data-i18n="policy_pay_basis_label">Base Salary Basis</label>
+                                <select class="form-select select2-static" id="policyPayBasis" data-option-keys="policy_pay_basis_full_month,policy_pay_basis_schedule_based,policy_pay_basis_sync_actual_days" data-option-values="full_month,schedule_based,sync_actual_days"></select>
+                                <div class="form-text mt-2" data-i18n="policy_pay_basis_description">Only takes effect while Employment Status = Probation -- daily/hourly-rate employees are unaffected either way.</div>
+                                <!-- 2026-08-30, explicit follow-up: reconciles Origami's own synced PROBATION_WORKING_DAYS
+                                     against the schedule-based option above -- a THIRD, separate choice (not a modifier of
+                                     "Schedule-based") since it reads real attendance from Origami sync instead of Shift+
+                                     Holiday config, and only has data to work with on a sync-pulled run. -->
+                                <div class="form-text mt-1" data-i18n="policy_pay_basis_sync_actual_days_hint">"Actual Days (Origami Sync)" only has data on a run pulled from Origami Payroll Sync -- any other run (or a cycle where Origami itself didn't send this figure) pays the full base salary instead, flagged visibly on that employee's calculation row.</div>
                             </div>
-                            <div class="col-sm-9">
+                            <div class="col-md-6 d-none" id="policyPayBasisSubOptions">
                                 <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="calc_sso" name="calc_sso" value="1">
-                                    <label class="form-check-label" for="calc_sso" data-i18n="calc_sso_label">Include in SSO contribution base</label>
+                                    <input class="form-check-input" type="checkbox" id="policyPayBasisDeductHolidays">
+                                    <label class="form-check-label" for="policyPayBasisDeductHolidays" data-i18n="policy_pay_basis_deduct_holidays_label">Exclude holidays from payable days</label>
                                 </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="calc_pf" name="calc_pf" value="1">
-                                    <label class="form-check-label" for="calc_pf" data-i18n="calc_pf_label">Include in Provident Fund base</label>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="policyPayBasisDeductLeave">
+                                    <label class="form-check-label" for="policyPayBasisDeductLeave" data-i18n="policy_pay_basis_deduct_leave_label">Exclude approved unpaid leave from payable days</label>
                                 </div>
+                                <div class="form-text" data-i18n="policy_pay_basis_hint">Both left off still pays 100% of base salary for a normal period -- these only reduce pay when a holiday/unpaid leave actually falls inside the pay period.</div>
+                            </div>
+                        </div>
+                        <div class="settings-subgroup">
+                            <div class="settings-subgroup-label" data-i18n="policy_probation_additional_conditions_label">Additional Conditions</div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="policyProbationDeferPvd">
+                                <label class="form-check-label" for="policyProbationDeferPvd" data-i18n="policy_probation_defer_pvd_label">Defer Provident Fund (PVD) contribution until probation passes</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="policyProbationDeferRecurringEarning">
+                                <label class="form-check-label" for="policyProbationDeferRecurringEarning" data-i18n="policy_probation_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) until probation passes</label>
                             </div>
                         </div>
                     </div>
-                    <div id="deductions_fields_wrapper" class="d-none">
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="tax_deduction_impact">Tax Deduction Impact</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-9">
-                                <select class="form-select select2-static" id="tax_deduction_impact" name="tax_deduction_impact" data-option-keys="impact_before_tax,impact_after_tax" data-option-values="before_tax,after_tax"></select>
-                            </div>
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="statutory_report_code">Statutory Report Mapping</label>
-                            </div>
-                            <div class="col-sm-9">
-                                <select class="form-select select2-static" id="statutory_report_code" name="statutory_report_code" data-option-keys="statutory_report_th_slf" data-option-values="TH_SLF"></select>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="country_scope">Country Scope</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="country_code" name="country_code" data-api="/api/country.get" data-type="country"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="source_event_code">Linked Attendance Event</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="source_event_code" name="source_event_code" data-api="/api/ped-type.source-event-options" data-type="earning"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="status">Status</label>
-                        </div>
-                        <div class="col-sm-3">
-                            <select class="form-select select2-static" id="ped_status" name="status" data-option-keys="active,inactive"></select>
-                        </div>
-                    </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="submit" class="btn btn-warning px-4" data-i18n="save">Save</button> 
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <div class="text-end">
+                    <button type="button" class="btn btn-primary btn-sm" id="btnSavePayrollPolicies"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
                 </div>
-            </form>
-        </div>
-    </div>
-</div>
-<!-- #attendanceBonusModal removed 2026-08-29 along with its own tab (see the removal comment on
-     #companySetupTabs). -->
-<!-- Attendance Deduction Rules (2026-08-20, explicit request -- relocated here from Time & Leave >
-     Setup & Rules the same day, generalized from Late-only to also cover Absent/Unpaid Leave; moved
-     again 2026-08-21 from a button+shared-modal-with-pill-switcher on the Deductions tab to its own
-     tab -- see #attendance-deduction-pane's 3 cards above, "Configure" opens this modal already
-     scoped to that one event, so the old event switcher is gone). Late/Absent/Unpaid Leave are all
-     item_type=deduction concepts, so this still lives next to Deductions, not Earnings, where
-     เบี้ยขยัน/DILIGENCE (item_type=earning) lives.
-     rate_unit (2026-08-21, "นาทีละกี่บาท ชั่วโมงละกี่บาท") is freely choosable per rule regardless of
-     event_code (not fixed per event like before) -- only shown for flat_amount/tiered_bracket,
-     ignored by percent_of_rate (see SyncPayResolver::computeAttendanceDeductionAmount() docblock). -->
-<div class="modal fade" id="attendanceDeductionRuleModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h6 class="modal-title"><i class="fa-solid fa-clock-rotate-left"></i> <span id="attendanceDeductionRuleModalEvent"></span> <span class="text-muted small ms-1" data-i18n="attendance_deduction_rule_title">Attendance Deduction Rule</span></h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label" data-i18n="attendance_deduction_method">Deduction Method</label>
-                    <select class="form-select select2-remote" id="attendanceDeductionMethod" data-api="/api/attendance-deduction-rule.method-options" data-type="attendance_deduction_method"></select>
-                </div>
-                <div id="attendanceRateUnitWrapper" class="mb-3 d-none">
-                    <label class="form-label" data-i18n="attendance_deduction_rate_unit">Rate Unit</label>
-                    <select class="form-select select2-static" id="attendanceRateUnit" data-option-keys="attendance_deduction_rate_unit_minute,attendance_deduction_rate_unit_hour,attendance_deduction_rate_unit_day" data-option-values="minute,hour,day"></select>
-                </div>
-                <div id="attendanceFlatSection" class="mb-3 d-none">
-                    <label class="form-label" id="attendanceFlatLabel">Deduction Amount per Unit</label>
-                    <input type="number" step="0.01" min="0.01" class="form-control" id="attendanceRatePerUnit" placeholder="e.g., 1.00">
-                </div>
-                <div id="attendancePercentSection" class="mb-3 d-none">
-                    <label class="form-label" data-i18n="attendance_deduction_multiplier">Multiplier (x of the salary-derived rate)</label>
-                    <input type="number" step="0.01" min="0.01" class="form-control" id="attendanceMultiplierRate" value="1.00">
-                </div>
-                <div id="attendanceBracketSection" class="mb-3 d-none">
-                    <label class="form-label d-block" data-i18n="attendance_deduction_brackets">Brackets</label>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-border align-middle mb-2">
-                            <thead class="table-light text-secondary">
-                                <tr>
-                                    <th id="attendanceBracketMinLabel">From</th>
-                                    <th id="attendanceBracketMaxLabel">To</th>
-                                    <th data-i18n="attendance_deduction_bracket_amount">Deduction Amount</th>
-                                    <th class="text-end"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="attendanceBracketRows"></tbody>
-                        </table>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addAttendanceBracketRow()"><i class="fa-solid fa-plus me-1"></i><span data-i18n="attendance_deduction_bracket_add_row">Row</span></button>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" onclick="saveAttendanceDeductionRule()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
 </div>
+<!-- itemModal / attendanceDeductionRuleModal moved to app/views/layout/modals.php
+     (2026-08-30, modal consolidation). -->
 <script src="<?=asset('public/js/setup/payroll-configuration.js')?>"></script>

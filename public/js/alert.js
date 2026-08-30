@@ -1,10 +1,16 @@
-function showSuccess(msg, confirm = true) {
+// 2026-08-29, explicit request: "ตอนกดออก Report สำเร็จ ให้ alert ปิดเองอัตโนมัติ" -- optional `timer`
+// (ms) param, undefined by default so every EXISTING showSuccess(...) call across the app keeps
+// requiring a manual OK click, unchanged. Only generateReport()'s own success call (app.js) passes
+// one. timerProgressBar gives a visible countdown so it doesn't feel like it vanished at random.
+function showSuccess(msg, confirm = true, timer = undefined) {
     Swal.fire({
         icon: 'success',
         title: langData.success || 'Success',
         text: msg,
         showConfirmButton: confirm,
-        confirmButtonText: langData.ok || 'OK'
+        confirmButtonText: langData.ok || 'OK',
+        timer: timer,
+        timerProgressBar: !!timer,
     });
 }
 function showError(msg, confirm = true) {

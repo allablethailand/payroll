@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/../services/SyncPayResolver.php';
 
 /**
  * Shift + Holiday + Work Location + Leave Type + OT Rate backend for the Setup & Rules page.
@@ -289,6 +290,98 @@ class SetupRulesModel {
             'holiday_days' => $holidayDaysCount, 'weekly_off_days' => $weeklyOffDaysCount,
             'has_shift_pattern' => $workDays !== null,
         ];
+    }
+
+    /**
+     * 2026-08-30, Payroll Policy "pay_basis='schedule_based'" rollout (explicit request: "จ่ายตามวันที่
+     * มาทำงาน หักวันหยุด หักวันลาไหม") -- computes how many of a MONTHLY-rate employee's own SCHEDULED
+     * work days (per their Shift's weekly-off pattern, same resolution as payableDaysForEmployee()/
+     * workingDaysBreakdown() above) within a date range are payable, optionally excluding
+     * holidays/unpaid-leave days. Confirmed via AskUserQuestion: intentionally modeled on
+     * salary_type='daily' proration (schedule+config only) rather than on Attendance Deduction
+     * Rule's own sync-derived absence formulas, specifically to AVOID double-deducting the same
+     * absence twice for a company that has both features configured -- this method never reads
+     * actual attendance/sync data at all.
+     *
+     * Deliberately narrower than workingDaysBreakdown() above: that method's own `holiday_days`
+     * bucket also counts a holiday that lands on an ALREADY weekly-off day (holiday-wins priority) --
+     * reusing it directly here would wrongly inflate "total scheduled days" with holidays the
+     * employee was never scheduled to work anyway. This method counts a holiday only when it falls
+     * on what would otherwise have been a scheduled work day.
+     *
+     * $deductHolidays/$deductLeave both false (the "toggle exists but nothing opted in" case) always
+     * yields payable_days === total_scheduled_days, i.e. 100% of base salary for a normal period --
+     * same safe-default spirit as every other Payroll Policy column (PayrollPolicyModel's own
+     * docblock). Unpaid leave = an APPROVED `leave_requests` row whose `leave_types.is_paid = 0` --
+     * deliberately excludes PAID leave types (annual/paid sick leave etc.) from ever reducing pay,
+     * since docking pay for using entitled PAID leave would be a real, harmful bug, not a feature.
+     * @return array{total_scheduled_days:int,holiday_on_scheduled_days:int,payable_days:float}
+     */
+    public function scheduledPayableDaysForEmployee(int $employeeId, int $compId, string $dateFrom, string $dateTo, bool $deductHolidays, bool $deductLeave): array {
+        $stmtE = $this->db->prepare("SELECT shift_id FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtE->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $emp = $stmtE->fetch(PDO::FETCH_ASSOC);
+        $shiftId = $emp['shift_id'] ?? null;
+
+        $workDays = null;
+        if ($shiftId !== null) {
+            $stmtS = $this->db->prepare("SELECT works_monday, works_tuesday, works_wednesday, works_thursday, works_friday, works_saturday, works_sunday
+                FROM shifts WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtS->execute([':id' => $shiftId, ':comp_id' => $compId]);
+            $shift = $stmtS->fetch(PDO::FETCH_ASSOC);
+            if ($shift) {
+                $workDays = [
+                    1 => (bool)$shift['works_monday'], 2 => (bool)$shift['works_tuesday'], 3 => (bool)$shift['works_wednesday'],
+                    4 => (bool)$shift['works_thursday'], 5 => (bool)$shift['works_friday'], 6 => (bool)$shift['works_saturday'],
+                    7 => (bool)$shift['works_sunday'],
+                ];
+            }
+        }
+
+        $holidays = $this->resolveHolidaysForEmployee($employeeId, $compId, $dateFrom, $dateTo);
+        $holidayDates = array_flip(array_column($holidays, 'date'));
+
+        $from = new DateTime($dateFrom);
+        $to = new DateTime($dateTo);
+        $totalScheduledDays = 0;
+        $holidayOnScheduledDays = 0;
+        $cursor = clone $from;
+        while ($cursor <= $to) {
+            $dateStr = $cursor->format('Y-m-d');
+            $dow = (int)$cursor->format('N');
+            $isScheduledWorkDay = $workDays === null ? true : ($workDays[$dow] ?? true);
+            if ($isScheduledWorkDay) {
+                $totalScheduledDays++;
+                if (isset($holidayDates[$dateStr])) {
+                    $holidayOnScheduledDays++;
+                }
+            }
+            $cursor->modify('+1 day');
+        }
+
+        $payableDays = (float)$totalScheduledDays;
+        if ($deductHolidays) {
+            $payableDays -= $holidayOnScheduledDays;
+        }
+        if ($deductLeave) {
+            $payableDays -= $this->approvedUnpaidLeaveDays($employeeId, $compId, $dateFrom, $dateTo);
+        }
+
+        return [
+            'total_scheduled_days' => $totalScheduledDays,
+            'holiday_on_scheduled_days' => $holidayOnScheduledDays,
+            'payable_days' => max(0.0, $payableDays),
+        ];
+    }
+
+    private function approvedUnpaidLeaveDays(int $employeeId, int $compId, string $dateFrom, string $dateTo): float {
+        $stmt = $this->db->prepare("SELECT COALESCE(SUM(lr.total_days), 0) AS total
+            FROM `leave_requests` lr
+            JOIN `leave_types` lt ON lt.id = lr.leave_type_id
+            WHERE lr.employee_id = :employee_id AND lr.comp_id = :comp_id AND lr.status = 'approved' AND lr.deleted_at IS NULL
+            AND lt.is_paid = 0 AND lr.start_date <= :date_to AND lr.end_date >= :date_from");
+        $stmt->execute([':employee_id' => $employeeId, ':comp_id' => $compId, ':date_to' => $dateTo, ':date_from' => $dateFrom]);
+        return (float)$stmt->fetchColumn();
     }
 
     public function shiftToggleStatus(int $id, int $compId, int $userId): array {
@@ -1178,5 +1271,40 @@ class SetupRulesModel {
         $this->db->prepare("UPDATE ot_rates SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
             ->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
         return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
+    }
+
+    /**
+     * 2026-08-30, explicit request ("ทำ OT ต่อเลยครับ" -- same calculation-preview feature as
+     * AttendanceDeductionRuleModel::previewCalculation()) -- computes a worked example against the
+     * CURRENT, not-yet-saved OT Rate form values, delegating the actual formula to
+     * SyncPayResolver::computeOtAmountFromConfig() -- the exact same pure function real OT payroll
+     * calculations use -- so this preview can never drift out of sync with the real result.
+     * $sampleBaseSalary/$sampleHours let the admin try their own numbers; both default to a round,
+     * easy-to-follow scenario (30,000 THB monthly, 2 OT hours) when omitted.
+     * @return array{status:bool,message?:string,amount?:float,formula?:array}
+     */
+    public function otRatePreview(array $data, float $sampleBaseSalary = 30000.0, float $sampleHours = 2.0): array {
+        $calcBase = in_array($data['calculation_base'] ?? '', ['hourly', 'daily'], true) ? $data['calculation_base'] : 'hourly';
+        $calcMethod = in_array($data['calculation_method'] ?? '', ['multiplier', 'flat_amount'], true) ? $data['calculation_method'] : 'multiplier';
+        if ($calcMethod === 'flat_amount' && (!isset($data['flat_amount_rate']) || (float)$data['flat_amount_rate'] <= 0)) {
+            return ['status' => false, 'message' => 'flat_amount_rate must be greater than 0.'];
+        }
+        if ($sampleBaseSalary <= 0 || $sampleHours < 0) {
+            return ['status' => false, 'message' => 'Sample base salary must be positive and sample hours must not be negative.'];
+        }
+
+        $rate = [
+            'calculation_base' => $calcBase, 'calculation_method' => $calcMethod,
+            'flat_amount_rate' => isset($data['flat_amount_rate']) ? (float)$data['flat_amount_rate'] : 0.0,
+            'multiplier_rate' => isset($data['multiplier_rate']) && (float)$data['multiplier_rate'] > 0 ? (float)$data['multiplier_rate'] : 1.0,
+        ];
+        $result = SyncPayResolver::computeOtAmountFromConfig($rate, $sampleBaseSalary, $sampleHours);
+        return [
+            'status' => true,
+            'amount' => $result['amount'],
+            'formula' => $result['formula'],
+            'sample_base_salary' => $sampleBaseSalary,
+            'sample_hours' => $sampleHours,
+        ];
     }
 }

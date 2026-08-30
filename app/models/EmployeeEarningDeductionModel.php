@@ -90,10 +90,17 @@ class EmployeeEarningDeductionModel {
         $totalStmt->execute($params);
         $totalCount = (int)$totalStmt->fetchColumn();
 
+        // 2026-08-30, explicit request: "ทำให้ fixed_amount/percent_rate เป็นค่าเริ่มต้นอัตโนมัติตอน
+        // assign ให้พนักงาน" -- calculation_method/fixed_amount/percent_rate are ADDITIVE to the
+        // select2 option payload here (the frontend's own initSelect2()/processResults() spreads
+        // every field of an item through untouched, see input.js) purely so
+        // detail.js's own select2:select handler can pre-fill the assignment amount field as a
+        // SUGGESTED starting value -- still fully editable per employee/assignment afterward, this
+        // never writes anything back to the catalog itself.
         $sql = "SELECT id,
                     CONCAT('[', item_code, '] ', item_name_th) AS text_th,
                     CONCAT('[', item_code, '] ', item_name_en) AS text_en,
-                    item_type
+                    item_type, calculation_method, fixed_amount, percent_rate
                 FROM `payroll_earning_deduction_types` {$where}
                 ORDER BY item_type ASC, item_code ASC LIMIT :offset, :limit";
         $stmt = $this->db->prepare($sql);

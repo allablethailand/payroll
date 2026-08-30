@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../services/reports/ReportRegistry.php';
+require_once __DIR__ . '/../services/reports/LocalizedException.php';
 require_once __DIR__ . '/../models/ReportExportLogModel.php';
 require_once __DIR__ . '/../models/PayrollRunModel.php';
 require_once __DIR__ . '/../models/PayrollReportDataModel.php';
@@ -70,6 +71,14 @@ class ReportsController extends Controller {
      * browser can only save natively via a plain navigation/anchor click, not an XHR blob
      * without extra client-side plumbing. All context fields are simple scalars, so a query
      * string is a perfectly natural fit; error responses (JSON) work the same either way.
+     *
+     * 2026-08-29, explicit request: "มีปุ่มสำหรับกด Download กดแล้วเปิด modal เพื่อ Preview ก่อน" -- a
+     * `preview=1` request renders the SAME file inline (Content-Disposition: inline, so the browser
+     * shows it in an <iframe> instead of triggering a save dialog) and is deliberately NOT logged --
+     * only a real download (Download Thai/English button, no preview flag) counts toward the
+     * download history/count this same request added. `source` (which screen triggered this,
+     * e.g. 'process_detail') and the request's own IP/User-Agent are captured on every LOGGED
+     * (non-preview) download -- see ReportExportLogModel::log()'s own docblock.
      */
     public function generate() {
         if (!$this->requireViewAccess()) return;
@@ -89,6 +98,7 @@ class ReportsController extends Controller {
             $this->json(['status' => false, 'message' => 'Unsupported format for this report.']);
             return;
         }
+        $isPreview = !empty($_GET['preview']);
 
         $context = [];
         // 2026-08-29, explicit request: "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่
@@ -105,6 +115,16 @@ class ReportsController extends Controller {
 
         try {
             $result = $report->generate($context, $format);
+        } catch (LocalizedException $e) {
+            // 2026-08-30, real bug found and fixed: LocalizedException (error_key + params for
+            // frontend i18n translation, see its own class docblock) has been thrown by 9 of the 10
+            // report generators for a while, but this catch block only ever sent back
+            // $e->getMessage() -- the raw English fallback -- never error_key/params. The whole
+            // mechanism was inert: translateApiError() (app.js) had nothing to translate against
+            // since the response never carried an error_key at all. Caught BEFORE the generic
+            // RuntimeException below since LocalizedException extends it.
+            $this->json(['status' => false, 'message' => $e->getMessage(), 'error_key' => $e->getErrorKey(), 'params' => $e->getParams()]);
+            return;
         } catch (InvalidArgumentException $e) {
             $this->json(['status' => false, 'message' => $e->getMessage()]);
             return;
@@ -113,24 +133,158 @@ class ReportsController extends Controller {
             return;
         }
 
-        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $this->logModel->log(
-            (int)$compId,
-            $report->reportType(),
-            $report->code(),
-            $result['file_name'],
-            $format,
-            isset($context['year']) ? (int)$context['year'] : null,
-            isset($context['month']) ? (int)$context['month'] : null,
-            isset($context['run_id']) ? (int)$context['run_id'] : null,
-            $userId ?: null
-        );
+        if (!$isPreview) {
+            $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+            // Same trusted-source-only convention every other IP/UA capture in this app follows
+            // (see EmployeeLoginLogModel's own docblock) -- read straight off the request, never
+            // accepted as a client-suppliable field. `source` is a short free-form label the caller
+            // passes (e.g. 'process_detail') describing which screen triggered this, whitelisted to
+            // a short length only to keep the column bounded, not for any access-control reason.
+            $source = isset($_GET['source']) ? substr((string)$_GET['source'], 0, 30) : null;
+            $this->logModel->log(
+                (int)$compId,
+                $report->reportType(),
+                $report->code(),
+                $result['file_name'],
+                $format,
+                isset($context['year']) ? (int)$context['year'] : null,
+                isset($context['month']) ? (int)$context['month'] : null,
+                isset($context['run_id']) ? (int)$context['run_id'] : null,
+                $userId ?: null,
+                (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+                (string)($_SERVER['HTTP_USER_AGENT'] ?? ''),
+                isset($context['language']) ? (string)$context['language'] : null,
+                $source,
+                // 2026-08-29: attributes this download to the employee it was FOR (PAY_SLIP/
+                // PAYMENT_VOUCHER) so a per-employee download count is possible -- see
+                // ReportExportLogModel::perEmployeeSummaryForRun()'s own docblock. Every other
+                // report simply has no employee_id in its context, same "unused key" tolerance.
+                isset($context['employee_id']) ? (int)$context['employee_id'] : null
+            );
+        }
 
         header('Content-Type: ' . $result['mime_type']);
-        header('Content-Disposition: attachment; filename="' . $result['file_name'] . '"');
+        header('Content-Disposition: ' . ($isPreview ? 'inline' : 'attachment') . '; filename="' . $result['file_name'] . '"');
         header('Content-Length: ' . strlen($result['content']));
         echo $result['content'];
         exit;
+    }
+
+    /**
+     * 2026-08-29, explicit request: backs the Process Detail page's own new "Reports" tab table --
+     * one row per report shortcut applicable to this run (same TH_SSO110/TH_PND1/BANK_TRANSFER_FILE
+     * set + any_tax/any_sso hiding the Print Reports dropdown already used, see
+     * PayrollRunModel::calcApplicabilitySummary()'s own docblock), each carrying its own
+     * download_count/last_downloaded_at from ReportExportLogModel::summaryForRun().
+     */
+    private const RUN_REPORT_SHORTCUTS = [
+        ['code' => 'TH_SSO110', 'format' => 'pdf', 'requires' => 'sso'],
+        ['code' => 'TH_PND1', 'format' => 'pdf', 'requires' => 'tax'],
+        ['code' => 'BANK_TRANSFER_FILE', 'format' => 'csv', 'requires' => null],
+    ];
+    public function runReportsSummary() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = isset($_GET['run_id']) ? (int)$_GET['run_id'] : 0;
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing run_id.']);
+            return;
+        }
+        $applicability = $this->payrollRunModel->calcApplicabilitySummary($runId, (int)$compId);
+        $downloadSummary = $this->logModel->summaryForRun((int)$compId, $runId);
+        $rows = [];
+        foreach (self::RUN_REPORT_SHORTCUTS as $shortcut) {
+            if ($shortcut['requires'] === 'tax' && !$applicability['any_tax']) continue;
+            if ($shortcut['requires'] === 'sso' && !$applicability['any_sso']) continue;
+            $report = ReportRegistry::get($shortcut['code']);
+            if (!$report) continue;
+            $summary = $downloadSummary[$shortcut['code']] ?? ['download_count' => 0, 'last_downloaded_at' => null];
+            $rows[] = [
+                'code' => $shortcut['code'],
+                'format' => $shortcut['format'],
+                'supports_preview' => $shortcut['format'] === 'pdf',
+                'label' => $report->label(),
+                'download_count' => $summary['download_count'],
+                'last_downloaded_at' => $summary['last_downloaded_at'],
+            ];
+        }
+        $this->json(['status' => true, 'data' => $rows]);
+    }
+
+    /**
+     * 2026-08-29, explicit request: "ใน /payroll/reports...ใช้หลักการ Download แบบเดียวกับหน้า Process"
+     * -- the Reports page's own "Per-Cycle Reports" tab needs EVERY cycle-frequency report (not just
+     * the 3 shortcuts runReportsSummary() above serves the Process Detail page's own Reports tab),
+     * one row per report with the same download_count/last_downloaded_at/supports_preview shape so
+     * the SAME preview-first Download UI can be reused verbatim. This list mirrors
+     * public/js/reports/index.js's own REPORT_META `frequency:'cycle'` set exactly -- keep both in
+     * sync if a report's frequency ever changes (no server-side frequency() method on
+     * ReportGeneratorInterface exists to derive this from; adding one would mean touching every
+     * report class for a purely display-layer concern, not worth it for a 6-entry list).
+     */
+    private const CYCLE_REPORT_CODES = ['TH_PND1', 'TH_SSO110', 'TH_SLF', 'PAY_SLIP', 'BANK_TRANSFER_FILE', 'PAYROLL_REGISTER'];
+    public function runCycleReportsSummary() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = isset($_GET['run_id']) ? (int)$_GET['run_id'] : 0;
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing run_id.']);
+            return;
+        }
+        $applicability = $this->payrollRunModel->calcApplicabilitySummary($runId, (int)$compId);
+        $downloadSummary = $this->logModel->summaryForRun((int)$compId, $runId);
+        $rows = [];
+        foreach (self::CYCLE_REPORT_CODES as $code) {
+            if ($code === 'TH_PND1' && !$applicability['any_tax']) continue;
+            if ($code === 'TH_SSO110' && !$applicability['any_sso']) continue;
+            $report = ReportRegistry::get($code);
+            if (!$report) continue;
+            $formats = $report->supportedFormats();
+            $format = in_array('pdf', $formats, true) ? 'pdf' : ($formats[0] ?? 'pdf');
+            $summary = $downloadSummary[$code] ?? ['download_count' => 0, 'last_downloaded_at' => null];
+            $rows[] = [
+                'code' => $code,
+                'report_type' => $report->reportType(),
+                'format' => $format,
+                'supports_preview' => $format === 'pdf',
+                // 2026-08-29: signals the frontend to open the employee-roster picker (see
+                // payslipRoster() below) instead of previewing/downloading directly -- PAY_SLIP is
+                // the only cycle report scoped to one employee at a time, not the whole run.
+                'per_employee' => $code === 'PAY_SLIP',
+                'label' => $report->label(),
+                'download_count' => $summary['download_count'],
+                'last_downloaded_at' => $summary['last_downloaded_at'],
+            ];
+        }
+        $this->json(['status' => true, 'data' => $rows]);
+    }
+
+    /**
+     * 2026-08-29, explicit request: "ตรงที่ปริ้น Slip ของพนักงาน ปรับให้ขึ้นเป็นรายชื่อพนักงานมาเลย และ emp
+     * code ด้วย แผนกตำแหน่งทีม และมีปุ่มให้กด Download และแสดงด้วยว่า Download ไปแล้วกี่ครั้ง" -- combines
+     * PayrollRunModel::employeeRosterForReports() with per-employee download counts for whichever
+     * per-employee report the picker is opened for (PAY_SLIP today; `report_code` is a real param,
+     * not hardcoded, so this same endpoint already works for a future per-employee report without
+     * changes).
+     */
+    public function payslipRoster() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = isset($_GET['run_id']) ? (int)$_GET['run_id'] : 0;
+        $reportCode = (string)($_GET['report_code'] ?? 'PAY_SLIP');
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing run_id.']);
+            return;
+        }
+        $roster = $this->payrollRunModel->employeeRosterForReports($runId, (int)$compId);
+        $counts = $this->logModel->perEmployeeSummaryForRun((int)$compId, $runId, $reportCode);
+        foreach ($roster as &$row) {
+            $c = $counts[(int)$row['employee_id']] ?? ['download_count' => 0, 'last_downloaded_at' => null];
+            $row['download_count'] = $c['download_count'];
+            $row['last_downloaded_at'] = $c['last_downloaded_at'];
+        }
+        unset($row);
+        $this->json(['status' => true, 'data' => $roster]);
     }
 
     /**
@@ -148,6 +302,41 @@ class ReportsController extends Controller {
         $this->json(['status' => true, 'data' => $this->reportDataModel->getCompletedRuns((int)$compId, self::CYCLE_REPORT_STATES)]);
     }
 
+    /**
+     * 2026-08-30, explicit request: "filter ปีให้เลือกจากปีที่มีข้อมูลจริง" -- backs the Annual Reports
+     * tab's year dropdown (was a free-typed number input). Same CYCLE_REPORT_STATES gate as
+     * cycleRuns()/runCycleReportsSummary() above -- a year is only offered if it has at least one
+     * run in a state annual reports are actually allowed to read from.
+     */
+    /**
+     * 2026-08-30, explicit request: "รายงานประจำปี อยากให้เป็นตารางครับ" -- backs the Annual Reports
+     * table's own Downloads/Last Downloaded columns for whichever year is currently selected.
+     * `year` here is the SAME Buddhist-Era value the year dropdown already holds/sends to
+     * report.generate (report_export_logs.period_year is stored in B.E., not converted -- see
+     * generate()'s own log() call above, which just persists $context['year'] verbatim).
+     */
+    public function annualReportsSummary() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $year = isset($_GET['year']) ? (int)$_GET['year'] : 0;
+        if (!$compId || $year <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing year.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->logModel->summaryForYear((int)$compId, $year)]);
+    }
+
+    public function availableYears() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => []]);
+            return;
+        }
+        $years = $this->reportDataModel->availableReportYears((int)$compId, self::CYCLE_REPORT_STATES);
+        $this->json(['status' => true, 'data' => array_map(fn($y) => $y + 543, $years)]);
+    }
+
     public function exportLogs() {
         if (!$this->requireViewAccess()) return;
         $compId = getCompId();
@@ -157,10 +346,13 @@ class ReportsController extends Controller {
         }
         $filters = [
             'report_type' => (string)($_GET['report_type'] ?? ''),
+            'report_code' => (string)($_GET['report_code'] ?? ''),
             'period_year' => isset($_GET['period_year']) ? (int)$_GET['period_year'] : null,
             'period_month' => isset($_GET['period_month']) ? (int)$_GET['period_month'] : null,
             'payroll_run_id' => isset($_GET['payroll_run_id']) ? (int)$_GET['payroll_run_id'] : null,
             'format' => (string)($_GET['format'] ?? ''),
+            'date_from' => (string)($_GET['date_from'] ?? ''),
+            'date_to' => (string)($_GET['date_to'] ?? ''),
         ];
         $this->json(['status' => true, 'data' => $this->logModel->list((int)$compId, $filters)]);
     }

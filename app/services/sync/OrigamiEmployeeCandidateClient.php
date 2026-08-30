@@ -26,9 +26,16 @@ declare(strict_types=1);
  * omitted-payroll-fields open questions -- see the guide's own §5). That means `fetchCandidates()`
  * will genuinely 404 for now -- callRealApi() surfaces that as a RuntimeException with the real
  * HTTP status in its message (not a silent empty list, not mock data), which
- * EmployeeSyncModel::candidates()/apply() catch and turn into a clear, honest UI error. Once
- * candidates.php exists on Origami's side, this file needs ZERO changes -- it already calls the
- * confirmed contract; the endpoint just starts returning 200 instead of 404.
+ * EmployeeSyncModel::candidates()/apply() catch and turn into a clear, honest UI error.
+ * **2026-08-30 update: candidates.php now exists and is live on Origami's side** (confirmed by
+ * reading its actual source, `origami/api/hr/employees/candidates.php`) -- this file needed ZERO
+ * changes, exactly as predicted; the endpoint just started returning 200 instead of 404. See that
+ * file's own top comment for how it resolved every one of §5's open questions (type/system_type=3
+ * folded into 'employee', the 5-of-8 payroll fields it does send + why the other 3 don't have a
+ * confirmed mapping yet, bank_code translated to Payroll's own clearing-code space, no pagination
+ * yet). It ALSO now sends one field beyond the original guide's contract, `tel_code` (the phone
+ * country calling code, default '+66') -- see EmployeeSyncer::upsertItem()'s own 2026-08-30 note for
+ * where that lands (`employees.mobile_country_code`).
  *
  * Deliberately its OWN standalone class, NOT an implementation of OrigamiSyncClientInterface --
  * that interface's fetchEmployees() is shaped for the existing bulk auto-apply engine
@@ -116,18 +123,49 @@ class OrigamiEmployeeCandidateClient {
     }
 
     /**
+     * 2026-08-30, corrected against candidates.php's own ACTUAL output (was previously guessed ahead
+     * of the endpoint existing, see this class's own top docblock) -- `tax_calculation_method`/
+     * `bank_account_name`/`bank_branch` were never real: candidates.php's own top comment explains
+     * why (no confirmed source mapping for any of the three on Origami's side) and its SELECT/output
+     * array genuinely never includes them. `tel_code` was added (Origami has no equivalent column
+     * for it in the original guide, sent anyway per that file's own note) -- see
+     * EmployeeSyncer::upsertItem()'s 2026-08-30 handling of it (`employees.mobile_country_code`).
+     *
+     * 2026-08-30, SAME-day follow-up: candidates.php's own field batch widened again (confirmed
+     * additive-only, every existing field unchanged) -- `branch_ref_id`/`branch_name`, `payroll_code`
+     * (distinct from `employee_no`, reference-only, see `employees.origami_payroll_code`), `emp_tel`
+     * (raw, distinct from the already-cleaned `mobile_no`), `title`/`nickname`/`nationality`/
+     * `religion`/`marital_status`/`military_service` (raw legacy values, same normalize-or-leave-null
+     * rule as PayrollSyncModel's own near-identical fields on the OTHER Origami integration --
+     * military_service stays intentionally unmapped), `idcard`/`idcard_issued`/`idcard_expire`,
+     * `pass_pro`/`pass_pro_date` (tri-state bool/null -- NOT stored anywhere: this app's own
+     * `employment_status` field already derives probation/permanent/resigned server-side on
+     * candidates.php's OWN side from this same pass_pro value, so it's redundant for this
+     * integration's purposes, unlike PAYROLL_SYNC_API.md's own raw pass_pro handling), `deduct_sso`
+     * (tri-state bool/null -> `employees.sso_enrolled`), `photo_url` (now a real absolute URL --
+     * downloaded and stored as a real file, see EmployeeSyncer::downloadPhoto()), `signature_drawing`
+     * (base64, decoded and stored as a real file, same as the OTHER integration), `spouse`/`children`
+     * (always present as `object|null`/`array`, never an absent key -- see
+     * EmployeeSyncer::spouseSummaryFromItem()/applySpouseAndChildren()).
      * @param array{department_ref_id: ?int, position_ref_id: ?int, team_ref_id: ?int, type: ?string} $filters
      * @return array<array{
      *   ref_id:int, employee_no:string, name_th:string, surname_th:string, name_en:string, surname_en:string,
-     *   date_of_birth:string, gender:string,
+     *   date_of_birth:?string, gender:?string,
      *   department_ref_id:?int, department_code:?string, department_name_th:?string, department_name_en:?string,
      *   position_ref_id:?int, position_code:?string, position_name_th:?string, position_name_en:?string,
      *   shift_ref_id:?int, shift_code:?string, shift_name_th:?string, shift_name_en:?string,
      *   shift_start_time:?string, shift_end_time:?string, shift_break_minutes:?int,
+     *   branch_ref_id:?int, branch_name:?string,
      *   team_ref_id:?int, team_name:?string, type:string,
-     *   employment_date:string, employment_status:string, personal_email:string, mobile_no:string, is_active:bool,
-     *   salary_type:string, base_salary_amount:string, tax_calculation_method:string, payment_type:string,
-     *   bank_code:?string, bank_account_no:?string, bank_account_name:?string, bank_branch:?string
+     *   payroll_code:?string,
+     *   employment_date:?string, employment_status:string, personal_email:string, mobile_no:string, emp_tel:?string, tel_code:string, is_active:bool,
+     *   title:?string, nickname:?string, nationality:?string, religion:?string, marital_status:mixed, military_service:mixed,
+     *   idcard:?string, idcard_issued:?string, idcard_expire:?string,
+     *   pass_pro:?bool, pass_pro_date:?string, deduct_sso:?bool,
+     *   photo_url:?string, signature_drawing:?string,
+     *   spouse:?array, children:array,
+     *   salary_type:?string, base_salary_amount:?string, payment_type:?string,
+     *   bank_code:?string, bank_account_no:?string
      * }>
      */
     public function fetchCandidates(int $origamiCompanyId, array $filters): array {

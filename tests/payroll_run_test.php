@@ -376,14 +376,19 @@ try {
     $leaveLineAfterExclude = current(array_filter($afterExcludeDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LEAVE_NO_PAY_DEDUCT'));
     checkTrue('LEAVE_NO_PAY_DEDUCT line no longer present after exclude', $leaveLineAfterExclude === false);
 
-    echo "=== syncDeductionLinesForEmployee(): raw computed amount + current override state, for the UI ===\n";
+    // 2026-08-29, generalized (explicit request: "แก้ไขตัวเลขได้...ทุกค่าเลย") from a sync-deduction-
+    // only listing into every earning/deduction line + base salary; `computed_amount` (the RAW
+    // pre-override figure, re-derived fresh from SyncPayResolver bypassing overrides) was renamed
+    // `current_amount` and now reads the CURRENT (post-override) persisted figure instead -- a
+    // deliberate simplification, see syncDeductionLinesForEmployee()'s own docblock for why.
+    echo "=== syncDeductionLinesForEmployee(): current amount + override state, for the UI ===\n";
     $syncLinesForUi = $runModel->syncDeductionLinesForEmployee($compId, $pulledRunId, $employeeFullId);
     $lateUiLine = current(array_filter($syncLinesForUi, fn($l) => $l['code'] === 'LATE_DEDUCT'));
-    check('UI-facing computed_amount stays the RAW 31.25 even though an override is active', (float)($lateUiLine['computed_amount'] ?? null), 31.25);
+    check('UI-facing current_amount reflects the OVERRIDDEN 10.00 (current, post-override figure now, not the raw pre-override 31.25)', (float)($lateUiLine['current_amount'] ?? null), 10.0);
     check('UI-facing override_action reflects the active override', $lateUiLine['override_action'] ?? null, 'override_amount');
     check('UI-facing override_amount reflects the active override', (float)($lateUiLine['override_amount'] ?? null), 10.0);
     $leaveUiLine = current(array_filter($syncLinesForUi, fn($l) => $l['code'] === 'LEAVE_NO_PAY_DEDUCT'));
-    check('excluded line is still listed for the UI (so it can be un-excluded) with its raw computed amount', (float)($leaveUiLine['computed_amount'] ?? null), 3000.0);
+    checkTrue('excluded line is still listed for the UI (so it can be un-excluded), even though it has dropped out of the persisted breakdown entirely', $leaveUiLine !== false);
     check('excluded line reports override_action=exclude', $leaveUiLine['override_action'] ?? null, 'exclude');
 
     echo "=== Line overrides: removing an override reverts to the computed default ===\n";
@@ -397,8 +402,23 @@ try {
     $runModel->lineOverrideRemove($pulledRunId, $compId, $employeeFullId, 'LEAVE_NO_PAY_DEDUCT', $adminUserId, true);
 
     echo "=== Line overrides: guards ===\n";
-    $overrideOnNonSyncRunRes = $runModel->lineOverrideSave($runId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', 5.00, null, $adminUserId, true);
-    check('lineOverrideSave() rejected on a non-sync (cycle-based) run', $overrideOnNonSyncRunRes['status'], false);
+    // 2026-08-29: lineOverrideSave() dropped its own sync_process_id-only restriction (see that
+    // method's own docblock) -- a cycle-based (non-sync) run is now a genuinely valid target, so
+    // this no longer belongs in a "guards" (rejection) section. Kept here as a positive assertion
+    // instead, but DELIBERATELY targets a throwaway run rather than $runId itself -- $runId is a
+    // large shared fixture many hundreds of lines further down in this file still rely on being
+    // "not yet recalculated" at specific points (e.g. the addManualLine()-membership-guard section
+    // right below), and lineOverrideSave() ends with its own recalculate() call, which would
+    // silently pull $runId's calculation forward and cascade into those later assertions.
+    $overrideThrowawayRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_OVERRIDE_GUARD_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +45 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +45 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +45 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('fixture: throwaway cycle-based run for the override-on-non-sync-run check' . (empty($overrideThrowawayRunRes['status']) ? " ({$overrideThrowawayRunRes['message']})" : ''), $overrideThrowawayRunRes['status']);
+    $overrideOnNonSyncRunRes = $runModel->lineOverrideSave($overrideThrowawayRunRes['id'], $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', 5.00, null, $adminUserId, true);
+    checkTrue('lineOverrideSave() now succeeds on a non-sync (cycle-based) run too (old sync-only restriction is gone)' . (empty($overrideOnNonSyncRunRes['status']) ? " ({$overrideOnNonSyncRunRes['message']})" : ''), $overrideOnNonSyncRunRes['status']);
     $overrideBadActionRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'not_a_real_action', null, null, $adminUserId, true);
     check('lineOverrideSave() rejected with an invalid action', $overrideBadActionRes['status'], false);
     $overrideMissingAmountRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', null, null, $adminUserId, true);
@@ -660,9 +680,15 @@ try {
     checkTrue('before exemption: employee has a real (nonzero) SSO deduction on the sync-based run', $ssoBeforeExemption > 0);
 
     $defaultExemption = $runModel->getEmployeeExemption($pulledRunId, $compId, $employeeFullId);
-    check('getEmployeeExemption() returns zeroed defaults before anything is saved', $defaultExemption, ['exempt_tax' => false, 'exempt_sso' => false, 'note' => null]);
+    check('getEmployeeExemption() returns "inherit" defaults before anything is saved', $defaultExemption, [
+        'tax_calculate_override' => 'inherit', 'sso_calculate_override' => 'inherit',
+        'exempt_tax' => false, 'exempt_sso' => false, 'note' => null,
+    ]);
 
-    $exemptionSaveRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, true, true, 'requested by employee', $adminUserId, true);
+    // 2026-08-29: exempt_tax=true/exempt_sso=true (booleans) widened to a bidirectional tri-state
+    // pair -- 'no' is the exact equivalent of the old force-off-only "exempt" meaning (see
+    // saveEmployeeExemption()'s own docblock).
+    $exemptionSaveRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, 'no', 'no', 'requested by employee', $adminUserId, true);
     checkTrue('saveEmployeeExemption() succeeds' . (empty($exemptionSaveRes['status']) ? " ({$exemptionSaveRes['message']})" : ''), $exemptionSaveRes['status']);
     $afterExemptionDetail = array_values(array_filter($runModel->getDetails($pulledRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeFullId))[0] ?? [];
     $ssoAfterExemption = (float)((array_values(array_filter($afterExemptionDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
@@ -671,16 +697,19 @@ try {
     check('after exempt_tax=true: TH_PIT is zeroed and flagged employee_tax_exempt (same engine note as the permanent tax_exempt flag)', [(float)($pitAfterExemption['employee_amount'] ?? -1), $pitAfterExemption['note'] ?? null], [0.0, 'employee_tax_exempt']);
 
     $savedExemption = $runModel->getEmployeeExemption($pulledRunId, $compId, $employeeFullId);
-    check('getEmployeeExemption() reflects the saved row', $savedExemption, ['exempt_tax' => true, 'exempt_sso' => true, 'note' => 'requested by employee']);
+    check('getEmployeeExemption() reflects the saved row', $savedExemption, [
+        'tax_calculate_override' => 'no', 'sso_calculate_override' => 'no',
+        'exempt_tax' => true, 'exempt_sso' => true, 'note' => 'requested by employee',
+    ]);
 
-    $exemptionClearRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, false, false, null, $adminUserId, true);
-    checkTrue('saveEmployeeExemption() with both flags false clears the row (deletes rather than keeping an all-zero row)' . (empty($exemptionClearRes['status']) ? " ({$exemptionClearRes['message']})" : ''), $exemptionClearRes['status']);
+    $exemptionClearRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, 'inherit', 'inherit', null, $adminUserId, true);
+    checkTrue('saveEmployeeExemption() with both set to inherit clears the row (deletes rather than keeping an all-inherit row)' . (empty($exemptionClearRes['status']) ? " ({$exemptionClearRes['message']})" : ''), $exemptionClearRes['status']);
     $afterClearDetail = array_values(array_filter($runModel->getDetails($pulledRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeFullId))[0] ?? [];
     $ssoAfterClear = (float)((array_values(array_filter($afterClearDetail['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
     check('after clearing the exemption: SSO deduction is back to the real computed amount', $ssoAfterClear, $ssoBeforeExemption);
 
     echo "=== Exemption is per-run only -- a different run for the same employee is unaffected ===\n";
-    $reExemptRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, true, false, null, $adminUserId, true);
+    $reExemptRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, 'no', 'inherit', null, $adminUserId, true);
     checkTrue('re-applying exempt_tax=true on the sync-based run succeeds' . (empty($reExemptRes['status']) ? " ({$reExemptRes['message']})" : ''), $reExemptRes['status']);
     // $runId (the cycle-based run) is recalculated and asserted for real SSO/PIT amounts for this
     // same $employeeFullId later in this file ("Per-employee SSO/PVD enrollment fix" section) --
@@ -962,7 +991,7 @@ try {
     echo "=== Employee Lock: blocks every other per-employee mutation entry point ===\n";
     $blockedManualLineRes = $runModel->addManualLine($runId, $compId, $employeeFullId, $otPedTypeId, 100, $adminUserId, true);
     check('addManualLine() rejected for a locked employee', $blockedManualLineRes['status'], false);
-    $blockedExemptionRes = $runModel->saveEmployeeExemption($runId, $compId, $employeeFullId, true, false, null, $adminUserId, true);
+    $blockedExemptionRes = $runModel->saveEmployeeExemption($runId, $compId, $employeeFullId, 'no', 'inherit', null, $adminUserId, true);
     check('saveEmployeeExemption() rejected for a locked employee', $blockedExemptionRes['status'], false);
 
     echo "=== Employee Verify: independent of Lock, no effect on recalculation ===\n";
@@ -1295,9 +1324,46 @@ try {
     checkTrue('rawSyncDataForEmployee() on a sync-based run includes working_days_breakdown', isset($rawSyncWithBreakdown['working_days_breakdown']));
     checkTrue('working_days_breakdown has all 4 count fields', isset($rawSyncWithBreakdown['working_days_breakdown']['total_days'], $rawSyncWithBreakdown['working_days_breakdown']['working_days'], $rawSyncWithBreakdown['working_days_breakdown']['holiday_days'], $rawSyncWithBreakdown['working_days_breakdown']['weekly_off_days']));
 
-    echo "=== Per-run earning/deduction item selection (two-panel, per-type) ===\n";
-    // A second earning PED type + standing assignment on the same full-period employee, so
-    // restricting to just $pedTypeId (transport allowance) has something else to visibly exclude.
+    // 2026-08-29, real bug found and fixed (explicit report: "จำนวนวันในรอบ: 31 วันทำงาน: 26 ...
+    // ส่วนนี้ยังไม่ถูก เพราะจำได้ว่าข้อมูลที่ส่งมาจาก Origami ถูกครับ เพราะเข้างานรอบนั้น ออกจากงานรอบนั้นจะ
+    // คำนวณวันจริงมาให้แล้ว") -- rawSyncDataForEmployee() used to pass the run's raw
+    // period_start_date/period_end_date straight into workingDaysBreakdown() unclamped, so a
+    // mid-period joiner/leaver's breakdown always showed the FULL period's day count instead of
+    // their real employment window -- disagreeing with Origami's own working_days figure, which
+    // already accounts for it. Fixed to intersect with employment_date/employment_end_date first,
+    // the same $effectiveStart/$effectiveEnd logic recalculate() already uses for its own prorate
+    // window. $employeeFullId is temporarily given a mid-period employment_date here (was the full
+    // period before this block -- restored at the end) so the clamp has something real to narrow.
+    // $pulledRunId's own period is $pullPeriodStart/$pullPeriodEnd (+2 months from today), NOT the
+    // $periodStart/$periodEnd this-month fixture used by the very first run in this file -- must
+    // clamp against the SAME period this specific run actually has, or the mid-period date falls
+    // before the run's real period start and never gets clamped at all (caught by this exact
+    // mismatch before shipping the test).
+    $midPeriodStart = (new DateTime($pullPeriodStart))->modify('+10 days')->format('Y-m-d');
+    $pdo->prepare("UPDATE employees SET employment_date = :d WHERE id = :id")
+        ->execute([':d' => $midPeriodStart, ':id' => $employeeFullId]);
+    $breakdownMidJoiner = $runModel->rawSyncDataForEmployee($compId, $pulledRunId, $employeeFullId)['working_days_breakdown'];
+    $expectedMidJoinerBreakdown = $setupRulesModelForTest->workingDaysBreakdown($employeeFullId, $compId, $midPeriodStart, $pullPeriodEnd);
+    check('a mid-period joiner\'s total_days is clamped to their real employment window, not the full period', $breakdownMidJoiner['total_days'], $expectedMidJoinerBreakdown['total_days']);
+    checkTrue('the clamped total_days is genuinely smaller than the full period (the bug\'s own symptom, not a no-op)', $breakdownMidJoiner['total_days'] < ((int)((strtotime($pullPeriodEnd) - strtotime($pullPeriodStart)) / 86400) + 1));
+    check('working_days/holiday_days/weekly_off_days all match the clamped-window computation too', [$breakdownMidJoiner['working_days'], $breakdownMidJoiner['holiday_days'], $breakdownMidJoiner['weekly_off_days']], [$expectedMidJoinerBreakdown['working_days'], $expectedMidJoinerBreakdown['holiday_days'], $expectedMidJoinerBreakdown['weekly_off_days']]);
+    // Restore -- this employee is reused as a full-period fixture by many later assertions in this
+    // same file.
+    $pdo->prepare("UPDATE employees SET employment_date = :d WHERE id = :id")
+        ->execute([':d' => '2020-01-01', ':id' => $employeeFullId]);
+    $breakdownAfterRestore = $runModel->rawSyncDataForEmployee($compId, $pulledRunId, $employeeFullId)['working_days_breakdown'];
+    check('an employee present for the WHOLE period sees zero change from the clamp (intersection is just the period itself)', $breakdownAfterRestore, $rawSyncWithBreakdown['working_days_breakdown']);
+
+    echo "=== Per-run item exclusion via Run Settings now covers standing PED items too (2026-08-29) ===\n";
+    // 2026-08-29, explicit follow-up request: "ตอนนี้ 2 รายการเงินได้/เงินหักที่ใช้ในรอบนี้ จะไม่ซ้ำซ้อนกับ
+    // การตั้งค่าของรอบใช่ไหมครับ" -- confirmed genuine overlap between the OLD per-run standing-PED
+    // allowlist (payroll_run_ped_type_settings/savePedTypeSettings(), now REMOVED entirely) and the
+    // Run Settings item-exclusion denylist for a standing PED item specifically -- consolidated per
+    // explicit choice into Run Settings alone (a strict superset, see recalculate()'s own docblock
+    // at the old restriction's removal site). This section's own fixture (second earning PED type +
+    // standing assignment) is unchanged; only the assertions below were rewritten to use
+    // runSettingsSave()/runSettingsGet() instead of the retired savePedTypeSettings()/
+    // getPedTypeSettings().
     $mealItemCode = 'TESTMEAL' . rand(100, 999);
     $mealPedRes = $pedTypeModel->save($compId, [
         'item_code' => $mealItemCode,
@@ -1315,13 +1381,7 @@ try {
     $pdo->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, status)
         VALUES (:assignment_id, 1, 300, 'pending')")->execute([':assignment_id' => $mealAssignmentId]);
 
-    $settingsBefore = $runModel->getPedTypeSettings($runId, $compId);
-    checkTrue('getPedTypeSettings succeeds before any selection saved' . (empty($settingsBefore['status']) ? " ({$settingsBefore['message']})" : ''), $settingsBefore['status']);
-    check('earning side unrestricted by default (no rows saved yet)', $settingsBefore['earning']['is_restricted'], false);
-    check('deduction side unrestricted by default (no rows saved yet)', $settingsBefore['deduction']['is_restricted'], false);
-    checkTrue('earning default selected_ids includes both allowance types', in_array($pedTypeId, $settingsBefore['earning']['selected_ids'], true) && in_array($mealPedTypeId, $settingsBefore['earning']['selected_ids'], true));
-
-    // Recalc without restriction first -- both allowance types should show up.
+    // Recalc without any exclusion first -- both allowance types should show up.
     $runModel->recalculate($runId, $compId, $adminUserId, true);
     $unrestrictedDetail = null;
     foreach ($runModel->getDetails($runId, $compId) as $d) {
@@ -1329,35 +1389,22 @@ try {
     }
     check('unrestricted: both PED earning lines present', count(array_filter($unrestrictedDetail['earning_breakdown'], fn($l) => $l['source'] === 'ped')), 2);
 
-    $invalidTypeRes = $runModel->savePedTypeSettings($runId, $compId, 'bogus', [$pedTypeId], $adminUserId, true);
-    check('savePedTypeSettings rejects an invalid item_type', $invalidTypeRes['status'], false);
+    $restrictRes = $runModel->runSettingsSave($runId, $compId, 'use_employee_setting', 'use_employee_setting', [$mealItemCode], $adminUserId, true);
+    checkTrue('runSettingsSave() excluding the meal-allowance item_code succeeds' . (empty($restrictRes['status']) ? " ({$restrictRes['message']})" : ''), $restrictRes['status']);
 
-    $invalidSaveRes = $runModel->savePedTypeSettings($runId, $compId, 'earning', [999999], $adminUserId, true);
-    check('savePedTypeSettings rejects an invalid/foreign ped_type_id', $invalidSaveRes['status'], false);
-
-    $crossTypeSaveRes = $runModel->savePedTypeSettings($runId, $compId, 'deduction', [$pedTypeId], $adminUserId, true);
-    check('savePedTypeSettings rejects an earning id submitted under item_type=deduction', $crossTypeSaveRes['status'], false);
-
-    $incentiveSaveRes = $runModel->savePedTypeSettings($incentiveRunId, $compId, 'earning', [$pedTypeId], $adminUserId, true);
-    check('savePedTypeSettings rejects an incentive run (items are picked per-employee there instead)', $incentiveSaveRes['status'], false);
-
-    $restrictRes = $runModel->savePedTypeSettings($runId, $compId, 'earning', [$pedTypeId], $adminUserId, true);
-    checkTrue('savePedTypeSettings succeeds restricting earning to the transport-allowance type only' . (empty($restrictRes['status']) ? " ({$restrictRes['message']})" : ''), $restrictRes['status']);
-
-    $settingsAfter = $runModel->getPedTypeSettings($runId, $compId);
-    check('earning side is now restricted', $settingsAfter['earning']['is_restricted'], true);
-    check('earning selected_ids reflects the saved selection', $settingsAfter['earning']['selected_ids'], [$pedTypeId]);
-    check('deduction side is still unrestricted (earning save did not touch it)', $settingsAfter['deduction']['is_restricted'], false);
-
-    // savePedTypeSettings() recalculates internally now (2026-08-19, explicit request) -- no
-    // separate recalculate() call needed to see the effect below.
     $restrictedDetail = null;
     foreach ($runModel->getDetails($runId, $compId) as $d) {
         if ((int)$d['employee_id'] === $employeeFullId) $restrictedDetail = $d;
     }
     $restrictedPedCodes = array_column(array_filter($restrictedDetail['earning_breakdown'], fn($l) => $l['source'] === 'ped'), 'code');
-    check('restricted: only the selected item is included', $restrictedPedCodes, [$pedTypeModel->get($compId, $pedTypeId)['item_code']]);
-    checkTrue('restricted: the excluded item is really gone', !in_array($mealItemCode, $restrictedPedCodes, true));
+    check('excluded via Run Settings: only the transport-allowance item remains', $restrictedPedCodes, [$pedTypeModel->get($compId, $pedTypeId)['item_code']]);
+    checkTrue('excluded via Run Settings: the meal item is really gone', !in_array($mealItemCode, $restrictedPedCodes, true));
+
+    // Reset immediately -- unlike the OLD retired allowlist (which only ever restricted STANDING
+    // PED assignments, never touching addManualLine()), this exclusion is universal by design (see
+    // recalculate()'s own docblock) and would otherwise silently swallow the $mealPedTypeId manual
+    // line the very next section below adds on purpose.
+    $runModel->runSettingsSave($runId, $compId, 'use_employee_setting', 'use_employee_setting', [], $adminUserId, true);
 
     echo "=== Per-employee ad-hoc adjustment on a normal (non-incentive) run ===\n";
     $notMemberRes = $runModel->addManualLine($runId, $compId, 999999, $mealPedTypeId, 100, $adminUserId, true);
@@ -1433,13 +1480,13 @@ try {
     }
     check('gross is back to baseline after removing both custom lines', round((float)$midAfterCustomRemove['gross_amount'], 2), round($midGrossBefore, 2));
 
-    // Reset the earning restriction back to unrestricted -- both the setting AND the run must be
-    // recalculated back to the fully-included state here so the rest of this script (markPaid's
-    // installment assertions below) sees exactly what the pre-existing flow always expected.
-    $resetRes = $runModel->savePedTypeSettings($runId, $compId, 'earning', [], $adminUserId, true);
-    checkTrue('savePedTypeSettings with an empty array resets earning to unrestricted' . (empty($resetRes['status']) ? " ({$resetRes['message']})" : ''), $resetRes['status']);
-    $settingsReset = $runModel->getPedTypeSettings($runId, $compId);
-    check('earning side is unrestricted again after reset', $settingsReset['earning']['is_restricted'], false);
+    // Reset the exclusion back to none -- both the setting AND the run must be recalculated back
+    // to the fully-included state here so the rest of this script (markPaid's installment
+    // assertions below) sees exactly what the pre-existing flow always expected.
+    $resetRes = $runModel->runSettingsSave($runId, $compId, 'use_employee_setting', 'use_employee_setting', [], $adminUserId, true);
+    checkTrue('runSettingsSave() with an empty excluded_item_codes list resets to unrestricted' . (empty($resetRes['status']) ? " ({$resetRes['message']})" : ''), $resetRes['status']);
+    $settingsReset = $runModel->runSettingsGet($runId, $compId);
+    check('excluded_item_codes is empty again after reset', $settingsReset['data']['excluded_item_codes'], []);
     $fullAfterReset = null;
     foreach ($runModel->getDetails($runId, $compId) as $d) {
         if ((int)$d['employee_id'] === $employeeFullId) $fullAfterReset = $d;
@@ -2492,11 +2539,11 @@ try {
     check('include_standing_items=1, include_base_salary=0: gross = ped earning only (1000)', (float)$inclItemsOnlyDetail['gross_amount'], 1000.0);
     check('include_standing_items=1: total_deduction = ped custom deduction (200)', (float)$inclItemsOnlyDetail['total_deduction_amount'], 200.0);
 
-    // -- both toggles on together, PLUS a manually-picked line, PLUS the two-panel earning-type
-    //    restriction (payroll_run_ped_type_settings, same mechanism a normal run already uses,
-    //    now also usable here since include_standing_items is on) restricting earning types down
-    //    to $otPedTypeId only -- TESTALLOW is NOT in that list, so it must be excluded, while the
-    //    unrestricted deduction side still lets the custom -200 deduction through unchanged.
+    // -- both toggles on together, PLUS a manually-picked line, PLUS a Run Settings item exclusion
+    //    (2026-08-29: the old two-panel payroll_run_ped_type_settings ALLOWLIST this used to test
+    //    is retired -- Run Settings' own DENYLIST now covers this case too, see recalculate()'s own
+    //    docblock at the old restriction's removal site) excluding the TESTALLOW item_code
+    //    specifically -- OT and the custom -200 deduction are both untouched.
     $inclBothStart = (clone $today)->modify('first day of +35 months')->format('Y-m-d');
     $inclBothEnd = (clone $today)->modify('last day of +35 months')->format('Y-m-d');
     $inclBothRes = $runModel->create($compId, [
@@ -2508,8 +2555,9 @@ try {
     $inclBothRunId = $inclBothRes['id'];
     $runModel->joinEmployees($inclBothRunId, $compId, [$employeeFullId], $adminUserId, true);
 
-    $restrictSaveRes = $runModel->savePedTypeSettings($inclBothRunId, $compId, 'earning', [$otPedTypeId], $adminUserId, true);
-    checkTrue('savePedTypeSettings now succeeds for an incentive run once include_standing_items=1' . (empty($restrictSaveRes['status']) ? " ({$restrictSaveRes['message']})" : ''), $restrictSaveRes['status']);
+    $testAllowItemCode = $pedTypeModel->get($compId, $pedTypeId)['item_code'];
+    $restrictSaveRes = $runModel->runSettingsSave($inclBothRunId, $compId, 'use_employee_setting', 'use_employee_setting', [$testAllowItemCode], $adminUserId, true);
+    checkTrue('runSettingsSave() excluding TESTALLOW succeeds for an incentive run (item exclusion is not scoped to standing-items-only anymore)' . (empty($restrictSaveRes['status']) ? " ({$restrictSaveRes['message']})" : ''), $restrictSaveRes['status']);
 
     $addBothManualRes = $runModel->addManualLine($inclBothRunId, $compId, $employeeFullId, $otPedTypeId, 5000, $adminUserId, true);
     checkTrue('fixture: manual line (OT, +5000) added on top' . (empty($addBothManualRes['status']) ? " ({$addBothManualRes['message']})" : ''), $addBothManualRes['status']);
@@ -2518,14 +2566,240 @@ try {
     $inclBothDetail = $runModel->getDetails($inclBothRunId, $compId)[0] ?? [];
     check('both toggles on: base_salary_amount is the FULL amount (30000)', (float)($inclBothDetail['base_salary_amount'] ?? -1), 30000.0);
     $inclBothPedEarning = current(array_filter($inclBothDetail['earning_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'ped' && (int)($l['assignment_id'] ?? 0) === $freshAssignmentId));
-    check('earning-type restriction to [OT] excludes the standing TESTALLOW PED earning', $inclBothPedEarning, false);
+    check('Run Settings item exclusion excludes the standing TESTALLOW PED earning', $inclBothPedEarning, false);
     $inclBothPedDeduction = current(array_filter($inclBothDetail['deduction_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'ped' && (int)($l['assignment_id'] ?? 0) === $freshCustomAssignmentId));
-    checkTrue('deduction side is untouched by the earning-only restriction -- custom -200 still included', $inclBothPedDeduction !== false);
+    checkTrue('deduction side is untouched by the earning-only exclusion -- custom -200 still included', $inclBothPedDeduction !== false);
     $inclBothManualLine = current(array_filter($inclBothDetail['earning_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'manual_line'));
     checkTrue('the manually-picked OT line is additive on top of base salary/standing items', $inclBothManualLine !== false);
-    check('both toggles on + manual line: gross = base(30000) + manual OT(5000), TESTALLOW excluded by restriction', (float)$inclBothDetail['gross_amount'], 35000.0);
+    check('both toggles on + manual line: gross = base(30000) + manual OT(5000), TESTALLOW excluded via Run Settings', (float)$inclBothDetail['gross_amount'], 35000.0);
     check('both toggles on: total_deduction = ped custom deduction (200)', (float)$inclBothDetail['total_deduction_amount'], 200.0);
     checkTrue('no "no_manual_lines" false-positive once base salary/standing items are actually present', strpos((string)($inclBothDetail['calc_errors'] ?? ''), 'no_manual_lines') === false);
+
+    echo "=== Generalized lineOverrideSave(): any line, any run type, base salary too ===\n";
+    // Own dedicated employee (not $employeeFullId, which by this point in this very large shared-
+    // fixture file has picked up enough incidental state from earlier sections -- e.g. proration
+    // against SOME run period along the way -- that its base salary is no longer a clean, known
+    // 30000 for an arbitrary NEW period; simplest and most robust to just not depend on that).
+    $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         sso_enrolled, pvd_enrolled, tax_exempt)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'โอเวอร์ไรด์', 'Test', 'Override', '1990-01-01', 'Thai',
+         '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active', 1, 1, 0)")
+        ->execute([':comp_id' => $compId, ':employee_no' => 'TEST_OVERRIDE_' . uniqid()]);
+    $employeeOverrideId = (int)$pdo->lastInsertId();
+
+    // Off-cycle (no cycle_id), matching the "Off-cycle run" fixture's own precedent earlier in this
+    // file -- sidesteps an unrelated proration interaction found while writing this test (a
+    // cycle_id run landing on a 28-day February period prorated unexpectedly; not this feature's
+    // concern to chase down, off-cycle avoids it entirely and this test doesn't care about cycle
+    // behavior anyway).
+    $ovRunRes = $runModel->create($compId, [
+        'run_name' => 'TEST_RUN_OVERRIDE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +20 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +20 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +20 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('fixture: off-cycle (non-sync) run created' . (empty($ovRunRes['status']) ? " ({$ovRunRes['message']})" : ''), $ovRunRes['status']);
+    $ovRunId = $ovRunRes['id'];
+    $runModel->joinEmployees($ovRunId, $compId, [$employeeOverrideId], $adminUserId, true);
+    $runModel->recalculate($ovRunId, $compId, $adminUserId, true);
+
+    $ovDetailBefore = $runModel->getDetails($ovRunId, $compId)[0] ?? [];
+    check('fixture sanity: base_salary_amount is the plain 30000 before any override', (float)($ovDetailBefore['base_salary_amount'] ?? -1), 30000.0);
+
+    $baseSalaryOvRes = $runModel->lineOverrideSave($ovRunId, $compId, $employeeOverrideId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, 'override_amount', 28000.0, 'test note', $adminUserId, true);
+    checkTrue('lineOverrideSave() on base salary succeeds on a NON-sync run (old sync_process_id-only restriction is gone)' . (empty($baseSalaryOvRes['status']) ? " ({$baseSalaryOvRes['message']})" : ''), $baseSalaryOvRes['status']);
+    $ovDetailAfterBase = $runModel->getDetails($ovRunId, $compId)[0] ?? [];
+    check('base salary is now the overridden 28000, not the original 30000', (float)$ovDetailAfterBase['base_salary_amount'], 28000.0);
+    check('gross_amount reflects the overridden base salary too (28000, no other lines on this fixture)', (float)$ovDetailAfterBase['gross_amount'], 28000.0);
+
+    $auditAfterBaseOv = $runModel->getAuditLog($ovRunId, $compId);
+    // lineOverrideSave() calls recalculate() internally right after logging its own audit entry
+    // (see that method's own docblock), which logs its own SEPARATE "recalculate" entry after --
+    // so the true last() entry is that recalculate, not this override. Find by action instead of
+    // assuming position.
+    $baseOvLogEntry = null;
+    foreach (array_reverse($auditAfterBaseOv) as $entry) {
+        if ($entry['action'] === 'line_override_save') { $baseOvLogEntry = $entry; break; }
+    }
+    checkTrue('found a line_override_save audit entry at all', $baseOvLogEntry !== null);
+    check('audit action recorded is line_override_save', $baseOvLogEntry['action'], 'line_override_save');
+    checkTrue('audit note captures the BEFORE value (30000) -- before/after diff', str_contains((string)$baseOvLogEntry['note'], '30,000.00'));
+    checkTrue('audit note captures the AFTER value (28000) too', str_contains((string)$baseOvLogEntry['note'], '28,000.00'));
+    checkTrue('audit note carries the free-text reason through', str_contains((string)$baseOvLogEntry['note'], 'test note'));
+
+    $ovManualRes = $runModel->addManualLine($ovRunId, $compId, $employeeOverrideId, $pedTypeId, 1500, $adminUserId, true);
+    checkTrue('fixture: a manual earning line added to override' . (empty($ovManualRes['status']) ? " ({$ovManualRes['message']})" : ''), $ovManualRes['status']);
+    $ovDetailWithManual = $runModel->getDetails($ovRunId, $compId)[0] ?? [];
+    $manualLineCode = current(array_filter($ovDetailWithManual['earning_breakdown'], fn($l) => ($l['source'] ?? null) === 'manual_line'))['code'] ?? null;
+    checkTrue('fixture: manual earning line has a real item_code to target', $manualLineCode !== null);
+
+    $earningOvRes = $runModel->lineOverrideSave($ovRunId, $compId, $employeeOverrideId, $manualLineCode, 'override_amount', 2500.0, null, $adminUserId, true);
+    checkTrue('lineOverrideSave() on an EARNING line succeeds (old version was deduction-only)' . (empty($earningOvRes['status']) ? " ({$earningOvRes['message']})" : ''), $earningOvRes['status']);
+    $ovDetailAfterEarningOv = $runModel->getDetails($ovRunId, $compId)[0] ?? [];
+    $overriddenManualLine = current(array_filter($ovDetailAfterEarningOv['earning_breakdown'], fn($l) => $l['code'] === $manualLineCode));
+    check('the manual earning line amount is now the overridden 2500, not the original 1500', (float)$overriddenManualLine['amount'], 2500.0);
+
+    $excludeOvRes = $runModel->lineOverrideSave($ovRunId, $compId, $employeeOverrideId, $manualLineCode, 'exclude', null, null, $adminUserId, true);
+    checkTrue('lineOverrideSave(exclude) succeeds', $excludeOvRes['status']);
+    $ovDetailAfterExclude = $runModel->getDetails($ovRunId, $compId)[0] ?? [];
+    $excludedStillPresent = current(array_filter($ovDetailAfterExclude['earning_breakdown'], fn($l) => $l['code'] === $manualLineCode));
+    check('the excluded line no longer appears in the breakdown at all', $excludedStillPresent, false);
+
+    $overrideOnLockedRunRes = $runModel->lineOverrideSave($runId, $compId, $employeeFullId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, 'override_amount', 1.0, null, $adminUserId, true);
+    check('lineOverrideSave() still correctly refuses a non-draft run ($runId is locked at this point)', $overrideOnLockedRunRes['status'], false);
+
+    echo "=== Run Settings panel: whole-run item exclusion (base salary + real items) + tax/SSO default (2026-08-29) ===\n";
+    // Own dedicated employee + off-cycle run, same "don't depend on shared-fixture incidental
+    // state" precedent as the lineOverrideSave section right above.
+    $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         sso_enrolled, pvd_enrolled, tax_exempt)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'รันเซตติ้ง', 'Test', 'RunSettings', '1990-01-01', 'Thai',
+         '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active', 1, 0, 0)")
+        ->execute([':comp_id' => $compId, ':employee_no' => 'TEST_RUNSET_' . uniqid()]);
+    $employeeRunSetId = (int)$pdo->lastInsertId();
+
+    $rsRunRes = $runModel->create($compId, [
+        'run_name' => 'TEST_RUN_SETTINGS_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +50 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +50 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +50 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('fixture: Run Settings test run created' . (empty($rsRunRes['status']) ? " ({$rsRunRes['message']})" : ''), $rsRunRes['status']);
+    $rsRunId = $rsRunRes['id'];
+    $runModel->joinEmployees($rsRunId, $compId, [$employeeRunSetId], $adminUserId, true);
+    $rsAddLineRes = $runModel->addManualLine($rsRunId, $compId, $employeeRunSetId, $pedTypeId, 2000.0, $adminUserId, true);
+    checkTrue('fixture: manual earning line added' . (empty($rsAddLineRes['status']) ? " ({$rsAddLineRes['message']})" : ''), $rsAddLineRes['status']);
+    $runModel->recalculate($rsRunId, $compId, $adminUserId, true);
+
+    $rsDetailBefore = current(array_filter($runModel->getDetails($rsRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeRunSetId));
+    check('fixture sanity: base_salary_amount is the plain 30000 before any Run Setting', (float)$rsDetailBefore['base_salary_amount'], 30000.0);
+    $rsManualLineCode = current(array_filter($rsDetailBefore['earning_breakdown'], fn($l) => ($l['source'] ?? null) === 'manual_line'))['code'] ?? null;
+    checkTrue('fixture sanity: manual earning line has a real item_code to target', $rsManualLineCode !== null);
+    $rsSsoBefore = (float)((array_values(array_filter($rsDetailBefore['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
+    checkTrue('fixture sanity: SSO is a real nonzero deduction before any Run Setting', $rsSsoBefore > 0);
+
+    $rsGetBefore = $runModel->runSettingsGet($rsRunId, $compId);
+    checkTrue('runSettingsGet() succeeds', $rsGetBefore['status']);
+    check('runSettingsGet(): tax/SSO default is "use_employee_setting" for a run that has never touched this', [$rsGetBefore['data']['tax_calculate_default'], $rsGetBefore['data']['sso_calculate_default']], ['use_employee_setting', 'use_employee_setting']);
+    check('runSettingsGet(): excluded_item_codes is empty for a run that has never touched this', $rsGetBefore['data']['excluded_item_codes'], []);
+    checkTrue('runSettingsGet(): item_options includes the reserved base-salary pseudo-item first', ($rsGetBefore['data']['item_options'][0]['item_code'] ?? null) === PayrollRunModel::BASE_SALARY_OVERRIDE_CODE);
+    checkTrue('runSettingsGet(): item_options includes at least one real catalog item too', count($rsGetBefore['data']['item_options']) > 1);
+
+    $rsInvalidRes = $runModel->runSettingsSave($rsRunId, $compId, 'not_a_real_value', 'use_employee_setting', [], $adminUserId, true);
+    check('runSettingsSave() rejects an invalid tax_calculate_default', $rsInvalidRes['status'], false);
+
+    $rsSaveRes = $runModel->runSettingsSave($rsRunId, $compId, 'no', 'no', [PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, $rsManualLineCode], $adminUserId, true);
+    checkTrue('runSettingsSave() succeeds' . (empty($rsSaveRes['status']) ? " ({$rsSaveRes['message']})" : ''), $rsSaveRes['status']);
+    $rsDetailAfterExclude = current(array_filter($runModel->getDetails($rsRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeRunSetId));
+    check('run-level default: base salary is zeroed for everyone (no per-employee override)', (float)$rsDetailAfterExclude['base_salary_amount'], 0.0);
+    $rsManualLineAfterExclude = current(array_filter($rsDetailAfterExclude['earning_breakdown'], fn($l) => $l['code'] === $rsManualLineCode));
+    check('run-level default: the manual earning item is dropped from the breakdown entirely', $rsManualLineAfterExclude, false);
+    $rsSsoAfterNo = (float)((array_values(array_filter($rsDetailAfterExclude['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
+    check('run-level default: SSO is zeroed for everyone (sso_calculate_default=no)', $rsSsoAfterNo, 0.0);
+
+    echo "=== getDetails(): base_salary_excluded flag (2026-08-29 follow-up) ===\n";
+    check('base_salary_excluded is true when the run-level default excludes it (no personal override yet)', $rsDetailAfterExclude['base_salary_excluded'], true);
+
+    echo "=== calcApplicabilitySummary() (2026-08-29 follow-up: Report tax/SSO hiding) ===\n";
+    $rsApplicabilityAfterOff = $runModel->calcApplicabilitySummary($rsRunId, $compId);
+    check('both tax_calculate_default=no and sso_calculate_default=no: any_tax is false', $rsApplicabilityAfterOff['any_tax'], false);
+    check('both tax_calculate_default=no and sso_calculate_default=no: any_sso is false', $rsApplicabilityAfterOff['any_sso'], false);
+
+    echo "=== Run Settings: a per-employee override always wins over the run-level default ===\n";
+    $rsBaseOverrideRes = $runModel->lineOverrideSave($rsRunId, $compId, $employeeRunSetId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, 'override_amount', 15000.0, null, $adminUserId, true);
+    checkTrue('lineOverrideSave() on base salary succeeds even though the run-level default excludes it' . (empty($rsBaseOverrideRes['status']) ? " ({$rsBaseOverrideRes['message']})" : ''), $rsBaseOverrideRes['status']);
+    $rsDetailAfterPersonalBase = current(array_filter($runModel->getDetails($rsRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeRunSetId));
+    check('per-employee override_amount forces base salary back to 15000 despite the run-level exclusion', (float)$rsDetailAfterPersonalBase['base_salary_amount'], 15000.0);
+    check('base_salary_excluded is now false (a real override_amount is in effect, not an exclusion)', $rsDetailAfterPersonalBase['base_salary_excluded'], false);
+    check('line_override_count reflects the one active override', $rsDetailAfterPersonalBase['line_override_count'], 1);
+
+    $rsTaxOverrideRes = $runModel->saveEmployeeExemption($rsRunId, $compId, $employeeRunSetId, 'yes', 'inherit', null, $adminUserId, true);
+    checkTrue('saveEmployeeExemption(tax_calculate_override=yes) succeeds even though the run-level default is "no"' . (empty($rsTaxOverrideRes['status']) ? " ({$rsTaxOverrideRes['message']})" : ''), $rsTaxOverrideRes['status']);
+    $rsDetailAfterTaxOverride = current(array_filter($runModel->getDetails($rsRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeRunSetId));
+    $rsPitAfterOverride = array_values(array_filter($rsDetailAfterTaxOverride['statutory_breakdown'], fn($l) => $l['code'] === 'TH_PIT'))[0] ?? [];
+    check('per-employee tax_calculate_override=yes is NOT flagged employee_tax_exempt (run-level "no" default overridden back on)', ($rsPitAfterOverride['note'] ?? null) === 'employee_tax_exempt', false);
+    $rsSsoStillOff = (float)((array_values(array_filter($rsDetailAfterTaxOverride['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
+    check('sso_calculate_override left at "inherit" still follows the run-level "no" default (SSO stays 0)', $rsSsoStillOff, 0.0);
+    check('has_calc_override is now true (a personal tax_calculate_override is active)', $rsDetailAfterTaxOverride['has_calc_override'], true);
+
+    $rsApplicabilityAfterPersonalOverride = $runModel->calcApplicabilitySummary($rsRunId, $compId);
+    check('calcApplicabilitySummary(): any_tax flips to true (this one employee now has tax on)', $rsApplicabilityAfterPersonalOverride['any_tax'], true);
+    check('calcApplicabilitySummary(): any_sso stays false (untouched by the tax-only override)', $rsApplicabilityAfterPersonalOverride['any_sso'], false);
+
+    echo "=== Run Settings: clearing everything reverts to the original computed values ===\n";
+    $rsClearRes = $runModel->runSettingsSave($rsRunId, $compId, 'use_employee_setting', 'use_employee_setting', [], $adminUserId, true);
+    checkTrue('runSettingsSave() with an empty excluded_item_codes list clears the run-level defaults' . (empty($rsClearRes['status']) ? " ({$rsClearRes['message']})" : ''), $rsClearRes['status']);
+    $rsClearOverridesRes = $runModel->lineOverrideRemove($rsRunId, $compId, $employeeRunSetId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, $adminUserId, true);
+    checkTrue('lineOverrideRemove() on the base-salary override succeeds' . (empty($rsClearOverridesRes['status']) ? " ({$rsClearOverridesRes['message']})" : ''), $rsClearOverridesRes['status']);
+    $rsClearExemptionRes = $runModel->saveEmployeeExemption($rsRunId, $compId, $employeeRunSetId, 'inherit', 'inherit', null, $adminUserId, true);
+    checkTrue('saveEmployeeExemption() cleared back to inherit/inherit succeeds' . (empty($rsClearExemptionRes['status']) ? " ({$rsClearExemptionRes['message']})" : ''), $rsClearExemptionRes['status']);
+    $rsDetailAfterFullClear = current(array_filter($runModel->getDetails($rsRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeRunSetId));
+    check('after clearing every Run Settings/per-employee override: base_salary_amount is back to the plain 30000', (float)$rsDetailAfterFullClear['base_salary_amount'], 30000.0);
+    $rsManualLineRestored = current(array_filter($rsDetailAfterFullClear['earning_breakdown'], fn($l) => $l['code'] === $rsManualLineCode));
+    checkTrue('the manual earning item is back in the breakdown (run-level exclusion cleared)', $rsManualLineRestored !== false);
+    $rsSsoRestored = (float)((array_values(array_filter($rsDetailAfterFullClear['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'))[0] ?? [])['employee_amount'] ?? -1);
+    check('SSO is back to the original computed amount', $rsSsoRestored, $rsSsoBefore);
+    check('base_salary_excluded is false again after the full clear', $rsDetailAfterFullClear['base_salary_excluded'], false);
+    check('line_override_count is back to 0 after the full clear', $rsDetailAfterFullClear['line_override_count'], 0);
+    check('has_calc_override is back to false after the full clear', $rsDetailAfterFullClear['has_calc_override'], false);
+    $rsApplicabilityAfterFullClear = $runModel->calcApplicabilitySummary($rsRunId, $compId);
+    check('calcApplicabilitySummary(): any_tax is back to true after the full clear', $rsApplicabilityAfterFullClear['any_tax'], true);
+    check('calcApplicabilitySummary(): any_sso is back to true after the full clear', $rsApplicabilityAfterFullClear['any_sso'], true);
+
+    $rsSaveOnLockedRes = $runModel->runSettingsSave($runId, $compId, 'no', 'no', [], $adminUserId, true);
+    check('runSettingsSave() refuses a non-draft run ($runId is locked at this point)', $rsSaveOnLockedRes['status'], false);
+
+    echo "=== reopen(): paid/locked -> draft, permission gating, installment un-consumption ===\n";
+    $reopenPermDenyRes = $runModel->reopen($runId, $compId, $employeeMidId, false);
+    check('reopen() denied for a role without can_finalize_payroll (only can_process_payroll is not enough)', $reopenPermDenyRes['status'], false);
+
+    $reopenOnDraftRes = $runModel->reopen($ovRunId, $compId, $adminUserId, true);
+    check('reopen() refuses a run that is not paid/locked (this fixture is still draft)', $reopenOnDraftRes['status'], false);
+
+    $instBeforeReopen = $pdo->prepare("SELECT status, payroll_run_id FROM `employee_earning_deduction_installments` WHERE assignment_id = :assignment_id");
+    $instBeforeReopen->execute([':assignment_id' => $eedRes['id']]);
+    $instBefore = $instBeforeReopen->fetch(PDO::FETCH_ASSOC);
+    check('fixture sanity: installment is still processed and tagged to $runId before reopen', [$instBefore['status'], (int)$instBefore['payroll_run_id']], ['processed', $runId]);
+    $assignmentBeforeReopen = $pdo->query("SELECT current_installment, status FROM employee_earning_deductions WHERE id = {$eedRes['id']}")->fetch(PDO::FETCH_ASSOC);
+    check('fixture sanity: assignment is completed (current_installment=total_installments=1) before reopen', [$assignmentBeforeReopen['status'], (int)$assignmentBeforeReopen['current_installment']], ['completed', 1]);
+
+    $reopenRes = $runModel->reopen($runId, $compId, $adminUserId, true, 'test reopen reason');
+    checkTrue('reopen() succeeds from locked' . (empty($reopenRes['status']) ? " ({$reopenRes['message']})" : ''), $reopenRes['status']);
+    $runAfterReopen = $runModel->get($runId, $compId);
+    check('state is back to draft', $runAfterReopen['state'], 'draft');
+    check('paid_at/paid_by cleared', [$runAfterReopen['paid_at'], $runAfterReopen['paid_by']], [null, null]);
+    check('locked_at/locked_by cleared', [$runAfterReopen['locked_at'], $runAfterReopen['locked_by']], [null, null]);
+    check('approved_at/approved_by cleared', [$runAfterReopen['approved_at'], $runAfterReopen['approved_by']], [null, null]);
+    check('submitted_at/submitted_by cleared', [$runAfterReopen['submitted_at'], $runAfterReopen['submitted_by']], [null, null]);
+
+    $instAfterReopen = $pdo->prepare("SELECT status, payroll_run_id FROM `employee_earning_deduction_installments` WHERE assignment_id = :assignment_id");
+    $instAfterReopen->execute([':assignment_id' => $eedRes['id']]);
+    $instAfter = $instAfterReopen->fetch(PDO::FETCH_ASSOC);
+    check('installment un-consumed: status back to pending', $instAfter['status'], 'pending');
+    check('installment un-consumed: payroll_run_id cleared', $instAfter['payroll_run_id'], null);
+    $assignmentAfterReopen = $pdo->query("SELECT current_installment, status FROM employee_earning_deductions WHERE id = {$eedRes['id']}")->fetch(PDO::FETCH_ASSOC);
+    check('assignment un-completed: current_installment decremented back to 0', (int)$assignmentAfterReopen['current_installment'], 0);
+    check('assignment un-completed: status back to active', $assignmentAfterReopen['status'], 'active');
+
+    $auditAfterReopen = $runModel->getAuditLog($runId, $compId);
+    $reopenLogEntry = end($auditAfterReopen);
+    check('audit action recorded is reopen', $reopenLogEntry['action'], 'reopen');
+    check('audit from_state/to_state recorded correctly', [$reopenLogEntry['from_state'], $reopenLogEntry['to_state']], ['locked', 'draft']);
+    check('audit note carries the reopen reason', $reopenLogEntry['note'], 'test reopen reason');
+
+    $editAfterReopenRes = $runModel->lineOverrideSave($runId, $compId, $employeeFullId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, 'override_amount', 29500.0, 'corrected after reopen', $adminUserId, true);
+    checkTrue('the reopened run can be edited via lineOverrideSave() again' . (empty($editAfterReopenRes['status']) ? " ({$editAfterReopenRes['message']})" : ''), $editAfterReopenRes['status']);
+    $resubmitRes = $runModel->submit($runId, $compId, $adminUserId, true);
+    checkTrue('the reopened, edited run can be resubmitted for approval' . (empty($resubmitRes['status']) ? " ({$resubmitRes['message']})" : ''), $resubmitRes['status']);
+    check('state is pending_approval again after resubmit', $runModel->get($runId, $compId)['state'], 'pending_approval');
 
 } finally {
     $pdo->rollBack();

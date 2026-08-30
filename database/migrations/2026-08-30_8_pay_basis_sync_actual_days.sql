@@ -1,0 +1,22 @@
+-- 2026-08-30, explicit follow-up: reconciling PROBATION_WORKING_DAYS (PAYROLL_SYNC_API.md's own
+-- 2026-08-29 addition -- Origami computes working_days minus absent_days for a probationary
+-- employee when its own company policy is 'actual_days', item_type='INFO') against this app's
+-- ALREADY-EXISTING pay_basis='schedule_based' (2026-08-30_6, deliberately schedule-only, never
+-- reads sync data at all -- see that migration's own comment for why). Confirmed via
+-- AskUserQuestion: a THIRD, separate pay_basis value rather than teaching 'schedule_based' to
+-- silently prefer sync data when present -- keeps 'schedule_based' byte-identical to its existing
+-- documented behavior for every company already using it, and makes "pay this probationary
+-- employee off Origami's own real attendance count" an explicit opt-in choice, not an implicit
+-- side effect of a setting that already means something else.
+--
+-- 'sync_actual_days' = PayrollRunModel::recalculate() prorates a MONTHLY-rate probationary
+-- employee's base salary by that cycle's own synced PROBATION_WORKING_DAYS / working_days ratio
+-- (both from payroll_sync_items, the same table SyncPayResolver already reads working_days from
+-- elsewhere) -- ONLY takes effect on a sync-based run where this employee has a mapped sync row
+-- carrying that item. Any other case (cycle-based/off-cycle run with no sync data at all, or a
+-- sync-based run where Origami didn't send PROBATION_WORKING_DAYS this cycle -- e.g. its own
+-- company policy is 'full_month', or this employee is outside Origami's own probation window)
+-- falls back to paying the FULL base salary and surfaces a visible `sync_actual_days_no_data`
+-- calc_errors flag, rather than silently guessing via the schedule-based formula instead.
+ALTER TABLE `company_payroll_policies`
+  MODIFY COLUMN `pay_basis` ENUM('full_month','schedule_based','sync_actual_days') NOT NULL DEFAULT 'full_month';

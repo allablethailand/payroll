@@ -56,6 +56,10 @@ $pdo->beginTransaction();
 
 $failures = 0;
 $passes = 0;
+// signature_drawing (2026-08-30 field batch) writes a REAL file to disk via file_put_contents() --
+// a rolled-back DB transaction cannot undo that, same precedent already documented in
+// tests/payroll_sync_test.php -- tracked here and cleaned up in the `finally` block below.
+$filesWrittenDuringTest = [];
 function check(string $label, $actual, $expected): void {
     global $failures, $passes;
     if ($actual === $expected) {
@@ -77,6 +81,13 @@ try {
 
     // ---------- Not linked to Origami yet ----------
     echo "=== Not linked ===\n";
+    // comp_id=1 is the real, live dev DB company -- it has genuinely been linked to Origami HR for
+    // real (companies.ref_id set) since the Employee Sync picker's own live-testing sessions (see
+    // feedback_dev_db_shared_state_test_fragility in project memory), so this test's own "starts
+    // unlinked" assumption no longer holds by default. Temporarily cleared here, inside this test's
+    // own rolled-back transaction only -- never committed, the real link is restored the instant
+    // this script exits.
+    $pdo->prepare("UPDATE companies SET ref_id = NULL WHERE id = :id")->execute([':id' => $compId]);
     $orch = new MasterDataSyncOrchestrator($pdo, $fake);
     $notLinked = $orch->syncEntity($compId, 'department', $adminUserId);
     checkFalse('syncEntity fails when companies.ref_id is NULL', $notLinked['status']);
@@ -187,7 +198,7 @@ try {
             'name_en' => 'Test', 'surname_en' => 'EmployeeOne', 'date_of_birth' => '1995-01-01', 'gender' => 'male',
             'department_ref_id' => 5001, 'position_ref_id' => 6001, 'shift_ref_id' => 7001,
             'employment_date' => '2024-01-01', 'employment_status' => 'permanent',
-            'personal_email' => 'mds1@test.local', 'mobile_no' => '0811111111', 'is_active' => true,
+            'personal_email' => 'mds1@test.local', 'mobile_no' => '0811111111', 'tel_code' => '+95', 'is_active' => true,
         ],
         [
             // References a department ref_id that was NEVER synced -- must fail this ROW only.
@@ -203,12 +214,15 @@ try {
     check('1 success, 1 error', [$re['success'], $re['error']], [1, 1]);
     checkTrue('error mentions syncing the department first', strpos($re['errors'][0]['message'], 'sync it first') !== false);
 
-    $empRow = $pdo->prepare("SELECT department_id, position_id, shift_id, employee_status, data_source FROM employees WHERE origami_ref_id = 11001 AND comp_id = :c");
+    $empRow = $pdo->prepare("SELECT department_id, position_id, shift_id, employee_status, data_source, mobile_country_code FROM employees WHERE origami_ref_id = 11001 AND comp_id = :c");
     $empRow->execute([':c' => $compId]);
     $emp1 = $empRow->fetch(PDO::FETCH_ASSOC);
     checkTrue('employee 1 created', $emp1 !== false);
     check('department_id resolved to the internal id', (int)$emp1['department_id'], $engId);
     check('data_source is sync', $emp1['data_source'], 'sync');
+    // 2026-08-30, real gap found and fixed while auditing candidates.php: `tel_code` was never read
+    // at all despite `employees.mobile_country_code` existing for exactly this purpose.
+    check('mobile_country_code taken from the sync payload tel_code (INSERT branch)', $emp1['mobile_country_code'] ?? null, '+95');
 
     // 2026-08-28, real bug found and fixed: EmployeeSyncer::upsertItem()'s UPDATE branch never wrote
     // origami_ref_id -- so a manually-created employee matched via the employee_no fallback (not the
@@ -261,6 +275,146 @@ try {
     check('manually-created employee is now linked via employee_no fallback', (int)$manualRows[0]['origami_ref_id'], 11003);
     check('same local id preserved across the link (updated in place, not re-inserted)', (int)$manualRows[0]['id'], (int)$manualBefore['id']);
 
+    // 2026-08-30, explicit request: "วันที่เริ่มประกันสังคมถ้าเป็นค่าว่างให้ Default เป็นวันที่เริ่มงานลงไปเลย"
+    // -- same rule as PayrollSyncModel::applyOneEmployeeMasterFields()'s own version (see
+    // tests/payroll_sync_test.php), applied here to EmployeeSyncer::upsertItem()'s UPDATE branch
+    // (the write path behind the Employee page's "Sync"/"Re-Sync" button). Reuses the same
+    // MDS_EMP_3 row already linked above -- sso_enrolled is turned on manually (this candidate API
+    // carries no SSO field of its own at all) with sso_start_date left blank, then a second sync
+    // call (candidate3b, a later employment_date) should fill it in.
+    $pdo->prepare("UPDATE employees SET sso_enrolled = 1, sso_start_date = NULL WHERE id = :id")->execute([':id' => (int)$manualBefore['id']]);
+    $candidate3b = $candidate3;
+    $candidate3b['employment_date'] = '2024-03-15'; // a later date, distinct from candidate3's 2024-03-01, so the assertion can't pass by coincidence.
+    $employeeSyncer->applyOne($compId, $candidate3b, $linkBatchId, $adminUserId);
+    $ssoStmt = $pdo->prepare("SELECT sso_start_date, mobile_country_code FROM employees WHERE id = :id");
+    $ssoStmt->execute([':id' => (int)$manualBefore['id']]);
+    $afterCandidate3b = $ssoStmt->fetch(PDO::FETCH_ASSOC);
+    check('sso_start_date defaulted to this sync call\'s employment_date since it was blank and the employee is sso_enrolled', $afterCandidate3b['sso_start_date'] ?? null, '2024-03-15');
+    check('mobile_country_code defaults to +66 on the UPDATE branch too when tel_code is absent from the payload', $afterCandidate3b['mobile_country_code'] ?? null, '+66');
+
+    // Never clobbers a value already on file.
+    $pdo->prepare("UPDATE employees SET sso_start_date = '2019-06-15' WHERE id = :id")->execute([':id' => (int)$manualBefore['id']]);
+    $employeeSyncer->applyOne($compId, $candidate3b, $linkBatchId, $adminUserId);
+    $ssoStmt->execute([':id' => (int)$manualBefore['id']]);
+    check('a manually-set sso_start_date survives a re-sync unchanged', $ssoStmt->fetchColumn(), '2019-06-15');
+
+    // 2026-08-30, candidates.php's new field batch (branch/payroll_code/emp_tel/title/nickname/
+    // nationality/religion/marital_status/idcard/deduct_sso/spouse/children/signature_drawing) --
+    // see EmployeeSyncer::upsertItem()'s own 2026-08-30 docblock. photo_url is deliberately NOT
+    // exercised here (a real HTTP download has no place in a repeatable, network-independent test)
+    // -- downloadPhoto()'s own guard clauses (non-http(s) scheme rejected) are covered directly.
+    echo "=== EmployeeSyncer: 2026-08-30 new field batch (branch/personal-profile/idcard/SSO/spouse/children/signature) ===\n";
+    $candidate4 = [
+        'ref_id' => 11004, 'employee_no' => 'MDS_EMP_4', 'name_th' => 'ทดสอบ', 'surname_th' => 'พนักงานสี่',
+        'name_en' => 'Test', 'surname_en' => 'EmployeeFour', 'date_of_birth' => '1998-01-01', 'gender' => 'female',
+        'department_ref_id' => null, 'position_ref_id' => null, 'shift_ref_id' => null,
+        'branch_ref_id' => 12001, 'branch_name' => 'Head Office (Test)',
+        'employment_date' => '2024-04-01', 'employment_status' => 'permanent',
+        'personal_email' => 'mds4@test.local', 'mobile_no' => '0844444444', 'is_active' => true,
+        'payroll_code' => 'PAYCODE-4', 'emp_tel' => '02-111-2222',
+        'title' => 'ms', 'nickname' => 'Four', 'nationality' => 'Thai', 'religion' => 'Buddha', 'marital_status' => 'single',
+        'idcard' => '1234567890124', 'idcard_issued' => '2018-01-01', 'idcard_expire' => '2028-01-01',
+        'deduct_sso' => true,
+        'spouse' => [
+            'spouse_name' => 'Malee', 'spouse_lastname' => 'Jaidee', 'spouse_idcard' => '1112223334446',
+            'father_name' => 'Somsak', 'father_lastname' => 'Testfour', 'father_idcard' => null,
+            'mother_name' => '', 'mother_lastname' => '', 'mother_idcard' => null,
+        ],
+        'children' => [
+            ['child_id' => 1, 'child_type' => 1, 'child_name' => 'Nong', 'child_lastname' => 'Testfour', 'child_idcard' => '9998887776664', 'child_birthday' => '2020-05-05', 'child_tax_allowance' => 1],
+        ],
+        'signature_drawing' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    ];
+    $batch4 = (new SyncBatchModel($pdo))->start($compId, 'employee', 'sync', 'manual', $adminUserId);
+    $employeeSyncer->applyOne($compId, $candidate4, $batch4, $adminUserId);
+    $emp4Stmt = $pdo->prepare("SELECT * FROM employees WHERE origami_ref_id = 11004 AND comp_id = :c");
+    $emp4Stmt->execute([':c' => $compId]);
+    $emp4 = $emp4Stmt->fetch(PDO::FETCH_ASSOC);
+    checkTrue('employee 4 created (INSERT branch)', $emp4 !== false);
+
+    $branch4 = $pdo->prepare("SELECT * FROM structure_branches WHERE origami_ref_id = 12001 AND comp_id = :c");
+    $branch4->execute([':c' => $compId]);
+    $branchRow4 = $branch4->fetch(PDO::FETCH_ASSOC);
+    checkTrue('branch auto-created (structure_branches had no origami_ref_id support before this round)', $branchRow4 !== false);
+    check('branch_name written to BOTH branch_name_th and branch_name_en (no separate TH/EN source on the wire)', [$branchRow4['branch_name_th'] ?? null, $branchRow4['branch_name_en'] ?? null], ['Head Office (Test)', 'Head Office (Test)']);
+    check('employee 4 branch_id resolved to the auto-created branch', (int)($emp4['branch_id'] ?? 0), (int)$branchRow4['id']);
+    check('branch data_source is sync', $branchRow4['data_source'] ?? null, 'sync');
+
+    check('origami_payroll_code stored (reference-only, NOT the matching key)', $emp4['origami_payroll_code'] ?? null, 'PAYCODE-4');
+    check('office_tel taken from emp_tel (distinct from mobile_no)', $emp4['office_tel'] ?? null, '02-111-2222');
+    check('title normalized to ms', $emp4['title'] ?? null, 'ms');
+    check('nickname written to both nickname_th and nickname_en', [$emp4['nickname_th'] ?? null, $emp4['nickname_en'] ?? null], ['Four', 'Four']);
+    check('nationality resolved to the real master_nationalities CODE (TH), not the raw word "Thai" (real bug found+fixed this round)', $emp4['nationality'] ?? null, 'TH');
+    check('religion stored as-sent (direct passthrough, same documented-risk precedent as the other Origami integration)', $emp4['religion'] ?? null, 'Buddha');
+    check('marital_status normalized to single', $emp4['marital_status'] ?? null, 'single');
+    check('id_card_issue_date stored', $emp4['id_card_issue_date'] ?? null, '2018-01-01');
+    check('id_card_expire_date stored', $emp4['id_card_expire_date'] ?? null, '2028-01-01');
+    check('sso_enrolled set from deduct_sso=true', (int)($emp4['sso_enrolled'] ?? -1), 1);
+    check('sso_start_date defaulted to employment_date on INSERT since sso_enrolled and blank', $emp4['sso_start_date'] ?? null, '2024-04-01');
+    $decIdCard4 = EncryptionService::decrypt($emp4['id_card_no'], (int)$emp4['key_version']);
+    check('id_card_no decrypts to the synced value', $decIdCard4, '1234567890124');
+    $decSso4 = EncryptionService::decrypt($emp4['sso_no'], (int)$emp4['key_version']);
+    check('sso_no defaults to the same value as id_card_no (Thai law equivalence, same precedent as the other integration)', $decSso4, '1234567890124');
+    check('has_spouse=1 (spouse_name present)', (int)($emp4['has_spouse'] ?? -1), 1);
+    check('spouse_name is the combined name+lastname', $emp4['spouse_name'] ?? null, 'Malee Jaidee');
+    $decSpouseIdCard4 = EncryptionService::decrypt($emp4['spouse_id_card_no'], (int)$emp4['key_version']);
+    check('spouse_id_card_no decrypts to the synced value', $decSpouseIdCard4, '1112223334446');
+    checkTrue('signature_path was written to a real file', !empty($emp4['signature_path']) && is_file(__DIR__ . '/../' . $emp4['signature_path']));
+    if (!empty($emp4['signature_path'])) { $filesWrittenDuringTest[] = __DIR__ . '/../' . $emp4['signature_path']; }
+
+    $parents4 = $pdo->prepare("SELECT * FROM employee_parents WHERE employee_id = :id");
+    $parents4->execute([':id' => $emp4['id']]);
+    $parentRows4 = $parents4->fetchAll(PDO::FETCH_ASSOC);
+    check('exactly 1 parent row created (father only -- mother name was blank, correctly skipped)', count($parentRows4), 1);
+    check('father name/relationship correct', [$parentRows4[0]['name'] ?? null, $parentRows4[0]['relationship'] ?? null], ['Somsak Testfour', 'father']);
+
+    $children4 = $pdo->prepare("SELECT * FROM employee_dependents WHERE employee_id = :id");
+    $children4->execute([':id' => $emp4['id']]);
+    $childRows4 = $children4->fetchAll(PDO::FETCH_ASSOC);
+    check('exactly 1 child row created', count($childRows4), 1);
+    check('child name/dob/relationship correct', [$childRows4[0]['name'] ?? null, $childRows4[0]['date_of_birth'] ?? null, $childRows4[0]['relationship'] ?? null], ['Nong Testfour', '2020-05-05', 'child_legitimate']);
+    $decChildIdCard4 = EncryptionService::decrypt($childRows4[0]['id_card_no'], (int)$childRows4[0]['key_version']);
+    check('child id_card_no decrypts to the synced value', $decChildIdCard4, '9998887776664');
+
+    echo "--- UPDATE branch: sparse re-sync (title/nickname/nationality/religion/marital_status/idcard all blank this time) must NOT erase what's already on file ---\n";
+    $candidate4Sparse = $candidate4;
+    unset($candidate4Sparse['title'], $candidate4Sparse['nickname'], $candidate4Sparse['nationality'], $candidate4Sparse['religion'], $candidate4Sparse['marital_status'], $candidate4Sparse['idcard'], $candidate4Sparse['idcard_issued'], $candidate4Sparse['idcard_expire']);
+    $candidate4Sparse['emp_tel'] = ''; // also blank -- office_tel must survive too.
+    $employeeSyncer->applyOne($compId, $candidate4Sparse, $batch4, $adminUserId);
+    $emp4Stmt->execute([':c' => $compId]);
+    $emp4AfterSparse = $emp4Stmt->fetch(PDO::FETCH_ASSOC);
+    check('title survives a sparse re-sync unchanged', $emp4AfterSparse['title'] ?? null, 'ms');
+    check('nickname survives a sparse re-sync unchanged', $emp4AfterSparse['nickname_th'] ?? null, 'Four');
+    check('nationality survives a sparse re-sync unchanged', $emp4AfterSparse['nationality'] ?? null, 'TH');
+    check('religion survives a sparse re-sync unchanged', $emp4AfterSparse['religion'] ?? null, 'Buddha');
+    check('marital_status survives a sparse re-sync unchanged', $emp4AfterSparse['marital_status'] ?? null, 'single');
+    check('office_tel survives a sparse re-sync unchanged (blank emp_tel this time)', $emp4AfterSparse['office_tel'] ?? null, '02-111-2222');
+    $decIdCard4After = EncryptionService::decrypt($emp4AfterSparse['id_card_no'], (int)$emp4AfterSparse['key_version']);
+    check('id_card_no survives a sparse re-sync unchanged', $decIdCard4After, '1234567890124');
+
+    echo "--- Spouse/children whole-set replace: removing spouse/emptying children on a re-sync clears them (not a diff-and-patch) ---\n";
+    $candidate4NoFamily = $candidate4;
+    $candidate4NoFamily['spouse'] = null;
+    $candidate4NoFamily['children'] = [];
+    $employeeSyncer->applyOne($compId, $candidate4NoFamily, $batch4, $adminUserId);
+    $emp4Stmt->execute([':c' => $compId]);
+    $emp4AfterNoFamily = $emp4Stmt->fetch(PDO::FETCH_ASSOC);
+    check('has_spouse cleared to 0', (int)($emp4AfterNoFamily['has_spouse'] ?? -1), 0);
+    checkTrue('spouse_name cleared to NULL', $emp4AfterNoFamily['spouse_name'] === null);
+    $parents4After = $pdo->prepare("SELECT COUNT(*) FROM employee_parents WHERE employee_id = :id");
+    $parents4After->execute([':id' => $emp4['id']]);
+    check('parent rows removed (whole-set replace, not diff-and-patch)', (int)$parents4After->fetchColumn(), 0);
+    $children4After = $pdo->prepare("SELECT COUNT(*) FROM employee_dependents WHERE employee_id = :id");
+    $children4After->execute([':id' => $emp4['id']]);
+    check('child rows removed (whole-set replace, not diff-and-patch)', (int)$children4After->fetchColumn(), 0);
+
+    echo "--- downloadPhoto() guard clauses (no real network call -- non-http(s)/blank input rejected) ---\n";
+    $photoReflection = new ReflectionMethod(EmployeeSyncer::class, 'downloadPhoto');
+    $photoReflection->setAccessible(true);
+    checkTrue('downloadPhoto() rejects a non-http(s) scheme (e.g. file://)', $photoReflection->invoke($employeeSyncer, 'file:///etc/passwd') === null);
+    checkTrue('downloadPhoto() rejects a blank URL', $photoReflection->invoke($employeeSyncer, '') === null);
+    checkTrue('downloadPhoto() rejects null', $photoReflection->invoke($employeeSyncer, null) === null);
+
     // Deactivation: employee 1 removed from a non-empty feed -> employee_status becomes resigned.
     $fake->employees = [$fake->employees[1]]; // keep only employee 2 (which still errors on department, so total=1, success=0)
     // Give employee 2 a resolvable department this time so the feed is non-empty AND has a success.
@@ -304,6 +458,11 @@ try {
     echo $e->getTraceAsString() . "\n";
 } finally {
     $pdo->rollBack();
+    foreach ($filesWrittenDuringTest as $path) {
+        if (is_file($path)) {
+            unlink($path);
+        }
+    }
 }
 
 echo "\n--------------------------------------------------\n";

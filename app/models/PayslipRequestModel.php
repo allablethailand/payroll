@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/ApprovalRequestModel.php';
 require_once __DIR__ . '/../services/PayslipDeliveryService.php';
+require_once __DIR__ . '/NotificationModel.php';
 
 /**
  * Mode B (employee-initiated payslip request), per Payslip Distribution's design. HR submits on
@@ -143,6 +144,24 @@ class PayslipRequestModel {
 
             if ($ownTransaction) {
                 $this->db->commit();
+            }
+            // 2026-08-29, explicit request: "มีคนขอ Slip เงินเดือนหรือขอเอกสารมานะรออนุมัติอยู่" -- notifies
+            // whoever the resolved workflow step ACTUALLY lists as eligible for this specific
+            // request (currentStepApprovers(), same source the Approval Queue itself reads), not a
+            // blanket permission-holder broadcast -- see NotificationModel's own top-of-file
+            // docblock. Best-effort: a notification hiccup must never undo a request that already
+            // committed successfully.
+            try {
+                $approvers = $approvalModel->currentStepApprovers($compId, (int)$approvalResult['id']);
+                $approverIds = array_map(fn($a) => (int)$a['id'], $approvers);
+                (new NotificationModel())->createForEmployees(
+                    $compId, $approverIds, 'document_request_pending',
+                    "มีคำขอสลิปเงินเดือนรออนุมัติ", "A payslip request is waiting for your approval",
+                    $label, $label,
+                    "/payslip-documents/requests", 'payslip_request', $requestId, null, 'fa-file-invoice-dollar'
+                );
+            } catch (Throwable $e) {
+                // Best-effort -- see comment above.
             }
             return ['status' => true, 'message' => 'Payslip request submitted for approval.', 'id' => $requestId];
         } catch (PDOException $e) {

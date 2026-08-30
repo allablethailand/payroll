@@ -310,9 +310,14 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             $lines[] = $this->renderRow($rowsByType['trailer'], null, $aggregateContext, $isFixedWidth, $delimiterChar, $encoding, $language, $widthOverflows, null);
         }
         if (!empty($widthOverflows)) {
+            // 2026-08-30: `details` added as a real param (was baked directly into the English
+            // message only, with no way for a translated template to include it) -- see this
+            // class's own docblock note in ReportsController's fix for why that mattered.
+            $details = implode('; ', $widthOverflows);
             throw new LocalizedException(
-                'The following values are too long for their fixed-width column and would be cut off in the file: ' . implode('; ', $widthOverflows) . '. Widen the field in Bank File Format settings, or shorten the source data, before exporting.',
-                'bank_transfer_width_overflow'
+                "The following values are too long for their fixed-width column and would be cut off in the file: {$details}. Widen the field in Bank File Format settings, or shorten the source data, before exporting.",
+                'bank_transfer_width_overflow',
+                ['details' => $details]
             );
         }
 

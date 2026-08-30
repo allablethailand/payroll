@@ -37,6 +37,21 @@ function aisMoneyCellHtml(cell) {
         <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(cell.deduction)}</span>
         <span class="ais-cell-net">${aisFmt(cell.net)}</span>`;
 }
+// 2026-08-30, explicit request: "ในแต่ละช่องถ้ามีข้อมูลให้สามารถกดดู Detail ได้ด้วยครับ" -- a per-employee
+// month cell with real data becomes a clickable button opening #aisCellDetailModal; a cell with
+// nothing in it (the existing '-' state) stays plain text, nothing to drill into. Kept separate
+// from aisMoneyCellHtml() above -- that one is ALSO used for the footer's own company-wide totals
+// row, which has no single employee/run to drill into and must never be clickable.
+function aisEmployeeMonthCellHtml(row, cell, month) {
+    if (!cell || (!cell.gross && !cell.deduction && !cell.net)) {
+        return '<span class="text-muted">-</span>';
+    }
+    return `<button type="button" class="ais-cell-clickable" data-employee-id="${row.employee_id}" data-year="${month.year}" data-month="${month.month}">
+        <span class="ais-cell-sub">+${aisFmt(cell.gross)}</span>
+        <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(cell.deduction)}</span>
+        <span class="ais-cell-net">${aisFmt(cell.net)}</span>
+    </button>`;
+}
 
 function aisCurrentFilters() {
     return {
@@ -128,7 +143,14 @@ function aisRenderTable(data) {
 
     // ---- head (built directly, before DataTable init -- column count/labels are dynamic per
     // fiscal year, so this isn't the usual "static thead in the view" DataTables setup) ----
-    let headHtml = '<tr><th>' + (langData['employee'] || 'Employee') + '</th>';
+    // 2026-08-30, explicit request: "ปรับให้มี Department team position เพิ่ม และให้ Fixed Column ส่วนของ
+    // ข้อมูลพนักงาน ไว้" -- 3 new columns join Employee in the LEFT-fixed group (see fixedColumns
+    // below), so they scroll together with the employee identity while the month columns scroll
+    // independently.
+    let headHtml = '<tr><th>' + (langData['employee'] || 'Employee') + '</th>'
+        + '<th>' + (langData['department'] || 'Department') + '</th>'
+        + '<th>' + (langData['team'] || 'Team') + '</th>'
+        + '<th>' + (langData['position'] || 'Position') + '</th>';
     months.forEach(function (m) {
         headHtml += `<th class="ais-month-${m.state}">${escapeHtmlAis(aisMonthLabel(m))}</th>`;
     });
@@ -137,12 +159,16 @@ function aisRenderTable(data) {
 
     // ---- foot (real totals from the server -- reflects every filtered employee, not just what
     // DataTable's own client-side search box currently shows) ----
-    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td>';
+    // Plain empty <td>s (not colspan) for the 3 new Department/Team/Position columns -- FixedColumns
+    // clones/aligns header+body+footer cells 1:1 by column INDEX, so keeping the footer's own cell
+    // count identical to the header's (rather than collapsing these into the "Total" label's own
+    // colspan) is what keeps the frozen-column math correct.
+    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td>';
     months.forEach(function (m) {
         const mt = data.totals.months[m.key] || { gross: 0, deduction: 0, net: 0 };
-        footHtml += `<td>${aisMoneyCellHtml(mt)}</td>`;
+        footHtml += `<td class="text-end">${aisMoneyCellHtml(mt)}</td>`;
     });
-    footHtml += `<td>
+    footHtml += `<td class="text-end">
         <span class="ais-cell-sub">+${aisFmt(data.totals.annual_gross)}</span>
         <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(data.totals.annual_deduction)}</span>
         <span class="ais-total-value">${aisFmt(data.totals.annual_net)}</span>
@@ -150,6 +176,8 @@ function aisRenderTable(data) {
     $('#tb_annual_summary tfoot').html(footHtml);
 
     // ---- columns ----
+    // 2026-08-30, explicit request: "ปรับให้มี Department team position เพิ่ม" -- 3 new columns, part
+    // of the LEFT-fixed group alongside Employee (see fixedColumns below).
     const columns = [
         {
             data: null,
@@ -158,7 +186,10 @@ function aisRenderTable(data) {
                 return `<div class="ais-employee-no">${escapeHtmlAis(row.employee_no)}</div>
                     <div class="ais-employee-name">${escapeHtmlAis(name || row.name_th || row.name_en || '')}</div>`;
             }
-        }
+        },
+        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
+        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
+        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
     ];
     months.forEach(function (m, idx) {
         // Object-form render (display/sort/filter split, same DataTables sort-safety convention
@@ -166,8 +197,9 @@ function aisRenderTable(data) {
         // its comma-formatted display string would sort lexicographically instead of numerically.
         columns.push({
             data: null,
+            className: 'text-end',
             render: {
-                display: (row) => aisMoneyCellHtml(row.months[idx]),
+                display: (row) => aisEmployeeMonthCellHtml(row, row.months[idx], m),
                 sort: (row) => row.months[idx] ? row.months[idx].net : 0,
                 filter: (row) => row.months[idx] ? row.months[idx].net : 0,
             }
@@ -175,6 +207,7 @@ function aisRenderTable(data) {
     });
     columns.push({
         data: null,
+        className: 'text-end',
         render: {
             display: (row) => `<span class="ais-cell-sub">+${aisFmt(row.annual_gross)}</span>
                 <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(row.annual_deduction)}</span>
@@ -194,12 +227,73 @@ function aisRenderTable(data) {
         scrollX: true,
         scrollY: '60vh',
         scrollCollapse: true,
-        fixedColumns: { left: 1, right: 1 },
+        // 2026-08-30, explicit request: "ให้ Fixed Column ส่วนของข้อมูลพนักงาน ไว้ แล้ว Column ส่วนที่เหลือ
+        // ใช้เมาส์เพื่อลากดู" -- left grew from 1 (Employee only) to 4 (Employee/Department/Team/
+        // Position -- the whole "who is this row" identity block); the month columns in between and
+        // the Annual Total on the right are unchanged in kind (still scroll / still fixed right).
+        fixedColumns: { left: 4, right: 1 },
         language: getTableLang(),
     });
     updateText($('#tb_annual_summary')[0]);
 }
 
+// 2026-08-30, explicit request: "ในแต่ละช่องถ้ามีข้อมูลให้สามารถกดดู Detail ได้ด้วยครับ" -- opens
+// #aisCellDetailModal with that one employee+month's own line-item breakdown
+// (AnnualIncomeSummaryModel::cellDetail()). More than one run can land in the same calendar month
+// (e.g. a regular run plus an off-cycle incentive run) -- renders one card per run returned,
+// rather than assuming there's always exactly one.
+function aisDetailLineRowsHtml(lines, amountKey) {
+    if (!lines || !lines.length) return `<div class="text-muted small">-</div>`;
+    return lines.map(function (l) {
+        const name = (currentLang === 'th' ? l.name_th : l.name_en) || l.name_th || l.name_en || l.code || '-';
+        const amount = l[amountKey] !== undefined ? l[amountKey] : l.amount;
+        return `<div class="d-flex justify-content-between small py-1 border-bottom">
+            <span>${escapeHtmlAis(name)}</span>
+            <span class="fw-semibold">${aisFmt(amount)}</span>
+        </div>`;
+    }).join('');
+}
+function aisRenderCellDetail(runs) {
+    if (!runs || !runs.length) {
+        $('#aisCellDetailBody').html(`<div class="text-center text-muted py-4">${langData['ais_no_data'] || 'No payroll data found for this fiscal year.'}</div>`);
+        return;
+    }
+    const html = runs.map(function (run) {
+        const period = `${formatDisplayDate ? formatDisplayDate(run.period_start_date) : run.period_start_date} - ${formatDisplayDate ? formatDisplayDate(run.period_end_date) : run.period_end_date}`;
+        return `<div class="card-surface p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="fw-bold">${escapeHtmlAis(run.run_name || '-')}</div>
+                <div class="text-muted small">${escapeHtmlAis(period)}</div>
+            </div>
+            <div class="d-flex justify-content-between small py-1 border-bottom">
+                <span>${langData['table_base_salary'] || 'Base Salary'}</span>
+                <span class="fw-semibold">${aisFmt(run.base_salary_amount)}</span>
+            </div>
+            <div class="fw-semibold small text-success mt-2 mb-1">${langData['breakdown_earnings'] || 'Income'}</div>
+            ${aisDetailLineRowsHtml(run.earning_lines, 'amount')}
+            <div class="fw-semibold small text-danger mt-2 mb-1">${langData['table_deduction_amount'] || 'Deductions'}</div>
+            ${aisDetailLineRowsHtml(run.deduction_lines, 'amount')}
+            <div class="fw-semibold small text-warning-emphasis mt-2 mb-1">${langData['statutory_items'] || 'Statutory'}</div>
+            ${aisDetailLineRowsHtml(run.statutory_lines, 'employee_amount')}
+            <div class="d-flex justify-content-between mt-3 pt-2 border-top">
+                <span class="fw-bold">${langData['table_net_pay'] || 'Net Pay'}</span>
+                <span class="fw-bold text-brand">${aisFmt(run.net_amount)}</span>
+            </div>
+        </div>`;
+    }).join('');
+    $('#aisCellDetailBody').html(html);
+}
+$(document).on('click', '.ais-cell-clickable', function () {
+    const employeeId = $(this).data('employee-id');
+    const year = $(this).data('year');
+    const month = $(this).data('month');
+    $('#aisCellDetailModalTitle').text(aisMonthLabel({ year: year, month: month }));
+    $('#aisCellDetailBody').html(`<div class="text-center text-secondary py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i>${langData['loading'] || 'Loading...'}</div>`);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('aisCellDetailModal')).show();
+    $.getJSON(`${BASE_URL}/api/annual-income-summary.cell-detail`, { employee_id: employeeId, year: year, month: month }, function (res) {
+        aisRenderCellDetail(res.status ? res.data : []);
+    });
+});
 $(document).on('click', '#aisStationFilterToggle', function () {
     const $filter = $('#aisStationFilter').toggleClass('collapsed');
     const collapsed = $filter.hasClass('collapsed');

@@ -7,8 +7,6 @@
  * with the "Add" button injected into `.dt-search` via `initComplete`, matching the convention
  * used by Approval Workflow / Payroll Cycle / Employee list -- NOT a hand-written search box.
  */
-let deleteContext = null;
-
 function statusSwitch(checked, onchange) {
     return `<div class="form-check form-switch d-flex justify-content-center m-0">
         <input class="form-check-input" type="checkbox" ${checked ? 'checked' : ''} onchange="${onchange}">
@@ -18,14 +16,6 @@ function actionBtns(editFn, delFn) {
     return `
     <div class="btn-group border rounded-3 bg-white">
         <button class="btn btn-link text-warning" onclick="${editFn}"><i class="fa-solid fa-pen-to-square"></i></button>
-        <button class="btn btn-link py-1 text-danger border-start" onclick="${delFn}"><i class="fa-solid fa-trash-can"></i></button>
-    </div>`;
-}
-function actionBtnsShift(editFn, assignFn, delFn) {
-    return `
-    <div class="btn-group border rounded-3 bg-white">
-        <button class="btn btn-link text-primary" title="${langData['assign_employees'] || 'Assign Employees'}" onclick="${assignFn}"><i class="fa-solid fa-user-check"></i></button>
-        <button class="btn btn-link text-warning border-start" onclick="${editFn}"><i class="fa-solid fa-pen-to-square"></i></button>
         <button class="btn btn-link py-1 text-danger border-start" onclick="${delFn}"><i class="fa-solid fa-trash-can"></i></button>
     </div>`;
 }
@@ -59,32 +49,42 @@ function addButtonInitComplete(btnClass, iconClass, labelKey, labelFallback, onC
         }
     };
 }
+// 2026-08-30, real pattern violation found and fixed: this used to open a Bootstrap modal
+// (#deleteModal) for delete confirmation across all 5 tabs -- CLAUDE.md's UI convention requires
+// SweetAlert2 for every alert/confirm, no Bootstrap modal/native confirm(). Replaced with a direct
+// showConfirm() call, same pattern already established elsewhere (e.g.
+// payslip-template.js's .pst-delete-lang-item handler) -- no modal markup needed at all, so
+// #deleteModal/#deleteTargetName were removed from setup-rules/index.php entirely.
+const SETUP_RULES_DELETE_ENDPOINTS = {
+    shift: '/api/shift.delete', holiday: '/api/holiday.delete', location: '/api/work-location.delete',
+    leave: '/api/leave-type.delete', ot: '/api/ot-rate.delete',
+};
 function askDelete(type, id, name) {
-    deleteContext = { type, id, name };
-    $('#deleteTargetName').text(name);
-    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    const endpoint = SETUP_RULES_DELETE_ENDPOINTS[type];
+    if (!endpoint) return;
+    const question = langData['delete_confirm_question'] || 'Delete';
+    const note = langData['delete_irreversible_note'] || 'This action cannot be undone.';
+    showConfirm(langData['confirm_delete_title'] || 'Confirm Delete', `${question} "${name}"? ${note}`, function () {
+        ajaxDelete(endpoint, SETUP_RULES_DELETE_TABLES[type](), id);
+    });
 }
-function ajaxDelete(url, table) {
+function ajaxDelete(url, table, id) {
     $.ajax({
-        url: `${BASE_URL}${url}`, method: 'POST', data: { id: deleteContext.id }, dataType: 'json',
+        url: `${BASE_URL}${url}`, method: 'POST', data: { id }, dataType: 'json',
         success: function (res) {
-            bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
             if (res.status) { showSuccess(res.message || langData['delete_success'] || 'Deleted successfully.'); table.ajax.reload(null, false); }
             else { showWarning(res.message || langData['delete_failed'] || 'Failed to delete.'); }
         },
-        error: function () { bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide(); showWarning(langData['delete_failed'] || 'Failed to delete.'); }
+        error: function () { showWarning(langData['delete_failed'] || 'Failed to delete.'); }
     });
 }
-function confirmDelete() {
-    if (!deleteContext) return;
-    const { type } = deleteContext;
-    if (type === 'shift') { ajaxDelete('/api/shift.delete', dtShift); }
-    else if (type === 'holiday') { ajaxDelete('/api/holiday.delete', dtHoliday); }
-    else if (type === 'location') { ajaxDelete('/api/work-location.delete', dtWorkLocation); }
-    else if (type === 'leave') { ajaxDelete('/api/leave-type.delete', dtLeave); }
-    else if (type === 'ot') { ajaxDelete('/api/ot-rate.delete', dtOt); }
-    deleteContext = null;
-}
+// Each table variable (dtShift/dtHoliday/etc.) is only assigned once its own tab has actually
+// initialized -- deferred behind a function (not a plain object literal evaluated at file-parse
+// time, before any of them exist yet) so askDelete() always reads the table var's CURRENT value.
+const SETUP_RULES_DELETE_TABLES = {
+    shift: () => dtShift, holiday: () => dtHoliday, location: () => dtWorkLocation,
+    leave: () => dtLeave, ot: () => dtOt,
+};
 
 /* ==================== SHIFT ==================== */
 let dtShift;
@@ -122,7 +122,14 @@ function renderShift() {
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleShiftStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsShift(`openShiftModal(${row.id})`, `openShiftAssignModal(${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`, `askDelete('shift', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`) }
+            // 2026-08-30, explicit request: "ตัดการ Assign ออกไปเลย เพราะสามารถเพิ่มได้ในฝั่งพนักงานอยู่แล้ว" --
+            // the per-shift bulk Assign button/modal is gone (an employee's own Shift dropdown on
+            // Employee Detail's Employment tab already sets the same employees.shift_id column, so
+            // this was a redundant second path). Back to the plain shared actionBtns() every other
+            // table in this file already uses -- SetupRulesModel::shiftAssignEmployees()/the
+            // api/shift.assign-employees route are left in place, unused by any UI now, in case an
+            // API consumer wants bulk-assign later.
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openShiftModal(${row.id})`, `askDelete('shift', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
@@ -215,43 +222,6 @@ function saveShift() {
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
-function openShiftAssignModal(id, name) {
-    $('#shiftAssignModalTitle').html(`<i class="fa-solid fa-user-check"></i> <span>${langData['assign_employees'] || 'Assign Employees'}</span> - ${escapeHtmlSr(name)}`);
-    $('#shiftAssignId').val(id);
-    initSelect2('#shiftAssignEmployees', { mode: 'ajax' });
-    const $sel = $('#shiftAssignEmployees');
-    $.ajax({
-        url: `${BASE_URL}/api/shift.assigned-employees`, method: 'GET', data: { id }, dataType: 'json',
-        success: function (res) {
-            $sel.empty();
-            if (res.status) {
-                (res.data || []).forEach(e => {
-                    const label = (currentLang === 'th' ? e.text_th : e.text_en) || e.text_th;
-                    $sel.append(new Option(label, e.id, true, true));
-                });
-            }
-            $sel.trigger('change.select2');
-            new bootstrap.Modal(document.getElementById('shiftAssignModal')).show();
-        }
-    });
-}
-function saveShiftAssignment() {
-    const shiftId = $('#shiftAssignId').val();
-    const employeeIds = ($('#shiftAssignEmployees').val() || []).map(v => parseInt(v));
-    $.ajax({
-        url: `${BASE_URL}/api/shift.assign-employees`, method: 'POST', contentType: 'application/json',
-        data: JSON.stringify({ shift_id: parseInt(shiftId), employee_ids: employeeIds }), dataType: 'json',
-        success: function (res) {
-            if (res.status) {
-                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
-                bootstrap.Modal.getInstance(document.getElementById('shiftAssignModal')).hide();
-                dtShift.ajax.reload(null, false);
-            } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
-        },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
-    });
-}
-
 /* ==================== HOLIDAY ==================== */
 let dtHoliday;
 const HOLIDAY_SCOPE_TYPES = ['shift', 'department', 'position', 'employee'];
@@ -530,7 +500,7 @@ function renderLeave() {
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
             { data: 'code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${escapeHtmlSr(currentLang === 'th' ? row.category_name_th : row.category_name_en)}</span>` },
-            { data: null, render: (d, t, row) => `<span class="text-faint">${parseFloat(row.quota_amount)} ${leaveQuotaUnitLabel(row.unit_type)}</span>` },
+            { data: null, className: 'text-end', render: (d, t, row) => `<span class="text-faint">${parseFloat(row.quota_amount)} ${leaveQuotaUnitLabel(row.unit_type)}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="badge-soft badge-paid">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="badge-soft badge-unpaid">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-success me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleLeaveStatus(${row.id})`) },
@@ -591,7 +561,7 @@ function initLeaveModalSelects() {
     initSelect2('#leaveApplicableStatuses', { mode: 'static' });
 }
 function openLeaveModal(id) {
-    $('#leaveModalTitle').html(`<i class="fa-regular fa-calendar-check"></i> <span data-i18n="leave_type">${langData['leave_type'] || 'Leave Type'}</span>`);
+    $('#leaveTypeModalTitle').html(`<i class="fa-regular fa-calendar-check"></i> <span data-i18n="leave_type">${langData['leave_type'] || 'Leave Type'}</span>`);
     initLeaveModalSelects();
     if (id) {
         $.ajax({
@@ -618,7 +588,7 @@ function openLeaveModal(id) {
                 $('#leaveCountWorkingDaysOnly').prop('checked', parseInt(l.is_continuous) !== 1);
                 $('#leaveCarryOver').prop('checked', parseInt(l.allow_carry_over) === 1);
                 $('#leaveStatus').prop('checked', l.status === 'active');
-                new bootstrap.Modal(document.getElementById('leaveModal')).show();
+                new bootstrap.Modal(document.getElementById('leaveTypeModal')).show();
             },
             error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
         });
@@ -638,7 +608,7 @@ function openLeaveModal(id) {
     $('#leaveCountWorkingDaysOnly').prop('checked', true);
     $('#leaveCarryOver').prop('checked', false);
     $('#leaveStatus').prop('checked', true);
-    new bootstrap.Modal(document.getElementById('leaveModal')).show();
+    new bootstrap.Modal(document.getElementById('leaveTypeModal')).show();
 }
 function saveLeave() {
     const nameTh = $('#leaveNameTh').val().trim();
@@ -667,7 +637,7 @@ function saveLeave() {
         success: function (res) {
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
-                bootstrap.Modal.getInstance(document.getElementById('leaveModal')).hide();
+                bootstrap.Modal.getInstance(document.getElementById('leaveTypeModal')).hide();
                 dtLeave.ajax.reload(null, false);
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
@@ -713,7 +683,7 @@ function renderOt() {
         columns: [
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}</div>` },
             { data: null, render: (d, t, row) => `<span class="badge-soft badge-weekday">${escapeHtmlSr(currentLang === 'th' ? row.scope_name_th : row.scope_name_en)}</span>` },
-            { data: null, render: (d, t, row) => otRateBadge(row) },
+            { data: null, className: 'text-end', render: (d, t, row) => otRateBadge(row) },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleOtStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
@@ -777,6 +747,7 @@ function openOtModal(id) {
                 $('#otCalcMethod').val(o.calculation_method || 'multiplier').trigger('change.select2');
                 applyOtCalculationMethodFields(o.calculation_method || 'multiplier');
                 $('#otStatus').prop('checked', o.status === 'active');
+                resetOtCalcPreview();
                 new bootstrap.Modal(document.getElementById('otModal')).show();
             },
             error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
@@ -791,6 +762,7 @@ function openOtModal(id) {
     $('#otCalcMethod').val('multiplier').trigger('change.select2');
     applyOtCalculationMethodFields('multiplier');
     $('#otStatus').prop('checked', true);
+    resetOtCalcPreview();
     new bootstrap.Modal(document.getElementById('otModal')).show();
 }
 function saveOt() {
@@ -836,6 +808,72 @@ function saveOt() {
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
+
+/* ==================== Calculation Preview (2026-08-30, OT Rate modal) ====================
+ * Same "ปุ่มแสดงตัวอย่างการคำนวณจากการตั้งค่าที่เลือก" feature already built for Attendance Deduction
+ * Rule (public/js/setup/payroll-configuration.js) -- posts whatever is CURRENTLY in the form to
+ * api/ot-rate.preview, which runs the exact same formula real OT payroll uses (see
+ * SetupRulesModel::otRatePreview()'s own docblock) against an editable sample scenario. */
+function resetOtCalcPreview() {
+    $('#otCalcPreviewBaseSalary').val(30000);
+    $('#otCalcPreviewHours').val(2);
+    $('#otCalcPreviewResult').addClass('d-none').empty();
+}
+function otCalcPreviewFormulaStepsHtml(formula) {
+    if (!formula) return '';
+    const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const baseLabel = formula.is_daily_base ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly');
+    if (formula.type === 'ot_flat') {
+        const unitHours = formula.is_daily_base ? fmt(formula.hours / formula.hours_divisor) : fmt(formula.hours);
+        return `<div class="calc-preview-step">${langData['calc_preview_step_base'] || 'Calculation Base'}: <code>${baseLabel}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_rate'] || 'Rate'}: <code>${fmt(formula.flat_rate)}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_formula'] || 'Formula'}: <code>${fmt(formula.flat_rate)} &times; ${unitHours}${formula.is_daily_base ? ' ' + (langData['unit_noun_day'] || 'day(s)') : ' ' + (langData['unit_noun_hour'] || 'hour(s)')} = ${fmt(formula.result)}</code></div>`;
+    }
+    if (formula.type === 'ot_multiplier') {
+        return `<div class="calc-preview-step">${langData['calc_preview_step_base'] || 'Calculation Base'}: <code>${baseLabel}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_unit_rate'] || 'Sample rate'}: <code>${fmt(formula.unit_rate)}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_formula'] || 'Formula'}: <code>${fmt(formula.unit_rate)} &times; ${formula.multiplier} &times; ${fmt(formula.is_daily_base ? formula.hours / formula.hours_divisor : formula.hours)} = ${fmt(formula.result)}</code></div>`;
+    }
+    return '';
+}
+$(document).on('click', '#btnOtCalcPreview', function () {
+    const calcMethod = $('#otCalcMethod').val() || 'multiplier';
+    const payload = {
+        calculation_method: calcMethod, calculation_base: $('#otBase').val() || 'hourly',
+        sample_base_salary: parseFloat($('#otCalcPreviewBaseSalary').val()) || 30000,
+        sample_hours: parseFloat($('#otCalcPreviewHours').val()),
+    };
+    if (isNaN(payload.sample_hours)) payload.sample_hours = 0;
+    if (calcMethod === 'flat_amount') {
+        payload.flat_amount_rate = parseFloat($('#otFlatAmountRate').val()) || 0;
+    } else {
+        payload.multiplier_rate = parseFloat($('#otMultiplier').val()) || 1.5;
+    }
+    const $btn = $(this).prop('disabled', true);
+    const $result = $('#otCalcPreviewResult');
+    $.ajax({
+        url: `${BASE_URL}/api/ot-rate.preview`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            const amount = Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            $result.removeClass('d-none').html(
+                `<div class="calc-preview-amount mb-1">${langData['calc_preview_result_label'] || 'Result'}: ${amount}</div>` +
+                otCalcPreviewFormulaStepsHtml(res.formula)
+            );
+        },
+        error: function () {
+            $btn.prop('disabled', false);
+            showWarning(langData['save_failed'] || 'An error occurred while calculating the preview.');
+        }
+    });
+});
+$(document).on('change input', '#otCalcMethod, #otBase, #otMultiplier, #otFlatAmountRate', function () {
+    $('#otCalcPreviewResult').addClass('d-none');
+});
 
 $(function () {
     initHolidayScopeSelects();

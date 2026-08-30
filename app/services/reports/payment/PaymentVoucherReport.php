@@ -86,6 +86,14 @@ class PaymentVoucherReport implements ReportGeneratorInterface {
         $totalNet = 0.0;
         $employeeDetail = null;
         $rowCount = 0;
+        // 2026-08-30, explicit follow-up: "ตรงส่วนของการตั้งค่ารอบ มีการให้เลือกบัญชีจ่ายเงินแล้ว...ในส่วนของ
+        // การออกรายงาน ถ้ายังไม่ดึงไปช่วยดึงไปด้วยครับ" -- this report spans a whole calendar year, and
+        // different runs in it can genuinely settle from different cycle bank_accounts (same
+        // per-cycle pinning BankTransferFileReport's own resolveCompanyBankAccount() already
+        // resolves), so the paying account is shown PER LINE rather than once in the header.
+        // $accountCache avoids re-resolving/re-decrypting the same account id across multiple runs
+        // in the same year that share one cycle (the overwhelmingly common case).
+        $accountCache = [];
         foreach ($runs as $run) {
             $detail = $dataModel->getRunDetailForEmployee((int)$run['id'], $employeeId);
             if (!$detail) {
@@ -96,9 +104,15 @@ class PaymentVoucherReport implements ReportGeneratorInterface {
             $totalGross += (float)$detail['gross_amount'];
             $totalDeduction += (float)$detail['total_deduction_amount'];
             $totalNet += (float)$detail['net_amount'];
+            $cycleBankAccountId = isset($run['bank_account_id']) && $run['bank_account_id'] !== null ? (int)$run['bank_account_id'] : null;
+            $cacheKey = $cycleBankAccountId ?? 0;
+            if (!array_key_exists($cacheKey, $accountCache)) {
+                $accountCache[$cacheKey] = $this->resolveCompanyBankAccountLabel($compId, $cycleBankAccountId);
+            }
             $rowsHtml .= '<tr>'
                 // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy"
                 . '<td>' . htmlspecialchars($this->formatDate($run['period_start_date']) . ' - ' . $this->formatDate($run['period_end_date'])) . '</td>'
+                . '<td>' . htmlspecialchars($accountCache[$cacheKey]) . '</td>'
                 . '<td class="amount">' . number_format((float)$detail['gross_amount'], 2) . '</td>'
                 . '<td class="amount">' . number_format((float)$detail['total_deduction_amount'], 2) . '</td>'
                 . '<td class="amount">' . number_format((float)$detail['net_amount'], 2) . '</td>'
@@ -126,9 +140,9 @@ tfoot td { font-weight: bold; }
 <div>หนังสือรับรองการจ่ายเงินประจำปี {$yearBe}</div>
 <div>รหัสพนักงาน: {$employeeNo} &nbsp; ชื่อ: {$employeeName}</div>
 <table>
-<thead><tr><th>งวด</th><th>รายได้รวม</th><th>หักรวม</th><th>ยอดจ่ายสุทธิ</th></tr></thead>
+<thead><tr><th>งวด</th><th>จ่ายจากบัญชี</th><th>รายได้รวม</th><th>หักรวม</th><th>ยอดจ่ายสุทธิ</th></tr></thead>
 <tbody>{$rowsHtml}</tbody>
-<tfoot><tr><td>รวมทั้งปี</td><td class="amount">{$this->fmt($totalGross)}</td><td class="amount">{$this->fmt($totalDeduction)}</td><td class="amount">{$this->fmt($totalNet)}</td></tr></tfoot>
+<tfoot><tr><td colspan="2">รวมทั้งปี</td><td class="amount">{$this->fmt($totalGross)}</td><td class="amount">{$this->fmt($totalDeduction)}</td><td class="amount">{$this->fmt($totalNet)}</td></tr></tfoot>
 </table>
 </body></html>
 HTML;
@@ -142,5 +156,45 @@ HTML;
 
     private function fmt(float $n): string {
         return number_format($n, 2);
+    }
+
+    /**
+     * Same resolution order as BankTransferFileReport::resolveCompanyBankAccount() (the run's own
+     * cycle bank_account_id first, else the company's is_default account) but returns a plain
+     * human-readable label (bank name + masked account no.) for display here, not the raw account
+     * number a transfer file needs. Never throws -- an unresolvable account just shows '-'.
+     */
+    private function resolveCompanyBankAccountLabel(int $compId, ?int $cycleBankAccountId): string {
+        $pdo = Database::getInstance()->pdo;
+        $row = null;
+        if ($cycleBankAccountId !== null && $cycleBankAccountId > 0) {
+            $stmt = $pdo->prepare(
+                "SELECT ba.account_no, ba.key_version, ba.account_name, mb.bank_name_th
+                 FROM `bank_accounts` ba LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
+                 WHERE ba.id = :id AND ba.comp_id = :comp_id AND ba.deleted_at IS NULL AND ba.status = 'active'"
+            );
+            $stmt->execute([':id' => $cycleBankAccountId, ':comp_id' => $compId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+        if ($row === null) {
+            $stmt = $pdo->prepare(
+                "SELECT ba.account_no, ba.key_version, ba.account_name, mb.bank_name_th
+                 FROM `bank_accounts` ba LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
+                 WHERE ba.comp_id = :comp_id AND ba.deleted_at IS NULL AND ba.status = 'active' AND ba.is_default = 1
+                 ORDER BY ba.id ASC LIMIT 1"
+            );
+            $stmt->execute([':comp_id' => $compId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+        if (!$row) {
+            return '-';
+        }
+        $accountNo = !empty($row['account_no'])
+            ? (string)(EncryptionService::decrypt($row['account_no'], $row['key_version'] !== null ? (int)$row['key_version'] : null) ?? '')
+            : '';
+        $masked = $accountNo !== '' ? (strlen($accountNo) > 4 ? str_repeat('x', strlen($accountNo) - 4) . substr($accountNo, -4) : $accountNo) : '';
+        $bankName = (string)($row['bank_name_th'] ?? '');
+        $parts = array_filter([$bankName, $masked !== '' ? $masked : null]);
+        return $parts ? implode(' ', $parts) : '-';
     }
 }

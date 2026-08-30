@@ -14,37 +14,83 @@ function dashToDisplayDate(isoVal) {
     return `${dd}/${mm}/${yyyy}`;
 }
 
-// 2026-08-29, explicit request: "รายการเงินเดือนล่าสุด ใส่ timeline ให้เห็นว่าปัจจุบันถึงไหนแล้ว ขอ Design
-// เดียวกับหน้าทำเงินเดือน" -- replaces the old plain state badge (dashStateBadge(), removed) with a
-// mini version of the SAME chevron pipeline component Payroll Process's own station-row uses
-// (.station-card/.station-card--reject etc., see style.css), scaled down (.station-card-sm) so it
-// fits inline per-row in a compact list instead of the full-size interactive filter bar. Draft ->
-// Pending Approval -> Approved -> Paid -> Locked is the canonical forward order; a run currently
-// sitting in one of those 5 shows every earlier stage as "done" (soft green) and that one stage
-// highlighted in its own color, with the stages still ahead left dim/neutral -- literally "how far
-// along it currently is". A run that got rejected/cancelled/need-info branched OFF the forward flow
-// at Pending Approval, so those states render as one extra highlighted segment appended right after
-// Pending Approval instead of continuing along Approved/Paid/Locked, which are left visibly
-// "skipped" (very light, not the same low-key grey as a not-yet-reached step, since -- unlike an
-// upcoming step -- they were never going to happen for this run).
-const DASH_RUN_STAGES = ['draft', 'pending_approval', 'approved', 'paid', 'locked'];
-const DASH_RUN_BRANCH_CLASS = { rejected: 'station-card-sm--danger', cancelled: 'station-card-sm--muted', need_info: 'station-card-sm--info' };
-function dashRunTimelineHtml(state) {
-    const branchClass = DASH_RUN_BRANCH_CLASS[state];
-    const currentIdx = branchClass ? 1 : DASH_RUN_STAGES.indexOf(state);
-    let html = '<div class="station-row-sm">';
-    DASH_RUN_STAGES.forEach(function (stage, idx) {
-        let cls = 'station-card-sm';
-        if (!branchClass && idx === currentIdx) cls += ' active';
-        else if (idx < currentIdx || (branchClass && idx <= 1)) cls += ' station-card-sm--done';
-        else if (branchClass) cls += ' station-card-sm--skipped';
-        html += `<div class="${cls}" data-state="${dashEscapeHtml(stage)}">${dashEscapeHtml(langData['state_' + stage] || stage)}</div>`;
-        if (branchClass && idx === 1) {
-            html += `<div class="station-card-sm active ${branchClass}">${dashEscapeHtml(langData['state_' + state] || state)}</div>`;
+// 2026-08-29, explicit request (this round): "ตรง Recent Payroll Runs ที่เห็น...ให้แสดงผลเป็น timeline
+// เหมือนใน Process List รายการครับ" -- an EARLIER same-day pass already replaced the plain state
+// badge with a mini timeline, but built it against the wrong reference component (Process List's
+// top FILTER BAR chevrons, .station-row/.station-card-sm) -- this user report is about the
+// DIFFERENT widget, the dot+connecting-line mini-timeline that renders inside each ROW of the
+// Process List's own table (renderMiniTimelineDots() in public/js/payroll/index.js, `.mini-timeline`/
+// `.mt-dot`/`.mt-line` in style.css). Ported here verbatim (same duplicated-per-page convention that
+// file's own top-of-file comment already documents -- every page's JS stays self-contained) rather
+// than loading index.js on the dashboard, which would pull in a large amount of unrelated
+// Process-List-only code (DataTable init, bulk actions, sync pickers, ...). No quick-action button
+// here (unlike index.js's own miniTimelineQuickActionHtml()) -- the Dashboard widget is a glance
+// view/link out to the real page, not a place to trigger payroll state changes from.
+const DASH_MINI_TIMELINE_STEPS = [
+    { key: 'draft', labelKey: 'state_draft', dateField: 'created_at', icon: 'fa-file-alt' },
+    { key: 'pending_approval', labelKey: 'state_pending_approval', dateField: 'submitted_at', icon: 'fa-paper-plane' },
+    { key: 'approved', labelKey: 'state_approved', dateField: 'approved_at', icon: 'fa-check' },
+    { key: 'paid', labelKey: 'state_paid', dateField: 'paid_at', icon: 'fa-money-check-dollar' },
+    { key: 'locked', labelKey: 'state_locked', dateField: 'locked_at', icon: 'fa-lock' },
+];
+const DASH_MINI_TIMELINE_BRANCH_ICONS = { rejected: 'fa-xmark', cancelled: 'fa-ban', need_info: 'fa-question' };
+const DASH_MINI_TIMELINE_BRANCH_LABEL_KEYS = { rejected: 'state_rejected', cancelled: 'state_cancelled', need_info: 'state_need_info' };
+function dashComputeMiniTimelineProgress(row) {
+    const state = row.state;
+    if (state === 'rejected') {
+        return { reachedIdx: 1, branch: { atIndex: 2, type: 'rejected' } };
+    }
+    if (state === 'need_info') {
+        return { reachedIdx: 1, branch: { atIndex: 2, type: 'need_info' } };
+    }
+    if (state === 'cancelled') {
+        const fromKey = row.cancelled_from_state || 'draft';
+        if (fromKey === 'draft') {
+            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
         }
-    });
-    html += '</div>';
-    return html;
+        const effectiveKey = fromKey === 'rejected' ? 'pending_approval' : fromKey;
+        const idx = DASH_MINI_TIMELINE_STEPS.findIndex(s => s.key === effectiveKey);
+        if (idx < 0) {
+            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
+        }
+        return { reachedIdx: idx, branch: { atIndex: idx + 1, type: 'cancelled' } };
+    }
+    // 2026-08-29, real bug found and fixed (explicit report: "Locked จะเป็นสีเขียวตอนไหนครับ" -- see
+    // payroll/detail.js's own computeTimelineProgress() docblock for the full explanation, ported
+    // here verbatim same as this whole function already was).
+    const idx = DASH_MINI_TIMELINE_STEPS.findIndex(s => s.key === state);
+    return { reachedIdx: idx, branch: null };
+}
+function dashRunTimelineHtml(row) {
+    const { reachedIdx, branch } = dashComputeMiniTimelineProgress(row);
+    const currentIndex = reachedIdx + 1;
+    let dotsHtml = '<ul class="mini-timeline">';
+    for (let i = 0; i < DASH_MINI_TIMELINE_STEPS.length; i++) {
+        const step = DASH_MINI_TIMELINE_STEPS[i];
+        let cls = '';
+        let label = langData[step.labelKey] || step.key;
+        let icon = step.icon;
+        const isBranchHere = branch && branch.atIndex === i;
+        if (isBranchHere) {
+            cls = branch.type;
+            label = langData[DASH_MINI_TIMELINE_BRANCH_LABEL_KEYS[branch.type]] || branch.type;
+            icon = DASH_MINI_TIMELINE_BRANCH_ICONS[branch.type] || 'fa-ban';
+        } else if (i <= reachedIdx) {
+            cls = 'done';
+            icon = 'fa-check';
+        } else if (i === currentIndex) {
+            cls = 'current';
+        }
+        const dateVal = row[step.dateField];
+        const dateText = (cls === 'done' || cls === 'current' || isBranchHere) && dateVal ? dashToDisplayDate(String(dateVal).substring(0, 10)) : '';
+        const title = dashEscapeHtml(`${label}${dateText ? ` (${dateText})` : ''}`);
+        dotsHtml += `<li class="mt-step ${cls}"><span class="mt-dot" title="${title}"><i class="fa-solid ${icon}"></i></span></li>`;
+        if (i < DASH_MINI_TIMELINE_STEPS.length - 1) {
+            dotsHtml += `<span class="mt-line ${i <= reachedIdx ? 'done' : ''}"></span>`;
+        }
+    }
+    dotsHtml += '</ul>';
+    return dotsHtml;
 }
 
 function dashEmployeeDisplayName(emp) {
@@ -130,7 +176,7 @@ function renderRecentRuns(rows, canViewAmounts) {
         const period = `${dashToDisplayDate(row.period_start_date)} - ${dashToDisplayDate(row.period_end_date)}`;
         const amountHtml = canViewAmounts ? `<div class="dash-run-row-amount">${dashFmtNum(row.total_net_amount)}</div>` : '';
         $list.append(`
-            <a href="${url}" class="dash-run-row">
+            <a href="${url}" target="_blank" rel="noopener" class="dash-run-row">
                 <div class="dash-run-row-top">
                     <div class="dash-run-row-main">
                         <div class="dash-run-row-name">${dashEscapeHtml(row.run_name)}</div>
@@ -138,12 +184,26 @@ function renderRecentRuns(rows, canViewAmounts) {
                     </div>
                     <div class="dash-run-row-meta">${amountHtml}</div>
                 </div>
-                ${dashRunTimelineHtml(row.state)}
+                ${dashRunTimelineHtml(row)}
             </a>
         `);
     });
 }
 
+// 2026-08-29, explicit request: notification summary card, see this file's own dashNotifSection
+// comment in dashboard.php. notifItemHtml()/BASE_URL are defined in notifications.js, loaded
+// globally on every page (layout/header.php) before this file's own <script> tag at the bottom of
+// dashboard.php, so both are already available here with no extra require.
+function loadDashboardNotifications() {
+    $.getJSON(`${BASE_URL}/api/notification.list`, { offset: 0, limit: 5 }, function (res) {
+        if (!res.status) return;
+        const rows = res.data || [];
+        $('#dashNotifEmpty').toggleClass('d-none', rows.length > 0);
+        $('#dashNotifList').find('.nav-notif-item').remove();
+        rows.forEach(item => $('#dashNotifList').append(typeof notifItemHtml === 'function' ? notifItemHtml(item) : ''));
+    });
+}
 $(document).ready(function () {
     loadDashboardSummary();
+    loadDashboardNotifications();
 });

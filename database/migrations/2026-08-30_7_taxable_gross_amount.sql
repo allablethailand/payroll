@@ -1,0 +1,21 @@
+-- 2026-08-30, real bug found and fixed (explicit request: audit the Earning/Deduction Type form for
+-- completeness -- "ถ้ามีเพิ่มมีลด ต้องนำไปใช้ในการคำนวณรอบด้วยครับเป็นเงื่อนไข"). Confirmed via a
+-- full grep audit: `payroll_earning_deduction_types.tax_treatment` (Taxable/Non-taxable, REQUIRED
+-- for every Earning item) and `.tax_deduction_impact` (Before/After Tax, REQUIRED for every
+-- Deduction item) were saved and validated as required data entry, but NEVER actually read anywhere
+-- in real payroll calculation -- PayrollRunModel::recalculate() summed every earning line
+-- unconditionally into `$grossAmount`, which fed `taxable_income` for TH_PIT withholding
+-- (ThPitCalculator) with zero regard for whether an item was marked "Non-taxable". A company that
+-- correctly marked an allowance as Non-taxable was having it taxed anyway.
+--
+-- `taxable_gross_amount`: a SEPARATE figure from `gross_amount` (which stays exactly what it always
+-- was -- full gross including non-taxable earnings, used for net-pay/reporting -- untouched by this
+-- fix). Only fed into PIT withholding math from now on. NULLable, defaulting NULL for every existing
+-- historical row (this fix does NOT retroactively recompute/backfill already-approved/paid/locked
+-- runs -- re-running real historical payroll is a much bigger, riskier undertaking than fixing the
+-- bug going forward). ThPitCalculator::ytdGrossPriorToThisPeriod() reads
+-- COALESCE(taxable_gross_amount, gross_amount) so a historical (pre-fix) period still contributes
+-- its best-available figure to this year's YTD cumulative ("actual" method) tax projection instead
+-- of a hard NULL breaking the sum.
+ALTER TABLE `payroll_run_details`
+  ADD COLUMN `taxable_gross_amount` DECIMAL(15,2) NULL DEFAULT NULL AFTER `gross_amount`;

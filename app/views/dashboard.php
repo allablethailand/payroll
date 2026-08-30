@@ -87,6 +87,20 @@
         </div>
 
         <div class="col-lg-4">
+            <!-- 2026-08-29, explicit request: "และตรงการใส่ Comments...และสามารถเพิ่มอะไรได้อีกในหน้า
+                 Dashboard ไหมครับ" -> "สนใจครับ" (confirmed the notification-summary-card suggestion) --
+                 latest few notifications right on the dashboard, not just reachable via the header
+                 bell. Reuses notifItemHtml()/BASE_URL/api/notification.list from notifications.js
+                 (loaded globally, see layout/header.php) rather than duplicating that markup here. -->
+            <div class="dash-section-card mb-4" id="dashNotifSection">
+                <div class="dash-section-card-header">
+                    <h6 class="mb-0"><i class="fa-solid fa-bell me-2 text-warning"></i><span data-i18n="notifications">Notifications</span></h6>
+                    <a href="<?=BASE_URL?>/notifications" class="dash-section-link" data-i18n="notif_view_all">View All</a>
+                </div>
+                <div class="dash-notif-list" id="dashNotifList">
+                    <div class="nav-notif-empty d-none" id="dashNotifEmpty" data-i18n="notif_empty">No notifications yet.</div>
+                </div>
+            </div>
             <div class="dash-section-card">
                 <div class="dash-section-card-header">
                     <h6 class="mb-0"><i class="fa-solid fa-bolt me-2 text-warning"></i><span data-i18n="dash_quick_links">Quick Links</span></h6>

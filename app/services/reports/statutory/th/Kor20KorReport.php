@@ -89,7 +89,10 @@ class Kor20KorReport implements ReportGeneratorInterface {
         // Only employees who actually had a PVD contribution belong in this report.
         $employeeList = array_values(array_filter($employees, fn($e) => $e['employee_contribution'] > 0 || $e['employer_contribution'] > 0));
         if (empty($employeeList)) {
-            throw new RuntimeException("No employees had a provident fund contribution in B.E. {$yearBe}.");
+            // 2026-08-30, real bug found and fixed: this was the ONE remaining plain RuntimeException
+            // in this file (every other validation in generate() already used LocalizedException) --
+            // bypassed the i18n mechanism the rest of the file already opted into.
+            throw new LocalizedException("No employees had a provident fund contribution in B.E. {$yearBe}.", 'kor20kor_no_pvd_contributions', ['year' => $yearBe]);
         }
         foreach ($employeeList as &$e) {
             $e['employee_contribution'] = round($e['employee_contribution'], 2);

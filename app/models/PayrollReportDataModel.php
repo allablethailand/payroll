@@ -54,10 +54,34 @@ class PayrollReportDataModel {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /**
+     * 2026-08-30, explicit request: "filter ปีให้เลือกจากปีที่มีข้อมูลจริง" -- the Annual Reports tab's
+     * year field used to be a free-typed number input (any year, including ones with zero data);
+     * now backs a dropdown of only the Gregorian years that genuinely have at least one usable-state
+     * run. Caller converts to Buddhist Era for display/selection (see ReportsController's own
+     * availableYears(), matching the same +543 convention every annual report generator already
+     * applies to context['year'] on the way back in).
+     */
+    public function availableReportYears(int $compId, array $allowedStates): array {
+        $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
+        $sql = "SELECT DISTINCT YEAR(r.period_start_date) AS yr FROM `payroll_runs` r
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
+                ORDER BY yr DESC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge([$compId], $allowedStates));
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
     /** Runs whose pay period falls (even partially) within the given calendar year, usable states only. */
     public function getRunsInYear(int $compId, int $year, array $allowedStates): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
-        $sql = "SELECT r.*, c.cycle_name FROM `payroll_runs` r
+        // c.bank_account_id (2026-08-30, explicit follow-up: "ตรงส่วนของการตั้งค่ารอบ มีการให้เลือกบัญชีจ่าย
+        // เงินแล้ว...ในส่วนของการออกรายงาน ถ้ายังไม่ดึงไปช่วยดึงไปด้วยครับ") -- PaymentVoucherReport spans
+        // multiple runs per employee across a year, and different runs can settle from different
+        // cycle bank_accounts (same per-cycle account pinning BankTransferFileReport's own
+        // resolveCompanyBankAccount() already resolves) -- exposed here so that report can show which
+        // account paid each line, not just Bank Transfer File.
+        $sql = "SELECT r.*, c.cycle_name, c.bank_account_id FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
                 AND YEAR(r.period_start_date) = ?

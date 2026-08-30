@@ -293,4 +293,16 @@ class SetupRulesController extends Controller {
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->model->otRateToggleStatus($id, (int)$compId, $this->userId()));
     }
+
+    public function otRatePreview() {
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $sampleBaseSalary = isset($data['sample_base_salary']) && is_numeric($data['sample_base_salary']) ? (float)$data['sample_base_salary'] : 30000.0;
+        $sampleHours = isset($data['sample_hours']) && is_numeric($data['sample_hours']) ? (float)$data['sample_hours'] : 2.0;
+        $this->json($this->model->otRatePreview($data, $sampleBaseSalary, $sampleHours));
+    }
 }

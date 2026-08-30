@@ -42,207 +42,286 @@
     </div>
 </div>
 <template id="tmpl-profile-pane">
+    <!-- 2026-08-30, explicit request: "อยากให้ Clear เรื่องกลุ่มของข้อมูล ตอนนี้เหมือนยังแยกกันไม่ชัดเจน
+         ส่วนไหนที่แยกออกมาเป็นอีก Tab ได้ก็ควรแยกครับ" -- was one long scroll of 6 numbered sections;
+         split into 4 sub-tabs (same .structure-tabs pill visual convention as the Bank Accounts/
+         Organization Structure sub-tabs on this same page), grouped by what they actually are:
+         Company Information (identity + address, what every company fills first), Statutory & Tax
+         (per-country dynamic fields only), Signatory & Branding (Signatory Name + Logo + Signature
+         reunited -- Signatory Name used to sit stranded at the end of the Statutory section, split
+         from its own Signature by the unrelated Logo section in between; all three are genuinely
+         "what appears on generated documents"), and Origami Integration (newest section, a
+         genuinely distinct system-linkage concern, not company data).
+         Uses REAL Bootstrap tab-panes (data-bs-toggle="tab", CSS display toggle only), NOT the
+         swap-innerHTML-per-tab pattern Bank Accounts/Bank File Format use just above -- every
+         field must stay present in the DOM at once regardless of which sub-tab is showing, since
+         .save-company-profile's own handler (company-profile.js) reads every field via a single
+         flat set of global jQuery selectors in one JSON payload, not scoped to whichever pane
+         happens to be visible. Save/Cancel stay OUTSIDE the tab-content, visible on every sub-tab,
+         since one Save call already covers the whole form -- no per-tab save needed (confirmed
+         no backend change required: CompanyProfileModel::save() already accepts today's full
+         payload shape unchanged, just re-grouped in the UI).
+         2026-08-30, explicit bug report: "sub tab ไม่มีช่องว่าง padding" -- root cause found by
+         comparing against this page's own sibling tabs: #tmpl-bank-pane/#tmpl-structure-pane (below)
+         both wrap their sub-tab-pill-bar + content in an outer `<div class="mt-5 mb-5">`, giving the
+         pill bar real breathing room from the white tab-content card's own top edge (that card itself
+         is `mt-0` -- the gap has always had to come from the injected template, not the outer
+         wrapper). This template (Company Profile's own default/first-shown tab) never had that same
+         outer wrapper -- it started directly with .structure-tabs-wrap (mb-4 only, no mt-*), so its
+         pill bar sat flush against the card's top edge with zero gap. Added the same `mt-5 mb-5`
+         wrapper here for parity -- purely a spacing fix, no markup inside changed. -->
     <div class="mt-5 mb-5">
-        <h6 class="text-secondary fw-bold mb-3 mt-2">
-            <label class="label label-head bg-head-first rounded-2 text-white me-2">1</label>
-            <span data-i18n="company_information">Company Information</span>
-        </h6>
-        <div class="row">
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span data-i18n="registered_country">Registered Country</span>
-                    <span class="text-danger">*</span>
-                </label>
+    <div class="bg-light rounded-3 p-2 mb-4 structure-tabs-wrap">
+        <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="cpProfileSubTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link structure-menu active" id="cpSub-info-tab" data-bs-toggle="tab" data-bs-target="#cpSub-info-pane" type="button" role="tab" aria-controls="cpSub-info-pane" aria-selected="true">
+                    <i class="fa-solid fa-building me-2"></i><span data-i18n="company_information">Company Information</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link structure-menu" id="cpSub-statutory-tab" data-bs-toggle="tab" data-bs-target="#cpSub-statutory-pane" type="button" role="tab" aria-controls="cpSub-statutory-pane" aria-selected="false">
+                    <i class="fa-solid fa-landmark me-2"></i><span data-i18n="local_statutory_and_tax_settings">Local Statutory &amp; Tax Settings</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link structure-menu" id="cpSub-brand-tab" data-bs-toggle="tab" data-bs-target="#cpSub-brand-pane" type="button" role="tab" aria-controls="cpSub-brand-pane" aria-selected="false">
+                    <i class="fa-solid fa-signature me-2"></i><span data-i18n="cp_signatory_branding_tab">Signatory &amp; Branding</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="tab-content mb-5">
+        <div class="tab-pane fade show active" id="cpSub-info-pane" role="tabpanel" aria-labelledby="cpSub-info-tab" tabindex="0">
+            <div class="row">
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span data-i18n="registered_country">Registered Country</span>
+                        <span class="text-danger">*</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <select id="registered_country" class="select2-remote" data-api="/api/country.get" data-type="country"></select>
+                </div>
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span id="tax_id_label" data-i18n="tax_id_ein">Tax ID / EIN</span>
+                        <span class="text-danger">*</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <input type="text" class="form-control required" name="global_tax_id">
+                </div>
             </div>
-            <div class="col-sm-4 mt-3">
-                <select id="registered_country" class="select2-remote" data-api="/api/country.get" data-type="country"></select>
+            <div class="row">
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span data-i18n="company_legal_name">Company Legal Name</span>
+                        <span class="text-danger">*</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <input type="text" class="form-control required" name="company_legal_name">
+                </div>
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span data-i18n="company_local_name">Local Name</span>
+                        <span class="text-danger">*</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <input type="text" class="form-control required" name="local_name">
+                </div>
+                <!-- 2026-08-29, follow-up to the Annual Income Summary report request: "การตั้งค่ารอบปี
+                     ให้เอาไปไว้ในส่วนของการตั้งค่า" -- a single company-wide value (like registered_country
+                     above), so it lives here in Company Information rather than a new settings section
+                     of its own. Governs which calendar month a "fiscal year" starts on for that report's
+                     own year grouping/filter (1=January, the default, is a plain calendar year -- so a
+                     company that never touches this sees no behavior change at all). -->
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span data-i18n="fiscal_year_start_month">Fiscal Year Start Month</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <select class="form-select" name="fiscal_year_start_month" id="fiscal_year_start_month" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
+                </div>
+                <!-- 2026-08-29, explicit request: "กรณีคนเข้า และคนออก การคิดเงินเดือน ต้องจับหาร 30 ตามกฏหมาย
+                     ช่วยเพิ่มให้ตั้งค่าตัวเลขนี้ได้หน่อยได้ไหมครับ" -- a single company-wide value (same shape
+                     as Fiscal Year Start Month above), governs the divisor PayrollRunModel::recalculate()
+                     uses for a monthly-rate employee's mid-period join/leave proration -- default 30
+                     matches the Thai labor law convention named outright in the request. -->
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span data-i18n="prorate_divisor_days">Proration Divisor (Days)</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <input type="number" class="form-control" name="prorate_divisor_days" id="prorate_divisor_days" min="1" max="31" value="30">
+                    <div class="form-text" data-i18n="prorate_divisor_days_hint">Used to calculate partial-month pay when an employee joins or leaves mid-period (Thai labor law: 30).</div>
+                </div>
             </div>
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span id="tax_id_label" data-i18n="tax_id_ein">Tax ID / EIN</span>
-                    <span class="text-danger">*</span>
-                </label>
+            <h6 class="text-secondary fw-bold mb-3 mt-4" data-i18n="registered_address">Registered Address</h6>
+            <div class="row">
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span data-i18n="address_line_1">Address Line 1</span>
+                        <span class="text-danger">*</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <input type="text" class="form-control required" name="address_line_1">
+                </div>
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span data-i18n="address_line_2">Address Line 2 (Optional)</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <input type="text" class="form-control" name="address_line_2">
+                </div>
             </div>
-            <div class="col-sm-4 mt-3">
-                <input type="text" class="form-control required" name="global_tax_id">
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span data-i18n="company_legal_name">Company Legal Name</span>
-                    <span class="text-danger">*</span>
-                </label>
-            </div>
-            <div class="col-sm-4 mt-3">
-                <input type="text" class="form-control required" name="company_legal_name">
-            </div>
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span data-i18n="company_local_name">Local Name</span>
-                    <span class="text-danger">*</span>
-                </label>
-            </div>
-            <div class="col-sm-4 mt-3">
-                <input type="text" class="form-control required" name="local_name">
-            </div>
-            <!-- 2026-08-29, follow-up to the Annual Income Summary report request: "การตั้งค่ารอบปี
-                 ให้เอาไปไว้ในส่วนของการตั้งค่า" -- a single company-wide value (like registered_country
-                 above), so it lives here in Company Information rather than a new settings section
-                 of its own. Governs which calendar month a "fiscal year" starts on for that report's
-                 own year grouping/filter (1=January, the default, is a plain calendar year -- so a
-                 company that never touches this sees no behavior change at all). -->
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span data-i18n="fiscal_year_start_month">Fiscal Year Start Month</span>
-                </label>
-            </div>
-            <div class="col-sm-4 mt-3">
-                <select class="form-select" name="fiscal_year_start_month" id="fiscal_year_start_month" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
-            </div>
-            <!-- 2026-08-29, explicit request: "กรณีคนเข้า และคนออก การคิดเงินเดือน ต้องจับหาร 30 ตามกฏหมาย
-                 ช่วยเพิ่มให้ตั้งค่าตัวเลขนี้ได้หน่อยได้ไหมครับ" -- a single company-wide value (same shape
-                 as Fiscal Year Start Month above), governs the divisor PayrollRunModel::recalculate()
-                 uses for a monthly-rate employee's mid-period join/leave proration -- default 30
-                 matches the Thai labor law convention named outright in the request. -->
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span data-i18n="prorate_divisor_days">Proration Divisor (Days)</span>
-                </label>
-            </div>
-            <div class="col-sm-4 mt-3">
-                <input type="number" class="form-control" name="prorate_divisor_days" id="prorate_divisor_days" min="1" max="31" value="30">
-                <div class="form-text" data-i18n="prorate_divisor_days_hint">Used to calculate partial-month pay when an employee joins or leaves mid-period (Thai labor law: 30).</div>
-            </div>
-        </div>
-        <h6 class="text-secondary fw-bold mb-3 mt-4">
-            <label class="label label-head bg-head-first rounded-2 text-white me-2">2</label>
-            <span data-i18n="registered_address">Registered Address</span>
-        </h6>
-        <div class="row">
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span data-i18n="address_line_1">Address Line 1</span>
-                    <span class="text-danger">*</span>
-                </label>
-            </div>
-            <div class="col-sm-4 mt-3">
-                <input type="text" class="form-control required" name="address_line_1">
-            </div>
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span data-i18n="address_line_2">Address Line 2 (Optional)</span>
-                </label>
-            </div>
-            <div class="col-sm-4 mt-3">
-                <input type="text" class="form-control" name="address_line_2">
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span id="address_search_label" data-i18n="search_address_label">Sub-district / City / Postcode</span>
-                    <span class="text-danger">*</span>
-                </label>
-            </div>
-            <div class="col-sm-4 mt-3 position-relative">
-                <input type="text" class="form-control required autocomplete-address" id="search_address" autocomplete="off">
-                <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
-                <input type="hidden" name="master_address_id" class="master-address-id-field" id="master_address_id">
-                <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
-            </div>
-        </div>
-        <h6 class="text-secondary fw-bold mb-3 mt-4">
-            <label class="label label-head bg-head-first rounded-2 text-white me-2">3</label>
-            <span data-i18n="local_statutory_and_tax_settings">Local Statutory & Tax Settings</span>
-        </h6>
-        <p class="text-muted small mb-3" data-i18n="local_statutory_description">*Please enter information based on the statutory requiredments of your company's country of registration.</p>
-        <div id="dynamic_statutory_fields_container" class="row"></div>
-        <div class="row">
-            <div class="col-sm-2 mt-3">
-                <label class="form-label">
-                    <span data-i18n="authorized_signatory_name">Authorized Signatory Name</span>
-                    <span class="text-danger">*</span>
-                </label>
-            </div>
-            <div class="col-sm-4 mt-3">
-                <input type="text" class="form-control required" name="authorized_signatory_name">
-            </div>
-        </div>
-        <!-- 2026-08-24, explicit request: "ปรับให้ Logo Upload อยู่ยนสุดของ Form ขอ Design สวยๆ รวมถึงมี
-             Preview ด้วย" -- moved from section 1 to its own numbered section 4 at the very bottom of
-             the form (was inline with Company Information before), redesigned as a proper upload card
-             instead of a plain button+small-preview row. Same upload endpoint/hidden-field-into-save
-             convention as before, nothing changed on the backend. -->
-        <h6 class="text-secondary fw-bold mb-3 mt-4">
-            <label class="label label-head bg-head-first rounded-2 text-white me-2">4</label>
-            <span data-i18n="company_logo">Company Logo</span>
-        </h6>
-        <div class="row">
-            <div class="col-sm-6 mt-3">
-                <div class="cp-logo-upload-card" id="cpLogoUploadCard">
-                    <div class="cp-logo-preview-box" id="cpLogoPreviewBox">
-                        <img id="cpLogoPreviewImg" src="" alt="Logo" class="d-none">
-                        <div class="cp-logo-placeholder" id="cpLogoPlaceholder">
-                            <i class="fa-solid fa-building"></i>
-                            <span data-i18n="no_logo_uploaded">No logo uploaded</span>
-                        </div>
-                    </div>
-                    <div class="cp-logo-actions">
-                        <label class="btn btn-outline-secondary btn-sm" for="cp_logo_file">
-                            <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_logo">Upload Logo</span>
-                        </label>
-                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpLogoRemoveBtn">
-                            <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
-                        </button>
-                        <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
-                        <input type="hidden" id="cp_logo_path" name="logo_path">
-                        <p class="text-muted small mt-2 mb-0" data-i18n="company_logo_reuse_hint">Used as the default logo on Payslip and Employment Certificate templates that don't have their own.</p>
-                    </div>
+            <div class="row">
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span id="address_search_label" data-i18n="search_address_label">Sub-district / City / Postcode</span>
+                        <span class="text-danger">*</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3 position-relative">
+                    <input type="text" class="form-control required autocomplete-address" id="search_address" autocomplete="off">
+                    <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                    <input type="hidden" name="master_address_id" class="master-address-id-field" id="master_address_id">
+                    <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
                 </div>
             </div>
         </div>
-        <!-- 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name หรือสามารถเซ็นต์สด
-             ผ่านหน้าจอได้" -- same upload-card layout as Company Logo just above, plus a second input
-             method (a live signature-pad drawn on a canvas, opened in a modal -- see
-             #cpSignaturePadModal below this template). Both paths end up producing the exact same kind
-             of file through the exact same upload endpoint (uploadSignature()), so this card doesn't
-             need to know or care which one was used. -->
-        <h6 class="text-secondary fw-bold mb-3 mt-4">
-            <label class="label label-head bg-head-first rounded-2 text-white me-2">5</label>
-            <span data-i18n="company_signature">Authorized Signature</span>
-        </h6>
-        <div class="row">
-            <div class="col-sm-6 mt-3">
-                <div class="cp-logo-upload-card" id="cpSignatureUploadCard">
-                    <div class="cp-logo-preview-box" id="cpSignaturePreviewBox">
-                        <img id="cpSignaturePreviewImg" src="" alt="Signature" class="d-none">
-                        <div class="cp-logo-placeholder" id="cpSignaturePlaceholder">
+        <div class="tab-pane fade" id="cpSub-statutory-pane" role="tabpanel" aria-labelledby="cpSub-statutory-tab" tabindex="0">
+            <p class="text-muted small mb-3" data-i18n="local_statutory_description">*Fields follow the statutory requirements of your company's registered country.</p>
+            <div id="dynamic_statutory_fields_container" class="row"></div>
+        </div>
+        <!-- 2026-08-30, explicit request: "Tab Signatory & Branding สามารถปรับให้สวยขึ้นกว่านี้ได้ไหมครับ" --
+             was 3 plain stacked sections (a bare label/input row, then two full-width h6-headed rows,
+             each upload card alone on its own line) with no visual grouping at all. Rewrapped into
+             .settings-info-card (new component below, same gradient-header-strip + card-surface shell
+             convention as Payslip Template's own .pst-info-card -- see that class's docblock) -- one
+             card for the signatory name, then Logo/Signature side-by-side in a 2-column row instead of
+             stacked, since both are genuinely the same kind of thing (an uploadable brand asset) and a
+             wide monitor was showing a huge empty gutter next to each single-column upload card before.
+             Every id/name attribute below is UNCHANGED from before this pass -- company-profile.js's
+             own selectors need zero changes, this is a pure markup/CSS restructure. -->
+        <div class="tab-pane fade" id="cpSub-brand-pane" role="tabpanel" aria-labelledby="cpSub-brand-tab" tabindex="0">
+            <div class="settings-info-card mb-4">
+                <div class="settings-info-card-header">
+                    <i class="fa-solid fa-user-pen"></i>
+                    <div>
+                        <p class="settings-info-card-title" data-i18n="authorized_signatory_title">Authorized Signatory</p>
+                        <p class="settings-info-card-desc" data-i18n="authorized_signatory_hint">The name printed alongside the signature on generated Payslip and Employment Certificate documents.</p>
+                    </div>
+                </div>
+                <div class="settings-info-card-body">
+                    <div class="row">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0">
+                                <span data-i18n="authorized_signatory_name">Authorized Signatory Name</span>
+                                <span class="text-danger">*</span>
+                            </label>
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="text" class="form-control required" name="authorized_signatory_name">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="settings-info-card h-100">
+                        <div class="settings-info-card-header">
+                            <i class="fa-solid fa-image"></i>
+                            <div>
+                                <p class="settings-info-card-title" data-i18n="company_logo">Company Logo</p>
+                                <p class="settings-info-card-desc" data-i18n="company_logo_reuse_hint">Used as the default logo on Payslip and Employment Certificate templates that don't have their own.</p>
+                            </div>
+                        </div>
+                        <div class="settings-info-card-body">
+                            <div class="cp-logo-upload-card" id="cpLogoUploadCard">
+                                <div class="cp-logo-preview-box" id="cpLogoPreviewBox">
+                                    <img id="cpLogoPreviewImg" src="" alt="Logo" class="d-none">
+                                    <div class="cp-logo-placeholder" id="cpLogoPlaceholder">
+                                        <i class="fa-solid fa-building"></i>
+                                        <span data-i18n="no_logo_uploaded">No logo uploaded</span>
+                                    </div>
+                                </div>
+                                <div class="cp-logo-actions">
+                                    <label class="btn btn-outline-secondary btn-sm" for="cp_logo_file">
+                                        <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_logo">Upload Logo</span>
+                                    </label>
+                                    <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpLogoRemoveBtn">
+                                        <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                                    </button>
+                                    <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                                    <input type="hidden" id="cp_logo_path" name="logo_path">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name หรือสามารถเซ็นต์สด
+                     ผ่านหน้าจอได้" -- same upload-card layout as Company Logo just above, plus a second input
+                     method (a live signature-pad drawn on a canvas, opened in a modal -- see
+                     #cpSignaturePadModal below this template). Both paths end up producing the exact same kind
+                     of file through the exact same upload endpoint (uploadSignature()), so this card doesn't
+                     need to know or care which one was used. -->
+                <div class="col-lg-6">
+                    <div class="settings-info-card h-100">
+                        <div class="settings-info-card-header">
                             <i class="fa-solid fa-signature"></i>
-                            <span data-i18n="no_signature_uploaded">No signature yet</span>
+                            <div>
+                                <p class="settings-info-card-title" data-i18n="company_signature">Authorized Signature</p>
+                                <p class="settings-info-card-desc" data-i18n="company_signature_reuse_hint">Available as the "Authorized Signature" item when designing Payslip and Employment Certificate templates.</p>
+                            </div>
                         </div>
-                    </div>
-                    <div class="cp-logo-actions">
-                        <label class="btn btn-outline-secondary btn-sm" for="cp_signature_file">
-                            <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_signature">Upload Image</span>
-                        </label>
-                        <button type="button" class="btn btn-outline-primary btn-sm" id="cpDrawSignatureBtn">
-                            <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
-                        </button>
-                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpSignatureRemoveBtn">
-                            <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
-                        </button>
-                        <input type="file" id="cp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
-                        <input type="hidden" id="cp_signature_path" name="signature_path">
-                        <p class="text-muted small mt-2 mb-0" data-i18n="company_signature_reuse_hint">Available as the "Authorized Signature" item when designing Payslip and Employment Certificate templates.</p>
+                        <div class="settings-info-card-body">
+                            <div class="cp-logo-upload-card" id="cpSignatureUploadCard">
+                                <div class="cp-logo-preview-box" id="cpSignaturePreviewBox">
+                                    <img id="cpSignaturePreviewImg" src="" alt="Signature" class="d-none">
+                                    <div class="cp-logo-placeholder" id="cpSignaturePlaceholder">
+                                        <i class="fa-solid fa-signature"></i>
+                                        <span data-i18n="no_signature_uploaded">No signature yet</span>
+                                    </div>
+                                </div>
+                                <div class="cp-logo-actions">
+                                    <label class="btn btn-outline-secondary btn-sm" for="cp_signature_file">
+                                        <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_signature">Upload Image</span>
+                                    </label>
+                                    <button type="button" class="btn btn-outline-primary btn-sm" id="cpDrawSignatureBtn">
+                                        <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpSignatureRemoveBtn">
+                                        <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                                    </button>
+                                    <input type="file" id="cp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
+                                    <input type="hidden" id="cp_signature_path" name="signature_path">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+        <!-- 2026-08-30, explicit request: "tab การเชื่อมต่อ Origami ไม่จำเป็นต้องมีนะครับ เพราะว่าเป็นการ
+             ตั้งค่าหลังบ้านตอน Sync มาผู้ใช้ไม่สามารถตั้งค่าเองได้" -- the Origami Integration sub-tab
+             (ref_id/origami_payroll_comp_code) is removed. NOTE: this WAS the only save path for
+             these 2 columns anywhere in the app (added 2026-08-29 specifically because Origami's own
+             SSO payload never carries them automatically) -- flagged to the user before removing;
+             they confirmed removing it anyway. CompanyProfileModel::save() switched both columns to
+             COALESCE(:param, existing_column) so an already-configured company's values are frozen in
+             place, not silently nulled out by a future unrelated profile save (see that model's own
+             comment). -->
     </div>
     <div class="text-end">
         <button type="button" class="btn btn-warning save-company-profile"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
         <button type="button" class="btn btn-light cancel-company-profile" data-i18n="cancel">Cancel</button>
+    </div>
     </div>
 </template>
 <template id="tmpl-bank-pane">
@@ -385,103 +464,7 @@
         </div>
     </div>
 </template>
-<div class="modal fade" id="bffFieldModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h6 class="modal-title" data-i18n="add_field">Add Field</h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="bffFieldId">
-                <div class="row g-3">
-                    <div class="col-6">
-                        <label class="form-label" data-i18n="field_label_th">Label (Thai)</label>
-                        <input type="text" class="form-control required" id="bffFieldLabelTh">
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label" data-i18n="field_label_en">Label (English)</label>
-                        <input type="text" class="form-control required" id="bffFieldLabelEn">
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label" data-i18n="row_type">Row</label>
-                        <select class="form-select" id="bffFieldRowType">
-                            <option value="detail" data-i18n="row_type_detail">Detail (per employee)</option>
-                            <option value="header" data-i18n="row_type_header">Header</option>
-                            <option value="trailer" data-i18n="row_type_trailer">Trailer</option>
-                        </select>
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label" data-i18n="order">Order</label>
-                        <input type="number" class="form-control" id="bffFieldSortOrder" min="0" value="0">
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label" data-i18n="source_type">Source Type</label>
-                        <select class="form-select" id="bffFieldSourceType">
-                            <option value="employee_field" data-i18n="source_type_employee_field">Payroll Field</option>
-                            <option value="constant" data-i18n="source_type_constant">Fixed Value</option>
-                            <option value="blank" data-i18n="source_type_blank">Blank</option>
-                        </select>
-                    </div>
-                    <div class="col-6" id="bffFieldSourceFieldWrap">
-                        <label class="form-label" data-i18n="source">Source</label>
-                        <select class="form-select" id="bffFieldSourceField"></select>
-                    </div>
-                    <div class="col-6 d-none" id="bffFieldConstantWrap">
-                        <label class="form-label" data-i18n="constant_value">Fixed Value</label>
-                        <input type="text" class="form-control" id="bffFieldConstantValue">
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label" data-i18n="data_type">Data Type</label>
-                        <select class="form-select" id="bffFieldDataType">
-                            <option value="text" data-i18n="data_type_text">Text</option>
-                            <option value="number" data-i18n="data_type_number">Number</option>
-                            <option value="date" data-i18n="data_type_date">Date</option>
-                        </select>
-                    </div>
-                    <div class="col-6" id="bffFieldDecimalWrap">
-                        <label class="form-label" data-i18n="decimal_places">Decimal Places</label>
-                        <input type="number" class="form-control" id="bffFieldDecimalPlaces" min="0" max="6" value="2">
-                    </div>
-                    <div class="col-6 d-none" id="bffFieldDateFormatWrap">
-                        <label class="form-label" data-i18n="date_format">Date Format</label>
-                        <input type="text" class="form-control" id="bffFieldDateFormat" value="Ymd" placeholder="Ymd">
-                    </div>
-                    <div class="col-4">
-                        <label class="form-label" data-i18n="width">Width</label>
-                        <input type="number" class="form-control" id="bffFieldWidth" min="1">
-                    </div>
-                    <div class="col-4">
-                        <label class="form-label" data-i18n="pad_char">Pad Char</label>
-                        <input type="text" class="form-control" id="bffFieldPadChar" maxlength="1" value=" ">
-                    </div>
-                    <div class="col-4">
-                        <label class="form-label" data-i18n="pad_direction">Pad Direction</label>
-                        <select class="form-select" id="bffFieldPadDirection">
-                            <option value="right" data-i18n="pad_direction_right">Right</option>
-                            <option value="left" data-i18n="pad_direction_left">Left</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button type="button" class="btn btn-warning" id="bffFieldSaveBtn"><span data-i18n="save">Save</span></button>
-            </div>
-        </div>
-    </div>
-</div>
-<div class="modal fade" id="bffLogModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h6 class="modal-title" data-i18n="edit_log">Edit Log</h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="bffLogModalBody"></div>
-        </div>
-    </div>
-</div>
+<!-- bffFieldModal / bffLogModal moved to app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 <template id="tmpl-structure-pane">
     <div class="mt-5 mb-5">
         <div class="bg-light rounded-3 p-2 mb-4 structure-tabs-wrap">
@@ -626,6 +609,25 @@
         </div>
         <div id="permissionMatrixContainer" class="table-responsive"></div>
     </div>
+    <!-- 2026-08-29, explicit follow-up request: "ทำ Notification Settings...ผูกกับ user preference ใน
+         ระดับ role ได้ด้วยถ้าไม่ซับซ้อนเกินไป" -- same grid pattern/markup shape as the Permission
+         Matrix right above (notification-preferences-matrix.js is a direct structural clone of
+         permission-matrix.js), own section on the same tab since both are role-config concerns for
+         the same admin audience. A checked cell means that role receives this notification type BY
+         DEFAULT -- an individual's own personal Settings-modal preference, if they ever set one,
+         still wins (see NotificationModel::shouldNotify()'s own docblock). -->
+    <div class="mt-5 mb-5 border-top pt-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div>
+                <h6 class="mb-1 text-secondary fw-bold"><i class="fa-solid fa-bell me-2 text-brand"></i><span data-i18n="notification_role_matrix_title">Notification Preferences by Role</span></h6>
+                <p class="text-muted small mb-0" data-i18n="notification_role_matrix_hint">Check the boxes to set which notification types each role receives by default. An employee's own personal Notification Settings, if set, always take priority over this.</p>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" id="btnSaveNotificationRoleMatrix">
+                <i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span>
+            </button>
+        </div>
+        <div id="notificationRoleMatrixContainer" class="table-responsive"></div>
+    </div>
 </template>
 <template id="tmpl-team-pane">
     <div class="mt-5 mb-5 table-responsive">
@@ -642,140 +644,10 @@
         </table>
     </div>
 </template>
-<!-- 2026-08-26, explicit request: "สามารถเซ็นต์สดผ่านหน้าจอได้" -- signature-pad modal. Lives OUTSIDE
-     every <template> above (a <template>'s content is inert until cloned by JS, so a live
-     bootstrap.Modal needs to sit in real page DOM instead) -- plain mouse/touch canvas drawing, no new
-     dependency (same "no reason to add a library for basic bounding-box interaction" precedent
-     Employment Certificate Template's own canvas designer already established). -->
-<div class="modal fade" id="cpSignaturePadModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <canvas id="cpSignaturePadCanvas" class="cp-signature-pad-canvas" width="500" height="220"></canvas>
-                <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" id="cpSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button type="button" class="btn btn-primary" id="cpSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Sync Department/Position/Team from Origami (2026-08-28, explicit request: "ส่วนของ Department
-     หรือข้อมูลที่ดึง Filter ได้ตอนนี้ เพิ่มปุ่มให้ Sync ได้ด้วย") -- ONE shared modal for all 3 entity
-     types (title/columns swapped by JS via #orgStructureSyncModalLabel/orgSyncCurrentEntityType),
-     same review-first architecture and side-by-side New/Already-Exists layout as Employee/Holiday
-     Sync (see OrgStructureSyncModel's own docblock). No filter row -- unlike Employee Sync, there's
-     nothing to narrow by, so the modal fetches immediately on open. -->
-<div class="modal fade" id="orgStructureSyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="orgStructureSyncModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title text-secondary" id="orgStructureSyncModalLabel">
-                    <i class="fa-solid fa-rotate me-1"></i><span id="orgStructureSyncModalLabelText">Sync from Origami</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="text-center py-5 d-none" id="orgStructureSyncNotConnected">
-                    <i class="fa-solid fa-plug-circle-xmark fa-2x text-danger mb-3"></i>
-                    <div class="fw-bold mb-1" data-i18n="employee_sync_not_connected_title">Not connected to Origami</div>
-                    <div class="text-muted small" id="orgStructureSyncNotConnectedMessage" data-i18n="employee_sync_not_connected_message">The connection to Origami has not been configured yet. Please contact your system administrator.</div>
-                </div>
-                <div id="orgStructureSyncBody" class="d-none">
-                    <div id="orgStructureSyncResultArea" class="d-none">
-                        <div class="row g-3">
-                            <div class="col-lg-6">
-                                <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="orgSyncNewCount">0</span></h6>
-                                </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
-                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_new">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
-                                            <tr>
-                                                <th style="width:3%;"><input type="checkbox" id="orgSyncNewSelectAll"></th>
-                                                <th data-i18n="name">Name</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody></tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            <div class="col-lg-6">
-                                <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="orgSyncExistingCount">0</span></h6>
-                                </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
-                                    <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_existing">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
-                                            <tr>
-                                                <th style="width:3%;"><input type="checkbox" id="orgSyncExistingSelectAll"></th>
-                                                <th data-i18n="name">Name</th>
-                                                <th data-i18n="employee_sync_update_col">Update Available</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody></tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="text-muted small text-center py-4" id="orgStructureSyncLoadingHint">
-                        <i class="fa-solid fa-spinner fa-spin me-1"></i><span data-i18n="loading">Loading...</span>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer justify-content-between">
-                <span class="text-muted small" id="orgSyncSelectedCountLabel"></span>
-                <div>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                    <button type="button" class="btn btn-primary d-none" id="btnApplyOrgStructureSync">
-                        <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="orgSyncSelectedCount">0</span>)
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Org Structure Sync Log -->
-<div class="modal fade" id="orgStructureSyncLogModal" tabindex="-1" aria-labelledby="orgStructureSyncLogModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title text-secondary" id="orgStructureSyncLogModalLabel">
-                    <i class="fa-solid fa-clock-rotate-left me-1"></i><span id="orgStructureSyncLogModalLabelText">Sync Log</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <table class="table table-hover table-sm align-middle w-100" id="tb_org_structure_sync_log">
-                    <thead class="table-light text-secondary">
-                        <tr>
-                            <th data-i18n="employee_sync_log_col_date">Date</th>
-                            <th data-i18n="employee_sync_log_col_triggered_by">By</th>
-                            <th data-i18n="employee_sync_log_col_status">Status</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- cpSignaturePadModal / orgStructureSyncModal / orgStructureSyncLogModal moved to
+     app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 
 <script src="<?=asset('public/js/setup/company-profile.js')?>"></script>
 <script src="<?=asset('public/js/setup/permission-matrix.js')?>"></script>
+<script src="<?=asset('public/js/setup/notification-preferences-matrix.js')?>"></script>
 <script src="<?=asset('public/js/setup/org-structure-sync.js')?>"></script>
