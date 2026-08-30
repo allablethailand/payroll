@@ -82,6 +82,7 @@ try {
                     'report_item_id' => 12,
                     'emp_id' => 101,
                     'emp_code' => 'E-101',
+                    'emp_name' => 'Somchai Jaidee',
                     'payroll_code' => $mappedCode,
                     'dept_description' => 'Accounting',
                     'position_name' => 'Accountant',
@@ -163,6 +164,10 @@ try {
     check('unmapped row employee_id is NULL', $items[1]['employee_id'], null);
     check('unmapped row mapping_status', $items[1]['mapping_status'] ?? null, 'unmapped');
     check('unmapped row keeps original payroll_code', $items[1]['payroll_code'] ?? null, $unmappedCode);
+
+    // ---------- items[].emp_name (2026-08-30 rev 2, PAYROLL_SYNC_API.md) ----------
+    check('items[].emp_name stored on the row (display/verification only, not a mapping key)', $items[0]['emp_name'] ?? null, 'Somchai Jaidee');
+    check('row with no emp_name sent stores null (not an empty string)', $items[1]['emp_name'], null);
 
     // ---------- Payment / SSO fields (added to the doc 2026-08-17) ----------
     check('transfer row pay_type stored', $items[0]['pay_type'] ?? null, 'transfer');
@@ -401,6 +406,15 @@ try {
     $placeholderProcessId = random_int(100000, 999999);
     $placeholderCodeWithStatus = 'PLACEHOLDER_TEST_' . uniqid();
     $placeholderCodeNoStatus = 'PLACEHOLDER_TEST_NOSTATUS_' . uniqid();
+    // 2026-08-30 rev 2: this one has items[].emp_name set directly but NO matching employee_status
+    // row at all -- an ordinary ongoing employee (not flagged new-hire/resigned this period) that
+    // just happens to still be unmapped. Before this round, this exact shape fell all the way
+    // through to the payroll_code-as-name placeholder; items[].emp_name should now be used instead.
+    $placeholderCodeItemNameOnly = 'PLACEHOLDER_TEST_ITEMNAME_' . uniqid();
+    // This one has BOTH sources -- items[].emp_name must win (it's the more complete/reliable
+    // source going forward), employee_status.emp_name here is deliberately a DIFFERENT name so a
+    // wrong-priority bug would be caught, not silently pass by coincidence.
+    $placeholderCodeBothSources = 'PLACEHOLDER_TEST_BOTHSOURCES_' . uniqid();
     $placeholderPayload = [
         'schema_version' => 1,
         'process_id' => $placeholderProcessId,
@@ -424,27 +438,40 @@ try {
                 'report_item_id' => 21, 'payroll_code' => $placeholderCodeNoStatus,
                 'pay_type' => 'cash', 'deduct_sso' => false, 'item_values' => [],
             ],
+            [
+                'report_item_id' => 22, 'payroll_code' => $placeholderCodeItemNameOnly,
+                'emp_name' => 'Wichai Somsri',
+                'pay_type' => 'cash', 'deduct_sso' => false, 'item_values' => [],
+            ],
+            [
+                'report_item_id' => 23, 'payroll_code' => $placeholderCodeBothSources,
+                'emp_name' => 'Priority Winner',
+                'pay_type' => 'cash', 'deduct_sso' => false, 'item_values' => [],
+            ],
         ],
         'employee_status' => [
             ['emp_id' => 201, 'emp_code' => 'E-201', 'payroll_code' => $placeholderCodeWithStatus, 'emp_name' => 'สมหญิง รักดี',
              'dept_description' => 'HR', 'position_name' => 'HR Officer', 'emp_start_date' => '2025-06-15', 'emp_resign_date' => null,
+             'is_new_hire' => 1, 'is_resigned_this_period' => 0, 'status_text' => 'New Hire'],
+            ['emp_id' => 202, 'emp_code' => 'E-202', 'payroll_code' => $placeholderCodeBothSources, 'emp_name' => 'Should Not Be Used',
+             'dept_description' => 'Sales', 'position_name' => 'Sales Rep', 'emp_start_date' => '2025-07-01', 'emp_resign_date' => null,
              'is_new_hire' => 1, 'is_resigned_this_period' => 0, 'status_text' => 'New Hire'],
         ],
     ];
     $placeholderIngest = $model->ingest($placeholderPayload);
     checkTrue('placeholder-fixture ingest succeeds' . (empty($placeholderIngest['status']) ? " ({$placeholderIngest['message']})" : ''), $placeholderIngest['status']);
     $placeholderProcessRowId = $placeholderIngest['process_row_id'] ?? 0;
-    check('placeholder-fixture: both rows start unmapped', $placeholderIngest['unmapped_items'] ?? null, 2);
+    check('placeholder-fixture: all four rows start unmapped', $placeholderIngest['unmapped_items'] ?? null, 4);
 
     $placeholderRemap = $model->remapUnmappedItems($placeholderProcessRowId, $compId);
-    check('remapUnmappedItems finds nothing (neither payroll_code matches a real employee yet)', $placeholderRemap, 0);
+    check('remapUnmappedItems finds nothing (none of the 4 payroll_codes match a real employee yet)', $placeholderRemap, 0);
 
     $createdCount = $model->createPlaceholderEmployeesForUnmapped($placeholderProcessRowId, $compId, 1);
-    check('createPlaceholderEmployeesForUnmapped creates both missing employees', $createdCount, 2);
+    check('createPlaceholderEmployeesForUnmapped creates all four missing employees', $createdCount, 4);
 
     $itemsAfterPlaceholder = $pdo->query("SELECT * FROM payroll_sync_items WHERE process_id = {$placeholderProcessRowId} ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
-    check('both rows now mapping_status=mapped', $itemsAfterPlaceholder[0]['mapping_status'] . '/' . $itemsAfterPlaceholder[1]['mapping_status'], 'mapped/mapped');
-    checkTrue('both rows now have an employee_id', !empty($itemsAfterPlaceholder[0]['employee_id']) && !empty($itemsAfterPlaceholder[1]['employee_id']));
+    check('all four rows now mapping_status=mapped', implode('/', array_column($itemsAfterPlaceholder, 'mapping_status')), 'mapped/mapped/mapped/mapped');
+    checkTrue('all four rows now have an employee_id', count(array_filter($itemsAfterPlaceholder, fn($r) => !empty($r['employee_id']))) === 4);
 
     $headerAfterPlaceholder = $pdo->query("SELECT unmapped_item_count FROM payroll_sync_processes WHERE id = {$placeholderProcessRowId}")->fetch(PDO::FETCH_ASSOC);
     check('unmapped_item_count zeroed out on the header row', (int)($headerAfterPlaceholder['unmapped_item_count'] ?? -1), 0);
@@ -466,6 +493,25 @@ try {
     check('new employee with no employee_status row falls back to payroll_code as surname_th too', $newEmp2['surname_th'] ?? null, $placeholderCodeNoStatus);
     check('new employee with no emp_start_date falls back to today as employment_date', $newEmp2['employment_date'] ?? null, date('Y-m-d'));
 
+    // 2026-08-30 rev 2: items[].emp_name used as the name source when there's NO employee_status
+    // row at all for this payroll_code (an ordinary, ongoing employee -- not new-hire/resigned this
+    // period -- who just happens to still be unmapped on this side).
+    $newEmp3Stmt = $pdo->prepare("SELECT * FROM employees WHERE id = :id");
+    $newEmp3Stmt->execute([':id' => $itemsAfterPlaceholder[2]['employee_id']]);
+    $newEmp3 = $newEmp3Stmt->fetch(PDO::FETCH_ASSOC);
+    check('new employee with items[].emp_name but NO employee_status row uses items[].emp_name (first word)', $newEmp3['name_th'] ?? null, 'Wichai');
+    check('new employee with items[].emp_name but NO employee_status row uses items[].emp_name (remainder)', $newEmp3['surname_th'] ?? null, 'Somsri');
+    check('new employee via items[].emp_name still falls back to today for employment_date (no emp_start_date source at all)', $newEmp3['employment_date'] ?? null, date('Y-m-d'));
+
+    // Priority: when BOTH items[].emp_name and a (deliberately different) employee_status.emp_name
+    // exist for the same payroll_code, items[].emp_name wins.
+    $newEmp4Stmt = $pdo->prepare("SELECT * FROM employees WHERE id = :id");
+    $newEmp4Stmt->execute([':id' => $itemsAfterPlaceholder[3]['employee_id']]);
+    $newEmp4 = $newEmp4Stmt->fetch(PDO::FETCH_ASSOC);
+    check('items[].emp_name takes priority over employee_status.emp_name when both are present (first word)', $newEmp4['name_th'] ?? null, 'Priority');
+    check('items[].emp_name takes priority over employee_status.emp_name when both are present (remainder)', $newEmp4['surname_th'] ?? null, 'Winner');
+    check('employment_date STILL comes from employee_status.emp_start_date even though the name came from items[]', $newEmp4['employment_date'] ?? null, '2025-07-01');
+
     $idempotentCreatedCount = $model->createPlaceholderEmployeesForUnmapped($placeholderProcessRowId, $compId, 1);
     check('nothing left to create the second time (idempotent, no duplicate employees)', $idempotentCreatedCount, 0);
 
@@ -473,7 +519,7 @@ try {
     // applyEmployeeMasterFields, so a brand-new placeholder also gets its payment/SSO/ID-card
     // fields populated in this SAME pull, not left blank until some future pull.
     $placeholderApplyCount = $model->applyEmployeeMasterFields($placeholderProcessRowId, $compId, 1);
-    check('applyEmployeeMasterFields also reaches the two just-created placeholder employees', $placeholderApplyCount, 2);
+    check('applyEmployeeMasterFields also reaches all four just-created placeholder employees', $placeholderApplyCount, 4);
     $newEmp1Stmt->execute([':id' => $itemsAfterPlaceholder[0]['employee_id']]);
     $newEmp1AfterApply = $newEmp1Stmt->fetch(PDO::FETCH_ASSOC);
     check('newly-created placeholder employee payment_type populated from sync data', $newEmp1AfterApply['payment_type'] ?? null, 'bank');

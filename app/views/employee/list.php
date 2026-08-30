@@ -18,6 +18,10 @@
     width: 38px; height: 38px; min-width: 38px;
     border-radius: 50%;
     object-fit: cover;
+    /* 2026-08-30, explicit follow-up report ("หัวหลุดวงกลม"): default object-position (center) crops
+       a typical portrait around the chest, not the face -- bias toward the top of the frame instead.
+       Same fix applied everywhere else this app shows a circular profile photo. */
+    object-position: center top;
 }
 </style>
 <div class="container container-body">
