@@ -842,9 +842,14 @@ function syncDetailSectionHeaderPr(num, i18nKey, fallback) {
 // means something specific instead of just decorating.
 function renderSyncItemCardPr(item) {
     const isMapped = !!item.matched_employee_no;
+    // 2026-08-30 rev 2: items[].emp_name (PAYROLL_SYNC_API.md) -- for an UNMAPPED row this used to
+    // show nothing but the bare payroll_code, with no way to tell which real person it belongs to
+    // without opening the raw payload. emp_name is display/verification only (payroll_code is still
+    // the actual mapping key), so it's shown here but never used for the "matched" branch, which
+    // already has a real, confirmed name from the employees table it resolved to.
     const nameLine = isMapped
         ? `<span class="fw-semibold">${escapeHtmlPr(item.matched_employee_no)}</span> <span class="text-muted">— ${escapeHtmlPr((currentLang === 'th' ? `${item.matched_name_th} ${item.matched_surname_th}` : `${item.matched_name_en} ${item.matched_surname_en}`).trim())}</span>`
-        : `<span class="text-muted">${escapeHtmlPr(item.payroll_code)}</span>`;
+        : `<span class="text-muted">${escapeHtmlPr(item.payroll_code)}</span>` + (item.emp_name ? ` <span class="text-muted">— ${escapeHtmlPr(item.emp_name)}</span>` : '');
     const values = (item.item_values || [])
         .filter(v => Number(v.value) !== 0)
         .map(v => {
