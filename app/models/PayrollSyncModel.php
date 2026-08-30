@@ -1035,7 +1035,7 @@ class PayrollSyncModel {
      * changes, both case-insensitive. Returns null on no match -- resolve-only, never creates a new
      * row (a fixed global country list, unlike resolveOrCreateBankId()'s per-company banks).
      */
-    private function resolveNationalityCode(?string $raw): ?string {
+    private function resolveNationalityCode(int|string|null $raw): ?string {
         $name = trim((string)$raw);
         if ($name === '') {
             return null;
@@ -1096,19 +1096,19 @@ class PayrollSyncModel {
         return !empty($passProDate) ? 'failed' : 'on_probation';
     }
 
-    private function normalizeTitle(?string $raw): ?string {
+    private function normalizeTitle(int|string|null $raw): ?string {
         $map = ['mr' => 'mr', 'mr.' => 'mr', 'mister' => 'mr', 'mrs' => 'mrs', 'mrs.' => 'mrs', 'ms' => 'ms', 'ms.' => 'ms', 'miss' => 'ms'];
         $key = strtolower(trim((string)$raw));
         return $map[$key] ?? null;
     }
 
-    private function normalizeGender(?string $raw): ?string {
+    private function normalizeGender(int|string|null $raw): ?string {
         $map = ['m' => 'male', 'male' => 'male', 'f' => 'female', 'female' => 'female'];
         $key = strtolower(trim((string)$raw));
         return $map[$key] ?? null;
     }
 
-    private function normalizeMaritalStatus(?string $raw): ?string {
+    private function normalizeMaritalStatus(int|string|null $raw): ?string {
         $map = ['single' => 'single', 'married' => 'married', 'divorced' => 'divorced', 'widowed' => 'widowed', 'widow' => 'widowed'];
         $key = strtolower(trim((string)$raw));
         return $map[$key] ?? null;
