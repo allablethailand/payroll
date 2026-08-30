@@ -854,10 +854,16 @@ function markTabDirty(key) {
     try { localStorage.setItem(key, String(Date.now())); } catch (e) { /* private browsing etc. */ }
 }
 // watchTabDirty(): call from the LIST tab once, at page init. `reloadFn` should reload that list's
-// own DataTable in place (e.g. `() => tb_employee.ajax.reload(null, false)`). Two independent
+// own DataTable in place (e.g. `() => tb_employee.ajax.reload(null, false)`). Three independent
 // signals, same as the pattern this generalizes: the 'storage' event (fires immediately, but only
 // while this tab is in the background/inactive in some browsers) plus a 'visibilitychange' fallback
 // (catches the case of coming back to this tab after the editor tab already saved and closed).
+// 2026-08-30, explicit report of the reload not happening ("List เหมือนจะยังไม่ Reload") -- couldn't
+// pin an exact root cause by reading the code (both existing signals look structurally correct for
+// their intended cases), so added window's own 'focus' event too as a genuinely independent third
+// signal: some browser/window-manager combinations fire it more reliably than 'visibilitychange'
+// when switching back to this tab/window. Harmless if redundant with the other two -- reloadFn()
+// itself is a cheap in-place DataTables refresh, not destructive to re-run more than strictly needed.
 function watchTabDirty(key, reloadFn) {
     window.addEventListener('storage', function (e) {
         if (e.key === key) reloadFn();
@@ -865,6 +871,7 @@ function watchTabDirty(key, reloadFn) {
     document.addEventListener('visibilitychange', function () {
         if (document.visibilityState === 'visible') reloadFn();
     });
+    window.addEventListener('focus', reloadFn);
 }
 function refreshAllTables() {
     const tableMappings = {

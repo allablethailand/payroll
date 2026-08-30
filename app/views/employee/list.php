@@ -11,6 +11,14 @@
 #tb_employee tbody tr { transition: background-color .12s ease; }
 .employee-completeness-bar { min-width: 100px; }
 .employee-completeness-bar .progress { height: 6px; background-color: #eef0f2; }
+/* 2026-08-30, real photo (synced or manually uploaded) shown in place of the initial-letter avatar
+   circle once profile_photo_path is set -- object-fit:cover so a non-square upload still fills the
+   circle cleanly instead of distorting/letterboxing. */
+.employee-list-avatar-img {
+    width: 38px; height: 38px; min-width: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+}
 </style>
 <div class="container container-body">
     <nav aria-label="breadcrumb">
