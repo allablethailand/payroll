@@ -51,6 +51,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/services/OrigamiSsoJwt.php';
 require_once __DIR__ . '/../app/models/PayrollEarningDeductionTypeModel.php';
+require_once __DIR__ . '/../app/models/EmployeeLoginLogModel.php';
 
 /**
  * 2026-08-27, explicit request: "/payroll/auth/ ปรับหน้านี้ให้เป็นธีมเดียวกันด้วยครับ" -- this used to be a
@@ -292,6 +293,28 @@ $_SESSION['user'] = [
     'company_id'  => (int)$company['id'],
     'role'        => $role,
 ];
+
+// 2026-08-29, explicit request: "ต้องการอีก Tab ใน Employee เพื่อดูประวัติการเข้าใช้งานระบบ...ตอนนี้เก็บ
+// ip location timezone อุปกรณ์ version อุปกรณ์ เบราเซอร์ ครบไหม ถ้ายังไม่ครบให้เก็บเพิ่มครับ" -- one row per
+// successful login, right after the session is established above (same REMOTE_ADDR convention
+// PayrollRunModel::clientIp() already uses for its own audit trail, see that method's own
+// docblock on why REMOTE_ADDR over X-Forwarded-For in this environment). Wrapped in its own
+// try/catch -- IP geolocation is a best-effort outbound HTTP call (see
+// EmployeeLoginLogModel::resolveLocation()'s own docblock) and must never be allowed to break a
+// real login if it throws. The new row's id is stashed in the session so recordTimezone() (fired
+// once by a small JS beacon after this same login's first post-redirect page load, see app.js's
+// recordLoginTimezone()) can find and patch it in without any other lookup key.
+try {
+    $loginLogModel = new EmployeeLoginLogModel();
+    $_SESSION['login_log_id'] = $loginLogModel->create(
+        (int)$company['id'],
+        (int)$employee['id'],
+        (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+        (string)($_SERVER['HTTP_USER_AGENT'] ?? '')
+    );
+} catch (Throwable $e) {
+    // Best-effort -- a login log failure must never block the login itself.
+}
 
 // App switcher (header "Origami Hub" icon): Origami's own header.php/switch_app.php reuses
 // $_SESSION['auth_json'] from ITS OWN same-origin session -- payroll is a separate origin with

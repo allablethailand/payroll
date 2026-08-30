@@ -146,6 +146,93 @@ try {
     check('total_employee_deduction sums all active items', $full['total_employee_deduction'], 750.0 + 900.0 + 17500.0);
     // SSO: 30000 clamped to max_base 15000 * 5% = 750 (also under the 750 cap), PVD: 30000*3% master=900, PIT=17500
 
+    // 2026-08-30, calc-preview rollout: TaxStatutoryModel::previewRateVersion() runs a DRAFT rate
+    // version's fields through the SAME StatutoryCalculationEngine::computeXxx() static functions
+    // used above, against a sample base amount -- expected numbers below are lifted directly from
+    // Scenario 1/5/6's own real calculateItem()/calculateLine() results (same config, same base),
+    // so a pass here proves the preview can never silently drift from real payroll calculation.
+    echo "=== previewRateVersion(): calc-preview endpoint for Tax & Statutory settings ===\n";
+
+    $beforeSsoRateCount = (int)$pdo->query("SELECT COUNT(*) FROM `statutory_item_rate_history` WHERE statutory_item_id = {$ssoId}")->fetchColumn();
+    $preview = $taxModel->previewRateVersion([
+        'statutory_item_id' => $ssoId,
+        'employee_rate' => 5, 'employer_rate' => 5,
+        'max_base_amount' => 15000, 'max_employee_contribution' => 750, 'max_employer_contribution' => 750,
+    ], 20000.0);
+    check('flat_rate preview status', $preview['status'], true);
+    check('flat_rate preview employee_amount matches Scenario 1 real calc (capped at 750)', $preview['employee_amount'], 750.0);
+    check('flat_rate preview employer_amount', $preview['employer_amount'], 750.0);
+    check('flat_rate preview formula.effective_base reflects the max_base clamp', $preview['formula']['effective_base'] ?? null, 15000.0);
+    check('flat_rate preview formula.employee_capped is false (raw already equals the cap)', $preview['formula']['employee_capped'], false);
+
+    $preview = $taxModel->previewRateVersion(['statutory_item_id' => $ssoId, 'employer_rate' => 5], 20000.0);
+    check('flat_rate preview rejects a missing employee_rate', $preview['status'], false);
+
+    check('previewRateVersion() never writes a rate history row (TH_SSO row count unchanged)',
+        (int)$pdo->query("SELECT COUNT(*) FROM `statutory_item_rate_history` WHERE statutory_item_id = {$ssoId}")->fetchColumn(), $beforeSsoRateCount);
+
+    // progressive_bracket (TH_PIT) -- reuse the real, already-configured brackets so the expected
+    // result matches Scenario 5's own published-table value (17,500 THB @ taxable_income=400,000).
+    $pitBracketsStmt = $pdo->prepare("SELECT min_amount, max_amount, rate FROM `statutory_item_brackets`
+        WHERE statutory_item_rate_history_id = (
+            SELECT id FROM `statutory_item_rate_history` WHERE statutory_item_id = :item_id AND deleted_at IS NULL
+            ORDER BY effective_date DESC LIMIT 1
+        ) ORDER BY bracket_order ASC");
+    $pitBracketsStmt->execute([':item_id' => $pitId]);
+    $pitBrackets = $pitBracketsStmt->fetchAll(PDO::FETCH_ASSOC);
+    check('fixture sanity: TH_PIT has real bracket rows configured', count($pitBrackets) > 0, true);
+
+    $beforeBracketCount = (int)$pdo->query("SELECT COUNT(*) FROM `statutory_item_brackets` WHERE statutory_item_rate_history_id IN (SELECT id FROM `statutory_item_rate_history` WHERE statutory_item_id = {$pitId})")->fetchColumn();
+    $preview = $taxModel->previewRateVersion(['statutory_item_id' => $pitId, 'brackets' => $pitBrackets], 400000.0);
+    check('progressive_bracket preview status', $preview['status'], true);
+    check('progressive_bracket preview matches Scenario 5 real calc (17,500)', $preview['employee_amount'], 17500.0);
+    check('progressive_bracket preview employer_amount is 0 (PIT has no employer share)', $preview['employer_amount'], 0.0);
+    check('progressive_bracket preview formula carries a steps array', is_array($preview['formula']['steps'] ?? null), true);
+
+    $preview = $taxModel->previewRateVersion(['statutory_item_id' => $pitId, 'brackets' => []], 400000.0);
+    check('progressive_bracket preview rejects an empty bracket list', $preview['status'], false);
+
+    check('previewRateVersion() never writes a bracket row (TH_PIT bracket count unchanged)',
+        (int)$pdo->query("SELECT COUNT(*) FROM `statutory_item_brackets` WHERE statutory_item_rate_history_id IN (SELECT id FROM `statutory_item_rate_history` WHERE statutory_item_id = {$pitId})")->fetchColumn(), $beforeBracketCount);
+
+    // fixed_amount -- no real TH fixed_amount item exists in seed data, so a small standalone
+    // fixture item is inserted directly (same approach Scenario 6 uses for the formula item).
+    $insertFixed = $pdo->prepare("INSERT INTO `statutory_items`
+        (country_code, code, name_th, name_en, category, calc_method, calc_base, is_employee_applicable, is_employer_applicable, sort_order, status, rounding_mode, decimal_places, created_by)
+        VALUES ('TH', 'TEST_PREVIEW_FIXED', 'Test Fixed', 'Test Fixed', 'other', 'fixed_amount', 'basic_salary', 1, 1, 99, 'active', 'round', 2, 1)");
+    $insertFixed->execute();
+    $fixedItemId = (int)$pdo->lastInsertId();
+    $preview = $taxModel->previewRateVersion(['statutory_item_id' => $fixedItemId, 'employee_amount' => 100, 'employer_amount' => 50], 30000.0);
+    check('fixed_amount preview status', $preview['status'], true);
+    check('fixed_amount preview employee_amount', $preview['employee_amount'], 100.0);
+    check('fixed_amount preview employer_amount', $preview['employer_amount'], 50.0);
+    check('fixed_amount preview formula.type', $preview['formula']['type'] ?? null, 'fixed_amount');
+
+    $preview = $taxModel->previewRateVersion(['statutory_item_id' => $fixedItemId, 'employer_amount' => 50], 30000.0);
+    check('fixed_amount preview rejects a missing employee_amount', $preview['status'], false);
+
+    check('previewRateVersion() never writes a rate history row for the fixed_amount fixture item',
+        (int)$pdo->query("SELECT COUNT(*) FROM `statutory_item_rate_history` WHERE statutory_item_id = {$fixedItemId}")->fetchColumn(), 0);
+
+    // formula -- reuse the exact US_FICA_MEDICARE config/base already verified in Scenario 6
+    // (employee 4075 = 250000*1.45% + (250000-200000)*0.9%, employer 3625 = 250000*1.45% only)
+    $preview = $taxModel->previewRateVersion([
+        'statutory_item_id' => $medicareId,
+        'formula_config' => json_encode(['employee' => ['base_rate' => 1.45, 'extra_rate' => 0.9, 'extra_threshold' => 200000], 'employer' => ['base_rate' => 1.45]]),
+    ], 250000.0);
+    check('formula preview status', $preview['status'], true);
+    check('formula preview employee_amount matches Scenario 6 real calc', $preview['employee_amount'], 4075.0);
+    check('formula preview employer_amount matches Scenario 6 real calc', $preview['employer_amount'], 3625.0);
+
+    $preview = $taxModel->previewRateVersion(['statutory_item_id' => $medicareId, 'formula_config' => 'not json'], 250000.0);
+    check('formula preview rejects invalid JSON', $preview['status'], false);
+
+    $preview = $taxModel->previewRateVersion(['statutory_item_id' => 999999], 30000.0);
+    check('preview rejects an unknown statutory_item_id', $preview['status'], false);
+
+    $preview = $taxModel->previewRateVersion(['statutory_item_id' => $ssoId, 'employee_rate' => 5, 'employer_rate' => 5], -100.0);
+    check('preview rejects a negative sample_base_amount', $preview['status'], false);
+
     // 2026-08-29, explicit request: "ให้มีการกำหนดเพิ่มได้ว่าปัดเศษ หรือไม่ปัด ถ้าปัดปัดแบบไหน และทศนิยม
     // ได้กี่ตำแหน่ง แล้วตอนคำนวณให้นำไปใช้ด้วย" -- per-item rounding_mode/decimal_places on
     // statutory_items, applied by StatutoryCalculationEngine::applyRounding(). TH_SSO's own 5% rate

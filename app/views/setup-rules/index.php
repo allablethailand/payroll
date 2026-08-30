@@ -205,26 +205,9 @@
         </div>
     </div>
 </div>
-<div class="modal fade" id="shiftAssignModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h6 class="modal-title" id="shiftAssignModalTitle"><i class="fa-solid fa-user-check"></i> <span data-i18n="assign_employees">Assign Employees</span></h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="shiftAssignId">
-                <label class="form-label" data-i18n="applies_to_employees">Applies to Employees</label>
-                <select class="form-select select2-remote" id="shiftAssignEmployees" multiple data-api="/api/employee.report_to.get" data-type="employee"></select>
-                <p class="text-muted small mb-0 mt-2" data-i18n="assign_employees_hint">Employees selected here will be moved onto this shift. Deselecting someone removes them from this shift only, not from the company.</p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveShiftAssignment()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- 2026-08-30, explicit request: "ตัดการ Assign ออกไปเลย เพราะสามารถเพิ่มได้ในฝั่งพนักงานอยู่แล้ว" --
+     #shiftAssignModal removed (see setup-rules.js's own comment at the actionBtns() Shift render
+     call for the reasoning). -->
 <div class="modal fade" id="workLocationModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -334,11 +317,18 @@
         </div>
     </div>
 </div>
-<div class="modal fade" id="leaveModal" tabindex="-1">
+<!-- 2026-08-30, renamed leaveModal -> leaveTypeModal (modal consolidation): a plain leave-RECORD
+     entry modal of the same name already exists on Manual Time Entry (app/views/manual-entry/
+     index.php) -- coincidental name reuse for a genuinely different purpose, harmless while each
+     page's own markup only ever loaded on its own page, but now that every modal shares one DOM
+     (app/views/layout/modals.php, loaded on every page) the two ids would collide live. Renamed
+     THIS one (leave-TYPE config) rather than Manual Time Entry's (leave-RECORD entry) to minimize
+     churn -- see public/js/setup/setup-rules.js for the matching id updates. -->
+<div class="modal fade" id="leaveTypeModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="leaveModalTitle"><i class="fa-regular fa-calendar-check"></i> <span data-i18n="leave_type">Leave Type</span></h6>
+                <h6 class="modal-title" id="leaveTypeModalTitle"><i class="fa-regular fa-calendar-check"></i> <span data-i18n="leave_type">Leave Type</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -476,6 +466,28 @@
                         <label class="form-label m-0" for="otStatus" data-i18n="enable_this_rate">Enable this rate</label>
                     </div>
                 </div>
+                <!-- 2026-08-30, explicit request: same calculation-preview feature as Attendance
+                     Deduction Rule's own Configure modal (see that modal's own comment for the full
+                     "ทำ OT ต่อเลยครับ" context) -- computes against whatever is CURRENTLY typed above,
+                     via SetupRulesModel::otRatePreview(), the exact same formula real OT payroll uses. -->
+                <hr class="my-3 text-muted opacity-25">
+                <div class="calc-preview-box" id="otCalcPreviewBox">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0 text-secondary"><i class="fa-solid fa-calculator me-2 text-brand"></i><span data-i18n="calc_preview_title">Calculation Preview</span></h6>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnOtCalcPreview"><i class="fa-solid fa-play me-1"></i><span data-i18n="calc_preview_button">Preview</span></button>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_salary">Sample Base Salary</label>
+                            <input type="number" min="1" step="0.01" class="form-control form-control-sm" id="otCalcPreviewBaseSalary" value="30000">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-1" data-i18n="calc_preview_sample_ot_hours">Sample OT Hours</label>
+                            <input type="number" min="0" step="0.5" class="form-control form-control-sm" id="otCalcPreviewHours" value="2">
+                        </div>
+                    </div>
+                    <div class="calc-preview-result d-none" id="otCalcPreviewResult"></div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
@@ -484,22 +496,6 @@
         </div>
     </div>
 </div>
-<div class="modal fade" id="deleteModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-body text-center pt-4">
-                <div class="confirm-icon"><i class="fa-solid fa-trash"></i></div>
-                <h6 class="fw-bold mb-1" data-i18n="confirm_delete_title">Confirm Delete</h6>
-                <p class="text-muted small mb-0"><span data-i18n="delete_confirm_question">Do you want to delete</span> "<span id="deleteTargetName"></span>"?<br><span data-i18n="delete_irreversible_note">This action cannot be undone.</span></p>
-            </div>
-            <div class="modal-footer border-0 justify-content-center pb-4">
-                <button class="btn btn-light px-3" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-danger px-3" onclick="confirmDelete()"><i class="fa-solid fa-trash me-1"></i><span data-i18n="delete">Delete</span></button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- 2026-08-28, explicit request: "เพิ่มให้ Sync ข้อมูลวันหยุดตามประกาศจาก API ที่มี...แต่ต้อง Map
      กับข้อมูลที่มีแล้ว แล้วค่อยมานำตั้งค่าให้พนักงานต่อ" -- picker modal, same 2-tab New/Existing
      review pattern as the Employee Sync picker (Employee List page). See HolidaySyncModel's own

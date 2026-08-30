@@ -126,7 +126,7 @@ function initStatutoryItemTable() {
             { data: null, render: (d, t, row) => escapeHtmlTs(itemNameTs(row)) },
             { data: 'category', render: d => categoryBadgeTs(d) },
             { data: 'calc_method', render: d => calcMethodLabelTs(d) },
-            { data: null, render: (d, t, row) => currentRateCellTs(row) },
+            { data: null, className: 'text-end', render: (d, t, row) => currentRateCellTs(row) },
             { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
             { data: 'status', render: d => statusBadgeTs(d) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
@@ -182,9 +182,9 @@ function resetItemForm() {
 }
 function populateItemForm(row) {
     $('#item_id').val(row.id);
-    $('#item_code').val(row.code);
-    $('#item_name_th').val(row.name_th);
-    $('#item_name_en').val(row.name_en);
+    $('#si_item_code').val(row.code);
+    $('#si_item_name_th').val(row.name_th);
+    $('#si_item_name_en').val(row.name_en);
     $('#item_category').val(row.category).trigger('change');
     $('#item_calc_method').val(row.calc_method).trigger('change');
     $('#item_calc_base').val(row.calc_base).trigger('change');
@@ -216,9 +216,9 @@ function collectItemFormData() {
         id: $('#item_id').val() || undefined,
         // country_code deliberately not sent -- TaxStatutoryController::itemSave() always forces it
         // to the acting company's own registered country server-side, ignoring the payload entirely.
-        code: $('#item_code').val().trim(),
-        name_th: $('#item_name_th').val().trim(),
-        name_en: $('#item_name_en').val().trim(),
+        code: $('#si_item_code').val().trim(),
+        name_th: $('#si_item_name_th').val().trim(),
+        name_en: $('#si_item_name_en').val().trim(),
         category: $('#item_category').val(),
         calc_method: $('#item_calc_method').val(),
         calc_base: $('#item_calc_base').val(),
@@ -279,7 +279,7 @@ function initRateHistoryTable() {
             // must stay on the raw ISO string, see reports/index.js's own comment for why.
             { data: 'effective_date', render: { display: d => formatDisplayDate(d), sort: d => d, filter: d => d } },
             { data: 'end_date', render: { display: d => d ? formatDisplayDate(d) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`, sort: d => d || '', filter: d => d || '' } },
-            { data: null, render: (d, t, row) => rateSummaryTs(row) },
+            { data: null, className: 'text-end', render: (d, t, row) => rateSummaryTs(row) },
             { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
@@ -451,6 +451,52 @@ function collectRateVersionFormData() {
     return data;
 }
 
+/* ---------- Rate Version Calculation Preview ---------- */
+function rateVersionCalcPreviewStepLine(labelKey, value) {
+    return `<div class="calc-preview-step"><span>${langData[labelKey] || labelKey}</span>: <code>${value}</code></div>`;
+}
+function rateVersionCalcPreviewFormulaStepsHtml(formula) {
+    if (!formula) return '';
+    let html = '';
+    if (formula.type === 'flat_rate') {
+        html += rateVersionCalcPreviewStepLine('calc_preview_step_raw_base', fmtNumTs(formula.raw_base));
+        if (formula.min_base !== null) html += rateVersionCalcPreviewStepLine('calc_preview_step_min_base', fmtNumTs(formula.min_base));
+        if (formula.max_base !== null) html += rateVersionCalcPreviewStepLine('calc_preview_step_max_base', fmtNumTs(formula.max_base));
+        html += rateVersionCalcPreviewStepLine('calc_preview_step_effective_base', fmtNumTs(formula.effective_base));
+        if (formula.employee_rate !== null) {
+            html += rateVersionCalcPreviewStepLine('calc_preview_step_employee_rate', formula.employee_rate + '%');
+            html += rateVersionCalcPreviewStepLine('calc_preview_step_employee_raw_amount', fmtNumTs(formula.employee_raw_amount));
+        }
+        if (formula.max_employee_contribution !== null) {
+            html += rateVersionCalcPreviewStepLine('calc_preview_step_max_employee_contribution', fmtNumTs(formula.max_employee_contribution));
+            html += rateVersionCalcPreviewStepLine('calc_preview_step_capped', formula.employee_capped ? (langData['calc_preview_yes'] || 'Yes') : (langData['calc_preview_no'] || 'No'));
+        }
+    } else if (formula.type === 'fixed_amount') {
+        html += rateVersionCalcPreviewStepLine('calc_preview_step_employee_amount', formula.is_employee_applicable ? fmtNumTs(formula.employee_amount) : (langData['calc_preview_step_not_applicable'] || 'Not applicable'));
+        html += rateVersionCalcPreviewStepLine('calc_preview_step_employer_amount', formula.is_employer_applicable ? fmtNumTs(formula.employer_amount) : (langData['calc_preview_step_not_applicable'] || 'Not applicable'));
+    } else if (formula.type === 'progressive_bracket') {
+        html += rateVersionCalcPreviewStepLine('calc_preview_step_base', fmtNumTs(formula.base));
+        (formula.steps || []).forEach(function (s) {
+            const maxLabel = s.max !== null ? fmtNumTs(s.max) : (langData['no_upper_limit'] || 'No upper limit');
+            const label = (langData['calc_preview_step_bracket_row'] || 'Bracket {min} - {max} @ {rate}%')
+                .replace('{min}', fmtNumTs(s.min)).replace('{max}', maxLabel).replace('{rate}', s.rate);
+            html += `<div class="calc-preview-step"><span>${label}</span>: <code>${fmtNumTs(s.taxable)} × ${s.rate}% = ${fmtNumTs(s.tax)}</code></div>`;
+        });
+    } else if (formula.type === 'formula') {
+        html += rateVersionCalcPreviewStepLine('calc_preview_step_base', fmtNumTs(formula.base));
+        html += rateVersionCalcPreviewStepLine('calc_preview_step_employee_amount', fmtNumTs(formula.employee_amount));
+        html += rateVersionCalcPreviewStepLine('calc_preview_step_employer_amount', fmtNumTs(formula.employer_amount));
+    }
+    return html;
+}
+function resetRateVersionCalcPreview() {
+    $('#rateVersionCalcPreviewBase').val(30000);
+    $('#rateVersionCalcPreviewResult').addClass('d-none').empty();
+}
+function invalidateRateVersionCalcPreview() {
+    $('#rateVersionCalcPreviewResult').addClass('d-none');
+}
+
 /* ---------- UI bindings ---------- */
 function initStatutoryItemUI() {
     $(document).on('click', '.btn-add-item', function () {
@@ -547,6 +593,7 @@ function initStatutoryItemUI() {
     /* Rate history + version */
     $(document).on('click', '#btnAddRateVersion', function () {
         resetRateVersionForm();
+        resetRateVersionCalcPreview();
         bootstrap.Modal.getInstance(document.getElementById('rateHistoryModal')).hide();
         new bootstrap.Modal(document.getElementById('rateVersionModal')).show();
     });
@@ -560,6 +607,7 @@ function initStatutoryItemUI() {
             success: function (res) {
                 if (res.status) {
                     resetRateVersionForm();
+                    resetRateVersionCalcPreview();
                     populateRateVersionForm(res.data);
                     bootstrap.Modal.getInstance(document.getElementById('rateHistoryModal')).hide();
                     new bootstrap.Modal(document.getElementById('rateVersionModal')).show();
@@ -605,13 +653,61 @@ function initStatutoryItemUI() {
     $(document).on('click', '#btnAddBracketRow', function () {
         const lastMax = $('#bracketBody tr:last .bracket-max').val();
         addBracketRow(lastMax !== '' && lastMax !== undefined ? (parseFloat(lastMax) + 0.01).toFixed(2) : '', '', '');
+        invalidateRateVersionCalcPreview();
     });
     $(document).on('click', '.btn-remove-bracket', function () {
         $(this).closest('tr').remove();
         recalcBracketRowsTs();
+        invalidateRateVersionCalcPreview();
     });
     $(document).on('change', '.bracket-max', function () {
         recalcBracketRowsTs();
+        invalidateRateVersionCalcPreview();
+    });
+    $(document).on('change input', '.bracket-min, .bracket-rate', function () {
+        invalidateRateVersionCalcPreview();
+    });
+    $(document).on('change input', '#rate_employee_rate, #rate_employer_rate, #rate_employee_amount, #rate_employer_amount, #rate_min_base_amount, #rate_max_base_amount, #rate_max_employee_contribution, #rate_max_employer_contribution, #rate_formula_config', function () {
+        invalidateRateVersionCalcPreview();
+    });
+    $(document).on('click', '#btnRateVersionCalcPreview', function () {
+        const $btn = $(this);
+        const sampleBase = parseFloat($('#rateVersionCalcPreviewBase').val());
+        if (isNaN(sampleBase) || sampleBase < 0) {
+            showWarning(langData['invalid_input'] || 'Please enter a valid value.');
+            return;
+        }
+        const payload = collectRateVersionFormData();
+        payload.sample_base_amount = sampleBase;
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i>');
+        $.ajax({
+            url: `${BASE_URL}/api/statutory-item.rate-version.preview`,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                if (res.status) {
+                    const stepsHtml = rateVersionCalcPreviewFormulaStepsHtml(res.formula);
+                    const empLabel = langData['calc_preview_step_employee_amount'] || 'Employee Amount';
+                    const erLabel = langData['calc_preview_step_employer_amount'] || 'Employer Amount';
+                    $('#rateVersionCalcPreviewResult').removeClass('d-none').html(`
+                        <div class="calc-preview-amount mb-1">${empLabel}: ${fmtNumTs(res.employee_amount)} &nbsp;|&nbsp; ${erLabel}: ${fmtNumTs(res.employer_amount)}</div>
+                        ${stepsHtml}
+                    `);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Unable to compute preview.');
+                }
+            },
+            error: function () {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                showWarning(langData['save_failed'] || 'An error occurred while computing the preview.');
+            }
+        });
     });
     $(document).on('submit', '#rateVersionForm', function (e) {
         e.preventDefault();
@@ -716,7 +812,7 @@ function initCompanySettingTable() {
             { data: 'code', render: d => `<code class="fw-bold text-dark">${escapeHtmlTs(d)}</code>` },
             { data: null, render: (d, t, row) => escapeHtmlTs(itemNameTs(row)) },
             { data: 'category', render: d => categoryBadgeTs(d) },
-            { data: null, render: (d, t, row) => csRateInUseCellTs(row) },
+            { data: null, className: 'text-end', render: (d, t, row) => csRateInUseCellTs(row) },
             { data: 'effective_status', render: d => csEffectiveStatusBadgeTs(d) },
             { data: null, render: (d, t, row) => csAdjustableCellTs(row) },
             { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row, 'last_edited_at') },

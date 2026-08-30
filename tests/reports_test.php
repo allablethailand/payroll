@@ -372,9 +372,23 @@ try {
     $pnd1kReport = ReportRegistry::get('TH_PND1K_SUMMARY');
     $pnd1kTxt = $pnd1kReport->generate(['comp_id' => $compId, 'year' => $periodYearBe], 'txt');
     $lines = explode("\r\n", rtrim($pnd1kTxt['content'], "\r\n"));
-    check('txt has 1 employee line', count($lines), 1);
-    $fields = explode('|', $lines[0]);
-    check('txt tax_id field matches the decrypted value', $fields[0], $taxId);
+    // 2026-08-30, real dev-DB-state fragility fixed (feedback_dev_db_shared_state_test_fragility) --
+    // comp_id=1 is the real shared dev DB company, which by now has other real employees with
+    // approved runs in this same calendar year, so an exact "1 line total" count is no longer
+    // meaningful here (it was 12, not 1, the moment this ran against real accumulated data). Finds
+    // THIS fixture employee's own line by its known tax_id instead of assuming array position/count
+    // -- still a real assertion (the fixture's own line must exist and be correctly formatted), just
+    // no longer dependent on how much other real data comp_id=1 has accumulated.
+    $fixtureLine = null;
+    foreach ($lines as $line) {
+        $f = explode('|', $line);
+        if (($f[0] ?? null) === $taxId) {
+            $fixtureLine = $f;
+            break;
+        }
+    }
+    checkTrue('txt includes a line for the fixture employee (comp_id=1 has other real employees with approved runs this year -- searched by tax_id, not assumed to be the only/first line)', $fixtureLine !== null);
+    check('txt tax_id field matches the decrypted value', $fixtureLine[0] ?? null, $taxId);
 
     $pnd1kExcel = $pnd1kReport->generate(['comp_id' => $compId, 'year' => $periodYearBe], 'excel');
     checkTrue('excel content is non-empty', strlen($pnd1kExcel['content']) > 0);
@@ -383,27 +397,32 @@ try {
     checkTrue('PDF content starts with %PDF header', str_starts_with($pnd1kPdf['content'], '%PDF'));
 
     echo "=== PndOneKorSummaryReport validation ===\n";
+    // 2026-08-30, real bug found and fixed: this generate() was the last holdout in the whole
+    // Reports module still throwing a plain InvalidArgumentException/RuntimeException, bypassing
+    // the LocalizedException i18n mechanism every sibling report already used -- now migrated,
+    // asserting the real error_key too (not just "an exception happened"), same convention as
+    // PayrollRegisterReport's own validation tests above.
     $nonNumericYear = false;
     try {
         $pnd1kReport->generate(['comp_id' => $compId, 'year' => 'abc'], 'excel');
-    } catch (InvalidArgumentException $e) {
-        $nonNumericYear = true;
+    } catch (LocalizedException $e) {
+        $nonNumericYear = ($e->getErrorKey() === 'year_required');
     }
     checkTrue('non-numeric year rejected', $nonNumericYear);
 
     $outOfRangeYear = false;
     try {
         $pnd1kReport->generate(['comp_id' => $compId, 'year' => 9999], 'excel');
-    } catch (InvalidArgumentException $e) {
-        $outOfRangeYear = true;
+    } catch (LocalizedException $e) {
+        $outOfRangeYear = ($e->getErrorKey() === 'year_out_of_range');
     }
     checkTrue('unreasonably far future year rejected', $outOfRangeYear);
 
     $noDataForYear = false;
     try {
         $pnd1kReport->generate(['comp_id' => $compId, 'year' => 2555], 'excel'); // B.E. 2555 = A.D. 2012, no runs exist there
-    } catch (RuntimeException $e) {
-        $noDataForYear = true;
+    } catch (LocalizedException $e) {
+        $noDataForYear = ($e->getErrorKey() === 'no_runs_in_state_for_year');
     }
     checkTrue('year with no approved runs rejected with a clear error', $noDataForYear);
 
@@ -589,6 +608,42 @@ try {
     $matchesFixture = array_filter($filteredByFormat, fn($l) => (int)$l['id'] === $logs2);
     checkTrue('filter by format returns this fixture\'s own pdf log entry', count($matchesFixture) === 1);
     checkTrue('every row filter by format returns is genuinely format=pdf', count(array_filter($filteredByFormat, fn($l) => $l['format'] !== 'pdf')) === 0);
+
+    echo "=== ReportExportLogModel: download history (2026-08-29, explicit request) ===\n";
+    // Real Chrome-on-Windows and Firefox-on-Windows UA strings -- same fixture style
+    // EmployeeLoginLogModel's own parseUserAgent() tests already use.
+    $chromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36';
+    $firefoxUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0';
+    $ssoLogId = $logModel->log($compId, 'statutory', 'TH_SSO110', 'sso110_th.pdf', 'pdf', null, null, $runId, $adminUserId, '203.0.113.10', $chromeUa, 'th', 'process_detail');
+    checkTrue('log() with IP/UA/language/source succeeds', $ssoLogId > 0);
+    $ssoLogRow = current(array_filter($logModel->list($compId, ['report_code' => 'TH_SSO110', 'payroll_run_id' => $runId]), fn($l) => (int)$l['id'] === $ssoLogId));
+    checkTrue('list(report_code filter) finds the new row', $ssoLogRow !== false);
+    check('ip_address stored verbatim', $ssoLogRow['ip_address'], '203.0.113.10');
+    check('device_type parsed from the UA (desktop, Windows Chrome)', $ssoLogRow['device_type'], 'desktop');
+    check('browser_name parsed from the UA (Chrome)', $ssoLogRow['browser_name'], 'Chrome');
+    check('language stored as given', $ssoLogRow['language'], 'th');
+    check('source stored as given', $ssoLogRow['source'], 'process_detail');
+    checkTrue('the raw user_agent is kept alongside the parsed fields', str_contains((string)$ssoLogRow['user_agent'], 'Chrome/119.0.0.0'));
+
+    $ssoLogId2 = $logModel->log($compId, 'statutory', 'TH_SSO110', 'sso110_en.pdf', 'pdf', null, null, $runId, $adminUserId, '198.51.100.20', $firefoxUa, 'en', 'process_detail');
+    checkTrue('a second download of the SAME report_code+run logs a separate row' , $ssoLogId2 > 0 && $ssoLogId2 !== $ssoLogId);
+    // Looked up by its own id (not list()'s own generated_at DESC ordering, which is NOT a stable
+    // tiebreak between two rows inserted within the same second in this fast test) -- verifies the
+    // second row parsed Firefox correctly and independently of the first row's own Chrome UA.
+    $ssoLogRow2 = current(array_filter($logModel->list($compId, ['report_code' => 'TH_SSO110', 'payroll_run_id' => $runId]), fn($l) => (int)$l['id'] === $ssoLogId2));
+    check('the second row parses Firefox correctly, independent of the first', $ssoLogRow2['browser_name'], 'Firefox');
+    check('the second row keeps its own distinct IP too', $ssoLogRow2['ip_address'], '198.51.100.20');
+
+    echo "=== ReportExportLogModel::summaryForRun() ===\n";
+    $summary = $logModel->summaryForRun($compId, $runId);
+    checkTrue('summaryForRun() includes TH_SSO110 (2 downloads logged above)', isset($summary['TH_SSO110']));
+    check('TH_SSO110 download_count is 2', $summary['TH_SSO110']['download_count'], 2);
+    checkTrue('TH_SSO110 last_downloaded_at is the more recent of the two (the English one)', $summary['TH_SSO110']['last_downloaded_at'] >= $ssoLogRow['generated_at']);
+    checkTrue('a report_code never downloaded for this run is simply absent from the summary map', !isset($summary['BANK_TRANSFER_FILE']));
+
+    echo "=== PayrollRunModel::calcApplicabilitySummary() (2026-08-29, backs the Reports tab's own tax/SSO hiding) ===\n";
+    $applicability = $runModel->calcApplicabilitySummary($runId, $compId);
+    checkTrue('calcApplicabilitySummary() returns an any_tax/any_sso shape', array_key_exists('any_tax', $applicability) && array_key_exists('any_sso', $applicability));
 
 } finally {
     $pdo->rollBack();

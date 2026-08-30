@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
 class TaxStatutoryModel {
     private $db;
     private const CATEGORIES = ['tax', 'social_insurance', 'provident_fund', 'other'];
@@ -469,6 +470,114 @@ class TaxStatutoryModel {
             }
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
+    }
+
+    /**
+     * 2026-08-30, calc-preview rollout (same pattern as AttendanceDeductionRuleModel::
+     * previewCalculation()/SetupRulesModel::otRatePreview()): runs a DRAFT/not-yet-saved rate
+     * version's fields through the SAME StatutoryCalculationEngine::computeXxx() static functions
+     * real payroll calculation uses, against a sample base amount, so this can never silently
+     * drift from what an actual payroll run would compute. calc_method/is_employee_applicable/
+     * is_employer_applicable/rounding_mode/decimal_places come from the MASTER statutory_items
+     * row (this modal edits a master rate version, not a per-company override) -- computeFlatRate()/
+     * computeFixedAmount() both read employee_rate_override/employer_rate_override/employee_amount_
+     * override/employer_amount_override via `??`, which are absent on this row and so simply have
+     * no effect, same as a company with no override configured at all.
+     */
+    public function previewRateVersion(array $data, float $sampleBase = 30000.0): array {
+        if (empty($data['statutory_item_id']) || !is_numeric($data['statutory_item_id'])) {
+            return ['status' => false, 'message' => 'Missing required field: statutory_item_id'];
+        }
+        $item = $this->get((int)$data['statutory_item_id']);
+        if (!$item) {
+            return ['status' => false, 'message' => 'Statutory item not found.'];
+        }
+        if ($sampleBase < 0) {
+            return ['status' => false, 'message' => 'Sample base amount must not be negative.'];
+        }
+
+        $numOrNull = function ($v) {
+            return ($v ?? '') !== '' && is_numeric($v) ? (float)$v : null;
+        };
+        $rateRow = [
+            'employee_rate' => $numOrNull($data['employee_rate'] ?? null),
+            'employer_rate' => $numOrNull($data['employer_rate'] ?? null),
+            'employee_amount' => $numOrNull($data['employee_amount'] ?? null),
+            'employer_amount' => $numOrNull($data['employer_amount'] ?? null),
+            'min_base_amount' => $numOrNull($data['min_base_amount'] ?? null),
+            'max_base_amount' => $numOrNull($data['max_base_amount'] ?? null),
+            'max_employee_contribution' => $numOrNull($data['max_employee_contribution'] ?? null),
+            'max_employer_contribution' => $numOrNull($data['max_employer_contribution'] ?? null),
+        ];
+
+        switch ($item['calc_method']) {
+            case 'flat_rate':
+                if ($item['is_employee_applicable'] && $rateRow['employee_rate'] === null) {
+                    return ['status' => false, 'message' => 'employee_rate is required and must be a non-negative number.'];
+                }
+                if ($item['is_employer_applicable'] && $rateRow['employer_rate'] === null) {
+                    return ['status' => false, 'message' => 'employer_rate is required and must be a non-negative number.'];
+                }
+                [$empAmt, $erAmt, , $formula] = StatutoryCalculationEngine::computeFlatRate($item, $rateRow, $sampleBase);
+                break;
+
+            case 'fixed_amount':
+                if ($item['is_employee_applicable'] && $rateRow['employee_amount'] === null) {
+                    return ['status' => false, 'message' => 'employee_amount is required and must be a non-negative number.'];
+                }
+                if ($item['is_employer_applicable'] && $rateRow['employer_amount'] === null) {
+                    return ['status' => false, 'message' => 'employer_amount is required and must be a non-negative number.'];
+                }
+                [$empAmt, $erAmt, $formula] = StatutoryCalculationEngine::computeFixedAmount($item, $rateRow);
+                break;
+
+            case 'progressive_bracket':
+                $brackets = is_array($data['brackets'] ?? null) ? $data['brackets'] : [];
+                $check = $this->validateBrackets($brackets);
+                if (!$check['status']) {
+                    return $check;
+                }
+                $normalized = [];
+                foreach ($brackets as $b) {
+                    $normalized[] = [
+                        'min_amount' => (float)$b['min_amount'],
+                        'max_amount' => ($b['max_amount'] ?? '') !== '' ? (float)$b['max_amount'] : null,
+                        'rate' => (float)$b['rate'],
+                    ];
+                }
+                usort($normalized, fn($a, $b) => $a['min_amount'] <=> $b['min_amount']);
+                [$tax, $formula] = StatutoryCalculationEngine::computeProgressiveBracket($normalized, $sampleBase, $item);
+                $empAmt = $item['is_employee_applicable'] ? $tax : 0.0;
+                $erAmt = 0.0;
+                break;
+
+            case 'formula':
+                if (empty($data['formula_config'])) {
+                    return ['status' => false, 'message' => 'formula_config is required for formula-based items.'];
+                }
+                $decoded = is_string($data['formula_config']) ? json_decode($data['formula_config'], true) : $data['formula_config'];
+                if (!is_array($decoded)) {
+                    return ['status' => false, 'message' => 'formula_config must be valid JSON.'];
+                }
+                $rateRow['formula_config'] = json_encode($decoded, JSON_UNESCAPED_UNICODE);
+                [$empAmt, $erAmt, $note, $formula] = StatutoryCalculationEngine::computeFormula($item, $rateRow, $sampleBase);
+                if ($note) {
+                    return ['status' => false, 'message' => 'Preview could not be computed: ' . $note];
+                }
+                break;
+
+            default:
+                return ['status' => false, 'message' => 'Unknown calc_method.'];
+        }
+
+        return [
+            'status' => true,
+            'employee_amount' => $empAmt,
+            'employer_amount' => $erAmt,
+            'formula' => $formula,
+            'sample_base_amount' => $sampleBase,
+            'calc_method' => $item['calc_method'],
+        ];
     }
 
     public function rateHistoryDelete(int $id, int $userId): array {

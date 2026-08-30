@@ -145,7 +145,21 @@ html, body {
    deliberately just the unchanged 12px default above -- a user who never opens the Settings
    modal, or explicitly picks Medium, sees byte-identical sizing to before this feature existed.
    Set via `data-font-size` on <html> by applyFontSize() in app.js (from the saved preference on
-   load, or live while dragging the modal's slider before Save is even clicked). */
+   load, or live while dragging the modal's slider before Save is even clicked).
+
+   2026-08-30, explicit request: "ช่วยดูเรื่องขนาดตัวอักษรของทั้งระบบหน่อยครับ...มี function ให้ปรับขนาดเองตาม
+   ผู้ใช้งานอยู่แล้ว" -- audited the whole stylesheet and found ~65 of this app's own custom
+   component font-size rules (badges/timelines/filter panels/notification dropdown/etc., NOT
+   Bootstrap's own components, which already use rem internally) were hardcoded in `px`, meaning
+   they never scaled with this S/M/L preference at all -- converted every one to the equivalent
+   `rem` value (px/12, since 12px is this rule's own Medium baseline) so Small/Large now genuinely
+   affect them too, with byte-identical Medium-mode output to before. These 3 rules directly
+   above/below THIS comment are the one deliberate exception -- they must stay `px`, never `rem`:
+   they're the ROOT font-size itself (what every other `rem` in the app resolves against), and a
+   root element's own `rem` resolves against the browser's UA default (usually 16px) instead of
+   cascading from a parent, not the 10/12/14px this feature actually needs -- a real bug hit and
+   fixed while doing this same conversion pass, worth remembering if this rule is ever touched
+   again. */
 html[data-font-size="s"], html[data-font-size="s"] body {
     font-size: 10px;
 }
@@ -400,6 +414,136 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .nav-hub-menu::-webkit-scrollbar-thumb:hover {
     background: #e68a00;
 }
+/* 2026-08-29, explicit request: "บน header มี icon noti อยู่ ช่วยวางระบบการแจ้งเตือนพร้อมทั้ง Design การ
+   มองเห็นหน่อยครับ" -- same active-class-toggle dropdown shape/glassmorphism surface as
+   .nav-hub-dropdown right above (blur + translucent white + soft shadow, this app's own standing
+   header-dropdown language), with its own badge + per-item unread treatment. */
+.nav-notif-dropdown { position: relative; }
+.nav-notif-btn {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: none; padding: 0; cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+.nav-notif-btn:hover { opacity: 0.8; }
+.nav-notif-btn img { width: 25px; height: 25px; }
+.nav-notif-badge {
+    position: absolute;
+    top: -6px; right: -8px;
+    min-width: 17px; height: 17px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #dc3545;
+    color: #fff;
+    font-size: 0.8333rem;
+    font-weight: 700;
+    line-height: 17px;
+    text-align: center;
+    box-shadow: 0 0 0 2px #fff;
+}
+.nav-notif-menu {
+    display: block;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 12px);
+    width: 340px;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    z-index: 1010;
+    /* "Slide ลงมา" -- a real slide+fade transition on open/close, not an instant display toggle. */
+    opacity: 0;
+    transform: translateY(-8px);
+    max-height: 0;
+    overflow: hidden;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease, max-height .18s ease;
+}
+.nav-notif-menu.active {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 480px;
+    pointer-events: auto;
+}
+.nav-notif-menu-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 10px;
+    font-weight: 700;
+    color: #1f2937;
+    font-size: 1.1667rem;
+}
+.nav-notif-menu-header button {
+    background: none; border: none;
+    color: #FF9900;
+    font-size: 0.9583rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 4px;
+}
+.nav-notif-menu-header button:hover { text-decoration: underline; }
+.nav-notif-menu-list {
+    max-height: 340px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #FF9900 rgba(255, 153, 0, 0.1);
+}
+.nav-notif-menu-list::-webkit-scrollbar { width: 6px; }
+.nav-notif-menu-list::-webkit-scrollbar-thumb { background: #FF9900; border-radius: 10px; }
+.nav-notif-empty {
+    padding: 30px 16px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 1.0833rem;
+}
+.nav-notif-loading { text-align: center; padding: 12px; color: #FF9900; font-size: 1.1667rem; }
+.nav-notif-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 16px;
+    text-decoration: none;
+    border-top: 1px solid rgba(238, 240, 242, .8);
+    position: relative;
+    transition: background-color .12s ease;
+}
+.nav-notif-item:hover { background: rgba(255, 153, 0, .06); }
+.nav-notif-item-unread { background: rgba(255, 153, 0, .04); }
+/* .nav-notif-item-icon removed 2026-08-30 -- superseded by the shared .row-type-icon component (see
+   its own definition above + notifications.js's 2026-08-30 comment); this class is no longer
+   referenced anywhere in the app. */
+.nav-notif-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nav-notif-item-title { font-size: 1.0417rem; font-weight: 700; color: #1f2937; }
+.nav-notif-item-message { font-size: 1rem; color: #4b5563; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.nav-notif-item-time { font-size: 0.875rem; color: #9ca3af; margin-top: 1px; }
+.nav-notif-item-dot {
+    flex: none;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #FF9900;
+    margin-top: 6px;
+}
+/* 2026-08-29, same-day follow-up: /payroll/notifications rebuilt as a DataTable -- see
+   notifications.js's own notifPageTableInit() docblock. Reuses .nav-notif-item-dot as-is for the
+   per-row unread marker (the icon itself moved to .row-type-icon 2026-08-30, see above), just needs
+   the dot's own flex-layout margin-top corrected for inline usage next to a title instead of stacked
+   in a flex column. */
+#tb_notification .nav-notif-item-dot { margin-top: 0; display: inline-block; vertical-align: middle; }
+#tb_notification tr.notif-row-unread { background: rgba(255, 153, 0, .04); }
+.nav-notif-menu-footer {
+    text-align: center;
+    padding: 10px;
+    border-top: 1px solid #eef0f2;
+}
+.nav-notif-menu-footer a {
+    color: #FF9900;
+    font-weight: 600;
+    font-size: 1.0417rem;
+    text-decoration: none;
+}
+.nav-notif-menu-footer a:hover { text-decoration: underline; }
 /* 2026-08-29, explicit request: profile icon -> Settings dropdown -- same active-class-toggle
    dropdown shape as .nav-hub-dropdown/.nav-lang-dropdown right above it, reusing that same visual
    language (white card, subtle shadow, hover row) instead of inventing a new dropdown style. */
@@ -648,7 +792,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     padding: 14px 20px;
     color: #4a5568;
     text-decoration: none;
-    font-size: 13px;
+    font-size: 1.0833rem;
     font-weight: 500;
     transition: background-color 0.2s;
     box-sizing: border-box;
@@ -681,7 +825,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     justify-content: center;
     transition: transform 0.25s ease;
     margin-left: auto;
-    font-size: 11px;
+    font-size: 0.9167rem;
     color: #a0aec0;
 }
 .menu-item.open .menu-arrow {
@@ -701,7 +845,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     padding: 10px 20px 10px 45px;
     color: #64748b;
     text-decoration: none;
-    font-size: 13px;
+    font-size: 1.0833rem;
     transition: all 0.15s ease;
     box-sizing: border-box;
 }
@@ -844,6 +988,138 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     flex: 1 1 auto;
     min-width: 0;
 }
+
+/* Generic settings-page info card -- gradient-header-strip + card-surface shell, same convention as
+   Payslip Template editor's own .pst-info-card (see that class's own comment). First built 2026-08-30
+   for Company Profile's Signatory & Branding tab (explicit request: "Tab Signatory & Branding สามารถ
+   ปรับให้สวยขึ้นกว่านี้ได้ไหมครับ", was .cp-brand-card before this class was generalized for reuse the
+   same day on Payroll Configuration's Payroll Policies tab -- "นโยบายการทำเงินเดือน Design ดูแปลกๆไม่เป็น
+   ระเบียบ"). Reuse this anywhere a settings page needs a titled section that's visually distinct from
+   a plain .card-surface, rather than inventing a new one-off card class per page. */
+.settings-info-card {
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-radius: 14px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+    overflow: hidden;
+}
+.settings-info-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+    padding: .9rem 1.25rem;
+    background: linear-gradient(135deg, rgba(255, 153, 0, .1), rgba(255, 153, 0, .03));
+    border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+.settings-info-card-header i {
+    color: #FF9900;
+    font-size: 1.1rem;
+    flex: none;
+    margin-top: .15rem;
+}
+/* Attendance Deduction Rule's event cards put a .row-type-icon badge (own white-on-gradient icon,
+   style.css above) directly inside .settings-info-card-header -- without this override, the generic
+   `.settings-info-card-header i { color: #FF9900 }` rule above (equal specificity, a plain descendant
+   selector on `i`) would win over .row-type-icon's own color via inheritance (inheritance carries NO
+   specificity, so ANY direct rule on `i` itself beats it), turning the badge's icon orange instead of
+   white. Scoped narrowly so it only fires where a .row-type-icon badge is actually used this way. */
+.settings-info-card-header .row-type-icon i {
+    color: #fff;
+    font-size: inherit;
+    margin-top: 0;
+}
+.settings-info-card-title {
+    font-weight: 700;
+    color: #333;
+    font-size: .95rem;
+    margin: 0;
+}
+.settings-info-card-desc {
+    color: #8a939e;
+    font-size: .8rem;
+    margin: .15rem 0 0;
+}
+.settings-info-card-body {
+    padding: 1.25rem;
+}
+@media (min-width: 768px) {
+    .settings-info-card-body {
+        padding: 1.75rem;
+    }
+}
+/* 2026-08-30, explicit request: "การจัดวางข้อมูลในแต่ละ Card ช่วยปรับให้หน่อยครับ ตอนนี้ดูแน่นไปหมด ไม่เป็น
+   ระเบียบ" -- Payroll Policy's cards specifically. A light, bordered sub-panel to visually group a
+   cluster of related fields (e.g. "Additional Conditions" checkboxes trailing at the bottom of a
+   card) so they read as one cohesive unit instead of loose stacked rows -- reuses the same
+   bg-light+rounded-3 language .structure-tabs-wrap already established elsewhere in this app. */
+.settings-subgroup {
+    background: #fafbfc;
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+}
+.settings-subgroup-label {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #98a2b3;
+    margin-bottom: .75rem;
+}
+
+/* 2026-08-30, follow-up: "กฎการหักตามข้อมูลเข้างาน ก็ให้เป็น Card เหมือนกัน แต่แยกสีตามกลุ่มการหักครับ" --
+   Attendance Deduction Rule reverted from a table back to cards (one .settings-info-card per event),
+   with the header gradient color-coded per event so the "deduction group" reads at a glance -- reuses
+   the exact same rt-1/rt-3/rt-4/rt-5 base colors .row-type-icon's own variants already use for
+   late/absent/unpaid_leave/leave_pending, so the color language matches the icon shown in the header.
+   Each event card's BODY lists that event's rule variants (company-wide default + any team/
+   department-scoped overrides) as compact rows, not nested cards -- avoids excessive visual nesting. */
+.settings-info-card-header.adr-hdr-1 { background: linear-gradient(135deg, rgba(255, 153, 0, .12), rgba(255, 153, 0, .03)); }
+.settings-info-card-header.adr-hdr-3 { background: linear-gradient(135deg, rgba(99, 102, 241, .12), rgba(99, 102, 241, .03)); }
+.settings-info-card-header.adr-hdr-4 { background: linear-gradient(135deg, rgba(240, 68, 56, .12), rgba(240, 68, 56, .03)); }
+.settings-info-card-header.adr-hdr-5 { background: linear-gradient(135deg, rgba(11, 165, 236, .12), rgba(11, 165, 236, .03)); }
+.adr-variant-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .85rem;
+    padding: .65rem 0;
+    border-bottom: 1px solid #f1f3f5;
+}
+.adr-variant-row:last-child {
+    border-bottom: none;
+}
+.adr-variant-main {
+    flex: 1 1 320px;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem 1rem;
+}
+.adr-variant-scope {
+    flex: 0 0 auto;
+}
+.adr-variant-label {
+    color: #667085;
+    font-size: .82rem;
+}
+.adr-variant-exemptions {
+    flex: 1 1 160px;
+}
+.adr-variant-actions {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+/* Select2's own widget renders as a SEPARATE sibling DOM node after the original <select> (which
+   select2 itself already sets display:none on) -- toggling Bootstrap's .d-none on the raw <select>
+   therefore has NO visible effect on the actual rendered dropdown widget. Real bug found 2026-08-30
+   (explicit report: "เลือกทีม แต่ select ของ Department ขึ้นมาด้วย"): the Attendance Deduction Rule scope
+   picker toggled .d-none directly on #attendanceRuleScopeTeamId/#attendanceRuleScopeDepartmentId, so
+   BOTH select2 widgets stayed visible regardless of which scope_type was chosen. Fixed by wrapping
+   each <select> in its own .adr-scope-target-wrap <div> and toggling Bootstrap's .d-none on THAT
+   wrapper instead (payroll-configuration.js) -- no new CSS needed, .d-none already works correctly on
+   a plain wrapping <div>, this comment just documents why the wrapper exists. */
 .nav-tabs .nav-link {
     color: #6c757d;
     border: none;
@@ -1053,7 +1329,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border: 1px solid #e2e8f0;
     border-radius: 5px;
     padding: 1px 10px;
-    font-size: 12px;
+    font-size: 1rem;
     color: #94a3b8;
     z-index: 1;
 }
@@ -1064,7 +1340,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     background: none;
     border: none;
     padding: 0;
-    font-size: 18px;
+    font-size: 1.5rem;
     line-height: 1;
     color: #FF9900;
     cursor: pointer;
@@ -1162,7 +1438,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: #64748b;
     border-radius: 10px;
     padding: 1px 7px;
-    font-size: 11px;
+    font-size: 0.9167rem;
     font-weight: 600;
     text-align: center;
 }
@@ -1268,10 +1544,10 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    alone read too small against this app's 12px base font, per explicit feedback. Scoped under
    .sync-summary-field so it doesn't affect .small/.fw-bold usage anywhere else. */
 .sync-summary-field .small {
-    font-size: 11.5px;
+    font-size: 0.9583rem;
 }
 .sync-summary-field .fw-bold {
-    font-size: 15px;
+    font-size: 1.25rem;
 }
 /* Dense, many-column tables (11 columns of mixed badges/stacked-lines/small-text in the Pending
    Sync View modal) read as a disorganized wall of content with nothing to anchor the eye per
@@ -1289,7 +1565,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-top: none;
     border-bottom-width: 2px;
     padding: 10px 14px;
-    font-size: 12px;
+    font-size: 1rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: #6c757d;
@@ -1298,7 +1574,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .sync-detail-table tbody td {
     padding: 12px 14px;
     vertical-align: middle;
-    font-size: 13px;
+    font-size: 1.0833rem;
 }
 .sync-detail-table th:not(:last-child),
 .sync-detail-table td:not(:last-child) {
@@ -1342,10 +1618,10 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     flex-wrap: wrap;
 }
 .sync-emp-card-name {
-    font-size: 14px;
+    font-size: 1.1667rem;
 }
 .sync-emp-card-dept {
-    font-size: 12.5px;
+    font-size: 1.0417rem;
     color: #495057;
 }
 .sync-emp-stats {
@@ -1369,7 +1645,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-right: none;
 }
 .sync-emp-stat-label {
-    font-size: 10.5px;
+    font-size: 0.875rem;
     color: #9aa1a9;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -1377,7 +1653,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .sync-emp-stat-value {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 1.1667rem;
     color: #343a40;
     white-space: nowrap;
 }
@@ -1388,10 +1664,10 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     align-items: center;
     padding-top: 8px;
     border-top: 1px dashed #eef0f2;
-    font-size: 13px;
+    font-size: 1.0833rem;
 }
 .sync-emp-card .badge {
-    font-size: 11px;
+    font-size: 0.9167rem;
     font-weight: 600;
     padding: 0.4em 0.65em;
 }
@@ -1530,7 +1806,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     position: relative;
     z-index: 1;
     color: #c2c2c2;
-    font-size: 15px;
+    font-size: 1.25rem;
     box-shadow: 0 2px 5px rgba(16, 24, 40, .06);
 }
 .process-timeline .tl-step.done .tl-icon {
@@ -1762,7 +2038,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     background: #fff;
     box-shadow: 0 0 0 2px #fff;
     flex: 0 0 auto;
-    font-size: 8px;
+    font-size: 0.6667rem;
     /* Default (not-yet-reached) dot stays white -- its icon must be a visible grey, not white,
        or it would disappear against that white background. Every colored/dark state below
        overrides this back to white for contrast against ITS OWN background. */
@@ -1866,7 +2142,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .apv-stage-icon {
     width: 38px; height: 38px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 14px; position: relative; z-index: 2;
+    color: #fff; font-size: 1.1667rem; position: relative; z-index: 2;
     box-shadow: 0 0 0 4px #fff;
 }
 .apv-stage-line {
@@ -1877,10 +2153,10 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .apv-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .apv-stage-title { font-weight: 700; color: #1f2937; }
 .apv-badge {
-    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    font-size: 0.9167rem; font-weight: 600; padding: 3px 10px; border-radius: 999px;
     white-space: nowrap;
 }
-.apv-stage-date { font-size: 12px; color: #9ca3af; margin-top: 3px; }
+.apv-stage-date { font-size: 1rem; color: #9ca3af; margin-top: 3px; }
 .apv-stage-body { margin-top: 8px; }
 .apv-substep {
     background: #f9fafb; border: 1px solid #f0f0f1; border-radius: 10px;
@@ -1889,9 +2165,9 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .apv-substep:last-child { margin-bottom: 0; }
 .apv-substep-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .apv-substep-label { font-weight: 600; color: #374151; display: flex; align-items: center; gap: 8px; }
-.apv-substep-date { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+.apv-substep-date { font-size: 0.9167rem; color: #9ca3af; margin-top: 6px; }
 .apv-substep-remark {
-    margin-top: 6px; font-size: 12px; color: #4b5563; background: #fff;
+    margin-top: 6px; font-size: 1rem; color: #4b5563; background: #fff;
     border-left: 3px solid #e5e7eb; padding: 6px 10px; border-radius: 4px;
 }
 .apv-people { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
@@ -1899,19 +2175,214 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .apv-person-avatar {
     width: 26px; height: 26px; min-width: 26px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    background: #eef0f2; color: #6c757d; font-size: 11px; font-weight: 700;
+    background: #eef0f2; color: #6c757d; font-size: 0.9167rem; font-weight: 700;
     border: 1px solid #e5e7eb; flex: none;
 }
-.apv-person-name { font-size: 12px; color: #4b5563; line-height: 1.2; }
+.apv-person-name { font-size: 1rem; color: #4b5563; line-height: 1.2; }
 .apv-muted-text { color: #6b7280; }
 .apv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .apv-timeline-log { margin-top: 4px; }
 .apv-timeline-log .apv-log-entry { border-left: 2px solid #e5e7eb; padding: 0 0 14px 14px; }
 .apv-timeline-log .apv-log-entry:last-child { padding-bottom: 0; }
-.apv-timeline-log .apv-log-date { font-size: 11px; color: #9ca3af; }
-.apv-timeline-log .apv-log-action { font-weight: 600; color: #374151; font-size: 13px; }
-.apv-timeline-log .apv-log-meta { font-size: 11px; color: #9ca3af; }
-.apv-timeline-log .apv-log-note { font-size: 12px; color: #4b5563; margin-top: 2px; }
+.apv-timeline-log .apv-log-date { font-size: 0.9167rem; color: #9ca3af; }
+.apv-timeline-log .apv-log-action { font-weight: 600; color: #374151; font-size: 1.0833rem; }
+.apv-timeline-log .apv-log-meta { font-size: 0.9167rem; color: #9ca3af; }
+.apv-timeline-log .apv-log-note { font-size: 1rem; color: #4b5563; margin-top: 2px; }
+
+/* 2026-08-29, explicit follow-up request: "ปรับ Action History ให้เป็น Timeline แบบเดิมดูดีกว่าครับ แต่เพิ่ม
+   ให้กดดู Detail ได้ ช่วย Design ให้สวยๆ" -- reverted the same-day boustrophedon/snake grid (its own
+   CSS block used to live here) back to a single vertical spine, restyled beyond a plain revert:
+   each stage is now a real elevated card (white surface, soft shadow, a subtle hover lift/border
+   tint) instead of bare text sitting on the tab's own background, and the connector spine got a
+   gradient-tinted line + a slightly larger icon marker with its own ring shadow so it reads as a
+   deliberate "timeline" at a glance, not just a bullet list. New class names (.apv-history-*)
+   instead of restyling .apv-stage/.apv-timeline directly -- those stay exactly as-is for the "View
+   Timeline" modal's own fixed 3-stage Created/Approval/Paid summary right above, which was never
+   part of either the grid experiment or this revert. */
+.apv-history-timeline { padding: 4px 2px; }
+.apv-history-row { position: relative; display: flex; gap: 16px; padding-bottom: 22px; }
+.apv-history-row-last { padding-bottom: 0; }
+.apv-history-row-marker { position: relative; flex: none; width: 40px; display: flex; justify-content: center; }
+.apv-history-row-icon {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 1.25rem;
+    position: relative;
+    z-index: 2;
+    box-shadow: 0 0 0 4px #fff, 0 2px 6px rgba(16, 24, 40, .12);
+}
+.apv-history-row-line {
+    position: absolute;
+    top: 40px; bottom: -22px; left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    background: linear-gradient(180deg, #e5e7eb, #eef0f2);
+    z-index: 1;
+}
+.apv-history-row-card {
+    flex: 1;
+    min-width: 0;
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    padding: 12px 16px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+    transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease;
+}
+.apv-history-row-card:hover {
+    box-shadow: 0 4px 12px rgba(16, 24, 40, .08);
+    border-color: #ffe3b3;
+    transform: translateY(-1px);
+}
+.apv-history-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+/* 2026-08-30, explicit bug report: "Tab Action History ตัวอักษรใหญ่ไปให้ปรับขนาดตัวอักษรลงหน่อยให้โหมด
+   Medium" -- real root cause: these were hardcoded px (14px/11.5px/12.5px), not rem, so they never
+   scaled with the per-user S/M/L font-size preference at all (html[data-font-size] only changes
+   the ROOT rem base -- see that rule's own comment) -- 14px happened to equal the Large mode's own
+   root size, which is why the title specifically read as oversized even while sitting in Medium.
+   Converted to rem (now genuinely responds to the user's own S/M/L setting) and reduced a step
+   below the raw px this replaced, matching this app's own comparable timeline widget
+   (.apv-timeline-log's own .apv-log-action/-date/-meta, immediately above) instead of standing
+   out larger than every other timeline in the app for no reason. */
+.apv-history-row-title { font-weight: 700; color: #1f2937; font-size: .9rem; }
+.apv-history-row-date { font-size: .78rem; color: #9ca3af; white-space: nowrap; }
+.apv-history-row-actor { font-size: .82rem; color: #4b5563; margin-top: 2px; margin-bottom: 4px; }
+
+/* 2026-08-29, same-day follow-up: "ตรงการใส่ Comments ในหน้าทำเงินเดือน ช่วยปรับปรุง Design ทั้ง Form และ
+   List ให้หน่อยครับ ย้าย Form มาไว้ Footer เพื่อถ้า Comment เยอะๆให้ค้างอยู่กับที่ แล้วใน Body ก็เลื่อนได้" --
+   own dedicated .apv-comment-* classes (list) — same "give a redesigned consumer new class names,
+   don't touch the shared component" precedent as .apv-history-row-* above; the per-employee
+   Comments modal (#employeeCommentModal, payroll/detail.php) used to reuse .apv-stage verbatim,
+   which now stays untouched for the Timeline modal's own Created/Approval/Paid summary. */
+.apv-comment-list { padding: 2px 2px 4px; }
+.apv-comment-item { position: relative; display: flex; gap: 14px; padding-bottom: 18px; }
+.apv-comment-item-last { padding-bottom: 0; }
+.apv-comment-marker { position: relative; flex: none; width: 36px; display: flex; justify-content: center; }
+.apv-comment-icon {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 1.0833rem;
+    position: relative;
+    z-index: 2;
+    box-shadow: 0 0 0 4px #fff, 0 2px 6px rgba(16, 24, 40, .12);
+}
+.apv-comment-line {
+    position: absolute;
+    top: 36px; bottom: -18px; left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    background: linear-gradient(180deg, #e5e7eb, #eef0f2);
+    z-index: 1;
+}
+.apv-comment-card {
+    flex: 1;
+    min-width: 0;
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    padding: 10px 14px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+    transition: box-shadow .15s ease, border-color .15s ease;
+}
+.apv-comment-card:hover { box-shadow: 0 4px 12px rgba(16, 24, 40, .07); border-color: #ffe3b3; }
+.apv-comment-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.apv-comment-author { font-weight: 700; color: #1f2937; font-size: 1.0833rem; }
+.apv-comment-tag-pill {
+    display: inline-flex; align-items: center;
+    color: #fff; font-size: 0.875rem; font-weight: 700;
+    padding: 2px 9px; border-radius: 999px;
+    letter-spacing: .01em;
+}
+.apv-comment-edited-tag { font-size: 0.9167rem; font-style: italic; color: #9ca3af; }
+.apv-comment-spacer { flex: 1 1 auto; }
+.apv-comment-action-btn {
+    border: none; background: transparent; color: #9ca3af;
+    width: 24px; height: 24px; border-radius: 7px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    transition: background .12s ease, color .12s ease;
+}
+.apv-comment-action-btn:hover { background: #f3f4f6; color: #FF9900; }
+.apv-comment-action-btn.text-danger:hover { background: #fef2f2; color: #dc2626 !important; }
+.apv-comment-body { font-size: 1.0833rem; color: #374151; line-height: 1.55; margin-top: 4px; white-space: pre-line; }
+.apv-comment-date { font-size: 0.9167rem; color: #9ca3af; margin-top: 8px; }
+
+/* Sticky footer form (the actual point of this redesign): Bootstrap's own .modal-footer is a plain
+   flex ROW meant for a button bar; #employeeCommentModal's footer now stacks a column instead (see
+   the .flex-column.align-items-stretch utility classes already added in the view), so this block
+   only needs to add the visual polish (surface tint, separator, spacing) — the layout override
+   itself is handled by those Bootstrap utilities, kept out of this file on purpose. */
+.apv-comment-footer {
+    background: #fbfbfc;
+    border-top: 1px solid #eef0f2;
+    padding: 14px 16px;
+    gap: 10px;
+}
+.apv-comment-footer #employeeCommentFormArea {
+    background: #fff;
+    border: 1px solid #eef0f2;
+    border-radius: 12px;
+    padding: 12px 12px 8px;
+}
+.apv-comment-footer textarea#employeeCommentText { resize: vertical; }
+
+/* 2026-08-29, same-day follow-up: "ปรับ radio group...ให้ดูสวยขึ้น หรือเป็นแค่ checkbox เรียงกัน 3 แถวหรือ
+   แถวเดียวกันแบบ Basic" -- the pill/gradient .calc-toggle-* treatment this block used to hold (tried
+   first, same visual language as the Comment Tag picker) was replaced same-day with the "Basic"
+   alternative offered instead: plain native Bootstrap form-check radios, one row, color conveyed
+   through icon/label text color only (see app/views/payroll/detail.php's own runCalcTaxGroup/
+   runCalcSsoGroup/empCalcTaxGroup/empCalcSsoGroup markup) -- no dedicated CSS needed for that, it's
+   just Bootstrap's own .form-check plus text-success/text-danger/text-secondary utility classes. */
+
+/* 2026-08-29, same-day follow-up: Report Preview modal's own "nothing to preview" empty state --
+   icon-in-a-circle + title/subtext, matching this app's other empty-state card conventions instead
+   of a bare icon-over-text block. */
+.report-preview-unavailable-icon {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg,#eef0f2,#e2e5e9);
+    color: #9aa3ad;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.8333rem;
+}
+
+/* 2026-08-29, same-day follow-up: "ตรงเงินได้เงินหัก เป็น item 2 column หรือ 3 column ก็ได้ครับ และไม่ต้องมี
+   Scroll" -- the Run Settings panel's own item-exclusion checklist, and the per-employee "Exclude
+   from This Employee's Calculation" one (itemChecklistBoxesHtml() in detail.js, shared between
+   both), flow their checkbox rows into 2 columns by default and 3 on wider screens instead of one
+   long single-column list -- keeps a normal-sized catalog short enough that the outer scroll
+   container (removed from both, see the view markup) is no longer needed. break-inside:avoid stops
+   a single checkbox+label row from visually splitting across the column break. */
+.item-checklist-cols { column-count: 2; column-gap: 16px; }
+.item-checklist-cols .form-check { break-inside: avoid; -webkit-column-break-inside: avoid; }
+@media (min-width: 992px) {
+    .item-checklist-cols { column-count: 3; }
+}
+
+/* Tag picker (2026-08-29, same-day follow-up: "ตรงเลือก Tag ปรับให้สวยขึ้นอีกได้ไหมครับ") -- icon+label
+   pill chips sharing the same gradient palette as the rendered tag pill (.apv-comment-tag-pill /
+   employeeCommentTagMeta() in detail.js) so picking a tag and seeing it on a saved comment feel
+   like the same visual language. Still plain radio .btn-check inputs underneath (hidden via
+   Bootstrap's own .btn-check rule) -- only the sibling <label> is restyled here. */
+.apv-comment-tag-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.apv-comment-tag-option {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1.5px solid #e5e7eb; background: #fff; color: #6b7280;
+    font-size: 1rem; font-weight: 600; cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+    user-select: none;
+}
+.apv-comment-tag-option i { font-size: 0.9167rem; }
+.apv-comment-tag-option:hover { border-color: #ffd699; color: #b45f00; background: #fff8ee; }
+.apv-comment-tag-picker input:checked + .apv-comment-tag-opt-none { background: linear-gradient(135deg,#9aa3ad,#6b7280); border-color: #6b7280; color: #fff; box-shadow: 0 2px 6px rgba(107,114,128,.3); }
+.apv-comment-tag-picker input:checked + .apv-comment-tag-opt-in_progress { background: linear-gradient(135deg,#f59e0b,#d97706); border-color: #d97706; color: #fff; box-shadow: 0 2px 6px rgba(217,119,6,.3); }
+.apv-comment-tag-picker input:checked + .apv-comment-tag-opt-completed { background: linear-gradient(135deg,#22c55e,#15803d); border-color: #15803d; color: #fff; box-shadow: 0 2px 6px rgba(21,128,61,.3); }
+.apv-comment-tag-picker input:checked + .apv-comment-tag-opt-error { background: linear-gradient(135deg,#f87171,#dc2626); border-color: #dc2626; color: #fff; box-shadow: 0 2px 6px rgba(220,38,38,.3); }
 
 /* ==========================================================================
    Generic Approval Request timeline (`#requestDetailModal`, public/js/setup/approval-request-
@@ -1931,7 +2402,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .art-stage-marker {
     width: 34px; height: 34px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 13px; position: relative; z-index: 2;
+    color: #fff; font-size: 1.0833rem; position: relative; z-index: 2;
     box-shadow: 0 0 0 4px #fff; background: #9ca3af;
 }
 .art-stage-requested .art-stage-marker { background: #6c757d; }
@@ -1946,14 +2417,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .art-stage:last-child .art-stage-line { display: none; }
 .art-stage-content { flex: 1; min-width: 0; padding-top: 5px; }
 .art-stage-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.art-stage-title { font-weight: 700; color: #1f2937; font-size: 13.5px; }
-.art-stage-body { margin-top: 4px; font-size: 12.5px; color: #6b7280; }
+.art-stage-title { font-weight: 700; color: #1f2937; font-size: 1.125rem; }
+.art-stage-body { margin-top: 4px; font-size: 1.0417rem; color: #6b7280; }
 .art-stage-note {
-    margin-top: 6px; font-size: 12px; color: #4b5563; background: #f9fafb;
+    margin-top: 6px; font-size: 1rem; color: #4b5563; background: #f9fafb;
     border-left: 3px solid #e5e7eb; padding: 6px 10px; border-radius: 4px;
 }
 .art-badge {
-    font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+    font-size: 0.9167rem; font-weight: 600; padding: 2px 9px; border-radius: 999px;
     white-space: nowrap; color: #fff;
 }
 .art-badge-approved { background: #16a34a; }
@@ -1971,42 +2442,50 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .stat-card {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     height: 100%;
-    padding: 14px 16px;
+    padding: 16px 18px;
     background: #fff;
     border: 1px solid #eef0f2;
     border-left: 4px solid transparent;
     border-radius: 12px;
     box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+/* 2026-08-29, explicit request: "ปรับให้หน้า Dashboard ดูสวยขึ้นครับ" -- a subtle hover lift, same
+   language every other interactive dashboard surface on this page already uses
+   (.dash-quick-link:hover/.dash-run-row:hover). */
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(16, 24, 40, .08);
 }
 .stat-card-icon {
     flex: 0 0 auto;
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
+    font-size: 1.05rem;
 }
 .stat-card-label {
     font-size: 0.78rem;
     color: #6c757d;
 }
 .stat-card-value {
-    font-size: 1.05rem;
+    font-size: 1.2rem;
     font-weight: 700;
     color: #212529;
 }
 .stat-card-info { border-left-color: #0dcaf0; }
-.stat-card-info .stat-card-icon { background: rgba(13, 202, 240, .15); color: #087990; }
+.stat-card-info .stat-card-icon { background: linear-gradient(135deg, #e0f7fb, #b6ecf6); color: #087990; }
 .stat-card-success { border-left-color: #198754; }
-.stat-card-success .stat-card-icon { background: rgba(25, 135, 84, .15); color: #198754; }
+.stat-card-success .stat-card-icon { background: linear-gradient(135deg, #e8f6ee, #c3ead4); color: #198754; }
 .stat-card-danger { border-left-color: #dc3545; }
-.stat-card-danger .stat-card-icon { background: rgba(220, 53, 69, .15); color: #dc3545; }
+.stat-card-danger .stat-card-icon { background: linear-gradient(135deg, #fdecea, #f8cdd1); color: #dc3545; }
 .stat-card-primary { border-left-color: #FF9900; }
-.stat-card-primary .stat-card-icon { background: rgba(255, 153, 0, .15); color: #FF9900; }
+.stat-card-primary .stat-card-icon { background: linear-gradient(135deg, #ffe9c2, #ffd591); color: #b45f00; }
 .stat-card-primary .stat-card-value { color: #b45f00; }
 
 /* ==========================================================================
@@ -2032,6 +2511,80 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     .card-surface {
         padding: 1.5rem;
     }
+}
+
+/* ==========================================================================
+   .row-type-icon -- 2026-08-30, explicit request: "ตรง icon ปรับให้เหมือนในหน้า Report ครับ...ทุกตาราง
+   ที่มี icon ให้เป็นรูปแบบเดียวกับ report ทั้งหมดครับ" -- promoted out of reports/index.php's own
+   page-scoped `.reports-row-report-type-icon`/`.rt-*` rules (added 2026-08-30, "ในตารางอยากให้เพิ่ม
+   icon ของรายงานแต่ละตัว ตอนนี้ตารางดูโล้นๆ") into this shared stylesheet so any OTHER table's
+   leading "what kind of row is this" icon can reuse the exact same look -- a small gradient-filled
+   rounded-square badge, not a bare colored <i> icon. reports/index.php's own classes are left as-is
+   (still work, not touched) -- new tables should use THESE classes instead of inventing their own.
+   5 semantic-neutral color variants (not tied to any one page's own category names) -- pick whichever
+   reads best for that table's own categories; add more variants here if a 6th is ever needed instead
+   of a 4th page inventing its own one-off gradient. */
+.row-type-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: .6rem;
+    font-size: .9rem;
+    color: #fff;
+    flex: none;
+}
+.row-type-icon.rt-1 { background: linear-gradient(135deg, #FF9900, #ffb84d); }
+.row-type-icon.rt-2 { background: linear-gradient(135deg, #12b76a, #6ee7b7); }
+.row-type-icon.rt-3 { background: linear-gradient(135deg, #6366f1, #a5b4fc); }
+.row-type-icon.rt-4 { background: linear-gradient(135deg, #f04438, #fda29b); }
+.row-type-icon.rt-5 { background: linear-gradient(135deg, #0ba5ec, #7cd4fd); }
+/* 2026-08-30, notifications.js's notification-bell dropdown (.nav-notif-item) already spaces its
+   icon from the body text via flexbox `gap: 10px` -- .row-type-icon's own `margin-right: .6rem`
+   (meant for inline "badge immediately followed by label text in the same flow" usage, like every
+   other table using this component) would stack on top of that gap and double the spacing. Scoped
+   narrowly to this one flex container, same "context needs its own override" precedent as
+   .settings-info-card-header .row-type-icon i above. */
+.nav-notif-item .row-type-icon { margin-right: 0; }
+
+/* ==========================================================================
+   .calc-preview-box -- 2026-08-30, explicit request: "อยากให้เพิ่มปุ่มแสดงตัวอย่างการคำนวณจากการตั้งค่าที่
+   เลือก...และทุกส่วนที่มีการตั้งค่าการคำนวณ อยากให้แสดงตัวอย่างการคำนวณให้เห็นในการตั้งค่าเลย" -- ONE reusable
+   component (sample-input row + Preview button + result area) for every settings form that computes
+   something (started on Attendance Deduction Rule, meant to extend to OT Rate/Statutory Rate
+   Version/PED Type the same way) -- a light, visually-distinct "inside the form, not a separate
+   section" card so it reads as "try it out" rather than another data field to fill in.
+   ========================================================================== */
+.calc-preview-box {
+    background: #fff8ef;
+    border: 1px dashed #ffd699;
+    border-radius: 10px;
+    padding: .85rem 1rem;
+}
+.calc-preview-result {
+    background: #ffffff;
+    border: 1px solid #eef0f2;
+    border-radius: 8px;
+    padding: .75rem .9rem;
+    margin-top: .5rem;
+}
+.calc-preview-result .calc-preview-amount {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #FF9900;
+}
+.calc-preview-result .calc-preview-step {
+    font-size: .85rem;
+    color: #667085;
+    padding: .1rem 0;
+}
+.calc-preview-result .calc-preview-step code {
+    color: #344054;
+    background: #f2f4f7;
+    border-radius: 4px;
+    padding: .05rem .3rem;
 }
 
 /* ==========================================================================
@@ -2135,12 +2688,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     box-shadow: 0 2px 10px rgba(16, 24, 40, .04);
 }
 #run-details-pane,
-#run-history-pane {
+#run-history-pane,
+#run-reports-pane {
     padding: 1.75rem 1.5rem;
 }
 @media (min-width: 768px) {
     #run-details-pane,
-    #run-history-pane {
+    #run-history-pane,
+    #run-reports-pane {
         padding: 2rem 2rem;
     }
 }
@@ -4275,18 +4830,21 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    "each item has no checkbox" specifically, not "nothing renders at all". Fixed by only setting the
    padding sides that don't collide with Bootstrap's own layout-critical padding-left. */
 .pst-assign-item,
-.ect-assign-item {
+.ect-assign-item,
+.ada-assign-item {
     padding-top: .3rem;
     padding-right: .4rem;
     padding-bottom: .3rem;
     border-radius: .4rem;
 }
 .pst-assign-item:hover,
-.ect-assign-item:hover {
+.ect-assign-item:hover,
+.ada-assign-item:hover {
     background: rgba(255, 153, 0, .08);
 }
 .pst-assign-item .form-check-label,
-.ect-assign-item .form-check-label {
+.ect-assign-item .form-check-label,
+.ada-assign-item .form-check-label {
     font-size: .88rem;
     word-break: break-word;
 }
@@ -4598,7 +5156,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     padding: 2px 4px;
     margin: 0;
     color: #adb5bd;
-    font-size: 11px;
+    font-size: 0.9167rem;
     line-height: 1;
     cursor: pointer;
     border-radius: 4px;
@@ -4621,7 +5179,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     border-radius: 10px;
     box-shadow: 0 10px 30px rgba(16, 24, 40, .18);
     padding: .6rem;
-    font-size: 13px;
+    font-size: 1.0833rem;
 }
 .tcf-panel-header {
     display: flex;
@@ -4635,7 +5193,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .tcf-panel-title {
     font-weight: 600;
     color: #1f2937;
-    font-size: 12.5px;
+    font-size: 1.0417rem;
 }
 .tcf-panel-close {
     display: flex;
@@ -4647,7 +5205,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     background: transparent;
     color: #9ca3af;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 1rem;
     line-height: 1;
     cursor: pointer;
     flex: none;
@@ -4666,14 +5224,14 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     top: 50%;
     transform: translateY(-50%);
     color: #9ca3af;
-    font-size: 11px;
+    font-size: 0.9167rem;
 }
 .tcf-search-wrap input {
     width: 100%;
     padding: .3rem .5rem .3rem 1.75rem;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
-    font-size: 12.5px;
+    font-size: 1.0417rem;
 }
 .tcf-search-wrap input:focus {
     outline: none;
@@ -4760,6 +5318,40 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     color: #667085;
     margin-bottom: .45rem;
 }
+/* 2026-08-29, explicit request: "ถ้า Process นั้นยังไม่สามารถออกรายงานได้ให้มีหมายเหตุขึ้นที่บนหัวตารางครับ
+   Design ให้สวยๆ" -- same icon-circle + gradient-bar shape as .reports-period-bar above, in an
+   amber/warning tone since this is informational (nothing to pick here), not an action bar. */
+.reports-not-ready-banner {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: linear-gradient(135deg, rgba(255, 193, 7, .12), rgba(255, 193, 7, .03));
+    border: 1px solid rgba(255, 193, 7, .35);
+    border-radius: 14px;
+    padding: 1rem 1.25rem;
+}
+.reports-not-ready-banner-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f0ad00, #ffd25f);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex: none;
+    box-shadow: 0 4px 10px rgba(255, 193, 7, .3);
+}
+.reports-not-ready-banner-title {
+    font-weight: 700;
+    color: #8a5a00;
+    font-size: .95rem;
+}
+.reports-not-ready-banner-hint {
+    font-size: .85rem;
+    color: #92722a;
+}
 .reports-type-section {
     margin-bottom: 1.75rem;
 }
@@ -4797,10 +5389,28 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f5f5f6;
 }
 .dash-section-card-header h6 {
     color: #344054;
     font-weight: 700;
+}
+/* 2026-08-29, explicit request: "ปรับให้หน้า Dashboard ดูสวยขึ้นครับ" -- the bare fa-icon + me-2 next
+   to each section title reads flat against the page-header-card's own gradient-badge icon right
+   above it; a small tinted circle gives every section card the same "icon in a badge" language the
+   rest of this app already uses (stat-card-icon, page-header-card-icon, ...) instead of a plain
+   colored glyph floating in text. */
+.dash-section-card-header h6 i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ffe9c2, #ffd591);
+    color: #b45f00 !important;
+    font-size: .8rem;
 }
 .dash-section-link {
     font-size: .8rem;
@@ -4854,6 +5464,17 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     object-fit: contain;
 }
 
+/* 2026-08-29, explicit request: Dashboard notification summary card -- reuses .nav-notif-item's own
+   markup/classes (notifications.js) but restyled as standalone rows (own border/radius/hover) since
+   this card has real room, unlike the header dropdown's own denser list. */
+.dash-notif-list .nav-notif-item {
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+}
+.dash-notif-list .nav-notif-item:last-child { margin-bottom: 0; }
+.dash-notif-list .nav-notif-item:hover { background: rgba(255, 153, 0, .06); border-color: #ffe3b3; }
 .dash-run-row {
     display: flex;
     flex-direction: column;
@@ -4886,6 +5507,17 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .dash-run-row-meta {
     text-align: right;
     flex: 0 0 auto;
+}
+/* 2026-08-29, explicit request: "ในหน้า Dashboard Recent Payroll Runs Timeline ไม่ต้องเต็มจอก็ได้ครับ ความ
+   กว้างพอสวยพอ" -- .mini-timeline's own .mt-line flex-grows to fill whatever width its container
+   gives it (correct/wanted inside the Process List's own table cell), but a Dashboard card row is
+   wide enough that this stretched the 5 dots apart across nearly the whole row, looking sparse.
+   Scoped to just this context -- Process List's own .mini-timeline is untouched. */
+.dash-run-row .mini-timeline {
+    max-width: 220px;
+}
+.dash-run-row .mini-timeline .mt-line {
+    flex: 0 0 20px;
 }
 .dash-run-row-amount {
     font-weight: 700;
@@ -4944,7 +5576,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     padding: 0 10px 0 13px;
     background: #f8fafc;
     color: #b0b8c4;
-    font-size: 10px;
+    font-size: 0.8333rem;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -5185,6 +5817,21 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .ais-cell-sub { font-size: .72rem; color: #94a3b8; display: block; }
 .ais-cell-sub.ais-cell-deduction { color: #dc3545; }
 .ais-total-value { font-weight: 700; color: #b45f00; }
+/* 2026-08-30, explicit request: "ในแต่ละช่องถ้ามีข้อมูลให้สามารถกดดู Detail ได้ด้วยครับ" -- a plain
+   <button> reset to look identical to the old non-clickable cell content at rest, with just a
+   hover affordance to signal it's now interactive. */
+.ais-cell-clickable {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    text-align: left;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.ais-cell-clickable:hover { background: rgba(255, 153, 0, .08); }
 .ais-table td:last-child { background: #fffaf1; }
 .ais-table thead th:last-child { background: #fff1db; }
 
@@ -5257,4 +5904,48 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     background: rgba(255, 153, 0, 0.1);
     border-radius: 6px;
     padding: 2px 10px;
+}
+
+/* 2026-08-30, explicit bug report: "/payroll/reports ติดกันไปหมดไม่มี padding เลยครับ ปรับให้ area เป็น
+   รูปแบบเดียวกันเหมือนหน้าอื่น" -- this page's 3 tab-panes had NO top/bottom breathing room at all
+   (content sat ~11px below the tab bar, vs. sibling setup-tabs pages like Payroll Configuration/
+   Setup & Rules, which all wrap their own tab-pane content in a `mt-5 mb-5` div -- ~3rem top/bottom,
+   NO left/right padding at all -- that's this app's own established convention, content runs the
+   full width of the card). Matches that exact convention via CSS instead of restructuring this
+   page's own already-nested markup with an extra wrapping div.
+   2026-08-30, SAME-DAY correction (explicit follow-up: "อยากให้เต็มซ้ายขวา ตอนนี้มี padding ไม่เท่าความ
+   กว้างของ header") -- the first pass over-corrected by adding 1.5rem of horizontal padding too,
+   narrower than every sibling page's own edge-to-edge content and than this page's own
+   .page-header-card above it -- removed, vertical-only now matches the real convention. */
+#cycle-pane, #annual-pane, #history-pane {
+    padding: 3rem 0;
+}
+
+/* ==========================================================================
+   Every modal: header + footer always present, language switch reachable
+   from inside a modal (2026-08-30, explicit bug report: "พอมีการเปิด modal จะกลับไป
+   เปลี่ยนภาษาไม่ได้" -- the modal backdrop sits above the top nav's own language
+   switcher (.nav-lang-dropdown), so it becomes unclickable while ANY modal is open).
+   Injected generically, per-modal, by app.js's own show.bs.modal handler -- see that
+   file's own docblock for the injection logic; this is JUST the visual styling for
+   whatever gets injected (or already exists) in a modal's header/footer. -->
+/* 2026-08-30, same-day follow-up: "Design การเปลี่ยนภาษาใน modal ให้เป็น design เดียวกับ header" -- the
+   injected control reuses .nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu as-is (same look as the
+   page header's own switcher, see those classes' own rules above) -- .modal-lang-dropdown only
+   overrides what genuinely differs by context: it sits at the LEFT edge of a modal header (the
+   nav's own version is flush right, hence that one's `right:0` menu alignment), and needs a
+   higher z-index than the nav ever did since it must clear the modal's own stacking context. */
+.modal-lang-dropdown {
+    flex: none;
+}
+.modal-lang-dropdown .nav-lang-menu {
+    right: auto;
+    left: 0;
+    z-index: 1060;
+}
+/* Keeps the title flush against the lang button's right edge (not centered between it and
+   the close X) once the lang button becomes the header's first flex child. */
+.modal-header .modal-title {
+    flex: 1 1 auto;
+    margin-left: .75rem;
 }

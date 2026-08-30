@@ -110,6 +110,21 @@ class CompanyProfileModel {
                 && !in_array((string)($data['authorized_signatory_name'] ?? ''), $placeholder, true)
                 && !in_array((string)($data['address_line_1'] ?? ''), $placeholder, true);
 
+            // 2026-08-29, explicit bug report: "ไม่นำ comp code ไปลง ทำให้เป็นบริษัทที่ไม่ Sync กับ Origami"
+            // -- ref_id/origami_payroll_comp_code had NO save path anywhere in this app before that
+            // fix (confirmed by grep) -- a company auto-provisioned via Origami SSO (auth/index.php)
+            // stayed permanently unlinked from both Origami integrations with no way to fix it short
+            // of a raw SQL UPDATE. Both are plain admin-entered values (Origami's own numbering, not
+            // derivable/validatable from anything this app has).
+            // 2026-08-30, explicit follow-up: "tab การเชื่อมต่อ Origami ไม่จำเป็นต้องมีนะครับ...ผู้ใช้ไม่
+            // สามารถตั้งค่าเองได้" -- the Company Profile UI section that fed :ref_id/
+            // :origami_payroll_comp_code is now REMOVED (see company-profile.php/company-profile.js),
+            // so every save from that page now arrives with these two keys simply absent from $data.
+            // Switched both columns to COALESCE(:param, existing_column) so an unrelated profile save
+            // (e.g. editing the address) can never silently null out a value some earlier admin
+            // already set through the old tab -- these columns are effectively frozen/read-only from
+            // this form now, not reset to null, matching "backend-only, not user-editable" without
+            // reintroducing the exact data-loss bug the 2026-08-29 fix above was written to prevent.
             $sql = "UPDATE companies SET
                         company_legal_name = :company_legal_name,
                         local_name = :local_name,
@@ -124,10 +139,13 @@ class CompanyProfileModel {
                         authorized_signatory_name = :authorized_signatory_name,
                         logo_path = :logo_path,
                         signature_path = :signature_path,
+                        ref_id = COALESCE(:ref_id, ref_id),
+                        origami_payroll_comp_code = COALESCE(:origami_payroll_comp_code, origami_payroll_comp_code),
                         setup_status = :setup_status,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id";
             $stmt = $this->db->prepare($sql);
+            try {
             $ok = $stmt->execute([
                 ':id' => $companyId,
                 ':company_legal_name' => $data['company_legal_name'] ?? null,
@@ -152,8 +170,21 @@ class CompanyProfileModel {
                 // Template's modal does, so an unrelated profile save never accidentally clears it.
                 ':logo_path' => !empty($data['logo_path']) ? $data['logo_path'] : null,
                 ':signature_path' => !empty($data['signature_path']) ? $data['signature_path'] : null,
+                ':ref_id' => !empty($data['ref_id']) ? (int)$data['ref_id'] : null,
+                ':origami_payroll_comp_code' => !empty($data['origami_payroll_comp_code']) ? trim((string)$data['origami_payroll_comp_code']) : null,
                 ':setup_status' => $isComplete ? 'active' : 'draft',
             ]);
+            } catch (PDOException $e) {
+                // ref_id/origami_payroll_comp_code are both UNIQUE -- a typo colliding with
+                // another company's own value is a real, expected possibility for a
+                // manually-entered field like this (not a system bug), so this degrades to the
+                // same $ok=false/"save failed" the caller already handles for any other
+                // validation failure, rather than an uncaught 500.
+                if ((int)$e->getCode() === 23000) {
+                    return false;
+                }
+                throw $e;
+            }
             // Auto-seed the default earning/deduction items the moment a company actually
             // transitions draft -> active (2026-08-21, explicit request: "กรณีเป็นการเปิดใช้งาน
             // บริษัทใหม่ ให้ขึ้น Default ของระบบไว้ให้เลย") -- only on the real transition, not every

@@ -97,7 +97,16 @@ class SyncPayResolver {
      */
     private const EVENT_ALIASES = [
         'ot_hours' => ['OT', 'OVERTIME'],
-        'trip_allowance' => ['TRIP', 'TRIPALLOWANCE'],
+        // 2026-08-30, real bug found and fixed: Origami's actual real-world item_code for this event
+        // is 'ROUND' (confirmed against Origami's own item catalog: "ROUND -- Trip Allowance
+        // (Robusta)"), not 'TRIP'/'TRIPALLOWANCE' as originally guessed -- those two guessed spellings
+        // never matched anything real, so a redundant item_values row Origami sent alongside the
+        // structured `trip_allowance` column was never excluded here and could double-count against
+        // it (added AGAIN as a generic/custom item further down in resolve()) whenever the company's
+        // own catalog item_code for Trip Allowance wasn't ALSO typed as exactly "ROUND". Kept as
+        // defensive secondary spellings, not removed, in case a different environment really does use
+        // one of them.
+        'trip_allowance' => ['ROUND', 'TRIP', 'TRIPALLOWANCE'],
         'late' => ['LATE'],
         'absent' => ['ABSENT', 'ABSENCE'],
         'unpaid_leave' => ['UNPAIDLEAVE', 'LEAVEWITHOUTPAY', 'LEAVENOPAY'],
@@ -105,6 +114,12 @@ class SyncPayResolver {
         // real item_code for this is 'LEAVE_PENDING' (normalizes to 'LEAVEPENDING', already covered
         // by the primary alias below), PENDINGLEAVE kept as a defensive secondary spelling only.
         'leave_pending' => ['LEAVEPENDING', 'PENDINGLEAVE'],
+        // 2026-08-30, real bug found and fixed: Origami's real item_code is 'EARLY_LEAVE' (normalizes
+        // to 'EARLYLEAVE') -- see RULE_DRIVEN_ITEM_DEFS['early_leave'] below, which was completely
+        // missing until this fix (the source_event_code was already selectable in the "Linked
+        // Attendance Event" dropdown -- master_payroll_source_events has always had 'early_leave' --
+        // but nothing in this class ever computed it).
+        'early_leave' => ['EARLYLEAVE'],
     ];
 
     /**
@@ -158,13 +173,32 @@ class SyncPayResolver {
         // ลารออนุมัติ ถึงจะเอามาคำนวณเป็นเงินหัก" -- leave that's still awaiting approval isn't
         // confirmed as paid leave yet, so (like unpaid leave) it's provisionally deducted until it's
         // actually approved -- at which point Origami stops reporting it as pending and it simply
-        // stops appearing here. No structured payroll_sync_items column exists for this (unlike
-        // late/absent/unpaid_leave) -- it only ever arrives via the generic item_values[] array
-        // (item_code 'LEAVE_PENDING'), matched purely through EVENT_ALIASES/the company's own
-        // catalog source_event_code below.
+        // stops appearing here.
+        //
+        // 2026-08-30, real bug found and fixed: this originally shipped with `'structured' => []`
+        // and a comment claiming "no structured payroll_sync_items column exists for this (unlike
+        // late/absent/unpaid_leave)" -- that was wrong the day it was written. `leave_wait_days` was
+        // added to `payroll_sync_items` one day earlier (2026-08-28, comprehensive schema catchup)
+        // and IS Origami's own structured column for this exact event, but it was never wired in here
+        // -- meaning a pull where Origami reported pending leave ONLY via the structured column (not
+        // also redundantly via item_values, which is not guaranteed on every pull -- see this class's
+        // own MULTI-UNIT DEDUPLICATION docblock) silently produced no deduction at all. Fixed by
+        // reading it the same way absent_days/leave_without_pay_days already are.
         'leave_pending' => [
             'default_code' => 'LEAVE_PENDING_DEDUCT', 'name_th' => 'หักลารออนุมัติ', 'name_en' => 'Pending Leave Deduction',
-            'structured' => [],
+            'structured' => [['column' => 'leave_wait_days', 'unit' => 'days']],
+        ],
+        // 2026-08-30, real bug found and fixed: 'early_leave' has always been a selectable
+        // source_event_code (master_payroll_source_events row 3, "Linked Attendance Event" dropdown
+        // in Payroll Configuration) and payroll_sync_items has always carried a structured `early_mins`
+        // column for it, but this class never had an entry for it at all -- so mapping a PED type's
+        // source_event_code to 'early_leave' had zero effect, the deduction was simply never computed.
+        // Same treatment as late (minute-based structured column, resolved through the company's
+        // configurable attendance_deduction_rules -- no row configured yet = percent_of_rate @
+        // multiplier 1.00, same safe default every other event in this array falls back to).
+        'early_leave' => [
+            'default_code' => 'EARLY_LEAVE_DEDUCT', 'name_th' => 'หักกลับก่อนเวลา', 'name_en' => 'Early Leave Deduction',
+            'structured' => [['column' => 'early_mins', 'unit' => 'minutes']],
         ],
     ];
 
@@ -194,9 +228,24 @@ class SyncPayResolver {
      *              the array, or present with a null value, for a given column = behave exactly as
      *              before this param existed (use whatever Origami sent). Empty array (the default)
      *              is fully backward compatible with every existing caller.
+     * @param string[] $exemptEventCodes 2026-08-30, explicit request: attendance-deduction event
+     *              codes (subset of RULE_DRIVEN_ITEM_DEFS's own keys) this employee is exempt from,
+     *              precomputed by the caller via AttendanceDeductionRuleModel::
+     *              exemptEventCodesForEmployee() -- this class does no DB lookups of its own for
+     *              WHO belongs to which department/team (it never queries `employees`), same
+     *              "engine takes a precomputed flags param" pattern StatutoryCalculationEngine::
+     *              calculate()'s own $employeeFlags already established. Empty array (the default)
+     *              is fully backward compatible with every existing caller.
+     * @param ?int $departmentId/$teamId 2026-08-30, multi-scope Attendance Deduction Rule rollout --
+     *              this employee's own department_id/team_id, used ONLY to pick which SAVED rule
+     *              variant applies (team > department > company-wide default -- see
+     *              attendanceDeductionRuleFor()'s own docblock) when more than one exists for an
+     *              event. Both null (the default) behaves exactly as before this param existed:
+     *              every event resolves to its company-wide default row, same as when only one row
+     *              per event could ever exist.
      * @return array{earning:array,deduction:array,errors:array}
      */
-    public function resolve(int $compId, array $syncItemRow, float $baseSalary, array $attendanceOverrides = []): array {
+    public function resolve(int $compId, array $syncItemRow, float $baseSalary, array $attendanceOverrides = [], array $exemptEventCodes = [], ?int $departmentId = null, ?int $teamId = null): array {
         $earning = [];
         $deduction = [];
         $errors = [];
@@ -215,11 +264,11 @@ class SyncPayResolver {
         // not "how many days did this employee actually have scheduled this period" -- so any period
         // where Origami's payload happened to include a non-standard working_days/working_mins (a
         // real month rarely has exactly 30 days worth of standard 8h shifts) silently produced a
-        // wrong OT amount. otHourlyRate/otDailyRate below are used ONLY for the OT block immediately
-        // following; every other calculation in this method (Late/Absent/Unpaid Leave/Trip
+        // wrong OT amount. This fixed-divisor conversion is used ONLY for the OT block immediately
+        // following (2026-08-30: now computed inside computeOtAmountFromConfig() itself, extracted
+        // out for the OT Rate settings form's own calculation-preview feature -- see that method's
+        // own docblock); every other calculation in this method (Late/Absent/Unpaid Leave/Trip
         // Allowance/generic items) is UNCHANGED, still correctly using the variable-divisor rate.
-        $otHourlyRate = $baseSalary / self::STANDARD_WORKING_DAYS_PER_MONTH / self::STANDARD_HOURS_PER_DAY;
-        $otDailyRate = $baseSalary / self::STANDARD_WORKING_DAYS_PER_MONTH;
 
         // Group item_values by item_code up front so every code (known or generic) is handled as
         // one candidate pool, not once per row -- see the class docblock's "MULTI-UNIT
@@ -261,35 +310,13 @@ class SyncPayResolver {
                 $errors[] = "missing_ot_rate_{$scopeCode}";
                 continue;
             }
-            $isDailyBase = $rate['calculation_base'] === 'daily';
-            $isFlat = $rate['calculation_method'] === 'flat_amount';
-            $amount = $isFlat
-                ? round($rate['flat_amount_rate'] * ($isDailyBase ? $hours / self::STANDARD_HOURS_PER_DAY : $hours), 2)
-                : ($isDailyBase
-                    ? round($otDailyRate * $rate['multiplier_rate'] * ($hours / self::STANDARD_HOURS_PER_DAY), 2)
-                    : round($otHourlyRate * $rate['multiplier_rate'] * $hours, 2));
+            $otResult = self::computeOtAmountFromConfig($rate, $baseSalary, $hours);
+            $amount = $otResult['amount'];
             if ($amount <= 0) {
                 continue;
             }
-            // 2026-08-29, explicit request: "OT ก็ให้เห็นสูตรคำนวณเลยว่า คำนวณจากอะไร ฐานเงินเดือนเท่าไหร่ /
-            // กี่วัน และคูณกับอะไร ผลลัพธ์ออกมาเท่าไหร่" -- structured step-by-step calculation trace
-            // (numbers only, formatted client-side for i18n) attached directly to the line so the
-            // Detail page's formula popover can show the REAL numbers used, not a guess reverse-
-            // engineered from the terse `note` string. `type` picks which step template the frontend
-            // renders (see formulaStepsHtml() in detail.js).
-            $formula = $isFlat
-                ? [
-                    'type' => 'ot_flat', 'scope' => $scopeCode, 'is_daily_base' => $isDailyBase,
-                    'flat_rate' => (float)$rate['flat_amount_rate'], 'hours' => $hours,
-                    'hours_divisor' => self::STANDARD_HOURS_PER_DAY, 'result' => $amount,
-                ]
-                : [
-                    'type' => 'ot_multiplier', 'scope' => $scopeCode, 'is_daily_base' => $isDailyBase,
-                    'base_salary' => $baseSalary, 'days_divisor' => self::STANDARD_WORKING_DAYS_PER_MONTH,
-                    'hours_divisor' => self::STANDARD_HOURS_PER_DAY,
-                    'unit_rate' => $isDailyBase ? $otDailyRate : $otHourlyRate,
-                    'multiplier' => (float)$rate['multiplier_rate'], 'hours' => $hours, 'result' => $amount,
-                ];
+            $formula = $otResult['formula'];
+            $formula['scope'] = $scopeCode;
             $earning[] = [
                 'source' => 'sync',
                 'code' => $otResolved['code'],
@@ -354,20 +381,30 @@ class SyncPayResolver {
             if ($minutes <= 0) {
                 continue;
             }
-            $result = $this->computeAttendanceDeductionAmount($compId, $eventCode, $minutes, $hourlyRate);
+            $result = $this->computeAttendanceDeductionAmount($compId, $eventCode, $minutes, $hourlyRate, $departmentId, $teamId);
             foreach ($result['errors'] as $e) {
                 $errors[] = $e;
             }
-            if ($result['amount'] > 0) {
+            // 2026-08-30, explicit request: "หักหรือไม่หักกับแผนกไหน ทีมไหน หรือเจาะจงรายคน...และมีหมายเหตุใน
+            // กรณีที่ไม่หัก" -- an exempt employee still gets a LINE (amount forced to 0, is_exempted=true,
+            // exempted_amount carries what it WOULD have been) rather than being silently skipped, so
+            // the Process Detail breakdown modal has something to show ("Late deduction not applied —
+            // employee is exempt") instead of the item just quietly not appearing. Deliberately reuses
+            // the existing deduction_breakdown array (no new payroll_run_details column) -- this is
+            // the same array the breakdown modal already renders per line.
+            $isExempt = in_array($eventCode, $exemptEventCodes, true);
+            if ($result['amount'] > 0 || $isExempt) {
                 $deduction[] = [
                     'source' => 'sync',
                     'code' => $resolved['code'],
                     'name_th' => $resolved['name_th'],
                     'name_en' => $resolved['name_en'],
-                    'amount' => $result['amount'],
-                    'note' => "sync_{$eventCode}_{$minutes}minutes" . ($isCorrected ? '_corrected' : ''),
+                    'amount' => $isExempt ? 0.0 : $result['amount'],
+                    'note' => "sync_{$eventCode}_{$minutes}minutes" . ($isCorrected ? '_corrected' : '') . ($isExempt ? '_exempted' : ''),
                     'is_custom' => $resolved['is_custom'],
                     'formula' => $result['formula'] ?? null,
+                    'is_exempted' => $isExempt,
+                    'exempted_amount' => $isExempt ? $result['amount'] : null,
                 ];
             }
         }
@@ -593,25 +630,6 @@ class SyncPayResolver {
     }
 
     /**
-     * Converts a MINUTE count into whichever unit an admin's `rate_unit` config was expressed in --
-     * used ONLY to interpret the admin's own typed `flat_amount`/`tiered_bracket` numbers, never to
-     * reinterpret raw attendance data (that's what `candidateToMinutes()` above is for, and it's
-     * always used first). This is the one place `STANDARD_HOURS_PER_DAY`'s 8h/day assumption still
-     * applies to attendance deductions -- deliberately narrowed to "what did the admin mean when
-     * they typed a per-day rate", not "how long was this specific day", which is exactly the
-     * distinction the 2026-08-21 correctness fix (see RULE_DRIVEN_ITEM_DEFS's docblock) is about.
-     */
-    private function minutesToRateUnit(float $minutes, string $rateUnit): float {
-        if ($rateUnit === 'hour') {
-            return $minutes / 60.0;
-        }
-        if ($rateUnit === 'day') {
-            return $minutes / (self::STANDARD_HOURS_PER_DAY * 60.0);
-        }
-        return $minutes; // 'minute'.
-    }
-
-    /**
      * Company-configurable attendance deduction (2026-08-20, explicit request -- originally
      * Late-only, replacing what used to be a fixed hourlyRate/60*minutes formula; generalized the
      * same day to Absent/Unpaid Leave too, before any real company had configured anything). No
@@ -629,8 +647,84 @@ class SyncPayResolver {
      * period, e.g. a half-day Saturday reports fewer actual `absent_mins` than a full weekday would.
      * @return array{amount:float,errors:array}
      */
-    private function computeAttendanceDeductionAmount(int $compId, string $eventCode, float $minutes, float $hourlyRate): array {
-        $rule = $this->attendanceDeductionRuleFor($compId, $eventCode);
+    private function computeAttendanceDeductionAmount(int $compId, string $eventCode, float $minutes, float $hourlyRate, ?int $departmentId = null, ?int $teamId = null): array {
+        $rule = $this->attendanceDeductionRuleFor($compId, $eventCode, $departmentId, $teamId);
+        $brackets = ($rule['method_code'] ?? 'percent_of_rate') === 'tiered_bracket'
+            ? $this->attendanceDeductionBrackets((int)($rule['id'] ?? 0))
+            : [];
+        $result = self::computeAttendanceDeductionFromConfig($rule, $brackets, $minutes, $hourlyRate);
+        if (($rule['method_code'] ?? 'percent_of_rate') === 'tiered_bracket' && empty($brackets)) {
+            $result['errors'][] = "attendance_deduction_no_brackets_configured_{$eventCode}";
+        }
+        return $result;
+    }
+
+    /**
+     * 2026-08-30, extracted out of the OT block in resolve() above (explicit request, same
+     * calculation-preview feature as computeAttendanceDeductionFromConfig() just below this one --
+     * "ทำ OT ต่อเลยครับ") so the exact same OT formula can run against a DRAFT, not-yet-saved OT Rate
+     * config from the settings form, not just a DB-loaded one -- ONE place this formula lives,
+     * shared by the real per-employee calculation above and OtRatePreview (wherever that ends up
+     * being called from) so the preview can never drift out of sync with real payroll. Pure/
+     * stateless -- no DB access, no side effects. otHourlyRate/otDailyRate are computed HERE from
+     * $baseSalary (not passed in) using the same fixed STANDARD_WORKING_DAYS_PER_MONTH/
+     * STANDARD_HOURS_PER_DAY divisors resolve() itself uses for OT specifically (see that block's own
+     * docblock for why OT deliberately does NOT use the variable, sync-derived working-days divisor
+     * every other calculation in this class uses).
+     * @param array $rate {calculation_method, calculation_base, flat_amount_rate, multiplier_rate} --
+     *   same shape otRateForScope() returns, or an equivalent draft array from a form.
+     * @return array{amount:float,formula:array}
+     */
+    public static function computeOtAmountFromConfig(array $rate, float $baseSalary, float $hours): array {
+        $otHourlyRate = $baseSalary / self::STANDARD_WORKING_DAYS_PER_MONTH / self::STANDARD_HOURS_PER_DAY;
+        $otDailyRate = $baseSalary / self::STANDARD_WORKING_DAYS_PER_MONTH;
+        $isDailyBase = ($rate['calculation_base'] ?? 'hourly') === 'daily';
+        $isFlat = ($rate['calculation_method'] ?? 'multiplier') === 'flat_amount';
+        $flatRate = (float)($rate['flat_amount_rate'] ?? 0);
+        $multiplier = (float)($rate['multiplier_rate'] ?? 1.0);
+        $amount = $isFlat
+            ? round($flatRate * ($isDailyBase ? $hours / self::STANDARD_HOURS_PER_DAY : $hours), 2)
+            : ($isDailyBase
+                ? round($otDailyRate * $multiplier * ($hours / self::STANDARD_HOURS_PER_DAY), 2)
+                : round($otHourlyRate * $multiplier * $hours, 2));
+        // 2026-08-29, explicit request: "OT ก็ให้เห็นสูตรคำนวณเลยว่า คำนวณจากอะไร ฐานเงินเดือนเท่าไหร่ / กี่วัน
+        // และคูณกับอะไร ผลลัพธ์ออกมาเท่าไหร่" -- same structured step-by-step trace convention as every
+        // other 'formula' shape in this class (see formulaStepsHtml() in detail.js for how each type
+        // renders). 'scope' is intentionally NOT set here -- the real per-employee call site above
+        // adds it itself (this function has no scope concept of its own, a preview call site has no
+        // scope at all since it's not computing for a real employee/period).
+        $formula = $isFlat
+            ? [
+                'type' => 'ot_flat', 'is_daily_base' => $isDailyBase,
+                'flat_rate' => $flatRate, 'hours' => $hours,
+                'hours_divisor' => self::STANDARD_HOURS_PER_DAY, 'result' => $amount,
+            ]
+            : [
+                'type' => 'ot_multiplier', 'is_daily_base' => $isDailyBase,
+                'base_salary' => $baseSalary, 'days_divisor' => self::STANDARD_WORKING_DAYS_PER_MONTH,
+                'hours_divisor' => self::STANDARD_HOURS_PER_DAY,
+                'unit_rate' => $isDailyBase ? $otDailyRate : $otHourlyRate,
+                'multiplier' => $multiplier, 'hours' => $hours, 'result' => $amount,
+            ];
+        return ['amount' => $amount, 'formula' => $formula];
+    }
+
+    /**
+     * 2026-08-30, extracted out of computeAttendanceDeductionAmount() above (explicit request: "อยาก
+     * ให้เพิ่มปุ่มแสดงตัวอย่างการคำนวณจากการตั้งค่าที่เลือก" -- a calculation-preview button on the
+     * Attendance Deduction Rule settings form) so the exact same formula logic can run against a
+     * DRAFT, not-yet-saved rule config (what the admin is currently typing into the form) instead of
+     * always reading from the database -- ONE place this formula is implemented, used by both the
+     * real per-employee calculation above (DB-loaded config) and AttendanceDeductionRuleModel::
+     * previewCalculation() (form-draft config), so the preview can never silently drift out of sync
+     * with what payroll actually computes. Pure/stateless -- no DB access, no side effects.
+     * @param array $rule {method_code, rate_unit, rate_per_unit, multiplier_rate} -- same shape
+     *   attendanceDeductionRuleFor() returns, or an equivalent draft array from a form.
+     * @param array $brackets only read when method_code='tiered_bracket' -- same shape
+     *   attendanceDeductionBrackets() returns ({min_units, max_units, deduction_amount}).
+     * @return array{amount:float,errors:array,formula?:array}
+     */
+    public static function computeAttendanceDeductionFromConfig(array $rule, array $brackets, float $minutes, float $hourlyRate): array {
         $methodCode = $rule['method_code'] ?? 'percent_of_rate';
         $rateUnit = $rule['rate_unit'] ?? 'minute';
 
@@ -639,7 +733,7 @@ class SyncPayResolver {
         // formulaStepsHtml() in detail.js for how each type renders).
         if ($methodCode === 'flat_amount') {
             $rate = (float)($rule['rate_per_unit'] ?? 0);
-            $quantity = $this->minutesToRateUnit($minutes, $rateUnit);
+            $quantity = self::minutesToRateUnit($minutes, $rateUnit);
             $amount = round($rate * $quantity, 2);
             return ['amount' => $amount, 'errors' => [], 'formula' => [
                 'type' => 'attendance_flat', 'rate_unit' => $rateUnit, 'rate_per_unit' => $rate,
@@ -648,11 +742,10 @@ class SyncPayResolver {
         }
 
         if ($methodCode === 'tiered_bracket') {
-            $brackets = $this->attendanceDeductionBrackets((int)($rule['id'] ?? 0));
             if (empty($brackets)) {
-                return ['amount' => 0.0, 'errors' => ["attendance_deduction_no_brackets_configured_{$eventCode}"]];
+                return ['amount' => 0.0, 'errors' => []];
             }
-            $quantityInRateUnit = $this->minutesToRateUnit($minutes, $rateUnit);
+            $quantityInRateUnit = self::minutesToRateUnit($minutes, $rateUnit);
             foreach ($brackets as $b) {
                 $min = (float)$b['min_units'];
                 $max = $b['max_units'] !== null ? (float)$b['max_units'] : null;
@@ -679,12 +772,58 @@ class SyncPayResolver {
         ]];
     }
 
-    /** @return array{id:?int,method_code:string,rate_per_unit:?float,multiplier_rate:?float} */
-    private function attendanceDeductionRuleFor(int $compId, string $eventCode): array {
-        $stmt = $this->db->prepare("SELECT id, method_code, rate_unit, rate_per_unit, multiplier_rate
+    /**
+     * Converts a MINUTE count into whichever unit an admin's `rate_unit` config was expressed in --
+     * used ONLY to interpret the admin's own typed `flat_amount`/`tiered_bracket` numbers, never to
+     * reinterpret raw attendance data (that's what `candidateToMinutes()` above is for, and it's
+     * always used first). This is the one place `STANDARD_HOURS_PER_DAY`'s 8h/day assumption still
+     * applies to attendance deductions -- deliberately narrowed to "what did the admin mean when
+     * they typed a per-day rate", not "how long was this specific day", which is exactly the
+     * distinction the 2026-08-21 correctness fix (see RULE_DRIVEN_ITEM_DEFS's docblock) is about.
+     * Static since computeAttendanceDeductionFromConfig() (its only caller) is static too.
+     */
+    private static function minutesToRateUnit(float $minutes, string $rateUnit): float {
+        if ($rateUnit === 'hour') {
+            return $minutes / 60.0;
+        }
+        if ($rateUnit === 'day') {
+            return $minutes / (self::STANDARD_HOURS_PER_DAY * 60.0);
+        }
+        return $minutes; // 'minute'.
+    }
+
+    /**
+     * 2026-08-30, multi-scope Attendance Deduction Rule rollout -- an event can now have several
+     * saved rows (one company-wide default, scope_type/scope_id NULL, plus any number of team/
+     * department-scoped overrides). Picks the single most-specific one that applies to THIS
+     * employee: team > department > company-wide default -- same priority as
+     * AttendanceDeductionRuleModel::resolveVariantRow() (re-implemented independently here rather
+     * than shared -- see that class's own docblock for why). Deliberately does NOT filter on
+     * is_active: the resolved row's config is still used to compute a "would-have-been" amount even
+     * when inactive/exempt, so the Process Detail breakdown modal has a real number to show next to
+     * "not applied" -- see resolve()'s own $isExempt handling, which is what actually suppresses it.
+     * @return array{id:?int,method_code:string,rate_per_unit:?float,multiplier_rate:?float}
+     */
+    private function attendanceDeductionRuleFor(int $compId, string $eventCode, ?int $departmentId = null, ?int $teamId = null): array {
+        $stmt = $this->db->prepare("SELECT id, method_code, rate_unit, rate_per_unit, multiplier_rate, scope_type, scope_id
             FROM `attendance_deduction_rules` WHERE comp_id = :comp_id AND event_code = :event_code");
         $stmt->execute([':comp_id' => $compId, ':event_code' => $eventCode]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows)) {
+            return ['id' => null, 'method_code' => 'percent_of_rate', 'rate_unit' => 'minute', 'rate_per_unit' => null, 'multiplier_rate' => 1.00];
+        }
+
+        $teamRow = null; $deptRow = null; $defaultRow = null;
+        foreach ($rows as $r) {
+            if ($r['scope_type'] === 'team' && $teamId !== null && (int)$r['scope_id'] === $teamId) {
+                $teamRow = $r;
+            } elseif ($r['scope_type'] === 'department' && $departmentId !== null && (int)$r['scope_id'] === $departmentId) {
+                $deptRow = $r;
+            } elseif ($r['scope_type'] === null) {
+                $defaultRow = $r;
+            }
+        }
+        $row = $teamRow ?? $deptRow ?? $defaultRow;
         if (!$row) {
             return ['id' => null, 'method_code' => 'percent_of_rate', 'rate_unit' => 'minute', 'rate_per_unit' => null, 'multiplier_rate' => 1.00];
         }
@@ -738,6 +877,56 @@ class SyncPayResolver {
 
     private function normalizeCode(string $code): string {
         return strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', $code) ?? '');
+    }
+
+    /**
+     * 2026-08-30, exposed for PayrollSyncModel's `item_master` auto-catalog step (PAYROLL_SYNC_API.md's
+     * 2026-08-30 revision -- "รายการไหนยังไม่มีให้ insert auto ไปได้เลยไหม") -- true when $itemCode
+     * (normalized the same way EVENT_ALIASES matching already works) is one of the built-in events
+     * this class computes via a dedicated structured-column/default_code path (OT, trip allowance
+     * ("ROUND"), late, absent, early leave, unpaid leave, leave pending). These are already fully
+     * functional with zero `payroll_earning_deduction_types` row required -- ONLY `source_event_code`
+     * (never `item_code`) ever wires a catalog row into one of them (see pedTypeBySourceEvent()) -- so
+     * auto-creating an item_code-matched row for one of these would be an inert decoy that looks
+     * configured but has no effect on anything. Built directly from EVENT_ALIASES so the two can never
+     * drift out of sync with each other.
+     */
+    public static function isKnownEventItemCode(string $itemCode): bool {
+        static $flat = null;
+        if ($flat === null) {
+            $flat = [];
+            foreach (self::EVENT_ALIASES as $aliases) {
+                foreach ($aliases as $alias) {
+                    $flat[$alias] = true;
+                }
+            }
+        }
+        $normalized = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', $itemCode) ?? '');
+        return isset($flat[$normalized]);
+    }
+
+    /**
+     * 2026-08-30, built for PayrollRunModel's `pay_basis='sync_actual_days'` (reads
+     * PROBATION_WORKING_DAYS out of a raw payroll_sync_items row) -- a general-purpose reader for
+     * any INFO-typed (or otherwise never-resolved-into-a-line) item_values entry a caller needs the
+     * raw numeric value of, matched by item_code (normalized the same way every other alias match in
+     * this class works -- case/punctuation-insensitive, exact match only). Returns the value of the
+     * FIRST matching entry (same "may be sent redundantly across units, this class picks one"
+     * caution as resolve() itself, though a plain day-count item like PROBATION_WORKING_DAYS has
+     * never been observed with more than one representation) or null when absent -- callers must
+     * treat null as "no data this cycle" (Origami didn't send it, wrong policy, employee outside the
+     * window, etc.), never as zero.
+     */
+    public static function extractInfoItemValue(array $syncItemRow, string $itemCode): ?float {
+        $itemValues = is_array($syncItemRow['item_values'] ?? null) ? $syncItemRow['item_values'] : [];
+        $target = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', $itemCode) ?? '');
+        foreach ($itemValues as $iv) {
+            $code = strtoupper(preg_replace('/[^a-zA-Z0-9]/', '', (string)($iv['item_code'] ?? '')) ?? '');
+            if ($code === $target && isset($iv['value']) && is_numeric($iv['value'])) {
+                return (float)$iv['value'];
+            }
+        }
+        return null;
     }
 
     /**

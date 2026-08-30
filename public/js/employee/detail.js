@@ -508,7 +508,13 @@ function refreshProfileHeader() {
 }
 function loadEmployeeIfEditing() {
     const employeeNo = $('#employee_no').val();
-    if (!employeeNo) return;
+    if (!employeeNo) {
+        // 2026-08-30, real bug found and fixed (explicit report: "เข้าใช้งานใน tab ที่เป็น data
+        // table refresh แล้ว data table ไม่ทำงาน") -- a brand-new employee (this branch) has
+        // nothing async to wait for, so the URL-hash tab restore is safe to run immediately.
+        activateEmployeeTabFromHash();
+        return;
+    }
     $.ajax({
         url: `${BASE_URL}/api/employee.get`,
         method: 'GET',
@@ -525,12 +531,30 @@ function loadEmployeeIfEditing() {
                     loadAllChildTables();
                     loadDocumentList();
                 }
+                // 2026-08-29: Login History has nothing to show for a brand-new employee (no
+                // login has ever happened yet) -- only revealed once a real, existing employee
+                // has actually loaded. The table itself is lazy-initialized on first tab show
+                // (see the shown.bs.tab handler above), not here.
+                $('#loginHistoryTabItem').removeClass('d-none');
             } else {
                 showWarning(res.message || langData['employee_not_found'] || 'Employee not found.');
             }
+            // 2026-08-30, real bug found and fixed (explicit report: "เข้าใช้งานใน tab ที่เป็น
+            // data table refresh แล้ว data table ไม่ทำงาน") -- root cause: the URL-hash tab
+            // restore used to fire unconditionally at the end of the page's own $(function(){...})
+            // init block, synchronously, well BEFORE this async response ever comes back. Landing
+            // directly on the Login History tab via that early restore fired its own
+            // shown.bs.tab-triggered lazy init (initLoginHistoryTable(), which reads
+            // currentEmployeeId) while currentEmployeeId was still null/undefined -- a genuine
+            // user click always happened long after this response settled, so this race never
+            // showed up before hash-restore existed. Moved here, after currentEmployeeId is
+            // definitely set (or the fetch has definitely failed), so restoring a DataTable-
+            // bearing tab on refresh now sees the same state a real click always would.
+            activateEmployeeTabFromHash();
         },
         error: function () {
             showWarning(langData['load_employee_failed'] || 'Failed to load employee data.');
+            activateEmployeeTabFromHash();
         }
     });
 }
@@ -662,6 +686,24 @@ $(function () {
     initRecurringEarningUI();
 });
 
+// 2026-08-29, explicit request: "ในหน้า Employee Detail ก็อยากให้คลิกที่ Tab ไหน ถ้า Refresh ให้อยู่ที่ Tab
+// นั้น" -- same URL-hash + history.replaceState mechanism already built for Payroll Process
+// Detail/List (payroll/detail.js's own activateTabFromHash()/shown.bs.tab handler) -- persist
+// whichever tab is active across a refresh instead of always resetting to Employee Info.
+$(document).on('shown.bs.tab', '#employeeTabs button[data-bs-toggle="tab"]', function (e) {
+    if (history.replaceState) {
+        history.replaceState(null, '', '#' + e.target.id);
+    }
+});
+function activateEmployeeTabFromHash() {
+    const hash = (location.hash || '').replace('#', '');
+    if (!hash) return;
+    const $btn = $('#' + CSS.escape(hash));
+    if ($btn.length && $btn.attr('data-bs-toggle') === 'tab' && $btn.closest('#employeeTabs').length) {
+        bootstrap.Tab.getOrCreateInstance($btn[0]).show();
+    }
+}
+
 function escapeHtml(str) {
     return $('<div>').text(str === null || str === undefined ? '' : str).html();
 }
@@ -706,6 +748,85 @@ function addDocumentRow(doc) {
     $tr.attr('data-id', doc.id).data('id', doc.id);
     $('#tableDocumentList tbody').append($tr);
 }
+/* ==================== Login History tab (2026-08-29) ====================
+   Explicit request: "ต้องการอีก Tab ใน Employee เพื่อดูประวัติการเข้าใช้งานระบบโดยแสดงข้อมูลแบบละเอียดตามที่
+   เก็บ...และสามารถ Filter ได้" -- server-side DataTable, scoped to this one employee
+   (EmployeeLoginLogController::list()'s own employee_id param), device/browser filter dropdowns
+   populated from whatever values actually exist for this employee (EmployeeLoginLogModel::
+   distinctFilterValues(), not a hardcoded list -- a brand-new employee with only ever logged in
+   from Chrome has no reason to see a Firefox/Safari option). ==================== */
+let tb_login_history;
+/* 2026-08-30, explicit request: "ทุกตารางที่มี icon ให้เป็นรูปแบบเดียวกับ report ทั้งหมดครับ" -- reuses
+   the shared .row-type-icon gradient badge (style.css, promoted from reports/index.js's own
+   report-type icon) instead of a bare colored <i>, same device->color mapping as
+   loginHistoryOverviewDeviceIcon() in employee/list.js's own Login History Overview table. */
+function loginHistoryDeviceIconRd(deviceType) {
+    const map = { desktop: { icon: 'fa-desktop', rt: 'rt-3' }, mobile: { icon: 'fa-mobile-screen', rt: 'rt-1' }, tablet: { icon: 'fa-tablet-screen-button', rt: 'rt-5' }, bot: { icon: 'fa-robot', rt: 'rt-4' } };
+    return map[deviceType] || { icon: 'fa-question', rt: 'rt-2' };
+}
+function loadLoginHistoryFilterOptions() {
+    if (!currentEmployeeId) return;
+    $.getJSON(`${BASE_URL}/api/employee-login-log.filter-options`, { employee_id: currentEmployeeId }, function (res) {
+        if (!res.status) return;
+        const $device = $('#loginHistoryFilterDevice').empty().append(`<option value="">${langData['select_option'] || 'All'}</option>`);
+        (res.data.device_types || []).forEach(v => $device.append(`<option value="${v}">${v}</option>`));
+        const $browser = $('#loginHistoryFilterBrowser').empty().append(`<option value="">${langData['select_option'] || 'All'}</option>`);
+        (res.data.browser_names || []).forEach(v => $browser.append(`<option value="${v}">${v}</option>`));
+        $device.trigger('change');
+        $browser.trigger('change');
+    });
+}
+function initLoginHistoryTable() {
+    if (!currentEmployeeId) return;
+    if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
+        $('#tableLoginHistory').DataTable().ajax.reload();
+        return;
+    }
+    tb_login_history = $('#tableLoginHistory').DataTable({
+        responsive: true,
+        serverSide: true,
+        processing: true,
+        order: [[0, 'desc']],
+        ajax: {
+            url: `${BASE_URL}/api/employee-login-log.list`,
+            type: 'POST',
+            data: function (d) {
+                d.employee_id = currentEmployeeId;
+                d.date_from = $('#loginHistoryFilterDateFrom').val() || '';
+                d.date_to = $('#loginHistoryFilterDateTo').val() || '';
+                d.device_type = $('#loginHistoryFilterDevice').val() || '';
+                d.browser_name = $('#loginHistoryFilterBrowser').val() || '';
+            }
+        },
+        columns: [
+            { data: 'login_at', render: d => escapeHtmlRd(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')) },
+            // 2026-08-29: logout_at is only ever set by auth/switch.php's own "Switch App away from
+            // Payroll" capture (see that file's own docblock) -- null is the normal, expected state
+            // for a session that ended any other way (tab closed, browser closed, session expired),
+            // not a sign anything is broken.
+            { data: 'logout_at', render: d => escapeHtmlRd(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-') },
+            { data: 'ip_address', render: d => escapeHtmlRd(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtmlRd([row.location_city, row.location_country].filter(Boolean).join(', ') || '-') },
+            { data: 'timezone', render: d => escapeHtmlRd(d || '-') },
+            { data: 'device_type', render: d => { const m = loginHistoryDeviceIconRd(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${escapeHtmlRd(d || '-')}`; } },
+            { data: null, render: (d, t, row) => escapeHtmlRd([row.os_name, row.os_version].filter(Boolean).join(' ') || '-') },
+            { data: null, render: (d, t, row) => escapeHtmlRd([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-') },
+        ],
+        language: getTableLang(),
+    });
+}
+$(document).on('change', '#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo, #loginHistoryFilterDevice, #loginHistoryFilterBrowser', function () {
+    if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
+        $('#tableLoginHistory').DataTable().ajax.reload();
+    }
+});
+// Lazy-init on first tab show -- a DataTable constructed while its own tab-pane is `display:none`
+// collapses every column to 0 width (this app's own well-known DataTables+Bootstrap-tab gotcha,
+// hit and fixed the same way in several other places already, e.g. payslip-template.js).
+$(document).on('shown.bs.tab', '#login-history-tab', function () {
+    loadLoginHistoryFilterOptions();
+    initLoginHistoryTable();
+});
 function loadDocumentList() {
     if (!currentEmployeeId) return;
     $('#tableDocumentList tbody').empty();
@@ -1202,9 +1323,13 @@ function eedInstallmentProgressCell(row) {
 function eedTableColumns() {
     return [
         { data: null, render: (d, t, row) => eedItemNameCell(row) },
-        { data: null, render: (d, t, row) => eedAmountSummary(row) },
+        { data: null, className: 'text-end', render: (d, t, row) => eedAmountSummary(row) },
         { data: null, className: 'text-center', render: (d, t, row) => eedInstallmentProgressCell(row) },
-        { data: 'effective_date', render: d => toDisplayDate(d) },
+        // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
+        // `render: fn` meant client-side sort/filter operated on the dd/mm/yyyy DISPLAY string, not
+        // the raw ISO date, same class of bug this project's own CLAUDE.md already documents for
+        // every other formatted-date column.
+        { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
         { data: null, render: (d, t, row) => eedStatusBadge(row) },
         // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
         // Responsive expand row.
@@ -1559,6 +1684,33 @@ function initEedUI() {
         // own established once-at-page-load pattern directly above).
         initSelect2('#eed_payee_employee_id', { mode: 'ajax', allowClear: true });
     }
+    // 2026-08-30, explicit request: "ทำให้ fixed_amount/percent_rate เป็นค่าเริ่มต้นอัตโนมัติตอน
+    // assign ให้พนักงาน" -- catalog fixed_amount/percent_rate are unused for automatic calculation
+    // (real amounts always come from this per-employee assignment's own principal_amount, entered
+    // separately -- see CLAUDE.md's own PED convention note), but a real value entered on the
+    // catalog item IS a genuinely useful SUGGESTED starting point here. Only fires from an actual
+    // user pick (select2:select), never from populateEedForm()'s own new Option(...) pre-select when
+    // opening an existing assignment for edit/view -- and only ever fills an EMPTY amount field, so
+    // it can never silently overwrite a value the admin already typed or a saved assignment's own
+    // real amount.
+    $(document).on('select2:select', '#eed_ped_type_id', function (e) {
+        const item = e.params && e.params.data;
+        if (!item) return;
+        const $amount = $('#eed_principal_amount');
+        if (($amount.val() || '').toString().trim() !== '') return;
+        let suggested = null;
+        if (item.calculation_method === 'fixed_amount' && parseFloat(item.fixed_amount) > 0) {
+            suggested = parseFloat(item.fixed_amount);
+        } else if (item.calculation_method === 'percent_of_base_salary' && parseFloat(item.percent_rate) > 0) {
+            const baseSalary = parseFloat($('#base_salary_amount').val() || '0');
+            if (baseSalary > 0) {
+                suggested = Math.round(baseSalary * parseFloat(item.percent_rate) / 100 * 100) / 100;
+            }
+        }
+        if (suggested !== null && suggested > 0) {
+            $amount.val(suggested);
+        }
+    });
     $(document).on('click', '#eedModeToggle button', function () {
         setEedMode($(this).data('mode'));
     });
@@ -1746,8 +1898,12 @@ function initRecurringEarningUI() {
         },
         columns: [
             { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '') },
-            { data: 'amount', render: d => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
-            { data: 'effective_date', render: d => toDisplayDate(d) },
+            // 2026-08-29, real bugs found via a system-wide table audit: sort-safety fixes -- both
+            // used a plain `render: fn`, so client-side sort/filter operated on the FORMATTED
+            // string (amount: "1,234.56" sorts before "999.00" lexicographically; date: dd/mm/yyyy
+            // doesn't sort chronologically), not the raw underlying value.
+            { data: 'amount', className: 'text-end', render: { display: d => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+            { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
             { data: null, render: (d, t, row) => recurringEarningSuspendPeriodCell(row) },
             { data: null, render: (d, t, row) => recurringEarningStatusBadge(row) },
             {
@@ -1796,6 +1952,19 @@ function initRecurringEarningUI() {
     if (typeof initSelect2 === 'function') {
         initSelect2('#ere_ped_type_id', { mode: 'ajax' });
     }
+    // Same suggested-default precedent as #eed_ped_type_id's own handler above -- this dropdown is
+    // always pre-filtered server-side to calculation_method='fixed_amount' items only (see
+    // EmployeeController::recurringEarningTypeOptions()), so no percent_of_base_salary branch is
+    // needed here.
+    $(document).on('select2:select', '#ere_ped_type_id', function (e) {
+        const item = e.params && e.params.data;
+        if (!item) return;
+        const $amount = $('#ere_amount');
+        if (($amount.val() || '').toString().trim() !== '') return;
+        if (item.calculation_method === 'fixed_amount' && parseFloat(item.fixed_amount) > 0) {
+            $amount.val(parseFloat(item.fixed_amount));
+        }
+    });
     $(document).on('click', '.btn-add-recurring-earning', function () {
         if (!currentEmployeeId) {
             showWarning(langData['save_basic_info_first'] || "Please save the employee's basic info first.");

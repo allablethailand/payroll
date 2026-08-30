@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/ApprovalRequestModel.php';
 require_once __DIR__ . '/EmploymentCertificateTemplateModel.php';
 require_once __DIR__ . '/../services/EmploymentCertificateRenderer.php';
+require_once __DIR__ . '/NotificationModel.php';
 
 /**
  * Employment Certificate request/issuance flow (2026-08-26, explicit request: "ในส่วนของ Request
@@ -122,6 +123,21 @@ class EmploymentCertificateRequestModel {
 
             if ($ownTransaction) {
                 $this->db->commit();
+            }
+            // 2026-08-29, explicit request: "มีคนขอ...ขอเอกสารมานะรออนุมัติอยู่" -- same
+            // currentStepApprovers()-driven recipient resolution as PayslipRequestModel::create()'s
+            // own version, see that method's own comment for the full rationale.
+            try {
+                $approvers = $approvalModel->currentStepApprovers($compId, (int)$approvalResult['id']);
+                $approverIds = array_map(fn($a) => (int)$a['id'], $approvers);
+                (new NotificationModel())->createForEmployees(
+                    $compId, $approverIds, 'document_request_pending',
+                    "มีคำขอหนังสือรับรองการทำงานรออนุมัติ", "An employment certificate request is waiting for your approval",
+                    $label, $label,
+                    "/payslip-documents/requests", 'employment_certificate_request', $requestId, null, 'fa-file-signature'
+                );
+            } catch (Throwable $e) {
+                // Best-effort -- see comment above.
             }
             return ['status' => true, 'message' => 'Employment certificate request submitted for approval.', 'id' => $requestId];
         } catch (PDOException $e) {

@@ -580,6 +580,82 @@ try {
     checkTrue('a negative-valued INCOME item is still skipped, not turned into a 100.00 earning line', findLine($r['earning'], 'CUSTOM:Negative Income') === null);
     check('zero earning lines', count($r['earning']), 0);
 
+    echo "=== 2026-08-30: exemptEventCodes param (per-department/team/individual attendance-deduction exemption) ===\n";
+    $pdo->prepare("DELETE FROM `attendance_deduction_rules` WHERE comp_id = :comp_id")->execute([':comp_id' => $compId]);
+    $pdo->prepare("INSERT INTO attendance_deduction_rules (comp_id, event_code, method_code, rate_unit, rate_per_unit, created_by) VALUES (?, 'late', 'flat_amount', 'minute', 2.00, ?)")
+        ->execute([$compId, $userId]);
+    $exLateRow = $blankRow;
+    $exLateRow['late_mins'] = 30; // 30 * 2.00 = 60.00, same fixture shape as the earlier flat_amount late test above.
+
+    $rNotExempt = $resolver->resolve($compId, $exLateRow, $baseSalary, [], []);
+    $lineNotExempt = findLine($rNotExempt['deduction'], 'LATE_DEDUCT');
+    check('not exempt: full 60.00 late deduction applied', $lineNotExempt['amount'] ?? null, 60.00);
+    check('not exempt: is_exempted is false', $lineNotExempt['is_exempted'] ?? null, false);
+    check('not exempt: exempted_amount is null', $lineNotExempt['exempted_amount'], null);
+
+    $rExempt = $resolver->resolve($compId, $exLateRow, $baseSalary, [], ['late']);
+    $lineExempt = findLine($rExempt['deduction'], 'LATE_DEDUCT');
+    checkTrue('exempt: a line still appears (not silently dropped)', $lineExempt !== null);
+    check('exempt: amount forced to 0', $lineExempt['amount'] ?? null, 0.0);
+    check('exempt: is_exempted is true', $lineExempt['is_exempted'] ?? null, true);
+    check('exempt: exempted_amount carries what it would have been (60.00)', $lineExempt['exempted_amount'] ?? null, 60.00);
+    checkTrue('exempt: note is tagged _exempted for the breakdown modal to key off of', str_contains($lineExempt['note'] ?? '', '_exempted'));
+
+    $rExemptOtherEvent = $resolver->resolve($compId, $exLateRow, $baseSalary, [], ['absent']);
+    $lineExemptOtherEvent = findLine($rExemptOtherEvent['deduction'], 'LATE_DEDUCT');
+    check('exempting a DIFFERENT event code (absent) leaves late deduction untouched', $lineExemptOtherEvent['amount'] ?? null, 60.00);
+
+    echo "=== 2026-08-30 fix: Trip allowance real-world item_code 'ROUND' -- structured column AND a matching item_values row sent together must still be only 1 line (real bug report: EVENT_ALIASES only knew 'TRIP'/'TRIPALLOWANCE', never the real 'ROUND' Origami actually sends) ===\n";
+    $pdo->prepare("DELETE FROM `attendance_deduction_rules` WHERE comp_id = :comp_id")->execute([':comp_id' => $compId]);
+    $roundRow = $blankRow;
+    $roundRow['trip_allowance'] = 350.5; // structured column
+    $roundRow['item_values'] = [
+        ['item_id' => 301, 'item_code' => 'ROUND', 'item_name' => 'Trip Allowance', 'item_type' => 'INCOME', 'unit_type' => null, 'value' => 350.5, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $roundRow, $baseSalary);
+    $roundTripLines = array_values(array_filter($r['earning'], fn($l) => $l['code'] === 'TRIP_ALLOW'));
+    check('exactly 1 TRIP_ALLOW line (item_code "ROUND" recognized via alias, not double-counted)', count($roundTripLines), 1);
+    check('amount is 350.50, not 701.00 (the "ROUND" item_values row must not also become a separate custom earning line)', $roundTripLines[0]['amount'] ?? null, 350.5);
+    checkTrue('no stray custom "ROUND"/"Trip Allowance" line was also created', findLine($r['earning'], 'CUSTOM:Trip Allowance') === null);
+
+    echo "=== 2026-08-30 fix: Early leave deduction -- 'early_leave' was completely missing from RULE_DRIVEN_ITEM_DEFS (selectable in the 'Linked Attendance Event' dropdown for years, but never actually computed) ===\n";
+    $earlyLeaveRow = $blankRow;
+    $earlyLeaveRow['early_mins'] = 30; // hourlyRate(100)/60 * 30 = 50, same default formula shape as late
+    $r = $resolver->resolve($compId, $earlyLeaveRow, $baseSalary);
+    $earlyLeaveLine = findLine($r['deduction'], 'EARLY_LEAVE_DEDUCT');
+    checkTrue('EARLY_LEAVE_DEDUCT line present (previously this event produced nothing at all)', $earlyLeaveLine !== null);
+    check('early leave deduction = (100/60)*30 = 50', $earlyLeaveLine['amount'] ?? null, 50.0);
+
+    echo "=== 2026-08-30 fix: Early leave -- item_code alias 'EARLY_LEAVE' also recognized, structured + item_values together still only 1 line ===\n";
+    $earlyLeaveAliasRow = $blankRow;
+    $earlyLeaveAliasRow['early_mins'] = 30;
+    $earlyLeaveAliasRow['item_values'] = [
+        ['item_id' => 401, 'item_code' => 'EARLY_LEAVE', 'item_name' => 'Early Leave', 'item_type' => 'DEDUCTION', 'unit_type' => 'minutes', 'value' => 30.0, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $earlyLeaveAliasRow, $baseSalary);
+    $earlyLeaveAliasLines = array_values(array_filter($r['deduction'], fn($l) => $l['code'] === 'EARLY_LEAVE_DEDUCT'));
+    check('exactly 1 EARLY_LEAVE_DEDUCT line (item_code "EARLY_LEAVE" recognized via alias, not double-deducted)', count($earlyLeaveAliasLines), 1);
+    check('amount is 50.00, not 100.00', $earlyLeaveAliasLines[0]['amount'] ?? null, 50.0);
+
+    echo "=== 2026-08-30 fix: Leave pending -- now read from the STRUCTURED leave_wait_days column (docblock previously, wrongly, claimed no such column existed; item_values was the only path before this fix) ===\n";
+    $leaveWaitStructuredRow = $blankRow;
+    $leaveWaitStructuredRow['leave_wait_days'] = 1.0; // 1 day = 480 minutes: (100/60)*480*1.0 = 800.00, no item_values at all this time
+    $r = $resolver->resolve($compId, $leaveWaitStructuredRow, $baseSalary);
+    $leaveWaitLine = findLine($r['deduction'], 'LEAVE_PENDING_DEDUCT');
+    checkTrue('LEAVE_PENDING_DEDUCT line present from the structured column alone (previously silently produced nothing)', $leaveWaitLine !== null);
+    check('1 day via leave_wait_days -> minutes(480)*(100/60)*1.0 = 800.00', $leaveWaitLine['amount'] ?? null, 800.0);
+
+    echo "=== 2026-08-30 fix: Leave pending -- structured leave_wait_days AND a matching item_values row together still only 1 line ===\n";
+    $leaveWaitBothRow = $blankRow;
+    $leaveWaitBothRow['leave_wait_days'] = 1.0;
+    $leaveWaitBothRow['item_values'] = [
+        ['item_id' => 201, 'item_code' => 'LEAVE_PENDING', 'item_name' => 'Leave Pending', 'item_type' => 'INFO', 'unit_type' => 'days', 'value' => 1.0, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $leaveWaitBothRow, $baseSalary);
+    $leaveWaitBothLines = array_values(array_filter($r['deduction'], fn($l) => $l['code'] === 'LEAVE_PENDING_DEDUCT'));
+    check('exactly 1 LEAVE_PENDING_DEDUCT line (structured column + item_values duplicate, not double-deducted)', count($leaveWaitBothLines), 1);
+    check('amount is 800.00, not 1600.00', $leaveWaitBothLines[0]['amount'] ?? null, 800.0);
+
 } finally {
     $pdo->rollBack();
 }

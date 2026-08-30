@@ -4,18 +4,21 @@ require_once __DIR__ . '/../models/PayrollConfigurationModel.php';
 require_once __DIR__ . '/../models/PayrollEarningDeductionTypeModel.php';
 require_once __DIR__ . '/../models/PayrollCycleModel.php';
 require_once __DIR__ . '/../models/AttendanceDeductionRuleModel.php';
+require_once __DIR__ . '/../models/PayrollPolicyModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 class PayrollConfigurationController extends Controller {
     private $model;
     private $pedTypeModel;
     private $cycleModel;
     private AttendanceDeductionRuleModel $attendanceDeductionRuleModel;
+    private PayrollPolicyModel $policyModel;
     private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new PayrollConfigurationModel();
         $this->pedTypeModel = new PayrollEarningDeductionTypeModel();
         $this->cycleModel = new PayrollCycleModel();
         $this->attendanceDeductionRuleModel = new AttendanceDeductionRuleModel();
+        $this->policyModel = new PayrollPolicyModel();
         $this->permissionModel = new PermissionModel();
     }
 
@@ -280,6 +283,40 @@ class PayrollConfigurationController extends Controller {
         $this->json($this->attendanceDeductionRuleModel->ruleSave($data, (int)$compId, $this->userId()));
     }
 
+    public function attendanceDeductionRuleAssignableOptions() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        $this->json(['status' => true, 'data' => $this->attendanceDeductionRuleModel->assignableOptions((int)$compId)]);
+    }
+
+    /** 2026-08-30, multi-scope rollout -- deletes a team/department-scoped rule variant (the
+     *  company-wide default is never deletable, see AttendanceDeductionRuleModel::ruleDelete()). */
+    public function attendanceDeductionRuleDelete() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->attendanceDeductionRuleModel->ruleDelete($id, (int)$compId));
+    }
+
+    public function attendanceDeductionRulePreview() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $sampleBaseSalary = isset($data['sample_base_salary']) && is_numeric($data['sample_base_salary']) ? (float)$data['sample_base_salary'] : 30000.0;
+        $sampleMinutes = isset($data['sample_minutes']) && is_numeric($data['sample_minutes']) ? (float)$data['sample_minutes'] : 30.0;
+        $this->json($this->attendanceDeductionRuleModel->previewCalculation($data, $sampleBaseSalary, $sampleMinutes));
+    }
+
     public function pedTypeDelete() {
         if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
@@ -297,5 +334,25 @@ class PayrollConfigurationController extends Controller {
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->pedTypeModel->delete((int)$compId, $id, $userId);
         $this->json($result);
+    }
+
+    /* ==================== PAYROLL POLICIES (2026-08-30, new tab) ==================== */
+
+    public function policyGet() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        $this->json(['status' => true, 'data' => $this->policyModel->get((int)$compId)]);
+    }
+
+    public function policySave() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $this->json($this->policyModel->save((int)$compId, $data, $this->userId()));
     }
 }

@@ -426,14 +426,20 @@ function initPayrollApprovalTable() {
             { data: null, render: (d, t, row) => `${toDisplayDateAp(row.period_start_date)} - ${toDisplayDateAp(row.period_end_date)}` },
             { data: 'state', render: d => stateBadgeAp(d) },
             { data: 'employee_count', className: 'text-end' },
-            { data: 'total_net_amount', className: 'text-end', render: d => fmtNumAp(d) },
+            // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
+            // `render: fn` meant client-side sort/filter operated on the formatted "1,234.56"
+            // string, not the raw numeric amount (same class of bug already documented in CLAUDE.md).
+            { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNumAp(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
             { data: null, render: (d, t, row) => escapeHtmlAp(submitterNameAp(row)) },
             // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น
             // UTC การแสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- was displaying the raw UTC time
             // straight from the DB string with no timezone conversion at all. Reuses
             // formatDisplayDateTime() (app.js) -- already UTC-aware, no need for a local copy of
             // the same technique here.
-            { data: 'submitted_at', render: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-' },
+            // 2026-08-29, same-day: object-form render added (sort-safety audit) -- sort/filter now
+            // key off the raw ISO datetime (still sorts correctly as a string) instead of the
+            // dd/mm/yyyy display string.
+            { data: 'submitted_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
             // "Last Updated" = updated_at, same column/semantics as the Process List page's own
             // (2026-08-23, explicit request: "หน้า Process List และ Approval List ให้แสดงวันที่ของ
             // Status ล่าสุดด้วย") -- every state transition (submit/approve/reject/request-info/
@@ -442,7 +448,7 @@ function initPayrollApprovalTable() {
             // CURRENT status was reached, not just "last touched" (which for a draft run tracks the
             // last edit/recalculate -- also correct, since a draft doesn't have a "status date" of
             // its own beyond that).
-            { data: 'updated_at', render: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-' },
+            { data: 'updated_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
             // 2026-08-28, explicit request: "ตาราง Responsive ทุกตาราง Column ท้ายสุดต้องเป็นปุ่ม
             // ดำเนินการ แล้วไป hidden ส่วนอื่นเป็นตัว expand แทน" -- these 2 action-button columns
             // are already positioned last; `className: 'all'` (per DataTables Responsive's own

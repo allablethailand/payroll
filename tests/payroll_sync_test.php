@@ -277,6 +277,10 @@ try {
     $decBankNo = EncryptionService::decrypt($mappedEmpRow['bank_account_no'], (int)$mappedEmpRow['key_version']);
     check('transfer employee bank_account_no decrypts to the synced value', $decBankNo, '1234567890');
     check('transfer employee sso_enrolled overwritten to 1 (deduct_sso=true)', (int)($mappedEmpRow['sso_enrolled'] ?? -1), 1);
+    // 2026-08-30, explicit request: "วันที่เริ่มประกันสังคมถ้าเป็นค่าว่างให้ Default เป็นวันที่เริ่มงานลงไปเลย"
+    // -- the fixture employee has no sso_start_date on file and employment_date='2020-01-01'; now
+    // that this pull marks them sso_enrolled, sso_start_date should default to it.
+    check('transfer employee sso_start_date defaulted to employment_date (2020-01-01) since it was blank', $mappedEmpRow['sso_start_date'] ?? null, '2020-01-01');
     $decIdCard = EncryptionService::decrypt($mappedEmpRow['id_card_no'], (int)$mappedEmpRow['key_version']);
     check('transfer employee id_card_no decrypts to the synced value', $decIdCard, '1234567890123');
     // SSO number defaults to ID card number (2026-08-29 explicit request) -- Origami's payload has
@@ -294,6 +298,15 @@ try {
     check('cash employee payment_type overwritten to cash', $lateEmpRow['payment_type'] ?? null, 'cash');
     check('cash employee bank_id cleared (no bank on this cycle)', $lateEmpRow['bank_id'], null);
     check('cash employee sso_enrolled overwritten to 0 (deduct_sso=false)', (int)($lateEmpRow['sso_enrolled'] ?? -1), 0);
+    check('cash employee sso_start_date left NULL (not SSO-enrolled, nothing to default)', $lateEmpRow['sso_start_date'] ?? null, null);
+
+    // ---------- SSO Start Date default: never overwrites a value HR already entered by hand ----------
+    echo "=== SSO Start Date default: does not clobber an existing value ===\n";
+    $pdo->prepare("UPDATE employees SET sso_start_date = '2019-06-15' WHERE id = :id")->execute([':id' => $mappedEmployeeId]);
+    $model->applyEmployeeMasterFields($processRowId, $compId, 1);
+    $mappedEmpStmt->execute([':id' => $mappedEmployeeId]);
+    $mappedEmpRowAfterManualSet = $mappedEmpStmt->fetch(PDO::FETCH_ASSOC);
+    check('a manually-set sso_start_date survives a re-pull unchanged', $mappedEmpRowAfterManualSet['sso_start_date'] ?? null, '2019-06-15');
 
     // ---------- Validation failures ----------
     echo "=== Validation failures ===\n";
@@ -935,6 +948,80 @@ try {
     $teamSigEmpStmt->execute([':id' => $teamSigEmployeeId]);
     $teamSigEmpFinal = $teamSigEmpStmt->fetch(PDO::FETCH_ASSOC);
     check('team_id left untouched when the row carries no support_team fields at all', (int)($teamSigEmpFinal['team_id'] ?? 0), (int)$teamSigEmp['team_id']);
+
+    // ---------- autoCreateMissingPedTypes() (item_master, PAYROLL_SYNC_API.md's 2026-08-30
+    // revision -- explicit request: "รายการไหนยังไม่มีให้ insert auto ไปได้เลยไหม") ----------
+    echo "=== autoCreateMissingPedTypes() ===\n";
+    $imProcessId = random_int(100000, 999999);
+    $imPayload = [
+        'schema_version' => 1, 'process_id' => $imProcessId, 'process_no' => 'ORIGAMI-TEST-ITEMMASTER-' . $imProcessId,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'item_master' => [
+            ['item_id' => 11, 'item_code' => 'DILIGENCE', 'item_name' => 'Diligence Allowance', 'item_type' => 'INCOME', 'unit_types' => []],
+            ['item_id' => 12, 'item_code' => 'ASSISTANCE', 'item_name' => 'Financial Assistance', 'item_type' => 'INCOME', 'unit_types' => []],
+            ['item_id' => 1, 'item_code' => 'LATE', 'item_name' => 'Late', 'item_type' => 'DEDUCTION', 'unit_types' => ['minutes']],
+            ['item_id' => 7, 'item_code' => 'ROUND', 'item_name' => 'Trip Allowance (Robusta)', 'item_type' => 'INCOME', 'unit_types' => []],
+            ['item_id' => 20, 'item_code' => 'LEAVE_APPROVED', 'item_name' => 'Leave Approved', 'item_type' => 'INFO', 'unit_types' => ['days']],
+            ['item_id' => 21, 'item_code' => 'PROBATION_WORKING_DAYS', 'item_name' => 'Probation Pay', 'item_type' => 'INFO', 'unit_types' => ['days']],
+        ],
+        'items' => [[
+            'report_item_id' => 90, 'payroll_code' => $mappedEmployeeNo, 'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ];
+    $imIngest = $model->ingest($imPayload);
+    checkTrue('item_master fixture ingest succeeds', $imIngest['status']);
+    $imProcessRowId = $imIngest['process_row_id'] ?? 0;
+
+    $createdCount = $model->autoCreateMissingPedTypes($imProcessRowId, $compId, 1);
+    check('exactly 2 new catalog rows created (DILIGENCE + ASSISTANCE only)', $createdCount, 2);
+
+    $pedRows = $pdo->prepare("SELECT * FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code IN ('DILIGENCE', 'ASSISTANCE')");
+    $pedRows->execute([':comp_id' => $compId]);
+    $pedByCode = [];
+    foreach ($pedRows->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $pedByCode[$r['item_code']] = $r;
+    }
+    checkTrue('DILIGENCE catalog row created', isset($pedByCode['DILIGENCE']));
+    check('DILIGENCE item_type mapped to earning', $pedByCode['DILIGENCE']['item_type'] ?? null, 'earning');
+    check('DILIGENCE item_name_th/en both set from item_name (no separate TH/EN source)', $pedByCode['DILIGENCE']['item_name_en'] ?? null, 'Diligence Allowance');
+    check('DILIGENCE tax_treatment defaults to taxable (same default as no-catalog-row behavior)', $pedByCode['DILIGENCE']['tax_treatment'] ?? null, 'taxable');
+    check('DILIGENCE is_sync_only=1 (system-managed, not manually editable)', (int)($pedByCode['DILIGENCE']['is_sync_only'] ?? 0), 1);
+    checkTrue('ASSISTANCE catalog row created', isset($pedByCode['ASSISTANCE']));
+
+    $pedLate = $pdo->prepare("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code = 'LATE'");
+    $pedLate->execute([':comp_id' => $compId]);
+    check('LATE (known built-in event, real Origami code) gets NO catalog row -- already functional without one', (int)$pedLate->fetchColumn(), 0);
+
+    $pedRound = $pdo->prepare("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code = 'ROUND'");
+    $pedRound->execute([':comp_id' => $compId]);
+    check('ROUND (known built-in trip allowance alias) gets NO catalog row either', (int)$pedRound->fetchColumn(), 0);
+
+    $pedInfo = $pdo->prepare("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code IN ('LEAVE_APPROVED', 'PROBATION_WORKING_DAYS')");
+    $pedInfo->execute([':comp_id' => $compId]);
+    check('INFO-typed items (LEAVE_APPROVED/PROBATION_WORKING_DAYS) get NO catalog row (item_type enum has no INFO value)', (int)$pedInfo->fetchColumn(), 0);
+
+    // Idempotent: running it again against the same (already-applied) item_master creates nothing new.
+    $createdCountAgain = $model->autoCreateMissingPedTypes($imProcessRowId, $compId, 1);
+    check('re-running autoCreateMissingPedTypes() on the same process is a no-op (already exist)', $createdCountAgain, 0);
+
+    // An item_code the company already has (e.g. from an earlier manual create) is skipped, not duplicated.
+    $imProcessId2 = random_int(100000, 999999);
+    $imIngest2 = $model->ingest([
+        'schema_version' => 1, 'process_id' => $imProcessId2, 'process_no' => 'ORIGAMI-TEST-ITEMMASTER2-' . $imProcessId2,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'item_master' => [
+            ['item_id' => 11, 'item_code' => 'diligence', 'item_name' => 'Diligence Allowance (again, different case)', 'item_type' => 'INCOME', 'unit_types' => []],
+        ],
+        'items' => [[
+            'report_item_id' => 91, 'payroll_code' => $mappedEmployeeNo, 'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    $createdCount2 = $model->autoCreateMissingPedTypes($imIngest2['process_row_id'] ?? 0, $compId, 1);
+    check('an item_code already in the catalog (case-insensitive match) is skipped, not duplicated', $createdCount2, 0);
 } catch (Throwable $e) {
     $failures++;
     echo "  FAIL  uncaught exception: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

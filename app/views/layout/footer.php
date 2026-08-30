@@ -21,14 +21,14 @@
 <script src="<?=BASE_URL?>/node_modules/sortablejs/Sortable.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/intl-tel-input/dist/js/intlTelInputWithUtils.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/leaflet/dist/leaflet.js"></script>
-<div class="modal fade" id="systemModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header"></div>
-            <div class="modal-body"></div>
-            <div class="modal-footer"></div>
-        </div>
-    </div>
-</div>
+<?php
+// 2026-08-30, explicit request: "ย้ายทุก modal ไปไว้ที่เดียวกัน" -- every modal's own HTML markup in
+// this app now lives in this one shared partial, included unconditionally here (after every page's
+// own content has already rendered -- Controller::view() includes header.php, then the page's
+// content view, then this file -- so DOM order puts every modal right before </body>; id-based
+// lookups/`data-bs-target` work identically regardless of DOM position). See modals.php's own
+// docblock for the full investigation/rationale.
+include __DIR__ . '/modals.php';
+?>
 </body>
 </html>

@@ -113,8 +113,11 @@ class PayrollController extends Controller {
         $row['can_approve_payroll'] = $this->model->canApprovePayroll($this->userId(), $this->isAdmin(), $row);
         $row['can_process_payroll'] = $this->model->canProcessPayroll($this->userId(), $this->isAdmin());
         $row['can_finalize_payroll'] = $this->model->canFinalizePayroll($this->userId(), $this->isAdmin());
-        $pedSettings = $this->model->getPedTypeSettings($id, (int)$compId);
-        $row['ped_type_settings'] = ['earning' => $pedSettings['earning'] ?? null, 'deduction' => $pedSettings['deduction'] ?? null];
+        // 2026-08-29: backs the Print Reports dropdown's own tax/SSO-report hiding -- see
+        // PayrollRunModel::calcApplicabilitySummary()'s own docblock.
+        $calcApplicability = $this->model->calcApplicabilitySummary($id, (int)$compId);
+        $row['any_tax_applicable'] = $calcApplicability['any_tax'];
+        $row['any_sso_applicable'] = $calcApplicability['any_sso'];
         $this->json(['status' => true, 'data' => $row]);
     }
 
@@ -140,19 +143,6 @@ class PayrollController extends Controller {
         $run['approval_flow'] = $this->model->approvalFlow($id, (int)$compId);
         $run['can_approve_payroll'] = $this->model->canApprovePayroll($this->userId(), $this->isAdmin(), $run);
         $this->json(['status' => true, 'data' => $run]);
-    }
-
-    public function savePedTypeSettings() {
-        $compId = getCompId();
-        $data = json_decode(file_get_contents('php://input'), true);
-        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
-        $itemType = (is_array($data) && isset($data['item_type'])) ? (string)$data['item_type'] : '';
-        $pedTypeIds = (is_array($data) && isset($data['ped_type_ids']) && is_array($data['ped_type_ids'])) ? $data['ped_type_ids'] : [];
-        if (!$compId || $id <= 0) {
-            $this->json(['status' => false, 'message' => 'Invalid ID.']);
-            return;
-        }
-        $this->json($this->model->savePedTypeSettings($id, (int)$compId, $itemType, $pedTypeIds, $this->userId(), $this->isAdmin()));
     }
 
     public function save() {
@@ -353,7 +343,19 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->syncDeductionLinesForEmployee((int)$compId, $runId, $employeeId)]);
+        // 2026-08-29: bundles this employee's per-run tax/SSO calculation override alongside the
+        // line-override list (same "always pull fresh, one fetch per modal open" convention as the
+        // Raw Sync Data modal used to have for this same data) -- the "Tax & SSO" tab of the Manage
+        // Items modal (universal, not sync-only, per explicit request) reads this `exemption` key.
+        // `run_settings` (item_options + excluded_item_codes, from the SAME source Run Settings'
+        // own panel uses) additionally backs this tab's own item-exclusion checklist (2026-08-29
+        // follow-up: "อยากให้มี List รายการและติ๊กเข้าออกได้เหมือนตอนที่ Set ทั้ง Template").
+        $this->json([
+            'status' => true,
+            'data' => $this->model->syncDeductionLinesForEmployee((int)$compId, $runId, $employeeId),
+            'exemption' => $this->model->getEmployeeExemption($runId, (int)$compId, $employeeId),
+            'run_settings' => $this->model->runSettingsGet($runId, (int)$compId)['data'] ?? null,
+        ]);
     }
 
     public function lineOverrideSave() {
@@ -444,19 +446,49 @@ class PayrollController extends Controller {
         $this->json(['status' => true, 'data' => $data]);
     }
 
+    /** 2026-08-29: `tax_calculate_override`/`sso_calculate_override` are tri-state strings
+     *  ('inherit'/'yes'/'no') now, widened from the original force-off-only exempt_tax/exempt_sso
+     *  booleans -- see PayrollRunModel::saveEmployeeExemption()'s own docblock. */
     public function saveEmployeeExemption() {
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
         $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
-        $exemptTax = is_array($data) && !empty($data['exempt_tax']);
-        $exemptSso = is_array($data) && !empty($data['exempt_sso']);
+        $taxCalculateOverride = (is_array($data) && isset($data['tax_calculate_override'])) ? (string)$data['tax_calculate_override'] : 'inherit';
+        $ssoCalculateOverride = (is_array($data) && isset($data['sso_calculate_override'])) ? (string)$data['sso_calculate_override'] : 'inherit';
         $note = (is_array($data) && isset($data['note'])) ? (string)$data['note'] : null;
         if (!$compId || $id <= 0 || $employeeId <= 0) {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->saveEmployeeExemption($id, (int)$compId, $employeeId, $exemptTax, $exemptSso, $note, $this->userId(), $this->isAdmin()));
+        $this->json($this->model->saveEmployeeExemption($id, (int)$compId, $employeeId, $taxCalculateOverride, $ssoCalculateOverride, $note, $this->userId(), $this->isAdmin()));
+    }
+
+    /* ==================== Run Settings panel (2026-08-29) ==================== */
+
+    public function runSettingsGet() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_GET['id'] ?? 0);
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->runSettingsGet($runId, (int)$compId));
+    }
+
+    public function runSettingsSave() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $taxCalculateDefault = (is_array($data) && isset($data['tax_calculate_default'])) ? (string)$data['tax_calculate_default'] : 'use_employee_setting';
+        $ssoCalculateDefault = (is_array($data) && isset($data['sso_calculate_default'])) ? (string)$data['sso_calculate_default'] : 'use_employee_setting';
+        $excludedItemCodes = (is_array($data) && isset($data['excluded_item_codes']) && is_array($data['excluded_item_codes'])) ? $data['excluded_item_codes'] : [];
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->runSettingsSave($id, (int)$compId, $taxCalculateDefault, $ssoCalculateDefault, $excludedItemCodes, $this->userId(), $this->isAdmin()));
     }
 
     /* ==================== Employee Verify / Lock / Comments (2026-08-29) ==================== */
@@ -728,5 +760,19 @@ class PayrollController extends Controller {
             return;
         }
         $this->json($this->model->lock($id, (int)$compId, $this->userId(), $this->isAdmin()));
+    }
+
+    /** 2026-08-29, explicit request: "รายการที่ติ๊กว่าทำจ่ายแล้ว หรือปิดรอบไปแล้ว สามารถเปิดให้กลับมาแก้ไขได้
+     *  และส่งอนุมัติใหม่ได้ครับ" -- see PayrollRunModel::reopen()'s own docblock. */
+    public function reopen() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $note = (is_array($data) && isset($data['note'])) ? (string)$data['note'] : null;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->reopen($id, (int)$compId, $this->userId(), $this->isAdmin(), $note));
     }
 }

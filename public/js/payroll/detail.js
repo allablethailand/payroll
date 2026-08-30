@@ -85,6 +85,7 @@ function calcErrorsRemarkRd(calcErrors) {
         if (code === 'no_manual_lines') return langData['calc_error_no_manual_lines'] || 'No payment items added yet -- use "Items" to add one.';
         if (code === 'daily_salary_no_shift_pattern') return langData['calc_error_daily_salary_no_shift_pattern'] || 'Daily salary type but no Shift assigned -- paid for every non-holiday day; assign a Shift to exclude weekly off-days.';
         if (code === 'salary_type_hourly_not_supported') return langData['calc_error_salary_type_hourly_not_supported'] || 'Hourly salary type is not yet supported -- calculated using the monthly formula instead.';
+        if (code === 'sync_actual_days_no_data') return langData['calc_error_sync_actual_days_no_data'] || 'Base Salary Basis is "Actual Days (Origami Sync)" but no PROBATION_WORKING_DAYS was available for this employee this cycle -- paid in full instead.';
         if (code.indexOf('no_rate_configured:') === 0) {
             const item = code.substring('no_rate_configured:'.length);
             const tpl = langData['calc_error_no_rate_configured'] || 'No statutory rate configured for {item}.';
@@ -206,8 +207,25 @@ function computeTimelineProgress(run) {
         }
         return { reachedIdx: idx, branch: { atIndex: idx + 1, type: 'cancelled' } };
     }
+    // 2026-08-29, real bug found and fixed (explicit report: "Locked จะเป็นสีเขียวตอนไหนครับ" -- when
+    // does Locked ever turn green?): was `reachedIdx: idx - 1`, meaning a station only shows
+    // done/green once you've moved PAST it into the NEXT state -- correct for every station except
+    // the very LAST one (locked), which by that same rule could never turn green, since there is no
+    // state after it to "move past it into". Also didn't match the explicit follow-up request that
+    // every action button (Approve/Mark Paid/Lock) should render ONE station AHEAD of the state
+    // that unlocks it (Approve at "Approved" while state=pending_approval, Mark Paid at "Paid"
+    // while state=approved, Lock at "Locked" while state=paid) -- exactly the same "+1 ahead"
+    // placement the Submit button already used (hardcoded i===1 while state=draft), just not
+    // applied consistently to the others. `reachedIdx: idx` (not idx-1) makes both true at once:
+    // the CURRENT state's own station is immediately done/green (matches the branch-state cases
+    // just above, which already used this same `idx` convention, not `idx-1` -- this base case was
+    // the one inconsistent with them), and currentIndex (=reachedIdx+1, used by
+    // timelineStepActionsHtml() below) naturally becomes "the next station", where the action to
+    // reach it belongs. The one state this makes currentIndex run off the end of the array for --
+    // locked, the actual last step -- is handled as its own special case in
+    // timelineStepActionsHtml() instead of here.
     const idx = RUN_TIMELINE_STEPS.findIndex(s => s.key === state);
-    return { reachedIdx: idx - 1, branch: null };
+    return { reachedIdx: idx, branch: null };
 }
 // Two independent things render into a step's tl-actions slot:
 //  1. "View Timeline" -- pinned PERMANENTLY at step 1 (the Approve station), and only once the run
@@ -239,7 +257,13 @@ function timelineStepActionsHtml(i, run, currentIndex) {
     // as a redundant a11y/tooltip hint, not the only way to read what the button does anymore.
     // .tl-actions-row's own CSS (style.css) was widened to fit a label, not just an icon.
     const buttons = [];
-    if (i === 1 && run.submitted_at) {
+    // 2026-08-29, explicit request: "ปุ่ม Timeline และ Approve ควรไปอยู่ที่ Station Approved แล้ว" -- was
+    // pinned at i===1 (the "Pending Approval"/ส่งอนุมัติ station itself); moved to i===2 ("Approved")
+    // to match computeTimelineProgress()'s own fix (see that function's own docblock) -- once
+    // submitted, "Pending Approval" is a COMPLETED milestone (shows green/done) and "Approved" is
+    // the station representing the NEXT thing to happen, which is where View Timeline/Approve/etc.
+    // now consistently live.
+    if (i === 2 && run.submitted_at) {
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-view-timeline" title="${langData['action_timeline'] || 'Timeline'}"><i class="fa-solid fa-list-check me-1"></i>${langData['action_timeline'] || 'Timeline'}</button>`);
     }
     if (i === currentIndex) {
@@ -291,9 +315,20 @@ function timelineStepActionsHtml(i, run, currentIndex) {
             // timeline, see index.js's miniTimelineQuickActionHtml()) but the Detail page's own
             // step-by-step timeline never got an equivalent button at the "Paid" step.
             buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-lock" title="${langData['action_lock'] || 'Lock'}"><i class="fa-solid fa-lock me-1"></i>${langData['action_lock'] || 'Lock'}</button>`);
+            // 2026-08-29, explicit request: "รายการที่ติ๊กว่าทำจ่ายแล้ว หรือปิดรอบไปแล้ว สามารถเปิดให้กลับมา
+            // แก้ไขได้และส่งอนุมัติใหม่ได้ครับ" -- see PayrollRunModel::reopen()'s own docblock.
+            buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-tl-reopen" title="${langData['action_reopen'] || 'Reopen for Editing'}"><i class="fa-solid fa-unlock me-1"></i>${langData['action_reopen'] || 'Reopen for Editing'}</button>`);
         } else if ((run.state === 'rejected' || run.state === 'need_info') && run.can_process_payroll) {
             buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-pull-back" title="${langData['action_revise'] || 'Revise'}"><i class="fa-solid fa-pen-to-square me-1"></i>${langData['action_revise'] || 'Revise'}</button>`);
         }
+    } else if (i === RUN_TIMELINE_STEPS.length - 1 && run.state === 'locked' && run.can_finalize_payroll) {
+        // 2026-08-29, explicit request: "ปุ่ม Lock ควรไปอยู่ที่ Lock หลังจากกด Lock แล้วให้ Lock เป็นสีเขียว" --
+        // "Locked" is the LAST station with nothing further ahead of it, so unlike every other
+        // action button above (which now renders one station AHEAD of the state that unlocks it,
+        // matching computeTimelineProgress()'s own "reachedIdx=idx" fix), Reopen has nowhere ahead
+        // to go -- it renders at the terminal station itself, which is also exactly where that fix
+        // makes "Locked" show as done/green the moment this state is reached.
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-tl-reopen" title="${langData['action_reopen'] || 'Reopen for Editing'}"><i class="fa-solid fa-unlock me-1"></i>${langData['action_reopen'] || 'Reopen for Editing'}</button>`);
     }
     return buttons.length ? `<div class="tl-actions-row">${buttons.join('')}</div>` : '';
 }
@@ -339,38 +374,211 @@ function renderProcessTimeline(run) {
    so it's obvious which part of the page each button touches. Button ids stay #btnEditRun/
    #btnRecalculate; the existing $(document).on(...) delegated handlers don't care where in the
    DOM they live. */
-// 2026-08-29, explicit request: "เพิ่มให้สามารถปริ้น Report จากหน้า Process ได้ ทั้งจากหน้า List และ Detail
-// ส่งประกันสังคม ส่งสรรพากร ขึ้นธนาคาร" -- same 3 report shortcuts + same allowed-state gate as the
-// List page's own row dropdown (public/js/payroll/index.js's PR_REPORT_SHORTCUTS/renderRunReportsDropdown) --
-// kept as its own small copy here rather than a shared cross-file function, since the two pages
-// don't share a common included JS file to put it in besides app.js, and this is small/simple
-// enough that factoring it out isn't worth the indirection.
-const RD_REPORT_SHORTCUTS = [
-    { code: 'TH_SSO110', format: 'pdf', icon: 'fa-file-shield', labelKey: 'report_shortcut_sso110' },
-    { code: 'TH_PND1', format: 'pdf', icon: 'fa-file-invoice', labelKey: 'report_shortcut_pnd1' },
-    { code: 'BANK_TRANSFER_FILE', format: 'csv', icon: 'fa-building-columns', labelKey: 'report_shortcut_bank_transfer' },
-];
+// 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action History และแสดงเป็น
+// ตารางรายการไว้ และบอกด้วยว่า Download แล้วทั้งหมดกี่ครั้ง ครั้งล่าสุด Download ไปเมื่อไหร่...มีปุ่มสำหรับกด
+// Download กดแล้วเปิด modal เพื่อ Preview ก่อน...มีอีกปุ่มเพื่อกดดูประวัติการ Download" -- was a header
+// dropdown (renderRunReportsButtons(), removed) offering the SAME 3 shortcuts the List page's own
+// row action used to have (public/js/payroll/index.js's since-removed PR_REPORT_SHORTCUTS dropdown
+// -- that page now just deep-links straight into THIS tab instead, see renderRunActionsPr()'s own
+// docblock); now its own tab with a small table (server-authoritative row set + tax/SSO hiding both
+// come from ReportsController::runReportsSummary(), not recomputed here).
 const RD_REPORT_ALLOWED_STATES = ['approved', 'paid', 'locked'];
-function renderRunReportsButtons(run) {
-    const $wrap = $('#runReportsButtonWrap').empty();
-    if (!RD_REPORT_ALLOWED_STATES.includes(run.state)) {
-        $wrap.html(`<button type="button" class="btn btn-sm btn-outline-secondary" disabled title="${langData['reports_available_after_approval'] || 'Reports are available once this run is approved.'}"><i class="fa-solid fa-file-export me-1"></i><span data-i18n="print_reports">${langData['print_reports'] || 'Print Reports'}</span></button>`);
+let rdReportsRows = [];
+let rdReportPreviewContext = null; // { code, format } for whichever row's modal is currently open
+// ReportGeneratorInterface::label() returns {th, en} (same convention public/js/reports/index.js's
+// own reportLabel() already reads) -- row.label here is that same bilingual object, not a string.
+function rdReportLabel(row) {
+    return (currentLang === 'th' ? row.label.th : row.label.en) || row.label.th || row.label.en || row.code;
+}
+// 2026-08-29, same-day follow-up: "ที่โชว์ในตารางประวัติการ Download มีเก็บครบหรือยังถ้ายังไม่ครบเก็บเพิ่มให้
+// ครบครับ" -- os_name/browser_version are now captured too (see the migration's own header comment),
+// folded into the same 2 columns ("Device"/"Browser") rather than adding 2 more columns, e.g.
+// "Desktop (Windows)" / "Chrome 119" instead of a bare "Desktop" / "Chrome".
+function rdReportDeviceLabel(row) {
+    if (!row.device_type) return '-';
+    return row.os_name ? `${row.device_type} (${row.os_name})` : row.device_type;
+}
+function rdReportBrowserLabel(row) {
+    if (!row.browser_name) return '-';
+    return row.browser_version ? `${row.browser_name} ${row.browser_version}` : row.browser_name;
+}
+// 2026-08-29, same-day follow-up: "จะสามารถพิมพ์รายงานได้เมื่องวดนี้ได้รับการอนุมัติแล้ว ให้ขึ้นรายการ Report
+// ไว้เลย แต่ยังกดไม่ได้" -- the row set itself is now ALWAYS shown (even for a draft/pending_approval
+// run -- calcApplicabilitySummary() already fails open to "show everything" before any employee has
+// been calculated yet, see that method's own docblock, so this never has to special-case "nothing
+// calculated" here), only the action buttons are disabled until the run reaches an allowed state.
+function loadRunReportsTab() {
+    if (!PAYROLL_RUN_ID || !currentRun) return;
+    const isReady = RD_REPORT_ALLOWED_STATES.includes(currentRun.state);
+    $('#runReportsNotReadyBanner').toggleClass('d-none', isReady);
+    $.getJSON(`${BASE_URL}/api/report.run-summary`, { run_id: PAYROLL_RUN_ID }, function (res) {
+        if (!res.status) return;
+        rdReportsRows = res.data || [];
+        $('#runReportsNotReady').toggleClass('d-none', rdReportsRows.length > 0);
+        $('#tb_run_reports').toggleClass('d-none', rdReportsRows.length === 0);
+        const disabledAttr = isReady ? '' : 'disabled';
+        const notReadyTitle = langData['reports_available_after_approval'] || 'Reports are available once this run is approved.';
+        $('#runReportsTableBody').html(rdReportsRows.map(row => `
+            <tr>
+                <td>${escapeHtmlRd(rdReportLabel(row))}</td>
+                <td class="text-center">${Number(row.download_count) || 0}</td>
+                <td>${row.last_downloaded_at ? formatDisplayDateTime(row.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`}</td>
+                <td class="text-center">
+                    <div class="btn-group border rounded-3 bg-white">
+                        <button type="button" class="btn btn-link text-primary btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${isReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
+                        <button type="button" class="btn btn-link text-secondary border-start btn-report-history" data-code="${row.code}" ${disabledAttr} title="${isReady ? (langData['report_view_history'] || 'View Download History') : notReadyTitle}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                    </div>
+                </td>
+            </tr>
+        `).join(''));
+    });
+}
+$(document).on('click', '.btn-report-preview', function () {
+    const row = rdReportsRows.find(r => r.code === $(this).data('code'));
+    if (!row) return;
+    rdReportPreviewContext = { code: row.code, format: row.format };
+    $('#reportPreviewModalTitle').text(rdReportLabel(row));
+    // 2026-08-29, same-day follow-up, real bug found and fixed (explicit report: "เหมือนมี iframe
+    // แสดงอยู่ด้วยทำให้ Word ถูกดันลงมา" -- an iframe seems to be showing too, pushing [the
+    // "can't preview"] text down). Root cause: the iframe's own 'load' handler (below, in the
+    // supports_preview branch) was only ever rebound with .off('load').on('load', ...) on a
+    // SUPPORTED preview -- clicking an unsupported report right after a supported one left that
+    // PRIOR handler still attached. Clearing the iframe's src to '' (a couple lines below) still
+    // navigates it to about:blank, which fires its own 'load' event -- the stale handler then ran
+    // $frame.removeClass('d-none'), silently un-hiding the now-empty iframe at the same time the
+    // "can't preview" card rendered underneath it, pushing that card down exactly as reported.
+    // Fixed by unbinding unconditionally, every open, regardless of which branch runs next.
+    const $frame = $('#reportPreviewFrame').off('load').addClass('d-none').attr('src', '');
+    const $loading = $('#reportPreviewLoading').removeClass('d-none');
+    const $unavailable = $('#reportPreviewUnavailable').addClass('d-none');
+    // 2026-08-29, same-day follow-up: "ไม่พอดีกับ modal สูงเกินไป" -- modal-xl is only meaningful
+    // while there's an actual PDF to show at 70vh tall; a report with nothing to preview gets the
+    // plain (smaller) dialog size instead, so the empty-state card isn't dwarfed by an oversized
+    // modal.
+    $('#reportPreviewDialog').toggleClass('modal-xl', row.supports_preview);
+    new bootstrap.Modal(document.getElementById('reportPreviewModal')).show();
+    if (!row.supports_preview) {
+        $loading.addClass('d-none');
+        $unavailable.removeClass('d-none');
         return;
     }
-    const items = RD_REPORT_SHORTCUTS.map(r => `<li><a class="dropdown-item rd-report-btn" href="#" data-code="${r.code}" data-format="${r.format}"><i class="fa-solid ${r.icon} me-2"></i><span data-i18n="${r.labelKey}">${langData[r.labelKey] || r.code}</span></a></li>`).join('');
-    $wrap.html(`<div class="dropdown">
-        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="fa-solid fa-file-export me-1"></i><span data-i18n="print_reports">${langData['print_reports'] || 'Print Reports'}</span></button>
-        <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
-    </div>`);
-}
-$(document).on('click', '.rd-report-btn', function (e) {
-    e.preventDefault();
-    if (!PAYROLL_RUN_ID) return;
     const params = new URLSearchParams();
-    params.set('report_code', $(this).data('code'));
-    params.set('format', $(this).data('format'));
+    params.set('report_code', row.code);
+    params.set('format', row.format);
     params.set('run_id', PAYROLL_RUN_ID);
-    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
+    params.set('language', currentLang === 'en' ? 'en' : 'th');
+    params.set('preview', '1');
+    $frame.on('load', function () {
+        $loading.addClass('d-none');
+        $frame.removeClass('d-none');
+    });
+    $frame.attr('src', `${BASE_URL}/api/report.generate?${params.toString()}`);
+});
+$(document).on('click', '.btn-report-download', function () {
+    if (!rdReportPreviewContext) return;
+    const params = new URLSearchParams();
+    params.set('report_code', rdReportPreviewContext.code);
+    params.set('format', rdReportPreviewContext.format);
+    params.set('run_id', PAYROLL_RUN_ID);
+    params.set('language', $(this).data('language') || 'th');
+    // 2026-08-29: "Download จากที่ไหน" -- which screen triggered this download, purely descriptive
+    // (see ReportExportLogModel::log()'s own docblock), not an access-control signal.
+    params.set('source', 'process_detail');
+    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`, loadRunReportsTab);
+});
+// 2026-08-29, same-day follow-up: "ประวัติการ Download ให้เป็น Datatable และ Filter ช่วงวันที่ได้" -- was a
+// plain hand-rendered <tbody>, now a real DataTable (client-side ajax+dataSrc, same convention this
+// project already uses for a small run-scoped list e.g. manual-entry's own attendance/leave/overtime
+// tables) filterable by date range (on generated_at, see ReportExportLogModel::list()'s own new
+// date_from/date_to filter). One report row's history at a time -- destroyed+recreated on every open
+// since the report_code filter itself changes per row, not just reloaded in place.
+let dtReportHistory = null;
+let rdReportHistoryCode = null;
+function rdReportByLabel(l) {
+    return (currentLang === 'th' ? l.generated_by_name_th : l.generated_by_name_en) || l.generated_by_name_th || l.generated_by_name_en || '-';
+}
+function rdReportLanguageLabel(l) {
+    if (l.language === 'en') return langData['language_en'] || 'English';
+    if (l.language === 'th') return langData['language_th'] || 'Thai';
+    return '-';
+}
+function reloadReportHistoryTable() {
+    if (dtReportHistory) { dtReportHistory.ajax.reload(null, false); }
+}
+function updateReportHistoryClearFilterVisibility() {
+    const active = !!($('#reportHistoryDateFrom').val() || $('#reportHistoryDateTo').val());
+    $('#btnReportHistoryClearFilter').toggleClass('d-none', !active);
+}
+$(document).on('click', '.btn-report-history', function () {
+    const row = rdReportsRows.find(r => r.code === $(this).data('code'));
+    if (!row) return;
+    rdReportHistoryCode = row.code;
+    $('#reportHistoryModalTitle').text(`${langData['report_view_history'] || 'View Download History'} - ${rdReportLabel(row)}`);
+    $('#reportHistoryDateFrom, #reportHistoryDateTo').val('');
+    updateReportHistoryClearFilterVisibility();
+    initDatepicker('#reportHistoryDateFrom');
+    initDatepicker('#reportHistoryDateTo');
+    new bootstrap.Modal(document.getElementById('reportHistoryModal')).show();
+    if (dtReportHistory) { dtReportHistory.destroy(); dtReportHistory = null; }
+    dtReportHistory = $('#tb_report_history').DataTable({
+        responsive: true,
+        order: [[0, 'desc']],
+        ajax: {
+            url: `${BASE_URL}/api/report.export-logs`,
+            dataSrc: 'data',
+            data: function (d) {
+                d.report_code = rdReportHistoryCode;
+                d.payroll_run_id = PAYROLL_RUN_ID;
+                d.date_from = toIsoDateRd($('#reportHistoryDateFrom').val());
+                d.date_to = toIsoDateRd($('#reportHistoryDateTo').val());
+            },
+        },
+        columns: [
+            // object-form render: client-side sort/filter must use the raw ISO datetime (sorts
+            // correctly as a string already), not the dd/mm/yyyy display string -- same gotcha
+            // documented in this project's own date-format-audit history.
+            { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
+            { data: null, render: (l) => escapeHtmlRd(rdReportByLabel(l)) },
+            { data: null, render: (l) => escapeHtmlRd(rdReportLanguageLabel(l)) },
+            { data: null, render: (l) => escapeHtmlRd(rdReportDeviceLabel(l)) },
+            { data: null, render: (l) => escapeHtmlRd(rdReportBrowserLabel(l)) },
+            { data: 'ip_address', render: (v) => escapeHtmlRd(v || '-') },
+            { data: 'source', render: (v) => escapeHtmlRd(v || '-') },
+        ],
+        initComplete: function () {
+            // 2026-08-29, same-day follow-up: system-wide table audit punch-list item -- every
+            // categorical column here (By/Language/Device/Browser/IP/Source) is a real filter
+            // candidate that had none at all; the date-range fields above already cover Date/Time.
+            // mode:'client' since this table is loaded whole (not serverSide:true) even though the
+            // date range itself is filtered server-side -- the Excel-filter operates on whatever
+            // rows are currently loaded, same as tb_payroll_run's own client-side station filter.
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 1, key: 'downloaded_by' },
+                    { index: 2, key: 'language' },
+                    { index: 3, key: 'device' },
+                    { index: 4, key: 'browser' },
+                    { index: 5, key: 'ip_address' },
+                    { index: 6, key: 'source' },
+                ]
+            });
+        },
+    });
+});
+$(document).on('click', '#reportHistoryStationFilterToggle', function () {
+    const $filter = $('#reportHistoryStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+$(document).on('change', '#reportHistoryDateFrom, #reportHistoryDateTo', function () {
+    updateReportHistoryClearFilterVisibility();
+    reloadReportHistoryTable();
+});
+$(document).on('click', '#btnReportHistoryClearFilter', function () {
+    $('#reportHistoryDateFrom, #reportHistoryDateTo').val('');
+    updateReportHistoryClearFilterVisibility();
+    reloadReportHistoryTable();
 });
 function renderSectionButtons(run) {
     const $editWrap = $('#runEditButtonWrap').empty();
@@ -389,100 +597,6 @@ function renderSectionButtons(run) {
     // currently-excluded employees.
     $recalcWrap.append(`<button type="button" id="btnJoinEmployees" class="btn btn-sm btn-outline-primary ms-2"><i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">${langData['action_join_employees'] || 'Join Employees'}</span></button>`);
 }
-
-/* ---------- Per-run earning/deduction item selection (section 2): two panels (Earning left /
-   Deduction right), always shown for a non-incentive run regardless of state -- an incentive run
-   already picks items explicitly per employee and has no use for this table at all, so the whole
-   section stays hidden there. Each panel shows every active item of that type, struck through when
-   currently excluded -- this IS the "Default" view (nothing configured yet = every item ticked,
-   see PayrollRunModel::getPedTypeSettings()'s docblock). The Edit button (and therefore the
-   ability to actually change anything) only shows while the run is still draft -- once it can no
-   longer be edited, the panels stay visible but are effectively View Mode. */
-let pedTypeSettingsData = null;
-let pedTypeEditingType = null;
-function pedTypeItemLabelRd(item) {
-    return (currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_name_th || item.item_name_en;
-}
-function renderPedTypePanel(itemType, data, canEdit) {
-    const panelId = itemType === 'earning' ? '#pedTypePanelEarning' : '#pedTypePanelDeduction';
-    const items = (data && data.all_items) || [];
-    const selected = new Set(((data && data.selected_ids) || []).map(Number));
-    if (!items.length) {
-        $(panelId).html(`<div class="text-muted small">-</div>`);
-    } else {
-        $(panelId).html(items.map(item => {
-            const isOn = selected.has(Number(item.id));
-            const cls = isOn ? 'bg-light text-dark border' : 'bg-light text-muted border text-decoration-line-through';
-            return `<span class="badge ${cls} me-1 mb-1"><code>${escapeHtmlRd(item.item_code)}</code> ${escapeHtmlRd(pedTypeItemLabelRd(item))}</span>`;
-        }).join(''));
-    }
-    $(`.btn-edit-ped-type-panel[data-item-type="${itemType}"]`).toggleClass('d-none', !canEdit);
-}
-function renderPedTypeSettings(run) {
-    // 2026-08-27, explicit request ("การทำงานจ่ายนอกรอบ...มีให้ติ๊กเลือกบางรายการที่จะนำมาแก้ไขหรือไม่
-    // นำมาแก้ไข") -- this panel used to hide outright for ANY incentive run (standing PED
-    // assignments were never a source at all). Now it also shows once that run opted into
-    // include_standing_items (new run.include_standing_items flag, set at creation -- see
-    // PayrollRunModel::recalculate()'s own docblock) -- same PayrollRunModel::savePedTypeSettings()
-    // endpoint this section already used for a normal run, now permitted for an incentive run too
-    // under that same condition (see that method's own updated docblock).
-    const hidePanel = run.run_purpose === 'incentive' && !run.include_standing_items;
-    $('#pedTypeSettingsSection').toggleClass('d-none', hidePanel);
-    if (hidePanel) return;
-    pedTypeSettingsData = run.ped_type_settings || {};
-    const canEdit = run.state === 'draft';
-    renderPedTypePanel('earning', pedTypeSettingsData.earning, canEdit);
-    renderPedTypePanel('deduction', pedTypeSettingsData.deduction, canEdit);
-}
-function openPedTypeEditModal(itemType) {
-    if (!pedTypeSettingsData || !pedTypeSettingsData[itemType]) return;
-    pedTypeEditingType = itemType;
-    const data = pedTypeSettingsData[itemType];
-    const selected = new Set((data.selected_ids || []).map(Number));
-    const titleKey = itemType === 'earning' ? 'breakdown_earnings' : 'table_deduction_amount';
-    $('#pedTypeEditModalTitle').text(langData[titleKey] || (itemType === 'earning' ? 'Earnings' : 'Deductions'));
-    const items = data.all_items || [];
-    if (!items.length) {
-        $('#pedTypeEditModalList').html(`<div class="text-muted small text-center py-3">-</div>`);
-    } else {
-        $('#pedTypeEditModalList').html(items.map(item => {
-            const checked = selected.has(Number(item.id)) ? 'checked' : '';
-            return `<div class="form-check mb-2">
-                <input class="form-check-input ped-type-edit-checkbox" type="checkbox" value="${item.id}" id="pedchk_${item.id}" ${checked}>
-                <label class="form-check-label" for="pedchk_${item.id}"><code class="fw-bold text-dark">${escapeHtmlRd(item.item_code)}</code> ${escapeHtmlRd(pedTypeItemLabelRd(item))}</label>
-            </div>`;
-        }).join(''));
-    }
-    new bootstrap.Modal(document.getElementById('pedTypeEditModal')).show();
-}
-$(document).on('click', '.btn-edit-ped-type-panel', function () {
-    openPedTypeEditModal($(this).data('item-type'));
-});
-$(document).on('click', '#btnSavePedTypeEdit', function () {
-    const pedTypeIds = $('#pedTypeEditModalList .ped-type-edit-checkbox:checked').map(function () { return Number($(this).val()); }).get();
-    const $btn = $(this).prop('disabled', true);
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.save-ped-type-settings`,
-        method: 'POST',
-        contentType: 'application/json',
-        dataType: 'json',
-        data: JSON.stringify({ id: PAYROLL_RUN_ID, item_type: pedTypeEditingType, ped_type_ids: pedTypeIds }),
-        success: function (res) {
-            $btn.prop('disabled', false);
-            if (res.status) {
-                showSuccess(langData['save_success'] || 'Saved successfully.');
-                bootstrap.Modal.getInstance(document.getElementById('pedTypeEditModal')).hide();
-                loadRunDetail();
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-            }
-        },
-        error: function () {
-            $btn.prop('disabled', false);
-            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-        }
-    });
-});
 
 // A run pulled from a cycle or a REGULAR sync process is always full payroll -- editable for a
 // genuine off-cycle run OR a sync-linked run pulled from a 'supplemental' Origami process (2026-
@@ -572,9 +686,179 @@ function renderRunHeader(run) {
 
     renderProcessTimeline(run);
     renderSectionButtons(run);
-    renderRunReportsButtons(run);
-    renderPedTypeSettings(run);
+    loadRunReportsTab();
+    renderRunSettingsPanel(run);
 }
+
+/* ---------- "Run Settings" panel (2026-08-29) -- see PayrollRunModel::runSettingsGet()'s own
+   docblock. Draft-only (hidden entirely once a run has moved on, same convention as the bulk
+   Verify/Lock bar) -- the per-employee override lives in each row's own "Items" -> "Tax & SSO"
+   tab instead (manageLinesCalcPane above). ---------- */
+// 2026-08-29, same-day follow-up: "รายรับให้เป็นสีเขียว รายจ่ายให้เป็นสีแดง และแยกกรอบกันอยู่ครับ" -- shared
+// between the Run Settings panel's own checklist AND the per-employee "Exclude from This Employee's
+// Calculation" checklist (empItemExclusionRowHtml used to duplicate this same shape) so both stay
+// visually consistent. `opts.isDisabled`/`opts.disabledBadgeHtml` are optional -- only the
+// per-employee checklist uses them (an item already excluded by the run-level default).
+function itemChecklistRowHtml(item, opts) {
+    const name = currentLang === 'th' ? (item.item_name_th || item.item_name_en) : (item.item_name_en || item.item_name_th);
+    const checked = opts.isChecked(item);
+    const disabled = !!(opts.isDisabled && opts.isDisabled(item));
+    const badge = disabled && opts.disabledBadgeHtml ? opts.disabledBadgeHtml(item) : '';
+    const safeId = `${opts.idPrefix}_${item.item_code}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const wasCheckedAttr = opts.trackWasChecked ? ` data-was-checked="${checked ? '1' : '0'}"` : '';
+    return `<div class="form-check mb-1">
+        <input class="form-check-input ${opts.checkboxClass}" type="checkbox" value="${escapeHtmlRd(item.item_code)}"${wasCheckedAttr} id="${safeId}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+        <label class="form-check-label small" for="${safeId}">${escapeHtmlRd(name)}${badge}</label>
+    </div>`;
+}
+// 2026-08-29, same-day follow-up: "เป็น item 2 column หรือ 3 column ก็ได้ครับ และไม่ต้องมี Scroll และปรับ
+// Design ให้ไม่โดดไปจากหน้าเท่าไหร่ได้ไหม" -- two changes from the previous round: (1) items within
+// each box now flow into 2-3 CSS columns (.item-checklist-cols, see style.css) instead of one long
+// vertical list, so a normal-sized catalog fits without scrolling at all -- the outer scroll
+// container was removed too (see the view's own #runSettingsItemChecklist/#empItemExclusionChecklist
+// markup). (2) the saturated bg-success-subtle/bg-danger-subtle/bg-warning-subtle fill from the
+// PREVIOUS round was toned down to a plain white box + colored header text/icon only, matching this
+// SAME page's own pre-existing Income/Deductions panels in the Manage Items modal (.ped-type-panel,
+// border rounded-3 h-100, no background tint) -- keeps the green/red distinction the user asked for
+// without introducing a bolder color treatment than the rest of this page already uses elsewhere.
+function itemChecklistBoxesHtml(itemOptions, opts) {
+    const baseSalaryItems = itemOptions.filter(i => i.item_type === 'base_salary');
+    const earningItems = itemOptions.filter(i => i.item_type === 'earning');
+    const deductionItems = itemOptions.filter(i => i.item_type === 'deduction');
+    const rowsHtml = items => items.length
+        ? `<div class="item-checklist-cols">${items.map(item => itemChecklistRowHtml(item, opts)).join('')}</div>`
+        : `<div class="text-muted small">-</div>`;
+    const baseSalaryHtml = baseSalaryItems.length ? `<div class="border rounded-3 p-2 mb-2">
+        <div class="fw-bold small text-warning-emphasis mb-1"><i class="fa-solid fa-sack-dollar me-1"></i>${langData['table_base_salary'] || 'Base Salary'}</div>
+        ${rowsHtml(baseSalaryItems)}
+    </div>` : '';
+    return `${baseSalaryHtml}<div class="row g-2">
+        <div class="col-md-6">
+            <div class="border rounded-3 p-2 h-100">
+                <div class="fw-bold small text-success mb-1"><i class="fa-solid fa-arrow-trend-up me-1"></i>${langData['breakdown_earnings'] || 'Income'}</div>
+                ${rowsHtml(earningItems)}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="border rounded-3 p-2 h-100">
+                <div class="fw-bold small text-danger mb-1"><i class="fa-solid fa-arrow-trend-down me-1"></i>${langData['table_deduction_amount'] || 'Deductions'}</div>
+                ${rowsHtml(deductionItems)}
+            </div>
+        </div>
+    </div>`;
+}
+// 2026-08-29, same-day follow-up: "ในหน้า Process Detail แบบ View Mode จะต้องบอกรายละเอียด ของการตั้งค่ารอบ
+// ด้วยครับ" -- this panel used to be hidden ENTIRELY once a run left draft; now stays visible
+// (read-only -- every control disabled, Save hidden) so an approved/paid/locked run's own Run
+// Settings are still visible for reference, matching this page's general "View Mode disables
+// controls, doesn't hide them" convention.
+// 2026-08-29, same-day follow-up: "ให้แสดงเป็นภาพรวมเลยครับ โดยที่ไม่ต้องเปิด toggle มาดู และให้ขึ้นเฉพาะรายการที่
+// เลือก ถ้าไม่เลือกก็ให้แสดงคำให้ถูกต้องครับว่าเงื่อนไขเป็นแบบไหน" -- plain text for whichever ONE Tax/SSO
+// condition was actually picked (never all 3 radio choices, never blank -- "Each Employee's Own
+// Setting" is itself a real, correctly-worded condition, not an absence of one).
+function runSettingsConditionHtml(value, yesKey, yesFallback, noKey, noFallback) {
+    if (value === 'yes') return `<span class="text-success fw-semibold"><i class="fa-solid fa-check me-1"></i>${langData[yesKey] || yesFallback}</span>`;
+    if (value === 'no') return `<span class="text-danger fw-semibold"><i class="fa-solid fa-xmark me-1"></i>${langData[noKey] || noFallback}</span>`;
+    return `<span class="text-secondary"><i class="fa-solid fa-users me-1"></i>${langData['calc_default_use_employee'] || "Each Employee's Own Setting"}</span>`;
+}
+// "ให้ขึ้นเฉพาะรายการที่เลือก" -- only the items genuinely ticked as excluded, not the full checklist;
+// "ถ้าไม่เลือกก็ให้แสดงคำให้ถูกต้อง" -- a correct sentence (not a blank box) when nothing is excluded.
+function runSettingsExcludedItemsSummaryHtml(itemOptions, excludedCodes) {
+    if (!excludedCodes.length) {
+        return `<div class="text-muted small"><i class="fa-solid fa-circle-check me-1 text-success"></i>${langData['run_settings_no_excluded_items'] || "Nothing is excluded -- every item is included in this run's calculation."}</div>`;
+    }
+    const excluded = itemOptions.filter(item => excludedCodes.includes(item.item_code));
+    const chipClass = item => item.item_type === 'base_salary' ? 'text-bg-warning-subtle text-warning-emphasis'
+        : item.item_type === 'earning' ? 'text-bg-success-subtle text-success' : 'text-bg-danger-subtle text-danger';
+    return `<div>${excluded.map(item => `<span class="badge rounded-pill ${chipClass(item)} me-1 mb-1">${escapeHtmlRd((currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_code)}</span>`).join('')}</div>`;
+}
+function renderRunSettingsSummary(d) {
+    const excludedCodes = d.excluded_item_codes || [];
+    $('#runSettingsSummary').html(`
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="text-muted small mb-1">${langData['run_exemption_tax'] || 'Tax Calculation'}</div>
+                ${runSettingsConditionHtml(d.tax_calculate_default, 'run_calc_tax_yes', 'Calculate for Everyone', 'run_calc_tax_no', "Don't Calculate for Anyone")}
+            </div>
+            <div class="col-md-6">
+                <div class="text-muted small mb-1">${langData['run_exemption_sso'] || 'SSO Contribution'}</div>
+                ${runSettingsConditionHtml(d.sso_calculate_default, 'run_calc_sso_yes', 'Send for Everyone', 'run_calc_sso_no', "Don't Send for Anyone")}
+            </div>
+        </div>
+        <div class="mt-3">
+            <div class="text-muted small mb-1">${langData['run_settings_excluded_items'] || 'Exclude from Calculation'}</div>
+            ${runSettingsExcludedItemsSummaryHtml(d.item_options || [], excludedCodes)}
+        </div>
+    `);
+}
+function loadRunSettingsPanel() {
+    const isDraft = !!currentRun && currentRun.state === 'draft';
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.run-settings-get`,
+        method: 'GET',
+        data: { id: PAYROLL_RUN_ID },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            const d = res.data || {};
+            // Non-draft: the collapsible editable form is never populated/shown at all -- the
+            // overview below is the ONLY thing rendered, always visible, no toggle click needed.
+            $('#runSettingsChevron').toggleClass('d-none', !isDraft);
+            $('#runSettingsToggle').css('cursor', isDraft ? 'pointer' : 'default');
+            $('#runSettingsSummary').toggleClass('d-none', isDraft);
+            $('#runSettingsBody').addClass('d-none'); // always starts collapsed regardless of mode
+            if (!isDraft) {
+                renderRunSettingsSummary(d);
+                return;
+            }
+            $(`#runCalcTaxGroup input[value="${d.tax_calculate_default || 'use_employee_setting'}"]`).prop('checked', true);
+            $(`#runCalcSsoGroup input[value="${d.sso_calculate_default || 'use_employee_setting'}"]`).prop('checked', true);
+            $('#runCalcTaxGroup input, #runCalcSsoGroup input').prop('disabled', false);
+            const excludedCodes = d.excluded_item_codes || [];
+            $('#runSettingsItemChecklist').html(itemChecklistBoxesHtml(d.item_options || [], {
+                checkboxClass: 'run-settings-item-check',
+                idPrefix: 'rsItem',
+                isChecked: item => excludedCodes.includes(item.item_code),
+            }));
+            $('#btnSaveRunSettings').removeClass('d-none');
+        }
+    });
+}
+function renderRunSettingsPanel() {
+    $('#runSettingsPanel').removeClass('d-none');
+    loadRunSettingsPanel();
+}
+$(document).on('click', '#runSettingsToggle', function () {
+    // View Mode shows the overview directly (renderRunSettingsSummary()) -- nothing to expand.
+    if (!currentRun || currentRun.state !== 'draft') return;
+    const $body = $('#runSettingsBody').toggleClass('d-none');
+    const collapsed = $body.hasClass('d-none');
+    $('#runSettingsChevron').toggleClass('fa-chevron-down', collapsed).toggleClass('fa-chevron-up', !collapsed);
+});
+$(document).on('click', '#btnSaveRunSettings', function () {
+    const $btn = $(this).prop('disabled', true);
+    const excludedItemCodes = $('.run-settings-item-check:checked').map(function () { return $(this).val(); }).get();
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.run-settings-save`,
+        method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({
+            id: PAYROLL_RUN_ID,
+            tax_calculate_default: $('#runCalcTaxGroup input:checked').val() || 'use_employee_setting',
+            sso_calculate_default: $('#runCalcSsoGroup input:checked').val() || 'use_employee_setting',
+            excluded_item_codes: excludedItemCodes,
+        }),
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                loadRunDetail();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
 
 /* ---------- Approval Flow timeline modal (2026-08-22, explicit request: "เพิ่มปุ่ม view เข้าไปในหน้า
    Detail หากมีสิทธิ์อนุมัติ ตรงช่อง Timeline ให้มีปุ่มอนุมัติด้วย และถ้าอนุมัติไปแล้วให้มีปุ่ม Timeline
@@ -852,6 +1136,22 @@ $(document).on('click', '.btn-tl-lock', function (e) {
         if (inst) inst.hide();
         callRunAction('/api/payroll-run.lock', {}, langData['save_success']);
     });
+});
+// 2026-08-29, explicit request: "รายการที่ติ๊กว่าทำจ่ายแล้ว หรือปิดรอบไปแล้ว สามารถเปิดให้กลับมาแก้ไขได้และ
+// ส่งอนุมัติใหม่ได้ครับ" -- see PayrollRunModel::reopen()'s own docblock for why this is a real,
+// sensitive state change (undoes markPaid()'s own installment-consumption side effect too), hence
+// the stronger warning-style confirm text rather than the plain confirm Lock above uses.
+$(document).on('click', '.btn-tl-reopen', function (e) {
+    e.stopPropagation();
+    showConfirm(
+        langData['confirm_reopen_title'] || 'Reopen this payroll run?',
+        langData['confirm_reopen_message'] || 'This will move the run back to Draft so its numbers can be corrected. Any linked loan/installment deductions this run already consumed will be un-consumed. You will need to submit it for approval again.',
+        function () {
+            const inst = bootstrap.Modal.getInstance(document.getElementById('runTimelineModal'));
+            if (inst) inst.hide();
+            callRunAction('/api/payroll-run.reopen', {}, langData['save_success']);
+        }
+    );
 });
 $(document).on('submit', '#runApproveForm', function (e) {
     e.preventDefault();
@@ -1134,6 +1434,15 @@ function breakdownLineRowsRd(lines) {
     return (lines || []).map(line => {
         const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || '';
         const commentHtml = line.note ? `<div class="small text-muted fst-italic"><i class="fa-regular fa-comment me-1"></i>${escapeHtmlRd(line.note)}</div>` : '';
+        // 2026-08-30, explicit request: "มีหมายเหตุในกรณีที่ไม่หัก ในการกดดูของพนักงานด้วยในหน้า Process
+        // Detail" -- SyncPayResolver still emits a LINE (amount forced to 0) for an attendance
+        // deduction this employee is exempt from, rather than dropping it silently, so there's
+        // something here to explain instead of the item just quietly not appearing. Distinct from
+        // the generic `commentHtml` above (which shows the raw technical `note` string) -- this is a
+        // dedicated, human-readable remark keyed off `is_exempted`/`exempted_amount`.
+        const exemptedHtml = line.is_exempted
+            ? `<div class="small text-warning-emphasis mt-1"><i class="fa-solid fa-user-shield me-1"></i>${(langData['attendance_deduction_exempted_remark'] || 'Exempted from this deduction -- would have been {amount}').replace('{amount}', fmtNumRd(line.exempted_amount))}</div>`
+            : '';
         // Transfer-to-payee (2026-08-21): a 'transfer_in' earning line gets its own badge (not the
         // generic "Custom" one, even though it's technically is_custom too) so it reads distinctly
         // as money credited from another employee, not an ad-hoc typed-in item. A deduction line
@@ -1149,9 +1458,10 @@ function breakdownLineRowsRd(lines) {
         const payeeHtml = line.payee_employee_id
             ? `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`
             : '';
-        return `<tr>
+        const exemptBadge = line.is_exempted ? `<span class="badge bg-warning-subtle text-warning-emphasis ms-1">${langData['attendance_deduction_exempted_badge'] || 'Exempted'}</span>` : '';
+        return `<tr class="${line.is_exempted ? 'text-muted' : ''}">
             <td>${codeHtml}</td>
-            <td>${escapeHtmlRd(name)}${formulaButtonRd(line)}${commentHtml}${payeeHtml}</td>
+            <td>${escapeHtmlRd(name)}${exemptBadge}${formulaButtonRd(line)}${commentHtml}${exemptedHtml}${payeeHtml}</td>
             <td class="text-end">${fmtNumRd(line.amount)}</td>
         </tr>`;
     }).join('');
@@ -1367,6 +1677,9 @@ function renderRawSyncDataModal(data) {
     `);
 }
 let rawSyncDataEmployeeId = null;
+// 2026-08-29: the tax/SSO exemption card that used to live in THIS modal moved to the universal
+// Manage Items modal's own "Tax & SSO" tab (see manageLinesCalcPane) -- this viewer is read-only
+// again, matching its original single purpose (a sync-only row's raw Origami payload).
 $(document).on('click', '.btn-raw-sync-data', function () {
     rawSyncDataEmployeeId = $(this).data('employee-id');
     const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(rawSyncDataEmployeeId));
@@ -1379,37 +1692,9 @@ $(document).on('click', '.btn-raw-sync-data', function () {
         success: function (res) {
             if (!res.status) { showWarning(res.message || langData['load_employee_failed'] || 'Failed to load data.'); return; }
             renderRawSyncDataModal(res.data);
-            const ex = res.data.exemption || { exempt_tax: false, exempt_sso: false };
-            $('#rawSyncDataExemptTax').prop('checked', !!ex.exempt_tax);
-            $('#rawSyncDataExemptSso').prop('checked', !!ex.exempt_sso);
             new bootstrap.Modal(document.getElementById('rawSyncDataModal')).show();
         },
         error: function () { showWarning(langData['load_employee_failed'] || 'Failed to load data.'); }
-    });
-});
-$(document).on('click', '#btnSaveRawSyncDataExemption', function () {
-    const $btn = $(this).prop('disabled', true);
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.save-employee-exemption`,
-        method: 'POST',
-        contentType: 'application/json',
-        dataType: 'json',
-        data: JSON.stringify({
-            id: PAYROLL_RUN_ID,
-            employee_id: rawSyncDataEmployeeId,
-            exempt_tax: $('#rawSyncDataExemptTax').is(':checked'),
-            exempt_sso: $('#rawSyncDataExemptSso').is(':checked'),
-        }),
-        success: function (res) {
-            $btn.prop('disabled', false);
-            if (res.status) {
-                showSuccess(langData['save_success'] || 'Saved successfully.');
-                loadRunDetail();
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-            }
-        },
-        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });
 
@@ -1454,8 +1739,24 @@ function initRunDetailTable(details) {
             // (computed just above from currentRun.state, see this function's own top-of-function
             // comment for why it's set HERE at construction time and not inside drawCallback).
             { data: null, className: 'text-center', orderable: false, visible: showCheckboxColumn, render: (d, t, row) => `<input type="checkbox" class="form-check-input run-detail-row-check" data-employee-id="${row.employee_id}">` },
-            { data: 'employee_no', render: {
-                display: (d, t, row) => `<div class="fw-semibold">${escapeHtmlRd(employeeDisplayNameRd(row))}</div><div class="small text-muted">${escapeHtmlRd(d)}</div>`,
+            // 2026-08-29, explicit follow-up request (own earlier suggestion, accepted): "มีไอคอน
+            // เล็กๆ บนแถวพนักงานที่บอกว่าคนนี้ถูกปรับแต่งอะไรไปแล้วบ้าง" -- shown here (not tied to the
+            // "Items" button, which disappears entirely once the run leaves draft -- see
+            // manageItemsButtonRd()) so the indicator stays visible for a locked/paid/approved run
+            // too, when knowing "was this person customized" matters most. Comment count already
+            // gets its own red-dot badge on the Comment button itself (commentButtonRd()) -- not
+            // repeated here to avoid saying the same thing twice.
+            { data: 'employee_no', orderable: false, render: {
+                display: (d, t, row) => {
+                    const badges = [];
+                    if (Number(row.line_override_count || 0) > 0) {
+                        badges.push(`<i class="fa-solid fa-sliders text-warning ms-1" title="${langData['row_badge_item_override'] || 'Has item override(s)'}"></i>`);
+                    }
+                    if (row.has_calc_override) {
+                        badges.push(`<i class="fa-solid fa-file-invoice-dollar text-info ms-1" title="${langData['row_badge_calc_override'] || 'Has tax/SSO override'}"></i>`);
+                    }
+                    return `<div class="fw-semibold">${escapeHtmlRd(employeeDisplayNameRd(row))}${badges.join('')}</div><div class="small text-muted">${escapeHtmlRd(d)}</div>`;
+                },
                 sort: d => d,
                 filter: (d, t, row) => `${d} ${employeeDisplayNameRd(row)}`,
             } },
@@ -1465,7 +1766,21 @@ function initRunDetailTable(details) {
             // Salary/Gross/Deduction/Net into one cell and wasn't clear enough; split back into their
             // own columns. Net gets its own strong pill styling (rd-net-pill) since it's the figure
             // people scan for first, distinct from the plain-text Base Salary/Gross/Deduction cells.
-            { data: 'base_salary_amount', className: 'text-end text-muted', render: d => fmtNumRd(d) },
+            // 2026-08-29, explicit follow-up request: "สมมุติถ้าเลือกไม่เอาเงินเดือนมาคำนวณ ตรงช่องเงินเดือน
+            // ในตารางพนักงานให้ขึ้นคำว่าไม่นำมาคำนวณสีแดงๆ แทน 0" -- row.base_salary_excluded (see
+            // PayrollRunModel::getDetails()'s own docblock) distinguishes "genuinely 0 this period"
+            // from "excluded from calculation entirely" -- only the latter gets this red label.
+            // Object-form render (this project's own DataTables convention, see CLAUDE.md) since
+            // this column is still sortable -- sort/filter stay on the raw numeric value regardless
+            // of which text the display side renders, so a client-side sort never turns into
+            // lexicographic string ordering for the excluded rows.
+            { data: 'base_salary_amount', className: 'text-end', render: {
+                display: (d, t, row) => row.base_salary_excluded
+                    ? `<span class="text-danger fw-semibold small">${langData['base_salary_excluded_label'] || 'Not Calculated'}</span>`
+                    : `<span class="text-muted">${fmtNumRd(d)}</span>`,
+                sort: d => d,
+                filter: d => d,
+            } },
             { data: 'gross_amount', className: 'text-end text-success fw-semibold', render: d => fmtNumRd(d) },
             { data: 'total_deduction_amount', className: 'text-end text-danger fw-semibold', render: d => fmtNumRd(d) },
             { data: 'net_amount', className: 'text-end', render: d => `<span class="rd-net-pill">${fmtNumRd(d)}</span>` },
@@ -1483,6 +1798,15 @@ function initRunDetailTable(details) {
         searching: details.length > 10,
         info: false,
         language: getTableLang(),
+        // 2026-08-29, explicit follow-up request: "ตรง Column แรกไม่ต้องให้ Sort ได้ และให้ตารางเรียงจาก
+        // emp code จากน้อยไปหามากครับเป็น Default" -- the Employee column (index 1, orderable:false
+        // above) is no longer click-to-sort, but still gets used as the table's own default/initial
+        // order here -- DataTables applies an `order` target regardless of that column's own
+        // orderable flag, it only blocks the USER from re-triggering it via the header. The data
+        // already arrives pre-sorted by employee_no ASC from PayrollRunModel::getDetails()'s own
+        // SQL, so this is a belt-and-braces guarantee it stays that way across every later
+        // rows.add().draw() reload too (recalculate/verify/lock/etc.), not just the first render.
+        order: [[1, 'asc']],
         // 2026-08-29, explicit follow-up request: "รายการให้แสดงให้ต่างกับรายการที่ยังไม่ Verify หรือ Lock"
         // -- a verified and/or locked row gets its own background tint (rd-row-verified/
         // rd-row-locked, see style.css) so it reads as visually distinct from a plain not-yet-
@@ -1494,6 +1818,24 @@ function initRunDetailTable(details) {
             $(row).toggleClass('rd-row-locked', !!data.is_locked);
         },
         drawCallback: function () { getTableLang(); updateRunDetailBulkBar(); applyRunDetailViewMode(); },
+        // 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี Summary
+        // ของแต่ละ Column ใน Footer" -- replaces the old updateRunDetailVerifyLockSummaryRd() side
+        // strip. Fires on every draw (search/sort/reload) automatically, same as drawCallback --
+        // {search:'applied'} means a filtered view sums/counts only what's currently visible, not
+        // the whole table, matching DataTables' own footer-total convention.
+        footerCallback: function () {
+            const api = this.api();
+            const sumColRd = idx => api.column(idx, { search: 'applied' }).data().toArray().reduce((a, b) => a + (parseFloat(b) || 0), 0);
+            const visibleRows = api.rows({ search: 'applied' }).data().toArray();
+            $('#rdFootEmployeeCount').text(`${langData['table_employee'] || 'Employee'}: ${visibleRows.length}`);
+            $('#rdFootBaseSalary').text(fmtNumRd(sumColRd(3)));
+            $('#rdFootGross').text(fmtNumRd(sumColRd(4)));
+            $('#rdFootDeduction').text(fmtNumRd(sumColRd(5)));
+            $('#rdFootNet').text(fmtNumRd(sumColRd(6)));
+            const verifiedCount = visibleRows.filter(r => r.is_verified).length;
+            const lockedCount = visibleRows.filter(r => r.is_locked).length;
+            $('#rdFootVerifyLock').html(`<i class="fa-solid fa-check-double text-success me-1" title="${langData['verify_status_verified'] || 'Verified'}"></i>${verifiedCount} <i class="fa-solid fa-lock text-secondary ms-2 me-1" title="${langData['lock_status_locked'] || 'Locked'}"></i>${lockedCount}`);
+        },
         // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
         // rollout, client mode (plain `data:` array, no ajax at all). employee_no/name stay excluded
         // (that column still combines 2 fields into one free-text cell -- the global search box
@@ -1633,15 +1975,23 @@ let employeeCommentEmployeeId = null;
 // on modal close/cancel/successful add so reopening the modal for a different employee, or for the
 // same one later, always starts fresh in "add" mode.
 let employeeCommentEditingId = null;
+// 2026-08-29 same-day redesign ("ช่วยปรับปรุง Design ทั้ง Form และ List ให้หน่อยครับ") -- own
+// dedicated .apv-comment-* tone/icon mapping (was a plain badge-only distinction before); mirrors
+// the tone vocabulary this page's shared .apv-stage component already uses (see APV_COLORS_RD)
+// without touching that shared map, since it's also used by the unrelated Timeline/Action-History
+// components on this same page.
+const EMPLOYEE_COMMENT_TAG_META = {
+    in_progress: { icon: 'fa-hourglass-half', color: '#f59e0b', bg: 'linear-gradient(135deg,#f59e0b,#d97706)', key: 'employee_comment_tag_in_progress', fallback: 'In Progress' },
+    completed: { icon: 'fa-check', color: '#16a34a', bg: 'linear-gradient(135deg,#22c55e,#15803d)', key: 'employee_comment_tag_completed', fallback: 'Completed' },
+    error: { icon: 'fa-triangle-exclamation', color: '#dc2626', bg: 'linear-gradient(135deg,#f87171,#dc2626)', key: 'employee_comment_tag_error', fallback: 'Error' },
+};
+function employeeCommentTagMeta(tag) {
+    return EMPLOYEE_COMMENT_TAG_META[tag] || { icon: 'fa-comment', bg: 'linear-gradient(135deg,#9aa3ad,#6b7280)', key: null, fallback: '' };
+}
 function employeeCommentTagBadge(tag) {
-    const map = {
-        in_progress: { cls: 'bg-warning-subtle text-warning', key: 'employee_comment_tag_in_progress', fallback: 'In Progress' },
-        completed: { cls: 'bg-success-subtle text-success', key: 'employee_comment_tag_completed', fallback: 'Completed' },
-        error: { cls: 'bg-danger-subtle text-danger', key: 'employee_comment_tag_error', fallback: 'Error' },
-    };
-    if (!tag || !map[tag]) return '';
-    const m = map[tag];
-    return `<span class="badge ${m.cls} ms-2">${langData[m.key] || m.fallback}</span>`;
+    const meta = employeeCommentTagMeta(tag);
+    if (!meta.key) return '';
+    return `<span class="apv-comment-tag-pill" style="background:${meta.bg};"><i class="fa-solid ${meta.icon} me-1"></i>${langData[meta.key] || meta.fallback}</span>`;
 }
 function renderEmployeeCommentTimeline(comments) {
     $('#employeeCommentEmpty').toggleClass('d-none', comments.length > 0);
@@ -1652,31 +2002,33 @@ function renderEmployeeCommentTimeline(comments) {
     const html = comments.map(function (c, idx) {
         const isLast = idx === comments.length - 1;
         const name = currentLang === 'th' ? (c.created_by_name_th || c.created_by_name_en) : (c.created_by_name_en || c.created_by_name_th);
+        const meta = employeeCommentTagMeta(c.tag);
         // 2026-08-29, explicit request: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย" -- a small
         // "(edited)" marker only when updated_at is actually set (see
         // PayrollRunModel::employeeCommentUpdate()'s own docblock -- a never-edited comment keeps
         // both updated_by/updated_at null).
-        const editedTag = c.updated_at ? `<span class="text-muted fst-italic ms-1" style="font-size:.72em;">(${langData['employee_comment_edited'] || 'edited'})</span>` : '';
+        const editedTag = c.updated_at ? `<span class="apv-comment-edited-tag">(${langData['employee_comment_edited'] || 'edited'})</span>` : '';
         // 2026-08-29, explicit follow-up: "ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข ลบได้" -- edit/delete icons
         // per comment are dropped entirely once the run has finished (commentsReadOnlyRd()), not
         // just disabled, matching the same "view-only means the control isn't there at all" pattern
         // Verify/Lock's own View Mode already uses elsewhere on this page.
         const editDeleteIcons = commentsReadOnlyRd() ? '' : `
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-2 text-secondary btn-edit-employee-comment" data-id="${c.id}" data-tag="${c.tag || ''}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
-                        <button type="button" class="btn btn-link btn-sm p-0 ms-2 text-danger btn-delete-employee-comment" data-id="${c.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
-        return `<div class="apv-stage${isLast ? ' apv-stage-last' : ''}">
-            <div class="apv-stage-marker">
-                <div class="apv-stage-icon"><i class="fa-solid fa-comment"></i></div>
-                ${isLast ? '' : '<div class="apv-stage-line"></div>'}
+                        <button type="button" class="apv-comment-action-btn btn-edit-employee-comment" data-id="${c.id}" data-tag="${c.tag || ''}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="apv-comment-action-btn text-danger btn-delete-employee-comment" data-id="${c.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+        return `<div class="apv-comment-item${isLast ? ' apv-comment-item-last' : ''}">
+            <div class="apv-comment-marker">
+                <div class="apv-comment-icon" style="background:${meta.bg};"><i class="fa-solid ${meta.icon}"></i></div>
+                ${isLast ? '' : '<div class="apv-comment-line"></div>'}
             </div>
-            <div class="apv-stage-content">
-                <div class="apv-stage-head">
-                    <span class="apv-stage-title">${escapeHtmlRd(name || '-')}${employeeCommentTagBadge(c.tag)}${editedTag}</span>
-                    <span class="apv-stage-date">
-                        ${formatDisplayDateTime ? formatDisplayDateTime(c.created_at) : c.created_at}${editDeleteIcons}
-                    </span>
+            <div class="apv-comment-card">
+                <div class="apv-comment-head">
+                    <span class="apv-comment-author"><i class="fa-solid fa-circle-user me-1"></i>${escapeHtmlRd(name || '-')}</span>
+                    ${employeeCommentTagBadge(c.tag)}${editedTag}
+                    <span class="apv-comment-spacer"></span>
+                    ${editDeleteIcons}
                 </div>
-                <div class="apv-stage-body" data-raw-comment="${escapeAttrRd(c.comment)}">${escapeHtmlRd(c.comment).replace(/\n/g, '<br>')}</div>
+                <div class="apv-comment-body" data-raw-comment="${escapeAttrRd(c.comment)}">${escapeHtmlRd(c.comment).replace(/\n/g, '<br>')}</div>
+                <div class="apv-comment-date"><i class="fa-regular fa-clock me-1"></i>${formatDisplayDateTime ? formatDisplayDateTime(c.created_at) : c.created_at}</div>
             </div>
         </div>`;
     }).join('');
@@ -1722,7 +2074,7 @@ $(document).on('hidden.bs.modal', '#employeeCommentModal', function () {
 });
 $(document).on('click', '.btn-edit-employee-comment', function () {
     employeeCommentEditingId = $(this).data('id');
-    const rawComment = $(this).closest('.apv-stage-content').find('.apv-stage-body').attr('data-raw-comment') || '';
+    const rawComment = $(this).closest('.apv-comment-card').find('.apv-comment-body').attr('data-raw-comment') || '';
     $('#employeeCommentText').val(rawComment).trigger('focus');
     const tag = $(this).data('tag') || '';
     $(`#employeeCommentTagGroup input[value="${tag}"]`).prop('checked', true);
@@ -1787,11 +2139,12 @@ function auditActionLabel(action) {
         create: 'action_create', update: 'action_edit', recalculate: 'action_recalculate',
         submit: 'action_submit', revert: 'action_revert', approve: 'action_approve',
         reject: 'action_reject', reviseAfterReject: 'action_revise', markPaid: 'action_mark_paid',
-        lock: 'action_lock', delete: 'action_delete', cancel: 'action_cancel',
+        lock: 'action_lock', delete: 'action_delete', cancel: 'action_cancel', reopen: 'action_reopen',
         add_manual_line: 'action_add_manual_line', remove_manual_line: 'action_remove_manual_line',
         line_override_save: 'action_line_override_save', line_override_remove: 'action_line_override_remove',
         attendance_override_save: 'action_attendance_override_save', attendance_override_remove: 'action_attendance_override_remove',
         employee_exemption_save: 'action_employee_exemption_save', employee_exemption_remove: 'action_employee_exemption_remove',
+        run_settings_save: 'action_run_settings_save',
         request_info: 'action_request_info', reviseAfterNeedInfo: 'action_revise',
     };
     const key = map[action];
@@ -1819,28 +2172,55 @@ const AUDIT_TIMELINE_META_RD = {
     lock: { tone: 'muted', icon: 'fa-lock' },
     delete: { tone: 'rejected', icon: 'fa-trash' },
     cancel: { tone: 'muted', icon: 'fa-ban' },
+    reopen: { tone: 'pending', icon: 'fa-unlock' },
+    line_override_save: { tone: 'pending', icon: 'fa-sliders' },
+    line_override_remove: { tone: 'muted', icon: 'fa-rotate-left' },
+    run_settings_save: { tone: 'pending', icon: 'fa-sliders' },
 };
 function auditTimelineMetaRd(action) {
     return AUDIT_TIMELINE_META_RD[action] || { tone: 'muted', icon: 'fa-pen' };
 }
-function auditHistoryStageHtmlRd(entry, isLast) {
+// 2026-08-29, explicit follow-up request: "ปรับ Action History ให้เป็น Timeline แบบเดิมดูดีกว่าครับ แต่เพิ่ม
+// ให้กดดู Detail ได้ ช่วย Design ให้สวยๆ" -- reverted the same-day boustrophedon/snake grid redesign
+// right back to a single vertical spine (the earlier round's own explicit ask, now un-asked-for) --
+// KEEPING the one genuinely new thing that round added: the "View Detail" button + modal (the
+// original vertical version before ANY of this showed everything inline in the row itself). Restyled
+// beyond a plain revert though ("Design ให้สวยๆ"): each stage is now a real card (white background,
+// soft shadow, hover lift) instead of bare icon+text sitting directly on the tab's own background,
+// and the connector line/icon markers got a bit more visual weight to read as a proper timeline
+// spine at a glance. auditHistoryEntries still holds the CURRENTLY rendered, newest-first-ordered
+// array so the detail modal can look an entry up by its plain index.
+let auditHistoryEntries = [];
+// 2026-08-29, same-day follow-up: "หน้า ประวัติการดำเนินการ Detail ไม่เยอะไม่ต้องมีปุ่มกดดูก็ได้ครับ แสดงใน
+// timeline ได้เลย" -- the "View Detail" button + #auditHistoryDetailModal round trip is gone; every
+// field that modal used to show (state change badges, note/remark, IP/user-agent) is now rendered
+// directly in the card itself, since there's rarely enough audit history on one run to make an
+// always-expanded card feel cluttered.
+function auditHistoryRowHtmlRd(entry, index, isLast) {
     const meta = auditTimelineMetaRd(entry.action);
+    const color = (APV_COLORS_RD[meta.tone] || APV_COLORS_RD.muted).icon;
+    const actor = personDisplayNameRd(entry, 'performed_by');
     const stateChangeHtml = entry.from_state
         ? `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`
         : (entry.to_state ? stateBadgeRd(entry.to_state) : '');
+    const metaParts = [];
+    if (entry.ip_address) metaParts.push(`<span class="me-3"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtmlRd(entry.ip_address)}</span>`);
+    if (entry.user_agent) metaParts.push(`<span><i class="fa-solid fa-desktop me-1"></i>${escapeHtmlRd(entry.user_agent)}</span>`);
     return `
-        <div class="apv-stage${isLast ? ' apv-stage-last' : ''}">
-            <div class="apv-stage-marker">${apvIconHtmlRd(meta.tone, meta.icon)}${isLast ? '' : '<div class="apv-stage-line"></div>'}</div>
-            <div class="apv-stage-content">
-                <div class="apv-stage-head">
-                    <span class="apv-stage-title">${escapeHtmlRd(auditActionLabel(entry.action))}</span>
+        <div class="apv-history-row${isLast ? ' apv-history-row-last' : ''}">
+            <div class="apv-history-row-marker">
+                <div class="apv-history-row-icon" style="background:${color};"><i class="fa-solid ${meta.icon}"></i></div>
+                ${isLast ? '' : '<div class="apv-history-row-line"></div>'}
+            </div>
+            <div class="apv-history-row-card">
+                <div class="apv-history-row-top">
+                    <span class="apv-history-row-title">${escapeHtmlRd(auditActionLabel(entry.action))}</span>
+                    <span class="apv-history-row-date"><i class="fa-regular fa-clock me-1"></i>${escapeHtmlRd(formatDisplayDateTime(entry.performed_at))}</span>
                 </div>
-                <div class="apv-stage-date">${escapeHtmlRd(formatDisplayDateTime(entry.performed_at))}</div>
-                <div class="apv-stage-body">
-                    ${apvPersonLineHtmlRd(personDisplayNameRd(entry, 'performed_by'))}
-                    ${stateChangeHtml ? `<div class="mt-2">${stateChangeHtml}</div>` : ''}
-                    ${entry.note ? `<div class="apv-substep-remark">${escapeHtmlRd(entry.note)}</div>` : ''}
-                </div>
+                <div class="apv-history-row-actor">${escapeHtmlRd(actor || '-')}</div>
+                ${stateChangeHtml ? `<div class="mt-2">${stateChangeHtml}</div>` : ''}
+                ${entry.note ? `<div class="apv-substep-remark mt-2">${escapeHtmlRd(entry.note)}</div>` : ''}
+                ${metaParts.length ? `<div class="small text-muted mt-2">${metaParts.join('')}</div>` : ''}
             </div>
         </div>
     `;
@@ -1851,10 +2231,11 @@ function renderAuditHistoryTimelineRd(auditLog) {
     $('#run_audit_timeline').toggleClass('d-none', logs.length === 0);
     if (!logs.length) {
         $('#run_audit_timeline').empty();
+        auditHistoryEntries = [];
         return;
     }
-    const ordered = logs.slice().reverse(); // newest first at the top, oldest at the bottom
-    $('#run_audit_timeline').html(ordered.map((entry, i) => auditHistoryStageHtmlRd(entry, i === ordered.length - 1)).join(''));
+    auditHistoryEntries = logs.slice().reverse(); // newest first at the top, oldest at the bottom -- same ordering convention this tab already had
+    $('#run_audit_timeline').html(auditHistoryEntries.map((entry, i) => auditHistoryRowHtmlRd(entry, i, i === auditHistoryEntries.length - 1)).join(''));
 }
 
 function loadRunDetail() {
@@ -2084,18 +2465,23 @@ function syncLineOverrideBadge(line) {
 function syncLineOverrideRowHtml(line) {
     const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code;
     const isExcluded = line.override_action === 'exclude';
-    const amountValue = line.override_action === 'override_amount' ? line.override_amount : line.computed_amount;
+    const amountValue = line.override_action === 'override_amount' ? line.override_amount : line.current_amount;
     const hasOverride = line.override_action !== null;
     return `<div class="border rounded-3 p-2 mb-2" data-item-code="${escapeHtmlRd(line.code)}">
         <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-1">
             <div>
                 <code class="fw-bold text-dark">${escapeHtmlRd(line.code)}</code> ${escapeHtmlRd(name)}${syncLineOverrideBadge(line)}
-                <div class="small text-muted">${langData['sync_line_override_computed'] || 'Computed'}: ${fmtNumRd(line.computed_amount)}</div>
+                <div class="small text-muted">${langData['sync_line_override_computed'] || 'Current'}: ${fmtNumRd(line.current_amount)}</div>
             </div>
             ${hasOverride ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-sync-line-reset" data-item-code="${escapeHtmlRd(line.code)}">${langData['sync_line_override_reset'] || 'Reset to computed'}</button>` : ''}
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap sync-line-controls">
             <input type="number" step="0.01" min="0" class="form-control form-control-sm sync-line-amount-input" style="max-width:140px;" value="${amountValue}" ${isExcluded ? 'disabled' : ''}>
+            <!-- 2026-08-29, explicit request: "เพิ่มให้สามารถเลือกเอาเงินเดือนออกจากการคำนวณได้" -- base
+                 salary's own row (__base_salary__) used to skip this checkbox entirely ('exclude'
+                 was a no-op for it server-side); PayrollRunModel::recalculate() now honors 'exclude'
+                 for base salary too (zeroes it, same as dropping a real line), so every row
+                 -- base salary included -- gets the same control. -->
             <div class="form-check form-check-inline mb-0">
                 <input type="checkbox" class="form-check-input sync-line-exclude-check" ${isExcluded ? 'checked' : ''}>
                 <label class="form-check-label small">${langData['sync_line_override_action_exclude'] || 'Exclude this run'}</label>
@@ -2120,6 +2506,33 @@ function syncLineOverrideRowHtml(line) {
         </div>
     </div>`;
 }
+// 2026-08-29, explicit follow-up request: "อยากให้มี List รายการและติ๊กเข้าออกได้เหมือนตอนที่ Set ทั้ง
+// Template" -- checklist version of per-employee item exclusion, sourced from the SAME item catalog
+// Run Settings' own panel uses (res.run_settings.item_options), cross-referenced against this
+// employee's existing per-item overrides (res.data, same array the per-row list below already
+// renders from) to compute each row's checked/disabled state. `data-was-checked` records the
+// state AT LOAD TIME so Save only needs to touch what actually changed.
+function empItemExclusionCheckedState(item, runExcludedSet, personalOverrideByCode) {
+    const personal = personalOverrideByCode[item.item_code] || null;
+    if (personal && personal.override_action === 'exclude') return { checked: true, disabled: false };
+    if (personal && personal.override_action === 'override_amount') return { checked: false, disabled: false };
+    if (runExcludedSet.has(item.item_code)) return { checked: true, disabled: true };
+    return { checked: false, disabled: false };
+}
+function loadEmpItemExclusionChecklist(lines, runSettings) {
+    if (!runSettings) { $('#empItemExclusionChecklist').html(''); return; }
+    const personalByCode = {};
+    (lines || []).forEach(l => { if (l.override_action) personalByCode[l.code] = l; });
+    const runExcludedSet = new Set(runSettings.excluded_item_codes || []);
+    $('#empItemExclusionChecklist').html(itemChecklistBoxesHtml(runSettings.item_options || [], {
+        checkboxClass: 'emp-item-exclusion-check',
+        idPrefix: 'empExclItem',
+        trackWasChecked: true,
+        isChecked: item => empItemExclusionCheckedState(item, runExcludedSet, personalByCode).checked,
+        isDisabled: item => empItemExclusionCheckedState(item, runExcludedSet, personalByCode).disabled,
+        disabledBadgeHtml: () => ` <span class="badge bg-secondary-subtle text-secondary">${langData['run_default_badge'] || 'Run Default'}</span>`,
+    }));
+}
 function loadSyncLineOverridesRd() {
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.sync-lines-for-employee`,
@@ -2131,10 +2544,84 @@ function loadSyncLineOverridesRd() {
             const lines = res.data || [];
             $('#syncLineOverrideList').html(lines.length
                 ? lines.map(syncLineOverrideRowHtml).join('')
-                : `<div class="text-center text-muted small py-2">${langData['sync_line_override_empty'] || 'No sync-computed deduction lines for this employee.'}</div>`);
+                : `<div class="text-center text-muted small py-2">${langData['sync_line_override_empty'] || 'No calculated amounts for this employee yet -- recalculate the run first.'}</div>`);
+            loadEmpItemExclusionChecklist(lines, res.run_settings);
+            // 2026-08-29: "Tax & SSO" tab -- see PayrollController::syncLinesForEmployee()'s own
+            // docblock for why this is bundled into the same fetch instead of a separate one.
+            const ex = res.exemption || { tax_calculate_override: 'inherit', sso_calculate_override: 'inherit' };
+            $(`#empCalcTaxGroup input[value="${ex.tax_calculate_override || 'inherit'}"]`).prop('checked', true);
+            $(`#empCalcSsoGroup input[value="${ex.sso_calculate_override || 'inherit'}"]`).prop('checked', true);
         }
     });
 }
+// Sequential (not parallel) on purpose -- each lineOverrideSave()/lineOverrideRemove() call
+// recalculates the whole run internally; firing several at once risks two overlapping
+// recalculate() writes racing each other.
+function runSequentialAjaxRd(calls, onDone) {
+    if (!calls.length) { onDone(); return; }
+    const call = calls.shift();
+    call(function (ok) {
+        if (!ok) { onDone(); return; }
+        runSequentialAjaxRd(calls, onDone);
+    });
+}
+$(document).on('click', '#btnSaveEmpItemExclusion', function () {
+    const $btn = $(this).prop('disabled', true);
+    const calls = [];
+    $('#empItemExclusionChecklist .emp-item-exclusion-check:not(:disabled)').each(function () {
+        const itemCode = $(this).val();
+        const wasChecked = $(this).data('was-checked') === '1' || $(this).data('was-checked') === 1;
+        const isChecked = this.checked;
+        if (wasChecked === isChecked) return; // unchanged, nothing to send
+        if (isChecked) {
+            calls.push(next => $.ajax({
+                url: `${BASE_URL}/api/payroll-run.line-override.save`, method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: itemCode, action: 'exclude' }),
+                success: res => next(!!res.status),
+                error: () => next(false),
+            }));
+        } else {
+            calls.push(next => $.ajax({
+                url: `${BASE_URL}/api/payroll-run.line-override.remove`, method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: itemCode }),
+                success: res => next(!!res.status),
+                error: () => next(false),
+            }));
+        }
+    });
+    if (!calls.length) { $btn.prop('disabled', false); return; }
+    runSequentialAjaxRd(calls, function () {
+        $btn.prop('disabled', false);
+        showSuccess(langData['save_success'] || 'Saved successfully.');
+        loadSyncLineOverridesRd();
+        loadRunDetail();
+    });
+});
+$(document).on('click', '#btnSaveEmpCalcOverride', function () {
+    const $btn = $(this).prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.save-employee-exemption`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({
+            id: PAYROLL_RUN_ID,
+            employee_id: manageLinesEmployeeId,
+            tax_calculate_override: $('#empCalcTaxGroup input:checked').val() || 'inherit',
+            sso_calculate_override: $('#empCalcSsoGroup input:checked').val() || 'inherit',
+        }),
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                loadRunDetail();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
 $(document).on('change', '.sync-line-exclude-check', function () {
     $(this).closest('.sync-line-controls').find('.sync-line-amount-input').prop('disabled', this.checked);
 });
@@ -2263,14 +2750,19 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
     // Always reopen on Tab 1 -- a stale "Attendance Data" tab left active from a previous employee
     // would otherwise show up front-and-center for someone this run isn't even sync-based for.
     bootstrap.Tab.getOrCreateInstance(document.getElementById('manageLinesItemsTab')).show();
-    // Attendance Data (from Sync) + Sync Deduction Adjustments (2026-08-21) -- both only meaningful
-    // on a sync-based run, where SyncPayResolver actually has raw numbers/computed lines to correct.
+    // Attendance Data (from Sync) is still sync-only -- SyncPayResolver only has raw attendance
+    // numbers to correct on a sync-based run. Adjust Amounts (2026-08-21, generalized 2026-08-29 --
+    // see syncDeductionLinesForEmployee()'s own docblock) is no longer sync-only: any draft run has
+    // earning/deduction lines (and a base salary) worth being able to correct.
     const isSyncRun = currentRun && currentRun.sync_process_id;
-    $('#manageLinesAttendanceTabWrap, #manageLinesSyncOverrideTabWrap').toggleClass('d-none', !isSyncRun);
+    $('#manageLinesAttendanceTabWrap').toggleClass('d-none', !isSyncRun);
     if (isSyncRun) {
         loadAttendanceDataRd();
-        loadSyncLineOverridesRd();
     }
+    // Reset the "Tax & SSO" tab to a neutral state before the fresh fetch below lands, so a stale
+    // previous employee's radios never flash for even a moment.
+    $('#empCalcTaxInherit, #empCalcSsoInherit').prop('checked', true);
+    loadSyncLineOverridesRd();
     new bootstrap.Modal(document.getElementById('manageLinesModal')).show();
     loadManualLinesRd();
 });
@@ -2641,8 +3133,29 @@ $(document).on('click', '#btnSubmitRun', function () {
         callRunAction('/api/payroll-run.submit', {});
     });
 });
+// 2026-08-29, same-day follow-up: "การทำงานในหน้า Detail ถ้าคลิก Tab ไหนแล้ว Refresh ให้ยังคงค้างอยู่ที่ Tab
+// นั้น" -- persist the active tab across a refresh via the URL hash (the tab button's own id, e.g.
+// "#run-reports-tab"), and double as the deep-link target for Process List's own "export report"
+// action (see renderRunActionsPr() in payroll/index.js, which now links straight to
+// "payroll-process/{id}#run-reports-tab" instead of downloading in place). history.replaceState (not
+// location.hash=...) so switching tabs neither scrolls the page nor spams browser history with one
+// entry per click.
+$(document).on('shown.bs.tab', '#runDetailTabs button[data-bs-toggle="tab"]', function (e) {
+    if (history.replaceState) {
+        history.replaceState(null, '', '#' + e.target.id);
+    }
+});
+function activateTabFromHash() {
+    const hash = (location.hash || '').replace('#', '');
+    if (!hash) return;
+    const $btn = $('#' + CSS.escape(hash));
+    if ($btn.length && $btn.attr('data-bs-toggle') === 'tab') {
+        bootstrap.Tab.getOrCreateInstance($btn[0]).show();
+    }
+}
 $(document).ready(function () {
     loadRunDetail();
+    activateTabFromHash();
     if (typeof initDatepicker === 'function') {
         initDatepicker('#edit_period_start');
         initDatepicker('#edit_period_end');

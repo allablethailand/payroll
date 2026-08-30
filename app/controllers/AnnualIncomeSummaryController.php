@@ -112,4 +112,21 @@ class AnnualIncomeSummaryController extends Controller {
         ];
         $this->json(['status' => true, 'data' => $this->model->summary($compId, $fiscalYear, $fsm, $filters)]);
     }
+
+    /**
+     * 2026-08-30, explicit request: "ในแต่ละช่องถ้ามีข้อมูลให้สามารถกดดู Detail ได้ด้วยครับ" -- one month
+     * cell's own line-item breakdown, backing the table's click-to-drill-down.
+     */
+    public function cellDetail() {
+        if (!$this->requireView()) return;
+        $compId = (int)getCompId();
+        $employeeId = (int)($_GET['employee_id'] ?? 0);
+        $year = (int)($_GET['year'] ?? 0);
+        $month = (int)($_GET['month'] ?? 0);
+        if (!$compId || !$employeeId || !$year || !$month) {
+            $this->json(['status' => false, 'message' => 'Missing employee_id/year/month.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->cellDetail($compId, $employeeId, $year, $month)]);
+    }
 }

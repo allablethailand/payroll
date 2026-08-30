@@ -69,6 +69,9 @@ function runTypeIconPr(row) {
 function employeeNamePr(row) {
     return (currentLang === 'th' ? row.created_by_name_th : row.created_by_name_en) || row.created_by_name_th || row.created_by_name_en || '-';
 }
+function updatedByNamePr(row) {
+    return (currentLang === 'th' ? row.updated_by_name_th : row.updated_by_name_en) || row.updated_by_name_th || row.updated_by_name_en || '-';
+}
 function frequencyLabelPr(freq) {
     return (freq && langData['frequency_' + freq]) || freq || '-';
 }
@@ -117,8 +120,14 @@ function computeMiniTimelineProgress(row) {
         }
         return { reachedIdx: idx, branch: { atIndex: idx + 1, type: 'cancelled' } };
     }
+    // 2026-08-29, real bug found and fixed (explicit report: "Locked จะเป็นสีเขียวตอนไหนครับ" -- see
+    // detail.js's own computeTimelineProgress() docblock for the full explanation, ported here
+    // verbatim since this is a duplicated copy of that same logic, same "each page stays self-
+    // contained" convention this file's own top-of-file comment already documents). Was
+    // `reachedIdx: idx - 1` -- a station only showed done/green once you'd moved PAST it, which
+    // meant the LAST station (locked) could never turn green, since there's no state after it.
     const idx = MINI_TIMELINE_STEPS.findIndex(s => s.key === state);
-    return { reachedIdx: idx - 1, branch: null };
+    return { reachedIdx: idx, branch: null };
 }
 // Quick shortcut buttons (2026-08-22) -- deliberately only for a zero-extra-input transition:
 // Submit (draft) and Lock (paid) both call the EXACT SAME existing endpoints detail.js already
@@ -480,51 +489,28 @@ $(document).on('click', '.btn-view-run-errors', function (e) {
 // own edit modal, not a separate one here. Delete only makes sense for draft
 // (PayrollRunModel::delete() rejects any other state); Cancel for anything not yet paid (matches
 // PayrollRunModel::cancel()'s own allowed-state check).
-// 2026-08-29, explicit request: "เพิ่มให้สามารถปริ้น Report จากหน้า Process ได้ ทั้งจากหน้า List และ Detail
-// ส่งประกันสังคม ส่งสรรพากร ขึ้นธนาคาร" -- one-click shortcuts straight to the 3 named reports for THIS
-// row's run, reusing the same GET /api/report.generate endpoint (+ generateReport(), moved to
-// app.js) the Reports page itself uses -- same report codes (TH_SSO110/TH_PND1/BANK_TRANSFER_FILE)
-// registered in ReportRegistry, no new generation logic. Gated on the SAME allowed-state set
-// ReportsController::CYCLE_REPORT_STATES/every individual report's own ALLOWED_STATES already
-// enforce server-side (approved/paid/locked) -- a disabled button here is just a head start on
-// that same rule, not a new one; the endpoint itself would refuse anyway if this check were ever
-// bypassed. Each report opens with its single most-useful default format (pdf for the two
-// statutory documents, csv for the bank transfer file -- that report only ever supports csv, see
-// BankTransferFileReport::supportedFormats()) rather than a nested format sub-menu, matching the
-// "print" framing of the request (one click, not a picker) -- the full Reports page still offers
-// every supported format/other report types for anyone who needs those.
-const PR_REPORT_SHORTCUTS = [
-    { code: 'TH_SSO110', format: 'pdf', icon: 'fa-file-shield', labelKey: 'report_shortcut_sso110' },
-    { code: 'TH_PND1', format: 'pdf', icon: 'fa-file-invoice', labelKey: 'report_shortcut_pnd1' },
-    { code: 'BANK_TRANSFER_FILE', format: 'csv', icon: 'fa-building-columns', labelKey: 'report_shortcut_bank_transfer' },
-];
-const PR_REPORT_ALLOWED_STATES = ['approved', 'paid', 'locked'];
-function renderRunReportsDropdown(row) {
-    if (!PR_REPORT_ALLOWED_STATES.includes(row.state)) {
-        return `<button type="button" class="btn btn-link text-secondary border-start" disabled title="${langData['reports_available_after_approval'] || 'Reports are available once this run is approved.'}"><i class="fa-solid fa-file-export"></i></button>`;
-    }
-    const items = PR_REPORT_SHORTCUTS.map(r => `<li><a class="dropdown-item pr-report-btn" href="#" data-code="${r.code}" data-format="${r.format}" data-run-id="${row.id}"><i class="fa-solid ${r.icon} me-2"></i><span data-i18n="${r.labelKey}">${langData[r.labelKey] || r.code}</span></a></li>`).join('');
-    return `<div class="dropdown d-inline-block">
-        <button type="button" class="btn btn-link text-secondary border-start dropdown-toggle" data-bs-toggle="dropdown" title="${langData['print_reports'] || 'Print Reports'}"><i class="fa-solid fa-file-export"></i></button>
-        <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
-    </div>`;
-}
-$(document).on('click', '.pr-report-btn', function (e) {
-    e.preventDefault();
-    const params = new URLSearchParams();
-    params.set('report_code', $(this).data('code'));
-    params.set('format', $(this).data('format'));
-    params.set('run_id', $(this).data('run-id'));
-    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
-});
+// 2026-08-29, same-day follow-up (supersedes the 2026-08-29 "print report dropdown" note this
+// replaced): "ถ้ากดออกรายงาน ให้เปิดหน้า Detail และมาค้างอยู่ที่ Tab Report เลย ไม่ต้อง Download แยก เปลี่ยน icon
+// ตา เป็น icon Download" -- the old in-place TH/EN download dropdown (PR_REPORT_SHORTCUTS/
+// renderRunReportsDropdown()/.pr-report-btn, all removed) is gone; the row's own View link (the
+// eye icon, the only other action already pointing at the Detail page for a non-draft run) now
+// doubles as the "export report" shortcut for every non-draft state -- icon swaps to a download
+// icon and the link's own hash targets the Detail page's Reports tab id directly
+// (payroll/detail.js's activateTabFromHash(), same mechanism a manual tab click + refresh
+// persists through). Not gated to only approved/paid/locked here -- the Reports tab itself always
+// shows its row set now (2026-08-29 "แต่ยังกดไม่ได้" fix, see loadRunReportsTab()'s own docblock),
+// just with actions disabled until ready, so landing there early is a feature, not a dead end.
 function renderRunActionsPr(row) {
     const isDraft = row.state === 'draft';
     // 2026-08-28, explicit request: "Process ที่ Cancel ให้สามารถลบข้อมูลออกไปได้" -- delete is now
     // also allowed for a cancelled run, not just draft (see PayrollRunModel::delete()'s own docblock).
     const isDeletable = isDraft || row.state === 'cancelled';
     let html = '<div class="btn-group border rounded-3 bg-white row-actions" role="group">';
-    html += `<a href="${BASE_URL}/payroll-process/${row.public_id}" target="_blank" rel="noopener" class="btn ${isDraft ? 'btn-link text-warning' : 'btn-link text-info'}" title="${langData[isDraft ? 'action_edit' : 'view'] || (isDraft ? 'Edit' : 'View')}"><i class="fa-solid ${isDraft ? 'fa-pen-to-square' : 'fa-eye'}"></i></a>`;
-    html += renderRunReportsDropdown(row);
+    const viewHref = `${BASE_URL}/payroll-process/${row.public_id}${isDraft ? '' : '#run-reports-tab'}`;
+    const viewIcon = isDraft ? 'fa-pen-to-square' : 'fa-download';
+    const viewTitleKey = isDraft ? 'action_edit' : 'print_reports';
+    const viewTitleFallback = isDraft ? 'Edit' : 'Print Reports';
+    html += `<a href="${viewHref}" target="_blank" rel="noopener" class="btn ${isDraft ? 'btn-link text-warning' : 'btn-link text-info'}" title="${langData[viewTitleKey] || viewTitleFallback}"><i class="fa-solid ${viewIcon}"></i></a>`;
     if (['draft', 'pending_approval', 'approved', 'rejected'].includes(row.state)) {
         html += `<button type="button" class="btn btn-link text-danger border-start btn-cancel-run" data-id="${row.id}" title="${langData['action_cancel'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
     }
@@ -627,8 +613,17 @@ function initPayrollRunTable() {
                 sort: d => d,
                 filter: d => d,
             } },
-            { data: 'total_net_amount', className: 'text-end', render: d => fmtNumPr(d) },
+            // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
+            // `render: fn` meant client-side sort/filter operated on the formatted string, not the
+            // raw numeric amount (same class of bug already documented in CLAUDE.md).
+            { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNumPr(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
             { data: null, render: (d, t, row) => escapeHtmlPr(employeeNamePr(row)) },
+            // 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใครเป็นคน
+            // Update" -- object-form render (sort-safety, same convention as every other formatted-
+            // date column in this app) so client-side sort operates on the raw updated_at timestamp,
+            // not the dd/mm/yyyy display string.
+            { data: 'updated_at', render: { display: (v) => v ? formatDisplayDateTime(v) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
+            { data: null, render: (d, t, row) => escapeHtmlPr(updatedByNamePr(row)) },
             // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น
             // ตัว expand แทน" -- className:'all' (dtr-all) keeps this last, already-actions column
             // from ever collapsing into the Responsive expand row, same fix as employee/list.js's
@@ -660,6 +655,8 @@ function initPayrollRunTable() {
                     { index: 3, key: 'employee_count' },
                     { index: 4, key: 'total_net_amount' },
                     { index: 5, key: 'employee_name' },
+                    { index: 6, key: 'updated_at' },
+                    { index: 7, key: 'updated_by' },
                 ]
             });
         },
@@ -746,7 +743,10 @@ function initPendingSyncTable() {
             { data: 'unmapped_item_count', className: 'text-end', render: d => Number(d) > 0 ? `<span class="text-danger fw-semibold">${d}</span>` : d },
             // 2026-08-29, real bug found and fixed: raw UTC time with no timezone conversion, see
             // renderStatusTimelineCell()'s own comment above for the full reasoning.
-            { data: 'received_at', render: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-' },
+            // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- sort/
+            // filter now key off the raw ISO datetime (sorts correctly as a string) instead of the
+            // dd/mm/yyyy display string.
+            { data: 'received_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
             {
                 // 2026-08-28: className:'all' keeps this last actions column from collapsing into
                 // the Responsive expand row (dtr-all convention).
@@ -1119,10 +1119,19 @@ function collectRunFormData() {
     };
 }
 
-function showStation(state) {
+// 2026-08-29, same-day follow-up: "อยากให้เลือก Station ไหนอยู่ ถ้า Refresh แล้ว ให้อยู่ Station เดิม" --
+// persisted the exact same way Process Detail's own active-tab persistence works (URL hash +
+// history.replaceState, see payroll/detail.js's own activateTabFromHash()/shown.bs.tab handler) so
+// a browser refresh keeps whichever station card was selected instead of always resetting to Draft.
+function showStation(state, opts) {
     currentStation = state;
     $('.station-card').removeClass('active');
     $(`.station-card[data-state="${state}"]`).addClass('active');
+    if (!opts || !opts.skipHashUpdate) {
+        if (history.replaceState) {
+            history.replaceState(null, '', '#station-' + state);
+        }
+    }
     if (state === 'pending_sync') {
         $('#tb_payroll_run_wrapper').addClass('d-none');
         // The <table> itself starts with d-none in the markup (hidden until first shown) -- once
@@ -1334,6 +1343,7 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
     let failCount = 0;
     let remappedTotal = 0;
     let placeholdersTotal = 0;
+    let pedTypesTotal = 0;
     function processNext(i) {
         if (i >= rowEls.length) {
             $btn.prop('disabled', false);
@@ -1341,6 +1351,7 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
             const notes = [];
             if (remappedTotal > 0) notes.push(`${remappedTotal} ${langData['sync_remapped_employees'] || 'employee(s) newly matched via auto-sync'}`);
             if (placeholdersTotal > 0) notes.push(`${placeholdersTotal} ${langData['sync_placeholders_created'] || 'placeholder employee(s) created from sync data -- please complete their profiles'}`);
+            if (pedTypesTotal > 0) notes.push(`${pedTypesTotal} ${langData['sync_ped_types_created'] || 'new earning/deduction item(s) added to the catalog -- please review their tax settings'}`);
             if (notes.length > 0) {
                 summary += ` (${notes.join(', ')})`;
             }
@@ -1380,6 +1391,7 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
                     successCount++;
                     remappedTotal += Number(res.sync_summary?.remapped_count) || 0;
                     placeholdersTotal += Number(res.sync_summary?.placeholders_created) || 0;
+                    pedTypesTotal += Number(res.sync_summary?.ped_types_created) || 0;
                     $row.find('.bulk-pull-row-status').html(`<span class="text-success small"><i class="fa-solid fa-check me-1"></i>${langData['bulk_pull_result_success'] || 'created'}</span>`);
                 } else {
                     failCount++;
@@ -1419,9 +1431,11 @@ $(document).on('submit', '#payrollRunForm', function (e) {
             if (res.status) {
                 const remapped = Number(res.sync_summary?.remapped_count) || 0;
                 const placeholders = Number(res.sync_summary?.placeholders_created) || 0;
+                const pedTypesCreated = Number(res.sync_summary?.ped_types_created) || 0;
                 const notes = [];
                 if (remapped > 0) notes.push(`${remapped} ${langData['sync_remapped_employees'] || 'employee(s) newly matched via auto-sync'}`);
                 if (placeholders > 0) notes.push(`${placeholders} ${langData['sync_placeholders_created'] || 'placeholder employee(s) created from sync data -- please complete their profiles'}`);
+                if (pedTypesCreated > 0) notes.push(`${pedTypesCreated} ${langData['sync_ped_types_created'] || 'new earning/deduction item(s) added to the catalog -- please review their tax settings'}`);
                 const successMsg = notes.length > 0
                     ? `${langData['save_success'] || 'Saved successfully.'} (${notes.join(', ')})`
                     : (langData['save_success'] || 'Saved successfully.');
@@ -1635,10 +1649,23 @@ if (typeof watchTabDirty === 'function') {
         if (tb_payroll_run) tb_payroll_run.ajax.reload(null, false);
     });
 }
+function restoreStationFromHash() {
+    const hash = (location.hash || '').replace('#station-', '');
+    if (!hash) return;
+    const $card = $(`.station-card[data-state="${hash}"]`);
+    // Only honor the hash if that station card genuinely exists AND isn't hidden by
+    // applyOrigamiPayrollLinkGating() (e.g. a stale #station-pending_sync from before the company's
+    // Origami Payroll link was removed) -- falls back to the default 'draft' station otherwise,
+    // same as a fresh visit with no hash at all.
+    if ($card.length && $card.closest('.station-col').is(':visible')) {
+        showStation(hash, { skipHashUpdate: true });
+    }
+}
 $(document).ready(function () {
     applyOrigamiPayrollLinkGating();
     registerStationSearchFilter();
     initPayrollRunTable();
+    restoreStationFromHash();
     if (typeof IS_ORIGAMI_PAYROLL_LINKED === 'undefined' || IS_ORIGAMI_PAYROLL_LINKED) {
         loadPendingSyncCount();
     }

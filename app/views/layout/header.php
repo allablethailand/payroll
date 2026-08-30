@@ -101,6 +101,7 @@ if ($navUserId > 0) {
 <script src="<?=asset('public/js/alert.js')?>"></script>
 <script src="<?=asset('public/js/input.js')?>"></script>
 <script src="<?=asset('public/js/table-column-filter.js')?>"></script>
+<script src="<?=asset('public/js/notifications.js')?>"></script>
 <nav class="origami-navbar">
     <div class="nav-container">
         <div class="nav-left">
@@ -112,9 +113,32 @@ if ($navUserId > 0) {
             </a>
         </div>
         <div class="nav-right">
-            <a href="#" class="nav-icon-link">
-                <img src="<?=BASE_URL?>/public/images/Bell.svg" alt="Notifications">
-            </a>
+            <!-- 2026-08-29, explicit request: "บน header มี icon noti อยู่ ช่วยวางระบบการแจ้งเตือนพร้อมทั้ง
+                 Design การมองเห็นหน่อยครับ โดยเป็นของใครของมัน...และสามารถคลิกจาก item นั้นแล้วไปหน้านั้นได้เลย
+                 โดย Slide ลงมาสุดท้ายแล้วค่อยๆทยอยโหลด และมีเปิดเพื่อดูทั้งหมดเป็นอีกหน้า" -- this was a dead
+                 href="#" link before now. Same .nav-hub-dropdown active-class-toggle convention as
+                 the hub/language dropdowns right next to it (public/js/app.js). List content itself
+                 is populated/paginated client-side (public/js/notifications.js) -- see
+                 NotificationModel's own top-of-file docblock for the full notification-type
+                 analysis and per-user read-state design. -->
+            <div class="nav-notif-dropdown">
+                <button class="nav-notif-btn" type="button" id="notifBellBtn" title="Notifications">
+                    <img src="<?=BASE_URL?>/public/images/Bell.svg" alt="Notifications">
+                    <span class="nav-notif-badge d-none" id="notifBadge">0</span>
+                </button>
+                <div class="nav-notif-menu" id="notifMenu">
+                    <div class="nav-notif-menu-header">
+                        <span data-i18n="notifications">Notifications</span>
+                        <button type="button" id="notifMarkAllReadBtn" data-i18n="notif_mark_all_read">Mark all as read</button>
+                    </div>
+                    <div class="nav-notif-menu-list" id="notifMenuList">
+                        <div class="nav-notif-empty d-none" id="notifMenuEmpty" data-i18n="notif_empty">No notifications yet.</div>
+                    </div>
+                    <div class="nav-notif-menu-footer">
+                        <a href="<?=BASE_URL?>/notifications" data-i18n="notif_view_all">View All</a>
+                    </div>
+                </div>
+            </div>
             <div class="nav-hub-dropdown">
                 <button class="nav-hub-btn" type="button" title="Switch application">
                     <img src="<?=BASE_URL?>/public/images/HUB.svg" alt="Origami Hub">
@@ -175,7 +199,8 @@ if ($navUserId > 0) {
                  CLAUDE.md's own history: "ยังไม่มีปุ่ม Logout แบบทั่วไป...ถ้าต้องการ logout button แยก
                  ต่างหากใน .nav-profile-link (ที่ยังเป็น dead href="#" อยู่)"). Now a dropdown, same
                  active-class-toggle convention as .nav-hub-dropdown/.nav-lang-dropdown right above
-                 (see public/js/app.js) -- ONLY "Settings" for now (opens #userSettingsModal below),
+                 (see public/js/app.js) -- ONLY "Settings" for now (opens #userSettingsModal, moved
+                 to app/views/layout/modals.php as of 2026-08-30's modal consolidation),
                  per this request's own scope; a real Logout entry was NOT asked for here and would
                  need its own separate request even though the backend teardown pattern already
                  exists in auth/switch.php if that's wanted later. -->
@@ -205,37 +230,8 @@ if ($navUserId > 0) {
      เพราะมีใน header อยู่แล้ว" -- the top-right nav-lang-dropdown switcher already covers it, and
      already calls persistUserPreferences() itself (see changeLanguage() in app.js), so nothing
      about server-side language persistence was lost by removing this section -- it just no longer
-     has a SECOND, redundant control for the same thing. -->
-<div class="modal fade" id="userSettingsModal" tabindex="-1" aria-labelledby="userSettingsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="userSettingsModalLabel">
-                    <i class="fa-solid fa-gear me-2"></i><span data-i18n="user_settings_menu">Settings</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-4">
-                    <label class="form-label fw-semibold" data-i18n="user_settings_font_size_label">Font Size</label>
-                    <div class="user-settings-font-slider-wrap">
-                        <input type="range" class="form-range" id="userSettingsFontSizeSlider" min="0" max="2" step="1" value="1">
-                        <div class="user-settings-font-slider-labels">
-                            <span data-font-size-option="s" data-i18n="user_settings_font_size_small">Small</span>
-                            <span data-font-size-option="m" data-i18n="user_settings_font_size_medium">Medium</span>
-                            <span data-font-size-option="l" data-i18n="user_settings_font_size_large">Large</span>
-                        </div>
-                    </div>
-                    <div class="user-settings-font-preview" id="userSettingsFontPreview" data-i18n="user_settings_font_size_preview">The quick brown fox jumps over the lazy dog.</div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button type="button" class="btn btn-primary" id="btnSaveUserSettings" data-i18n="save">Save</button>
-            </div>
-        </div>
-    </div>
-</div>
+     has a SECOND, redundant control for the same thing. userSettingsModal itself moved to
+     app/views/layout/modals.php as of 2026-08-30's modal consolidation. -->
 <aside class="origami-sidebar" id="origamiSidebar">
     <!-- 2026-08-23, explicit request ("ใน Menu อยากให้เพิ่มช่องในการค้นหา Menu ในกรณีที่ Menu เยอะๆ") --
          filters .menu-item/.submenu-link by their visible text as you type (public/js/app.js's
@@ -396,6 +392,9 @@ if ($navUserId > 0) {
                 </li>
             </ul>
         </li>
+        <!-- 2026-08-30, explicit request: "การจัดเรียง Menu Setting อยู่ท้ายสุดเสมอครับ" -- already the
+             last top-level <li> in $sidebarMenuList (verified, no other file renders this menu) --
+             keep it that way: any future top-level menu item goes ABOVE this one, not below. -->
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">

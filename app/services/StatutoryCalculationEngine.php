@@ -123,7 +123,7 @@ class StatutoryCalculationEngine {
                     return $line;
                 }
                 $isOverride = $item['employee_rate_override'] !== null || $item['employer_rate_override'] !== null;
-                [$line['employee_amount'], $line['employer_amount'], $line['base_amount'], $line['formula']] = $this->computeFlatRate($item, $rateRow, $base);
+                [$line['employee_amount'], $line['employer_amount'], $line['base_amount'], $line['formula']] = self::computeFlatRate($item, $rateRow, $base);
                 $line['rate_source'] = $isOverride ? 'company_override' : 'master';
                 return $line;
 
@@ -133,7 +133,7 @@ class StatutoryCalculationEngine {
                     return $line;
                 }
                 $isOverride = $item['employee_amount_override'] !== null || $item['employer_amount_override'] !== null;
-                [$line['employee_amount'], $line['employer_amount']] = $this->computeFixedAmount($item, $rateRow);
+                [$line['employee_amount'], $line['employer_amount'], $line['formula']] = self::computeFixedAmount($item, $rateRow);
                 $line['rate_source'] = $isOverride ? 'company_override' : 'master';
                 return $line;
 
@@ -147,13 +147,13 @@ class StatutoryCalculationEngine {
                     $line['note'] = 'no_brackets_configured';
                     return $line;
                 }
-                $tax = $this->computeProgressiveBracket($brackets, $base, $item);
+                [$tax, $line['formula']] = self::computeProgressiveBracket($brackets, $base, $item);
                 $line['employee_amount'] = $item['is_employee_applicable'] ? $tax : 0.0;
                 $line['employer_amount'] = 0.0;
                 return $line;
 
             case 'formula':
-                [$line['employee_amount'], $line['employer_amount'], $note] = $this->computeFormula($item, $rateRow, $base, $noRateNote);
+                [$line['employee_amount'], $line['employer_amount'], $note, $line['formula']] = self::computeFormula($item, $rateRow, $base, $noRateNote);
                 if ($note) {
                     $line['note'] = $note;
                 }
@@ -173,7 +173,7 @@ class StatutoryCalculationEngine {
      * decimal_places straight from statutory_items -- missing keys (old cached/test fixtures)
      * default to 'round'/2, i.e. byte-identical to the pre-fix hardcoded behavior.
      */
-    private function applyRounding(float $value, array $item): float {
+    public static function applyRounding(float $value, array $item): float {
         $decimals = isset($item['decimal_places']) ? (int)$item['decimal_places'] : 2;
         $mode = $item['rounding_mode'] ?? 'round';
         $factor = 10 ** $decimals;
@@ -222,8 +222,15 @@ class StatutoryCalculationEngine {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /** @return array{0:float,1:float,2:float,3:array} [employee_amount, employer_amount, effective_base, formula] */
-    private function computeFlatRate(array $item, array $rateRow, float $base): array {
+    /**
+     * @return array{0:float,1:float,2:float,3:array} [employee_amount, employer_amount, effective_base, formula]
+     * Public+static (like every other computeXxx() below) so the Tax & Statutory settings
+     * page's Calculation Preview feature (previewRateVersion() on TaxStatutoryModel) can run
+     * the EXACT same formula against a draft/not-yet-saved rate version as real payroll
+     * calculation uses -- same rationale as SyncPayResolver's computeOtAmountFromConfig()/
+     * computeAttendanceDeductionFromConfig() (2026-08-29/30 calc-preview rollout).
+     */
+    public static function computeFlatRate(array $item, array $rateRow, float $base): array {
         $employeeRate = $item['employee_rate_override'] ?? $rateRow['employee_rate'];
         $employerRate = $item['employer_rate_override'] ?? $rateRow['employer_rate'];
 
@@ -240,7 +247,7 @@ class StatutoryCalculationEngine {
         $employeeRawAmount = null;
         $employeeCapped = false;
         if ($item['is_employee_applicable'] && $employeeRate !== null) {
-            $employeeRawAmount = $this->applyRounding($effBase * (float)$employeeRate / 100, $item);
+            $employeeRawAmount = self::applyRounding($effBase * (float)$employeeRate / 100, $item);
             $employeeAmount = $employeeRawAmount;
             if ($rateRow['max_employee_contribution'] !== null) {
                 $employeeAmount = min($employeeAmount, (float)$rateRow['max_employee_contribution']);
@@ -248,7 +255,7 @@ class StatutoryCalculationEngine {
             }
         }
         if ($item['is_employer_applicable'] && $employerRate !== null) {
-            $employerAmount = $this->applyRounding($effBase * (float)$employerRate / 100, $item);
+            $employerAmount = self::applyRounding($effBase * (float)$employerRate / 100, $item);
             if ($rateRow['max_employer_contribution'] !== null) {
                 $employerAmount = min($employerAmount, (float)$rateRow['max_employer_contribution']);
             }
@@ -269,17 +276,33 @@ class StatutoryCalculationEngine {
         return [$employeeAmount, $employerAmount, $effBase, $formula];
     }
 
-    /** @return array{0:float,1:float} [employee_amount, employer_amount] */
-    private function computeFixedAmount(array $item, array $rateRow): array {
-        $employeeAmount = $item['employee_amount_override'] ?? $rateRow['employee_amount'];
-        $employerAmount = $item['employer_amount_override'] ?? $rateRow['employer_amount'];
-        $employeeAmount = ($item['is_employee_applicable'] && $employeeAmount !== null) ? $this->applyRounding((float)$employeeAmount, $item) : 0.0;
-        $employerAmount = ($item['is_employer_applicable'] && $employerAmount !== null) ? $this->applyRounding((float)$employerAmount, $item) : 0.0;
-        return [$employeeAmount, $employerAmount];
+    /**
+     * @return array{0:float,1:float,2:array} [employee_amount, employer_amount, formula]
+     * Static/public per the same calc-preview rationale as computeFlatRate() above.
+     */
+    public static function computeFixedAmount(array $item, array $rateRow): array {
+        $employeeSourceAmount = $item['employee_amount_override'] ?? $rateRow['employee_amount'];
+        $employerSourceAmount = $item['employer_amount_override'] ?? $rateRow['employer_amount'];
+        $employeeAmount = ($item['is_employee_applicable'] && $employeeSourceAmount !== null) ? self::applyRounding((float)$employeeSourceAmount, $item) : 0.0;
+        $employerAmount = ($item['is_employer_applicable'] && $employerSourceAmount !== null) ? self::applyRounding((float)$employerSourceAmount, $item) : 0.0;
+        $formula = [
+            'type' => 'fixed_amount',
+            'is_employee_applicable' => (bool)$item['is_employee_applicable'],
+            'is_employer_applicable' => (bool)$item['is_employer_applicable'],
+            'employee_source_amount' => $employeeSourceAmount !== null ? (float)$employeeSourceAmount : null,
+            'employer_source_amount' => $employerSourceAmount !== null ? (float)$employerSourceAmount : null,
+            'employee_amount' => $employeeAmount, 'employer_amount' => $employerAmount,
+        ];
+        return [$employeeAmount, $employerAmount, $formula];
     }
 
-    private function computeProgressiveBracket(array $brackets, float $base, array $item): float {
+    /**
+     * @return array{0:float,1:array} [tax_amount, formula]
+     * Static/public per the same calc-preview rationale as computeFlatRate() above.
+     */
+    public static function computeProgressiveBracket(array $brackets, float $base, array $item): array {
         $tax = 0.0;
+        $steps = [];
         foreach ($brackets as $b) {
             $min = (float)$b['min_amount'];
             $max = $b['max_amount'] !== null ? (float)$b['max_amount'] : null;
@@ -288,33 +311,43 @@ class StatutoryCalculationEngine {
             }
             $upper = $max !== null ? min($base, $max) : $base;
             $taxable = max(0.0, $upper - $min);
-            $tax += $taxable * (float)$b['rate'] / 100;
+            $bracketTax = $taxable * (float)$b['rate'] / 100;
+            $tax += $bracketTax;
+            $steps[] = ['min' => $min, 'max' => $max, 'rate' => (float)$b['rate'], 'taxable' => $taxable, 'tax' => $bracketTax];
             if ($max !== null && $base <= $max) {
                 break;
             }
         }
-        return $this->applyRounding($tax, $item);
+        $result = self::applyRounding($tax, $item);
+        $formula = ['type' => 'progressive_bracket', 'base' => $base, 'steps' => $steps, 'result' => $result];
+        return [$result, $formula];
     }
 
     /**
      * formula_config JSON shape (per side, both optional):
      * {"employee": {"base_rate":1.45,"extra_rate":0.9,"extra_threshold":200000}, "employer": {"base_rate":1.45}}
-     * @return array{0:float,1:float,2:?string} [employee_amount, employer_amount, note]
+     * @return array{0:float,1:float,2:?string,3:?array} [employee_amount, employer_amount, note, formula]
+     * Static/public per the same calc-preview rationale as computeFlatRate() above.
      */
-    private function computeFormula(array $item, ?array $rateRow, float $base, string $noRateNote = 'no_rate_configured'): array {
+    public static function computeFormula(array $item, ?array $rateRow, float $base, string $noRateNote = 'no_rate_configured'): array {
         if (!$rateRow || empty($rateRow['formula_config'])) {
-            return [0.0, 0.0, $noRateNote];
+            return [0.0, 0.0, $noRateNote, null];
         }
         $config = json_decode($rateRow['formula_config'], true);
         if (!is_array($config)) {
-            return [0.0, 0.0, 'invalid_formula_config'];
+            return [0.0, 0.0, 'invalid_formula_config', null];
         }
-        $employeeAmount = $item['is_employee_applicable'] ? $this->applyThresholdFormula($config['employee'] ?? null, $base, $item) : 0.0;
-        $employerAmount = $item['is_employer_applicable'] ? $this->applyThresholdFormula($config['employer'] ?? null, $base, $item) : 0.0;
-        return [$employeeAmount, $employerAmount, null];
+        $employeeAmount = $item['is_employee_applicable'] ? self::applyThresholdFormula($config['employee'] ?? null, $base, $item) : 0.0;
+        $employerAmount = $item['is_employer_applicable'] ? self::applyThresholdFormula($config['employer'] ?? null, $base, $item) : 0.0;
+        $formula = [
+            'type' => 'formula', 'base' => $base,
+            'employee_config' => $config['employee'] ?? null, 'employer_config' => $config['employer'] ?? null,
+            'employee_amount' => $employeeAmount, 'employer_amount' => $employerAmount,
+        ];
+        return [$employeeAmount, $employerAmount, null, $formula];
     }
 
-    private function applyThresholdFormula(?array $sideConfig, float $base, array $item): float {
+    public static function applyThresholdFormula(?array $sideConfig, float $base, array $item): float {
         if ($sideConfig === null || !isset($sideConfig['base_rate'])) {
             return 0.0;
         }
@@ -323,6 +356,6 @@ class StatutoryCalculationEngine {
             $extraBase = max(0.0, $base - (float)$sideConfig['extra_threshold']);
             $amount += $extraBase * (float)$sideConfig['extra_rate'] / 100;
         }
-        return $this->applyRounding($amount, $item);
+        return self::applyRounding($amount, $item);
     }
 }
