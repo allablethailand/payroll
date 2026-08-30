@@ -201,6 +201,8 @@ declare(strict_types=1);
  *     left orphaned" precedent (CompanyProfileController/EmployeeController's own uploadSignature())
  *     on the pulls where the signature genuinely did change.
  */
+require_once __DIR__ . '/NotificationModel.php';
+require_once __DIR__ . '/../services/SyncPayResolver.php';
 class PayrollSyncModel {
     private PDO $db;
 
@@ -250,6 +252,22 @@ class PayrollSyncModel {
             ]);
 
             if ($ownTransaction) { $this->db->commit(); }
+            // 2026-08-29, explicit request: "มีข้อมูล Sync มาใหม่จาก Origami" -- best-effort, own
+            // try/catch: a notification hiccup must never turn a genuinely successful ingest into a
+            // failed one (Origami's own cron retries on a non-2xx response, see
+            // PayrollSyncController::ingest()'s own docblock -- a spurious failure here would cause
+            // needless re-delivery of data that already landed fine).
+            try {
+                $processNo = (string)($payload['process_no'] ?? '');
+                (new NotificationModel())->createForPermissionHolders(
+                    $compId, 'can_process_payroll', 'sync_new_data',
+                    "มีข้อมูล Sync ใหม่จาก Origami", "New data synced from Origami",
+                    "รอบข้อมูล {$processNo} พร้อมให้ดึงเข้าคำนวณเงินเดือนแล้วครับ", "Sync batch {$processNo} is ready to be pulled into a payroll run",
+                    "/payroll-process", 'payroll_sync_process', $processRowId, "sync_new_data:{$processRowId}", 'fa-arrows-rotate'
+                );
+            } catch (Throwable $e) {
+                // Best-effort -- see comment above.
+            }
             return ['status' => true, 'process_row_id' => $processRowId, 'unmapped_items' => $unmappedCount];
         } catch (Throwable $e) {
             if ($ownTransaction && $this->db->inTransaction()) { $this->db->rollBack(); }
@@ -650,6 +668,99 @@ class PayrollSyncModel {
     }
 
     /**
+     * `item_master` (top-level array, PAYROLL_SYNC_API.md's 2026-08-30 revision) -- the distinct
+     * list of income/deduction/info items this specific process has turned on, independent of
+     * whether anyone actually carries a value for it this cycle. Per explicit request ("พวกรายได้
+     * รายหักเรื่อง item เงินได้เงินหักถ้ารายการไหนยังไม่มีให้ insert auto ไปได้เลยไหม"), auto-creates a
+     * `payroll_earning_deduction_types` row for any item_code this company doesn't already have one
+     * for -- so a brand-new custom item (DILIGENCE/ASSISTANCE/PHONE_ALLOWANCE/LOAN/STUDENT_LOAN/...)
+     * shows up in Payroll Configuration > Earning-Deduction Types ready to review/adjust (tax
+     * treatment, SSO/PF, statutory report tag), instead of silently landing every pull as an
+     * anonymous "CUSTOM:<name>" line (SyncPayResolver::resolve()'s own generic item_values fallback)
+     * with no tax categorization and nothing an admin can configure.
+     *
+     * Deliberately SKIPS any item_code SyncPayResolver::isKnownEventItemCode() recognizes (OT, trip
+     * allowance/"ROUND", late, absent, early leave, unpaid leave, leave pending) -- see that
+     * method's own docblock for why an item_code-matched row for one of those would be an inert
+     * decoy. Also skips item_type='INFO' (LEAVE_APPROVED/PROBATION_WORKING_DAYS) --
+     * `payroll_earning_deduction_types.item_type` is a hard enum('earning','deduction') and an INFO
+     * item is designed to never produce a payroll line at all (see SyncPayResolver::resolve()'s own
+     * INFO-type handling), so there's nothing for a catalog row to configure.
+     *
+     * Read from `payroll_sync_processes.raw_payload` (the verbatim original JSON, already stored at
+     * ingest time) rather than a new dedicated column -- item_master has no other use anywhere in
+     * this table, so a full column would be unused storage for what's only ever a one-time read at
+     * pull time. Called from the SAME "Pending Pull" moment as remapUnmappedItems()/
+     * applyEmployeeMasterFields() (see PayrollRunModel::create()), so a brand-new item's catalog row
+     * already exists by the time recalculate() runs for the very first time on this run.
+     *
+     * `is_sync_only = 1` on every auto-created row -- the per-employee amount for these is always
+     * driven externally by Origami's own item_values[] each cycle, never something a payroll admin
+     * assigns locally (there's no per-employee manual-assignment path for a generic synced item),
+     * same "system-managed, not manually editable" precedent trip allowance's own seeded row already
+     * established (see PayrollEarningDeductionTypeModel::save()/delete()'s own is_sync_only guard).
+     * tax_treatment/tax_deduction_impact default to the exact same values these items already got
+     * BEFORE this row existed (taxable earning / before-tax deduction -- PayrollRunModel::
+     * recalculate()'s own tax-flag lookup treats "no matching catalog row" the same way), so creating
+     * the row is purely additive visibility/manageability, not a silent calculation change for any
+     * pull that already happened before this feature existed.
+     * @return int number of new catalog rows created
+     */
+    public function autoCreateMissingPedTypes(int $processRowId, int $compId, ?int $triggeredBy): int {
+        $stmt = $this->db->prepare("SELECT raw_payload FROM payroll_sync_processes WHERE id = :id AND comp_id = :comp_id");
+        $stmt->execute([':id' => $processRowId, ':comp_id' => $compId]);
+        $rawPayload = $stmt->fetchColumn();
+        if ($rawPayload === false) {
+            return 0;
+        }
+        $payload = json_decode((string)$rawPayload, true);
+        $itemMaster = is_array($payload['item_master'] ?? null) ? $payload['item_master'] : [];
+        if (empty($itemMaster)) {
+            return 0;
+        }
+
+        $stmtExisting = $this->db->prepare("SELECT item_code FROM `payroll_earning_deduction_types` WHERE comp_id = :comp_id");
+        $stmtExisting->execute([':comp_id' => $compId]);
+        $existingCodes = array_map('strtoupper', array_column($stmtExisting->fetchAll(PDO::FETCH_ASSOC), 'item_code'));
+
+        $insertStmt = $this->db->prepare("INSERT INTO `payroll_earning_deduction_types`
+                (comp_id, item_code, item_name_th, item_name_en, item_type, calculation_method,
+                 tax_treatment, tax_deduction_impact, calc_sso, calc_pf, is_sync_only, status, created_by)
+            VALUES (:comp_id, :item_code, :item_name_th, :item_name_en, :item_type, 'manual_entry',
+                 :tax_treatment, :tax_deduction_impact, 0, 0, 1, 'active', :created_by)");
+
+        $created = 0;
+        foreach ($itemMaster as $item) {
+            $itemCode = trim((string)($item['item_code'] ?? ''));
+            $itemName = trim((string)($item['item_name'] ?? ''));
+            $itemTypeRaw = strtoupper((string)($item['item_type'] ?? ''));
+            if ($itemCode === '' || $itemName === '' || !in_array($itemTypeRaw, ['INCOME', 'DEDUCTION'], true)) {
+                continue; // INFO-typed or malformed entries never get a catalog row -- see docblock.
+            }
+            if (SyncPayResolver::isKnownEventItemCode($itemCode)) {
+                continue; // already fully functional without one -- see docblock.
+            }
+            if (in_array(strtoupper($itemCode), $existingCodes, true)) {
+                continue; // this company already has a row for it (active, inactive, or soft-deleted).
+            }
+            $itemType = $itemTypeRaw === 'INCOME' ? 'earning' : 'deduction';
+            try {
+                $insertStmt->execute([
+                    ':comp_id' => $compId, ':item_code' => $itemCode, ':item_name_th' => $itemName, ':item_name_en' => $itemName,
+                    ':item_type' => $itemType, ':tax_treatment' => $itemType === 'earning' ? 'taxable' : null,
+                    ':tax_deduction_impact' => $itemType === 'deduction' ? 'before_tax' : null,
+                    ':created_by' => $triggeredBy,
+                ]);
+                $existingCodes[] = strtoupper($itemCode); // guards a duplicate item_code appearing twice in the same item_master array.
+                $created++;
+            } catch (PDOException $e) {
+                // Race with a concurrent pull, or a genuine constraint clash -- skip, don't fail the whole pull over one item.
+            }
+        }
+        return $created;
+    }
+
+    /**
      * Resolve-or-create for department/position/bank (per explicit request, 2026-08-19: "if it
      * doesn't exist yet, create it; if it already exists, just fetch its ID and use it" --
      * department, position, AND bank all get the same treatment). Department/position reuse the
@@ -1004,7 +1115,8 @@ class PayrollSyncModel {
     }
 
     private function applyOneEmployeeMasterFields(int $compId, int $employeeId, array $row, ?int $triggeredBy): bool {
-        $stmt = $this->db->prepare("SELECT id_card_no, tax_id_no, passport_no, bank_account_no, sso_no, spouse_id_card_no, key_version, employment_status, signature_path
+        $stmt = $this->db->prepare("SELECT id_card_no, tax_id_no, passport_no, bank_account_no, sso_no, spouse_id_card_no, key_version, employment_status, signature_path,
+                employment_date, sso_enrolled, sso_start_date
             FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
         $current = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1044,6 +1156,22 @@ class PayrollSyncModel {
         if (array_key_exists('deduct_sso', $row) && $row['deduct_sso'] !== null) {
             $set[] = "sso_enrolled = :sso_enrolled";
             $params[':sso_enrolled'] = (int)$row['deduct_sso'];
+        }
+
+        // SSO Start Date default (2026-08-30, explicit request: "วันที่เริ่มประกันสังคมถ้าเป็นค่าว่างให้
+        // Default เป็นวันที่เริ่มงานลงไปเลย") -- Origami's payload has no SSO-start-date field of its own
+        // (out of scope per PAYROLL_SYNC_API.md's own "Out of scope" section -- only the deduct/
+        // don't-deduct flag itself is sent), so `employees.sso_start_date` stays entirely
+        // receiver-owned. This only fills it in when it's genuinely still blank, using the
+        // employee's own on-file employment_date as the sensible default -- never overwrites a
+        // value HR already entered by hand, and never fires for an employee who isn't (or won't be,
+        // after this pull) SSO-enrolled at all.
+        $ssoEnrolledAfterThisPull = array_key_exists('deduct_sso', $row) && $row['deduct_sso'] !== null
+            ? (bool)$row['deduct_sso']
+            : !empty($current['sso_enrolled']);
+        if ($ssoEnrolledAfterThisPull && empty($current['sso_start_date']) && !empty($current['employment_date'])) {
+            $set[] = "sso_start_date = :sso_start_date";
+            $params[':sso_start_date'] = $current['employment_date'];
         }
 
         if (!empty($row['id_card_no'])) {

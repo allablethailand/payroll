@@ -142,11 +142,18 @@ class AnnualIncomeSummaryModel {
             $term = '%' . $filters['search'] . '%';
             array_push($params, $term, $term, $term, $term, $term);
         }
+        // 2026-08-30, explicit request: "ปรับให้มี Department team position เพิ่ม...ให้ Fixed Column
+        // ส่วนของข้อมูลพนักงาน ไว้" -- team/position joined alongside the existing department join,
+        // same LEFT JOIN pattern, so a report row is still complete even when one of these is unset.
         $stmtEmp = $this->db->prepare(
             "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.employee_status,
-                    dep.department_name_th, dep.department_name_en
+                    dep.department_name_th, dep.department_name_en,
+                    tm.team_name_th, tm.team_name_en,
+                    p.position_name_th, p.position_name_en
              FROM employees e
              LEFT JOIN structure_departments dep ON dep.id = e.department_id
+             LEFT JOIN structure_teams tm ON tm.id = e.team_id
+             LEFT JOIN structure_positions p ON p.id = e.position_id
              WHERE {$where}
              ORDER BY e.employee_no ASC"
         );
@@ -180,6 +187,10 @@ class AnnualIncomeSummaryModel {
                 'employee_status' => $emp['employee_status'],
                 'department_name_th' => $emp['department_name_th'],
                 'department_name_en' => $emp['department_name_en'],
+                'team_name_th' => $emp['team_name_th'],
+                'team_name_en' => $emp['team_name_en'],
+                'position_name_th' => $emp['position_name_th'],
+                'position_name_en' => $emp['position_name_en'],
                 'months' => $months,
                 'annual_gross' => $annualGross,
                 'annual_deduction' => $annualDeduction,
@@ -196,6 +207,49 @@ class AnnualIncomeSummaryModel {
             'employees' => $employees,
             'totals' => $totals,
         ];
+    }
+
+    /**
+     * 2026-08-30, explicit request: "ในแต่ละช่องถ้ามีข้อมูลให้สามารถกดดู Detail ได้ด้วยครับ" -- a month
+     * cell's own line-item breakdown (base salary + every earning/deduction/statutory item that
+     * made up that gross/deduction/net figure), backing a click-to-drill-down on the table. More
+     * than one run can genuinely land in the same calendar month (a regular run plus an off-cycle
+     * incentive run, say) -- returns one entry PER RUN found, not a single flattened total, so the
+     * modal can show "which run contributed what" rather than silently merging them.
+     */
+    public function cellDetail(int $compId, int $employeeId, int $year, int $month): array {
+        $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
+        $stmt = $this->db->prepare(
+            "SELECT d.base_salary_amount, d.earning_breakdown, d.deduction_breakdown, d.statutory_breakdown,
+                    d.gross_amount, d.total_deduction_amount, d.net_amount,
+                    r.id AS run_id, r.run_name, r.period_start_date, r.period_end_date, r.run_purpose
+             FROM payroll_run_details d
+             INNER JOIN payroll_runs r ON r.id = d.run_id
+             WHERE r.comp_id = ? AND d.employee_id = ? AND r.status = 'active' AND r.deleted_at IS NULL
+               AND r.state IN ({$placeholders})
+               AND YEAR(r.period_start_date) = ? AND MONTH(r.period_start_date) = ?
+             ORDER BY r.period_start_date ASC"
+        );
+        $stmt->execute(array_merge([$compId, $employeeId], self::ALLOWED_STATES, [$year, $month]));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $runs = [];
+        foreach ($rows as $row) {
+            $runs[] = [
+                'run_id' => (int)$row['run_id'],
+                'run_name' => $row['run_name'],
+                'run_purpose' => $row['run_purpose'],
+                'period_start_date' => $row['period_start_date'],
+                'period_end_date' => $row['period_end_date'],
+                'base_salary_amount' => (float)$row['base_salary_amount'],
+                'earning_lines' => json_decode((string)$row['earning_breakdown'], true) ?? [],
+                'deduction_lines' => json_decode((string)$row['deduction_breakdown'], true) ?? [],
+                'statutory_lines' => json_decode((string)$row['statutory_breakdown'], true) ?? [],
+                'gross_amount' => (float)$row['gross_amount'],
+                'total_deduction_amount' => (float)$row['total_deduction_amount'],
+                'net_amount' => (float)$row['net_amount'],
+            ];
+        }
+        return $runs;
     }
 
     private function emptyTotals(array $monthDefs): array {

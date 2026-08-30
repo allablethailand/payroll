@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../ExcelRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../export/th/PndOneKorExporter.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
  * ภ.ง.ด.1ก annual summary — aggregates TH_PIT withheld per employee across every payroll run
@@ -54,17 +55,22 @@ class PndOneKorSummaryReport implements ReportGeneratorInterface {
      * @param array $context { comp_id: int, year: int (พ.ศ., Thai Buddhist year) }
      */
     public function generate(array $context, string $format): array {
+        // 2026-08-30, real bug found and fixed: this method was the last holdout in the Reports
+        // module still throwing a plain InvalidArgumentException/RuntimeException -- every sibling
+        // report (Kor20KorReport, PaymentVoucherReport, etc.) already migrated to LocalizedException
+        // for the SAME 4 validations, so the exact same error_key names are reused here rather than
+        // inventing new ones.
         $compId = (int)($context['comp_id'] ?? 0);
         if ($compId <= 0) {
-            throw new InvalidArgumentException('comp_id is required.');
+            throw new LocalizedException('comp_id is required.', 'comp_id_required');
         }
         if (!isset($context['year']) || !is_numeric($context['year'])) {
-            throw new InvalidArgumentException('year (พ.ศ.) is required and must be numeric.');
+            throw new LocalizedException('year (พ.ศ.) is required and must be numeric.', 'year_required');
         }
         $yearBe = (int)$context['year'];
         $currentYearBe = (int)date('Y') + 543;
         if ($yearBe < 2500 || $yearBe > $currentYearBe + 1) {
-            throw new InvalidArgumentException("year must be a valid Buddhist Era year (2500–{$currentYearBe}).");
+            throw new LocalizedException("year must be a valid Buddhist Era year (2500–{$currentYearBe}).", 'year_out_of_range', ['min' => 2500, 'max' => $currentYearBe]);
         }
         $yearAd = $yearBe - 543;
 
@@ -72,7 +78,7 @@ class PndOneKorSummaryReport implements ReportGeneratorInterface {
         $runs = $dataModel->getRunsInYear($compId, $yearAd, self::ALLOWED_STATES);
         if (empty($runs)) {
             $allowedLabel = implode('/', self::ALLOWED_STATES);
-            throw new RuntimeException("No payroll runs in state {$allowedLabel} were found for B.E. {$yearBe}.");
+            throw new LocalizedException("No payroll runs in state {$allowedLabel} were found for B.E. {$yearBe}.", 'no_runs_in_state_for_year', ['states' => self::ALLOWED_STATES, 'year' => $yearBe]);
         }
 
         $employees = []; // keyed by employee_id, accumulated across runs

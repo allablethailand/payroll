@@ -110,6 +110,34 @@ try {
     checkTrue('delete succeeds', $del['status']);
     check('deleted rate no longer retrievable', $model->otRateGet((int)$id1, $compId), null);
 
+    echo "=== 2026-08-30: otRatePreview() -- computes against DRAFT (unsaved) form values ===\n";
+    $rowCountBeforePreview = (int)$pdo->query("SELECT COUNT(*) FROM ot_rates WHERE comp_id = {$compId}")->fetchColumn();
+    // Hand-verified numbers, same fixture SyncPayResolver's own OT tests already confirmed correct
+    // (tests/sync_pay_resolver_test.php's "OT: weekday scope" / "flat_amount" sections) -- this
+    // proves the preview uses the IDENTICAL formula, not a second reimplementation.
+    $multiplierPreview = $model->otRatePreview(['calculation_method' => 'multiplier', 'calculation_base' => 'hourly', 'multiplier_rate' => 1.5], 13500.0, 1.5);
+    checkTrue('multiplier/hourly preview succeeds' . (empty($multiplierPreview['status']) ? " ({$multiplierPreview['message']})" : ''), $multiplierPreview['status']);
+    check('multiplier/hourly: 13500/30/8=56.25/hr * 1.5 * 1.5h = 126.56', $multiplierPreview['amount'], 126.56);
+
+    $flatHourlyPreview = $model->otRatePreview(['calculation_method' => 'flat_amount', 'calculation_base' => 'hourly', 'flat_amount_rate' => 40], 30000.0, 3.0);
+    checkTrue('flat_amount/hourly preview succeeds', $flatHourlyPreview['status']);
+    check('flat_amount/hourly: 40.00 * 3h = 120.00 (ignores salary-derived rate)', $flatHourlyPreview['amount'], 120.0);
+
+    $flatDailyPreview = $model->otRatePreview(['calculation_method' => 'flat_amount', 'calculation_base' => 'daily', 'flat_amount_rate' => 500], 30000.0, 4.0);
+    checkTrue('flat_amount/daily preview succeeds', $flatDailyPreview['status']);
+    check('flat_amount/daily: 500.00 * (4h/8h=0.5) = 250.00', $flatDailyPreview['amount'], 250.0);
+    check('flat_amount/daily formula flags is_daily_base', $flatDailyPreview['formula']['is_daily_base'], true);
+
+    checkTrue('otRatePreview() defaults to the 30000/2h sample when none is passed', $model->otRatePreview(['calculation_method' => 'multiplier', 'calculation_base' => 'hourly', 'multiplier_rate' => 1.5])['status']);
+    check('default sample: 30000/30/8=125/hr * 1.5 * 2h = 375.00', $model->otRatePreview(['calculation_method' => 'multiplier', 'calculation_base' => 'hourly', 'multiplier_rate' => 1.5])['amount'], 375.0);
+
+    check('otRatePreview() rejects flat_amount with no flat_amount_rate', $model->otRatePreview(['calculation_method' => 'flat_amount', 'calculation_base' => 'hourly'])['status'], false);
+    check('otRatePreview() rejects a non-positive sample base salary', $model->otRatePreview(['calculation_method' => 'multiplier', 'multiplier_rate' => 1.5], 0.0, 2.0)['status'], false);
+    check('otRatePreview() rejects negative sample hours', $model->otRatePreview(['calculation_method' => 'multiplier', 'multiplier_rate' => 1.5], 30000.0, -1.0)['status'], false);
+
+    check('otRatePreview() never actually writes a row (ot_rates row count for this company unchanged by every call above)',
+        (int)$pdo->query("SELECT COUNT(*) FROM ot_rates WHERE comp_id = {$compId}")->fetchColumn(), $rowCountBeforePreview);
+
 } finally {
     $pdo->rollBack();
 }

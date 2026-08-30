@@ -53,6 +53,26 @@ if ($origamiBase !== '' && $switchToken !== '' && $appKey !== '') {
     $destination = $origamiBase . '/api/oauth/v2/switch?token=' . urlencode($switchToken) . '&app=' . urlencode($appKey);
 }
 
+// 2026-08-29, explicit follow-up request: "การเก็บประวัติเก็บตอน Switch App มาที่ Payroll และ Logout คือ
+// ตอน Switch ออกจาก Payroll ไปที่อื่น แต่ถ้าไม่มีก็แสดงว่าไม่ Logout" -- this IS "leaving Payroll" (see
+// this file's own top-of-file docblock: switching away via the hub is the only real "leaving"
+// action this app has), so it's the logout_at capture point for employee_login_logs (see that
+// column's own migration comment). Reads login_log_id from THIS session (never trusted from a
+// request param) before the teardown below wipes it -- must run BEFORE $_SESSION = [] a few lines
+// down. Best-effort, wrapped in its own try/catch: a DB hiccup here must never block a real logout.
+require_once __DIR__ . '/../app/core/Database.php';
+require_once __DIR__ . '/../app/models/EmployeeLoginLogModel.php';
+try {
+    $loginLogId = (int)($_SESSION['login_log_id'] ?? 0);
+    $switchEmployeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+    $switchCompanyId = (int)($_SESSION['user']['company_id'] ?? 0);
+    if ($loginLogId > 0 && $switchEmployeeId > 0 && $switchCompanyId > 0) {
+        (new EmployeeLoginLogModel())->recordLogout($loginLogId, $switchCompanyId, $switchEmployeeId);
+    }
+} catch (Throwable $e) {
+    // Best-effort -- a logout-timestamp failure must never block the actual session teardown/switch.
+}
+
 // Full session teardown -- clear the data, expire the cookie, destroy the session store entry.
 // Same three-step pattern PHP's own session_destroy() manual page documents for a real logout
 // (session_destroy() alone does not expire the browser's cookie).

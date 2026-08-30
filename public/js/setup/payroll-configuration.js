@@ -222,30 +222,34 @@ function applyCalculationMethodFields(method) {
     $('#fixed_amount').toggleClass('required', method === 'fixed_amount');
     $('#percent_rate').toggleClass('required', method === 'percent_of_base_salary');
 }
+/** 2026-08-30, explicit request: "ตรง ประเภท * น่าจะตัดออก...หรือเปลี่ยนเป็นแค่แสดงคำเฉยๆ เป็นสีเขียวกับสีแดง
+ *  เป็นหัวข้อว่ากำลังตั้งค่าอะไร" -- replaces the old checked+disabled radio-group dance (item_type was
+ *  ALREADY locked before the modal opened, from whichever tab's Add button was clicked -- the radio
+ *  group only ever LOOKED editable) with a single hidden input + a colored badge that IS the modal's
+ *  own title now. */
+function applyPedTypeModalBadge(itemType) {
+    $('#ped_item_type').val(itemType);
+    const isEarning = itemType === 'earning';
+    $('#pedTypeModalBadge')
+        .removeClass('bg-success-subtle text-success bg-danger-subtle text-danger')
+        .addClass(isEarning ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger')
+        .text(isEarning ? (langData['earning_singular'] || 'Income') : (langData['deduction_singular'] || 'Deduction'));
+}
 function resetPedTypeForm(itemType) {
     $('#pedTypeForm')[0].reset();
     $('#ped_type_id').val('');
-    $('input[name="item_type"]').prop('disabled', false);
-    $(`input[name="item_type"][value="${itemType}"]`).prop('checked', true);
-    $('input[name="item_type"]').prop('disabled', true);
     $('.is-invalid').removeClass('is-invalid');
     $('#calculation_method').val('').trigger('change');
     $('#tax_treatment').val('').trigger('change');
     $('#tax_deduction_impact').val('').trigger('change');
     $('#statutory_report_code').val('').trigger('change');
-    $('#country_code').val('').trigger('change');
     $('#ped_status').val('active').trigger('change');
     applyItemTypeFields(itemType);
     applyCalculationMethodFields('');
-    const titleText = itemType === 'earning' 
-        ? (langData['earning_type'] || 'Income Type') 
-        : (langData['deduction_type'] || 'Deduction Type');
-    $('#pedTypeModalLabel').html(`<i class="fa-solid fa-pen-to-square me-2"></i>${titleText}`);
+    applyPedTypeModalBadge(itemType);
 }
 function populatePedTypeForm(row) {
     $('#ped_type_id').val(row.id);
-    $(`input[name="item_type"][value="${row.item_type}"]`).prop('checked', true);
-    $('input[name="item_type"]').prop('disabled', true);
     $('#item_code').val(row.item_code);
     $('#item_name_en').val(row.item_name_en);
     $('#item_name_th').val(row.item_name_th);
@@ -257,7 +261,6 @@ function populatePedTypeForm(row) {
     $('#statutory_report_code').val(row.statutory_report_code || '').trigger('change');
     $('#calc_sso').prop('checked', Number(row.calc_sso) === 1);
     $('#calc_pf').prop('checked', Number(row.calc_pf) === 1);
-    $('#country_code').val(row.country_code || '').trigger('change');
     applyItemTypeFields(row.item_type, true);
     if (row.source_event_code) {
         const label = (currentLang === 'th' ? row.source_event_name_th : row.source_event_name_en) || row.source_event_code;
@@ -268,10 +271,7 @@ function populatePedTypeForm(row) {
     }
     $('#ped_status').val(row.status || 'active').trigger('change');
     applyCalculationMethodFields(row.calculation_method);
-    const titleText = row.item_type === 'earning' 
-        ? (langData['earning_type'] || 'Income Type') 
-        : (langData['deduction_type'] || 'Deduction Type');
-    $('#pedTypeModalLabel').html(`<i class="fa-solid fa-pen-to-square me-2"></i>${titleText}`);
+    applyPedTypeModalBadge(row.item_type);
 }
 function validatePedTypeForm() {
     let firstInvalid = null;
@@ -291,7 +291,7 @@ function validatePedTypeForm() {
 function collectPedTypeFormData() {
     return {
         id: $('#ped_type_id').val() || undefined,
-        item_type: $('input[name="item_type"]:checked').val(),
+        item_type: $('#ped_item_type').val(),
         item_code: $('#item_code').val().trim(),
         item_name_en: $('#item_name_en').val().trim(),
         item_name_th: $('#item_name_th').val().trim(),
@@ -303,7 +303,6 @@ function collectPedTypeFormData() {
         statutory_report_code: $('#statutory_report_code').val(),
         calc_sso: $('#calc_sso').is(':checked'),
         calc_pf: $('#calc_pf').is(':checked'),
-        country_code: $('#country_code').val(),
         source_event_code: $('#source_event_code').val(),
         status: $('#ped_status').val(),
     };
@@ -319,7 +318,6 @@ $(document).ready(function () {
         initSelect2('#statutory_report_code', { mode: 'static', allowClear: true });
         initSelect2('#source_event_code', { mode: 'ajax', allowClear: true });
         initSelect2('#ped_status', { mode: 'static' });
-        initSelect2('#country_code', { mode: 'ajax' });
         initSelect2('#payroll_frequency', { mode: 'static' });
         initSelect2('#cutoff_day_of_week', { mode: 'static' });
         initSelect2('#payment_day_of_week', { mode: 'static' });
@@ -341,7 +339,71 @@ $(document).ready(function () {
         if (tabId === 'attendance-deduction-tab') {
             loadAttendanceDeductionCards();
         }
+        if (tabId === 'policies-tab') {
+            loadPayrollPolicies();
+        }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+    });
+});
+
+/* ==================== PAYROLL POLICIES (2026-08-30, new tab) ==================== */
+function applyPolicyPayBasisFields(payBasis) {
+    $('#policyPayBasisSubOptions').toggleClass('d-none', payBasis !== 'schedule_based');
+}
+$(document).on('change', '#policyPayBasis', function () {
+    applyPolicyPayBasisFields($(this).val());
+});
+function loadPayrollPolicies() {
+    $.get(`${BASE_URL}/api/payroll-policy.get`, function (res) {
+        if (res && res.status && res.data) {
+            const d = res.data;
+            $('#policyReopenWindowDays').val(d.reopen_window_days !== null && d.reopen_window_days !== undefined ? d.reopen_window_days : '');
+            $('#policyProbationPeriodDays').val(d.probation_period_days !== null && d.probation_period_days !== undefined ? d.probation_period_days : '');
+            $('#policyProbationBaseSalaryRatio').val(d.probation_base_salary_ratio !== null && d.probation_base_salary_ratio !== undefined ? d.probation_base_salary_ratio : '');
+            $('#policyProbationDeferPvd').prop('checked', !!d.probation_defer_pvd);
+            $('#policyProbationDeferRecurringEarning').prop('checked', !!d.probation_defer_recurring_earning);
+            const payBasis = d.pay_basis || 'full_month';
+            $('#policyPayBasis').val(payBasis).trigger('change');
+            $('#policyPayBasisDeductHolidays').prop('checked', !!d.pay_basis_deduct_holidays);
+            $('#policyPayBasisDeductLeave').prop('checked', !!d.pay_basis_deduct_leave);
+            applyPolicyPayBasisFields(payBasis);
+        }
+    });
+}
+// ONE shared Save for the whole tab (reads every card's fields together) -- see the view's own
+// comment on why a per-card save would silently reset the OTHER card's fields.
+$(document).on('click', '#btnSavePayrollPolicies', function () {
+    const $btn = $(this);
+    const reopenDaysRaw = $('#policyReopenWindowDays').val();
+    const probationDaysRaw = $('#policyProbationPeriodDays').val();
+    const probationRatioRaw = $('#policyProbationBaseSalaryRatio').val();
+    $btn.prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-policy.save`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            reopen_window_days: reopenDaysRaw === '' ? null : reopenDaysRaw,
+            probation_period_days: probationDaysRaw === '' ? null : probationDaysRaw,
+            probation_base_salary_ratio: probationRatioRaw === '' ? null : probationRatioRaw,
+            probation_defer_pvd: $('#policyProbationDeferPvd').is(':checked'),
+            probation_defer_recurring_earning: $('#policyProbationDeferRecurringEarning').is(':checked'),
+            pay_basis: $('#policyPayBasis').val() || 'full_month',
+            pay_basis_deduct_holidays: $('#policyPayBasisDeductHolidays').is(':checked'),
+            pay_basis_deduct_leave: $('#policyPayBasisDeductLeave').is(':checked'),
+        }),
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (res && res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+            } else {
+                showError((res && res.message) || (langData['save_failed'] || 'Save failed'));
+            }
+        },
+        error: function () {
+            $btn.prop('disabled', false);
+            showError(langData['save_failed'] || 'Save failed');
+        },
     });
 });
 $(document).on('change', '#calculation_method', function () {
@@ -792,16 +854,22 @@ function initPayrollCycleUI() {
 // attendance_bonus_schemes/attendance_bonus_ledger tables themselves are now fully removed
 // too, not left in place -- see database/migrations/2026-08-29_drop_attendance_bonus_tables.sql.
 
-/* ==================== ATTENDANCE DEDUCTION RULES (Late / Absent / Unpaid Leave) ====================
+/* ==================== ATTENDANCE DEDUCTION RULES (Late / Absent / Unpaid Leave / Leave Pending) ====================
  * 2026-08-21: moved from a button+shared-modal-with-pill-switcher on the Deductions tab to its own
- * tab (#attendance-deduction-pane) showing all 3 events as cards -- each card's "Configure" button
- * opens this modal already scoped to that one event (openAttendanceDeductionRuleModal(eventCode)),
- * so there's no in-modal event picker anymore. currentAttendanceRules caches all 3 events' rules
- * (refetched on every card-tab-show and every modal-open, cheap since it's a single GET returning
- * all 3 at once -- same "always pull fresh" spirit as the DataTable Edit-button convention
- * elsewhere in this codebase, just applied to a fixed 3-item list instead). currentAttendanceBrackets
- * is the source-of-truth array for the currently-open event's bracket editor -- same "rebuild rows
- * from an array" idiom used elsewhere in this codebase (approval-workflow.js's step editor,
+ * tab (#attendance-deduction-pane) showing all events as cards, later a table.
+ *
+ * 2026-08-30, multi-scope rollout ("ในกรณีที่มีการคำนวณประเภทเดียวกันแต่หลายทีม ให้เพิ่มปุ่ม Clone ขึ้นมา")
+ * -- currentAttendanceRules changed shape from {eventCode: row} (one row per event) to
+ * {eventCode: [row, ...]} (a LIST of rule variants per event -- the company-wide default always
+ * first, index 0, followed by any team/department-scoped overrides), matching
+ * AttendanceDeductionRuleModel::ruleGetAll()'s own new return shape 1:1. Every function below that
+ * used to look a row up by eventCode alone now takes the specific ROW OBJECT (or an explicit
+ * variantId, null = the default) -- see findAttendanceVariant(). Clone is NOT a separate backend
+ * endpoint -- it's a pure client-side convenience that opens the same Configure modal pre-filled
+ * with an existing row's method/rate/brackets, but with id AND scope left BLANK, forcing the admin
+ * to pick a new team/department before Save creates a genuinely new row (ruleSave() with no `id` in
+ * the payload always inserts). currentAttendanceBrackets is still the source-of-truth array for the
+ * currently-open row's bracket editor -- unchanged idiom (approval-workflow.js's step editor,
  * payslip-template.js's field list).
  *
  * rate_unit (2026-08-21, "นาทีละกี่บาท ชั่วโมงละกี่บาท") replaces the old fixed-per-event unit
@@ -810,7 +878,29 @@ function initPayrollCycleUI() {
  */
 let currentAttendanceRules = {};
 let currentAttendanceEvent = 'late';
+let currentAttendanceEditingId = null; // null = creating a NEW variant (blank/cloned form); a real id = editing that existing row.
 let currentAttendanceBrackets = [];
+const ATTENDANCE_EVENT_ICON = {
+    late: { icon: 'fa-user-clock', rt: 'rt-1' },
+    absent: { icon: 'fa-user-slash', rt: 'rt-4' },
+    unpaid_leave: { icon: 'fa-calendar-xmark', rt: 'rt-3' },
+    leave_pending: { icon: 'fa-hourglass-half', rt: 'rt-5' },
+};
+/** Finds one variant row out of currentAttendanceRules[eventCode] -- null id = the company-wide default (always index 0, but looked up by scope_type===null rather than assumed-position for clarity). */
+function findAttendanceVariant(eventCode, id) {
+    const rows = currentAttendanceRules[eventCode] || [];
+    if (id === null || id === undefined) {
+        return rows.find(r => r.scope_type === null) || rows[0] || null;
+    }
+    return rows.find(r => String(r.id) === String(id)) || null;
+}
+function attendanceScopeBadgeHtml(row) {
+    if (!row || row.scope_type === null) {
+        return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_scope_default'] || 'Company-wide Default'}</span>`;
+    }
+    const scopeLabel = row.scope_type === 'team' ? (langData['team'] || 'Team') : (langData['department'] || 'Department');
+    return `<span class="badge bg-info-subtle text-info">${scopeLabel}: ${escapeHtmlPc(row.scope_label || '?')}</span>`;
+}
 
 const ATTENDANCE_DEFAULT_RATE_UNIT = { late: 'minute', absent: 'day', unpaid_leave: 'day', leave_pending: 'day' };
 
@@ -874,19 +964,21 @@ function renderAttendanceBracketRows() {
 }
 function updateAttendanceBracketField(index, field, value) {
     currentAttendanceBrackets[index][field] = value === '' ? null : value;
+    $('#attendanceCalcPreviewResult').addClass('d-none'); // bracket edits invalidate any shown preview too
 }
 function addAttendanceBracketRow() {
     currentAttendanceBrackets.push({ min_units: null, max_units: null, deduction_amount: null });
     renderAttendanceBracketRows();
+    $('#attendanceCalcPreviewResult').addClass('d-none');
 }
 function removeAttendanceBracketRow(index) {
     currentAttendanceBrackets.splice(index, 1);
     renderAttendanceBracketRows();
+    $('#attendanceCalcPreviewResult').addClass('d-none');
 }
 
-function renderAttendanceDeductionEvent(eventCode) {
-    currentAttendanceEvent = eventCode;
-    const r = currentAttendanceRules[eventCode] || { method_code: 'percent_of_rate', rate_unit: ATTENDANCE_DEFAULT_RATE_UNIT[eventCode], rate_per_unit: null, multiplier_rate: '1.00', method_name_th: '', method_name_en: '', brackets: [] };
+function renderAttendanceDeductionModalFields(eventCode, row) {
+    const r = row || { method_code: 'percent_of_rate', rate_unit: ATTENDANCE_DEFAULT_RATE_UNIT[eventCode], rate_per_unit: null, multiplier_rate: '1.00', method_name_th: '', method_name_en: '', brackets: [] };
     const $method = $('#attendanceDeductionMethod');
     const methodLabel = (currentLang === 'th' ? r.method_name_th : r.method_name_en) || langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate';
     $method.empty().append(new Option(methodLabel, r.method_code, true, true)).trigger('change.select2');
@@ -897,35 +989,227 @@ function renderAttendanceDeductionEvent(eventCode) {
     currentAttendanceBrackets = (r.brackets || []).map(b => ({ min_units: b.min_units, max_units: b.max_units, deduction_amount: b.deduction_amount }));
     renderAttendanceBracketRows();
 }
+function applyAttendanceScopeTargetFields(scopeType) {
+    // 2026-08-30, real bug found and fixed (explicit report: "เลือกทีม แต่ select ของ Department ขึ้นมา
+    // ด้วย") -- select2 renders its own widget as a separate sibling DOM node, so toggling .d-none on
+    // the raw <select> (what this used to do) never actually hid it. Toggles the WRAPPING <div> now
+    // instead -- see modals.php's own comment at #attendanceRuleScopeTeamWrap/-DepartmentWrap.
+    $('#attendanceRuleScopeTargetLabel').text(scopeType === 'department' ? (langData['department'] || 'Department') : (langData['team'] || 'Team'));
+    $('#attendanceRuleScopeTeamWrap').toggleClass('d-none', scopeType !== 'team');
+    $('#attendanceRuleScopeDepartmentWrap').toggleClass('d-none', scopeType !== 'department');
+}
+$(document).on('change', '#attendanceRuleScopeType', function () {
+    applyAttendanceScopeTargetFields($(this).val());
+});
+function attendanceScopeBadgeParts(row) {
+    if (!row || row.scope_type === null || row.scope_type === undefined) {
+        return { cls: 'badge bg-secondary-subtle text-secondary', text: langData['attendance_deduction_scope_default'] || 'Company-wide Default' };
+    }
+    const scopeLabel = row.scope_type === 'team' ? (langData['team'] || 'Team') : (langData['department'] || 'Department');
+    return { cls: 'badge bg-info-subtle text-info', text: `${scopeLabel}: ${row.scope_label || '?'}` };
+}
+function attendanceScopeBadgeHtml(row) {
+    const parts = attendanceScopeBadgeParts(row);
+    return `<span class="${parts.cls}">${escapeHtmlPc(parts.text)}</span>`;
+}
 
-function openAttendanceDeductionRuleModal(eventCode) {
-    // #attendanceRateUnit is select2-static -- already initialized once by app.js's global
-    // `.select2-static` sweep on page load (2026-08-21 bug fix: re-running initSelect2 static mode
-    // here on every open re-synced its `data` array into real <option> elements each time without
-    // clearing the previous set -- select2('destroy') tears down the widget but doesn't strip
+/**
+ * 2026-08-30, multi-scope rollout. `variantId`: null = edit the company-wide default (real row if one
+ * exists, else the virtual not-yet-persisted one) -- scope is fixed, shown as a read-only badge.
+ * A number = edit that specific EXISTING scoped row by id -- same read-only-scope treatment, just a
+ * different (team/department) badge. The string 'new' = create a brand-new scoped variant -- scope
+ * picker shown, required, nothing pre-filled unless `cloneFromRow` is passed (see
+ * cloneAttendanceDeductionRule() below), in which case method/rate/brackets/label are copied from it
+ * as a starting point (label gets a " (Copy)" suffix) while id/scope stay blank.
+ */
+let currentAttendanceEditingMode = 'default'; // 'default' | 'existing_scoped' | 'new'
+let currentAttendanceEditingRow = null;
+function openAttendanceDeductionRuleModal(eventCode, variantId, cloneFromRow) {
+    // #attendanceRateUnit/#attendanceRuleScopeType are select2-static -- already initialized once by
+    // app.js's global `.select2-static` sweep on page load (2026-08-21 bug fix: re-running initSelect2
+    // static mode here on every open re-synced its `data` array into real <option> elements each time
+    // without clearing the previous set -- select2('destroy') tears down the widget but doesn't strip
     // options it added, so the dropdown showed every option duplicated after the modal was opened
-    // once. #attendanceDeductionMethod is select2-remote/ajax mode instead, which doesn't upfront-
-    // populate <option> elements this way, so re-initializing it per-open (unchanged below) is safe.
+    // once). #attendanceDeductionMethod/#attendanceRuleScopeTeamId/#attendanceRuleScopeDepartmentId
+    // are select2-remote/ajax mode instead, which doesn't upfront-populate <option> elements this way,
+    // so re-initializing them per-open (unchanged below) is safe.
     initSelect2('#attendanceDeductionMethod', { mode: 'ajax' });
+    initSelect2('#attendanceRuleScopeTeamId', { mode: 'ajax' });
+    initSelect2('#attendanceRuleScopeDepartmentId', { mode: 'ajax' });
     $.ajax({
         url: `${BASE_URL}/api/attendance-deduction-rule.get-all`, method: 'GET', dataType: 'json',
         success: function (res) {
             if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
             currentAttendanceRules = res.data;
-            renderAttendanceDeductionEvent(eventCode);
-            $('#attendanceDeductionRuleModalEvent').text(attendanceEventLabel(eventCode));
+            currentAttendanceEvent = eventCode;
+
+            if (variantId === 'new') {
+                currentAttendanceEditingMode = 'new';
+                currentAttendanceEditingRow = null;
+            } else {
+                const row = findAttendanceVariant(eventCode, variantId);
+                currentAttendanceEditingMode = (row && row.scope_type !== null && row.scope_type !== undefined) ? 'existing_scoped' : 'default';
+                currentAttendanceEditingRow = row;
+            }
+
+            const fieldsSource = currentAttendanceEditingMode === 'new' ? (cloneFromRow || null) : currentAttendanceEditingRow;
+            renderAttendanceDeductionModalFields(eventCode, fieldsSource);
+            $('#attendanceRuleLabel').val(
+                currentAttendanceEditingMode === 'new'
+                    ? (cloneFromRow && cloneFromRow.label ? cloneFromRow.label + ' (Copy)' : '')
+                    : (currentAttendanceEditingRow ? (currentAttendanceEditingRow.label || '') : '')
+            );
+
+            if (currentAttendanceEditingMode === 'new') {
+                $('#attendanceRuleScopeBadgeWrapper').addClass('d-none');
+                $('#attendanceRuleScopePickerWrapper').removeClass('d-none');
+                $('#attendanceRuleScopeType').val('team').trigger('change');
+                $('#attendanceRuleScopeTeamId').val(null).trigger('change');
+                $('#attendanceRuleScopeDepartmentId').val(null).trigger('change');
+                applyAttendanceScopeTargetFields('team');
+            } else {
+                $('#attendanceRuleScopePickerWrapper').addClass('d-none');
+                $('#attendanceRuleScopeBadgeWrapper').removeClass('d-none');
+                const parts = attendanceScopeBadgeParts(currentAttendanceEditingRow);
+                $('#attendanceRuleScopeBadge').attr('class', parts.cls).text(parts.text);
+            }
+
+            const modeSuffix = currentAttendanceEditingMode === 'new' ? ` (${cloneFromRow ? (langData['clone'] || 'Clone') : (langData['add'] || 'Add')})` : '';
+            $('#attendanceDeductionRuleModalEvent').text(attendanceEventLabel(eventCode) + modeSuffix);
+            // Calculation Preview: reset to the default sample every time the modal opens for a
+            // (possibly different) event, and hide any stale result from a previous open.
+            $('#attendanceCalcPreviewBaseSalary').val(30000);
+            $('#attendanceCalcPreviewMinutes').val(30);
+            $('#attendanceCalcPreviewResult').addClass('d-none').empty();
+            const minutesLabelKey = eventCode === 'late' ? 'calc_preview_sample_minutes_late' : 'calc_preview_sample_minutes_other';
+            $('#attendanceCalcPreviewMinutesLabel').text(langData[minutesLabelKey] || (eventCode === 'late' ? 'Sample Minutes Late' : 'Sample Minutes'));
             new bootstrap.Modal(document.getElementById('attendanceDeductionRuleModal')).show();
         },
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
     });
 }
+/* ==================== Calculation Preview (2026-08-30, Attendance Deduction Rule modal) ====================
+ * "อยากให้เพิ่มปุ่มแสดงตัวอย่างการคำนวณจากการตั้งค่าที่เลือก...ก็อยากให้มี Area แสดงตัวอย่างการคำนวณครับ" --
+ * reads whatever is CURRENTLY in the form (not yet saved) and posts it to
+ * api/attendance-deduction-rule.preview, which runs the exact same formula real payroll uses (see
+ * AttendanceDeductionRuleModel::previewCalculation()'s own docblock) against an editable sample
+ * scenario. Intended as the first of several forms this same .calc-preview-box pattern gets applied
+ * to (see style.css's own comment on that class). */
+function attendanceCalcPreviewFormulaStepsHtml(formula) {
+    if (!formula) return '';
+    const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (formula.type === 'attendance_flat') {
+        return `<div class="calc-preview-step">${(langData['calc_preview_step_quantity'] || 'Quantity in {unit}').replace('{unit}', attendanceRateUnitShortLabel(formula.rate_unit))}: <code>${formula.minutes} ${langData['minutes_short'] || 'min'} = ${fmt(formula.quantity_in_rate_unit)} ${attendanceRateUnitShortLabel(formula.rate_unit)}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_rate'] || 'Rate'}: <code>${fmt(formula.rate_per_unit)}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_formula'] || 'Formula'}: <code>${fmt(formula.rate_per_unit)} &times; ${fmt(formula.quantity_in_rate_unit)} = ${fmt(formula.result)}</code></div>`;
+    }
+    if (formula.type === 'attendance_bracket') {
+        const maxLabel = formula.bracket_max === null || formula.bracket_max === undefined ? (langData['no_limit'] || 'No limit') : fmt(formula.bracket_max);
+        return `<div class="calc-preview-step">${(langData['calc_preview_step_quantity'] || 'Quantity in {unit}').replace('{unit}', attendanceRateUnitShortLabel(formula.rate_unit))}: <code>${formula.minutes} ${langData['minutes_short'] || 'min'} = ${fmt(formula.quantity_in_rate_unit)} ${attendanceRateUnitShortLabel(formula.rate_unit)}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_bracket_matched'] || 'Matched bracket'}: <code>${fmt(formula.bracket_min)} - ${maxLabel}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_formula'] || 'Formula'}: <code>${fmt(formula.result)}</code></div>`;
+    }
+    if (formula.type === 'attendance_percent') {
+        return `<div class="calc-preview-step">${langData['calc_preview_step_hourly_rate'] || 'Sample hourly rate'}: <code>${fmt(formula.hourly_rate)}</code></div>
+            <div class="calc-preview-step">${langData['calc_preview_step_formula'] || 'Formula'}: <code>(${fmt(formula.hourly_rate)} &divide; 60) &times; ${formula.minutes} &times; ${formula.multiplier} = ${fmt(formula.result)}</code></div>`;
+    }
+    return '';
+}
+function attendanceRateUnitShortLabel(unit) {
+    return { minute: langData['unit_noun_minute'] || 'minute(s)', hour: langData['unit_noun_hour'] || 'hour(s)', day: langData['unit_noun_day'] || 'day(s)' }[unit] || unit;
+}
+function collectAttendanceDeductionDraftForPreview() {
+    const method = $('#attendanceDeductionMethod').val();
+    const payload = { method_code: method, rate_unit: $('#attendanceRateUnit').val() || 'minute' };
+    if (method === 'flat_amount') {
+        payload.rate_per_unit = parseFloat($('#attendanceRatePerUnit').val()) || 0;
+    } else if (method === 'percent_of_rate') {
+        payload.multiplier_rate = parseFloat($('#attendanceMultiplierRate').val()) || 1.00;
+    } else if (method === 'tiered_bracket') {
+        payload.brackets = currentAttendanceBrackets.map(b => ({
+            min_units: parseInt(b.min_units) || 0,
+            max_units: (b.max_units === null || b.max_units === '') ? null : parseInt(b.max_units),
+            deduction_amount: parseFloat(b.deduction_amount) || 0
+        }));
+    }
+    return payload;
+}
+$(document).on('click', '#btnAttendanceCalcPreview', function () {
+    const method = $('#attendanceDeductionMethod').val();
+    if (!method) {
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    const payload = collectAttendanceDeductionDraftForPreview();
+    payload.sample_base_salary = parseFloat($('#attendanceCalcPreviewBaseSalary').val()) || 30000;
+    payload.sample_minutes = parseFloat($('#attendanceCalcPreviewMinutes').val());
+    if (payload.sample_minutes === '' || isNaN(payload.sample_minutes)) payload.sample_minutes = 0;
+    const $btn = $(this).prop('disabled', true);
+    const $result = $('#attendanceCalcPreviewResult');
+    $.ajax({
+        url: `${BASE_URL}/api/attendance-deduction-rule.preview`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            const amount = Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            $result.removeClass('d-none').html(
+                `<div class="calc-preview-amount mb-1">${langData['calc_preview_result_label'] || 'Result'}: ${amount}</div>` +
+                attendanceCalcPreviewFormulaStepsHtml(res.formula)
+            );
+        },
+        error: function () {
+            $btn.prop('disabled', false);
+            showWarning(langData['save_failed'] || 'An error occurred while calculating the preview.');
+        }
+    });
+});
+// Any change to the form invalidates the shown preview -- re-run explicitly via the button rather
+// than silently going stale (matches this feature's own "ปุ่มแสดงตัวอย่าง" framing -- a button, not a
+// fully-live area) but hide the now-outdated result so it's never mistaken for current.
+$(document).on('change input', '#attendanceDeductionMethod, #attendanceRateUnit, #attendanceRatePerUnit, #attendanceMultiplierRate', function () {
+    $('#attendanceCalcPreviewResult').addClass('d-none');
+});
+
 function saveAttendanceDeductionRule() {
     const method = $('#attendanceDeductionMethod').val();
     if (!method) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
-    const payload = { event_code: currentAttendanceEvent, method_code: method };
+    // 2026-08-30, real bug found and fixed while adding is_active/exemptions: this payload used to
+    // send ONLY the method/rate fields being edited here, and AttendanceDeductionRuleModel::
+    // ruleSave() treats an ABSENT is_active/exemptions key as "reset to default" (active=true, no
+    // exemptions), not "leave unchanged" -- saving from this Configure modal would have silently
+    // wiped out whatever was set via the table's own is_active toggle or the Assign modal.
+    // Preserving both from currentAttendanceEditingRow (already loaded before this modal opened) --
+    // null for a brand-new variant, correctly defaulting to active/no-exemptions below.
+    const payload = {
+        event_code: currentAttendanceEvent, method_code: method,
+        label: ($('#attendanceRuleLabel').val() || '').trim() || null,
+        is_active: currentAttendanceEditingRow ? (currentAttendanceEditingRow.is_active !== false) : true,
+        exemptions: currentAttendanceEditingRow ? (currentAttendanceEditingRow.exemptions || []).map(ex => ({ scope_type: ex.scope_type, scope_id: ex.scope_id })) : [],
+    };
+    if (currentAttendanceEditingRow && currentAttendanceEditingRow.id) {
+        payload.id = currentAttendanceEditingRow.id;
+    }
+    // 2026-08-30, multi-scope rollout: scope is fixed once a row exists (default OR an existing
+    // scoped variant) -- only a genuinely NEW variant reads it from the (otherwise hidden) picker.
+    if (currentAttendanceEditingMode === 'new') {
+        const scopeType = $('#attendanceRuleScopeType').val();
+        const scopeId = scopeType === 'department' ? $('#attendanceRuleScopeDepartmentId').val() : $('#attendanceRuleScopeTeamId').val();
+        if (!scopeType || !scopeId) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        payload.scope_type = scopeType;
+        payload.scope_id = parseInt(scopeId, 10);
+    } else {
+        payload.scope_type = currentAttendanceEditingRow ? (currentAttendanceEditingRow.scope_type || null) : null;
+        payload.scope_id = currentAttendanceEditingRow ? (currentAttendanceEditingRow.scope_id || null) : null;
+    }
     if (method === 'flat_amount') {
         payload.rate_unit = $('#attendanceRateUnit').val() || 'minute';
         payload.rate_per_unit = parseFloat($('#attendanceRatePerUnit').val());
@@ -962,44 +1246,88 @@ function saveAttendanceDeductionRule() {
     });
 }
 
-/* Cards on #attendance-deduction-pane -- 3 fixed items (Late/Absent/Unpaid Leave), not a DataTable
- * (same reasoning as the Permission Matrix page: a fixed small grid, not a record list to paginate). */
-function attendanceDeductionCardSummary(eventCode) {
-    const r = currentAttendanceRules[eventCode];
+/* Table on #attendance-deduction-pane -- NOT a DataTable (same reasoning as the Permission Matrix
+ * page: a small, fully-loaded-at-once grid, not a paginated record list). 2026-08-30, multi-scope
+ * rollout: was exactly 4 rows (one per event); now each event can have several rows (the
+ * company-wide default + any team/department-scoped variants, see findAttendanceVariant()'s own
+ * docblock) -- every function below takes the specific ROW OBJECT, not an eventCode lookup. */
+function attendanceDeductionMethodSummary(r) {
     if (!r || !r.id) {
-        return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_default_badge'] || 'Default'}</span> <div class="text-muted small mt-1">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'} (1.00x)</div>`;
+        return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_default_badge'] || 'Default'}</span> <span class="text-muted small ms-1">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'} (1.00x)</span>`;
     }
     if (r.method_code === 'flat_amount') {
         const unitLabel = (ATTENDANCE_RATE_UNIT_LABELS[r.rate_unit] || ATTENDANCE_RATE_UNIT_LABELS.minute).flat();
         const amt = parseFloat(r.rate_per_unit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return `<span class="badge bg-info-subtle text-info">${langData['attendance_deduction_method_flat_amount'] || 'Flat Amount'}</span> <div class="text-muted small mt-1">${unitLabel}: ${amt}</div>`;
+        return `<span class="badge bg-info-subtle text-info">${langData['attendance_deduction_method_flat_amount'] || 'Flat Amount'}</span> <span class="text-muted small ms-1">${unitLabel}: ${amt}</span>`;
     }
     if (r.method_code === 'tiered_bracket') {
         const n = (r.brackets || []).length;
-        return `<span class="badge bg-warning-subtle text-warning">${langData['attendance_deduction_method_tiered_bracket'] || 'Tiered Brackets'}</span> <div class="text-muted small mt-1">${n} ${langData['attendance_deduction_brackets'] || 'Brackets'}</div>`;
+        return `<span class="badge bg-warning-subtle text-warning">${langData['attendance_deduction_method_tiered_bracket'] || 'Tiered Brackets'}</span> <span class="text-muted small ms-1">${n} ${langData['attendance_deduction_brackets'] || 'Brackets'}</span>`;
     }
     const mult = parseFloat(r.multiplier_rate || 1).toFixed(2);
-    return `<span class="badge bg-success-subtle text-success">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'}</span> <div class="text-muted small mt-1">${mult}x</div>`;
+    return `<span class="badge bg-success-subtle text-success">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'}</span> <span class="text-muted small ms-1">${mult}x</span>`;
+}
+function attendanceDeductionExemptionsSummary(r) {
+    const exemptions = (r && r.exemptions) || [];
+    if (!exemptions.length) {
+        return `<span class="text-muted small">${langData['attendance_deduction_no_exemptions'] || 'None'}</span>`;
+    }
+    const labels = exemptions.slice(0, 3).map(ex => `<span class="badge bg-light text-secondary border me-1 mb-1">${escapeHtmlPc(ex.label || '?')}</span>`).join('');
+    const more = exemptions.length > 3 ? `<span class="text-muted small">+${exemptions.length - 3}</span>` : '';
+    return labels + more;
+}
+/** One compact row per rule variant, rendered INSIDE its event's card body (see
+ *  attendanceDeductionEventCardHtml() below) -- not a <tr> anymore (2026-08-30 follow-up, reverted
+ *  from a table back to cards: "กฎการหักตามข้อมูลเข้างาน ก็ให้เป็น Card เหมือนกัน"). */
+function attendanceDeductionVariantRowHtml(eventCode, r) {
+    const isActive = r.is_active !== false; // default true when no row saved yet
+    const idAttr = r.id || '';
+    const canDelete = !!(r.id && r.scope_type);
+    return `<div class="adr-variant-row" data-event="${eventCode}" data-id="${idAttr}">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input attendance-deduction-active-toggle" type="checkbox" role="switch" data-event="${eventCode}" data-id="${idAttr}" ${isActive ? 'checked' : ''}>
+        </div>
+        <div class="adr-variant-main">
+            ${attendanceScopeBadgeHtml(r)}
+            ${r.label ? `<span class="adr-variant-label">${escapeHtmlPc(r.label)}</span>` : ''}
+            ${attendanceDeductionMethodSummary(r)}
+        </div>
+        <div class="adr-variant-exemptions">${attendanceDeductionExemptionsSummary(r)}</div>
+        <div class="adr-variant-actions">
+            <div class="btn-group border rounded-3 bg-white">
+                <button type="button" class="btn btn-link text-warning" onclick="openAttendanceDeductionRuleModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['attendance_deduction_configure'] || 'Configure'}"><i class="fa-solid fa-gear"></i></button>
+                <button type="button" class="btn btn-link text-primary border-start" onclick="cloneAttendanceDeductionRule('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
+                <button type="button" class="btn btn-link text-secondary border-start" onclick="openAttendanceDeductionAssignModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['attendance_deduction_assign_title'] || 'Exempt Departments / Teams / Employees'}"><i class="fa-solid fa-user-shield"></i></button>
+                ${canDelete ? `<button type="button" class="btn btn-link py-1 text-danger border-start" onclick="deleteAttendanceDeductionVariant(${r.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+            </div>
+        </div>
+    </div>`;
+}
+/** One .settings-info-card per event, header color-coded by deduction group (2026-08-30 explicit
+ *  request: "แยกสีตามกลุ่มการหักครับ" -- reuses the shared .row-type-icon component/rt-N palette,
+ *  "ตรง icon ปรับให้เหมือนในหน้า Report ครับ", same one reports/index.php's own report-type icon
+ *  introduced). Body lists that event's rule variants as compact rows. */
+function attendanceDeductionEventCardHtml(eventCode) {
+    const meta = ATTENDANCE_EVENT_ICON[eventCode];
+    const rows = currentAttendanceRules[eventCode] || [];
+    return `<div class="settings-info-card mb-4" data-event-card="${eventCode}">
+        <div class="settings-info-card-header adr-hdr-${meta.rt.replace('rt-', '')}">
+            <span class="row-type-icon ${meta.rt}"><i class="fa-solid ${meta.icon}"></i></span>
+            <div>
+                <p class="settings-info-card-title mb-0">${attendanceEventLabel(eventCode)}</p>
+            </div>
+        </div>
+        <div class="settings-info-card-body">
+            ${rows.map(row => attendanceDeductionVariantRowHtml(eventCode, row)).join('')}
+        </div>
+    </div>`;
 }
 function renderAttendanceDeductionCards() {
     // 2026-08-29: leave_pending added alongside the original 3 (explicit request -- leave still
     // awaiting approval is provisionally deducted like unpaid leave until approved, see
     // AttendanceDeductionRuleModel's own docblock).
     const events = ['late', 'absent', 'unpaid_leave', 'leave_pending'];
-    const icons = { late: 'fa-user-clock', absent: 'fa-user-slash', unpaid_leave: 'fa-calendar-xmark', leave_pending: 'fa-hourglass-half' };
-    $('#attendanceDeductionCards').html(events.map(eventCode => `
-        <div class="col-md-4">
-            <div class="card h-100 shadow-sm">
-                <div class="card-body d-flex flex-column">
-                    <h6 class="fw-bold mb-3"><i class="fa-solid ${icons[eventCode]} me-2 text-brand"></i>${attendanceEventLabel(eventCode)}</h6>
-                    <div class="mb-3">${attendanceDeductionCardSummary(eventCode)}</div>
-                    <button type="button" class="btn btn-outline-secondary btn-sm mt-auto" onclick="openAttendanceDeductionRuleModal('${eventCode}')">
-                        <i class="fa-solid fa-gear me-1"></i><span data-i18n="attendance_deduction_configure">${langData['attendance_deduction_configure'] || 'Configure'}</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    `).join(''));
+    $('#attendanceDeductionCardsContainer').html(events.map(attendanceDeductionEventCardHtml).join(''));
 }
 function loadAttendanceDeductionCards() {
     $.ajax({
@@ -1012,3 +1340,154 @@ function loadAttendanceDeductionCards() {
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
     });
 }
+/** Opens the Configure modal pre-filled from an existing row's config, blank id + blank scope, so
+ *  Save creates a genuinely NEW variant for a different team/department -- this IS the "Clone"
+ *  feature (2026-08-30, explicit request: "ให้เพิ่มปุ่ม Clone ขึ้นมา"), not a separate backend
+ *  endpoint (ruleSave() with no id already inserts). sourceId=null clones the company-wide default. */
+function cloneAttendanceDeductionRule(eventCode, sourceId) {
+    const sourceRow = findAttendanceVariant(eventCode, sourceId);
+    openAttendanceDeductionRuleModal(eventCode, 'new', sourceRow);
+}
+function deleteAttendanceDeductionVariant(id) {
+    const title = langData['confirm_delete_title'] || 'Confirm Delete';
+    const message = langData['confirm_delete_message'] || 'Are you sure you want to delete this item?';
+    showConfirm(title, message, function () {
+        $.ajax({
+            url: `${BASE_URL}/api/attendance-deduction-rule.delete`, method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ id: id }), dataType: 'json',
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(res.message || langData['delete_success'] || 'Deleted successfully.');
+                    loadAttendanceDeductionCards();
+                } else {
+                    showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
+                }
+            },
+            error: function () { showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.'); }
+        });
+    });
+}
+function escapeHtmlPc(s) {
+    return $('<div>').text(s == null ? '' : String(s)).html();
+}
+
+/* is_active quick toggle -- preserves the rule's existing method/rate/scope/exemptions, only flips
+   the one flag, so it can be saved right from the table without opening a modal. */
+$(document).on('change', '.attendance-deduction-active-toggle', function () {
+    const eventCode = $(this).data('event');
+    const id = $(this).data('id') || null;
+    const isActive = $(this).is(':checked');
+    const r = findAttendanceVariant(eventCode, id) || {};
+    const payload = {
+        event_code: eventCode, is_active: isActive,
+        method_code: r.method_code || 'percent_of_rate', rate_unit: r.rate_unit,
+        rate_per_unit: r.rate_per_unit, multiplier_rate: r.multiplier_rate,
+        scope_type: r.scope_type || null, scope_id: r.scope_id || null, label: r.label || null,
+        brackets: (r.brackets || []).map(b => ({ min_units: b.min_units, max_units: b.max_units, deduction_amount: b.deduction_amount })),
+        exemptions: (r.exemptions || []).map(ex => ({ scope_type: ex.scope_type, scope_id: ex.scope_id })),
+    };
+    if (r.id) { payload.id = r.id; }
+    const $toggle = $(this);
+    $.ajax({
+        url: `${BASE_URL}/api/attendance-deduction-rule.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                loadAttendanceDeductionCards();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                $toggle.prop('checked', !isActive); // revert the switch on failure
+            }
+        },
+        error: function () {
+            showWarning(langData['save_failed'] || 'An error occurred while saving.');
+            $toggle.prop('checked', !isActive);
+        }
+    });
+});
+
+/* ==================== Attendance Deduction: Assign (exemptions) modal ==================== */
+let attendanceDeductionAssignEvent = null;
+let attendanceDeductionAssignId = null; // 2026-08-30, multi-scope rollout -- which specific row's exemption list this modal is editing (null = the company-wide default).
+let attendanceDeductionAssignableOptions = null;
+function adaScopeItemHtml(scopeType, item, checked) {
+    return `<div class="form-check ada-assign-item">
+        <input class="form-check-input ada-assign-checkbox" type="checkbox" data-scope="${scopeType}" value="${item.id}" id="ada_${scopeType}_${item.id}" ${checked ? 'checked' : ''}>
+        <label class="form-check-label small" for="ada_${scopeType}_${item.id}">${escapeHtmlPc(item.label)}</label>
+    </div>`;
+}
+function renderAttendanceDeductionAssignLists(checkedByScope) {
+    const opts = attendanceDeductionAssignableOptions || { departments: [], teams: [], employees: [] };
+    $('#adaScopeListDepartment').html(opts.departments.map(d => adaScopeItemHtml('department', d, (checkedByScope.department || []).includes(String(d.id)))).join('') || `<span class="text-muted small">${langData['no_data_found'] || 'No data found'}</span>`);
+    $('#adaScopeListTeam').html(opts.teams.map(t => adaScopeItemHtml('team', t, (checkedByScope.team || []).includes(String(t.id)))).join('') || `<span class="text-muted small">${langData['no_data_found'] || 'No data found'}</span>`);
+    $('#adaScopeListEmployee').html(opts.employees.map(e => adaScopeItemHtml('employee', e, (checkedByScope.employee || []).includes(String(e.id)))).join('') || `<span class="text-muted small">${langData['no_data_found'] || 'No data found'}</span>`);
+}
+function openAttendanceDeductionAssignModal(eventCode, id) {
+    attendanceDeductionAssignEvent = eventCode;
+    attendanceDeductionAssignId = id || null;
+    const r = findAttendanceVariant(eventCode, attendanceDeductionAssignId) || {};
+    const scopeParts = attendanceScopeBadgeParts(r);
+    $('#attendanceDeductionAssignEvent').text(`${attendanceEventLabel(eventCode)} (${scopeParts.text})`);
+    const checkedByScope = { department: [], team: [], employee: [] };
+    (r.exemptions || []).forEach(ex => { if (checkedByScope[ex.scope_type]) { checkedByScope[ex.scope_type].push(String(ex.scope_id)); } });
+
+    const openModal = function () {
+        renderAttendanceDeductionAssignLists(checkedByScope);
+        $('.ada-select-all').prop('checked', false);
+        $('.ada-scope-search').val('');
+        new bootstrap.Modal(document.getElementById('attendanceDeductionAssignModal')).show();
+    };
+    if (attendanceDeductionAssignableOptions) {
+        openModal();
+        return;
+    }
+    $.get(`${BASE_URL}/api/attendance-deduction-rule.assignable-options`, function (res) {
+        if (res && res.status) {
+            attendanceDeductionAssignableOptions = res.data;
+            openModal();
+        } else {
+            showWarning((res && res.message) || langData['save_failed'] || 'An error occurred.');
+        }
+    });
+}
+$(document).on('input', '.ada-scope-search', function () {
+    const scope = $(this).data('scope');
+    const term = $(this).val().toLowerCase();
+    $(`#adaScopeList${scope.charAt(0).toUpperCase()}${scope.slice(1)} .ada-assign-item`).each(function () {
+        $(this).toggle($(this).text().toLowerCase().includes(term));
+    });
+});
+$(document).on('change', '.ada-select-all', function () {
+    const scope = $(this).data('scope');
+    const checked = $(this).is(':checked');
+    $(`#adaScopeList${scope.charAt(0).toUpperCase()}${scope.slice(1)} .ada-assign-checkbox:visible`).prop('checked', checked);
+});
+$(document).on('click', '#btnSaveAttendanceDeductionAssign', function () {
+    const exemptions = [];
+    $('.ada-assign-checkbox:checked').each(function () {
+        exemptions.push({ scope_type: $(this).data('scope'), scope_id: parseInt($(this).val(), 10) });
+    });
+    const r = findAttendanceVariant(attendanceDeductionAssignEvent, attendanceDeductionAssignId) || {};
+    const payload = {
+        event_code: attendanceDeductionAssignEvent, is_active: r.is_active !== false,
+        method_code: r.method_code || 'percent_of_rate', rate_unit: r.rate_unit,
+        rate_per_unit: r.rate_per_unit, multiplier_rate: r.multiplier_rate,
+        scope_type: r.scope_type || null, scope_id: r.scope_id || null, label: r.label || null,
+        brackets: (r.brackets || []).map(b => ({ min_units: b.min_units, max_units: b.max_units, deduction_amount: b.deduction_amount })),
+        exemptions: exemptions,
+    };
+    if (r.id) { payload.id = r.id; }
+    $.ajax({
+        url: `${BASE_URL}/api/attendance-deduction-rule.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('attendanceDeductionAssignModal'))?.hide();
+                loadAttendanceDeductionCards();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+            }
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});

@@ -153,6 +153,18 @@ class TaxStatutoryController extends Controller {
         $this->json($result);
     }
 
+    public function rateVersionPreview() {
+        if (!$this->requirePermission('tax_statutory.manage')) return;
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $sampleBase = isset($data['sample_base_amount']) && is_numeric($data['sample_base_amount']) ? (float)$data['sample_base_amount'] : 30000.0;
+        $this->json($this->model->previewRateVersion($data, $sampleBase));
+    }
+
     public function rateHistoryDelete() {
         if (!$this->requirePermission('tax_statutory.manage')) return;
         $rawInput = file_get_contents('php://input');

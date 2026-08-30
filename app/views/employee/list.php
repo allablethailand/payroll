@@ -3,8 +3,10 @@
    2-field date filter but not this page's 6-field row, which wraps to 3 rows on narrow screens --
    raise it here only. Both the expanded and collapsed variants must be scoped to this page's own
    id so the collapse-to-0 animation (the more specific .collapsed rule) still wins over this. */
-#employeeStationFilter .station-filter-body { max-height: 320px; }
-#employeeStationFilter.collapsed .station-filter-body { max-height: 0; }
+#employeeStationFilter .station-filter-body,
+#employeeLoginHistoryStationFilter .station-filter-body { max-height: 320px; }
+#employeeStationFilter.collapsed .station-filter-body,
+#employeeLoginHistoryStationFilter.collapsed .station-filter-body { max-height: 0; }
 
 #tb_employee tbody tr { transition: background-color .12s ease; }
 .employee-completeness-bar { min-width: 100px; }
@@ -28,6 +30,26 @@
         </div>
     </div>
 
+    <!-- 2026-08-29, explicit request: "ในหน้า employee list ก็ให้แยกเป็น 2 tab tab employee กับประวัติการ
+         เข้าใช้ ดูภาพรวมของทุกคน มี Filter ด้วย" -- top-level page tab (per this project's own Tab
+         convention: .setup-tabs/.setup-menu, NOT .structure-tabs -- this switches the ENTIRE page's
+         content, same category as Payroll Configuration's Cycle/Earnings/Deductions tabs, not a
+         sub-tab within one page). Everything that used to be this page's only content (the
+         .station-filter block through #tb_employee's own table) is now the "Employee" pane; the
+         existing #employeeTabs status-filter pills (Active/Probation/Permanent/Resign) stay exactly
+         as they were, nested one level deeper inside this new pane -- they filter WITHIN the
+         Employee tab, they don't switch pages, so they keep using plain .nav-tabs (not this new
+         outer level's .setup-tabs) same as before. -->
+    <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" id="employeeTopTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active setup-menu" id="employee-top-tab" data-bs-toggle="tab" data-bs-target="#employee-top-pane" type="button" role="tab" aria-controls="employee-top-pane" aria-selected="true"><i class="fa-solid fa-users me-1"></i><span data-i18n="employee">Employee</span></button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link setup-menu" id="employee-login-history-top-tab" data-bs-toggle="tab" data-bs-target="#employee-login-history-top-pane" type="button" role="tab" aria-controls="employee-login-history-top-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="login_history">Login History</span></button>
+        </li>
+    </ul>
+    <div class="tab-content" id="employeeTopTabsContent">
+    <div class="tab-pane fade show active" id="employee-top-pane" role="tabpanel" aria-labelledby="employee-top-tab" tabindex="0">
     <div class="station-filter" id="employeeStationFilter">
         <span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="employeeStationFilterToggle" title="Toggle filter">
@@ -142,185 +164,78 @@
             </div>
         </div>
     </div>
-
-    <!-- Sync Employee from Origami (2026-08-28, explicit request) -- picker modal. Real Origami
-         HTTP client (OrigamiEmployeeCandidateClient) as of the same day, see its own docblock. -->
-    <!-- 2026-08-29, explicit request: "ตารางที่แสดงผลอยู่ดูแน่นมาก ช่วยปรับให้สวยขึ้นหน่อยครับ" (the table
-         looks very cramped, please make it nicer) -- modal-xl (~1140px) split into two side-by-side
-         panels left each one with barely enough room for 4 columns; upgraded to modal-fullscreen for
-         real breathing room, same lever this project's own other data-dense pickers/canvases already
-         reached for when they needed more room (see CLAUDE.md's Payslip Template fullscreen-modal
-         precedent). Table/panel styling itself reworked too -- see .es-sync-* rules in style.css and
-         employee-sync.js's esRenderEmployeeCell()/esRenderDeptPositionCell() for the rest. -->
-    <div class="modal fade" id="employeeSyncModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="employeeSyncModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow">
-                <!-- 2026-08-28, explicit request: "ย้ายปุ่มประวัติการ Sync ให้หน่อยครับ ตอนนี้ดู
-                     สะเปะสะปะ" -- the Sync Log button used to live here, squeezed between the title
-                     and the close button. Moved to the Employee List's own search-bar toolbar (see
-                     list.js's initComplete) as a peer of the Sync from Origami button, matching this
-                     app's own convention for where action buttons belong. -->
-                <div class="modal-header">
-                    <h5 class="modal-title text-secondary" id="employeeSyncModalLabel">
-                        <i class="fa-solid fa-rotate me-1"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- 2026-08-28, explicit request: "ถ้ายังเชื่อมไม่ได้ก็ควรแจ้งว่าเชื่อมไม่ได้ ไม่ใช่
-                         Mock Data" (if still not connected, say so -- don't show Mock Data) --
-                         confirmed via AskUserQuestion: block the whole picker (filters/fetch/result
-                         area all stay hidden) until EmployeeSyncModel::requireConnected() reports a
-                         real connection, showing only this panel instead. Nothing here is ever
-                         mock/sample data. -->
-                    <div class="text-center py-5 d-none" id="employeeSyncNotConnected">
-                        <i class="fa-solid fa-plug-circle-xmark fa-2x text-danger mb-3"></i>
-                        <div class="fw-bold mb-1" data-i18n="employee_sync_not_connected_title">Not connected to Origami</div>
-                        <div class="text-muted small" id="employeeSyncNotConnectedMessage" data-i18n="employee_sync_not_connected_message">The connection to Origami has not been configured yet. Please contact your system administrator.</div>
+    </div>
+    <!-- 2026-08-29, explicit request: "ในหน้า employee list ก็ให้แยกเป็น 2 tab tab employee กับประวัติการ
+         เข้าใช้ ดูภาพรวมของทุกคน มี Filter ด้วย" -- company-wide overview (every employee), unlike the
+         Employee Detail page's own Login History tab which is scoped to one employee -- see
+         EmployeeLoginLogModel::listForCompany()'s own docblock. Lazy-inits its DataTable on first
+         shown.bs.tab (this app's own standing habit for a DataTable inside a non-default Bootstrap
+         tab -- constructing one while its pane is display:none collapses every column to 0 width). -->
+    <div class="tab-pane fade" id="employee-login-history-top-pane" role="tabpanel" aria-labelledby="employee-login-history-top-tab" tabindex="0">
+        <div class="station-filter" id="employeeLoginHistoryStationFilter">
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <button type="button" class="station-filter-toggle" id="employeeLoginHistoryStationFilterToggle" title="Toggle filter">
+                <i class="fas fa-chevron-up"></i>
+            </button>
+            <div class="station-filter-body">
+                <div class="row g-2">
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1" data-i18n="employee">Employee</label>
+                        <select class="form-select select2-remote" id="loginHistoryOverviewFilterEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
                     </div>
-                    <div id="employeeSyncFilterRow" class="d-none">
-                    <div class="row g-2 align-items-end mb-3">
-                        <!-- 2026-08-28, explicit follow-up: "ตัวที่เป็น Filter ต้อง Filter จาก Origami
-                             ครับ แล้วส่งไปดึงข้อมูลพนักงานอีกที" -- these 4 options are fetched from
-                             api/employee-sync.filter-options (Origami-sourced) and rendered as real
-                             <option> tags by employee-sync.js, NOT from Payroll's own local
-                             department/position/team endpoints -- select2 'native' mode only (no
-                             data-api/data-option-keys here on purpose). -->
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
-                            <select class="form-select" id="sync_filter_department"></select>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1" data-i18n="position">Position</label>
-                            <select class="form-select" id="sync_filter_position"></select>
-                        </div>
-                        <div class="col-6 col-md-2">
-                            <label class="form-label mb-1" data-i18n="employee_sync_filter_type">Type</label>
-                            <select class="form-select" id="sync_filter_type"></select>
-                        </div>
-                        <div class="col-6 col-md-2">
-                            <label class="form-label mb-1" data-i18n="employee_sync_filter_team">Team (Origami)</label>
-                            <select class="form-select" id="sync_filter_team"></select>
-                        </div>
-                        <div class="col-12 col-md-2">
-                            <button type="button" class="btn btn-primary w-100" id="btnFetchSyncCandidates">
-                                <i class="fa-solid fa-magnifying-glass me-1"></i><span data-i18n="employee_sync_fetch_button">Fetch</span>
-                            </button>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" id="loginHistoryOverviewFilterDateFrom" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
-
-                    <!-- 2026-08-28, explicit follow-up request: "ตารางอยู่ซ้ายขวา จะสะดวกกว่าไหมครับ"
-                         (side-by-side would be more convenient) -- replaced the New/Already-Exists
-                         Bootstrap tabs with 2 always-visible panels. This also fixes a real bug the
-                         same request surfaced ("ทดสอบกด Sync แล้วข้อมูลไม่ลงตาราง" -- data doesn't
-                         land in the table): the Already-Exists tab-pane was `fade` WITHOUT `show
-                         active`, i.e. `display:none` at the exact moment renderSyncTables() called
-                         `$('#tb_sync_existing').DataTable({responsive:true, ...})` -- DataTables
-                         Responsive computes column widths against the container's width AT INIT
-                         TIME, and a `display:none` container measures 0, so every column collapsed
-                         and the table rendered with no visible rows even though `data` genuinely had
-                         25 real candidates in it (same bug class already documented elsewhere in
-                         this project for a Bootstrap-tab-hidden DataTable, usually fixed by deferring
-                         init to `shown.bs.tab` -- side-by-side removes the bug at the ROOT instead,
-                         since neither panel is ever hidden, so there's no "later" to defer init to). -->
-                    <!-- 2026-08-28, explicit request: "ปรับข้อมูลตาราง ตรง Sync ให้ดูสวยขึ้น" -- Employee
-                         No.+Name merged into one identity cell (avatar circle, same #007aff style
-                         Employee List's own table already uses, + name/code stacked) and
-                         Department+Position merged into one stacked cell, both to make room for
-                         readable columns in a half-width panel and to look like a real "record"
-                         instead of a flat spreadsheet row -- see esRenderEmployeeCell()/
-                         esTypeBadgeHtml() in employee-sync.js. -->
-                    <div id="employeeSyncResultArea" class="d-none">
-                        <div class="row g-4">
-                            <div class="col-lg-6">
-                                <div class="es-sync-panel-header es-sync-panel-header-new">
-                                    <div class="es-sync-panel-header-icon"><i class="fa-solid fa-user-plus"></i></div>
-                                    <div class="es-sync-panel-header-body">
-                                        <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span></h6>
-                                        <div class="text-muted small" data-i18n="employee_sync_tab_new_hint">Not in this system yet</div>
-                                    </div>
-                                    <span class="badge rounded-pill bg-success" id="syncNewCount">0</span>
-                                </div>
-                                <div class="es-sync-scroll-box">
-                                    <table class="table table-hover align-middle w-100 mb-0 es-sync-table" id="tb_sync_new">
-                                        <thead class="table-light text-secondary">
-                                            <tr>
-                                                <th class="es-sync-th-check"><input type="checkbox" id="syncNewSelectAll"></th>
-                                                <th data-i18n="employee">Employee</th>
-                                                <th data-i18n="employee_sync_dept_position">Department / Position</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody></tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            <div class="col-lg-6">
-                                <div class="es-sync-panel-header es-sync-panel-header-existing">
-                                    <div class="es-sync-panel-header-icon"><i class="fa-solid fa-user-check"></i></div>
-                                    <div class="es-sync-panel-header-body">
-                                        <h6 class="mb-0"><span data-i18n="employee_sync_tab_existing">Already Exists</span></h6>
-                                        <div class="text-muted small" data-i18n="employee_sync_tab_existing_hint">Already in this system</div>
-                                    </div>
-                                    <span class="badge rounded-pill bg-secondary" id="syncExistingCount">0</span>
-                                </div>
-                                <div class="es-sync-scroll-box">
-                                    <table class="table table-hover align-middle w-100 mb-0 es-sync-table" id="tb_sync_existing">
-                                        <thead class="table-light text-secondary">
-                                            <tr>
-                                                <th class="es-sync-th-check"><input type="checkbox" id="syncExistingSelectAll"></th>
-                                                <th data-i18n="employee">Employee</th>
-                                                <th data-i18n="department">Department</th>
-                                                <th data-i18n="employee_sync_update_col">Update Available</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody></tbody>
-                                    </table>
-                                </div>
-                            </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" id="loginHistoryOverviewFilterDateTo" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
-                    <div class="text-muted small text-center py-4" id="employeeSyncEmptyHint" data-i18n="employee_sync_empty_hint">Set filters (optional) and click Fetch to browse candidates from Origami.</div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1" data-i18n="device">Device</label>
+                        <select class="form-select select2-native" id="loginHistoryOverviewFilterDevice"></select>
                     </div>
-                </div>
-                <div class="modal-footer justify-content-between">
-                    <span class="text-muted small" id="syncSelectedCountLabel"></span>
-                    <div>
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                        <button type="button" class="btn btn-primary d-none" id="btnApplyEmployeeSync">
-                            <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="syncSelectedCount">0</span>)
-                        </button>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1" data-i18n="browser">Browser</label>
+                        <select class="form-select select2-native" id="loginHistoryOverviewFilterBrowser"></select>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- Sync Log -->
-    <div class="modal fade" id="employeeSyncLogModal" tabindex="-1" aria-labelledby="employeeSyncLogModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header">
-                    <h5 class="modal-title text-secondary" id="employeeSyncLogModalLabel">
-                        <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="employee_sync_log_title">Employee Sync Log</span>
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <!-- 2026-08-29, explicit request: "Employee Sync Log ปรับจากตารางให้เป็น Card และดูได้ว่า
-                     Failed จากอะไร" -- was a plain table with just Total/Success/Error COUNTS, never
-                     showing the actual failure reason(s) (EmployeeSyncModel::log() already decodes
-                     sync_batches.error_detail into an array server-side, this view just never
-                     rendered it). Now one card per batch (esRenderSyncLogCard() in
-                     employee-sync.js) with the error message(s) listed inline whenever
-                     error_count > 0, instead of only ever showing a bare number. -->
-                <div class="modal-body">
-                    <div id="syncLogCards"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                </div>
-            </div>
+        <div class="d-flex justify-content-end mb-3">
+            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearLoginHistoryOverviewFilter">
+                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+            </button>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover w-100" id="tb_login_history_overview">
+                <thead class="table-light text-secondary">
+                    <tr>
+                        <th data-i18n="employee">Employee</th>
+                        <th data-i18n="login_at">Login At</th>
+                        <th data-i18n="logout_at">Logout At</th>
+                        <th data-i18n="ip_address">IP Address</th>
+                        <th data-i18n="location">Location</th>
+                        <th data-i18n="timezone">Timezone</th>
+                        <th data-i18n="device">Device</th>
+                        <th data-i18n="operating_system">OS</th>
+                        <th data-i18n="browser">Browser</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
         </div>
     </div>
+    </div>
+
+    <!-- employeeSyncModal / employeeSyncLogModal moved to app/views/layout/modals.php
+         (2026-08-30, modal consolidation). -->
 </div>
 <script src="<?=asset('public/js/employee/list.js')?>"></script>
 <script src="<?=asset('public/js/employee/employee-sync.js')?>"></script>

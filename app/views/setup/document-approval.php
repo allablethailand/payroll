@@ -111,49 +111,7 @@
 
   </div>
 
-  <!-- Document Numbering edit modal -->
-  <div class="modal fade" id="documentNumberingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="documentNumberingModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title fw-bold text-secondary" id="documentNumberingModalLabel">
-            <i class="fa-solid fa-hashtag me-2"></i><span id="documentNumberingModalTypeLabel"></span>
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <form id="documentNumberingForm">
-          <input type="hidden" id="dn_document_type_code">
-          <div class="modal-body">
-            <div class="mb-3">
-              <label class="form-label"><span data-i18n="doc_numbering_prefix">Format (Prefix)</span> <span class="text-danger">*</span></label>
-              <input type="text" class="form-control required" id="dn_prefix_format" maxlength="50">
-              <div class="text-secondary small mt-1" data-i18n="doc_numbering_prefix_hint">Placeholders: {YYYY} = year, {MM} = month, {YYYYMMDD} = full date.</div>
-            </div>
-            <div class="row g-3 mb-3">
-              <div class="col-sm-6">
-                <label class="form-label"><span data-i18n="doc_numbering_digits">Digits</span> <span class="text-danger">*</span></label>
-                <input type="number" class="form-control required" id="dn_digit_count" min="1" max="10" step="1">
-              </div>
-              <div class="col-sm-6">
-                <label class="form-label"><span data-i18n="doc_numbering_current">Current Number</span> <span class="text-danger">*</span></label>
-                <input type="number" class="form-control required" id="dn_current_number" min="0" step="1">
-              </div>
-            </div>
-            <div class="mb-2">
-              <label class="form-label" data-i18n="doc_numbering_reset">Reset</label>
-              <select class="form-select select2-static" id="dn_reset_cycle" data-option-keys="reset_cycle_never,reset_cycle_yearly,reset_cycle_monthly" data-option-values="never,yearly,monthly"></select>
-            </div>
-            <div class="text-secondary small" id="documentNumberingPreview"></div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-            <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
+  <!-- documentNumberingModal moved to app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 </div>
 <script src="<?=asset('public/js/setup/approval-workflow.js')?>"></script>
 <script src="<?=asset('public/js/setup/document-numbering.js')?>"></script>

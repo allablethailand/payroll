@@ -63,7 +63,22 @@ function makeEmployee(PDO $pdo, int $compId, string $employeeNo, ?int $roleId, ?
 }
 
 try {
-    $compId = 1;
+    // 2026-08-30, real dev-DB-state fragility fixed (see feedback_dev_db_shared_state_test_fragility
+    // in project memory) -- this test used to run against comp_id=1, the real shared dev DB company,
+    // which by now has 5 real structure_roles rows of its own (matrix()'s own role query is
+    // correctly comp_id-scoped, so those 5 real roles landed in this test's own role-count
+    // assertions alongside the 2 fresh ones it creates below). Fixed by using a genuinely fresh,
+    // isolated company instead -- zero pre-existing roles by construction, so the role-count
+    // assertions are correct regardless of how much real data comp_id=1 accumulates going forward.
+    // `permissions` itself (unlike structure_roles) is a GLOBAL table, not comp_id-scoped
+    // (PermissionModel::listPermissions() has no WHERE comp_id at all) -- switching companies does
+    // NOT fix that count on its own, so it's derived from a live query instead of a hardcoded number
+    // just below.
+    $insComp = $pdo->prepare("INSERT INTO `companies`
+        (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name, origami_payroll_comp_code)
+        VALUES ('Permission Matrix Test Co.', 'Permission Matrix Test Co.', 'TH', '0000000000000', 'Test Address', 'Test Signatory', :comp_code)");
+    $insComp->execute([':comp_code' => 'PMTEST_' . uniqid()]);
+    $compId = (int)$pdo->lastInsertId();
     $adminUserId = 1;
     $model = new PermissionModel($pdo);
 
@@ -77,7 +92,8 @@ try {
     $permissions = $model->listPermissions();
     $byKey = [];
     foreach ($permissions as $p) { $byKey[$p['permission_key']] = (int)$p['id']; }
-    check('17 permissions seeded', count($permissions), 17);
+    $expectedPermissionCount = (int)$pdo->query("SELECT COUNT(*) FROM permissions WHERE is_active = 1")->fetchColumn();
+    check('listPermissions() returns every active permission row (live count, not a stale hardcoded one)', count($permissions), $expectedPermissionCount);
 
     // ---------- checkPermission: isAdmin bypass ----------
     $adminCheck = $model->checkPermission($empStaff, 'holiday.manage', true, $compId);
@@ -93,8 +109,8 @@ try {
 
     // ---------- matrix(): empty grants ----------
     $matrixBefore = $model->matrix($compId);
-    check('matrix returns 2 roles', count($matrixBefore['roles']), 2);
-    check('matrix returns 17 permissions', count($matrixBefore['permissions']), 17);
+    check('matrix returns exactly the 2 fresh roles (isolated company, nothing else to pick up)', count($matrixBefore['roles']), 2);
+    check('matrix returns every active permission (live count)', count($matrixBefore['permissions']), $expectedPermissionCount);
     check('matrix returns 0 grants before any save', count($matrixBefore['grants']), 0);
 
     // ---------- saveMatrix(): grant holiday.manage (all) to manager, approval_request.act (own_department) to manager ----------

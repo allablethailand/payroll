@@ -32,7 +32,29 @@
          form is gone from THIS tab entirely (every completed run is just a row now, no picking one
          first); Annual Reports' own picker+card flow is untouched, since the 2nd request only ever
          talked about "รอบที่เสร็จแล้ว" (completed runs) -- there's no equivalent concept for a
-         once-a-year report. -->
+         once-a-year report.
+         Rebuilt AGAIN 2026-08-29 (explicit request: "ปรับ Design ให้ใหม่ทั้งหมด...ใช้หลักการ Download แบบ
+         เดียวกับหน้า Process") -- the run x report-type MATRIX above is retired in favor of the SAME
+         pattern Payroll Process Detail's own "Reports" tab already established: pick ONE run via a
+         .reports-period-bar picker, then a plain row-list per report type (Report | Downloads | Last
+         Downloaded | Actions), each row's Download going through the SAME preview-first modal
+         (#reportsPreviewModal, see below) and a History button opening a per-report download log --
+         reusing runCycleReportsSummary() (ReportsController) instead of the matrix's own per-cell
+         format/language dropdown. Pay Slip's row (scoped to one employee, not the whole run) opens an
+         employee-roster picker instead of downloading directly -- see #payslipRosterModal further
+         down and its own docblock for why (explicit request: "ปรับให้ขึ้นเป็นรายชื่อพนักงานมาเลย"). -->
+    <style>
+        /* 2026-08-29, "ปรับ Design ให้ใหม่ทั้งหมด...ให้รูปแบบดูง่ายและสวยงาม" -- small page-scoped polish
+           for the row-list tables/report cards this redesign introduced; nothing here is reused
+           elsewhere so it stays local rather than in the global stylesheet. */
+        .reports-row-report-name { font-weight: 600; color: #344054; }
+        .reports-row-report-type-icon { width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; margin-right: .6rem; font-size: .9rem; color: #fff; flex: none; }
+        .reports-row-report-type-icon.rt-statutory { background: linear-gradient(135deg, #FF9900, #ffb84d); }
+        .reports-row-report-type-icon.rt-payment { background: linear-gradient(135deg, #12b76a, #6ee7b7); }
+        .reports-row-report-type-icon.rt-internal { background: linear-gradient(135deg, #6366f1, #a5b4fc); }
+        .report-card-annual { transition: box-shadow .15s ease, transform .15s ease; }
+        .report-card-annual:hover { box-shadow: 0 8px 20px rgba(16, 24, 40, .08); transform: translateY(-2px); }
+    </style>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="reportsTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
@@ -52,68 +74,188 @@
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
         <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
-            <div class="bg-light rounded-3 p-2 mb-3 structure-tabs-wrap">
-                <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="cycleReportTypeTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link structure-menu active" id="cycleType-statutory-tab" data-bs-toggle="tab" data-bs-target="#cycleType-statutory-pane" type="button" role="tab" aria-controls="cycleType-statutory-pane" aria-selected="true" data-report-type="statutory">
-                            <i class="fa-solid fa-landmark me-2"></i><span data-i18n="report_type_statutory">Statutory</span>
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link structure-menu" id="cycleType-payment-tab" data-bs-toggle="tab" data-bs-target="#cycleType-payment-pane" type="button" role="tab" aria-controls="cycleType-payment-pane" aria-selected="false" data-report-type="payment">
-                            <i class="fa-solid fa-money-check-dollar me-2"></i><span data-i18n="report_type_payment">Payment</span>
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link structure-menu" id="cycleType-internal-tab" data-bs-toggle="tab" data-bs-target="#cycleType-internal-pane" type="button" role="tab" aria-controls="cycleType-internal-pane" aria-selected="false" data-report-type="internal">
-                            <i class="fa-solid fa-building me-2"></i><span data-i18n="report_type_internal">Internal</span>
-                        </button>
-                    </li>
-                </ul>
+            <!-- 2026-08-30, explicit follow-up: "filter 2 tab แรกไม่เป็นไปตามระบบที่ออกไปแบบ" -- was a
+                 custom .reports-period-bar (an orange context bar, distinct visual language from the
+                 system's standard filter component); now the same .station-filter every other page's
+                 filter uses (collapsible, chevron toggle, label). -->
+            <div class="station-filter" id="cycleReportPeriodBar">
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <button type="button" class="station-filter-toggle" id="cycleReportPeriodBarToggle" title="Toggle filter">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+                <div class="station-filter-body">
+                    <div class="text-muted small mb-2" data-i18n="reports_cycle_hint">Select a completed payroll run to view and download its reports.</div>
+                    <!-- 2026-08-30, explicit request: "ใน tab อื่น filter บางตัวกว้างเกินไปอยากให้ความกว้าง
+                         แต่ละ block เป็นมาตรฐานเดียวกัน" -- was col-12 col-md-8 col-lg-6 (half the row on a
+                         large screen for one dropdown), now the SAME col-6 col-md-4 col-lg-2 every other
+                         filter field on this page (Annual's year picker, Export History's own 3 fields)
+                         already uses. -->
+                    <div class="row g-2">
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <label class="form-label mb-1" data-i18n="table_payroll_run">Payroll Run</label>
+                            <select class="form-select form-select-sm select2-native" id="cycleReportRunSelect"></select>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="tab-content">
-                <div class="tab-pane fade show active" id="cycleType-statutory-pane" role="tabpanel" aria-labelledby="cycleType-statutory-tab" tabindex="0">
-                    <div class="table-responsive"><table class="table table-hover table-border align-middle w-100" id="tb_cycle_statutory"></table></div>
-                    <div class="text-center text-secondary py-4 d-none" id="noCycleReports_statutory"><span></span></div>
+            <div class="reports-not-ready-banner mb-3 d-none" id="cycleReportsNoRunBanner">
+                <div class="reports-not-ready-banner-icon"><i class="fa-solid fa-calendar-xmark"></i></div>
+                <div class="reports-not-ready-banner-body">
+                    <div class="reports-not-ready-banner-title" data-i18n="reports_cycle_no_run_title">No Completed Payroll Run Yet</div>
+                    <div class="reports-not-ready-banner-hint" data-i18n="no_completed_runs">No completed payroll runs yet.</div>
                 </div>
-                <div class="tab-pane fade" id="cycleType-payment-pane" role="tabpanel" aria-labelledby="cycleType-payment-tab" tabindex="0">
-                    <div class="table-responsive"><table class="table table-hover table-border align-middle w-100" id="tb_cycle_payment"></table></div>
-                    <div class="text-center text-secondary py-4 d-none" id="noCycleReports_payment"><span></span></div>
+            </div>
+            <div id="cycleReportBody" class="d-none">
+                <div class="bg-light rounded-3 p-2 mb-3 structure-tabs-wrap">
+                    <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="cycleReportTypeTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link structure-menu active" id="cycleType-statutory-tab" data-bs-toggle="tab" data-bs-target="#cycleType-statutory-pane" type="button" role="tab" aria-controls="cycleType-statutory-pane" aria-selected="true" data-report-type="statutory">
+                                <i class="fa-solid fa-landmark me-2"></i><span data-i18n="report_type_statutory">Statutory</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link structure-menu" id="cycleType-payment-tab" data-bs-toggle="tab" data-bs-target="#cycleType-payment-pane" type="button" role="tab" aria-controls="cycleType-payment-pane" aria-selected="false" data-report-type="payment">
+                                <i class="fa-solid fa-money-check-dollar me-2"></i><span data-i18n="report_type_payment">Payment</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link structure-menu" id="cycleType-internal-tab" data-bs-toggle="tab" data-bs-target="#cycleType-internal-pane" type="button" role="tab" aria-controls="cycleType-internal-pane" aria-selected="false" data-report-type="internal">
+                                <i class="fa-solid fa-building me-2"></i><span data-i18n="report_type_internal">Internal</span>
+                            </button>
+                        </li>
+                    </ul>
                 </div>
-                <div class="tab-pane fade" id="cycleType-internal-pane" role="tabpanel" aria-labelledby="cycleType-internal-tab" tabindex="0">
-                    <div class="table-responsive"><table class="table table-hover table-border align-middle w-100" id="tb_cycle_internal"></table></div>
-                    <div class="text-center text-secondary py-4 d-none" id="noCycleReports_internal"><span></span></div>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="cycleType-statutory-pane" role="tabpanel" aria-labelledby="cycleType-statutory-tab" tabindex="0">
+                        <div class="table-responsive"><table class="table table-hover align-middle w-100" id="tb_cycle_statutory">
+                            <thead class="table-light text-secondary"><tr>
+                                <th data-i18n="report_name">Report</th>
+                                <th class="text-center" data-i18n="download_count">Downloaded</th>
+                                <th data-i18n="last_downloaded_at">Last Downloaded</th>
+                                <th class="text-center"></th>
+                            </tr></thead>
+                            <tbody></tbody>
+                        </table></div>
+                        <div class="text-center text-secondary py-4 d-none" id="noCycleReports_statutory"><span></span></div>
+                    </div>
+                    <div class="tab-pane fade" id="cycleType-payment-pane" role="tabpanel" aria-labelledby="cycleType-payment-tab" tabindex="0">
+                        <div class="table-responsive"><table class="table table-hover align-middle w-100" id="tb_cycle_payment">
+                            <thead class="table-light text-secondary"><tr>
+                                <th data-i18n="report_name">Report</th>
+                                <th class="text-center" data-i18n="download_count">Downloaded</th>
+                                <th data-i18n="last_downloaded_at">Last Downloaded</th>
+                                <th class="text-center"></th>
+                            </tr></thead>
+                            <tbody></tbody>
+                        </table></div>
+                        <div class="text-center text-secondary py-4 d-none" id="noCycleReports_payment"><span></span></div>
+                    </div>
+                    <div class="tab-pane fade" id="cycleType-internal-pane" role="tabpanel" aria-labelledby="cycleType-internal-tab" tabindex="0">
+                        <div class="table-responsive"><table class="table table-hover align-middle w-100" id="tb_cycle_internal">
+                            <thead class="table-light text-secondary"><tr>
+                                <th data-i18n="report_name">Report</th>
+                                <th class="text-center" data-i18n="download_count">Downloaded</th>
+                                <th data-i18n="last_downloaded_at">Last Downloaded</th>
+                                <th class="text-center"></th>
+                            </tr></thead>
+                            <tbody></tbody>
+                        </table></div>
+                        <div class="text-center text-secondary py-4 d-none" id="noCycleReports_internal"><span></span></div>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="tab-pane fade" id="annual-pane" role="tabpanel" aria-labelledby="annual-tab" tabindex="0">
-            <div class="reports-period-bar mb-4">
-                <div class="reports-period-bar-icon"><i class="fa-solid fa-calendar-days"></i></div>
-                <div class="reports-period-bar-body">
-                    <div class="reports-period-bar-hint" data-i18n="reports_annual_hint">Select the year, then click Generate on whichever annual reports you need.</div>
-                    <input type="number" class="form-control form-control-sm reports-period-year" id="reportsPeriodYear" min="2500" max="2700" style="max-width:160px;" placeholder="พ.ศ.">
+            <!-- 2026-08-30, explicit follow-up: "filter 2 tab แรกไม่เป็นไปตามระบบที่ออกไปแบบ...filter ปีให้
+                 เลือกจากปีที่มีข้อมูลจริง" -- was a custom .reports-period-bar with a free-typed number
+                 input (any year, including ones with zero data); now .station-filter (matching the
+                 system standard) with a dropdown populated from ReportsController::availableYears()
+                 (only years with a real, usable-state run). -->
+            <div class="station-filter" id="annualReportPeriodBar">
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <button type="button" class="station-filter-toggle" id="annualReportPeriodBarToggle" title="Toggle filter">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+                <div class="station-filter-body">
+                    <div class="text-muted small mb-2" data-i18n="reports_annual_hint">Select the year, then click Generate on whichever annual reports you need.</div>
+                    <div class="row g-2">
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <label class="form-label mb-1" data-i18n="period_year">Year</label>
+                            <select class="form-select form-select-sm select2-native" id="reportsPeriodYear"></select>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="reports-type-section" data-report-type-section="statutory">
-                <h6 class="reports-type-section-title"><i class="fa-solid fa-landmark me-2"></i><span data-i18n="report_type_statutory">Statutory</span></h6>
-                <div class="row g-3" id="reportCards_annual_statutory"></div>
+            <div class="reports-not-ready-banner mb-3 d-none" id="annualReportsNoYearBanner">
+                <div class="reports-not-ready-banner-icon"><i class="fa-solid fa-calendar-xmark"></i></div>
+                <div class="reports-not-ready-banner-body">
+                    <div class="reports-not-ready-banner-title" data-i18n="reports_cycle_no_run_title">No Completed Payroll Run Yet</div>
+                    <div class="reports-not-ready-banner-hint" data-i18n="no_completed_runs">No completed payroll runs yet.</div>
+                </div>
             </div>
-            <div class="reports-type-section" data-report-type-section="payment">
-                <h6 class="reports-type-section-title"><i class="fa-solid fa-money-check-dollar me-2"></i><span data-i18n="report_type_payment">Payment</span></h6>
-                <div class="row g-3" id="reportCards_annual_payment"></div>
-            </div>
-            <div class="reports-type-section" data-report-type-section="internal">
-                <h6 class="reports-type-section-title"><i class="fa-solid fa-building me-2"></i><span data-i18n="report_type_internal">Internal</span></h6>
-                <div class="row g-3" id="reportCards_annual_internal"></div>
+            <!-- 2026-08-30, explicit request: "รายงานประจำปี อยากให้เป็นตารางครับ และกดกด Download ให้เป็น
+                 แบบเดียวกันคือมี preview ก่อน แล้วให้มี Dropdown เลือกว่าประเภทไหน และปุ่ม th en" -- was a
+                 card grid per report-type section, each with its own inline form; now the same
+                 row-list table shape as Per-Cycle Reports (Report | Downloads | Last Downloaded |
+                 Actions). A report needing extra input before it can preview (format choice always;
+                 SSO 6-09 also needs its own month; Payment Voucher also needs its own employee)
+                 opens #annualReportConfigModal first to collect just that, THEN routes through the
+                 exact same #reportsPreviewModal (openReportsPreview()) every other report on this
+                 page already uses -- which is itself where the TH/EN download buttons live, so
+                 they don't need to be duplicated in the config step. -->
+            <div id="annualReportBody" class="d-none">
+                <div class="table-responsive"><table class="table table-hover align-middle w-100" id="tb_annual_reports">
+                    <thead class="table-light text-secondary"><tr>
+                        <th data-i18n="report_name">Report</th>
+                        <th class="text-center" data-i18n="download_count">Downloaded</th>
+                        <th data-i18n="last_downloaded_at">Last Downloaded</th>
+                        <th class="text-center"></th>
+                    </tr></thead>
+                    <tbody></tbody>
+                </table></div>
             </div>
             <div class="text-center text-secondary py-4 d-none" id="noReports_annual"><span data-i18n="no_reports_available">No reports are registered in this category yet.</span></div>
         </div>
         <div class="tab-pane fade" id="history-pane" role="tabpanel" aria-labelledby="history-tab" tabindex="0">
-            <div class="row mb-3">
-                <div class="col-sm-4 col-md-3">
-                    <label class="form-label mb-1"><span data-i18n="filter_report_type">Report Type</span></label>
-                    <select class="form-select select2-static" id="filter_export_report_type" data-option-keys="report_type_statutory,report_type_payment,report_type_internal" data-option-values="statutory,payment,internal"></select>
+            <!-- 2026-08-29, explicit request: "ประวัติการ Export ให้เป็น Datatable เพิ่ม Filter ช่วงวันที่ได้"
+                 -- #tb_export_history was already a real DataTable with a working report_type filter +
+                 Excel-style per-column filters (see initExportHistoryTable()'s own comment); the one
+                 genuine gap was a date-RANGE filter, which an Excel-style discrete-value filter can't
+                 express. Restyled the report-type filter into the same .station-filter component used
+                 everywhere else in this app (per the same-day "ปรับ Design Filter ให้เป็นรูปแบบที่กำหนดไว้
+                 ของระบบ" request) alongside the new date range. -->
+            <div class="station-filter mb-2" id="exportHistoryStationFilter">
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <button type="button" class="station-filter-toggle" id="exportHistoryStationFilterToggle" title="Toggle filter">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+                <div class="station-filter-body">
+                    <div class="row g-2">
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <label class="form-label mb-1"><span data-i18n="filter_report_type">Report Type</span></label>
+                            <select class="form-select select2-static" id="filter_export_report_type" data-option-keys="report_type_statutory,report_type_payment,report_type_internal" data-option-values="statutory,payment,internal"></select>
+                        </div>
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="exportHistoryDateFrom" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="exportHistoryDateTo" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+            </div>
+            <div class="d-flex justify-content-end mb-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnExportHistoryClearFilter">
+                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+                </button>
             </div>
             <table class="table table-hover table-border align-middle w-100" id="tb_export_history">
                 <thead class="table-light text-secondary">
@@ -130,88 +272,7 @@
         </div>
     </div>
 
-    <!-- Report card template (cloned per report by JS) -- used by Annual Reports only now (Per-Cycle
-         Reports moved to the run x report-type matrix table above, 2026-08-27). Year is shared via
-         the .reports-period-bar control on the Annual tab; only the genuinely per-report extra
-         fields (SSO 6-09's own month, Payment Voucher's own employee) remain here. -->
-    <template id="reportCardTemplate">
-        <div class="col-sm-6 col-lg-4">
-            <div class="card-surface p-3 h-100 d-flex flex-column">
-                <h6 class="fw-bold mb-1 report-card-label"></h6>
-                <form class="report-generate-form mt-2 flex-grow-1 d-flex flex-column">
-                    <div class="mb-2 field-month d-none">
-                        <label class="form-label mb-1 small"><span data-i18n="period_month">Month</span></label>
-                        <select class="form-select form-select-sm select2-static required field-month-input" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
-                    </div>
-                    <div class="mb-2 field-employee d-none">
-                        <label class="form-label mb-1 small"><span data-i18n="input_employee">Employee</span></label>
-                        <select class="form-select form-select-sm select2-remote required field-employee-input" data-api="/api/employee.report_to.get"></select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label mb-1 small"><span data-i18n="report_format_label">Format</span></label>
-                        <select class="form-select form-select-sm select2-static required field-format-input"></select>
-                    </div>
-                    <!-- 2026-08-29, explicit follow-up request: "ตัวออกรายงาน ที่เลือกได้ว่า en หรือ th ต้องออก
-                         ได้จากทุกหน้าที่มีปุ่ม Export ครับ" -- always shown (unlike field-month/
-                         field-employee, which are per-report conditional), same context.language every
-                         other Export entry point on this page now sends. -->
-                    <div class="mb-3 field-language">
-                        <label class="form-label mb-1 small" data-i18n="report_language">Language</label>
-                        <select class="form-select form-select-sm select2-static field-language-input" data-option-keys="language_th,language_en" data-option-values="th,en"></select>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-sm mt-auto">
-                        <i class="fa-solid fa-file-export me-1"></i><span data-i18n="btn_generate">Generate</span>
-                    </button>
-                </form>
-            </div>
-        </div>
-    </template>
-
-    <!-- Per-Cycle Reports matrix, 2026-08-27: a cell for a report that's scoped to one specific
-         employee (Pay Slip -- there's no "run-level" version of a pay slip to export) opens this
-         small picker instead of downloading directly. -->
-    <div class="modal fade" id="cycleExportEmployeeModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h6 class="modal-title" id="cycleExportEmployeeModalTitle"></h6>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <label class="form-label mb-1"><span data-i18n="input_employee">Employee</span></label>
-                    <select class="form-select select2-remote" id="cycleExportEmployeeSelect" data-api="/api/employee.report_to.get"></select>
-                    <!-- 2026-08-29, explicit follow-up request: "ตัวออกรายงาน ที่เลือกได้ว่า en หรือ th ต้อง
-                         ออกได้จากทุกหน้าที่มีปุ่ม Export ครับ" -- same context.language every other Export
-                         entry point on this page now sends. -->
-                    <label class="form-label mb-1 mt-3" data-i18n="report_language">Language</label>
-                    <select class="form-select select2-static" id="cycleExportEmployeeLanguage" data-option-keys="language_th,language_en" data-option-values="th,en"></select>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">Cancel</span></button>
-                    <button type="button" class="btn btn-primary" id="cycleExportEmployeeConfirmBtn">
-                        <i class="fa-solid fa-file-export me-1"></i><span data-i18n="btn_generate">Generate</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Per-Cycle Reports matrix, 2026-08-27: per-run audit of everything already exported for that
-         run (across every report type, not just the tab currently open) -- reuses the same
-         report_export_logs data the Export History tab already shows, filtered to one run. -->
-    <div class="modal fade" id="cycleAuditLogModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h6 class="modal-title mb-0">
-                        <span data-i18n="export_audit_log">Export Audit Log</span>
-                        <span id="cycleAuditLogRunLabel" class="text-secondary fw-normal small ms-1"></span>
-                    </h6>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body" id="cycleAuditLogBody"></div>
-            </div>
-        </div>
-    </div>
+    <!-- payslipRosterModal / annualReportConfigModal / reportsPreviewModal / cycleReportHistoryModal
+         moved to app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 </div>
 <script src="<?=asset('public/js/reports/index.js')?>"></script>

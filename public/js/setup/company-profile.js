@@ -632,6 +632,10 @@ function initStructure(page) {
             $structureContent.html($('#tmpl-permission-pane').html());
             updateText($structureContent[0]);
             if (typeof initPermissionMatrix === 'function') { initPermissionMatrix(); }
+            // 2026-08-29, explicit follow-up: "ผูกกับ user preference ในระดับ role ได้ด้วยถ้าไม่ซับซ้อนเกินไป"
+            // -- same tab, own section/container below the Permission Matrix grid (see
+            // tmpl-permission-pane's own markup).
+            if (typeof initNotificationRoleMatrix === 'function') { initNotificationRoleMatrix(); }
             break;
         // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการ
         // เพิ่มการตั้งค่าเช่นเดียวกับ Department" -- 7th Organization Structure sub-tab.
@@ -891,6 +895,7 @@ function getStructureColumns(type) {
                 },
                 {
                     data: null,
+                    className: 'text-end',
                     render: function (data, type, row) {
                         let min = row.salary_min ? parseFloat(row.salary_min).toLocaleString('th-TH') : '0';
                         let max = row.salary_max ? parseFloat(row.salary_max).toLocaleString('th-TH') : 'Max';

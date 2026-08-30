@@ -19,10 +19,12 @@
                 <div class="text-danger small mt-2 d-none" id="rejectReasonBox"></div>
                 <div class="text-muted small mt-2 d-none" id="cancelReasonBox"></div>
             </div>
-            <!-- 2026-08-29, explicit request: "เพิ่มให้สามารถปริ้น Report จากหน้า Process ได้...จากหน้า List
-                 และ Detail" -- same shortcut buttons as the List page's own row dropdown, see
-                 renderRunReportsButtons() in detail.js. -->
-            <div id="runReportsButtonWrap"></div>
+            <!-- 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action
+                 History" -- the dropdown button that used to sit here (renderRunReportsButtons())
+                 moved into its own "Reports" tab (#run-reports-pane) instead. The List page's own
+                 row dropdown (public/js/payroll/index.js) is UNCHANGED, still a dropdown there --
+                 this request was specifically about the Detail page. -->
+
         </div>
         <div class="process-timeline-wrap" id="runProcessTimeline"></div>
         <div id="nextStepBanner" class="next-step-banner"></div>
@@ -34,6 +36,14 @@
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary active" id="run-details-tab" data-bs-toggle="tab" data-bs-target="#run-details-pane" type="button" role="tab" aria-controls="run-details-pane" aria-selected="true">
                 <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="tab_run_details">Details</span>
+            </button>
+        </li>
+        <!-- 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action History
+             และแสดงเป็นตารางรายการไว้" -- was a dropdown button in the page header
+             (renderRunReportsButtons(), now removed) -- see loadRunReportsTab() in detail.js. -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link text-secondary" id="run-reports-tab" data-bs-toggle="tab" data-bs-target="#run-reports-pane" type="button" role="tab" aria-controls="run-reports-pane" aria-selected="false">
+                <i class="fa-solid fa-file-export me-1"></i><span data-i18n="tab_reports">Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -86,39 +96,10 @@
                 </div>
             </div>
           </div>
-          <div class="detail-section d-none" id="pedTypeSettingsSection">
-            <div class="mb-3">
-                <h6 class="text-secondary fw-bold mb-1">
-                    <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
-                    <span data-i18n="ped_type_settings_title">Income/Deduction Items Used</span>
-                </h6>
-                <div class="text-muted small" data-i18n="ped_type_settings_hint">The items currently used to calculate this run. Click "Edit" on either side to tick items in or out.</div>
-            </div>
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <div class="ped-type-panel border rounded-3 p-3 h-100">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="text-success fw-bold mb-0"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Income</span></h6>
-                            <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-ped-type-panel d-none" data-item-type="earning"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">Edit</span></button>
-                        </div>
-                        <div id="pedTypePanelEarning" class="ped-type-chip-list"></div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="ped-type-panel border rounded-3 p-3 h-100">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="text-danger fw-bold mb-0"><i class="fa-solid fa-arrow-trend-down me-1"></i><span data-i18n="table_deduction_amount">Deductions</span></h6>
-                            <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-ped-type-panel d-none" data-item-type="deduction"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">Edit</span></button>
-                        </div>
-                        <div id="pedTypePanelDeduction" class="ped-type-chip-list"></div>
-                    </div>
-                </div>
-            </div>
-          </div>
           <div class="detail-section">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <h6 class="text-secondary fw-bold mb-0">
-                    <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">3</label>
+                    <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
                     <span data-i18n="employee_breakdown">Employee Breakdown</span>
                     <!-- 2026-08-29, explicit request: "ตอน View Mode...อยากให้ปรับให้ดูเป็น View อยากเดียว
                          ...จะได้ดูแตกต่างจากตอนสร้างและแก้ไข" -- shown whenever currentRun.state !== 'draft'
@@ -168,6 +149,92 @@
                     </div>
                 </div>
             </div>
+            <!-- 2026-08-29, explicit request: "เพิ่มให้สามารถเลือกเอาเงินเดือนออกจากการคำนวณได้ หรือค่าอื่นๆที่ไม่
+                 นำมาคำนวณ ทั้ง template เลย...และต้องกำหนดได้ด้วยว่าคำนวณภาษี ไม่คำนวณภาษี ส่งประกันสังคมไหม
+                 กำหนดแบบทั้งหมด และรายบุคคลได้" -- whole-run defaults (a per-employee override lives in
+                 each row's own "Items" button -> "Tax & SSO" tab instead, see manageLinesModal).
+                 2026-08-29, same-day follow-up: "ในหน้า Process Detail แบบ View Mode จะต้องบอกรายละเอียด
+                 ของการตั้งค่ารอบด้วยครับ" -- was hidden entirely once a run left draft; now ALWAYS
+                 visible, read-only (every control disabled + Save hidden) once the run is no longer
+                 draft -- see loadRunSettingsPanel()'s own docblock in detail.js. Collapsed by
+                 default -- most runs never touch this, no need for it to compete with the employee
+                 table for space. -->
+            <div class="border rounded-3 p-3 mb-3 d-none" id="runSettingsPanel">
+                <div class="d-flex justify-content-between align-items-center" id="runSettingsToggle">
+                    <h6 class="mb-0 text-secondary fw-bold"><i class="fa-solid fa-sliders me-2 text-brand"></i><span data-i18n="run_settings_title">Run Settings</span></h6>
+                    <i class="fa-solid fa-chevron-down" id="runSettingsChevron"></i>
+                </div>
+                <!-- 2026-08-29, same-day follow-up: "ตรงการตั้งค่าของรอบ ใน View Mode ให้แสดงเป็นภาพรวมเลยครับ
+                     โดยที่ไม่ต้องเปิด toggle มาดู และให้ขึ้นเฉพาะรายการที่เลือก ถ้าไม่เลือกก็ให้แสดงคำให้ถูกต้องครับ
+                     ว่าเงื่อนไขเป็นแบบไหน" -- once a run leaves draft, this replaces the collapsible editable
+                     form entirely (never needs a click to reveal): plain text for whichever Tax/SSO
+                     condition was actually selected (falls back to "Each Employee's Own Setting" text
+                     when nothing was overridden -- never blank), and ONLY the items genuinely ticked
+                     as excluded (or a correct "nothing excluded" sentence when none are) -- see
+                     renderRunSettingsSummary() in detail.js. Draft mode never populates this div at
+                     all (#runSettingsBody below is still the one true editable UI there, unchanged). -->
+                <div class="mt-3" id="runSettingsSummary"></div>
+                <div class="d-none mt-3" id="runSettingsBody">
+                    <p class="text-muted small mb-3" data-i18n="run_settings_hint">Default settings applied to every employee in this run -- an individual employee can still be adjusted from their own row's "Items" button.</p>
+                    <div class="row g-3 mb-3">
+                        <!-- 2026-08-29, same-day follow-up: "ปรับ radio group...ให้ดูสวยขึ้น หรือเป็นแค่
+                             checkbox เรียงกัน 3 แถวหรือแถวเดียวกันแบบ Basic" -- was pill-styled btn-check
+                             buttons (same treatment as the Comment Tag picker); switched to the
+                             "Basic" alternative offered -- plain native radio inputs, one row
+                             (wraps to multiple on narrow widths), meaning conveyed through
+                             icon/label COLOR alone rather than a filled pill background. -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold mb-1" data-i18n="run_exemption_tax">Tax Calculation</label>
+                            <div class="d-flex flex-wrap gap-3" id="runCalcTaxGroup">
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input" type="radio" name="runCalcTax" id="runCalcTaxInherit" value="use_employee_setting" checked>
+                                    <label class="form-check-label small text-secondary" for="runCalcTaxInherit"><i class="fa-solid fa-users me-1"></i><span data-i18n="calc_default_use_employee">Each Employee's Own Setting</span></label>
+                                </div>
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input" type="radio" name="runCalcTax" id="runCalcTaxYes" value="yes">
+                                    <label class="form-check-label small text-success fw-semibold" for="runCalcTaxYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_tax_yes">Calculate for Everyone</span></label>
+                                </div>
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input" type="radio" name="runCalcTax" id="runCalcTaxNo" value="no">
+                                    <label class="form-check-label small text-danger fw-semibold" for="runCalcTaxNo"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="run_calc_tax_no">Don't Calculate for Anyone</span></label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold mb-1" data-i18n="run_exemption_sso">SSO Contribution</label>
+                            <div class="d-flex flex-wrap gap-3" id="runCalcSsoGroup">
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input" type="radio" name="runCalcSso" id="runCalcSsoInherit" value="use_employee_setting" checked>
+                                    <label class="form-check-label small text-secondary" for="runCalcSsoInherit"><i class="fa-solid fa-users me-1"></i><span data-i18n="calc_default_use_employee">Each Employee's Own Setting</span></label>
+                                </div>
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input" type="radio" name="runCalcSso" id="runCalcSsoYes" value="yes">
+                                    <label class="form-check-label small text-success fw-semibold" for="runCalcSsoYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_sso_yes">Send for Everyone</span></label>
+                                </div>
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input" type="radio" name="runCalcSso" id="runCalcSsoNo" value="no">
+                                    <label class="form-check-label small text-danger fw-semibold" for="runCalcSsoNo"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="run_calc_sso_no">Don't Send for Anyone</span></label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1" data-i18n="run_settings_excluded_items">Exclude from Calculation</label>
+                        <div class="text-muted small mb-2" data-i18n="run_settings_excluded_items_hint">Ticked items are left out of every employee's calculation for this run (base salary and/or any earning/deduction item).</div>
+                        <!-- 2026-08-29, same-day follow-up: "รายรับให้เป็นสีเขียว รายจ่ายให้เป็นสีแดง และ
+                             แยกกรอบกันอยู่ครับ" -- built by itemChecklistBoxesHtml() in detail.js into 2
+                             (or 3, incl. Base Salary) separate bordered boxes (plain white + colored
+                             header text, same as this page's own Income/Deductions panels elsewhere)
+                             instead of one flat grid. Items inside each box flow into 2-3 CSS
+                             columns (.item-checklist-cols) -- no fixed max-height/scroll anymore
+                             (same-day follow-up: "ไม่ต้องมี Scroll"), the box just grows to fit. -->
+                        <div id="runSettingsItemChecklist"></div>
+                    </div>
+                    <div class="text-end">
+                        <button type="button" class="btn btn-sm btn-primary" id="btnSaveRunSettings"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
+                    </div>
+                </div>
+            </div>
             <div id="noDetailsYet" class="text-center text-secondary py-4 d-none">
                 <i class="fa-solid fa-calculator fa-2x mb-3 text-secondary opacity-50"></i>
                 <span data-i18n="no_details_yet">No employees calculated yet. Click "Recalculate" to compute this run.</span>
@@ -210,15 +277,44 @@
                     </tr>
                 </thead>
                 <tbody></tbody>
+                <!-- 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี
+                     Summary ของแต่ละ Column ใน Footer" -- the small right-aligned summary strip below
+                     the table (Employee/Verified/Locked counts) is retired; a real DataTables <tfoot>
+                     now carries the SAME information (Employee count + Verified/Locked, in the
+                     columns those concepts actually belong to) plus a running total for every
+                     numeric money column (Base Salary/Gross/Deduction/Net), computed by
+                     footerCallback in detail.js's own initRunDetailTable() -- respects the table's
+                     own search filter (a filtered view sums only what's visible), same convention
+                     DataTables' own footer-total examples use. -->
+                <tfoot class="table-light text-secondary">
+                    <tr>
+                        <th></th>
+                        <th id="rdFootEmployeeCount"></th>
+                        <th></th>
+                        <th class="text-end" id="rdFootBaseSalary"></th>
+                        <th class="text-end" id="rdFootGross"></th>
+                        <th class="text-end" id="rdFootDeduction"></th>
+                        <th class="text-end" id="rdFootNet"></th>
+                        <th></th>
+                        <th class="text-center" id="rdFootVerifyLock"></th>
+                        <th></th>
+                    </tr>
+                </tfoot>
             </table>
             </div>
           </div>
         </div>
 
         <!-- 2026-08-29, explicit request: "ใส่ Comment ได้ของแต่ละคน กดแล้วเปิดเป็น Modal ให้ใส่ Comment
-             เรื่อยๆ เป็น Timeline...ให้มีใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด" -- same
-             .apv-stage timeline component already used for Action History on this same page (see the
-             comment above #tb_run_detail), oldest-first (matches employeeComments()'s own ORDER BY). -->
+             เรื่อยๆ เป็น Timeline...ให้มีใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด" -- own
+             dedicated .apv-comment-* card design now (see renderEmployeeCommentTimeline()'s own
+             docblock in detail.js), not the shared .apv-stage used elsewhere on this page.
+             2026-08-29 same-day follow-up ("ช่วยปรับปรุง Design ทั้ง Form และ List ให้หน่อยครับ ย้าย Form
+             มาไว้ Footer เพื่อถ้า Comment เยอะๆให้ค้างอยู่กับที่ แล้วใน Body ก็เลื่อนได้") -- the form (Tag
+             picker + textarea) moved from the (scrollable) modal-body into the (fixed)
+             modal-footer, alongside .modal-dialog-scrollable (already present) doing the rest: the
+             list above keeps scrolling internally while this form + the action buttons stay pinned
+             in view the whole time, even with a long comment history. -->
         <div class="modal fade" id="employeeCommentModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-scrollable">
                 <div class="modal-content">
@@ -227,61 +323,231 @@
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <div id="employeeCommentTimeline" class="apv-timeline mb-3"></div>
+                        <div id="employeeCommentTimeline" class="apv-comment-list"></div>
                         <div id="employeeCommentEmpty" class="text-center text-muted small py-3 d-none" data-i18n="employee_comment_timeline_empty">No comments yet.</div>
+                    </div>
+                    <div class="modal-footer apv-comment-footer flex-column align-items-stretch">
                         <!-- 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น
-                             ไม่สามารถเพิ่ม แก้ไข ลบได้" -- shown instead of the form area below once
+                             ไม่สามารถเพิ่ม แก้ไข ลบได้" -- shown instead of the form below once
                              commentsReadOnlyRd() (detail.js) is true, i.e. the run has reached a
                              genuinely finished state (paid/locked/cancelled -- see
                              PayrollRunModel::COMMENT_LOCKED_STATES's own docblock for why that's a
                              different, narrower cutoff than this page's general View Mode). -->
                         <div id="employeeCommentReadOnlyNotice" class="text-center text-muted small py-2 d-none"><i class="fa-solid fa-lock me-1"></i><span data-i18n="employee_comment_read_only">This payroll run has finished processing. Comments are view-only.</span></div>
                         <div id="employeeCommentFormArea">
-                        <hr>
                         <!-- 2026-08-29, explicit request: "ตรงใส่ Comment Tag ให้กดเลือกเป็น radio" -- was a
                              select2-static dropdown, now Bootstrap's btn-check/btn-outline-* radio-as-
                              button component (real <input type="radio"> underneath, styled as a
                              segmented toggle) so each tag's own color is visible without opening a
                              dropdown first. -->
+                        <!-- 2026-08-29, same-day follow-up: "ตรงเลือก Tag ปรับให้สวยขึ้นอีกได้ไหมครับ" --
+                             was a plain Bootstrap btn-check/btn-outline-* segmented toggle (flat
+                             outline colors unrelated to the list's own tag colors); now icon+label
+                             pill chips that share the EXACT same gradient palette as
+                             employeeCommentTagBadge()/EMPLOYEE_COMMENT_TAG_META in detail.js, so the
+                             picker and the rendered tag pill below it visually agree. Same
+                             btn-check/radio ids/values/name -- zero JS changes needed, only the
+                             <label> classes/content changed. -->
                         <div class="mb-2">
                             <label class="form-label small text-muted mb-1" data-i18n="employee_comment_tag">Tag</label>
-                            <div class="btn-group w-100" role="group" id="employeeCommentTagGroup">
+                            <div class="apv-comment-tag-picker" id="employeeCommentTagGroup">
                                 <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagNone" value="" checked>
-                                <label class="btn btn-outline-secondary btn-sm" for="employeeCommentTagNone" data-i18n="employee_comment_tag_none">No tag</label>
+                                <label class="apv-comment-tag-option apv-comment-tag-opt-none" for="employeeCommentTagNone"><i class="fa-solid fa-comment-slash"></i><span data-i18n="employee_comment_tag_none">No tag</span></label>
                                 <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagInProgress" value="in_progress">
-                                <label class="btn btn-outline-warning btn-sm" for="employeeCommentTagInProgress" data-i18n="employee_comment_tag_in_progress">In Progress</label>
+                                <label class="apv-comment-tag-option apv-comment-tag-opt-in_progress" for="employeeCommentTagInProgress"><i class="fa-solid fa-hourglass-half"></i><span data-i18n="employee_comment_tag_in_progress">In Progress</span></label>
                                 <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagCompleted" value="completed">
-                                <label class="btn btn-outline-success btn-sm" for="employeeCommentTagCompleted" data-i18n="employee_comment_tag_completed">Completed</label>
+                                <label class="apv-comment-tag-option apv-comment-tag-opt-completed" for="employeeCommentTagCompleted"><i class="fa-solid fa-check"></i><span data-i18n="employee_comment_tag_completed">Completed</span></label>
                                 <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagError" value="error">
-                                <label class="btn btn-outline-danger btn-sm" for="employeeCommentTagError" data-i18n="employee_comment_tag_error">Error</label>
+                                <label class="apv-comment-tag-option apv-comment-tag-opt-error" for="employeeCommentTagError"><i class="fa-solid fa-triangle-exclamation"></i><span data-i18n="employee_comment_tag_error">Error</span></label>
                             </div>
                         </div>
                         <div class="mb-2">
-                            <textarea class="form-control form-control-sm" id="employeeCommentText" rows="3" data-i18n="employee_comment_placeholder" placeholder="Write a comment..."></textarea>
+                            <textarea class="form-control form-control-sm" id="employeeCommentText" rows="2" data-i18n="employee_comment_placeholder" placeholder="Write a comment..."></textarea>
                         </div>
                         </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnCancelEditEmployeeComment" data-i18n="cancel">Cancel</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                        <button type="button" class="btn btn-primary btn-sm" id="btnAddEmployeeComment"><i class="fa-solid fa-plus me-1"></i><span id="btnAddEmployeeCommentLabel" data-i18n="employee_comment_add">Add Comment</span></button>
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnCancelEditEmployeeComment" data-i18n="cancel">Cancel</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="btnAddEmployeeComment"><i class="fa-solid fa-plus me-1"></i><span id="btnAddEmployeeCommentLabel" data-i18n="employee_comment_add">Add Comment</span></button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+        <!-- 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action History
+             และแสดงเป็นตารางรายการไว้ และบอกด้วยว่า Download แล้วทั้งหมดกี่ครั้ง ครั้งล่าสุด Download ไปเมื่อไหร่"
+             -- one row per report shortcut applicable to this run (same TH_SSO110/TH_PND1/
+             BANK_TRANSFER_FILE set + tax/SSO hiding the old dropdown already used -- see
+             ReportsController::runReportsSummary()'s own docblock), not a DataTable (fixed set of
+             at most 3 rows, same "small enough not to need it" precedent as the Manage Items
+             modal's own Income/Deduction panels). Populated by loadRunReportsTab() in detail.js. -->
+        <div class="tab-pane fade" id="run-reports-pane" role="tabpanel" aria-labelledby="run-reports-tab" tabindex="0">
+            <!-- 2026-08-29, same-day follow-up: "ถ้า Process นั้นยังไม่สามารถออกรายงานได้ให้มีหมายเหตุขึ้นที่
+                 บนหัวตารางครับ Design ให้สวยๆ" -- distinct from #runReportsNotReady below (that div's
+                 own "zero rows at all" condition is effectively unreachable today -- BANK_TRANSFER_FILE
+                 has no applicability gate, so the table always has at least one row -- kept as-is for
+                 defense in depth). This banner is keyed purely on run state (isReady in
+                 loadRunReportsTab()), shown ABOVE the table regardless of row count, reusing
+                 .reports-period-bar's own visual language (icon-circle + gradient bar) in a
+                 warning/amber tone instead of the brand-orange "pick a context" one, since this is
+                 informational, not an action to take. -->
+            <div class="reports-not-ready-banner mb-3 d-none" id="runReportsNotReadyBanner">
+                <div class="reports-not-ready-banner-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+                <div class="reports-not-ready-banner-body">
+                    <div class="reports-not-ready-banner-title" data-i18n="reports_not_ready_title">Reports Not Available Yet</div>
+                    <div class="reports-not-ready-banner-hint" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</div>
+                </div>
+            </div>
+            <div id="runReportsNotReady" class="text-center text-secondary py-4 d-none">
+                <i class="fa-solid fa-file-export fa-2x mb-3 text-secondary opacity-50"></i>
+                <span data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle w-100 d-none" id="tb_run_reports">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th data-i18n="report_name">Report</th>
+                            <th class="text-center" data-i18n="download_count">Downloaded</th>
+                            <th data-i18n="last_downloaded_at">Last Downloaded</th>
+                            <th class="text-center"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="runReportsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Preview & Download modal -- opened from a report row's own button. The iframe only
+             loads for a report that supports a PDF preview (row.supports_preview, see
+             ReportsController::runReportsSummary()); a CSV-only report like the bank transfer file
+             skips straight to the "preview unavailable, download directly" message. Preview itself
+             (GET .../report.generate?preview=1) is deliberately NOT logged -- see that endpoint's
+             own docblock -- only the Thai/English Download buttons below are real, counted
+             downloads. -->
+        <!-- 2026-08-29, same-day follow-up: "'ไฟล์ประเภทนี้ดูตัวอย่างไม่ได้' UI ไม่ค่อยสวยครับ และไม่พอดีกับ
+             modal สูงเกินไป" -- the dialog itself now switches size (id="reportPreviewDialog", toggled
+             in detail.js's own .btn-report-preview handler): modal-xl only while an actual PDF
+             preview is loading/shown, a plain (smaller) centered dialog for a report with nothing to
+             preview -- so the empty-state card isn't rattling around in an oversized XL modal. The
+             card itself (icon-in-a-circle, title + subtext) replaces the old bare
+             icon-over-one-line-of-text block. -->
+        <div class="modal fade" id="reportPreviewModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered" id="reportPreviewDialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-secondary" id="reportPreviewModalTitle">-</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-0">
+                        <div id="reportPreviewLoading" class="text-center text-muted py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+                        <iframe id="reportPreviewFrame" class="d-none" style="width:100%; height:70vh; border:0;" title="Report preview"></iframe>
+                        <div id="reportPreviewUnavailable" class="text-center d-none py-4 px-4">
+                            <div class="report-preview-unavailable-icon mx-auto mb-3">
+                                <i class="fa-solid fa-file-circle-exclamation"></i>
+                            </div>
+                            <div class="fw-semibold text-secondary mb-1" data-i18n="report_preview_unavailable_title">Preview Not Available</div>
+                            <div class="text-muted small" data-i18n="report_preview_unavailable">This file type can't be previewed -- download it directly below.</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-outline-secondary btn-report-download" data-language="th"><img src="<?=BASE_URL?>/public/flags/th.png" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
+                        <button type="button" class="btn btn-primary btn-report-download" data-language="en"><img src="<?=BASE_URL?>/public/flags/gb.png" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Download History modal -- opened from a report row's own "History" button. Reuses the
+             EXISTING api/report.export-logs endpoint (report_code + payroll_run_id filters, see
+             ReportExportLogModel::list()'s own docblock), showing every LOGGED (non-preview)
+             download -- when, by whom, language, device/browser (parsed from the request's own
+             User-Agent), IP, and source (which screen triggered it). -->
+        <div class="modal fade" id="reportHistoryModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-secondary" id="reportHistoryModalTitle">-</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- 2026-08-29, same-day follow-up: "ถ้า Tab ไหนมี Filter ช่วยปรับ Design Filter ให้เป็น
+                             รูปแบบที่กำหนดไว้ของระบบ" -- was a bespoke d-flex row; now the same
+                             .station-filter collapsible component every other filter in this app uses
+                             (see Employee List's own Login History tab filter for the identical
+                             pattern this was copied from: label + chevron-toggle button + a row of
+                             fields, Clear Filter shown separately only once a filter is actually
+                             active). The categorical columns (By/Language/Device/Browser/Source)
+                             additionally get the system's per-column Excel-style filter
+                             (initExcelColumnFilters(), see detail.js) instead of duplicating them here. -->
+                        <div class="station-filter mb-2" id="reportHistoryStationFilter">
+                            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                            <button type="button" class="station-filter-toggle" id="reportHistoryStationFilterToggle" title="Toggle filter">
+                                <i class="fas fa-chevron-up"></i>
+                            </button>
+                            <div class="station-filter-body">
+                                <div class="row g-2">
+                                    <div class="col-6 col-md-4">
+                                        <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control datepicker" id="reportHistoryDateFrom" autocomplete="off">
+                                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control datepicker" id="reportHistoryDateTo" autocomplete="off">
+                                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-end mb-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnReportHistoryClearFilter">
+                                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle w-100" id="tb_report_history">
+                                <thead class="table-light text-secondary small">
+                                    <tr>
+                                        <th data-i18n="downloaded_at">Date/Time</th>
+                                        <th data-i18n="downloaded_by">By</th>
+                                        <th data-i18n="language">Language</th>
+                                        <th data-i18n="device">Device</th>
+                                        <th data-i18n="browser">Browser</th>
+                                        <th>IP</th>
+                                        <th data-i18n="source">Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น
              Timeline สวยๆ" -- was a plain DataTable (5 columns: Date/Time, Action, Status Change,
-             Performed By, Note). Replaced with the SAME `.apv-stage` circular-marker/connector-line
-             design this page already uses for its own Timeline modal/status card
-             (apvCreatedStageHtmlRd()/apvApprovalStageHtmlRd()/apvPaidStageHtmlRd() in detail.js) --
-             reusing an already-established "nice timeline" component on this exact page rather than
-             inventing a new visual pattern, see renderAuditHistoryTimelineRd()'s own docblock. -->
+             Performed By, Note). Replaced with a vertical icon+connector-line timeline. 2026-08-29
+             briefly redesigned into a boustrophedon/snake grid (explicit request), then reverted the
+             SAME day back to vertical, briefly gaining a "View Detail" button+modal in that same
+             round -- REMOVED again same-day per explicit follow-up ("หน้า ประวัติการดำเนินการ Detail
+             ไม่เยอะไม่ต้องมีปุ่มกดดูก็ได้ครับ แสดงใน timeline ได้เลย"): every field that modal used to show
+             (state change, note, IP/user-agent) is now rendered directly in each card instead. See
+             renderAuditHistoryTimelineRd()/auditHistoryRowHtmlRd()'s own docblock in detail.js. -->
         <div class="tab-pane fade" id="run-history-pane" role="tabpanel" aria-labelledby="run-history-tab" tabindex="0">
             <div id="noAuditYet" class="text-center text-secondary py-4 d-none">
                 <i class="fa-solid fa-clock-rotate-left fa-2x mb-3 text-secondary opacity-50"></i>
                 <span data-i18n="no_history_yet">No action has been taken on this request yet.</span>
             </div>
-            <div id="run_audit_timeline" class="apv-timeline"></div>
+            <div id="run_audit_timeline" class="apv-history-timeline"></div>
         </div>
     </div>
 
@@ -430,9 +696,23 @@
                                 <i class="fa-solid fa-calendar-check me-1"></i><span data-i18n="manage_items_tab_attendance">Attendance Data</span>
                             </button>
                         </li>
-                        <li class="nav-item d-none" id="manageLinesSyncOverrideTabWrap" role="presentation">
+                        <!-- 2026-08-29, generalized from sync-only (explicit request: "ในหน้าทำจ่าย
+                             น่าจะเปิดให้แก้ไขตัวเลขได้...ทุกค่าเลย") -- no longer toggled d-none for a
+                             non-sync run, see detail.js's own openManageLinesModal()-equivalent
+                             comment on why. -->
+                        <li class="nav-item" id="manageLinesSyncOverrideTabWrap" role="presentation">
                             <button class="nav-link" id="manageLinesSyncOverrideTab" data-bs-toggle="tab" data-bs-target="#manageLinesSyncOverridePane" type="button" role="tab">
                                 <i class="fa-solid fa-sliders me-1"></i><span data-i18n="manage_items_tab_adjustments">Deduction Adjustments</span>
+                            </button>
+                        </li>
+                        <!-- 2026-08-29, explicit request: "กำหนดได้สำหรับพนักงานรายบุคคล ติ๊กเอาหรือไม่เอา...
+                             และต้องกำหนดได้ด้วยว่าคำนวณภาษี ไม่คำนวณภาษี ส่งประกันสังคมไหม" -- moved here
+                             (universal, every draft-run employee row) from the sync-only Raw Sync Data
+                             modal's own "This Run's Settings" card, which only ever opened for a
+                             data_source='sync' row. -->
+                        <li class="nav-item" id="manageLinesCalcTabWrap" role="presentation">
+                            <button class="nav-link" id="manageLinesCalcTab" data-bs-toggle="tab" data-bs-target="#manageLinesCalcPane" type="button" role="tab">
+                                <i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="manage_items_tab_calc">Tax &amp; SSO</span>
                             </button>
                         </li>
                     </ul>
@@ -549,36 +829,79 @@
                              override/exclude/reset control per line. Per-run only (confirmed choice),
                              not a standing setting. -->
                         <div class="tab-pane fade" id="manageLinesSyncOverridePane" role="tabpanel">
+                            <!-- 2026-08-29, explicit follow-up request: "อยากให้มี List รายการและติ๊กเข้าออก
+                                 ได้เหมือนตอนที่ Set ทั้ง Template" -- a checklist for THIS employee only,
+                                 same visual/interaction pattern as the run-wide "Run Settings" panel's own
+                                 checklist (base salary + full catalog, tick to exclude, one Save button)
+                                 instead of having to open each item's row individually below. Backed by
+                                 the SAME payroll_run_line_overrides 'exclude' mechanism as the per-row
+                                 list further down -- this is just a faster, bulk way to set it, not a
+                                 separate concern. An item already excluded by the run-level default (Run
+                                 Settings panel) shows pre-checked and disabled here, since there's no
+                                 "force this one item back in" action distinct from typing a specific
+                                 override amount in the per-row list below (see
+                                 PayrollRunModel::recalculate()'s own docblock on this known,
+                                 accepted simplification). -->
+                            <div class="border rounded-3 p-3 bg-light bg-opacity-50 mb-3">
+                                <h6 class="text-secondary fw-bold mb-1"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="employee_item_exclusion_title">Exclude from This Employee's Calculation</span></h6>
+                                <div class="text-muted small mb-2" data-i18n="employee_item_exclusion_hint">Ticked items are left out of this employee's calculation for this run. Greyed-out items are already excluded by this run's own Run Settings default.</div>
+                                <div id="empItemExclusionChecklist"></div>
+                                <div class="text-end mt-2">
+                                    <button type="button" class="btn btn-sm btn-primary" id="btnSaveEmpItemExclusion"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
+                                </div>
+                            </div>
+                            <hr>
                             <p class="text-muted small mb-2" data-i18n="sync_line_override_hint">Override the computed amount, or exclude it entirely, for this run only.</p>
                             <div id="syncLineOverrideList"></div>
+                        </div>
+                        <!-- 2026-08-29: per-employee, per-run tax/SSO calculation override -- see
+                             PayrollRunModel::saveEmployeeExemption()'s own docblock. "Follow Run
+                             Default" (inherit) is the initial state for every employee until this run's
+                             own "Run Settings" panel and/or this control are actually touched. -->
+                        <div class="tab-pane fade" id="manageLinesCalcPane" role="tabpanel">
+                            <p class="text-muted small mb-3" data-i18n="employee_calc_override_hint">Set whether tax/SSO is calculated for this employee, for this run only -- overrides this run's own default (Run Settings panel) for this one person.</p>
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold mb-1" data-i18n="run_exemption_tax">Tax Calculation</label>
+                                <div class="d-flex flex-wrap gap-3" id="empCalcTaxGroup">
+                                    <div class="form-check form-check-inline m-0">
+                                        <input class="form-check-input" type="radio" name="empCalcTax" id="empCalcTaxInherit" value="inherit" checked>
+                                        <label class="form-check-label small text-secondary" for="empCalcTaxInherit"><i class="fa-solid fa-arrow-rotate-left me-1"></i><span data-i18n="calc_override_inherit">Follow Run Default</span></label>
+                                    </div>
+                                    <div class="form-check form-check-inline m-0">
+                                        <input class="form-check-input" type="radio" name="empCalcTax" id="empCalcTaxYes" value="yes">
+                                        <label class="form-check-label small text-success fw-semibold" for="empCalcTaxYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="calc_override_yes">Calculate</span></label>
+                                    </div>
+                                    <div class="form-check form-check-inline m-0">
+                                        <input class="form-check-input" type="radio" name="empCalcTax" id="empCalcTaxNo" value="no">
+                                        <label class="form-check-label small text-danger fw-semibold" for="empCalcTaxNo"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="calc_override_no">Don't Calculate</span></label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold mb-1" data-i18n="run_exemption_sso">SSO Contribution</label>
+                                <div class="d-flex flex-wrap gap-3" id="empCalcSsoGroup">
+                                    <div class="form-check form-check-inline m-0">
+                                        <input class="form-check-input" type="radio" name="empCalcSso" id="empCalcSsoInherit" value="inherit" checked>
+                                        <label class="form-check-label small text-secondary" for="empCalcSsoInherit"><i class="fa-solid fa-arrow-rotate-left me-1"></i><span data-i18n="calc_override_inherit">Follow Run Default</span></label>
+                                    </div>
+                                    <div class="form-check form-check-inline m-0">
+                                        <input class="form-check-input" type="radio" name="empCalcSso" id="empCalcSsoYes" value="yes">
+                                        <label class="form-check-label small text-success fw-semibold" for="empCalcSsoYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="sso_override_yes">Send</span></label>
+                                    </div>
+                                    <div class="form-check form-check-inline m-0">
+                                        <input class="form-check-input" type="radio" name="empCalcSso" id="empCalcSsoNo" value="no">
+                                        <label class="form-check-label small text-danger fw-semibold" for="empCalcSsoNo"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="sso_override_no">Don't Send</span></label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <button type="button" class="btn btn-sm btn-primary" id="btnSaveEmpCalcOverride"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Edit Earning/Deduction Item Selection Modal: opened from either panel's Edit button in
-         section 2 -- lists every active item of just that one item_type with a checkbox each (tick
-         in/out), scoped so saving one side never touches the other's selection. -->
-    <div class="modal fade" id="pedTypeEditModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="pedTypeEditModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header">
-                    <h5 class="modal-title text-secondary" id="pedTypeEditModalLabel">
-                        <i class="fa-solid fa-list-check me-1"></i><span id="pedTypeEditModalTitle">-</span>
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="pedTypeEditModalList"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="btnSavePedTypeEdit"><span data-i18n="save">Save</span></button>
                 </div>
             </div>
         </div>
@@ -631,30 +954,12 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- This Run's Settings (2026-08-21, explicit request: "สามารถจัดการได้ว่า คนนี้
-                         ไม่ต้องคำนวณภาษี ไม่นำส่งประกันสังคมในรอบนี้") -- per-run, per-employee opt-out,
-                         separate from and above the read-only raw data below it since this is the one
-                         part of this modal that's actually editable. Same
-                         "border rounded-3 p-3 bg-light bg-opacity-50" card idiom as the Manage Items
-                         modal's Add Item card. -->
-                    <div class="border rounded-3 p-3 bg-light bg-opacity-50 mb-3" id="rawSyncDataExemptionCard">
-                        <h6 class="text-secondary fw-bold mb-2"><i class="fa-solid fa-user-shield me-1"></i><span data-i18n="run_exemption_title">This Run's Settings</span></h6>
-                        <div class="d-flex align-items-center gap-2 mb-2">
-                            <div class="form-check form-switch m-0">
-                                <input class="form-check-input" type="checkbox" id="rawSyncDataExemptTax">
-                            </div>
-                            <label class="form-label m-0" for="rawSyncDataExemptTax" data-i18n="run_exemption_tax">Exempt from tax calculation this run</label>
-                        </div>
-                        <div class="d-flex align-items-center gap-2 mb-2">
-                            <div class="form-check form-switch m-0">
-                                <input class="form-check-input" type="checkbox" id="rawSyncDataExemptSso">
-                            </div>
-                            <label class="form-label m-0" for="rawSyncDataExemptSso" data-i18n="run_exemption_sso">Exempt from SSO submission this run</label>
-                        </div>
-                        <div class="text-end mt-2">
-                            <button type="button" class="btn btn-sm btn-primary" id="btnSaveRawSyncDataExemption"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
-                        </div>
-                    </div>
+                    <!-- 2026-08-29: the per-run tax/SSO Settings card that used to live here moved to
+                         the "Tax & SSO" tab of the universal Manage Items modal (this modal's own
+                         Items button, .btn-manage-manual-lines) -- it needed to be reachable for
+                         EVERY employee, not just sync-sourced rows this modal only ever opens for
+                         (see manageLinesModal's own manageLinesCalcPane). This viewer is read-only
+                         again, matching its original single purpose. -->
                     <div id="rawSyncDataModalBody"></div>
                 </div>
                 <div class="modal-footer">

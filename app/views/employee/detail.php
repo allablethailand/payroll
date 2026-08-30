@@ -210,6 +210,13 @@
         <li class="nav-item d-none" role="presentation">
             <button class="nav-link text-secondary" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false"><i class="fa-solid fa-paperclip me-1"></i><span data-i18n="documents">Documents</span></button>
         </li>
+        <!-- 2026-08-29, explicit request: "ต้องการอีก Tab ใน Employee เพื่อดูประวัติการเข้าใช้งานระบบ" -- new
+             tab, only shown once a real employee is loaded (a brand-new employee has no login history
+             to show yet -- see detail.js's own toggle on this <li> at the same point new-employee
+             progressive reveal already hides other not-yet-relevant tabs). -->
+        <li class="nav-item d-none" role="presentation" id="loginHistoryTabItem">
+            <button class="nav-link text-secondary" id="login-history-tab" data-bs-toggle="tab" data-bs-target="#login-history-pane" type="button" role="tab" aria-controls="login-history-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="login_history">Login History</span></button>
+        </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-5" id="employeeTabsContent">
         <div class="tab-pane fade show active" id="info-pane" role="tabpanel" aria-labelledby="info-tab" tabindex="0">
@@ -260,7 +267,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="employee_status" id="employee_status">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="active" data-i18n="status_active">Active</option>
                         <option value="probation" data-i18n="status_probation">Probation</option>
                         <option value="suspended" data-i18n="status_suspended">Suspended</option>
@@ -275,7 +282,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="title" id="title">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="mr" data-i18n="title_mr">Mr.</option>
                         <option value="mrs" data-i18n="title_mrs">Mrs.</option>
                         <option value="ms" data-i18n="title_ms">Ms.</option>
@@ -374,7 +381,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native" name="marital_status" id="marital_status">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="single" data-i18n="single">Single</option>
                         <option value="married" data-i18n="married">Married</option>
                         <option value="divorced" data-i18n="divorced">Divorced</option>
@@ -388,7 +395,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native" name="military_status" id="military_status">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="exempted" data-i18n="exempted">Exempted</option>
                         <option value="served" data-i18n="served">Served</option>
                         <option value="not_yet" data-i18n="not_yet">Not yet drafted</option>
@@ -849,7 +856,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="employment_status" id="employment_status">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="probation" data-i18n="probation">Probation</option>
                         <option value="permanent" data-i18n="permanent">Permanent</option>
                         <option value="contract" data-i18n="contract">Contract</option>
@@ -862,7 +869,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="employment_type" id="employment_type">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="full_time" data-i18n="full_time">Full-time</option>
                         <option value="part_time" data-i18n="part_time">Part-time</option>
                         <option value="daily" data-i18n="daily">Daily wage</option>
@@ -934,7 +941,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select" name="holiday_calendar_id" id="holiday_calendar_id">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
@@ -956,7 +963,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native" name="workforce_type" id="workforce_type">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="office" data-i18n="office">Office</option>
                         <option value="field" data-i18n="field">Field</option>
                         <option value="remote" data-i18n="remote">Remote</option>
@@ -968,7 +975,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native" name="record_time_method" id="record_time_method">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="fingerprint" data-i18n="fingerprint">Fingerprint</option>
                         <option value="qr_code" data-i18n="qr_code">QR Code</option>
                         <option value="mobile_app" data-i18n="mobile_app">Mobile App</option>
@@ -1114,7 +1121,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="tax_calculation_method" id="tax_calculation_method">
-                        <option value="" data-i18n="please_choose">Please choose.</option>
+                        <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="average" data-i18n="average_method">Average</option>
                         <option value="actual" data-i18n="actual_method">Actual</option>
                     </select>
@@ -1241,7 +1248,7 @@
                     <div class="mt-3 d-none">
                         <label class="form-label d-block"><span data-i18n="sso_hospital">Hospital</span></label>
                         <select class="form-select" name="sso_hospital_id" id="sso_hospital_id">
-                            <option value="" data-i18n="please_choose">Please choose.</option>
+                            <option value="" data-i18n="please_choose">Select an option</option>
                         </select>
                     </div>
                     <!-- Hidden 2026-08-19 (not needed for Payroll): SSO contribution rate is
@@ -1306,7 +1313,7 @@
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select" name="insurance_plan_id" id="insurance_plan_id">
-                            <option value="" data-i18n="please_choose">Please choose.</option>
+                            <option value="" data-i18n="please_choose">Select an option</option>
                         </select>
                     </div>
                     <div class="col-sm-2 mt-3">
@@ -1559,366 +1566,52 @@
                 </div>
             </div>
         </div>
-    </div>
-</div>
-<div class="modal fade" id="eedModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="eedModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="eedModalLabel">
-                    <span data-i18n="add_earning_deduction">Add Income / Deduction</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="eedForm" novalidate>
-                <input type="hidden" id="eed_id" name="id">
-                <div class="modal-body">
-                    <h6 class="text-secondary fw-bold mb-3 mt-2">
-                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
-                        <span data-i18n="sec_general_info">General Information</span>
-                    </h6>
-                    <!-- Catalog vs custom item toggle (2026-08-19, explicit request: "ในส่วนของ Item
-                         ให้สามารถใส่เองได้ โดยบอกว่าเป็นรายได้หรือรายหัก") -- same shape as the Payroll
-                         Run Detail page's own manual-line custom-item toggle (#manualLineModeToggle in
-                         app/views/payroll/detail.php), reusing its exact lang keys for consistency. -->
-                    <div class="d-flex justify-content-end mb-3">
-                        <div class="btn-group btn-group-sm" role="group" id="eedModeToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-mode="catalog"><i class="fa-solid fa-list me-1"></i><span data-i18n="manual_line_mode_catalog">From List</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-mode="custom"><i class="fa-solid fa-pen me-1"></i><span data-i18n="manual_line_mode_custom">Custom Item</span></button>
-                        </div>
-                    </div>
-                    <div class="row mb-3" id="eedCatalogFields">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="eed_ped_type_id" name="ped_type_id" data-api="/api/employee.earning-deduction.options" data-type=""></select>
-                        </div>
-                    </div>
-                    <!-- Type selector removed from here (2026-08-21, explicit request: "เลือกแล้วว่า
-                         จะเป็นเงินได้หรือเงินหัก ตอนที่เลือกแบบกรอกเอง ไม่ต้องมีให้เลือกอีก...มันดู
-                         ซ้ำซ้อน") -- which Add button opened this modal (context, see resetEedForm())
-                         already fixes earning-vs-deduction for the whole modal session (the catalog
-                         dropdown above is itself pre-filtered to that same type, so switching to/from
-                         custom mode never changes it either) -- asking again here was redundant.
-                         #eed_custom_item_type stays as a plain hidden field carrying that fixed type
-                         for the save payload + interest-section gating (see applyEedInterestVisibility()
-                         in detail.js), it's just never user-facing anymore. -->
-                    <div class="row mb-3 d-none" id="eedCustomFields">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_custom_item_name">Item Name</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <input type="text" class="form-control" id="eed_custom_item_name" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
-                        </div>
-                        <input type="hidden" id="eed_custom_item_type" name="custom_item_type">
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <!-- 2026-08-21, explicit request ("Form ยังดูไม่สมดุล"): was col-sm-4, leaving
-                                 col-sm-5 of dead space to the right -- every other single-field row in
-                                 this modal (Item, Interest, Amount per Installment, Reference, Notes)
-                                 already uses col-sm-9, matched here for the same reason. -->
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker required" id="eed_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                    <hr class="my-4 text-muted opacity-25">
-                    <h6 class="text-secondary fw-bold mb-3">
-                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
-                        <span data-i18n="sec_installment_settings">Installment Settings</span>
-                    </h6>
-                    <!-- Total Installments + Amount merged into one row (2026-08-21, explicit request:
-                         "Form ยังดูไม่สมดุล") -- each used to be its own col-sm-3/col-sm-3 row, leaving
-                         col-sm-6 of dead space to the right of every one of them. Pairing the two
-                         numbers that directly drive the installment schedule together (both feed
-                         computeInstallmentSchedule()) fills the row properly and reads as a more
-                         natural "how many periods, how much total" narrative than having Interest
-                         sandwiched between them like before -- Interest (which configures HOW that
-                         schedule gets computed) now follows both inputs instead of splitting them. -->
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="total_installments">Total Installments</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" step="1" min="1" class="form-control required" id="eed_total_installments" name="total_installments" value="1">
-                        </div>
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" id="eed_principal_amount_label">
-                                <span data-i18n="total_amount">Total Amount</span>
-                                <span data-i18n="principal_amount_label" class="d-none">Principal Amount</span>
-                                <span class="text-danger">*</span>
-                            </label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_principal_amount" name="principal_amount">
-                        </div>
-                    </div>
-                    <!-- Interest support (2026-08-20, explicit request: "อยากให้มีการกำหนดได้ค่าคิด
-                         ดอกเบี้ยหรือไม่คิดดอกเบี้ย...ถ้ามีการคิดดอกเบี้ย ก็ต้องกำหนดต่อได้ว่าดอกเบี้ย
-                         แบบไหน คงที่ ลดต้นลดดอก"). Same btn-outline-brand toggle-group convention as
-                         every other yes/no choice on this page (type/gender/payment-type, SSO/PVD
-                         enrolled, etc). interest_rate is % PER INSTALLMENT PERIOD, not annual -- see
-                         EmployeeEarningDeductionModel::computeInstallmentSchedule()'s docblock for why.
-                         2026-08-21 follow-up (explicit request: "รายรับให้ตัดเรื่องดอกเบี้ยไปเลย มีแค่
-                         รายหักที่บอกว่าคิดหรือไม่คิดดอกเบี้ย") -- this whole section only makes sense
-                         for deductions (a loan/salary deduction can carry interest, an earning never
-                         does), so it's now hidden entirely for earning items -- see
-                         applyEedInterestVisibility() in detail.js, driven by #eed_custom_item_type
-                         (the fixed session item type, see the comment above #eedCustomFields). -->
-                    <div id="eedInterestSection">
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="interest_label">Interest</label>
-                            </div>
-                            <div class="col-sm-9">
-                                <div class="btn-group btn-group-sm" role="group" id="eedInterestToggle">
-                                    <button type="button" class="btn btn-outline-brand active" data-value="none"><span data-i18n="interest_none">No Interest</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="has_interest"><span data-i18n="interest_has">With Interest</span></button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row mb-3 d-none" id="eedInterestDetailWrapper">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="interest_type">Interest Type</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-9 d-flex align-items-center flex-wrap gap-2">
-                                <div class="btn-group btn-group-sm" role="group" id="eedInterestTypeToggle">
-                                    <button type="button" class="btn btn-outline-brand active" data-value="fixed"><span data-i18n="interest_fixed">Flat</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="reducing_balance"><span data-i18n="interest_reducing_balance">Reducing Balance</span></button>
-                                </div>
-                                <div class="input-group input-group-sm" style="max-width:180px;">
-                                    <input type="number" step="0.01" min="0.01" class="form-control" id="eed_interest_rate" name="interest_rate" placeholder="0.00">
-                                    <span class="input-group-text" data-i18n="interest_rate_suffix">% / installment</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Always-visible, always-editable installment schedule (2026-08-20, explicit
-                         request: "ให้คำนวณให้อัตโนมัติหากใส่ยอดหักทั้งหมด แต่สามารถแก้ไขได้" +
-                         "Status ของแต่ละงวดการจ่าย...จ่ายแล้วหรือรอจ่าย") -- replaces the old
-                         even_split/custom_per_installment radio pair; amounts are pre-filled by
-                         GET /api/employee.earning-deduction.preview-installments (debounced, fires on
-                         principal/installment-count/interest changes) but every cell stays a plain
-                         editable input. Status column only appears once an existing assignment's real
-                         installments (with their pending/processed/skipped status) are loaded -- a
-                         brand-new Add has no installments yet, so nothing to show there. -->
-                    <div class="row mb-3">
-                        <div class="col-sm-3">
-                            <label class="form-label mb-0" data-i18n="installment_amounts">Amount per Installment</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <div class="table-responsive eed-installment-table-wrap">
-                                <table class="table table-sm table-striped align-middle mb-0" id="eedInstallmentTable">
-                                    <thead>
-                                        <tr>
-                                            <th class="text-muted small" style="width:15%;" data-i18n="installment_no_col">#</th>
-                                            <th class="text-muted small" data-i18n="installment_amount_col">Amount</th>
-                                            <th class="text-muted small d-none" id="eedInstallmentStatusHeader" data-i18n="installment_status_col">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="eedInstallmentTableBody"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="external_reference_no">Reference / Contract No.</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <input type="text" class="form-control" id="eed_external_reference_no" name="external_reference_no" maxlength="100">
-                        </div>
-                    </div>
-                    <!-- Transfer-to-payee (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร โดยเลือก
-                         พนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- only meaningful on a deduction, so
-                         toggled alongside the interest section (both deduction-only) by
-                         applyEedInterestVisibility() in detail.js. Reuses /api/employee.report_to.get
-                         (data-exclude-id set to the employee whose detail page this is, same pattern
-                         already documented in input.js for #report_to_id) rather than a new endpoint. -->
-                    <div class="row mb-3 d-none" id="eedPayeeWrapper">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="eed_payee_employee_id" name="payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="notes">Notes</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <textarea class="form-control" id="eed_notes" name="notes" rows="2"></textarea>
-                        </div>
-                    </div>
+        <!-- 2026-08-29, explicit request: "ต้องการอีก Tab ใน Employee เพื่อดูประวัติการเข้าใช้งานระบบโดยแสดง
+             ข้อมูลแบบละเอียดตามที่เก็บ...และสามารถ Filter ได้" -- server-side DataTable (this can grow
+             unbounded, one row per login), scoped to this one employee via EmployeeLoginLogController's
+             own employee_id param. Filter bar follows the simple inline-controls pattern (not the
+             fuller collapsible .station-filter used on Employee List/Payroll Process, which is sized
+             for a company-wide list with many more filterable dimensions than this 4-field tab needs). -->
+        <div class="tab-pane fade" id="login-history-pane" role="tabpanel" aria-labelledby="login-history-tab" tabindex="0">
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-sm-3">
+                    <label class="form-label small mb-1" data-i18n="date_from">From</label>
+                    <input type="text" class="form-control form-control-sm datepicker" id="loginHistoryFilterDateFrom">
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
+                <div class="col-sm-3">
+                    <label class="form-label small mb-1" data-i18n="date_to">To</label>
+                    <input type="text" class="form-control form-control-sm datepicker" id="loginHistoryFilterDateTo">
                 </div>
-            </form>
-        </div>
-    </div>
-</div>
-<!-- Recurring Allowance modal -- 2026-08-26, explicit request, see EmployeeRecurringEarningModel's
-     own docblock. Catalog-only (no free-text/custom item, unlike #eedModal above) since this
-     feature is specifically "assign one of the company's own fixed-amount earning types to this
-     employee at their own flat monthly amount". -->
-<div class="modal fade" id="recurringEarningModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="recurringEarningModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="recurringEarningModalLabel">
-                    <span data-i18n="add_recurring_earning">Add Recurring Allowance</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="recurringEarningForm" novalidate>
-                <input type="hidden" id="ere_id" name="id">
-                <div class="modal-body">
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <select class="form-select select2-remote required" id="ere_ped_type_id" name="ped_type_id" data-api="/api/employee.recurring-earning.type-options"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="amount">Amount</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="ere_amount" name="amount">
-                                <span class="input-group-text" data-i18n="thb">THB</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker required" id="ere_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                    <hr class="my-4 text-muted opacity-25">
-                    <h6 class="text-secondary fw-bold mb-2"><span data-i18n="suspend_period">Suspend Period</span></h6>
-                    <!-- Confirmed via AskUserQuestion: "suspend" is a date RANGE, not a plain on/off
-                         toggle -- both fields set together or neither, enforced server-side too
-                         (EmployeeRecurringEarningModel::save()). -->
-                    <p class="text-secondary small mb-3" data-i18n="suspend_period_hint">*Optional. While set, this allowance is skipped in any payroll run whose pay period overlaps this range, then resumes automatically afterward.</p>
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="suspend_from">Suspend From</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="ere_suspended_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="suspend_to">Suspend To</span></label>
-                        </div>
-                        <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="ere_suspended_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0" data-i18n="notes">Notes</label>
-                        </div>
-                        <div class="col-sm-8">
-                            <textarea class="form-control" id="ere_notes" rows="2" maxlength="255"></textarea>
-                        </div>
-                    </div>
+                <div class="col-sm-3">
+                    <label class="form-label small mb-1" data-i18n="device">Device</label>
+                    <select class="form-select form-select-sm select2-native" id="loginHistoryFilterDevice"></select>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="ereSaveBtn" data-i18n="save_item">Save Item</button>
+                <div class="col-sm-3">
+                    <label class="form-label small mb-1" data-i18n="browser">Browser</label>
+                    <select class="form-select form-select-sm select2-native" id="loginHistoryFilterBrowser"></select>
                 </div>
-            </form>
-        </div>
-    </div>
-</div>
-<!-- Shared Dependent/Parent edit modal (2026-08-19, explicit request: card layout, "กด edit" opens a
-     modal rather than inline table-cell editing) -- one modal for both entity types (#child_entity
-     tracks which), same generic dependent/parent pairing already used server-side
-     (EmployeeModel::childConfig()). date_of_birth/studying only apply to a dependent, hidden for a
-     parent. Relationship is now a static dropdown (#child_relationship) instead of free text -- its
-     option set is swapped per entity type in detail.js (children get legitimate/adopted child,
-     parents get father/mother/spouse's father/spouse's mother), since the DB column itself is a
-     plain, uncontrolled varchar never read by any calc/report (only ever displayed), so there's no
-     schema reason the two entity types must share one option list. -->
-<!-- #childModal removed (2026-08-20) -- Dependents are now filled in directly on their inline
-     card in #dependentCardsContainer (see renderDependentCards()/dependentCardHtml() in
-     detail.js), no modal needed. This was the only remaining consumer of the modal (Parents
-     moved to inline father/mother fields back on 2026-08-19), so removing it also resolves the
-     "modal body doesn't scroll" report -- there's no modal left to have that bug. -->
-<!-- 2026-08-26, explicit request: "เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้" -- signature-pad modal,
-     direct port of Company Profile's own #cpSignaturePadModal (plain mouse/touch canvas drawing, no
-     new dependency). -->
-<div class="modal fade" id="empSignaturePadModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <canvas id="empSignaturePadCanvas" class="cp-signature-pad-canvas" width="500" height="220"></canvas>
-                <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" id="empSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button type="button" class="btn btn-primary" id="empSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm w-100" id="tableLoginHistory">
+                    <thead>
+                        <tr>
+                            <th data-i18n="login_at">Login At</th>
+                            <th data-i18n="logout_at">Logout At</th>
+                            <th data-i18n="ip_address">IP Address</th>
+                            <th data-i18n="location">Location</th>
+                            <th data-i18n="timezone">Timezone</th>
+                            <th data-i18n="device">Device</th>
+                            <th data-i18n="operating_system">OS</th>
+                            <th data-i18n="browser">Browser</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </div>
     </div>
 </div>
-<!-- 2026-08-26, explicit request: "ส่วนของที่อยู่ให้เพิ่มสามารถปักหมุด Location บน Map ได้" -- OpenStreetMap
-     + Leaflet map-pin modal. A Nominatim (OSM's own free geocoder) search box jumps the map to an
-     address; clicking anywhere on the map (or dragging the marker) drops/moves the pin. Leaflet needs
-     a real visible, correctly-sized container to compute its tile grid against -- initialized on
-     `shown.bs.modal` (after the modal has finished sizing), with `invalidateSize()` called right after
-     in case the container was already created once before (same "recompute after the modal is
-     actually visible" precedent as the Payslip/Employment Certificate Template editors' own
-     fullscreen-modal canvas resize). -->
-<div class="modal fade" id="empMapPinModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-map-location-dot me-2"></i><span data-i18n="pin_location_on_map">Pin Location on Map</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <input type="text" class="form-control mb-2" id="empMapSearchInput" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                <div id="empMapPinContainer" style="width:100%;height:360px;border-radius:8px;overflow:hidden;"></div>
-                <p class="text-muted small mt-2 mb-0" data-i18n="map_pin_hint">Click anywhere on the map, or drag the marker, to set the location.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button type="button" class="btn btn-primary" id="empMapPinSaveBtn"><span data-i18n="save">Save</span></button>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- eedModal / recurringEarningModal / empSignaturePadModal / empMapPinModal moved to
+     app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 <input type="hidden" id="employee_no" value="<?= htmlspecialchars($employee_no ?? '', ENT_QUOTES, 'UTF-8') ?>">
 <script src="<?=asset('public/js/employee/detail.js')?>"></script>

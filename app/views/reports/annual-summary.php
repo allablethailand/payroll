@@ -30,26 +30,6 @@
         </button>
     </div>
 
-    <div class="modal fade" id="aisFiscalYearSettingsModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="fa-solid fa-gear me-2 text-brand"></i><span data-i18n="ais_fiscal_year_settings">Fiscal Year Settings</span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <label class="form-label" data-i18n="fiscal_year_start_month">Fiscal Year Start Month</label>
-                    <select class="form-select select2-static" id="aisFiscalYearStartMonth" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
-                    <p class="text-muted small mt-2 mb-0" data-i18n="ais_fiscal_year_settings_hint">Sets which calendar month a fiscal year starts on for this report (1 = January is a plain calendar year). Applies company-wide.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                    <button type="button" class="btn btn-primary btn-sm" id="btnSaveAisFiscalYearSetting"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- 2026-08-29, explicit follow-up: "ไม่ต้องมีปุ่ม search เลือก filter แล้ว Reload เลย" -- no Apply
          button; every filter reloads immediately on change (see annual-summary.js). Free-text
          search is DataTable's own built-in search box (in the table card below) instead of a

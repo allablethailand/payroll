@@ -118,7 +118,7 @@ function renderAttendance() {
             { data: null, render: (d, t, row) => escapeHtmlMe((currentLang === 'th' ? row.shift_name_th : row.shift_name_en) || '-') },
             { data: null, render: (d, t, row) => row.clock_in ? String(row.clock_in).substring(11, 16) : '-' },
             { data: null, render: (d, t, row) => row.clock_out ? String(row.clock_out).substring(11, 16) : '-' },
-            { data: null, render: (d, t, row) => row.actual_work_minutes ? (row.actual_work_minutes / 60).toFixed(1) : '-' },
+            { data: null, className: 'text-end', render: (d, t, row) => row.actual_work_minutes ? (row.actual_work_minutes / 60).toFixed(1) : '-' },
             { data: 'status', className: 'text-center', render: (d) => attendanceStatusBadge(d) },
             { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
@@ -442,13 +442,54 @@ function saveOvertime() {
     });
 }
 
+// 2026-08-29, same-day follow-up: system-wide page-level filter audit -- these 3 tabs' filter
+// fields moved from a bare row into the standard .station-filter component (see
+// app/views/manual-entry/index.php's own comment) -- toggle + conditional Clear Filter visibility
+// wired the same way as every other .station-filter instance in this app (e.g.
+// employee/list.js's own #employeeLoginHistoryStationFilterToggle).
+function meFilterToggle(filterId, toggleId) {
+    $(document).on('click', toggleId, function () {
+        const $filter = $(filterId).toggleClass('collapsed');
+        const collapsed = $filter.hasClass('collapsed');
+        $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+    });
+}
+meFilterToggle('#attendanceStationFilter', '#attendanceStationFilterToggle');
+meFilterToggle('#leaveStationFilter', '#leaveStationFilterToggle');
+meFilterToggle('#overtimeStationFilter', '#overtimeStationFilterToggle');
+
+function updateMeClearFilterVisibility(btnId, employeeId, dateFromId, dateToId) {
+    const active = !!($(employeeId).val() || $(dateFromId).val() || $(dateToId).val());
+    $(btnId).toggleClass('d-none', !active);
+}
 $(document).on('change', '#filter_att_employee, #filter_att_date_from, #filter_att_date_to', function () {
+    updateMeClearFilterVisibility('#btnAttendanceClearFilter', '#filter_att_employee', '#filter_att_date_from', '#filter_att_date_to');
     if (dtAttendance) dtAttendance.ajax.reload(null, true);
 });
 $(document).on('change', '#filter_leave_employee, #filter_leave_date_from, #filter_leave_date_to', function () {
+    updateMeClearFilterVisibility('#btnLeaveClearFilter', '#filter_leave_employee', '#filter_leave_date_from', '#filter_leave_date_to');
     if (dtLeave) dtLeave.ajax.reload(null, true);
 });
 $(document).on('change', '#filter_ot_employee, #filter_ot_date_from, #filter_ot_date_to', function () {
+    updateMeClearFilterVisibility('#btnOvertimeClearFilter', '#filter_ot_employee', '#filter_ot_date_from', '#filter_ot_date_to');
+    if (dtOvertime) dtOvertime.ajax.reload(null, true);
+});
+$(document).on('click', '#btnAttendanceClearFilter', function () {
+    $('#filter_att_employee').val(null).trigger('change');
+    $('#filter_att_date_from, #filter_att_date_to').val('');
+    updateMeClearFilterVisibility('#btnAttendanceClearFilter', '#filter_att_employee', '#filter_att_date_from', '#filter_att_date_to');
+    if (dtAttendance) dtAttendance.ajax.reload(null, true);
+});
+$(document).on('click', '#btnLeaveClearFilter', function () {
+    $('#filter_leave_employee').val(null).trigger('change');
+    $('#filter_leave_date_from, #filter_leave_date_to').val('');
+    updateMeClearFilterVisibility('#btnLeaveClearFilter', '#filter_leave_employee', '#filter_leave_date_from', '#filter_leave_date_to');
+    if (dtLeave) dtLeave.ajax.reload(null, true);
+});
+$(document).on('click', '#btnOvertimeClearFilter', function () {
+    $('#filter_ot_employee').val(null).trigger('change');
+    $('#filter_ot_date_from, #filter_ot_date_to').val('');
+    updateMeClearFilterVisibility('#btnOvertimeClearFilter', '#filter_ot_employee', '#filter_ot_date_from', '#filter_ot_date_to');
     if (dtOvertime) dtOvertime.ajax.reload(null, true);
 });
 

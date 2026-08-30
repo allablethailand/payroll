@@ -32,6 +32,18 @@ require_once __DIR__ . '/StatutoryCalculationEngine.php';
  *    `period_amount * periodsPerYear` for BOTH methods (not full YTD-cumulative precision for
  *    this one piece) -- SSO has a fixed statutory cap so this is very close to exact regardless,
  *    and PVD is exact whenever the rate/base doesn't change mid-year (the common case).
+ *
+ * 2026-08-30, real bug found and fixed (see database/migrations/2026-08-30_7_taxable_gross_amount.sql's
+ * own header for the full root-cause writeup). $periodGrossAmount is now the CALLER's
+ * tax_treatment-filtered figure (non_taxable earning lines already excluded), not the raw full
+ * gross -- this class itself does no filtering, same "engine takes a precomputed figure"
+ * convention as StatutoryCalculationEngine's own $employeeFlags. $periodBeforeTaxDeductionAmount
+ * (new param) is a before_tax-flagged PED deduction total for this ONE period, folded into
+ * $allowances the SAME way SSO/PVD already are (flat `* periodsPerYear` projection, not full
+ * YTD-cumulative precision -- same simplification precedent as SSO/PVD above) -- deliberately NOT
+ * subtracted from $periodGrossAmount itself, since a before-tax PED deduction functions as an
+ * allowance (subtracted AFTER the 50%-capped expense deduction), not as an exclusion from
+ * assessable income itself the way a non-taxable EARNING is.
  */
 class ThPitCalculator {
     private PDO $db;
@@ -51,6 +63,10 @@ class ThPitCalculator {
     }
 
     /**
+     * @param float $periodGrossAmount tax_treatment-filtered gross for this ONE period (non_taxable
+     *   earning lines already excluded by the caller -- see this class's own 2026-08-30 docblock note).
+     * @param float $periodBeforeTaxDeductionAmount before_tax-flagged PED deduction total for this
+     *   ONE period (2026-08-30) -- folded into $allowances the same way SSO/PVD are.
      * @param string $method 'average' or 'actual' (employees.tax_calculation_method)
      * @return array{employee_amount:float, annual_taxable_income:float, annual_tax:float, method:string, periods_elapsed:?int}
      */
@@ -60,6 +76,7 @@ class ThPitCalculator {
         float $periodGrossAmount,
         float $periodSsoEmployeeAmount,
         float $periodPvdEmployeeAmount,
+        float $periodBeforeTaxDeductionAmount,
         int $periodsPerYear,
         string $method,
         bool $hasSpouse,
@@ -70,7 +87,8 @@ class ThPitCalculator {
         $childCount = $this->dependentChildCount($employeeId);
         $annualSso = $periodSsoEmployeeAmount * $periodsPerYear;
         $annualPvd = $periodPvdEmployeeAmount * $periodsPerYear;
-        $allowances = $this->personalAllowances($hasSpouse, $childCount) + $annualSso + $annualPvd;
+        $annualBeforeTaxDeduction = $periodBeforeTaxDeductionAmount * $periodsPerYear;
+        $allowances = $this->personalAllowances($hasSpouse, $childCount) + $annualSso + $annualPvd + $annualBeforeTaxDeduction;
 
         if ($method === 'actual') {
             return $this->calculateActual($compId, $employeeId, $periodGrossAmount, $periodsPerYear, $allowances, $periodStartDate, $calcDate);
@@ -152,11 +170,16 @@ class ThPitCalculator {
 
     /** Same query shape as PayrollReportDataModel::getYtdTotals() -- states filtered to
      *  approved/paid/locked, which naturally excludes the current still-draft run being
-     *  calculated, no separate self-exclusion needed. */
+     *  calculated, no separate self-exclusion needed.
+     *  2026-08-30: reads COALESCE(taxable_gross_amount, gross_amount) -- a period computed after
+     *  the tax_treatment fix (see database/migrations/2026-08-30_7_taxable_gross_amount.sql) has a
+     *  real, tax_treatment-filtered taxable_gross_amount; a historical period computed BEFORE that
+     *  fix has it NULL, so falls back to its own (imperfect, pre-fix) gross_amount rather than
+     *  breaking the YTD sum with a NULL. */
     private function ytdGrossPriorToThisPeriod(int $compId, int $employeeId, string $periodStartDate): float {
         $year = (int)substr($periodStartDate, 0, 4);
         $placeholders = implode(',', array_fill(0, count(self::YTD_STATES), '?'));
-        $stmt = $this->db->prepare("SELECT COALESCE(SUM(d.gross_amount), 0) FROM `payroll_run_details` d
+        $stmt = $this->db->prepare("SELECT COALESCE(SUM(COALESCE(d.taxable_gross_amount, d.gross_amount)), 0) FROM `payroll_run_details` d
             JOIN `payroll_runs` r ON r.id = d.run_id
             WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
                 AND YEAR(r.period_start_date) = ? AND r.period_start_date < ? AND d.employee_id = ?");

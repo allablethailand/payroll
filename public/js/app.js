@@ -35,25 +35,211 @@ function syncLangCookie(lang) {
 // makes that happen immediately instead. `$.fn.dataTable.tables({ api: true })` covers every table
 // on the page in one call, so this works for any current or future page with no per-page wiring --
 // a table with no `ajax` option configured (fully static data) just silently no-ops.
+// 2026-08-29, real bug found and fixed (explicit report: "ในหน้าทำจ่าย เลือกเปลี่ยนภาษาแล้ว ชื่อพนักงานไม่
+// เปลี่ยนตามภาษาที่เลือก ต้องการให้ได้แบบเดียวกันกับหน้า Employee") -- this used to call ONLY
+// `.ajax.reload()` on every visible DataTable, which is a silent no-op on a table that was
+// constructed with a plain in-memory `data:` array and no `ajax:` option at all (e.g. the Payroll
+// Run Detail page's own Employee Breakdown table, `#tb_run_detail` in payroll/detail.js -- its
+// name column already correctly branches on `currentLang` inside a `render` callback, same
+// convention the Employee page itself uses, but that callback only ever re-runs on the NEXT
+// `.draw()`, which `.ajax.reload()` never triggers for a table with nothing to fetch). Now checks
+// each visible table individually: ajax-backed tables keep re-fetching fresh data as before
+// (`.ajax.reload(null, false)`, so a server-rendered th/en value like a joined lookup name still
+// comes back correct too); a plain client-side table instead gets `.draw(false)` -- cheap, no
+// network round trip, and sufficient to re-invoke every column's own `render` function against the
+// now-current `currentLang`, exactly what a `data_th`/`data_en`-branching render already expects.
+// Both paths pass `false` for "don't reset pagination", same as the original behavior.
+// 2026-08-30, real bug found and fixed (explicit report: "การแปลยังไม่ครบทั้งหมด ทั้งที่เป็น data table
+// select2 และ html บางทีก็แปลบ้างไม่แปลบ้าง") -- `$.fn.dataTable.tables({visible:true, api:true})`
+// (still correct for the common case, unchanged above) only ever redraws tables that are visible
+// at the EXACT moment changeLanguage() fires -- a table sitting inside a hidden Bootstrap tab pane
+// at that instant was silently skipped, with nothing anywhere in the app catching it up
+// afterward. Its rows stayed rendered in whatever language was active when it was LAST drawn,
+// indefinitely, however many times the page's language got switched while some other tab was
+// active -- exactly the "sometimes translates, sometimes doesn't, depends which tab I was on"
+// symptom reported. `langChangeEpoch` is a simple version counter stamped onto every table this
+// function actually redraws; a delegated 'shown.bs.tab' handler compares each newly-visible pane's
+// own tables against it and redraws any that are behind, using the exact same
+// ajax-vs-client-side branch this function already uses.
+let langChangeEpoch = 0;
 function reloadAllTablesForLanguageChange() {
     if (typeof $.fn.dataTable === 'undefined') return;
+    langChangeEpoch++;
     try {
-        $.fn.dataTable.tables({ visible: true, api: true }).ajax.reload(null, false);
-    } catch (e) { /* no ajax-backed tables on this page -- nothing to reload */ }
+        $.fn.dataTable.tables({ visible: true, api: true }).every(function () {
+            const table = this;
+            table.settings()[0]._langEpoch = langChangeEpoch;
+            if (table.ajax.url()) {
+                table.ajax.reload(null, false);
+            } else {
+                table.draw(false);
+            }
+        });
+    } catch (e) { /* no DataTables on this page -- nothing to reload */ }
 }
+// 2026-08-30, real bug found and fixed (explicit report: "ในตอนที่กด expand ตารางเพื่อดูข้อมูลที่ซ่อน บาง
+// Field ขึ้น undefined") -- confirmed against the vendored source itself
+// (node_modules/datatables.net-responsive/js/dataTables.responsive.js's own `listHidden()`, the
+// DEFAULT renderer every `responsive: true` table in this app uses -- none override it): its
+// expand-row builder does plain string concatenation of `col.title`/`col.data` with NO
+// null/undefined guard at all. Since ~40+ DataTable columns across this app are `data: null` with
+// a custom `render` function (this codebase's own dominant column style, see
+// table-column-filter.js's own docblock), any render function whose implicit fall-through returns
+// `undefined` for some row (or a plain `data:'field'` binding to a key genuinely absent from that
+// row's payload) renders as the literal text "undefined" the moment that column collapses into
+// the expand row on a narrow viewport -- reproducible on the exact same data that displays fine in
+// the main table, since Responsive re-fetches the identical rendered value via DataTables' own
+// core `fastData()`, not a different code path. Fixed with ONE global override of the Responsive
+// plugin's own default renderer (registered once, here, rather than hunting down every render
+// function that can fall through to undefined across dozens of tables) -- otherwise byte-for-byte
+// the same as the vendored listHidden() above, with `col.title`/`col.data` each coalesced to '' /
+// '-' before concatenating.
+$(document).ready(function () {
+    if (typeof $.fn.dataTable === 'undefined' || !$.fn.dataTable.Responsive) return;
+    // 2026-08-30, real bug found and fixed (explicit report: expand rows render empty, and a
+    // long-standing "Cannot read properties of undefined (reading 's')" console error) -- this used
+    // to be wrapped in an extra `function () { return function (api, rowIdx, columns) {...}; }`
+    // layer, mimicking how the vendored NAMED PRESETS work (Responsive.renderer.listHidden() etc.
+    // are zero-arg factories, looked up and INVOKED by the plugin only when `details.renderer` is a
+    // STRING). The actual vendored call site (node_modules/datatables.net-responsive/js/
+    // dataTables.responsive.js) only unwraps that way for a string value -- for a plain function (an
+    // object override like this one), it's used AS-IS and called directly with (dt, rowIdx,
+    // detailsObj). The outer wrapper above ignored those arguments and returned the INNER function
+    // object itself, not real HTML -- that function object then got handed to the child-row display
+    // machinery instead of content, producing a visibly empty expand row (and very likely the source
+    // of the "reading 's'" error too, whenever something downstream tried to treat that stray
+    // function as a DataTables settings-bearing context instead of markup). Fixed by assigning the
+    // renderer function directly, no wrapping factory.
+    $.fn.dataTable.Responsive.defaults.details.renderer = function (api, rowIdx, columns) {
+        var data = $.map(columns, function (col) {
+            if (!col.hidden) return '';
+            var klass = col.className ? 'class="' + col.className + '"' : '';
+            var title = (col.title === null || col.title === undefined) ? '' : col.title;
+            var value = (col.data === null || col.data === undefined) ? '-' : col.data;
+            return '<li ' + klass +
+                ' data-dtr-index="' + col.columnIndex + '"' +
+                ' data-dt-row="' + col.rowIndex + '"' +
+                ' data-dt-column="' + col.columnIndex + '">' +
+                '<span class="dtr-title">' + title + '</span> ' +
+                '<span class="dtr-data">' + value + '</span>' +
+                '</li>';
+        }).join('');
+        return data ? $('<ul data-dtr-index="' + rowIdx + '" class="dtr-details"/>').append(data) : false;
+    };
+});
+$(document).on('shown.bs.tab', function (e) {
+    // langChangeEpoch === 0 means the language has never actually been switched this session --
+    // nothing could possibly be stale, so skip entirely (avoids a redundant reload/draw on every
+    // single tab click in the overwhelmingly common case where a user never touches the switcher).
+    if (typeof $.fn.dataTable === 'undefined' || langChangeEpoch === 0) return;
+    const targetSel = $(e.target).attr('data-bs-target') || $(e.target).attr('href');
+    if (!targetSel) return;
+    $(targetSel).find('table.dataTable').each(function () {
+        if (!$.fn.DataTable.isDataTable(this)) return;
+        const dt = $(this).DataTable();
+        const settings = dt.settings()[0];
+        if (settings._langEpoch === langChangeEpoch) return; // already current, no-op
+        settings._langEpoch = langChangeEpoch;
+        if (dt.ajax.url()) {
+            dt.ajax.reload(null, false);
+        } else {
+            dt.draw(false);
+        }
+    });
+});
 
+// 2026-08-29, explicit request: "ตอนนี้เก็บ ip location timezone อุปกรณ์ version อุปกรณ์ เบราเซอร์ ครบไหม
+// ถ้ายังไม่ครบให้เก็บเพิ่มครับ" -- of that list, `timezone` is the one piece the SERVER genuinely
+// cannot know from the initial login request alone (no standard HTTP header carries a browser's
+// IANA timezone) -- auth/index.php's own login flow captures everything else (ip/location/device/
+// os/browser) synchronously at login and stashes the new row's id in $_SESSION['login_log_id'].
+// This fires once per browser session (a sessionStorage flag, not localStorage -- a genuinely NEW
+// login in the same browser, e.g. a different user after a Switch-App round trip, must be able to
+// record its own timezone again) on every page's first load after that, PATCHing it in via
+// api/employee-login-log.record-timezone -- best-effort, silently does nothing if there's no
+// active login-log session (already recorded this session, or session/route not reached yet, e.g.
+// the public /auth page itself before a session exists at all).
+function recordLoginTimezone() {
+    if (sessionStorage.getItem('login_timezone_recorded') === '1') return;
+    let timezone = '';
+    try {
+        timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    } catch (e) { /* Intl unsupported -- nothing to send */ }
+    if (!timezone) return;
+    fetch(`${BASE_URL}/api/employee-login-log.record-timezone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timezone: timezone }),
+    }).then(res => res.json()).then(json => {
+        // Only mark "recorded" on a genuine success -- if there's no active login-log session yet
+        // (status:false, e.g. an edge case where this runs before auth/index.php's own redirect
+        // has completed) this should keep retrying on the next page load instead of giving up
+        // silently for the rest of the browser session.
+        if (json && json.status) {
+            sessionStorage.setItem('login_timezone_recorded', '1');
+        }
+    }).catch(() => { /* best-effort -- will simply retry on the next page load this session */ });
+}
+/**
+ * 2026-08-30, real bug found and fixed: `app/services/reports/LocalizedException.php` (PHP) has
+ * carried an i18n `error_key` + `params` pair for a while -- 9 of the Reports module's 10 report
+ * generators already throw it -- and its own docblock has claimed since it was written that "the
+ * frontend looks up langData['error_' + errorKey]... see translateApiError() in public/js/app.js".
+ * That function never actually existed, AND `ReportsController`'s own catch block only ever sent
+ * back `message` (the raw English fallback), never `error_key`/`params` at all -- so the entire
+ * mechanism was completely inert; a Thai-locale user hitting a report validation error has always
+ * seen a raw English sentence, exactly the original problem this was supposed to fix. Both halves
+ * fixed together: the controller now forwards `error_key`/`params`, and this is the actual lookup.
+ * `{param}` placeholders are substituted from `params` -- a value that's an array is treated as a
+ * list of `payroll_runs.state` codes and translated per-element via the existing `state_{code}` lang
+ * keys before joining (same convention the PHP class's own docblock already promised), every other
+ * param type substituted as a plain string. Falls back to the raw English `message` when
+ * `error_key` is absent or the lang key doesn't exist yet (a new error_key added later degrades
+ * gracefully instead of showing "undefined").
+ */
+function translateApiError(data) {
+    if (!data || !data.error_key) {
+        return (data && data.message) || null;
+    }
+    const template = langData['error_' + data.error_key];
+    if (!template) {
+        return data.message || null;
+    }
+    let text = template;
+    const params = data.params || {};
+    Object.keys(params).forEach(key => {
+        const value = params[key];
+        let substituted;
+        if (Array.isArray(value)) {
+            substituted = value.map(code => langData['state_' + code] || code).join(', ');
+        } else if (key === 'state' || key === 'current_state') {
+            // payroll_runs.state codes ('draft'/'approved'/...) also show up as a lone scalar
+            // param (e.g. run_state_invalid's own `current_state`), not just inside a `states`
+            // array -- same state_{code} lang-key translation either way.
+            substituted = langData['state_' + value] || value;
+        } else {
+            substituted = value;
+        }
+        text = text.split('{' + key + '}').join(substituted);
+    });
+    return text;
+}
 /** 2026-08-29: moved here from public/js/reports/index.js (unchanged) so any page can trigger a
  *  report download through the existing GET /api/report.generate endpoint -- originally only the
  *  Reports page itself loaded that file, but the Payroll Process List/Detail pages' own "print"
  *  shortcuts (SSO/RD/Bank Transfer for a specific run) need the exact same fetch+blob+download
  *  flow without pulling in the rest of reports/index.js's page-specific state. */
-function generateReport(url) {
+// 2026-08-29, same-day follow-up: the new "Reports" tab's own download-count/last-downloaded
+// columns need to refresh right after a real download completes -- `onSuccess` is optional
+// (existing callers that don't pass it are unaffected) and only fires once the download actually
+// went through, not on a JSON error response.
+function generateReport(url, onSuccess) {
     fetch(url, { method: 'GET' })
         .then(async res => {
             const contentType = res.headers.get('Content-Type') || '';
             if (contentType.indexOf('application/json') !== -1) {
                 const data = await res.json();
-                showWarning(data.message || langData['generate_failed'] || 'Failed to generate the report.');
+                showWarning(translateApiError(data) || langData['generate_failed'] || 'Failed to generate the report.');
                 return;
             }
             const disposition = res.headers.get('Content-Disposition') || '';
@@ -68,7 +254,11 @@ function generateReport(url) {
             a.click();
             a.remove();
             window.URL.revokeObjectURL(blobUrl);
-            showSuccess(langData['generate_success'] || 'Report generated successfully.');
+            // 2026-08-29, explicit request: "ตอนกดออก Report สำเร็จ ให้ alert ปิดเองอัตโนมัติ" -- 1.5s,
+            // enough to register "it worked" without needing a click, same spirit as the file
+            // download itself already happening with no further action needed.
+            showSuccess(langData['generate_success'] || 'Report generated successfully.', true, 1500);
+            if (typeof onSuccess === 'function') onSuccess();
         })
         .catch(function () {
             showWarning(langData['generate_failed'] || 'Failed to generate the report.');
@@ -85,15 +275,23 @@ $(document).ready(async function() {
     // same "fast local default, then server reconciles" pattern the language switcher already used.
     applyFontSize(localStorage.getItem('preferred_font_size') || 'm');
     loadUserPreferences();
-    $('.nav-lang-btn').on('click', function(e) {
+    recordLoginTimezone();
+    // 2026-08-30, explicit request: "Design การเปลี่ยนภาษาใน modal ให้เป็น design เดียวกับ header" -- was
+    // a single non-delegated .on('click') bound only to the ONE nav button that existed at page
+    // load, toggling the ONE #languageMenu by id. Delegated ($(document).on(...)) so it also covers
+    // every .nav-lang-btn a modal gets (see the show.bs.modal handler below, which injects the
+    // exact same .nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu markup this nav button already
+    // uses) -- and scoped to THIS button's own sibling menu (id can't repeat across N open modals +
+    // the nav itself, so every instance now uses a shared CLASS instead).
+    $(document).on('click', '.nav-lang-btn', function(e) {
         e.stopPropagation();
-        $('#languageMenu').toggleClass('active');
+        $(this).siblings('.nav-lang-menu').toggleClass('active');
     });
     $(document).on('click', '.dropdown-lang-item', async function(e) {
         e.preventDefault();
         const selectedValue = $(this).data('value');
         await changeLanguage(selectedValue);
-        $('#languageMenu').removeClass('active');
+        $('.nav-lang-menu').removeClass('active');
     });
     $('.nav-hub-btn').on('click', function(e) {
         e.stopPropagation();
@@ -104,7 +302,7 @@ $(document).ready(async function() {
         $('#profileMenu').toggleClass('active');
     });
     $(document).on('click', function() {
-        $('#languageMenu').removeClass('active');
+        $('.nav-lang-menu').removeClass('active');
         $('#hubMenu').removeClass('active');
         $('#profileMenu').removeClass('active');
     });
@@ -347,12 +545,41 @@ let userSettingsJustSaved = false;
 // block already exists to avoid for everything inside it, but these 2 lines were originally written
 // outside that block). Bootstrap's own modal events bubble up to document just like a native DOM
 // event, so delegation works identically to direct binding once the element does exist.
+// 2026-08-29, explicit follow-up request: "ทำ Notification Settings ก่อนเลยครับ -- ให้ user เลือกเปิด/ปิด
+// รับแจ้งเตือนได้เป็นราย category (5 ประเภทที่มีอยู่)" -- own section inside this same modal, loaded
+// fresh every time it opens (same "always pull fresh" convention as everything else in this app),
+// not persisted to localStorage the way font size is (server is the only source of truth here,
+// since it's also affected by the role-level default an admin can set elsewhere).
+function userSettingsNotifPrefItemHtml(pref) {
+    const label = currentLang === 'th' ? (pref.label_th || pref.label_en) : (pref.label_en || pref.label_th);
+    return `<div class="form-check form-switch">
+        <input class="form-check-input user-settings-notif-pref-check" type="checkbox" data-type="${$('<div>').text(pref.type).html()}" id="notifPref_${pref.type}" ${pref.enabled ? 'checked' : ''}>
+        <label class="form-check-label" for="notifPref_${pref.type}">${$('<div>').text(label).html()}</label>
+    </div>`;
+}
+function loadUserSettingsNotifPrefs() {
+    $('#userSettingsNotifPrefsList').html(`<div class="text-center text-muted py-2"><i class="fa-solid fa-spinner fa-spin"></i></div>`);
+    $.getJSON(`${BASE_URL}/api/notification.preferences-get`, function (res) {
+        if (!res.status) { $('#userSettingsNotifPrefsList').html(''); return; }
+        $('#userSettingsNotifPrefsList').html((res.data || []).map(userSettingsNotifPrefItemHtml).join(''));
+    }).fail(function () { $('#userSettingsNotifPrefsList').html(''); });
+}
+function saveUserSettingsNotifPrefs() {
+    const preferences = $('.user-settings-notif-pref-check').map(function () {
+        return { type: $(this).data('type'), enabled: this.checked };
+    }).get();
+    $.ajax({
+        url: `${BASE_URL}/api/notification.preferences-save`, method: 'POST', contentType: 'application/json',
+        data: JSON.stringify({ preferences }), dataType: 'json',
+    });
+}
 $(document).on('show.bs.modal', '#userSettingsModal', function () {
     userSettingsJustSaved = false;
     const current = localStorage.getItem('preferred_font_size') || 'm';
     userSettingsOriginalFontSize = current;
     const idx = FONT_SIZE_STEPS.indexOf(current);
     $('#userSettingsFontSizeSlider').val(idx >= 0 ? idx : 1);
+    loadUserSettingsNotifPrefs();
 });
 $(document).on('hidden.bs.modal', '#userSettingsModal', function () {
     if (!userSettingsJustSaved) {
@@ -374,6 +601,7 @@ $(document).on('click', '#btnSaveUserSettings', function () {
     localStorage.setItem('preferred_font_size', size);
     applyFontSize(size);
     persistUserPreferences(currentLang, size);
+    saveUserSettingsNotifPrefs();
     userSettingsJustSaved = true;
     if (typeof bootstrap !== 'undefined') {
         bootstrap.Modal.getOrCreateInstance(document.getElementById('userSettingsModal')).hide();
@@ -496,23 +724,85 @@ function applyLanguage(lang, root = document) {
         refreshAllTables();
     }
 }
-function buildLanguageMenu() {
+// 2026-08-30: `$scope` lets a caller populate just ONE freshly-injected modal's own
+// `.nav-lang-menu` (see the show.bs.modal handler below) without re-touching the nav's own
+// already-built menu -- defaults to every `.nav-lang-menu` on the page (the original, whole-page
+// call site further down still works unchanged).
+function buildLanguageMenu($scope) {
     const langs = ['en', 'th'];
-    const menu = $('#languageMenu').empty();
-    langs.forEach(lang => {
-        const info = langInfo[lang];
-        if (!info) return;
-        const item = $(`
-            <li>
-                <a class="dropdown-item dropdown-lang-item" href="javascript:void(0)" data-value="${lang}" data-lang="${info.label}" data-flag="${BASE_URL}/public/flags/${info.flag}.png">
-                    <img src="${BASE_URL}/public/flags/${info.flag}.png" width="15" class="me-2" loading="lazy">
-                    ${info.full}
-                </a>
-            </li>
-        `);
-        menu.append(item);
+    const $menus = $scope ? $scope.find('.nav-lang-menu') : $('.nav-lang-menu');
+    $menus.each(function () {
+        const menu = $(this).empty();
+        langs.forEach(lang => {
+            const info = langInfo[lang];
+            if (!info) return;
+            const item = $(`
+                <li>
+                    <a class="dropdown-item dropdown-lang-item" href="javascript:void(0)" data-value="${lang}" data-lang="${info.label}" data-flag="${BASE_URL}/public/flags/${info.flag}.png">
+                        <img src="${BASE_URL}/public/flags/${info.flag}.png" width="15" class="me-2" loading="lazy">
+                        ${info.full}
+                    </a>
+                </li>
+            `);
+            menu.append(item);
+        });
     });
 }
+// 2026-08-30, explicit bug report: "ทุก modal ที่เปิด จะต้องมี header และ footer เสมอ footer มีปุ่มปิด
+// เป็น Default และมุมซ้ายสุดของ header ให้เป็นปุ่มเปลี่ยนภาษา เพราะตอนนี้ปัญหาคือพอมีการเปิด modal จะกลับไป
+// เปลี่ยนภาษาไม่ได้" -- root cause confirmed by reading the markup: the top nav's own language
+// switcher (.nav-lang-dropdown) sits in the page header, and Bootstrap's modal backdrop (higher
+// z-index, by design) sits above it, so it becomes genuinely unclickable the moment ANY modal is
+// open -- not a CSS mistake to fix, backdrops are supposed to block the page behind them. The fix
+// has to put a language control INSIDE the modal itself.
+//
+// Applied GENERICALLY on every modal's own 'show.bs.modal' event, rather than hand-editing every
+// modal's markup across the whole app (there are far too many, and any modal added later would
+// need the same treatment) -- this is the one place that guarantees the invariant everywhere,
+// including modals written after this comment. Idempotent (checks for its own marker classes
+// before injecting) so it's safe to fire on every single modal open, repeatedly.
+//
+// 2026-08-30, same-day follow-up (explicit request: "Design การเปลี่ยนภาษาใน modal ให้เป็น design เดียวกับ
+// header และถ้าเลือกเปลี่ยนแล้วให้ผูกไปถึง header และการแปลในหน้าหลักด้วย") -- was a simplified single-click
+// toggle button (swap directly to the other language, no menu); now the EXACT same
+// .nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu markup the header's own switcher uses, injected
+// fresh per modal. Every instance shares the SAME .dropdown-lang-item click handler (already
+// delegated, see above) that already calls the one global changeLanguage() -- which was already
+// reaching every open element via loadLang()'s own `$('.text-current-lang')`/`$('.current-flag')`
+// class-based updates (not id-based), so "changing in the modal also updates the header and the
+// page behind it" was already true the moment this reused those same classes -- no extra binding
+// needed for that half of the request, only the visual redesign to match.
+function modalLangDropdownHtml() {
+    const info = langInfo[currentLang] || langInfo.en;
+    return `<div class="nav-lang-dropdown modal-lang-dropdown">
+        <button class="nav-lang-btn" type="button" title="${(langData && langData['switch_language']) || 'Switch language'}">
+            <img class="current-flag" src="${BASE_URL}/public/flags/${info.flag}.png" width="15" alt="">
+            <span class="lang-text text-current-lang">${info.label}</span>
+        </button>
+        <ul class="nav-lang-menu"></ul>
+    </div>`;
+}
+$(document).on('show.bs.modal', '.modal', function () {
+    const $content = $(this).find('> .modal-dialog > .modal-content').first();
+    if (!$content.length) return;
+
+    let $header = $content.find('> .modal-header').first();
+    if (!$header.length) {
+        $header = $('<div class="modal-header"></div>').prependTo($content);
+    }
+    if (!$header.find('.modal-lang-dropdown').length) {
+        const $dropdown = $(modalLangDropdownHtml()).prependTo($header);
+        buildLanguageMenu($dropdown);
+    }
+
+    let $footer = $content.find('> .modal-footer').first();
+    if (!$footer.length) {
+        $footer = $('<div class="modal-footer"></div>').appendTo($content);
+    }
+    if (!$footer.find('[data-bs-dismiss="modal"]').length) {
+        $footer.prepend(`<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">${(langData && langData['close']) || 'Close'}</button>`);
+    }
+});
 function getLangValue(key) {
     return key.split('.').reduce((acc, part) => {
         return (acc && acc[part] !== undefined) ? acc[part] : undefined;
