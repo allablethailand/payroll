@@ -3,16 +3,22 @@ declare(strict_types=1);
 require_once __DIR__ . '/../models/EmployeeModel.php';
 require_once __DIR__ . '/../models/EmployeeEarningDeductionModel.php';
 require_once __DIR__ . '/../models/EmployeeRecurringEarningModel.php';
+require_once __DIR__ . '/../models/EmployeeRecurringDeductionModel.php';
+require_once __DIR__ . '/../models/EmployeeOtRateModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 class EmployeeController extends Controller {
     private $model;
     private $earningDeductionModel;
     private EmployeeRecurringEarningModel $recurringEarningModel;
+    private EmployeeRecurringDeductionModel $recurringDeductionModel;
+    private EmployeeOtRateModel $otRateModel;
     private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new EmployeeModel();
         $this->earningDeductionModel = new EmployeeEarningDeductionModel();
         $this->recurringEarningModel = new EmployeeRecurringEarningModel();
+        $this->recurringDeductionModel = new EmployeeRecurringDeductionModel();
+        $this->otRateModel = new EmployeeOtRateModel();
         $this->permissionModel = new PermissionModel();
     }
 
@@ -66,6 +72,8 @@ class EmployeeController extends Controller {
             'team_id' => $_POST['team_id'] ?? '',
             'shift_id' => $_POST['shift_id'] ?? '',
             'branch_id' => $_POST['branch_id'] ?? '',
+            // 2026-08-30 (Phase 3, T022) -- '' (All), '1' (Pays Salary), '0' (No Salary).
+            'is_payroll_participant' => $_POST['is_payroll_participant'] ?? '',
             'created_date_from' => $_POST['created_date_from'] ?? '',
             'created_date_to' => $_POST['created_date_to'] ?? '',
             // 2026-08-27, explicit request: Excel-style per-column header filter (proof-of-concept
@@ -85,6 +93,93 @@ class EmployeeController extends Controller {
             "recordsFiltered" => $res['filtered'],
             "data" => $res['data']
         ]);
+    }
+    /** 2026-08-30 (Phase 3, T018) -- server-side DataTables source for the "Recheck ข้อมูล" tab.
+     *  Reuses the SAME station filters (department/team/shift/branch/role/date range) as list()
+     *  itself; unlike list(), there's no per-column sort here (see recheckList()'s own docblock --
+     *  each field_readiness column is a derived boolean, not a raw sortable value, same exemption
+     *  category CLAUDE.md's own DataTables convention already grants widget-only columns). */
+    // Explicit request: "ต้องการอีก Tab ต่อจาก Tab ตรวจสอบข้อมูล เป็น Tab สรุปรวมรายได้รายหักที่ หักหรือได้
+    // ประจำ" -- see EmployeeModel::standingSummaryList()'s own docblock for the full design. Same
+    // $_POST/lang/no-explicit-permission-gate convention as recheckList() just below (list()'s own
+    // docblock: "Full employee PII...requires employee.view/.manage -- list() stays ungated" -- this
+    // tab has no more PII exposure than recheckList() already does, matched for consistency).
+    public function standingSummaryList() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['draw' => 1, 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => [], 'totals' => []]);
+            return;
+        }
+        $start = intval($_POST['start'] ?? 0);
+        $length = intval($_POST['length'] ?? 10);
+        $filters = [
+            'role_id' => $_POST['role_id'] ?? '',
+            'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
+            'shift_id' => $_POST['shift_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $search = (string)($_POST['search']['value'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $res = $this->model->standingSummaryList((int)$compId, $start, $length, $filters, $search, (string)$lang);
+        $this->json([
+            'draw' => intval($_POST['draw'] ?? 1),
+            'recordsTotal' => $res['total'],
+            'recordsFiltered' => $res['filtered'],
+            'data' => $res['data'],
+            'totals' => $res['totals'],
+        ]);
+    }
+    public function recheckList() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['draw' => 1, 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
+            return;
+        }
+        $start = intval($_POST['start'] ?? 0);
+        $length = intval($_POST['length'] ?? 10);
+        $filters = [
+            'role_id' => $_POST['role_id'] ?? '',
+            'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
+            'shift_id' => $_POST['shift_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $search = (string)($_POST['search']['value'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $res = $this->model->recheckList((int)$compId, $start, $length, $filters, $search, (string)$lang);
+        $this->json([
+            "draw" => intval($_POST['draw'] ?? 1),
+            "recordsTotal" => $res['total'],
+            "recordsFiltered" => $res['filtered'],
+            "data" => $res['data']
+        ]);
+    }
+    /** 2026-08-30 (Phase 3, T024) -- powers the Employee tab's own station-card pipeline counts.
+     *  Same station filters (department/team/shift/branch/role/date range/is_payroll_participant)
+     *  as list() itself, minus status/employment_status (blanked internally by
+     *  EmployeeModel::stationCounts() regardless -- those ARE the station selector, never sent by
+     *  the frontend's own currentStationCountsFilters() either). */
+    public function stationCounts() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['active' => 0, 'probation' => 0, 'permanent' => 0, 'resigned' => 0]]);
+            return;
+        }
+        $filters = [
+            'role_id' => $_POST['role_id'] ?? '',
+            'department_id' => $_POST['department_id'] ?? '',
+            'team_id' => $_POST['team_id'] ?? '',
+            'shift_id' => $_POST['shift_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+            'is_payroll_participant' => $_POST['is_payroll_participant'] ?? '',
+            'created_date_from' => $_POST['created_date_from'] ?? '',
+            'created_date_to' => $_POST['created_date_to'] ?? '',
+        ];
+        $search = (string)($_POST['search'] ?? '');
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $data = $this->model->stationCounts((int)$compId, $filters, $search, (string)$lang);
+        $this->json(['status' => true, 'data' => $data]);
     }
     /** 2026-08-27, explicit request: "ในตารางทุกตาราง...เพิ่มให้สามารถ Filter ได้...เหมือนกับ Excel" --
      *  proof-of-concept on this table first (server-side, so the checkbox list can't be computed
@@ -107,6 +202,7 @@ class EmployeeController extends Controller {
             'team_id' => $_POST['team_id'] ?? '',
             'shift_id' => $_POST['shift_id'] ?? '',
             'branch_id' => $_POST['branch_id'] ?? '',
+            'is_payroll_participant' => $_POST['is_payroll_participant'] ?? '',
             'created_date_from' => $_POST['created_date_from'] ?? '',
             'created_date_to' => $_POST['created_date_to'] ?? '',
             'column_filters' => is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [],
@@ -333,8 +429,16 @@ class EmployeeController extends Controller {
         $totalInstallments = isset($_GET['total_installments']) ? (int)$_GET['total_installments'] : 0;
         $interestType = isset($_GET['interest_type']) ? (string)$_GET['interest_type'] : 'none';
         $interestRate = isset($_GET['interest_rate']) && is_numeric($_GET['interest_rate']) ? (float)$_GET['interest_rate'] : null;
+        // 2026-08-31, explicit request: Fee (% of a selectable base) -- fee_base='base_salary' needs
+        // a real number to compute against; the modal already has the employee's own base salary
+        // in plain text on the page (the Salary tab's own #base_salary_amount input, same value the
+        // employee already sees), so the frontend just passes it straight through as a plain GET
+        // param -- no server-side employee lookup/decryption needed for what's purely a live preview.
+        $feePercent = isset($_GET['fee_percent']) && is_numeric($_GET['fee_percent']) ? (float)$_GET['fee_percent'] : null;
+        $feeBase = isset($_GET['fee_base']) ? (string)$_GET['fee_base'] : null;
+        $baseSalaryForFee = isset($_GET['base_salary_for_fee']) && is_numeric($_GET['base_salary_for_fee']) ? (float)$_GET['base_salary_for_fee'] : null;
         try {
-            $amounts = $this->earningDeductionModel->computeInstallmentSchedule($principal, $totalInstallments, $interestType, $interestRate);
+            $amounts = $this->earningDeductionModel->computeInstallmentSchedule($principal, $totalInstallments, $interestType, $interestRate, $feePercent, $feeBase, $baseSalaryForFee);
             $this->json(['status' => true, 'data' => ['amounts' => $amounts]]);
         } catch (InvalidArgumentException $e) {
             http_response_code(422);
@@ -485,6 +589,118 @@ class EmployeeController extends Controller {
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $this->json($this->recurringEarningModel->delete($id, (int)$compId, $employeeId, $userId));
+    }
+
+    /* ==================== Recurring Deductions (Salary tab, 2026-08-31, explicit request: "หน้า
+       Employee Detail เพิ่มรายหักประจำด้วยครับ") -- exact mirror of Recurring Earnings above, restricted
+       to item_type='deduction' instead of 'earning'. See EmployeeRecurringDeductionModel's own
+       docblock. ==================== */
+
+    public function recurringDeductionTypeOptions() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['items' => [], 'total_count' => 0]]);
+            return;
+        }
+        $page = intval($_POST['page'] ?? 1);
+        $limit = intval($_POST['limit'] ?? 10);
+        $search = (string)($_POST['searchTerm'] ?? '');
+        $data = $this->earningDeductionModel->activeOptions((int)$compId, $search, $page, $limit, 'deduction', 'fixed_amount');
+        $this->json(['status' => true, 'data' => $data]);
+    }
+    public function recurringDeductionList() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'data' => []]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->recurringDeductionModel->list($employeeId, (int)$compId)]);
+    }
+    public function recurringDeductionGet() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $row = $this->recurringDeductionModel->get($id, (int)$compId);
+        if ($row) {
+            $this->json(['status' => true, 'data' => $row]);
+        } else {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+        }
+    }
+    public function recurringDeductionSave() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
+        if ($employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing employee_id.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->recurringDeductionModel->save($employeeId, (int)$compId, $data, $userId));
+    }
+    public function recurringDeductionDelete() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($employeeId <= 0 || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid request.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->recurringDeductionModel->delete($id, (int)$compId, $employeeId, $userId));
+    }
+
+    // Explicit request: "OT Rate เพิ่มให้สามารถ Assing รายบุคคลได้ด้วย...ให้ไป Set แยก ใน Employee" -- see
+    // EmployeeOtRateModel's own docblock for the full feature design.
+    public function otRateGet() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid request.']);
+            return;
+        }
+        $this->json($this->otRateModel->getForEmployee($employeeId, (int)$compId));
+    }
+    public function otRateSave() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $otRateSource = (is_array($data) && isset($data['ot_rate_source'])) ? (string)$data['ot_rate_source'] : 'default';
+        $overrides = (is_array($data) && is_array($data['overrides'] ?? null)) ? $data['overrides'] : [];
+        $assignedOtRateSetId = (is_array($data) && !empty($data['assigned_ot_rate_set_id']) && is_numeric($data['assigned_ot_rate_set_id'])) ? (int)$data['assigned_ot_rate_set_id'] : null;
+        if ($employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid request.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->otRateModel->save($employeeId, (int)$compId, $otRateSource, $overrides, $userId, $assignedOtRateSetId));
     }
 
     private function handleChildList(string $type): void {

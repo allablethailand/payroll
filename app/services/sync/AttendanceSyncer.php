@@ -65,15 +65,19 @@ class AttendanceSyncer extends AbstractTransactionDataSyncer {
         $refId = isset($item['ref_id']) && is_numeric($item['ref_id']) ? (int)$item['ref_id'] : null;
 
         if ($existingId !== null) {
+            // 2026-08-30, conflict-prevention fix: data_source now updates on every write, not just
+            // INSERT -- see AbstractTransactionDataSyncer's own docblock for why a stale source
+            // badge was a real bug (e.g. a sync-derived row hand-corrected via Manual Entry kept
+            // showing "sync" forever).
             $stmt = $this->db->prepare("UPDATE attendance_records SET
                     work_date = :work_date, shift_id = :shift_id, clock_in = :clock_in, clock_out = :clock_out,
                     actual_work_minutes = :actual_minutes, late_minutes = :late, early_leave_minutes = :early, status = :status,
-                    sync_batch_id = :batch_id, updated_by = :user, updated_at = CURRENT_TIMESTAMP
+                    data_source = :data_source, sync_batch_id = :batch_id, updated_by = :user, updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id");
             $stmt->execute([
                 ':work_date' => $workDate, ':shift_id' => $shiftId, ':clock_in' => $clockIn, ':clock_out' => $clockOut,
                 ':actual_minutes' => $actualMinutes, ':late' => $lateMinutes, ':early' => $earlyMinutes, ':status' => $status,
-                ':batch_id' => $batchId, ':user' => $triggeredBy, ':id' => $existingId,
+                ':data_source' => $dataSource, ':batch_id' => $batchId, ':user' => $triggeredBy, ':id' => $existingId,
             ]);
         } else {
             $stmt = $this->db->prepare("INSERT INTO attendance_records

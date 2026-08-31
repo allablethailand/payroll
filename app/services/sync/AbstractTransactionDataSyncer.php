@@ -9,8 +9,16 @@ require_once __DIR__ . '/TransactionDataSyncerInterface.php';
  * passed straight through, per the "never link transaction data by internal id directly"
  * requirement either way.
  *
- * Same data_source rule as AbstractMasterDataSyncer: written on INSERT only, never overwritten on
- * UPDATE. sync_batch_id updates on every touch regardless.
+ * 2026-08-30 (Phase 5, conflict-prevention decision -- explicit confirmation: "แก้ทั้ง 3 จุดใน Phase
+ * นี้"): data_source now updates on EVERY write, not just INSERT (was previously written once and
+ * left stale forever after -- an attendance row Origami synced, then later hand-corrected via
+ * Manual Entry, kept showing a "sync" badge even though a human overwrote it last). Concrete
+ * columns are set in each subclass's own upsertItem() UPDATE branch (this base class has no SQL of
+ * its own to touch); importRow() below additionally reports when an import is about to overwrite a
+ * row whose CURRENT data_source differs from 'import' (e.g. a sync-derived row), via
+ * `source_conflict`/`previous_source` in its return array -- surfaced as a non-blocking warning by
+ * ImportService's row_results (see that class's own docblock), not a hard rejection: a legitimate
+ * correction from a different source is still allowed through, just made visible instead of silent.
  */
 abstract class AbstractTransactionDataSyncer implements TransactionDataSyncerInterface {
     protected PDO $db;
@@ -113,6 +121,14 @@ abstract class AbstractTransactionDataSyncer implements TransactionDataSyncerInt
         return $id === false ? null : (int)$id;
     }
 
+    /** Current data_source of an existing row, or null if it no longer exists -- used by importRow() to detect a cross-source overwrite before it happens. */
+    private function currentDataSource(int $id): ?string {
+        $stmt = $this->db->prepare("SELECT data_source FROM `{$this->tableName()}` WHERE id = :id");
+        $stmt->execute([':id' => $id]);
+        $value = $stmt->fetchColumn();
+        return $value === false ? null : (string)$value;
+    }
+
     /**
      * Soft-deletes previously-synced rows (non-null origami_ref_id) whose date column falls
      * WITHIN [dateFrom, dateTo] and are absent from this fetch -- scoped to the requested window,
@@ -165,9 +181,18 @@ abstract class AbstractTransactionDataSyncer implements TransactionDataSyncerInt
         } else {
             $existingId = $this->findByNaturalKey($compId, $employeeId, $item);
         }
+        // 2026-08-30, conflict-prevention: capture the row's CURRENT source before upsertItem()
+        // overwrites it -- if it was 'sync' or 'manual', this import is silently taking over a
+        // record that came from somewhere else. Reported, never blocked (see class docblock).
+        $previousSource = $existingId !== null ? $this->currentDataSource($existingId) : null;
         $itemWithRef = $item;
         $itemWithRef['ref_id'] = $refId;
         $this->upsertItem($compId, $itemWithRef, $employeeId, $batchId, $triggeredBy, $existingId, 'import');
-        return ['action' => $existingId !== null ? 'updated' : 'inserted'];
+        $result = ['action' => $existingId !== null ? 'updated' : 'inserted'];
+        if ($previousSource !== null && $previousSource !== 'import') {
+            $result['source_conflict'] = true;
+            $result['previous_source'] = $previousSource;
+        }
+        return $result;
     }
 }

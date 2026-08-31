@@ -199,12 +199,51 @@ function apvApprovalStageInfoAp(state) {
         default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
     }
 }
+// 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่า
+// ตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") -- see index.js's own equivalent comment for
+// the full reasoning (mirrored here per this file's own "duplicate, don't share across pages" convention).
+function apvStepDotToneAp(step) {
+    if (!step.unlocked) return 'apv-step-dot-locked';
+    if (step.status === 'approved') return 'apv-step-dot-approved';
+    if (step.status === 'rejected') return 'apv-step-dot-rejected';
+    return 'apv-step-dot-pending';
+}
+function apvStepDotsHtmlAp(steps) {
+    return `<div class="apv-step-dots">` + steps.map((s, i) => {
+        const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
+        const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
+        const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
+        return `<div class="apv-step-dot-wrap" title="${escapeHtmlAp(s.step_name || '')}">
+            <div class="apv-step-dot ${apvStepDotToneAp(s)}">${icon}</div>
+            ${lockIcon}
+        </div>${connector}`;
+    }).join('') + `</div>`;
+}
+function apvStepGroupHtmlAp(step) {
+    const badgeHtml = !step.unlocked
+        ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
+        : apvBadgeHtmlAp(apvApproverToneAp(step.status), apvApproverLabelAp(step.status));
+    const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
+    const approversHtml = step.approvers.length
+        ? step.approvers.map(apvApproverSubstepHtmlAp).join('')
+        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
+    return `<div class="apv-step-group">
+        <div class="apv-step-group-head">
+            <span class="apv-step-group-title">${escapeHtmlAp(stepLabel)}${step.step_name ? ': ' + escapeHtmlAp(step.step_name) : ''}</span>
+            ${badgeHtml}
+        </div>
+        <div class="apv-step-group-body">${approversHtml}</div>
+    </div>`;
+}
 function apvApprovalStageHtmlAp(run) {
     const info = apvApprovalStageInfoAp(run.state);
+    const steps = (run.approval_flow && run.approval_flow.steps) || null;
     const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
-    const bodyHtml = approvers.length
-        ? approvers.map(apvApproverSubstepHtmlAp).join('')
-        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
+    const bodyHtml = (steps && steps.length)
+        ? apvStepDotsHtmlAp(steps) + steps.map(apvStepGroupHtmlAp).join('')
+        : (approvers.length
+            ? approvers.map(apvApproverSubstepHtmlAp).join('')
+            : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`);
     return `
         <div class="apv-stage">
             <div class="apv-stage-marker">${apvIconHtmlAp(info.tone, info.icon)}<div class="apv-stage-line"></div></div>

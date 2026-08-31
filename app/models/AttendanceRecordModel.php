@@ -19,7 +19,7 @@ class AttendanceRecordModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
-    /** @param array $filters optional: employee_id, date_from, date_to */
+    /** @param array $filters optional: employee_id, date_from, date_to, batch_id (2026-08-30, Phase 5 T034 -- drill into one import batch's rows) */
     public function list(int $compId, array $filters = []): array {
         $where = "WHERE a.comp_id = :comp_id AND a.deleted_at IS NULL";
         $params = [':comp_id' => $compId];
@@ -34,6 +34,10 @@ class AttendanceRecordModel {
         if (!empty($filters['date_to'])) {
             $where .= " AND a.work_date <= :date_to";
             $params[':date_to'] = $filters['date_to'];
+        }
+        if (!empty($filters['batch_id'])) {
+            $where .= " AND a.sync_batch_id = :batch_id";
+            $params[':batch_id'] = (int)$filters['batch_id'];
         }
         $sql = "SELECT a.*, e.employee_no, CONCAT(e.name_th, ' ', e.surname_th) AS employee_name_th, CONCAT(e.name_en, ' ', e.surname_en) AS employee_name_en,
                     s.shift_name_th, s.shift_name_en
@@ -57,6 +61,36 @@ class AttendanceRecordModel {
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
+    }
+
+    /**
+     * 2026-08-31, explicit follow-up ("ต่อเลยครับ" -- continuing the salary_type coverage audit,
+     * fixing the confirmed `hourly` gap): PayrollRunModel::recalculate() previously had NO formula
+     * for salary_type='hourly' at all -- it silently fell through to the monthly-prorate formula
+     * (flagged salary_type_hourly_not_supported, but still produced a wrong number). This is the
+     * REAL data source that fix needed -- attendance_records.actual_work_minutes is computed from
+     * real clock_in/clock_out timestamps (AttendanceSyncer/AttendanceRecordModel, both Sync/Import/
+     * Manual Entry alike -- same "what happened" table TransactionDataPayAdapter already reuses for
+     * late/absence, see that class's own docblock), NOT a guessed/scheduled figure -- genuinely
+     * different from SyncPayResolver's own dailyRate()/hourlyRate() (those convert a MONTHLY salary
+     * into an implied per-unit equivalent for OT/deduction math on a DIFFERENT employee's flat
+     * salary; this instead sums REAL worked minutes to pay someone whose salary_type IS hourly).
+     * A day with a real attendance row but NULL actual_work_minutes (e.g. imported without clock
+     * times) is excluded from the sum but still counts toward `days_with_data` -- distinct from a
+     * day with NO row at all, so the caller can tell "worked 0 minutes, confirmed" apart from
+     * "no attendance data reached us for this day at all."
+     * @return array{total_minutes:int,days_with_data:int}
+     */
+    public function totalWorkedMinutesForEmployee(int $employeeId, int $compId, string $start, string $end): array {
+        $stmt = $this->db->prepare("SELECT SUM(actual_work_minutes) AS total_minutes, COUNT(*) AS days_with_data
+            FROM attendance_records
+            WHERE comp_id = :comp_id AND employee_id = :employee_id AND deleted_at IS NULL AND work_date BETWEEN :start AND :end");
+        $stmt->execute([':comp_id' => $compId, ':employee_id' => $employeeId, ':start' => $start, ':end' => $end]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return [
+            'total_minutes' => $row && $row['total_minutes'] !== null ? (int)$row['total_minutes'] : 0,
+            'days_with_data' => $row ? (int)$row['days_with_data'] : 0,
+        ];
     }
 
     private function employeeBelongsToCompany(int $employeeId, int $compId): bool {
@@ -122,10 +156,14 @@ class AttendanceRecordModel {
                 if (!$stmtCheck->fetch()) {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
+                // 2026-08-30, conflict-prevention fix (Phase 5, explicit decision): data_source is
+                // reset to 'manual' on every save, not just at INSERT -- a record last touched by
+                // Sync/Import that gets hand-edited here is now genuinely manual data going
+                // forward, and the badge must reflect that instead of showing a stale source.
                 $stmt = $this->db->prepare("UPDATE attendance_records SET
                         employee_id = :employee_id, work_date = :work_date, shift_id = :shift_id, clock_in = :clock_in, clock_out = :clock_out,
                         actual_work_minutes = :actual_minutes, late_minutes = :late, early_leave_minutes = :early, status = :status,
-                        updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+                        data_source = 'manual', updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id");
                 $stmt->execute([
                     ':employee_id' => $employeeId, ':work_date' => $workDate, ':shift_id' => $shiftId, ':clock_in' => $clockIn, ':clock_out' => $clockOut,

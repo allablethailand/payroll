@@ -227,10 +227,29 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="row g-4 mb-5">
-                            <div class="col-md-6">
+                        <!-- 2026-08-30 (Phase 2, T016, explicit request: "เปลี่ยนเป็น radio (2 ตัวเลือก)... ถ้าเลือก
+                             option ที่ต้องใส่เงื่อนไข ให้แสดงช่องกรอกเงื่อนไขต่ออีกบรรทัดใต้ radio" -- confirmed with
+                             user that the field itself (Base Salary Basis) is correct, radio buttons for the real,
+                             current 3 options, not the 2 the ticket text was written against before
+                             sync_actual_days existed) -- was a <select>, now 3 radio buttons stacked as their own
+                             full-width row; the schedule_based-only sub-options moved from a side-by-side column
+                             into their own row directly below the radio group (as asked), rather than sitting
+                             beside it. -->
+                        <div class="row g-4 mb-3">
+                            <div class="col-12">
                                 <label class="form-label mb-2" data-i18n="policy_pay_basis_label">Base Salary Basis</label>
-                                <select class="form-select select2-static" id="policyPayBasis" data-option-keys="policy_pay_basis_full_month,policy_pay_basis_schedule_based,policy_pay_basis_sync_actual_days" data-option-values="full_month,schedule_based,sync_actual_days"></select>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="policyPayBasisRadio" id="policyPayBasisFullMonth" value="full_month">
+                                    <label class="form-check-label" for="policyPayBasisFullMonth" data-i18n="policy_pay_basis_full_month">Full Month</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="policyPayBasisRadio" id="policyPayBasisScheduleBased" value="schedule_based">
+                                    <label class="form-check-label" for="policyPayBasisScheduleBased" data-i18n="policy_pay_basis_schedule_based">Schedule-based (Shift + Holiday config)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="policyPayBasisRadio" id="policyPayBasisSyncActualDays" value="sync_actual_days">
+                                    <label class="form-check-label" for="policyPayBasisSyncActualDays" data-i18n="policy_pay_basis_sync_actual_days">Actual Days (Origami Sync)</label>
+                                </div>
                                 <div class="form-text mt-2" data-i18n="policy_pay_basis_description">Only takes effect while Employment Status = Probation -- daily/hourly-rate employees are unaffected either way.</div>
                                 <!-- 2026-08-30, explicit follow-up: reconciles Origami's own synced PROBATION_WORKING_DAYS
                                      against the schedule-based option above -- a THIRD, separate choice (not a modifier of
@@ -238,7 +257,9 @@
                                      Holiday config, and only has data to work with on a sync-pulled run. -->
                                 <div class="form-text mt-1" data-i18n="policy_pay_basis_sync_actual_days_hint">"Actual Days (Origami Sync)" only has data on a run pulled from Origami Payroll Sync -- any other run (or a cycle where Origami itself didn't send this figure) pays the full base salary instead, flagged visibly on that employee's calculation row.</div>
                             </div>
-                            <div class="col-md-6 d-none" id="policyPayBasisSubOptions">
+                        </div>
+                        <div class="row g-4 mb-5">
+                            <div class="col-12 d-none" id="policyPayBasisSubOptions">
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="checkbox" id="policyPayBasisDeductHolidays">
                                     <label class="form-check-label" for="policyPayBasisDeductHolidays" data-i18n="policy_pay_basis_deduct_holidays_label">Exclude holidays from payable days</label>
@@ -259,6 +280,49 @@
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="policyProbationDeferRecurringEarning">
                                 <label class="form-check-label" for="policyProbationDeferRecurringEarning" data-i18n="policy_probation_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) until probation passes</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 2026-08-31, explicit request: "ในหน้านโยบายการทำเงินเดือน ก็มีให้ตั้งค่าสำหรับเด็กฝึกงาน
+                     และยังไม่ผ่านโปรไว้เหมือนเดิมเป็น Default" -- direct mirror of #policyProbationCard
+                     immediately above, own SEPARATE field set (confirmed via AskUserQuestion: NOT
+                     reusing the probation_* fields) gated by employment_type='internship' instead of
+                     employment_status='probation' -- see PayrollPolicyModel::internSettings()'s own
+                     docblock and PayrollRunModel's own precedence comment for what happens when an
+                     employee is somehow both. No "Standard Period (days)"/"Base Salary Basis" fields
+                     here -- those are Probation-specific concepts (probation_period_days is reference-
+                     only display text about a probation window; pay_basis's schedule/sync-actual-days
+                     options are ALSO explicitly probation-status-gated, per that field's own docblock
+                     -- neither has an internship equivalent asked for in this request). -->
+                <div class="settings-info-card mb-4" id="policyInternCard">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-user-graduate"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="policy_intern_title">Internship Pay Conditions</p>
+                            <p class="settings-info-card-desc" data-i18n="policy_intern_description">Applies only to employees whose Employment Type is "Internship" -- switches back to normal automatically the moment their type changes. Can also be overridden per employee on their own Salary tab.</p>
+                        </div>
+                    </div>
+                    <div class="settings-info-card-body">
+                        <div class="row g-4 mb-5">
+                            <div class="col-md-6">
+                                <label class="form-label mb-2" data-i18n="policy_intern_base_salary_ratio_label">Base Salary Ratio for Salaried Interns</label>
+                                <div class="input-group">
+                                    <input type="number" min="1" max="100" step="0.01" class="form-control" id="policyInternBaseSalaryRatio" data-i18n="policy_probation_base_salary_ratio_placeholder" placeholder="100 (no reduction)">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <div class="form-text mt-2" data-i18n="policy_intern_base_salary_ratio_hint">Applied as a further multiplier on top of whatever base pay calculation already produced (same convention as Probation's own ratio) -- for a daily-allowance intern (salary_type=Daily), leave this blank/100% unless you deliberately also want to further reduce their real daily proration by this percentage.</div>
+                            </div>
+                        </div>
+                        <div class="settings-subgroup">
+                            <div class="settings-subgroup-label" data-i18n="policy_probation_additional_conditions_label">Additional Conditions</div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="policyInternDeferPvd">
+                                <label class="form-check-label" for="policyInternDeferPvd" data-i18n="policy_intern_defer_pvd_label">Defer Provident Fund (PVD) contribution for interns</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="policyInternDeferRecurringEarning">
+                                <label class="form-check-label" for="policyInternDeferRecurringEarning" data-i18n="policy_intern_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) for interns</label>
                             </div>
                         </div>
                     </div>

@@ -33,6 +33,21 @@
                 <i class="fa-solid fa-stopwatch me-2"></i><span data-i18n="overtime">Overtime</span>
             </button>
         </li>
+        <!-- 2026-08-30 (Phase 5, T030-T035, explicit request) -- Import lives as a 4th tab on this
+             SAME page rather than a separate page, since it writes into the exact same 3 tables the
+             other 3 tabs already manage; T035 (editing an imported record) reuses those 3 tabs' own
+             edit modals directly instead of a second, parallel edit surface -- see
+             ManualEntryController's own docblock for the full reasoning. -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="import-tab" data-bs-toggle="tab" data-bs-target="#import-pane" type="button" role="tab" aria-controls="import-pane" aria-selected="false">
+                <i class="fa-solid fa-file-import me-2"></i><span data-i18n="import">Import</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="import-history-tab" data-bs-toggle="tab" data-bs-target="#import-history-pane" type="button" role="tab" aria-controls="import-history-pane" aria-selected="false">
+                <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="import_history_tab">History</span>
+            </button>
+        </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
         <div class="tab-pane fade show active" id="attendance-pane" role="tabpanel" aria-labelledby="attendance-tab" tabindex="0">
@@ -189,6 +204,121 @@
                             <th data-i18n="amount">Amount</th>
                             <th data-i18n="status" class="text-center">Status</th>
                             <th data-i18n="source" class="text-center">Source</th>
+                            <th class="text-end"></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="import-pane" role="tabpanel" aria-labelledby="import-tab" tabindex="0">
+            <div class="card-surface mb-4">
+                <h6 class="mb-3"><span class="badge bg-secondary me-2">1</span><span data-i18n="import_step1_title">Choose a data type and download its template</span></h6>
+                <div class="row g-2 align-items-end">
+                    <div class="col-sm-5 col-md-4">
+                        <label class="form-label mb-1" data-i18n="entity_type">Data Type</label>
+                        <select class="form-select" id="importEntityType" data-option-keys="attendance,leave,overtime" data-option-values="attendance,leave,overtime"></select>
+                    </div>
+                    <div class="col-sm-4 col-md-3">
+                        <button type="button" class="btn btn-outline-primary w-100" id="btnDownloadImportTemplate">
+                            <i class="fa-solid fa-download me-1"></i><span data-i18n="download_template">Download Template</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-surface mb-4">
+                <h6 class="mb-3"><span class="badge bg-secondary me-2">2</span><span data-i18n="import_step2_title">Upload the filled-in template</span></h6>
+                <div class="row g-2 align-items-end">
+                    <div class="col-sm-6 col-md-5">
+                        <input type="file" class="form-control" id="importFileInput" accept=".csv,.xlsx,.xls">
+                    </div>
+                    <div class="col-sm-4 col-md-3">
+                        <button type="button" class="btn btn-primary w-100" id="btnPreviewImport">
+                            <i class="fa-solid fa-magnifying-glass me-1"></i><span data-i18n="preview">Preview</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-surface mb-4 d-none" id="importPreviewWrap">
+                <h6 class="mb-3"><span class="badge bg-secondary me-2">3</span><span data-i18n="import_step3_title">Review results and confirm</span></h6>
+                <div class="d-flex flex-wrap gap-2 mb-3" id="importSummaryBadges"></div>
+                <div class="alert alert-warning d-none" id="importUnmappedAlert"></div>
+                <div class="table-responsive mb-3" style="max-height:400px;overflow-y:auto;">
+                    <table class="table table-sm" id="tb_import_preview">
+                        <thead>
+                            <tr>
+                                <th data-i18n="row">Row</th>
+                                <th data-i18n="status">Status</th>
+                                <th data-i18n="action">Action</th>
+                                <th data-i18n="message">Message</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-success" id="btnConfirmImport">
+                    <i class="fa-solid fa-check me-1"></i><span data-i18n="confirm_import">Confirm Import</span>
+                </button>
+            </div>
+        </div>
+        <!-- 2026-08-30, explicit follow-up request: "เก็บประวัติการ Download ข้อมูลออกจากระบบ และการ Import
+             ข้อมูลเข้าระบบ...เพิ่ม Tab ในการดูประวัติการ Download Upload ด้วยครับ" -- a 5th tab, unifying BOTH
+             the Download Template action (import_template_download_logs, new) and every Import round
+             (sync_batches, source='import' -- previously shown as its own "Import History" card
+             inside the Import tab above; consolidated in here instead of duplicating the same data
+             in two places) into ONE audit trail via ImportActivityLogModel's own UNION ALL. Same
+             audit-field convention (who/when/device/IP/browser/source) report_export_logs already
+             established for Reports' own Download History. -->
+        <div class="tab-pane fade" id="import-history-pane" role="tabpanel" aria-labelledby="import-history-tab" tabindex="0">
+            <div class="station-filter" id="importHistoryStationFilter">
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <button type="button" class="station-filter-toggle" id="importHistoryStationFilterToggle" title="Toggle filter">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+                <div class="station-filter-body">
+                    <div class="row g-2">
+                        <div class="col-sm-4 col-md-3">
+                            <label class="form-label mb-1" data-i18n="event_type">Event</label>
+                            <select class="form-select" id="filter_ih_event_type" data-option-keys="download,import" data-option-values="download,import"></select>
+                        </div>
+                        <div class="col-sm-4 col-md-3">
+                            <label class="form-label mb-1" data-i18n="entity_type">Data Type</label>
+                            <select class="form-select" id="filter_ih_entity_type" data-option-keys="attendance,leave,overtime" data-option-values="attendance,leave,overtime"></select>
+                        </div>
+                        <div class="col-sm-4 col-md-3">
+                            <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="filter_ih_date_from" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                        <div class="col-sm-4 col-md-3">
+                            <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="filter_ih_date_to" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex justify-content-end mb-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnImportHistoryClearFilter">
+                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+                </button>
+            </div>
+            <div class="mb-5 table-responsive">
+                <table class="table" id="tb_import_history" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th data-i18n="started_at">Date/Time</th>
+                            <th data-i18n="event_type">Event</th>
+                            <th data-i18n="entity_type">Data Type</th>
+                            <th data-i18n="by">By</th>
+                            <th data-i18n="device">Device</th>
+                            <th data-i18n="browser">Browser</th>
+                            <th data-i18n="ip_address">IP Address</th>
+                            <th data-i18n="status" class="text-center">Result</th>
                             <th class="text-end"></th>
                         </tr>
                     </thead>

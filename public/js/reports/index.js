@@ -592,6 +592,11 @@ function openReportHistoryModal(reportCode, label, scopeParams) {
             { data: 'ip_address', render: (v) => escapeHtmlReports(v || '-') },
             { data: 'source', render: (v) => escapeHtmlReports(v || '-') },
         ],
+        // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
+        // entirely, silently falling back to DataTables' own built-in default of 10. Same shape as
+        // payroll/detail.js's own dtReportHistory (the per-run equivalent of this cycle-wide one).
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
         initComplete: function () {
             initExcelColumnFilters(this.api(), {
                 mode: 'client',

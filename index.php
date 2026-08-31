@@ -83,6 +83,7 @@
     $router->post('api/payroll-run.employee-comment.update', 'PayrollController@employeeCommentUpdate');
     $router->post('api/payroll-run.employee-comment.delete', 'PayrollController@employeeCommentDelete');
     $router->get('api/payroll-run.error-employees', 'PayrollController@errorEmployees');
+    $router->get('api/payroll-run.sync-missing-employees', 'PayrollController@syncMissingEmployees');
     $router->post('api/payroll-run.submit', 'PayrollController@submit');
     $router->post('api/payroll-run.revert', 'PayrollController@revert');
     $router->post('api/payroll-run.approve', 'PayrollController@approve');
@@ -113,6 +114,7 @@
     $router->get('api/ped-type.get', 'PayrollConfigurationController@pedTypeGet');
     $router->post('api/ped-type.save', 'PayrollConfigurationController@pedTypeSave');
     $router->post('api/ped-type.delete', 'PayrollConfigurationController@pedTypeDelete');
+    $router->post('api/ped-type.toggle-status', 'PayrollConfigurationController@pedTypeToggleStatus');
     $router->post('api/ped-type.seed-defaults', 'PayrollConfigurationController@pedTypeSeedDefaults');
     $router->post('api/attendance-deduction-rule.method-options', 'PayrollConfigurationController@attendanceDeductionMethodOptions');
     $router->get('api/attendance-deduction-rule.get-all', 'PayrollConfigurationController@attendanceDeductionRuleGetAll');
@@ -271,6 +273,14 @@
     $router->get('api/manual-overtime.get', 'ManualEntryController@overtimeGet');
     $router->post('api/manual-overtime.save', 'ManualEntryController@overtimeSave');
     $router->post('api/manual-overtime.delete', 'ManualEntryController@overtimeDelete');
+    $router->get('api/manual-import.template', 'ManualEntryController@importTemplate');
+    $router->post('api/manual-import.preview', 'ManualEntryController@importPreview');
+    $router->post('api/manual-import.commit', 'ManualEntryController@importCommit');
+    $router->get('api/manual-import.batch-list', 'ManualEntryController@importBatchList');
+    $router->get('api/manual-import.batch-detail', 'ManualEntryController@importBatchDetail');
+    $router->get('api/manual-import.activity-log', 'ManualEntryController@importActivityLog');
+    // 2026-08-30, Phase 7 (T037/T038/T039) -- session-guard.js's periodic heartbeat poll.
+    $router->get('api/session.heartbeat', 'SessionController@heartbeat');
     $router->post('api/ot-rate.scope-options', 'SetupRulesController@otScopeOptions');
     $router->post('api/ot-rate.options', 'MasterController@getMaster');
     $router->post('api/leave-type.options', 'MasterController@getMaster');
@@ -279,6 +289,9 @@
     $router->post('api/ot-rate.save', 'SetupRulesController@otRateSave');
     $router->post('api/ot-rate.delete', 'SetupRulesController@otRateDelete');
     $router->post('api/ot-rate.toggle-status', 'SetupRulesController@otRateToggleStatus');
+    $router->post('api/ot-rate.set-default', 'SetupRulesController@otRateSetDefault');
+    $router->post('api/ot-rate.assignable-options', 'SetupRulesController@otRateAssignableOptions');
+    $router->post('api/ot-rate.set-options', 'SetupRulesController@otRateSetOptions');
     $router->post('api/ot-rate.preview', 'SetupRulesController@otRatePreview');
     $router->get('api/holiday.list', 'SetupRulesController@holidayList');
     $router->get('api/holiday.get', 'SetupRulesController@holidayGet');
@@ -299,9 +312,13 @@
     $router->get('reports/annual-summary', 'AnnualIncomeSummaryController@index');
     $router->get('api/annual-income-summary.years', 'AnnualIncomeSummaryController@years');
     $router->get('api/annual-income-summary.summary', 'AnnualIncomeSummaryController@summary');
-    $router->get('api/annual-income-summary.fiscal-year-setting', 'AnnualIncomeSummaryController@fiscalYearSetting');
-    $router->post('api/annual-income-summary.fiscal-year-setting.save', 'AnnualIncomeSummaryController@saveFiscalYearSetting');
     $router->get('api/annual-income-summary.cell-detail', 'AnnualIncomeSummaryController@cellDetail');
+    // Phase 4, T026/T027/T028 -- ตั้งค่าการตัดรอบปี route removed (companies.fiscal_year_start_month
+    // is edited from Company Profile only, see that controller's own save()); 3 new routes for the
+    // combined page's 2nd/3rd tabs.
+    $router->get('api/annual-income-summary.pit-summary', 'AnnualIncomeSummaryController@pitSummary');
+    $router->get('api/annual-income-summary.monthly-pit', 'AnnualIncomeSummaryController@monthlyPit');
+    $router->get('api/annual-income-summary.calendar-years', 'AnnualIncomeSummaryController@calendarYears');
     $router->get('api/report.list', 'ReportsController@list');
     $router->get('api/report.cycle-runs', 'ReportsController@cycleRuns');
     $router->get('api/report.available-years', 'ReportsController@availableYears');
@@ -313,6 +330,9 @@
     $router->get('api/report.payslip-roster', 'ReportsController@payslipRoster');
     $router->get('submission', 'SubmissionController@index');
     $router->post('api/employee.list', 'EmployeeController@list');
+    $router->post('api/employee.recheck-list', 'EmployeeController@recheckList');
+    $router->post('api/employee.standing-summary-list', 'EmployeeController@standingSummaryList');
+    $router->post('api/employee.station-counts', 'EmployeeController@stationCounts');
     $router->post('api/employee.list-column-values', 'EmployeeController@listColumnValues');
     $router->post('api/employee-sync.filter-options', 'EmployeeSyncController@filterOptions');
     $router->post('api/employee-sync.candidates', 'EmployeeSyncController@candidates');
@@ -411,6 +431,13 @@
     $router->get('api/employee.recurring-earning.get', 'EmployeeController@recurringEarningGet');
     $router->post('api/employee.recurring-earning.save', 'EmployeeController@recurringEarningSave');
     $router->post('api/employee.recurring-earning.delete', 'EmployeeController@recurringEarningDelete');
+    $router->post('api/employee.recurring-deduction.type-options', 'EmployeeController@recurringDeductionTypeOptions');
+    $router->get('api/employee.recurring-deduction.list', 'EmployeeController@recurringDeductionList');
+    $router->get('api/employee.recurring-deduction.get', 'EmployeeController@recurringDeductionGet');
+    $router->post('api/employee.recurring-deduction.save', 'EmployeeController@recurringDeductionSave');
+    $router->post('api/employee.recurring-deduction.delete', 'EmployeeController@recurringDeductionDelete');
+    $router->get('api/employee.ot-rate.get', 'EmployeeController@otRateGet');
+    $router->post('api/employee.ot-rate.save', 'EmployeeController@otRateSave');
     $router->get('api/employee.document.list', 'EmployeeController@documentList');
     $router->post('api/employee.document.upload', 'EmployeeController@documentUpload');
     $router->get('api/employee.document.view', 'EmployeeController@documentView');

@@ -87,13 +87,45 @@ class MasterModel {
                 $stmt->execute();
                 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 break;
+            case 'ot_rate':
+                // 2026-08-30: `ot_rates` (a flat per-company table matching every other entry in the
+                // generic $tableMap below) was replaced by the OT Rate Set system -- a selectable "OT
+                // rate" is now one `ot_rate_set_items` row (one OT scope's rate within a Set), a child
+                // of `ot_rate_sets` rather than its own top-level comp_id-scoped table, so it can't
+                // reuse the generic dispatcher below and gets its own case instead (same precedent as
+                // 'religion'/'bank' above, which are shaped differently from the generic group too).
+                // Used by the manual/imported Overtime Record entry picker (OvertimeRecordModel) --
+                // label combines the Set name + OT type name since a Set's own items have no name of
+                // their own (only the type they belong to does).
+                if ($compId === null) {
+                    break;
+                }
+                $where = " WHERE s.comp_id = :comp_id AND s.deleted_at IS NULL AND s.status = 'active' ";
+                $params = [':comp_id' => $compId];
+                if (!empty($searchTerm)) {
+                    $where .= " AND (s.name_th LIKE :search OR s.name_en LIKE :search OR st.name_th LIKE :search OR st.name_en LIKE :search) ";
+                    $params[':search'] = '%' . $searchTerm . '%';
+                }
+                $fromSql = " FROM ot_rate_set_items i JOIN ot_rate_sets s ON s.id = i.set_id JOIN master_ot_scope_types st ON st.id = i.ot_scope_id";
+                $sqlTotal = "SELECT COUNT(*)" . $fromSql . $where;
+                $stmtTotal = $pdo->prepare($sqlTotal);
+                $stmtTotal->execute($params);
+                $totalCount = $stmtTotal->fetchColumn();
+                $sql = "SELECT i.id, CONCAT(s.name_th, ' - ', st.name_th) AS text_th, CONCAT(s.name_en, ' - ', st.name_en) AS text_en"
+                    . $fromSql . $where . " ORDER BY s.is_default DESC, s.name_th ASC, st.sort_order ASC LIMIT :offset, :limit";
+                $stmt = $pdo->prepare($sql);
+                $stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+                $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+                foreach ($params as $key => $val) $stmt->bindValue($key, $val);
+                $stmt->execute();
+                $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                break;
             case 'department':
             case 'role':
             case 'position':
             case 'branch':
             case 'shift':
             case 'leave_type':
-            case 'ot_rate':
             case 'team':
                 if ($compId === null) {
                     break;
@@ -105,7 +137,6 @@ class MasterModel {
                     'branch' => ['table' => 'structure_branches', 'code' => 'branch_code', 'nameTh' => 'branch_name_th', 'nameEn' => 'branch_name_en'],
                     'shift' => ['table' => 'shifts', 'code' => 'shift_code', 'nameTh' => 'shift_name_th', 'nameEn' => 'shift_name_en'],
                     'leave_type' => ['table' => 'leave_types', 'code' => 'code', 'nameTh' => 'name_th', 'nameEn' => 'name_en'],
-                    'ot_rate' => ['table' => 'ot_rates', 'code' => null, 'nameTh' => 'ot_name_th', 'nameEn' => 'ot_name_en'],
                     'team' => ['table' => 'structure_teams', 'code' => 'team_code', 'nameTh' => 'team_name_th', 'nameEn' => 'team_name_en'],
                 ];
                 $cfg = $tableMap[$type];

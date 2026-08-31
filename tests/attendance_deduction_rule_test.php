@@ -1,9 +1,10 @@
 <?php
 /**
  * Lightweight verification script for Attendance Deduction Rule CRUD
- * (AttendanceDeductionRuleModel), covering all 4 events (late/absent/unpaid_leave/leave_pending --
- * the last one added 2026-08-29) AND the 2026-08-30 multi-scope rollout (team/department-scoped
- * rule variants, priority resolution, ruleDelete()). Not PHPUnit -- see
+ * (AttendanceDeductionRuleModel), covering all 5 events (late/early_leave/absent/unpaid_leave/
+ * leave_pending -- early_leave added 2026-08-30, Phase 8 T043, "เพิ่ม 'กลับก่อนเวลา' ตั้งค่าได้แบบ
+ * เดียวกับ 'มาสาย'"; leave_pending added 2026-08-29) AND the 2026-08-30 multi-scope rollout
+ * (team/department-scoped rule variants, priority resolution, ruleDelete()). Not PHPUnit -- see
  * tests/statutory_engine_test.php for why. Runs against the real dev DB inside a transaction that is
  * always rolled back.
  * Run with: php tests/attendance_deduction_rule_test.php
@@ -55,13 +56,19 @@ try {
 
     echo "=== Method options (master data) ===\n";
     $methods = $model->methodOptions();
-    check('3 attendance deduction methods seeded', count($methods), 3);
+    // 2026-08-30 (T015, "เพิ่มตัวเลือก 'ไม่หัก'"): 3 -> 4 (percent_of_rate/flat_amount/tiered_bracket/
+    // no_deduction).
+    check('4 attendance deduction methods seeded', count($methods), 4);
 
     echo "=== Default (no rows saved yet) -- one virtual default variant per event ===\n";
     $all = $model->ruleGetAll($compId);
-    check('all 4 events present in ruleGetAll()', array_keys($all), ['late', 'absent', 'unpaid_leave', 'leave_pending']);
-    $defaultRateUnit = ['late' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day', 'leave_pending' => 'day'];
-    foreach (['late', 'absent', 'unpaid_leave', 'leave_pending'] as $eventCode) {
+    // 2026-08-30 (Phase 8, T043): 'early_leave' added as the 2nd event, mirroring 'late' exactly
+    // (SyncPayResolver::attendanceDeductionRuleFor() already queried attendance_deduction_rules
+    // generically by event_code with no hardcoded list -- the only real gap was EVENT_CODES never
+    // including it, so the settings UI never let an admin configure it).
+    check('all 5 events present in ruleGetAll()', array_keys($all), ['late', 'early_leave', 'absent', 'unpaid_leave', 'leave_pending']);
+    $defaultRateUnit = ['late' => 'minute', 'early_leave' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day', 'leave_pending' => 'day'];
+    foreach (['late', 'early_leave', 'absent', 'unpaid_leave', 'leave_pending'] as $eventCode) {
         check("{$eventCode}: exactly 1 variant (the virtual default) when nothing saved", count($all[$eventCode]), 1);
         check("{$eventCode}: default method_code is percent_of_rate", $all[$eventCode][0]['method_code'], 'percent_of_rate');
         check("{$eventCode}: default multiplier_rate is 1.00", (float)$all[$eventCode][0]['multiplier_rate'], 1.0);
@@ -172,6 +179,51 @@ try {
     checkTrue('switch to flat_amount succeeds', $backToFlat['status']);
     $bracketCountAfterSwitch = (int)$pdo->query("SELECT COUNT(*) FROM attendance_deduction_rule_brackets WHERE rule_id = {$leaveRuleId}")->fetchColumn();
     check('brackets cleared after switching away from tiered_bracket', $bracketCountAfterSwitch, 0);
+
+    echo "=== 2026-08-30 (Phase 8, T043) -- 'early_leave' configures independently, same shape as 'late' ===\n";
+    $saveEarlyLeave = $model->ruleSave(['event_code' => 'early_leave', 'method_code' => 'flat_amount', 'rate_unit' => 'minute', 'rate_per_unit' => 3.0], $compId, $userId);
+    checkTrue('early_leave flat_amount save succeeds' . (empty($saveEarlyLeave['status']) ? " ({$saveEarlyLeave['message']})" : ''), $saveEarlyLeave['status']);
+    $earlyLeaveRuleId = $saveEarlyLeave['id'];
+    $allAfterEarlyLeave = $model->ruleGetAll($compId);
+    check("early_leave's method_code is flat_amount", $allAfterEarlyLeave['early_leave'][0]['method_code'], 'flat_amount');
+    check("early_leave's rate_per_unit round-trips", (float)$allAfterEarlyLeave['early_leave'][0]['rate_per_unit'], 3.0);
+    check("early_leave's rate_unit round-trips as minute", $allAfterEarlyLeave['early_leave'][0]['rate_unit'], 'minute');
+    // 'late' was already resaved to percent_of_rate (multiplier 1.25) by the "Re-save 'late' by id"
+    // section earlier in this file -- this assertion only confirms early_leave's own save didn't
+    // ALSO touch late's row (independent rows), not that late is still at its very first value.
+    check("late is unaffected by early_leave's save (independent rows)", $allAfterEarlyLeave['late'][0]['method_code'], 'percent_of_rate');
+    check('late and early_leave got different row ids', $lateRuleId !== $earlyLeaveRuleId, true);
+
+    echo "=== 2026-08-30 (T015, \"เพิ่มตัวเลือก 'ไม่หัก'\") -- no_deduction needs no extra config at all ===\n";
+    // Real bug found and fixed while adding this method: ruleSave()'s validation used to be an
+    // unconditional trailing `else { // tiered_bracket }` that assumed anything not flat_amount/
+    // percent_of_rate MUST be tiered_bracket -- would have silently required a bracket row for a
+    // method that has none. Confirmed fixed: saving with NO brackets/rate_per_unit/multiplier_rate
+    // at all succeeds.
+    // Updates the EXISTING company-wide 'late' default row (id already tracked in $lateRuleId from
+    // earlier in this file) rather than creating a new one -- ruleSave() correctly rejects a second
+    // default row for an event that already has one (see the dup-default test further up).
+    $saveNoDeduction = $model->ruleSave(['id' => $lateRuleId, 'event_code' => 'late', 'method_code' => 'no_deduction'], $compId, $userId);
+    checkTrue('saving method_code=no_deduction succeeds with zero extra fields' . (empty($saveNoDeduction['status']) ? " ({$saveNoDeduction['message']})" : ''), $saveNoDeduction['status']);
+    $noDeductionRow = $pdo->query("SELECT method_code, rate_per_unit, multiplier_rate FROM attendance_deduction_rules WHERE id = {$lateRuleId}")->fetch(PDO::FETCH_ASSOC);
+    check('persisted method_code is no_deduction', $noDeductionRow['method_code'] ?? null, 'no_deduction');
+    check('rate_per_unit stays null (no rate to configure for this method)', $noDeductionRow['rate_per_unit'], null);
+    check('multiplier_rate stays null too', $noDeductionRow['multiplier_rate'], null);
+    $noDeductionBracketCount = (int)$pdo->query("SELECT COUNT(*) FROM attendance_deduction_rule_brackets rb JOIN attendance_deduction_rules r ON r.id = rb.rule_id WHERE r.comp_id = {$compId} AND r.event_code = 'late'")->fetchColumn();
+    check('no bracket rows created for no_deduction', $noDeductionBracketCount, 0);
+
+    echo "--- SyncPayResolver::computeAttendanceDeductionFromConfig() -- always 0, regardless of minutes ---\n";
+    require_once __DIR__ . '/../app/services/SyncPayResolver.php';
+    $noDeductionResult1 = SyncPayResolver::computeAttendanceDeductionFromConfig(['method_code' => 'no_deduction'], [], 0.0, 100.0);
+    check('0 minutes -> amount 0.00', $noDeductionResult1['amount'], 0.0);
+    $noDeductionResult2 = SyncPayResolver::computeAttendanceDeductionFromConfig(['method_code' => 'no_deduction'], [], 99999.0, 500.0);
+    check('a huge minute count and a large hourly rate STILL produce 0.00 -- no formula applies at all', $noDeductionResult2['amount'], 0.0);
+    check('formula type is attendance_no_deduction (for the UI trace, even though this specific line never reaches the breakdown modal today -- see detail.js\'s own comment on that)', $noDeductionResult2['formula']['type'] ?? null, 'attendance_no_deduction');
+
+    echo "--- previewCalculation() -- Configure modal's own \"try it out\" button, same no_deduction behavior ---\n";
+    $previewNoDeduction = $model->previewCalculation(['method_code' => 'no_deduction'], 50000.0, 480.0);
+    checkTrue('previewCalculation() accepts no_deduction' . (empty($previewNoDeduction['status']) ? " ({$previewNoDeduction['message']})" : ''), $previewNoDeduction['status']);
+    check('preview amount is 0.00 even with a large sample (480 minutes = a full 8h day)', $previewNoDeduction['amount'], 0.0);
 
     echo "=== 2026-08-30: is_active toggle + department/team/individual exemptions ===\n";
     // No real structure_teams row exists anywhere in this dev DB yet (confirmed via a direct query

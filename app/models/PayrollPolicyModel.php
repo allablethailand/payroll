@@ -37,6 +37,13 @@ class PayrollPolicyModel {
             $row['pay_basis'] = $row['pay_basis'] ?? 'full_month';
             $row['pay_basis_deduct_holidays'] = (bool)($row['pay_basis_deduct_holidays'] ?? false);
             $row['pay_basis_deduct_leave'] = (bool)($row['pay_basis_deduct_leave'] ?? false);
+            // 2026-08-31, explicit request: internship pay conditions -- own separate field set,
+            // same shape as probation_* immediately above, gated by employment_type='internship'
+            // instead of employment_status='probation' (see PayrollRunModel's own precedence
+            // comment for what happens when an employee is somehow both).
+            $row['intern_defer_pvd'] = (bool)($row['intern_defer_pvd'] ?? false);
+            $row['intern_defer_recurring_earning'] = (bool)($row['intern_defer_recurring_earning'] ?? false);
+            $row['intern_base_salary_ratio'] = $row['intern_base_salary_ratio'] !== null ? (float)$row['intern_base_salary_ratio'] : null;
             return $row;
         }
         return [
@@ -44,6 +51,7 @@ class PayrollPolicyModel {
             'probation_period_days' => null, 'probation_defer_pvd' => false,
             'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null,
             'pay_basis' => 'full_month', 'pay_basis_deduct_holidays' => false, 'pay_basis_deduct_leave' => false,
+            'intern_defer_pvd' => false, 'intern_defer_recurring_earning' => false, 'intern_base_salary_ratio' => null,
         ];
     }
 
@@ -59,6 +67,19 @@ class PayrollPolicyModel {
             'defer_pvd' => $row['probation_defer_pvd'],
             'defer_recurring_earning' => $row['probation_defer_recurring_earning'],
             'base_salary_ratio' => $row['probation_base_salary_ratio'], // null = 100%, no reduction
+        ];
+    }
+
+    /** Same "engine takes a precomputed flags param, called once per run not per employee" convention
+     *  as probationSettings() immediately above -- direct mirror, own separate field set (see this
+     *  class's own get() docblock comment / the migration's own header for why these are kept
+     *  independent of probation_* rather than reused). */
+    public function internSettings(int $compId): array {
+        $row = $this->get($compId);
+        return [
+            'defer_pvd' => $row['intern_defer_pvd'],
+            'defer_recurring_earning' => $row['intern_defer_recurring_earning'],
+            'base_salary_ratio' => $row['intern_base_salary_ratio'], // null = 100%, no reduction
         ];
     }
 
@@ -110,16 +131,30 @@ class PayrollPolicyModel {
         $probationDeferPvd = !empty($data['probation_defer_pvd']) ? 1 : 0;
         $probationDeferRecurringEarning = !empty($data['probation_defer_recurring_earning']) ? 1 : 0;
 
+        // 2026-08-31, explicit request: internship pay conditions -- own separate field set, same
+        // validation shape as probation_base_salary_ratio immediately above.
+        $internBaseSalaryRatio = null;
+        if (isset($data['intern_base_salary_ratio']) && $data['intern_base_salary_ratio'] !== '' && $data['intern_base_salary_ratio'] !== null) {
+            if (!is_numeric($data['intern_base_salary_ratio']) || (float)$data['intern_base_salary_ratio'] <= 0 || (float)$data['intern_base_salary_ratio'] > 100) {
+                return ['status' => false, 'message' => 'Intern base salary ratio must be a percentage between 0 (exclusive) and 100, or left blank for no reduction.'];
+            }
+            $internBaseSalaryRatio = (float)$data['intern_base_salary_ratio'];
+        }
+        $internDeferPvd = !empty($data['intern_defer_pvd']) ? 1 : 0;
+        $internDeferRecurringEarning = !empty($data['intern_defer_recurring_earning']) ? 1 : 0;
+
         $payBasis = in_array($data['pay_basis'] ?? '', ['full_month', 'schedule_based', 'sync_actual_days'], true) ? $data['pay_basis'] : 'full_month';
         $payBasisDeductHolidays = !empty($data['pay_basis_deduct_holidays']) ? 1 : 0;
         $payBasisDeductLeave = !empty($data['pay_basis_deduct_leave']) ? 1 : 0;
 
         $stmt = $this->db->prepare(
-            "INSERT INTO `company_payroll_policies` (comp_id, reopen_window_days, probation_period_days, probation_defer_pvd, probation_defer_recurring_earning, probation_base_salary_ratio, pay_basis, pay_basis_deduct_holidays, pay_basis_deduct_leave, updated_by)
-             VALUES (:comp_id, :reopen_window_days, :probation_period_days, :probation_defer_pvd, :probation_defer_recurring_earning, :probation_base_salary_ratio, :pay_basis, :pay_basis_deduct_holidays, :pay_basis_deduct_leave, :updated_by)
+            "INSERT INTO `company_payroll_policies` (comp_id, reopen_window_days, probation_period_days, probation_defer_pvd, probation_defer_recurring_earning, probation_base_salary_ratio, intern_defer_pvd, intern_defer_recurring_earning, intern_base_salary_ratio, pay_basis, pay_basis_deduct_holidays, pay_basis_deduct_leave, updated_by)
+             VALUES (:comp_id, :reopen_window_days, :probation_period_days, :probation_defer_pvd, :probation_defer_recurring_earning, :probation_base_salary_ratio, :intern_defer_pvd, :intern_defer_recurring_earning, :intern_base_salary_ratio, :pay_basis, :pay_basis_deduct_holidays, :pay_basis_deduct_leave, :updated_by)
              ON DUPLICATE KEY UPDATE reopen_window_days = VALUES(reopen_window_days), probation_period_days = VALUES(probation_period_days),
                 probation_defer_pvd = VALUES(probation_defer_pvd), probation_defer_recurring_earning = VALUES(probation_defer_recurring_earning),
                 probation_base_salary_ratio = VALUES(probation_base_salary_ratio),
+                intern_defer_pvd = VALUES(intern_defer_pvd), intern_defer_recurring_earning = VALUES(intern_defer_recurring_earning),
+                intern_base_salary_ratio = VALUES(intern_base_salary_ratio),
                 pay_basis = VALUES(pay_basis), pay_basis_deduct_holidays = VALUES(pay_basis_deduct_holidays), pay_basis_deduct_leave = VALUES(pay_basis_deduct_leave),
                 updated_by = VALUES(updated_by)"
         );
@@ -133,6 +168,9 @@ class PayrollPolicyModel {
             ':pay_basis_deduct_holidays' => $payBasisDeductHolidays,
             ':pay_basis_deduct_leave' => $payBasisDeductLeave,
             ':probation_base_salary_ratio' => $probationBaseSalaryRatio,
+            ':intern_defer_pvd' => $internDeferPvd,
+            ':intern_defer_recurring_earning' => $internDeferRecurringEarning,
+            ':intern_base_salary_ratio' => $internBaseSalaryRatio,
             ':updated_by' => $userId,
         ]);
 

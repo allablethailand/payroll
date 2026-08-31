@@ -663,17 +663,42 @@ $(document).on('click', '#btnApplyLeaveTypeDefaults', function () {
     );
 });
 
-/* ==================== OT RATE ====================
- * Moved back here 2026-08-21 (explicit request: "ย้ายตัวคูณ OT ไปไว้ที่เดิมครับ") -- briefly lived
- * under Payroll Configuration earlier the same day, reverted to its original tab.
- * calculation_method/flat_amount_rate (added during that same detour, "เพิ่มตัวเลือก 'จำนวนเงินคงที่'
- * ต่อชม./วัน") are kept -- only the location moved back, not the feature.
+/* ==================== OT RATE SET ====================
+ * 2026-08-30, full replacement of the old flat one-row-per-scope `ot_rates` CRUD -- explicit request:
+ * "ตอนกดบวกรายการ ให้ขึ้นมาเลยเป็นชุดของ OT Type แล้วมี form ในแต่ละ Type ให้ระบุ...1 ชุดข้อมูลมีทุก Type ให้
+ * จัดการ แต่สามารถจัดการแยกกันได้แต่ละ type ในแถวเดียวกัน และให้เพิ่มการ Assign ให้ด้วย...ป้องกันการบันทึกซ้ำ...
+ * บังคับไปเลยว่าต้องมี Default". Backed by OtRateSetModel (app/models/OtRateSetModel.php) -- see that
+ * class's own docblock for the full architecture. `dtOt`/`askDelete('ot', ...)`/the
+ * `api/ot-rate.delete`/`.toggle-status` endpoints keep their old names for continuity (delegate to
+ * OtRateSetModel now, not SetupRulesModel).
  */
 let dtOt;
-function otRateBadge(row) {
-    return row.calculation_method === 'flat_amount'
-        ? `<span class="row-code">${parseFloat(row.flat_amount_rate || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${row.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>`
-        : `<span class="row-code">${parseFloat(row.multiplier_rate).toFixed(1)}x</span>`;
+let otScopeCache = null; // master_ot_scope_types options, fetched once and reused (id/code/name_th/name_en)
+function otScopeOptionsPromise() {
+    if (otScopeCache) { return $.Deferred().resolve(otScopeCache).promise(); }
+    // 2026-08-31, real bug found and fixed (explicit report: "GET .../api/ot-rate.scope-options 404
+    // (Not Found)") -- the route is registered POST-only (`$router->post('api/ot-rate.scope-options',
+    // ...)`, same as every other select2-remote-style options endpoint in this app), but this used
+    // $.get() (a GET request) instead of $.post().
+    return $.post(`${BASE_URL}/api/ot-rate.scope-options`).then(function (res) {
+        otScopeCache = (res && res.data && res.data.items) || [];
+        return otScopeCache;
+    });
+}
+function otItemBadge(item) {
+    if (!item) { return `<span class="text-muted small">${langData['ot_rate_set_not_configured'] || 'Not set'}</span>`; }
+    return item.calculation_method === 'flat_amount'
+        ? `<span class="row-code">${parseFloat(item.flat_amount_rate || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${item.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>`
+        : `<span class="row-code">${parseFloat(item.multiplier_rate).toFixed(1)}x</span>`;
+}
+function otItemByScopeCode(row, code) {
+    return (row.items || []).find(i => i.scope_code === code) || null;
+}
+function otAssignSummary(row) {
+    if (row.is_default) { return `<span class="badge-soft badge-weekday"><i class="fa-solid fa-star me-1"></i>${langData['ot_rate_set_unassigned'] || 'Unassigned'}</span>`; }
+    const n = (row.assignments || []).length;
+    if (n === 0) { return `<span class="text-muted small">-</span>`; }
+    return `<span class="row-code">${n} ${langData['ot_rate_set_assignments_summary'] || 'assigned'}</span>`;
 }
 function renderOt() {
     if ($.fn.DataTable.isDataTable('#tb_ot')) { $('#tb_ot').DataTable().ajax.reload(null, false); return; }
@@ -681,26 +706,36 @@ function renderOt() {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/ot-rate.list`, dataSrc: 'data' },
         columns: [
-            { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}</div>` },
-            { data: null, render: (d, t, row) => `<span class="badge-soft badge-weekday">${escapeHtmlSr(currentLang === 'th' ? row.scope_name_th : row.scope_name_en)}</span>` },
-            { data: null, className: 'text-end', render: (d, t, row) => otRateBadge(row) },
+            { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
+            { data: null, className: 'text-end', render: (d, t, row) => otItemBadge(otItemByScopeCode(row, 'weekday')) },
+            { data: null, className: 'text-end', render: (d, t, row) => otItemBadge(otItemByScopeCode(row, 'weekend')) },
+            { data: null, className: 'text-end', render: (d, t, row) => otItemBadge(otItemByScopeCode(row, 'holiday')) },
+            { data: null, render: (d, t, row) => otAssignSummary(row) },
+            {
+                data: 'is_default', className: 'text-center', render: (d, t, row) => d
+                    ? `<i class="fa-solid fa-star text-warning" title="${langData['ot_rate_set_default_badge'] || 'Default'}"></i>`
+                    : `<button type="button" class="btn btn-link p-0 text-muted" title="${langData['ot_rate_set_make_default'] || 'Make Default'}" onclick="askOtSetDefault(${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')"><i class="fa-regular fa-star"></i></button>`
+            },
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleOtStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.ot_name_th : row.ot_name_en)}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_ot_rates_yet'] || 'No OT rates have been added yet.' },
+        language: { ...getTableLang(), emptyTable: langData['no_ot_rate_sets_yet'] || 'No OT Rate Sets have been added yet.' },
         initComplete: function () {
-            addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'OT Rate', 'openOtModal()').call(this);
+            addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'OT Rate Set', 'openOtModal()').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the interactive status SWITCH (3) and actions (4).
+            // rollout, client mode. Excludes the interactive Default star (5), Status switch (6),
+            // and actions (7).
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
                     { index: 0, key: 'name' },
-                    { index: 1, key: 'scope' },
-                    { index: 2, key: 'rate' },
+                    { index: 1, key: 'weekday' },
+                    { index: 2, key: 'weekend' },
+                    { index: 3, key: 'holiday' },
+                    { index: 4, key: 'assign' },
                 ]
             });
         }
@@ -710,26 +745,128 @@ function toggleOtStatus(id) {
     $.ajax({
         url: `${BASE_URL}/api/ot-rate.toggle-status`, method: 'POST', data: { id }, dataType: 'json',
         success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
+            if (!res.status) { showWarning(res.message || langData['ot_rate_set_default_blocked'] || langData['save_failed'] || 'An error occurred.'); }
             dtOt.ajax.reload(null, false);
         }
     });
 }
-function applyOtCalculationMethodFields(method) {
-    $('#otMultiplierWrapper').toggleClass('d-none', method === 'flat_amount');
-    $('#otFlatAmountWrapper').toggleClass('d-none', method !== 'flat_amount');
+function askOtSetDefault(id, name) {
+    showConfirm(langData['ot_rate_set_make_default'] || 'Make Default', langData['ot_rate_set_make_default_confirm'] || 'Make this Set the company Default?', function () {
+        $.ajax({
+            url: `${BASE_URL}/api/ot-rate.set-default`, method: 'POST', data: { id }, dataType: 'json',
+            success: function (res) {
+                if (res.status) { showSuccess(res.message || langData['save_success'] || 'Saved successfully.'); dtOt.ajax.reload(null, false); }
+                else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        });
+    });
 }
-$(document).on('change', '#otCalcMethod', function () {
-    applyOtCalculationMethodFields($(this).val());
+function applyOtItemRowFields($row, method) {
+    const $rate = $row.find('.ot-item-rate');
+    if (method === 'flat_amount') {
+        $rate.attr({ step: '0.01', min: '0.01', placeholder: '100.00' });
+    } else {
+        $rate.attr({ step: '0.1', min: '0.1', placeholder: '1.5' });
+    }
+}
+$(document).on('change', '.ot-item-method', function () {
+    applyOtItemRowFields($(this).closest('tr'), $(this).val());
 });
 $(document).on('click', '#shiftWorkDaysToggle button', function () {
     $(this).toggleClass('active');
 });
+function otItemRowHtml(scope, item) {
+    const method = (item && item.calculation_method) || 'multiplier';
+    const base = (item && item.calculation_base) || 'hourly';
+    const rate = item ? (method === 'flat_amount' ? item.flat_amount_rate : item.multiplier_rate) : (method === 'flat_amount' ? '' : 1.5);
+    return `<tr data-scope-id="${scope.id}" data-scope-code="${scope.code}">
+        <td class="fw-bold">${escapeHtmlSr(currentLang === 'th' ? scope.text_th : scope.text_en)}</td>
+        <td><select class="form-select form-select-sm select2-static ot-item-method" data-option-keys="ot_calc_method_multiplier,ot_calc_method_flat_amount" data-option-values="multiplier,flat_amount"></select></td>
+        <td><select class="form-select form-select-sm select2-static ot-item-base" data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select></td>
+        <td>
+            <div class="d-flex align-items-center gap-1">
+                <input type="number" class="form-control form-control-sm ot-item-rate" step="${method === 'flat_amount' ? '0.01' : '0.1'}" min="${method === 'flat_amount' ? '0.01' : '0.1'}" value="${rate}">
+                <button type="button" class="btn btn-link p-0 text-muted ot-item-preview-btn" title="${langData['calc_preview_button'] || 'Preview'}"><i class="fa-solid fa-calculator"></i></button>
+            </div>
+        </td>
+    </tr>`;
+}
+function buildOtItemsBody(items) {
+    return otScopeOptionsPromise().then(function (scopes) {
+        const $body = $('#otItemsBody').empty();
+        scopes.forEach(function (scope) {
+            const item = (items || []).find(i => String(i.ot_scope_id) === String(scope.id)) || null;
+            $body.append(otItemRowHtml(scope, item));
+        });
+        $body.find('.ot-item-method, .ot-item-base').each(function () { initSelect2(this, { mode: 'static' }); });
+        $body.find('tr').each(function () {
+            const $row = $(this);
+            const item = (items || []).find(i => String(i.ot_scope_id) === String($row.data('scope-id'))) || null;
+            const method = (item && item.calculation_method) || 'multiplier';
+            $row.find('.ot-item-method').val(method).trigger('change.select2');
+            $row.find('.ot-item-base').val((item && item.calculation_base) || 'hourly').trigger('change.select2');
+            applyOtItemRowFields($row, method);
+        });
+    });
+}
+function otAssignListHtml(options, scopeType, checkedIds) {
+    if (!options.length) { return `<div class="text-muted small">-</div>`; }
+    return options.map(function (o) {
+        const id = o.id;
+        const checked = checkedIds.includes(String(id)) ? 'checked' : '';
+        const label = String(o.label || '');
+        return `<div class="form-check ot-assign-item" data-label="${escapeHtmlSr(label.toLowerCase())}">
+            <input class="form-check-input ot-assign-checkbox" type="checkbox" value="${id}" data-scope-type="${scopeType}" id="ot_assign_${scopeType}_${id}" ${checked}>
+            <label class="form-check-label small" for="ot_assign_${scopeType}_${id}">${escapeHtmlSr(label)}</label>
+        </div>`;
+    }).join('');
+}
+const OT_ASSIGN_LIST_ELS = { department: '#otAssignDepartments', team: '#otAssignTeams', position: '#otAssignPositions', employee: '#otAssignEmployees' };
+function buildOtAssignLists(assignments) {
+    const checkedByType = { department: [], team: [], position: [], employee: [] };
+    (assignments || []).forEach(function (a) { if (checkedByType[a.scope_type]) { checkedByType[a.scope_type].push(String(a.scope_id)); } });
+    return $.post(`${BASE_URL}/api/ot-rate.assignable-options`).then(function (res) {
+        const data = (res && res.data) || { departments: [], teams: [], positions: [], employees: [] };
+        $('#otAssignDepartments').html(otAssignListHtml(data.departments || [], 'department', checkedByType.department));
+        $('#otAssignTeams').html(otAssignListHtml(data.teams || [], 'team', checkedByType.team));
+        $('#otAssignPositions').html(otAssignListHtml(data.positions || [], 'position', checkedByType.position));
+        $('#otAssignEmployees').html(otAssignListHtml(data.employees || [], 'employee', checkedByType.employee));
+        // Reset search/select-all controls on every rebuild (edit vs. create vs. re-open) so stale
+        // filter text/checked state from a previous modal open never carries over.
+        $('.ot-assign-search').val('');
+        $('.ot-assign-select-all').prop('checked', false);
+    });
+}
+function applyOtDefaultToggleUi(isDefault) {
+    $('#otAssignWrap').toggleClass('opacity-50', isDefault).find('input').prop('disabled', isDefault);
+    $('#otAssignDisabledHint').toggleClass('d-none', !isDefault);
+}
+$(document).on('change', '#otIsDefault', function () {
+    applyOtDefaultToggleUi($(this).is(':checked'));
+});
+// 2026-08-31, explicit follow-up ("ปรับ 3 จุดด้านบน") -- search + select-all per Assign-To column,
+// same convention Payslip/Employment Certificate Template's own "Assign To" checkbox lists already
+// use (pst_assign_*/ect_assign_* pattern) for companies with long department/team/position/employee
+// lists. "Select All" only affects currently-VISIBLE (non-filtered-out) rows, matching that same
+// established convention.
+$(document).on('input', '.ot-assign-search', function () {
+    const scopeType = $(this).data('scope-type');
+    const term = $(this).val().toLowerCase().trim();
+    const $list = $(OT_ASSIGN_LIST_ELS[scopeType]);
+    $list.find('.ot-assign-item').each(function () {
+        $(this).toggleClass('d-none', term !== '' && $(this).data('label').indexOf(term) === -1);
+    });
+});
+$(document).on('change', '.ot-assign-select-all', function () {
+    const scopeType = $(this).data('scope-type');
+    const checked = $(this).is(':checked');
+    $(OT_ASSIGN_LIST_ELS[scopeType]).find('.ot-assign-item:not(.d-none) .ot-assign-checkbox').prop('checked', checked);
+});
 function openOtModal(id) {
     $('#otModalTitle').html(`<i class="fa-solid fa-coins"></i> <span data-i18n="ot_rate">${langData['ot_rate'] || 'OT Rate'}</span>`);
-    initSelect2('#otScope', { mode: 'ajax' });
-    initSelect2('#otBase', { mode: 'static' });
-    initSelect2('#otCalcMethod', { mode: 'static' });
+    $('#otId').val('');
+    $('#otNameTh').val(''); $('#otNameEn').val('');
     if (id) {
         $.ajax({
             url: `${BASE_URL}/api/ot-rate.get`, method: 'GET', data: { id }, dataType: 'json',
@@ -737,65 +874,67 @@ function openOtModal(id) {
                 if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
                 const o = res.data;
                 $('#otId').val(o.id);
-                $('#otNameTh').val(o.ot_name_th);
-                $('#otNameEn').val(o.ot_name_en);
-                const $scope = $('#otScope');
-                $scope.empty().append(new Option(currentLang === 'th' ? o.scope_name_th : o.scope_name_en, o.ot_scope_id, true, true)).trigger('change.select2');
-                $('#otMultiplier').val(o.multiplier_rate);
-                $('#otFlatAmountRate').val(o.flat_amount_rate || '');
-                $('#otBase').val(o.calculation_base).trigger('change.select2');
-                $('#otCalcMethod').val(o.calculation_method || 'multiplier').trigger('change.select2');
-                applyOtCalculationMethodFields(o.calculation_method || 'multiplier');
-                $('#otStatus').prop('checked', o.status === 'active');
-                resetOtCalcPreview();
-                new bootstrap.Modal(document.getElementById('otModal')).show();
+                $('#otNameTh').val(o.name_th);
+                $('#otNameEn').val(o.name_en);
+                $('#otIsDefault').prop('checked', !!o.is_default);
+                applyOtDefaultToggleUi(!!o.is_default);
+                $.when(buildOtItemsBody(o.items), buildOtAssignLists(o.assignments)).then(function () {
+                    new bootstrap.Modal(document.getElementById('otModal')).show();
+                });
             },
             error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
         });
         return;
     }
-    $('#otId').val(''); $('#otNameTh').val(''); $('#otNameEn').val('');
-    $('#otScope').empty().trigger('change.select2');
-    $('#otMultiplier').val(1.5);
-    $('#otFlatAmountRate').val('');
-    $('#otBase').val('hourly').trigger('change.select2');
-    $('#otCalcMethod').val('multiplier').trigger('change.select2');
-    applyOtCalculationMethodFields('multiplier');
-    $('#otStatus').prop('checked', true);
-    resetOtCalcPreview();
-    new bootstrap.Modal(document.getElementById('otModal')).show();
+    // 2026-08-30, explicit request: "ในหน้าจัดการ OT บังคับไปเลยดีกว่าครับว่าต้องมี Default...โดยระบบ
+    // เลือกให้เลยในหน้าสร้าง แล้วให้ User เปลี่ยนเอง" -- pre-checked on create, user can uncheck (backend
+    // still force-defaults this company's very first Set regardless of what's submitted).
+    $('#otIsDefault').prop('checked', true);
+    applyOtDefaultToggleUi(true);
+    $.when(buildOtItemsBody([]), buildOtAssignLists([])).then(function () {
+        new bootstrap.Modal(document.getElementById('otModal')).show();
+    });
+}
+function collectOtItems() {
+    const items = [];
+    $('#otItemsBody tr').each(function () {
+        const $row = $(this);
+        const method = $row.find('.ot-item-method').val() || 'multiplier';
+        const rate = parseFloat($row.find('.ot-item-rate').val());
+        const item = { ot_scope_id: parseInt($row.data('scope-id')), calculation_method: method, calculation_base: $row.find('.ot-item-base').val() || 'hourly' };
+        if (method === 'flat_amount') { item.flat_amount_rate = rate; } else { item.multiplier_rate = rate; }
+        items.push(item);
+    });
+    return items;
+}
+function collectOtAssignments() {
+    const assignments = [];
+    $('.ot-assign-checkbox:checked').each(function () {
+        assignments.push({ scope_type: $(this).data('scope-type'), scope_id: parseInt($(this).val()) });
+    });
+    return assignments;
 }
 function saveOt() {
     const nameTh = $('#otNameTh').val().trim();
-    const scopeId = $('#otScope').val();
-    const calcMethod = $('#otCalcMethod').val() || 'multiplier';
-    if (!nameTh || !scopeId) {
+    if (!nameTh) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
+    const items = collectOtItems();
+    for (const item of items) {
+        const rate = item.calculation_method === 'flat_amount' ? item.flat_amount_rate : item.multiplier_rate;
+        if (!rate || rate <= 0 || isNaN(rate)) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+    }
     const payload = {
         id: $('#otId').val() || null,
-        ot_name_th: nameTh, ot_name_en: $('#otNameEn').val().trim(),
-        ot_scope_id: parseInt(scopeId),
-        calculation_base: $('#otBase').val() || 'hourly',
-        calculation_method: calcMethod,
-        status: $('#otStatus').is(':checked') ? 'active' : 'inactive'
+        name_th: nameTh, name_en: $('#otNameEn').val().trim(),
+        is_default: $('#otIsDefault').is(':checked'),
+        items: items,
+        assignments: collectOtAssignments(),
     };
-    if (calcMethod === 'flat_amount') {
-        const flatAmount = parseFloat($('#otFlatAmountRate').val());
-        if (!flatAmount || flatAmount <= 0) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
-        }
-        payload.flat_amount_rate = flatAmount;
-    } else {
-        const multiplier = parseFloat($('#otMultiplier').val());
-        if (!multiplier || multiplier <= 0) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
-        }
-        payload.multiplier_rate = multiplier;
-    }
     $.ajax({
         url: `${BASE_URL}/api/ot-rate.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
@@ -809,16 +948,12 @@ function saveOt() {
     });
 }
 
-/* ==================== Calculation Preview (2026-08-30, OT Rate modal) ====================
+/* ==================== Calculation Preview (2026-08-30, per OT-type row) ====================
  * Same "ปุ่มแสดงตัวอย่างการคำนวณจากการตั้งค่าที่เลือก" feature already built for Attendance Deduction
- * Rule (public/js/setup/payroll-configuration.js) -- posts whatever is CURRENTLY in the form to
- * api/ot-rate.preview, which runs the exact same formula real OT payroll uses (see
- * SetupRulesModel::otRatePreview()'s own docblock) against an editable sample scenario. */
-function resetOtCalcPreview() {
-    $('#otCalcPreviewBaseSalary').val(30000);
-    $('#otCalcPreviewHours').val(2);
-    $('#otCalcPreviewResult').addClass('d-none').empty();
-}
+ * Rule (public/js/setup/payroll-configuration.js), now scoped to ONE item row at a time (a Set bundles
+ * all 3 types, so the preview button lives per-row instead of once per modal) -- posts whatever is
+ * CURRENTLY typed in that row to api/ot-rate.preview (OtRateSetModel::previewCalculation(), the exact
+ * same formula real OT payroll uses) against a fixed 30,000/2h sample scenario, shown in a small popup. */
 function otCalcPreviewFormulaStepsHtml(formula) {
     if (!formula) return '';
     const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -836,43 +971,74 @@ function otCalcPreviewFormulaStepsHtml(formula) {
     }
     return '';
 }
-$(document).on('click', '#btnOtCalcPreview', function () {
-    const calcMethod = $('#otCalcMethod').val() || 'multiplier';
-    const payload = {
-        calculation_method: calcMethod, calculation_base: $('#otBase').val() || 'hourly',
-        sample_base_salary: parseFloat($('#otCalcPreviewBaseSalary').val()) || 30000,
-        sample_hours: parseFloat($('#otCalcPreviewHours').val()),
-    };
-    if (isNaN(payload.sample_hours)) payload.sample_hours = 0;
-    if (calcMethod === 'flat_amount') {
-        payload.flat_amount_rate = parseFloat($('#otFlatAmountRate').val()) || 0;
-    } else {
-        payload.multiplier_rate = parseFloat($('#otMultiplier').val()) || 1.5;
-    }
-    const $btn = $(this).prop('disabled', true);
-    const $result = $('#otCalcPreviewResult');
-    $.ajax({
-        url: `${BASE_URL}/api/ot-rate.preview`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
-        success: function (res) {
-            $btn.prop('disabled', false);
-            if (!res.status) {
-                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
-                return;
+// 2026-08-31, explicit follow-up ("ปรับตัวอย่างการคำนวณ OT ในหน้าตั้งค่า OT Form ดูไม่ Balance ปรับให้
+// Form ตรงกัน และกดคำนวณแล้วให้ขึ้น Block ตัวอย่างต่อลงมาเลย ไม่ต้องเปิดตัวใหม่ ให้เป็น modal เดียวไปเลย") --
+// ONE Swal.fire now handles the whole flow: 2 sample inputs laid out SIDE BY SIDE (was stacked full-
+// width, looked "unbalanced" against each other) with a Calculate button that appends the result
+// block directly below them IN THE SAME modal instead of closing it and opening a second one.
+// Achieved via preConfirm always returning `false` (SweetAlert2's own "keep the popup open" signal)
+// after injecting the result HTML into a placeholder that's already part of this SAME html -- only
+// Cancel/the X button actually closes it, so "Calculate" can be clicked repeatedly with different
+// sample values without ever losing the row's own calculation_method/base/rate context.
+function otItemPreviewPromptHtml() {
+    return `<div class="text-start ot-preview-swal-body">
+        <div class="row g-2">
+            <div class="col-6">
+                <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_salary">${langData['calc_preview_sample_base_salary'] || 'Sample Base Salary'}</label>
+                <input type="number" min="1" step="0.01" class="swal2-input m-0" id="swalOtPreviewBaseSalary" value="30000">
+            </div>
+            <div class="col-6">
+                <label class="form-label small mb-1" data-i18n="calc_preview_sample_ot_hours">${langData['calc_preview_sample_ot_hours'] || 'Sample OT Hours'}</label>
+                <input type="number" min="0" step="0.5" class="swal2-input m-0" id="swalOtPreviewHours" value="2">
+            </div>
+        </div>
+        <div class="calc-preview-result d-none mt-3" id="swalOtPreviewResult"></div>
+    </div>`;
+}
+$(document).on('click', '.ot-item-preview-btn', function () {
+    const $row = $(this).closest('tr');
+    const calcMethod = $row.find('.ot-item-method').val() || 'multiplier';
+    const rate = parseFloat($row.find('.ot-item-rate').val());
+    const calcBase = $row.find('.ot-item-base').val() || 'hourly';
+    Swal.fire({
+        icon: 'question', title: langData['calc_preview_title'] || 'Calculation Preview',
+        html: otItemPreviewPromptHtml(),
+        showCancelButton: true,
+        confirmButtonText: langData['calc_preview_button'] || 'Preview',
+        cancelButtonText: langData['close'] || 'Close',
+        showLoaderOnConfirm: true,
+        allowOutsideClick: () => !Swal.isLoading(),
+        preConfirm: () => {
+            const baseSalary = parseFloat(document.getElementById('swalOtPreviewBaseSalary').value);
+            const hours = parseFloat(document.getElementById('swalOtPreviewHours').value);
+            if (!baseSalary || baseSalary <= 0 || isNaN(hours) || hours < 0) {
+                Swal.showValidationMessage(langData['required_star_message'] || 'Please fill all fields marked with *');
+                return false;
             }
-            const amount = Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            $result.removeClass('d-none').html(
-                `<div class="calc-preview-amount mb-1">${langData['calc_preview_result_label'] || 'Result'}: ${amount}</div>` +
-                otCalcPreviewFormulaStepsHtml(res.formula)
-            );
-        },
-        error: function () {
-            $btn.prop('disabled', false);
-            showWarning(langData['save_failed'] || 'An error occurred while calculating the preview.');
+            const payload = {
+                calculation_method: calcMethod, calculation_base: calcBase,
+                sample_base_salary: baseSalary, sample_hours: hours,
+            };
+            if (calcMethod === 'flat_amount') { payload.flat_amount_rate = rate || 0; } else { payload.multiplier_rate = rate || 1.5; }
+            return $.ajax({
+                url: `${BASE_URL}/api/ot-rate.preview`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
+            }).then(function (res) {
+                if (!res.status) {
+                    Swal.showValidationMessage(res.message || langData['save_failed'] || 'An error occurred.');
+                    return false;
+                }
+                const amount = Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                $('#swalOtPreviewResult').removeClass('d-none').html(
+                    `<div class="calc-preview-amount mb-1">${langData['calc_preview_result_label'] || 'Result'}: ${amount}</div>` +
+                    otCalcPreviewFormulaStepsHtml(res.formula)
+                );
+                return false; // keep the modal open -- Calculate never "confirms"/closes it.
+            }, function () {
+                Swal.showValidationMessage(langData['save_failed'] || 'An error occurred while calculating the preview.');
+                return false;
+            });
         }
     });
-});
-$(document).on('change input', '#otCalcMethod, #otBase, #otMultiplier, #otFlatAmountRate', function () {
-    $('#otCalcPreviewResult').addClass('d-none');
 });
 
 $(function () {

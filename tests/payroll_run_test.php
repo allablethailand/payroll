@@ -17,6 +17,8 @@ require_once __DIR__ . '/../app/models/PayrollEarningDeductionTypeModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunModel.php';
 require_once __DIR__ . '/../app/models/EmployeeEarningDeductionModel.php';
 require_once __DIR__ . '/../app/models/SetupRulesModel.php';
+require_once __DIR__ . '/../app/models/AttendanceDeductionRuleModel.php';
+require_once __DIR__ . '/../app/models/OtRateSetModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -84,6 +86,8 @@ try {
         SET w.status = 'inactive'
         WHERE w.comp_id = :comp_id AND awdt.document_type_code = 'PAYROLL_RUN_APPROVAL' AND w.status = 'active'")
         ->execute([':comp_id' => $compId]);
+    // 2026-08-30: same isolation for the OT Rate Set replacement -- see employee_ot_rate_override_test.php.
+    $pdo->prepare("UPDATE `ot_rate_sets` SET deleted_at = NOW(), status = 'deleted' WHERE comp_id = :comp_id AND deleted_at IS NULL")->execute([':comp_id' => $compId]);
 
     // ---------- Fixtures (created inside the transaction, rolled back at the end) ----------
     $today = new DateTime();
@@ -115,13 +119,13 @@ try {
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_end_date, employment_status, employment_type, workforce_type, record_time_method,
          payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
-         sso_enrolled, pvd_enrolled, tax_exempt)
+         sso_enrolled, pvd_enrolled, tax_exempt, ot_eligible)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          :employment_date, :employment_end_date, :employee_status_enum, 'full_time', 'office', 'manual',
          'bank', 'monthly', :base_salary, :salary_effective_date, 'average', 'active',
-         :sso_enrolled, :pvd_enrolled, :tax_exempt)");
+         :sso_enrolled, :pvd_enrolled, :tax_exempt, 1)");
 
     $insEmp->execute([
         ':comp_id' => $compId, ':employee_no' => 'TEST_FULL_' . uniqid(),
@@ -321,9 +325,12 @@ try {
     // $employeeFullId has base_salary_amount=30000 -> dailyRate=1000, hourlyRate=125.
     echo "=== Sync-derived lines flow into recalculate()'s earning/deduction breakdown ===\n";
     $weekdayOtScopeId = (int)$pdo->query("SELECT id FROM master_ot_scope_types WHERE code = 'weekday'")->fetchColumn();
-    $pdo->prepare("INSERT INTO `ot_rates` (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate, calculation_base, status, created_by)
-        VALUES (?, 'OT ทดสอบ', 'Test OT', ?, 1.50, 'hourly', 'active', ?)")
-        ->execute([$compId, $weekdayOtScopeId, $adminUserId]);
+    $prtOtRateSetModel = new OtRateSetModel($pdo);
+    $prtOtSetSave = $prtOtRateSetModel->save([
+        'name_th' => 'ชุด OT ทดสอบ', 'name_en' => 'Test OT Set', 'is_default' => true,
+        'items' => [['ot_scope_id' => $weekdayOtScopeId, 'calculation_method' => 'multiplier', 'multiplier_rate' => 1.50, 'calculation_base' => 'hourly']],
+    ], $compId, $adminUserId);
+    checkTrue('fixture: OT Rate Set created' . (empty($prtOtSetSave['status']) ? " ({$prtOtSetSave['message']})" : ''), $prtOtSetSave['status']);
     $itemValuesJson = json_encode([
         ['item_id' => 99, 'item_code' => 'CUSTOM_ATTENDANCE_BONUS', 'item_name' => 'Attendance Bonus', 'item_type' => 'INCOME', 'unit_type' => null, 'value' => 500, 'remark' => null],
     ], JSON_UNESCAPED_UNICODE);
@@ -1295,12 +1302,101 @@ try {
     check('daily employee prorate_total_days holds total_days', (int)$dailyDetail['prorate_total_days'], $expectedPayableDaily['total_days']);
     check('daily employee WITH a shift is not flagged daily_salary_no_shift_pattern', strpos((string)($dailyDetail['calc_errors'] ?? ''), 'daily_salary_no_shift_pattern'), false);
 
-    checkTrue('hourly employee flagged salary_type_hourly_not_supported', strpos((string)($hourlyDetail['calc_errors'] ?? ''), 'salary_type_hourly_not_supported') !== false);
-    check('hourly employee falls back to the unprorated monthly formula for a full period', (float)$hourlyDetail['base_salary_amount'], $hourlyRate);
+    // 2026-08-31, real gap fixed: salary_type='hourly' used to silently fall through to the
+    // monthly-prorate formula (a WRONG number, not just "unsupported") -- now sums real
+    // attendance_records.actual_work_minutes for the employee's own effective range. With
+    // ZERO attendance data at all (this fixture's state before any attendance rows are added
+    // below), pays 0 with a visible advisory flag rather than guessing.
+    checkTrue('hourly employee with NO attendance data flagged hourly_salary_no_attendance_data', strpos((string)($hourlyDetail['calc_errors'] ?? ''), 'hourly_salary_no_attendance_data') !== false);
+    check('hourly employee with no attendance data pays 0 base (not the old wrong monthly-formula guess)', (float)$hourlyDetail['base_salary_amount'], 0.0);
 
     checkTrue('daily employee WITHOUT a shift flagged daily_salary_no_shift_pattern', strpos((string)($noShiftDetail['calc_errors'] ?? ''), 'daily_salary_no_shift_pattern') !== false);
     check('daily employee without a shift has_shift_pattern is false', $expectedPayableNoShift['has_shift_pattern'], false);
     check('no-shift daily employee base_salary_amount = rate * payable_days (holiday-only exclusion)', (float)$noShiftDetail['base_salary_amount'], round($noShiftRate * $expectedPayableNoShift['payable_days'], 2));
+
+    echo "=== 2026-08-31: salary_type weekly/semi_monthly/bi_weekly (explicit request: \"รายสัปดาห์ด้วย และ\n    รายปักษ์...ต้องครอบคลุมทั้งหมด\") -- same payableDaysForEmployee() proration as 'daily', base\n    rate first divided by a fixed per-type divisor (7/15/14) to get an effective daily rate ===\n";
+    $weeklyRate = 3500.0;
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_WEEKLY_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'รายสัปดาห์', ':name_en' => 'Test', ':surname_en' => 'WeeklySalary',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => $weeklyRate, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $employeeWeeklyId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET salary_type = 'weekly', shift_id = :shift_id WHERE id = :id")
+        ->execute([':shift_id' => $dailyShiftId, ':id' => $employeeWeeklyId]);
+
+    $semiMonthlyRate = 15000.0;
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_SEMIMONTHLY_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'รายปักษ์', ':name_en' => 'Test', ':surname_en' => 'SemiMonthlySalary',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => $semiMonthlyRate, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $employeeSemiMonthlyId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET salary_type = 'semi_monthly', shift_id = :shift_id WHERE id = :id")
+        ->execute([':shift_id' => $dailyShiftId, ':id' => $employeeSemiMonthlyId]);
+
+    $biWeeklyRate = 7000.0;
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_BIWEEKLY_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'ราย2สัปดาห์', ':name_en' => 'Test', ':surname_en' => 'BiWeeklySalary',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => $biWeeklyRate, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $employeeBiWeeklyId = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET salary_type = 'bi_weekly', shift_id = :shift_id WHERE id = :id")
+        ->execute([':shift_id' => $dailyShiftId, ':id' => $employeeBiWeeklyId]);
+
+    $calcRes3 = $runModel->recalculate($runId, $compId, $adminUserId, true);
+    checkTrue('recalculate succeeds after adding weekly/semi_monthly/bi_weekly employees' . (empty($calcRes3['status']) ? " ({$calcRes3['message']})" : ''), $calcRes3['status']);
+    check('employee_count is 10 after adding the 3 new salary_type fixtures', $calcRes3['employee_count'], 10);
+
+    $details3 = $runModel->getDetails($runId, $compId);
+    $weeklyDetail = null; $semiMonthlyDetail = null; $biWeeklyDetail = null;
+    foreach ($details3 as $d) {
+        if ((int)$d['employee_id'] === $employeeWeeklyId) $weeklyDetail = $d;
+        if ((int)$d['employee_id'] === $employeeSemiMonthlyId) $semiMonthlyDetail = $d;
+        if ((int)$d['employee_id'] === $employeeBiWeeklyId) $biWeeklyDetail = $d;
+    }
+    check('weekly employee base_salary_amount = (rate/7) * payable_days', (float)$weeklyDetail['base_salary_amount'], round(($weeklyRate / 7) * $expectedPayableDaily['payable_days'], 2));
+    check('weekly employee WITH a shift is not flagged daily_salary_no_shift_pattern', strpos((string)($weeklyDetail['calc_errors'] ?? ''), 'daily_salary_no_shift_pattern'), false);
+    check('semi_monthly employee base_salary_amount = (rate/15) * payable_days', (float)$semiMonthlyDetail['base_salary_amount'], round(($semiMonthlyRate / 15) * $expectedPayableDaily['payable_days'], 2));
+    check('bi_weekly employee base_salary_amount = (rate/14) * payable_days', (float)$biWeeklyDetail['base_salary_amount'], round(($biWeeklyRate / 14) * $expectedPayableDaily['payable_days'], 2));
+    check('weekly employee prorate_total_days holds total_days (same X/Y breakdown as daily)', (int)$weeklyDetail['prorate_total_days'], $expectedPayableDaily['total_days']);
+
+    echo "=== 2026-08-31: salary_type='hourly' -- real attendance_records.actual_work_minutes now\n    drives base pay (was previously a wrong number via a silent fallback to the monthly formula) ===\n";
+    // 2 real attendance days: 480 + 300 minutes = 780 minutes = 13 hours total.
+    $pdo->prepare("INSERT INTO attendance_records (comp_id, employee_id, work_date, clock_in, clock_out, actual_work_minutes, status, data_source)
+        VALUES (:comp_id, :employee_id, :work_date, '08:00:00', '16:00:00', 480, 'present', 'manual')")
+        ->execute([':comp_id' => $compId, ':employee_id' => $employeeHourlyId, ':work_date' => $periodStart]);
+    $hourlyDay2 = (new DateTime($periodStart))->modify('+1 day')->format('Y-m-d');
+    $pdo->prepare("INSERT INTO attendance_records (comp_id, employee_id, work_date, clock_in, clock_out, actual_work_minutes, status, data_source)
+        VALUES (:comp_id, :employee_id, :work_date, '08:00:00', '13:00:00', 300, 'present', 'manual')")
+        ->execute([':comp_id' => $compId, ':employee_id' => $employeeHourlyId, ':work_date' => $hourlyDay2]);
+    // A THIRD row on the same date range but with NULL actual_work_minutes (e.g. imported without
+    // clock times) -- must be excluded from the SUM but still count toward days_with_data (proving
+    // the employee is correctly NOT flagged hourly_salary_no_attendance_data just because one row
+    // happens to carry no worked-minutes figure).
+    $hourlyDay3 = (new DateTime($periodStart))->modify('+2 day')->format('Y-m-d');
+    $pdo->prepare("INSERT INTO attendance_records (comp_id, employee_id, work_date, status, data_source)
+        VALUES (:comp_id, :employee_id, :work_date, 'present', 'manual')")
+        ->execute([':comp_id' => $compId, ':employee_id' => $employeeHourlyId, ':work_date' => $hourlyDay3]);
+
+    $calcRes3b = $runModel->recalculate($runId, $compId, $adminUserId, true);
+    checkTrue('recalculate succeeds after adding real hourly attendance data' . (empty($calcRes3b['status']) ? " ({$calcRes3b['message']})" : ''), $calcRes3b['status']);
+    $details3b = $runModel->getDetails($runId, $compId);
+    $hourlyDetail2 = null;
+    foreach ($details3b as $d) { if ((int)$d['employee_id'] === $employeeHourlyId) $hourlyDetail2 = $d; }
+    check('hourly employee base_salary_amount = hourlyRate(30000) * (780min/60=13h) = 390000', (float)$hourlyDetail2['base_salary_amount'], round($hourlyRate * (780 / 60.0), 2));
+    check('hourly employee with real (partial) attendance data is NOT flagged hourly_salary_no_attendance_data', strpos((string)($hourlyDetail2['calc_errors'] ?? ''), 'hourly_salary_no_attendance_data') !== false, false);
+    check('hourly employee prorate_days holds days_with_data = 3 (all 3 rows count, even the NULL-minutes one)', (int)$hourlyDetail2['prorate_days'], 3);
 
     // 2026-08-29, explicit request: "ให้แสดงในข้อมูลด้วยว่า จำนวนวันในรอบนั้นกี่วัน วันทำงานกี่วัน วันหยุด
     // นักขัตฤกษ์กี่วัน วันหยุดประจำสัปดาห์กี่วัน" -- workingDaysBreakdown() is a richer companion to
@@ -2267,11 +2363,34 @@ try {
     $listBeforeBystander = $runModel->list($compId, [], $wfBystanderId, false, true);
     checkTrue('approval-queue list() excludes the run for the bystander from the start', !in_array((int)$jointRunId, array_map('intval', array_column($listBeforeBystander, 'id')), true));
 
+    echo "=== 2026-08-30, explicit follow-up: ApprovalRequestModel::stepBreakdown() (feeds" .
+        " approvalFlow()'s new 'steps' key -- the frontend step-dot timeline) -- before anyone" .
+        " acts, both steps pending/unlocked with their full pool listed ===\n";
+    $stepsBefore = $runModel->approvalFlow($jointRunId, $compId)['steps'];
+    check('2 steps returned', count($stepsBefore), 2);
+    check('step 1 is step_order 1', $stepsBefore[0]['step_order'], 1);
+    check('step 2 is step_order 2', $stepsBefore[1]['step_order'], 2);
+    check('step 1 status is pending (nobody decided it yet)', $stepsBefore[0]['status'], 'pending');
+    checkTrue('step 1 is unlocked (requires_previous_step=0 by default)', $stepsBefore[0]['unlocked']);
+    check('step 1 lists the full pool (X, Y, W) -- 3 people', count($stepsBefore[0]['approvers']), 3);
+    checkTrue('every step-1 approver shows pending before anyone acts', array_reduce($stepsBefore[0]['approvers'], fn($c, $a) => $c && $a['status'] === 'pending', true));
+    check('step 2 lists its own pool (Z, W) -- 2 people', count($stepsBefore[1]['approvers']), 2);
+
     echo "--- X approves step 1 (joint 'any' -- first action decides the whole pool's row) ---\n";
     $xApproveRes = $runModel->approve($jointRunId, $compId, $X, false, 'X decides for the pool');
     checkTrue('X (in the pool) can approve step 1' . (empty($xApproveRes['status']) ? " ({$xApproveRes['message']})" : ''), $xApproveRes['status']);
     check('run stays pending_approval (step 2 -- an AND-group step -- is still open)', $runModel->get($jointRunId, $compId)['state'], 'pending_approval');
     $jointRunAfterX = $runModel->get($jointRunId, $compId);
+
+    echo "--- stepBreakdown(): step 1 now shows only the actual actor (X), not Y/W who shared the" .
+        " same 'any'-mode pool but never personally acted -- listing them as still 'pending' would" .
+        " misrepresent an already-decided step as still open ---\n";
+    $stepsAfterX = $runModel->approvalFlow($jointRunId, $compId)['steps'];
+    check('step 1 status flips to approved', $stepsAfterX[0]['status'], 'approved');
+    check('step 1 now shows only 1 approver (the actual actor)', count($stepsAfterX[0]['approvers']), 1);
+    check('that approver is X', (int)$stepsAfterX[0]['approvers'][0]['id'], $X);
+    check('X shows approved status with their own note', [$stepsAfterX[0]['approvers'][0]['status'], $stepsAfterX[0]['approvers'][0]['note']], ['approved', 'X decides for the pool']);
+    check('step 2 is untouched -- still pending with its full 2-person pool', [$stepsAfterX[1]['status'], count($stepsAfterX[1]['approvers'])], ['pending', 2]);
 
     echo "--- Y shared the SAME row with X; now that X decided it, Y must lose visibility/the" .
         " button entirely (Y has no other open step) -- the actual bug report ---\n";
@@ -2293,6 +2412,11 @@ try {
     checkTrue('Z can approve step 2' . (empty($zApproveRes['status']) ? " ({$zApproveRes['message']})" : ''), $zApproveRes['status']);
     check('both AND-group steps now decided -- run flips to approved', $runModel->get($jointRunId, $compId)['state'], 'approved');
     $jointRunAfterZ = $runModel->get($jointRunId, $compId);
+    echo "--- stepBreakdown(): step 2 now also shows only its actual actor (Z) once decided ---\n";
+    $stepsAfterZ = $runModel->approvalFlow($jointRunId, $compId)['steps'];
+    check('step 2 status flips to approved', $stepsAfterZ[1]['status'], 'approved');
+    check('step 2 now shows only Z', [count($stepsAfterZ[1]['approvers']), (int)$stepsAfterZ[1]['approvers'][0]['id']], [1, $Z]);
+
     echo "--- once fully decided, Undo Decision must still be available to anyone who was EVER" .
         " part of the flow (the coarser check on purpose -- unlike the tightened pending-side" .
         " check above) ---\n";
@@ -2363,6 +2487,65 @@ try {
     $adminFlatApproveRes = $runModel->approve($adminFlatFallbackRunId, $compId, $adminUserId, true, 'admin approves via the legacy flat fallback');
     checkTrue('admin can still approve via the flat fallback' . (empty($adminFlatApproveRes['status']) ? " ({$adminFlatApproveRes['message']})" : ''), $adminFlatApproveRes['status']);
     $pdo->prepare("UPDATE `approval_workflows` SET status = 'active' WHERE id = :id")->execute([':id' => $testWorkflowId]);
+
+    echo "=== stepBreakdown(): requires_previous_step gating shows up as 'unlocked' flipping" .
+        " false->true, and joint_approve_mode='all' lists each person's OWN real per-row status" .
+        " (not the any-mode only-show-the-actor behavior tested above) ===\n";
+    // Retire the joint-step config and replace with: step 1 ('all' mode, 2 approvers, not gated) ->
+    // step 2 (gated behind step 1, single approver) -- same "soft-delete then insert fresh active
+    // rows" pattern the joint-step fixture above already used; only affects NEW requests created
+    // from here on, the already-finished $jointRunId/$wfRunId runs keep their own frozen snapshots.
+    $pdo->prepare("UPDATE `approval_workflow_steps` SET status = 'deleted' WHERE workflow_id = :wf AND status = 'active'")->execute([':wf' => $testWorkflowId]);
+    // Both steps need requires_previous_step=1 -- isStepUnlocked() only counts an EARLIER step as a
+    // gate for a later one when that earlier step is ALSO requires_previous_step=1 itself (steps
+    // that don't require sequencing don't block anything, see that method's own docblock); step 1
+    // stays unlocked regardless of its own flag here since nothing precedes it.
+    $pdo->prepare("INSERT INTO `approval_workflow_steps` (workflow_id, step_order, step_name, joint_approve_mode, requires_previous_step)
+        VALUES (:workflow_id, 1, 'Gated Step 1 (all)', 'all', 1)")->execute([':workflow_id' => $testWorkflowId]);
+    $gatedStep1Id = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `approval_workflow_steps` (workflow_id, step_order, step_name, joint_approve_mode, requires_previous_step)
+        VALUES (:workflow_id, 2, 'Gated Step 2 (locked until step 1 done)', 'any', 1)")->execute([':workflow_id' => $testWorkflowId]);
+    $gatedStep2Id = (int)$pdo->lastInsertId();
+    $insStepApprover->execute([':step_id' => $gatedStep1Id, ':approver_id' => $X]);
+    $insStepApprover->execute([':step_id' => $gatedStep1Id, ':approver_id' => $Y]);
+    $insStepApprover->execute([':step_id' => $gatedStep2Id, ':approver_id' => $Z]);
+
+    $gatedRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_GATED_STEP_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +26 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +26 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +26 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: gated-step-test run created' . (empty($gatedRunRes['status']) ? " ({$gatedRunRes['message']})" : ''), $gatedRunRes['status']);
+    $gatedRunId = $gatedRunRes['id'];
+    $runModel->recalculate($gatedRunId, $compId, $adminUserId, true);
+    $runModel->submit($gatedRunId, $compId, $adminUserId, true);
+
+    $gatedStepsBefore = $runModel->approvalFlow($gatedRunId, $compId)['steps'];
+    checkTrue('step 1 is unlocked from the start (requires_previous_step=0)', $gatedStepsBefore[0]['unlocked']);
+    check('step 2 is LOCKED before step 1 is fully approved (requires_previous_step=1)', $gatedStepsBefore[1]['unlocked'], false);
+    check('step 1 (all mode) lists both X and Y individually, both pending', count($gatedStepsBefore[0]['approvers']), 2);
+
+    // X (one of two 'all'-mode approvers) approves -- step 1 must stay 'pending' (Y hasn't acted
+    // yet) and step 2 must stay locked.
+    $runModel->approve($gatedRunId, $compId, $X, false, 'X approves, Y still pending');
+    $gatedStepsAfterX = $runModel->approvalFlow($gatedRunId, $compId)['steps'];
+    check('step 1 still pending -- only X (of 2 required) has approved so far', $gatedStepsAfterX[0]['status'], 'pending');
+    check('step 2 still locked -- step 1 not FULLY approved yet', $gatedStepsAfterX[1]['unlocked'], false);
+    $xRow = array_values(array_filter($gatedStepsAfterX[0]['approvers'], fn($a) => (int)$a['id'] === $X))[0];
+    $yRow = array_values(array_filter($gatedStepsAfterX[0]['approvers'], fn($a) => (int)$a['id'] === $Y))[0];
+    check('X\'s OWN row shows approved ("all" mode tracks each person individually)', $xRow['status'], 'approved');
+    check('Y\'s OWN row still shows pending (has not acted yet)', $yRow['status'], 'pending');
+
+    // Y approves too -- step 1 fully approved now, step 2 unlocks.
+    $runModel->approve($gatedRunId, $compId, $Y, false, 'Y closes out step 1');
+    $gatedStepsAfterY = $runModel->approvalFlow($gatedRunId, $compId)['steps'];
+    check('step 1 now fully approved (both X and Y approved)', $gatedStepsAfterY[0]['status'], 'approved');
+    checkTrue('step 2 UNLOCKS the moment step 1 is fully approved', $gatedStepsAfterY[1]['unlocked']);
+
+    echo "=== approvalFlow()'s 'steps' key stays ABSENT for a run with no workflow at all (the" .
+        " flat department-scoped fallback has no multi-step concept -- must not fabricate one) ===\n";
+    check('the flat-fallback run (no approval_request_id) has no steps key at all', array_key_exists('steps', $runModel->approvalFlow($adminFlatFallbackRunId, $compId)), false);
 
     echo "=== a run with NO workflow configured still falls back to the flat role check" .
         " (backward compatibility -- confirms this integration didn't break the pre-existing" .
@@ -2472,6 +2655,88 @@ try {
     $recRun3Line = current(array_filter($recRun3Detail['earning_breakdown'], fn($l) => ($l['source'] ?? null) === 'recurring_earning'));
     checkTrue('run 3: the recurring_earning line resumes automatically after the suspend window ends', $recRun3Line !== false);
     check('run 3: gross = base(30000) + recurring earning(1200) again', (float)$recRun3Detail['gross_amount'], 31200.0);
+
+    echo "=== 2026-08-31: recalculate() includes/excludes Recurring Deductions (EmployeeRecurringDeductionModel) ===\n";
+    // Direct mirror of the Recurring Earnings section immediately above -- same 3-run
+    // included/suspended/resumed shape, on the deduction side of recalculate() instead.
+    require_once __DIR__ . '/../app/models/EmployeeRecurringDeductionModel.php';
+    $recDedTypeRes = $recTypeModel->save($compId, [
+        'item_code' => 'RECDEDTEST1', 'item_name_th' => 'ค่าเครื่องแบบทดสอบ', 'item_name_en' => 'Test Uniform Fee',
+        'item_type' => 'deduction', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 300, 'tax_deduction_impact' => 'after_tax',
+    ], $adminUserId);
+    checkTrue('fixture: recurring-deduction catalog type created', $recDedTypeRes['status']);
+    $recDedTypeId = $recDedTypeRes['id'];
+
+    // Baselines captured from the recurring-EARNING section above, BEFORE this deduction fixture
+    // exists -- used below to isolate the deduction's own effect on net_amount by delta rather than
+    // asserting an absolute net figure (this fixture employee also has sso_enrolled/pvd_enrolled=1,
+    // so net_amount already reflects real statutory deductions unrelated to this feature).
+    $recDedRun1NetBaseline = (float)$recRun1Detail['net_amount'];
+    $recDedRun3NetBaseline = (float)$recRun3Detail['net_amount'];
+
+    $recDeductionModel = new EmployeeRecurringDeductionModel($pdo);
+    $recDedAssignRes = $recDeductionModel->save($recEmployeeId, $compId, [
+        'ped_type_id' => $recDedTypeId, 'amount' => 250, 'effective_date' => '2020-01-01',
+    ], $adminUserId);
+    checkTrue('fixture: recurring deduction assigned to the employee', $recDedAssignRes['status']);
+    $recDedAssignmentId = $recDedAssignRes['id'];
+
+    // Run 1 (+30 months, same period as the recurring-earning run above, no suspend window yet).
+    $runModel->recalculate($recRun1Id, $compId, $adminUserId, true);
+    $recDedRun1Detail = current(array_filter($runModel->getDetails($recRun1Id, $compId), fn($d) => (int)$d['employee_id'] === $recEmployeeId));
+    $recDedRun1Line = current(array_filter($recDedRun1Detail['deduction_breakdown'], fn($l) => ($l['source'] ?? null) === 'recurring_deduction'));
+    checkTrue('run 1: a recurring_deduction line is present (no suspend window yet)', $recDedRun1Line !== false);
+    check('run 1: the line carries the right amount', (float)$recDedRun1Line['amount'], 250.0);
+    check('run 1: the line carries the catalog item_code', $recDedRun1Line['code'], 'RECDEDTEST1');
+    check('run 1: net_amount dropped by exactly the recurring deduction(250) vs. the pre-deduction baseline', round($recDedRun1NetBaseline - (float)$recDedRun1Detail['net_amount'], 2), 250.0);
+
+    // Suspend for a window overlapping run 2's period (+31 months) but NOT run 1's.
+    $recDedSuspendRes = $recDeductionModel->save($recEmployeeId, $compId, [
+        'id' => $recDedAssignmentId, 'ped_type_id' => $recDedTypeId, 'amount' => 250, 'effective_date' => '2020-01-01',
+        'suspended_from' => $recRun2PeriodStart, 'suspended_to' => $recRun2PeriodEnd,
+    ], $adminUserId);
+    checkTrue('fixture: deduction suspended for run 2\'s exact period', $recDedSuspendRes['status']);
+
+    $runModel->recalculate($recRun2Id, $compId, $adminUserId, true);
+    $recDedRun2Detail = current(array_filter($runModel->getDetails($recRun2Id, $compId), fn($d) => (int)$d['employee_id'] === $recEmployeeId));
+    $recDedRun2Line = current(array_filter($recDedRun2Detail['deduction_breakdown'], fn($l) => ($l['source'] ?? null) === 'recurring_deduction'));
+    check('run 2: the recurring_deduction line is EXCLUDED (suspend window covers this run\'s period)', $recDedRun2Line !== false, false);
+
+    // Run 3 (+32 months, after the suspend window ends) -- resumes automatically.
+    $runModel->recalculate($recRun3Id, $compId, $adminUserId, true);
+    $recDedRun3Detail = current(array_filter($runModel->getDetails($recRun3Id, $compId), fn($d) => (int)$d['employee_id'] === $recEmployeeId));
+    $recDedRun3Line = current(array_filter($recDedRun3Detail['deduction_breakdown'], fn($l) => ($l['source'] ?? null) === 'recurring_deduction'));
+    checkTrue('run 3: the recurring_deduction line resumes automatically after the suspend window ends', $recDedRun3Line !== false);
+    check('run 3: net_amount dropped by exactly the recurring deduction(250) again vs. the pre-deduction baseline', round($recDedRun3NetBaseline - (float)$recDedRun3Detail['net_amount'], 2), 250.0);
+
+    echo "=== 2026-08-31: recurring deduction Fee (fee_percent % of the employee's CURRENT base salary, added live every run) ===\n";
+    // $recEmployeeId's own base_salary_amount is 30000 (set in this section's own fixture INSERT
+    // above) -- clears the (already-expired) suspend window and adds a 5% base-salary fee on top of
+    // the existing flat 250 amount: feeAmount = 30000 * 0.05 = 1500, so the line's own `amount`
+    // should read 250 + 1500 = 1750 (recomputed live by PayrollRunModel::recurringDeductionAmountWithFee(),
+    // NOT baked into the stored `amount` column the way the loan side's fee is).
+    $recDedFeeRes = $recDeductionModel->save($recEmployeeId, $compId, [
+        'id' => $recDedAssignmentId, 'ped_type_id' => $recDedTypeId, 'amount' => 250, 'effective_date' => '2020-01-01',
+        'fee_percent' => 5, 'fee_base' => 'base_salary',
+    ], $adminUserId);
+    checkTrue('fixture: fee_percent/fee_base saved on the recurring deduction' . (empty($recDedFeeRes['status']) ? " ({$recDedFeeRes['message']})" : ''), $recDedFeeRes['status']);
+    $runModel->recalculate($recRun3Id, $compId, $adminUserId, true);
+    $recDedFeeDetail = current(array_filter($runModel->getDetails($recRun3Id, $compId), fn($d) => (int)$d['employee_id'] === $recEmployeeId));
+    $recDedFeeLine = current(array_filter($recDedFeeDetail['deduction_breakdown'], fn($l) => ($l['source'] ?? null) === 'recurring_deduction'));
+    checkTrue('the recurring_deduction line is still present with the fee active', $recDedFeeLine !== false);
+    check('the line amount is amount(250) + fee(5% of base salary 30000 = 1500) = 1750', (float)$recDedFeeLine['amount'], 1750.0);
+    check('net_amount dropped by the full 1750 vs. the pre-deduction baseline', round($recDedRun3NetBaseline - (float)$recDedFeeDetail['net_amount'], 2), 1750.0);
+
+    $recDedFeeZeroRes = $recDeductionModel->save($recEmployeeId, $compId, [
+        'ped_type_id' => $recDedTypeId, 'amount' => 100, 'effective_date' => '2020-01-01',
+        'fee_percent' => 0, 'fee_base' => 'base_salary',
+    ], $adminUserId);
+    check('save() rejects fee_percent <= 0', $recDedFeeZeroRes['status'], false);
+    $recDedFeeInvalidBaseRes = $recDeductionModel->save($recEmployeeId, $compId, [
+        'ped_type_id' => $recDedTypeId, 'amount' => 100, 'effective_date' => '2020-01-01',
+        'fee_percent' => 5, 'fee_base' => 'principal_amount',
+    ], $adminUserId);
+    check('save() rejects a fee_base other than base_salary (no principal concept on this table)', $recDedFeeInvalidBaseRes['status'], false);
 
     echo "=== 2026-08-27: incentive run include_base_salary/include_standing_items opt-in toggles ===\n";
     // Reuses $employeeFullId (base_salary=30000), but NOT its original $assignmentId/
@@ -2800,6 +3065,360 @@ try {
     $resubmitRes = $runModel->submit($runId, $compId, $adminUserId, true);
     checkTrue('the reopened, edited run can be resubmitted for approval' . (empty($resubmitRes['status']) ? " ({$resubmitRes['message']})" : ''), $resubmitRes['status']);
     check('state is pending_approval again after resubmit', $runModel->get($runId, $compId)['state'], 'pending_approval');
+
+    // ==================== T017 (2026-08-30): "wire all of T011-T016 into the real payroll
+    // calculation + regression test with at least one real payroll run before closing" ====================
+    // T011 (Diligence)/T013 (Student Loan, Loan Repay -- opt-in)/T015 (no_deduction) were already
+    // unit-tested individually (SyncPayResolver::resolve() in tests/sync_pay_resolver_test.php,
+    // AttendanceDeductionRuleModel/computeAttendanceDeductionFromConfig() in
+    // tests/attendance_deduction_rule_test.php). This section is the thing those two don't prove on
+    // their own: that all three actually flow correctly through a REAL PayrollRunModel::
+    // recalculate() call, not just in isolation. Reuses $pulledRunId/$employeeFullId (confirmed via
+    // grep before reusing it here that $pulledRunId never transitions out of 'draft' anywhere else
+    // in this file) instead of building a whole new sync-run fixture from scratch.
+    echo "=== T017: Diligence / Student Loan / Loan Repay / no_deduction wired into a REAL recalculate() run ===\n";
+
+    // Neutralize any real, pre-existing comp_id=1 catalog opt-in for these 3 events (shared dev-DB
+    // state, see feedback_dev_db_shared_state_test_fragility in project memory) so this section's
+    // own dedicated fixture rows below are unambiguously what pedTypeBySourceEvent() resolves --
+    // same defensive pattern tests/sync_pay_resolver_test.php already uses for the same 3 events.
+    $pdo->prepare("UPDATE payroll_earning_deduction_types SET source_event_code = NULL
+            WHERE comp_id = :c AND source_event_code IN ('diligence','student_loan','loan_repay') AND deleted_at IS NULL")
+        ->execute([':c' => $compId]);
+
+    $t017Diligence = $pedTypeModel->save($compId, [
+        'item_code' => 'T017_DILIGENCE', 'item_name_th' => 'เบี้ยขยัน T017', 'item_name_en' => 'T017 Diligence',
+        'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'source_event_code' => 'diligence',
+        'tax_treatment' => 'taxable', 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('fixture: T017 Diligence catalog row (opt-in via source_event_code) created' . (empty($t017Diligence['status']) ? " ({$t017Diligence['message']})" : ''), $t017Diligence['status']);
+
+    $t017StudentLoan = $pedTypeModel->save($compId, [
+        'item_code' => 'T017_STUDENT_LOAN', 'item_name_th' => 'กยศ T017', 'item_name_en' => 'T017 Student Loan',
+        'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'source_event_code' => 'student_loan',
+        'tax_deduction_impact' => 'before_tax', 'statutory_report_code' => 'TH_SLF', 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('fixture: T017 Student Loan catalog row (opt-in) created' . (empty($t017StudentLoan['status']) ? " ({$t017StudentLoan['message']})" : ''), $t017StudentLoan['status']);
+
+    $t017LoanRepay = $pedTypeModel->save($compId, [
+        'item_code' => 'T017_LOAN_REPAY', 'item_name_th' => 'เงินกู้ T017', 'item_name_en' => 'T017 Loan Repay',
+        'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'source_event_code' => 'loan_repay',
+        'tax_deduction_impact' => 'after_tax', 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('fixture: T017 Loan Repay catalog row (opt-in) created' . (empty($t017LoanRepay['status']) ? " ({$t017LoanRepay['message']})" : ''), $t017LoanRepay['status']);
+
+    // T015: a fresh company-wide 'absent' rule set to no_deduction. attendance_deduction_rules for
+    // comp_id=1 was deleted entirely at the very top of this file, so this is a clean insert, not
+    // an update of a pre-existing row.
+    $attRuleModel = new AttendanceDeductionRuleModel($pdo);
+    $t017NoDeductionRule = $attRuleModel->ruleSave(['event_code' => 'absent', 'method_code' => 'no_deduction'], $compId, $adminUserId);
+    checkTrue('fixture: absent event set to no_deduction' . (empty($t017NoDeductionRule['status']) ? " ({$t017NoDeductionRule['message']})" : ''), $t017NoDeductionRule['status']);
+
+    // Feed the sync item row: item_values carrying DILIGENCE/STUDENT_LOAN/LOAN_REPAY (matched via
+    // EVENT_ALIASES), plus absent_days (a structured RULE_DRIVEN_ITEM_DEFS column) that would
+    // normally deduct via the DEFAULT percent_of_rate formula if no_deduction weren't configured --
+    // proving the rule is actually being read, not just coincidentally producing 0 some other way.
+    $t017ItemValues = json_encode([
+        ['item_id' => 701, 'item_code' => 'DILIGENCE', 'item_name' => 'Diligence Allowance', 'item_type' => 'INCOME', 'unit_type' => null, 'value' => 750.0, 'remark' => null],
+        ['item_id' => 702, 'item_code' => 'STUDENT_LOAN', 'item_name' => 'Student Loan', 'item_type' => 'DEDUCTION', 'unit_type' => null, 'value' => 600.0, 'remark' => null],
+        ['item_id' => 703, 'item_code' => 'LOAN_REPAY', 'item_name' => 'Loan Repayment', 'item_type' => 'DEDUCTION', 'unit_type' => null, 'value' => 1500.0, 'remark' => null],
+    ], JSON_UNESCAPED_UNICODE);
+    $pdo->prepare("UPDATE `payroll_sync_items` SET absent_days = 2, item_values = :iv
+            WHERE process_id = :process_id AND employee_id = :employee_id")
+        ->execute([':iv' => $t017ItemValues, ':process_id' => $syncProcessId, ':employee_id' => $employeeFullId]);
+
+    $t017Recalc = $runModel->recalculate($pulledRunId, $compId, $adminUserId, true);
+    checkTrue('recalculate() succeeds with all 4 items configured' . (empty($t017Recalc['status']) ? " ({$t017Recalc['message']})" : ''), $t017Recalc['status']);
+    $t017Details = $runModel->getDetails($pulledRunId, $compId);
+    $t017Row = array_values(array_filter($t017Details, fn($d) => (int)$d['employee_id'] === $employeeFullId))[0] ?? [];
+
+    $t017DiligenceLine = current(array_filter($t017Row['earning_breakdown'] ?? [], fn($l) => $l['code'] === 'T017_DILIGENCE'));
+    checkTrue('T011: Diligence resolves to the REAL catalog code (T017_DILIGENCE), not the hardcoded DILIGENCE_ALLOW fallback', $t017DiligenceLine !== false);
+    check('T011: Diligence amount = face value 750.00', (float)($t017DiligenceLine['amount'] ?? null), 750.0);
+
+    $t017StudentLoanLine = current(array_filter($t017Row['deduction_breakdown'] ?? [], fn($l) => $l['code'] === 'T017_STUDENT_LOAN'));
+    checkTrue('T013: Student Loan resolves to the REAL catalog code once opted in', $t017StudentLoanLine !== false);
+    check('T013: Student Loan amount = face value 600.00', (float)($t017StudentLoanLine['amount'] ?? null), 600.0);
+
+    $t017LoanRepayLine = current(array_filter($t017Row['deduction_breakdown'] ?? [], fn($l) => $l['code'] === 'T017_LOAN_REPAY'));
+    checkTrue('T013: Loan Repay resolves to the REAL catalog code once opted in', $t017LoanRepayLine !== false);
+    check('T013: Loan Repay amount = face value 1500.00', (float)($t017LoanRepayLine['amount'] ?? null), 1500.0);
+
+    $t017AbsentLine = current(array_filter($t017Row['deduction_breakdown'] ?? [], fn($l) => $l['code'] === 'ABSENT_DEDUCT'));
+    checkTrue('T015: no_deduction produces ZERO absence deduction line at all (2 absent_days would otherwise deduct via the default percent_of_rate formula)', $t017AbsentLine === false);
+
+    // ==================== T021 (2026-08-30): "ไม่จ่ายเงินเดือน" employee excluded from every
+    // recalculate() eligibility branch + the manual employee picker, even if already joined before
+    // being marked unpaid. Depends on T020 (is_payroll_participant column). ====================
+    echo "=== T021: is_payroll_participant=0 employee excluded from payroll processing ===\n";
+    $insUnpaidEmp = $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, employment_date, employment_status, employment_type,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         is_payroll_participant)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'ไม่จ่ายเงินเดือน', 'Test', 'Unpaid', '1990-01-01', 'Thai',
+         :email, '0800000001', '2020-01-01', 'permanent', 'full_time',
+         'cash', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         0)");
+    $insUnpaidEmp->execute([':comp_id' => $compId, ':employee_no' => 'TEST_UNPAID_' . uniqid(), ':email' => uniqid() . '@test.local']);
+    $employeeUnpaidId = (int)$pdo->lastInsertId();
+
+    // ---- Branch 1: cycle-based run's automatic date-range eligibility ----
+    // +55 months -- every offset up to +50 is already used somewhere else in this large shared-
+    // fixture file (confirmed via grep before picking this), avoiding isDuplicatePeriod() collisions.
+    $t021PeriodStart = (clone $today)->modify('first day of +55 months')->format('Y-m-d');
+    $t021PeriodEnd = (clone $today)->modify('last day of +55 months')->format('Y-m-d');
+    $t021CycleRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'T021_CYCLE_' . uniqid(),
+        'period_start_date' => $t021PeriodStart, 'period_end_date' => $t021PeriodEnd, 'payment_date' => $t021PeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('T021 fixture: cycle-based run created' . (empty($t021CycleRunRes['status']) ? " ({$t021CycleRunRes['message']})" : ''), $t021CycleRunRes['status']);
+    $t021CycleRunId = $t021CycleRunRes['id'] ?? 0;
+    $t021CycleRecalc = $runModel->recalculate($t021CycleRunId, $compId, $adminUserId, true);
+    checkTrue('T021 cycle-run recalculate() succeeds', $t021CycleRecalc['status']);
+    $t021CycleDetails = $runModel->getDetails($t021CycleRunId, $compId);
+    check('unpaid employee NOT in a cycle-based run despite matching the date range', in_array($employeeUnpaidId, array_map(fn($d) => (int)$d['employee_id'], $t021CycleDetails), true), false);
+    checkTrue('the OTHER (paid) full-period fixture employee IS still included, same date range', in_array($employeeFullId, array_map(fn($d) => (int)$d['employee_id'], $t021CycleDetails), true));
+
+    // ---- Branch 2: sync-based run's payload-mapped eligibility (reuses $syncProcessId/$pulledRunId) ----
+    $insSyncItemUnpaid = $pdo->prepare("INSERT INTO payroll_sync_items (process_id, employee_id, payroll_code, mapping_status)
+        VALUES (:process_id, :employee_id, :payroll_code, 'mapped')");
+    $insSyncItemUnpaid->execute([':process_id' => $syncProcessId, ':employee_id' => $employeeUnpaidId, ':payroll_code' => 'UNPAID_SYNC']);
+    $t021SyncRecalc = $runModel->recalculate($pulledRunId, $compId, $adminUserId, true);
+    checkTrue('T021 sync-run recalculate() still succeeds after adding the unpaid employee to the sync payload', $t021SyncRecalc['status']);
+    $t021SyncDetails = $runModel->getDetails($pulledRunId, $compId);
+    check('unpaid employee NOT included even though the sync payload explicitly mapped them', in_array($employeeUnpaidId, array_map(fn($d) => (int)$d['employee_id'], $t021SyncDetails), true), false);
+
+    // ---- Branch 3: manual employee picker never offers them, on any run type ----
+    $t021PickerOffCycle = $runModel->manualEmployeeOptions($compId, $t021CycleRunId, 0, 50, [], '', 'en');
+    $t021OffCycleIds = array_map(fn($r) => (int)$r['id'], $t021PickerOffCycle['data'] ?? []);
+    check('manualEmployeeOptions() never offers the unpaid employee (default, no search)', in_array($employeeUnpaidId, $t021OffCycleIds, true), false);
+    $t021PickerSearch = $runModel->manualEmployeeOptions($compId, $t021CycleRunId, 0, 50, [], 'TEST_UNPAID', 'en');
+    check('manualEmployeeOptions() searched directly by their own employee_no still returns nothing', count($t021PickerSearch['data'] ?? []), 0);
+    $t021AllIds = $runModel->manualEmployeeAllIds($compId, $t021CycleRunId, [], '', 'en');
+    check('manualEmployeeAllIds() (Select All Matching) never includes the unpaid employee either', in_array($employeeUnpaidId, $t021AllIds, true), false);
+
+    // ---- Branch 4: an off-cycle run where the unpaid employee was already joined BEFORE being
+    // marked unpaid (simulated via a direct insert into payroll_run_manual_employees, bypassing
+    // joinEmployees()'s own is_payroll_participant-aware picker gate above -- proves recalculate()
+    // itself still refuses to calculate them, not just that the picker won't offer them going
+    // forward) -- recalculate()'s off-cycle branch (payroll_run_manual_employees JOIN employees)
+    // must exclude them even though the join row already exists. ----
+    $t021OffCycleRunRes = $runModel->create($compId, [
+        'run_name' => 'T021_OFFCYCLE_' . uniqid(),
+        'period_start_date' => $t021PeriodStart, 'period_end_date' => $t021PeriodEnd, 'payment_date' => $t021PeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('T021 fixture: off-cycle run created' . (empty($t021OffCycleRunRes['status']) ? " ({$t021OffCycleRunRes['message']})" : ''), $t021OffCycleRunRes['status']);
+    $t021OffCycleRunId = $t021OffCycleRunRes['id'] ?? 0;
+    $pdo->prepare("INSERT INTO `payroll_run_manual_employees` (run_id, employee_id, joined_by) VALUES (:run_id, :employee_id, :joined_by)")
+        ->execute([':run_id' => $t021OffCycleRunId, ':employee_id' => $employeeUnpaidId, ':joined_by' => $adminUserId]);
+    $t021OffCycleRecalc = $runModel->recalculate($t021OffCycleRunId, $compId, $adminUserId, true);
+    checkTrue('T021 off-cycle recalculate() succeeds even with the pre-existing manual join row', $t021OffCycleRecalc['status']);
+    check('recalculate() excludes them anyway (employee_count is 0, not 1)', $t021OffCycleRecalc['employee_count'], 0);
+    $t021OffCycleDetails = $runModel->getDetails($t021OffCycleRunId, $compId);
+    check('getDetails() confirms zero rows for this run', count($t021OffCycleDetails), 0);
+
+    echo "\n=== 2026-08-30 (Phase 8, T041) -- cross-cycle employee leakage fix ===\n";
+    // Real bug found and fixed, reproduced live before this test existed: recalculate()'s cycle-based
+    // eligibility query never filtered by employees.cycle_id at all -- a company running MORE THAN ONE
+    // concurrent payroll cycle could pull an employee assigned to Cycle A into a run created under
+    // Cycle B (and pay them there too), as long as the employment date range overlapped. Fixed with
+    // `e.cycle_id IS NULL OR e.cycle_id = :cycle_id` (NOT a strict equality filter -- employees.cycle_id
+    // is nullable/optional, so a company that has never bothered assigning it per employee must keep
+    // working exactly as before: NULL = eligible for any cycle's run, same "unassigned = general,
+    // explicitly assigned = scoped" convention this codebase already uses elsewhere, e.g. Holiday/
+    // Payslip Template assignment).
+    $t041CycleA = $cycleModel->save($compId, [
+        'cycle_name' => 'T041_CYCLE_A_' . uniqid(), 'payroll_frequency' => 'monthly',
+        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5,
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1, 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('T041 fixture: Cycle A created', $t041CycleA['status']);
+    $t041CycleB = $cycleModel->save($compId, [
+        'cycle_name' => 'T041_CYCLE_B_' . uniqid(), 'payroll_frequency' => 'monthly',
+        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5,
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1, 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('T041 fixture: Cycle B created', $t041CycleB['status']);
+    $t041CycleAId = $t041CycleA['id'];
+    $t041CycleBId = $t041CycleB['id'];
+
+    $t041Period = (clone $today)->modify('first day of +103 months');
+    $t041PeriodStart = $t041Period->format('Y-m-d');
+    $t041PeriodEnd = (clone $t041Period)->modify('last day of this month')->format('Y-m-d');
+
+    // 3 employees: one explicitly assigned to Cycle A, one explicitly assigned to Cycle B, one never
+    // assigned to any cycle at all (cycle_id stays NULL, the common single-cycle-company default).
+    $t041MakeEmployee = function (string $suffix, ?int $cycleId) use ($pdo, $compId) {
+        $pdo->prepare("INSERT INTO `employees`
+            (comp_id, employee_no, cycle_id, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+             personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+             emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+             employment_date, employment_status, employment_type, workforce_type, record_time_method,
+             payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+             sso_enrolled, pvd_enrolled, tax_exempt)
+            VALUES (:comp_id, :employee_no, :cycle_id, 'mr', 'male', 'ทดสอบ', :surname_th, 'Test', :surname_en, '1990-01-01', 'Thai',
+             :email, '0800000000', 'Test Address', 'Test Address', 'Emergency', 'Contact', 'friend', '0899999999',
+             '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+             'bank', 'monthly', 30000, '2020-01-01', 'average', 'active', 1, 1, 0)")
+            ->execute([
+                ':comp_id' => $compId, ':employee_no' => 'T041_EMP_' . $suffix . '_' . uniqid(), ':cycle_id' => $cycleId,
+                ':surname_th' => $suffix, ':surname_en' => $suffix, ':email' => uniqid() . '@test.local',
+            ]);
+        return (int)$pdo->lastInsertId();
+    };
+    $t041EmpA = $t041MakeEmployee('A', $t041CycleAId);
+    $t041EmpB = $t041MakeEmployee('B', $t041CycleBId);
+    $t041EmpUnassigned = $t041MakeEmployee('UNASSIGNED', null);
+
+    $t041RunA = $runModel->create($compId, [
+        'cycle_id' => $t041CycleAId, 'run_name' => 'T041_RUN_A_' . uniqid(),
+        'period_start_date' => $t041PeriodStart, 'period_end_date' => $t041PeriodEnd, 'payment_date' => $t041PeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('T041 fixture: Cycle A run created', $t041RunA['status']);
+    $runModel->recalculate($t041RunA['id'], $compId, $adminUserId, true);
+    $t041RunAIds = array_map(fn($d) => (int)$d['employee_id'], $runModel->getDetails($t041RunA['id'], $compId));
+
+    $t041RunB = $runModel->create($compId, [
+        'cycle_id' => $t041CycleBId, 'run_name' => 'T041_RUN_B_' . uniqid(),
+        'period_start_date' => $t041PeriodStart, 'period_end_date' => $t041PeriodEnd, 'payment_date' => $t041PeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('T041 fixture: Cycle B run created', $t041RunB['status']);
+    $runModel->recalculate($t041RunB['id'], $compId, $adminUserId, true);
+    $t041RunBIds = array_map(fn($d) => (int)$d['employee_id'], $runModel->getDetails($t041RunB['id'], $compId));
+
+    check('Cycle A run includes the Cycle-A-assigned employee', in_array($t041EmpA, $t041RunAIds, true), true);
+    check('Cycle A run does NOT include the Cycle-B-assigned employee (the leakage this fix closes)', in_array($t041EmpB, $t041RunAIds, true), false);
+    check('Cycle A run includes the never-assigned employee too (NULL = eligible everywhere, backward-compatible)', in_array($t041EmpUnassigned, $t041RunAIds, true), true);
+
+    check('Cycle B run includes the Cycle-B-assigned employee', in_array($t041EmpB, $t041RunBIds, true), true);
+    check('Cycle B run does NOT include the Cycle-A-assigned employee (the leakage this fix closes)', in_array($t041EmpA, $t041RunBIds, true), false);
+    check('Cycle B run ALSO includes the never-assigned employee (NULL is eligible for every cycle, not just the first one found)', in_array($t041EmpUnassigned, $t041RunBIds, true), true);
+
+    echo "\n=== 2026-08-30 (Phase 8, T041) -- advisory note for a cycle-based employee with zero attendance data ===\n";
+    // comp_id=1 is Origami-Payroll-linked (companies.origami_payroll_comp_code = 'TDI', confirmed via
+    // a direct DB query before writing this) -- the exact precondition the new advisory branch gates
+    // on. $t041EmpA has zero attendance_records/leave_requests/overtime_records rows for
+    // $t041PeriodStart..$t041PeriodEnd (never inserted any for this fixture employee), so Cycle A's
+    // own run (already recalculated above) should carry the new advisory note.
+    $t041EmpADetail = null;
+    foreach ($runModel->getDetails($t041RunA['id'], $compId) as $d) {
+        if ((int)$d['employee_id'] === $t041EmpA) { $t041EmpADetail = $d; break; }
+    }
+    checkTrue('fixture: found the Cycle-A-assigned employee\'s own detail row', $t041EmpADetail !== null);
+    check('calc_status is still "calculated", NOT "error" -- advisory only, never blocks', $t041EmpADetail['calc_status'] ?? null, 'calculated');
+    checkTrue('calc_errors carries the new advisory code', strpos((string)($t041EmpADetail['calc_errors'] ?? ''), 'no_attendance_data_this_period') !== false);
+
+    echo "\n=== 2026-08-30 (Phase 8, T041) -- syncMissingEmployees() reconciliation for a sync-based run ===\n";
+    // 3 employees date-range-eligible for the same period: one actually present+mapped in the sync
+    // payload, one manually joined on top (deliberately NOT missing -- an admin explicitly added
+    // them), one neither -- genuinely missing from this sync and never manually added either.
+    $t041SyncPeriod = (clone $today)->modify('first day of +104 months');
+    $t041SyncPeriodStart = $t041SyncPeriod->format('Y-m-d');
+    $t041SyncPeriodEnd = (clone $t041SyncPeriod)->modify('last day of this month')->format('Y-m-d');
+    $pdo->prepare("INSERT INTO payroll_sync_processes
+        (comp_id, origami_process_id, process_no, origami_comp_code, origami_comp_name, frequency_type, schema_version, raw_payload)
+        VALUES (:comp_id, :origami_process_id, :process_no, 'TESTCODE', 'Test Co.', 'monthly', 1, '{}')")
+        ->execute([':comp_id' => $compId, ':origami_process_id' => random_int(1000000, 9999999), ':process_no' => 'T041_SYNCTEST_' . uniqid()]);
+    $t041SyncProcessId = (int)$pdo->lastInsertId();
+
+    $t041EmpSyncMapped = $t041MakeEmployee('SYNCMAPPED', null);
+    $t041EmpManualJoin = $t041MakeEmployee('MANUALJOIN', null);
+    $t041EmpMissing = $t041MakeEmployee('MISSING', null);
+
+    $pdo->prepare("INSERT INTO payroll_sync_items (process_id, employee_id, payroll_code, mapping_status)
+        VALUES (:process_id, :employee_id, :payroll_code, 'mapped')")
+        ->execute([':process_id' => $t041SyncProcessId, ':employee_id' => $t041EmpSyncMapped, ':payroll_code' => 'T041_MAPPED']);
+
+    $t041SyncRunRes = $runModel->create($compId, [
+        'cycle_id' => $t041CycleAId, 'run_name' => 'T041_SYNCRUN_' . uniqid(),
+        'period_start_date' => $t041SyncPeriodStart, 'period_end_date' => $t041SyncPeriodEnd, 'payment_date' => $t041SyncPeriodEnd,
+        'sync_process_id' => $t041SyncProcessId,
+    ], $adminUserId, true);
+    checkTrue('T041 fixture: sync-based run created' . (empty($t041SyncRunRes['status']) ? " ({$t041SyncRunRes['message']})" : ''), $t041SyncRunRes['status']);
+    $t041SyncRunId = $t041SyncRunRes['id'];
+    $runModel->joinEmployees($t041SyncRunId, $compId, [$t041EmpManualJoin], $adminUserId, true);
+    $runModel->recalculate($t041SyncRunId, $compId, $adminUserId, true);
+
+    check('syncMissingEmployees() returns [] for a cycle-based run (nothing to reconcile against)', $runModel->syncMissingEmployees($t041RunA['id'], $compId), []);
+    $t041MissingList = $runModel->syncMissingEmployees($t041SyncRunId, $compId);
+    $t041MissingIds = array_map(fn($e) => (int)$e['id'], $t041MissingList);
+    check('the mapped-in-sync employee is NOT flagged as missing', in_array($t041EmpSyncMapped, $t041MissingIds, true), false);
+    check('the manually-joined employee is NOT flagged as missing (an admin explicitly added them)', in_array($t041EmpManualJoin, $t041MissingIds, true), false);
+    check('the genuinely-missing employee IS flagged (date-range-eligible, not in the sync payload, never manually joined)', in_array($t041EmpMissing, $t041MissingIds, true), true);
+    // Not an exact total-count assertion -- comp_id=1 is this file's own shared, cumulative dev-DB
+    // fixture (many other employee rows already exist from earlier sections in this same rolled-back
+    // transaction, and every permanent one with no employment_end_date legitimately also matches this
+    // future period's date-range eligibility) -- see feedback_dev_db_shared_state_test_fragility.
+    // Confirm THIS section's own 3 fixture employees resolve exactly as expected instead.
+    check('exactly the 1 genuinely-missing fixture employee (not the mapped or manually-joined ones) among this section\'s own 3', array_values(array_intersect($t041MissingIds, [$t041EmpSyncMapped, $t041EmpManualJoin, $t041EmpMissing])), [$t041EmpMissing]);
+
+    // Re-check: excluding the missing employee (payroll_run_excluded_employees) removes them from
+    // the reconciliation list too -- a deliberate admin exclusion is not "missing data," it's an
+    // intentional decision, and should stop showing up as a warning.
+    $runModel->removeManualEmployee($t041SyncRunId, $compId, $t041EmpMissing, $adminUserId, true);
+    $t041MissingIdsAfterExclude = array_map(fn($e) => (int)$e['id'], $runModel->syncMissingEmployees($t041SyncRunId, $compId));
+    check('an explicitly-excluded employee no longer shows up as "missing" (deliberate exclusion, not missing data)', in_array($t041EmpMissing, $t041MissingIdsAfterExclude, true), false);
+
+    echo "\n=== 2026-08-30 (Phase 8, T041) -- include_attendance_pay: OT-only off-cycle payout through the real rate engine ===\n";
+    // Real gap found and fixed: before this, a genuine ad-hoc off-cycle run (no cycle_id, no
+    // sync_process_id) could only pay OT/trip allowance via a hand-typed manual line with no
+    // calculation behind it -- SyncPayResolver was never invoked at all for that run type. This
+    // proves the new toggle pulls a REAL, engine-computed OT amount, AND that the employee's late
+    // minutes (also present) do NOT produce a deduction line -- a supplemental payout run only ever
+    // pays out attendance EARNINGS through this toggle, never deducts.
+    $t041OtEmpBase = 30000.0;
+    $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+         emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         sso_enrolled, pvd_enrolled, tax_exempt, ot_eligible)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'OTOffCycle', 'Test', 'OTOffCycle', '1990-01-01', 'Thai',
+         :email, '0800000000', 'Test Address', 'Test Address', 'Emergency', 'Contact', 'friend', '0899999999',
+         '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+         'bank', 'monthly', :base_salary, '2020-01-01', 'average', 'active', 1, 1, 0, 1)")
+        ->execute([':comp_id' => $compId, ':employee_no' => 'T041_EMP_OT_' . uniqid(), ':email' => uniqid() . '@test.local', ':base_salary' => $t041OtEmpBase]);
+    $t041EmpOt = (int)$pdo->lastInsertId();
+
+    $t041OtPeriod = (clone $today)->modify('first day of +105 months');
+    $t041OtPeriodStart = $t041OtPeriod->format('Y-m-d');
+    $t041OtPeriodEnd = (clone $t041OtPeriod)->modify('last day of this month')->format('Y-m-d');
+    $t041OtRateId = (int)$pdo->query("SELECT i.id FROM ot_rate_set_items i JOIN ot_rate_sets s ON s.id = i.set_id
+        WHERE s.comp_id = {$compId} AND s.deleted_at IS NULL ORDER BY i.id DESC LIMIT 1")->fetchColumn();
+    checkTrue('fixture: reuses an already-configured OT rate from earlier in this file', $t041OtRateId > 0);
+    $pdo->prepare("INSERT INTO overtime_records (comp_id, employee_id, ot_date, ot_rate_id, hours, status, data_source)
+        VALUES (:comp_id, :employee_id, :ot_date, :ot_rate_id, 2.0, 'approved', 'manual')")
+        ->execute([':comp_id' => $compId, ':employee_id' => $t041EmpOt, ':ot_date' => $t041OtPeriodStart, ':ot_rate_id' => $t041OtRateId]);
+    $pdo->prepare("INSERT INTO attendance_records (comp_id, employee_id, work_date, late_minutes, status, data_source)
+        VALUES (:comp_id, :employee_id, :work_date, 30, 'present', 'manual')")
+        ->execute([':comp_id' => $compId, ':employee_id' => $t041EmpOt, ':work_date' => $t041OtPeriodStart]);
+
+    $t041OtRunOffRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'include_attendance_pay' => true,
+        'run_name' => 'T041_OTRUN_' . uniqid(),
+        'period_start_date' => $t041OtPeriodStart, 'period_end_date' => $t041OtPeriodEnd, 'payment_date' => $t041OtPeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: genuine off-cycle incentive run created with include_attendance_pay=true' . (empty($t041OtRunOffRes['status']) ? " ({$t041OtRunOffRes['message']})" : ''), $t041OtRunOffRes['status']);
+    $t041OtRunOffId = $t041OtRunOffRes['id'];
+    check('include_attendance_pay persisted as 1', (int)$pdo->query("SELECT include_attendance_pay FROM payroll_runs WHERE id = {$t041OtRunOffId}")->fetchColumn(), 1);
+    $runModel->joinEmployees($t041OtRunOffId, $compId, [$t041EmpOt], $adminUserId, true);
+    $runModel->recalculate($t041OtRunOffId, $compId, $adminUserId, true);
+
+    $t041OtDetail = null;
+    foreach ($runModel->getDetails($t041OtRunOffId, $compId) as $d) {
+        if ((int)$d['employee_id'] === $t041EmpOt) { $t041OtDetail = $d; break; }
+    }
+    checkTrue('fixture: found the OT-only employee\'s own detail row', $t041OtDetail !== null);
+    $t041ExpectedHourlyRate = ($t041OtEmpBase / 30.0) / 8.0;
+    $t041ExpectedOt = round($t041ExpectedHourlyRate * 1.50 * 2.0, 2); // fixture OT rate is 1.50x hourly, same as every other OT fixture in this file.
+    $t041OtLine = current(array_filter($t041OtDetail['earning_breakdown'] ?? [], fn($l) => $l['code'] === 'OT'));
+    checkTrue('an OT earning line is present, computed through the real rate engine', $t041OtLine !== false);
+    check('OT amount matches the hand-computed formula (base_salary/30/8 * 1.50 * 2 hours)', (float)($t041OtLine['amount'] ?? null), $t041ExpectedOt);
+    check('base salary is NOT paid (include_base_salary was never turned on for this run -- OT/trip-only payout)', (float)$t041OtDetail['base_salary_amount'], 0.0);
+    checkTrue('NO late-deduction line, even though the employee also has 30 late minutes recorded -- attendance pay only ever ADDS earnings, never deducts', current(array_filter($t041OtDetail['deduction_breakdown'] ?? [], fn($l) => $l['code'] === 'LATE_DEDUCT')) === false);
+    check('gross_amount is exactly the OT amount (no base salary, no other earning)', (float)$t041OtDetail['gross_amount'], $t041ExpectedOt);
 
 } finally {
     $pdo->rollBack();

@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/EmployeeLoginLogModel.php';
 
 /**
  * sync_batches CRUD -- start() opens a 'running' row, complete()/fail() closes it. Read-only
@@ -8,6 +9,14 @@ declare(strict_types=1);
  * Shared by both the sync engine and the import engine -- `source` distinguishes which one a
  * given batch came from; manual entry never creates a batch row (it's a single-record write, not
  * a batch operation).
+ *
+ * 2026-08-30, explicit request: "เก็บประวัติการ...Import ข้อมูลเข้าระบบ...เก็บตาม Format Log ที่ควรเก็บเพื่อ
+ * ให้สามารถ Audit ต่อได้" -- start() now ALSO captures ip_address/device_type/os_name/browser_name/
+ * browser_version/user_agent (parsed via EmployeeLoginLogModel::parseUserAgent(), the SAME
+ * convention report_export_logs already proved out for this exact "who/when/what device/IP/browser"
+ * audit shape, per that migration's own header comment -- not reinvented here). Both new params are
+ * optional/nullable and default to null so every EXISTING sync-engine call site (a scheduled
+ * Origami pull has no browser request to fingerprint at all) keeps working unchanged.
  */
 class SyncBatchModel {
     private PDO $db;
@@ -16,12 +25,19 @@ class SyncBatchModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
-    public function start(int $compId, string $entityType, string $source, string $triggerType, ?int $triggeredBy, ?string $scopeDateFrom = null, ?string $scopeDateTo = null): int {
-        $stmt = $this->db->prepare("INSERT INTO sync_batches (comp_id, entity_type, source, trigger_type, scope_date_from, scope_date_to, status, triggered_by)
-            VALUES (:comp_id, :entity_type, :source, :trigger_type, :scope_from, :scope_to, 'running', :triggered_by)");
+    public function start(int $compId, string $entityType, string $source, string $triggerType, ?int $triggeredBy, ?string $scopeDateFrom = null, ?string $scopeDateTo = null, ?string $ipAddress = null, ?string $userAgent = null): int {
+        $parsed = $userAgent ? EmployeeLoginLogModel::parseUserAgent($userAgent) : ['device_type' => null, 'os_name' => null, 'browser_name' => null, 'browser_version' => null];
+        $stmt = $this->db->prepare("INSERT INTO sync_batches
+                (comp_id, entity_type, source, trigger_type, scope_date_from, scope_date_to, status, triggered_by,
+                 ip_address, device_type, os_name, browser_name, browser_version, user_agent)
+            VALUES (:comp_id, :entity_type, :source, :trigger_type, :scope_from, :scope_to, 'running', :triggered_by,
+                 :ip_address, :device_type, :os_name, :browser_name, :browser_version, :user_agent)");
         $stmt->execute([
             ':comp_id' => $compId, ':entity_type' => $entityType, ':source' => $source, ':trigger_type' => $triggerType,
             ':scope_from' => $scopeDateFrom, ':scope_to' => $scopeDateTo, ':triggered_by' => $triggeredBy,
+            ':ip_address' => $ipAddress, ':device_type' => $parsed['device_type'], ':os_name' => $parsed['os_name'],
+            ':browser_name' => $parsed['browser_name'], ':browser_version' => $parsed['browser_version'],
+            ':user_agent' => $userAgent !== null && $userAgent !== '' ? substr($userAgent, 0, 500) : null,
         ]);
         return (int)$this->db->lastInsertId();
     }

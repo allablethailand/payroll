@@ -16,6 +16,7 @@ require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/models/AttendanceRecordModel.php';
 require_once __DIR__ . '/../app/models/LeaveRequestModel.php';
 require_once __DIR__ . '/../app/models/OvertimeRecordModel.php';
+require_once __DIR__ . '/../app/models/OtRateSetModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -89,6 +90,12 @@ try {
     $updateSameRecord = $attModel->save(['id' => $created['id'], 'employee_id' => $employeeId, 'work_date' => '2026-04-01', 'status' => 'present'], $compId, $adminUserId);
     checkTrue('updating the SAME record (excluding itself from the dup check) succeeds', $updateSameRecord['status']);
 
+    // 2026-08-30 (Phase 5, conflict-prevention): data_source resets to 'manual' on every edit, even
+    // if it had previously come from Sync/Import -- proves the badge stays honest.
+    $pdo->prepare("UPDATE attendance_records SET data_source = 'sync' WHERE id = :id")->execute([':id' => $created['id']]);
+    $attModel->save(['id' => $created['id'], 'employee_id' => $employeeId, 'work_date' => '2026-04-01', 'status' => 'present'], $compId, $adminUserId);
+    check('editing a sync-sourced record via Manual Entry flips data_source back to manual', $attModel->get((int)$created['id'], $compId)['data_source'], 'manual');
+
     $listed = $attModel->list($compId, ['employee_id' => $employeeId]);
     check('list() returns the record', count($listed), 1);
 
@@ -128,20 +135,46 @@ try {
     $leaveDup = $leaveModel->save(['employee_id' => $employeeId, 'leave_type_id' => $leaveTypeId, 'start_date' => '2026-04-05', 'end_date' => '2026-04-05', 'total_days' => 1], $compId, $adminUserId);
     checkFalse('exact duplicate leave request rejected', $leaveDup['status']);
 
+    // 2026-08-30 (Phase 5, conflict-prevention): an OVERLAPPING (not identical) range for the same
+    // employee+leave_type is now also rejected, not just an exact duplicate.
+    $leaveOverlap = $leaveModel->save(['employee_id' => $employeeId, 'leave_type_id' => $leaveTypeId, 'start_date' => '2026-04-04', 'end_date' => '2026-04-06', 'total_days' => 3], $compId, $adminUserId);
+    checkFalse('overlapping (non-identical) date range for the same employee+leave_type rejected', $leaveOverlap['status']);
+    checkTrue('overlap rejection message names the conflicting range', strpos((string)$leaveOverlap['message'], '2026-04-05') !== false);
+
+    // A separate, non-overlapping range for the same employee+leave_type is still allowed.
+    $leaveSeparate = $leaveModel->save(['employee_id' => $employeeId, 'leave_type_id' => $leaveTypeId, 'start_date' => '2026-04-20', 'end_date' => '2026-04-20', 'total_days' => 1], $compId, $adminUserId);
+    checkTrue('non-overlapping second leave request for the same employee+type is allowed', $leaveSeparate['status']);
+    $leaveModel->delete((int)$leaveSeparate['id'], $compId, $adminUserId);
+
+    // data_source resets to 'manual' on every edit -- same fix as AttendanceRecordModel above.
+    $pdo->prepare("UPDATE leave_requests SET data_source = 'import' WHERE id = :id")->execute([':id' => $leaveCreated['id']]);
+    $leaveModel->save(['id' => $leaveCreated['id'], 'employee_id' => $employeeId, 'leave_type_id' => $leaveTypeId, 'start_date' => '2026-04-05', 'end_date' => '2026-04-05', 'total_days' => 1], $compId, $adminUserId);
+    check('editing an import-sourced leave request flips data_source back to manual', $leaveModel->get((int)$leaveCreated['id'], $compId)['data_source'], 'manual');
+
     $delRes = $leaveModel->delete((int)$leaveCreated['id'], $compId, $adminUserId);
     checkTrue('leave delete succeeds', $delRes['status']);
 
     // ---------- OvertimeRecordModel ----------
     echo "=== OvertimeRecordModel ===\n";
-    $otRateRow = $pdo->query("SELECT id FROM ot_rates WHERE comp_id = {$compId} AND deleted_at IS NULL LIMIT 1")->fetchColumn();
-    if ($otRateRow === false) {
-        $scopeId = (int)$pdo->query("SELECT id FROM master_ot_scope_types WHERE code='weekday'")->fetchColumn();
-        $pdo->prepare("INSERT INTO ot_rates (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate, calculation_base, status)
-            VALUES (:comp_id, 'OT ทดสอบ', 'Test OT', :scope, 1.5, 'hourly', 'active')")
-            ->execute([':comp_id' => $compId, ':scope' => $scopeId]);
-        $otRateRow = (int)$pdo->lastInsertId();
+    // 2026-08-30: ot_rate_id now targets ot_rate_set_items, not the retired flat `ot_rates` table --
+    // see OvertimeRecordModel's own docblock (TransactionDataPayAdapter only ever reads the referenced
+    // row's own ot_scope_id, never its rate value).
+    $otRateSetModel = new OtRateSetModel($pdo);
+    $scopeId = (int)$pdo->query("SELECT id FROM master_ot_scope_types WHERE code='weekday'")->fetchColumn();
+    $otRateRow = $pdo->prepare("SELECT i.id FROM ot_rate_set_items i JOIN ot_rate_sets s ON s.id = i.set_id
+        WHERE s.comp_id = :comp_id AND s.deleted_at IS NULL AND i.ot_scope_id = :scope LIMIT 1");
+    $otRateRow->execute([':comp_id' => $compId, ':scope' => $scopeId]);
+    $otRateId = $otRateRow->fetchColumn();
+    if ($otRateId === false) {
+        $setSave = $otRateSetModel->save([
+            'name_th' => 'ชุด OT ทดสอบ', 'name_en' => 'Test OT Set', 'is_default' => true,
+            'items' => [['ot_scope_id' => $scopeId, 'calculation_method' => 'multiplier', 'multiplier_rate' => 1.5, 'calculation_base' => 'hourly']],
+        ], $compId, $adminUserId);
+        checkTrue('fixture: OT Rate Set created' . (empty($setSave['status']) ? " ({$setSave['message']})" : ''), $setSave['status']);
+        $otRateRow->execute([':comp_id' => $compId, ':scope' => $scopeId]);
+        $otRateId = $otRateRow->fetchColumn();
     }
-    $otRateId = (int)$otRateRow;
+    $otRateId = (int)$otRateId;
     $otModel = new OvertimeRecordModel($pdo);
 
     $r = $otModel->save(['employee_id' => $employeeId, 'ot_rate_id' => 999999, 'ot_date' => '2026-04-05', 'hours' => 2], $compId, $adminUserId);
@@ -158,6 +191,11 @@ try {
 
     $otDup = $otModel->save(['employee_id' => $employeeId, 'ot_rate_id' => $otRateId, 'ot_date' => '2026-04-05', 'hours' => 1], $compId, $adminUserId);
     checkFalse('duplicate employee+rate+date rejected', $otDup['status']);
+
+    // data_source resets to 'manual' on every edit -- same fix as the other 2 models above.
+    $pdo->prepare("UPDATE overtime_records SET data_source = 'sync' WHERE id = :id")->execute([':id' => $otCreated['id']]);
+    $otModel->save(['id' => $otCreated['id'], 'employee_id' => $employeeId, 'ot_rate_id' => $otRateId, 'ot_date' => '2026-04-05', 'hours' => 2.5], $compId, $adminUserId);
+    check('editing a sync-sourced overtime record flips data_source back to manual', $otModel->get((int)$otCreated['id'], $compId)['data_source'], 'manual');
 
     $delRes = $otModel->delete((int)$otCreated['id'], $compId, $adminUserId);
     checkTrue('overtime delete succeeds', $delRes['status']);

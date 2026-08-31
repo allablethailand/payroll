@@ -1004,10 +1004,16 @@ try {
         'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
         'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
         'item_master' => [
-            ['item_id' => 11, 'item_code' => 'DILIGENCE', 'item_name' => 'Diligence Allowance', 'item_type' => 'INCOME', 'unit_types' => []],
+            // 2026-08-30 (Phase 2, T011): DILIGENCE moved OUT of this fixture -- it's now a known
+            // event (KNOWN_ITEM_DEFS/EVENT_ALIASES, source_event_code='diligence'), same as
+            // LATE/ROUND below, so it must get NO catalog row here too (see the new assertion
+            // further down). PERFORMANCE_BONUS replaces it as the "genuinely unmapped custom
+            // income item" example.
+            ['item_id' => 11, 'item_code' => 'PERFORMANCE_BONUS', 'item_name' => 'Performance Bonus', 'item_type' => 'INCOME', 'unit_types' => []],
             ['item_id' => 12, 'item_code' => 'ASSISTANCE', 'item_name' => 'Financial Assistance', 'item_type' => 'INCOME', 'unit_types' => []],
             ['item_id' => 1, 'item_code' => 'LATE', 'item_name' => 'Late', 'item_type' => 'DEDUCTION', 'unit_types' => ['minutes']],
             ['item_id' => 7, 'item_code' => 'ROUND', 'item_name' => 'Trip Allowance (Robusta)', 'item_type' => 'INCOME', 'unit_types' => []],
+            ['item_id' => 22, 'item_code' => 'DILIGENCE', 'item_name' => 'Diligence Allowance', 'item_type' => 'INCOME', 'unit_types' => []],
             ['item_id' => 20, 'item_code' => 'LEAVE_APPROVED', 'item_name' => 'Leave Approved', 'item_type' => 'INFO', 'unit_types' => ['days']],
             ['item_id' => 21, 'item_code' => 'PROBATION_WORKING_DAYS', 'item_name' => 'Probation Pay', 'item_type' => 'INFO', 'unit_types' => ['days']],
         ],
@@ -1021,19 +1027,19 @@ try {
     $imProcessRowId = $imIngest['process_row_id'] ?? 0;
 
     $createdCount = $model->autoCreateMissingPedTypes($imProcessRowId, $compId, 1);
-    check('exactly 2 new catalog rows created (DILIGENCE + ASSISTANCE only)', $createdCount, 2);
+    check('exactly 2 new catalog rows created (PERFORMANCE_BONUS + ASSISTANCE only)', $createdCount, 2);
 
-    $pedRows = $pdo->prepare("SELECT * FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code IN ('DILIGENCE', 'ASSISTANCE')");
+    $pedRows = $pdo->prepare("SELECT * FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code IN ('PERFORMANCE_BONUS', 'ASSISTANCE')");
     $pedRows->execute([':comp_id' => $compId]);
     $pedByCode = [];
     foreach ($pedRows->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $pedByCode[$r['item_code']] = $r;
     }
-    checkTrue('DILIGENCE catalog row created', isset($pedByCode['DILIGENCE']));
-    check('DILIGENCE item_type mapped to earning', $pedByCode['DILIGENCE']['item_type'] ?? null, 'earning');
-    check('DILIGENCE item_name_th/en both set from item_name (no separate TH/EN source)', $pedByCode['DILIGENCE']['item_name_en'] ?? null, 'Diligence Allowance');
-    check('DILIGENCE tax_treatment defaults to taxable (same default as no-catalog-row behavior)', $pedByCode['DILIGENCE']['tax_treatment'] ?? null, 'taxable');
-    check('DILIGENCE is_sync_only=1 (system-managed, not manually editable)', (int)($pedByCode['DILIGENCE']['is_sync_only'] ?? 0), 1);
+    checkTrue('PERFORMANCE_BONUS catalog row created', isset($pedByCode['PERFORMANCE_BONUS']));
+    check('PERFORMANCE_BONUS item_type mapped to earning', $pedByCode['PERFORMANCE_BONUS']['item_type'] ?? null, 'earning');
+    check('PERFORMANCE_BONUS item_name_th/en both set from item_name (no separate TH/EN source)', $pedByCode['PERFORMANCE_BONUS']['item_name_en'] ?? null, 'Performance Bonus');
+    check('PERFORMANCE_BONUS tax_treatment defaults to taxable (same default as no-catalog-row behavior)', $pedByCode['PERFORMANCE_BONUS']['tax_treatment'] ?? null, 'taxable');
+    check('PERFORMANCE_BONUS is_sync_only=1 (system-managed, not manually editable)', (int)($pedByCode['PERFORMANCE_BONUS']['is_sync_only'] ?? 0), 1);
     checkTrue('ASSISTANCE catalog row created', isset($pedByCode['ASSISTANCE']));
 
     $pedLate = $pdo->prepare("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code = 'LATE'");
@@ -1043,6 +1049,12 @@ try {
     $pedRound = $pdo->prepare("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code = 'ROUND'");
     $pedRound->execute([':comp_id' => $compId]);
     check('ROUND (known built-in trip allowance alias) gets NO catalog row either', (int)$pedRound->fetchColumn(), 0);
+
+    // 2026-08-30 (Phase 2, T011): DILIGENCE is now a known event too (source_event_code='diligence'),
+    // same "already functional without one" treatment as LATE/ROUND above.
+    $pedDiligence = $pdo->prepare("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code = 'DILIGENCE'");
+    $pedDiligence->execute([':comp_id' => $compId]);
+    check('DILIGENCE (now a known built-in event) gets NO catalog row either', (int)$pedDiligence->fetchColumn(), 0);
 
     $pedInfo = $pdo->prepare("SELECT COUNT(*) FROM payroll_earning_deduction_types WHERE comp_id = :comp_id AND item_code IN ('LEAVE_APPROVED', 'PROBATION_WORKING_DAYS')");
     $pedInfo->execute([':comp_id' => $compId]);
