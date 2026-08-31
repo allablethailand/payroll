@@ -67,19 +67,26 @@ try {
     check('no deduction lines', count($r['deduction']), 0);
     check('no errors', count($r['errors']), 0);
 
-    echo "=== OT: weekday scope, hourly-base ot_rates fixture, no rate for weekend/holiday ===\n";
+    echo "=== OT: weekday scope, hourly-base rate, no rate for weekend/holiday ===\n";
+    // 2026-08-30 (OT Rate Set replacement): SyncPayResolver::resolve() no longer reads `ot_rates`
+    // (retired table) or any table at all for OT rates -- it's fed a pre-resolved
+    // $otRateSetRatesByScope array (scope_code => rate) by the caller, normally
+    // OtRateSetModel::resolveRatesForEmployees() via PayrollRunModel::recalculate() (see that
+    // model's own docblock; covered end-to-end there and in tests/payroll_run_test.php /
+    // tests/employee_ot_rate_override_test.php). This file tests SyncPayResolver's OWN calculation
+    // logic in isolation, so the rate array is built directly here rather than round-tripping
+    // through OtRateSetModel/the DB.
     $insScope = $pdo->query("SELECT id, code FROM master_ot_scope_types")->fetchAll(PDO::FETCH_KEY_PAIR);
     $weekdayScopeId = array_search('weekday', $insScope, true);
     checkTrue('weekday OT scope exists in master data', $weekdayScopeId !== false);
 
-    $insOtRate = $pdo->prepare("INSERT INTO `ot_rates` (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate, calculation_base, status, created_by)
-        VALUES (?, 'OT ทดสอบ วันธรรมดา', 'Test OT Weekday', ?, 1.50, 'hourly', 'active', ?)");
-    $insOtRate->execute([$compId, $weekdayScopeId, $userId]);
-
+    $otRateSetRates = [
+        'weekday' => ['multiplier_rate' => 1.50, 'calculation_base' => 'hourly', 'calculation_method' => 'multiplier', 'flat_amount_rate' => 0.0],
+    ];
     $otRow = $blankRow;
     $otRow['ot_req_working_day_hrs'] = 2.0; // hourlyRate=100 * 1.5 * 2 = 300
-    $otRow['ot_req_weekend_hrs'] = 3.0;      // no ot_rates fixture for this scope -> error, no amount
-    $r = $resolver->resolve($compId, $otRow, $baseSalary);
+    $otRow['ot_req_weekend_hrs'] = 3.0;      // no configured rate for this scope -> error, no amount
+    $r = $resolver->resolve($compId, $otRow, $baseSalary, [], [], null, null, true, [], $otRateSetRates);
     $otLine = findLine($r['earning'], 'OT');
     checkTrue('weekday OT line present', $otLine !== null);
     check('weekday OT amount = hourlyRate(100) * 1.5 * 2h = 300', $otLine['amount'] ?? null, 300.0);
@@ -87,32 +94,26 @@ try {
     check('only 1 earning line (weekend skipped, not a zero/garbage line)', count($r['earning']), 1);
 
     echo "=== OT: daily-base calculation_base ===\n";
-    $insOtRateDaily = $pdo->prepare("INSERT INTO `ot_rates` (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate, calculation_base, status, created_by)
-        VALUES (?, 'OT ทดสอบ วันหยุด', 'Test OT Holiday', (SELECT id FROM master_ot_scope_types WHERE code='holiday'), 2.00, 'daily', 'active', ?)");
-    $insOtRateDaily->execute([$compId, $userId]);
+    $otRateSetRates['holiday'] = ['multiplier_rate' => 2.00, 'calculation_base' => 'daily', 'calculation_method' => 'multiplier', 'flat_amount_rate' => 0.0];
     $dailyRow = $blankRow;
     $dailyRow['ot_req_holiday_hrs'] = 8.0; // 1 full day: dailyRate(800) * 2.0 * (8/8) = 1600
-    $r = $resolver->resolve($compId, $dailyRow, $baseSalary);
+    $r = $resolver->resolve($compId, $dailyRow, $baseSalary, [], [], null, null, true, [], $otRateSetRates);
     $holidayLine = findLine($r['earning'], 'OT');
     check('holiday OT (daily base, 8h = 1 day) = dailyRate(800) * 2.0 * 1 = 1600', $holidayLine['amount'] ?? null, 1600.0);
 
     echo "=== OT: calculation_method=flat_amount (2026-08-21, \"เพิ่มตัวเลือก 'จำนวนเงินคงที่'\") -- hourly base ===\n";
-    $insOtRateFlatHourly = $pdo->prepare("INSERT INTO `ot_rates` (comp_id, ot_name_th, ot_name_en, ot_scope_id, calculation_base, calculation_method, flat_amount_rate, status, created_by)
-        VALUES (?, 'OT คงที่ วันหยุดสุดสัปดาห์', 'Test Flat OT Weekend', (SELECT id FROM master_ot_scope_types WHERE code='weekend'), 'hourly', 'flat_amount', 40.00, 'active', ?)");
-    $insOtRateFlatHourly->execute([$compId, $userId]);
+    $otRateSetRates['weekend'] = ['multiplier_rate' => 1.0, 'calculation_base' => 'hourly', 'calculation_method' => 'flat_amount', 'flat_amount_rate' => 40.00];
     $flatOtRow = $blankRow;
     $flatOtRow['ot_req_weekend_hrs'] = 3.0; // flat_amount_rate(40) * 3h = 120, NOT hourlyRate(100)*multiplier*3
-    $r = $resolver->resolve($compId, $flatOtRow, $baseSalary);
+    $r = $resolver->resolve($compId, $flatOtRow, $baseSalary, [], [], null, null, true, [], $otRateSetRates);
     $flatOtLine = findLine($r['earning'], 'OT');
     check('flat_amount OT (hourly base) = 40.00 * 3h = 120.00, ignores salary-derived rate entirely', $flatOtLine['amount'] ?? null, 120.0);
 
     echo "=== OT: calculation_method=flat_amount -- daily base ===\n";
-    $pdo->prepare("UPDATE ot_rates SET calculation_base = 'daily', flat_amount_rate = 500.00
-        WHERE comp_id = ? AND ot_scope_id = (SELECT id FROM master_ot_scope_types WHERE code='weekend')")
-        ->execute([$compId]);
+    $otRateSetRates['weekend'] = ['multiplier_rate' => 1.0, 'calculation_base' => 'daily', 'calculation_method' => 'flat_amount', 'flat_amount_rate' => 500.00];
     $flatOtDailyRow = $blankRow;
     $flatOtDailyRow['ot_req_weekend_hrs'] = 4.0; // half a day: flat_amount_rate(500) * (4/8) = 250
-    $r = $resolver->resolve($compId, $flatOtDailyRow, $baseSalary);
+    $r = $resolver->resolve($compId, $flatOtDailyRow, $baseSalary, [], [], null, null, true, [], $otRateSetRates);
     $flatOtDailyLine = findLine($r['earning'], 'OT');
     check('flat_amount OT (daily base, 4h = half day) = 500.00 * 0.5 = 250.00', $flatOtDailyLine['amount'] ?? null, 250.0);
 
@@ -338,7 +339,7 @@ try {
         ['item_id' => 4, 'item_code' => 'OT', 'item_name' => 'Overtime', 'item_type' => 'INCOME', 'unit_type' => 'hours', 'value' => 2.0, 'remark' => null],
         ['item_id' => 4, 'item_code' => 'OT', 'item_name' => 'Overtime', 'item_type' => 'INCOME', 'unit_type' => 'days', 'value' => 0.25, 'remark' => 'same OT, days unit'],
     ];
-    $r = $resolver->resolve($compId, $itemValueOtRow, $baseSalary);
+    $r = $resolver->resolve($compId, $itemValueOtRow, $baseSalary, [], [], null, null, true, [], $otRateSetRates);
     check('exactly 1 OT earning line (item_values OT rows did not double it)', count(array_filter($r['earning'], fn($l) => $l['code'] === 'OT')), 1);
     $otAmounts = array_column(array_filter($r['earning'], fn($l) => $l['code'] === 'OT'), 'amount');
     check('OT amount still exactly 300 (not doubled/tripled by item_values rows)', $otAmounts[0] ?? null, 300.0);
@@ -418,7 +419,7 @@ try {
     echo "=== Attendance override: OT hours (no candidate pool involved for OT -- pure substitution) ===\n";
     $otOverrideRow = $blankRow;
     $otOverrideRow['ot_req_working_day_hrs'] = 5; // if NOT overridden: hourlyRate(100)*1.5*5 = 750 (reuses the weekday OT rate fixture from earlier in this file)
-    $rOtOv = $resolver->resolve($compId, $otOverrideRow, $baseSalary, ['ot_req_working_day_hrs' => 2]);
+    $rOtOv = $resolver->resolve($compId, $otOverrideRow, $baseSalary, ['ot_req_working_day_hrs' => 2], [], null, null, true, [], $otRateSetRates);
     $otOvLine = findLine($rOtOv['earning'], 'OT');
     checkTrue('OT line present with the override applied', $otOvLine !== null);
     check('override wins: hourlyRate(100)*1.5*2h = 300.00, NOT the stale 750.00', $otOvLine['amount'] ?? null, 300.0);
@@ -533,9 +534,7 @@ try {
     check('positive deduction value unaffected: 250.00', $posDeductionLine['amount'] ?? null, 250.0);
 
     echo "=== OT: premium pay uses the FIXED standard 30-day/8-hour divisor, never the period's actual working_days/working_mins (real bug report, exact hand-worked example: baseSalary 13,500, 1.5h OT at 1.5x -> 126.56) ===\n";
-    $insOtRateFixed = $pdo->prepare("INSERT INTO `ot_rates` (comp_id, ot_name_th, ot_name_en, ot_scope_id, multiplier_rate, calculation_base, status, created_by)
-        VALUES (?, \"OT ทดสอบ 1.5x คงที่\", \"Test Fixed-Divisor OT\", ?, 1.50, \"hourly\", \"active\", ?)");
-    $insOtRateFixed->execute([$compId, $weekdayScopeId, $userId]);
+    $otRatesFixed = ['weekday' => ['multiplier_rate' => 1.50, 'calculation_base' => 'hourly', 'calculation_method' => 'multiplier', 'flat_amount_rate' => 0.0]];
     $otFixedDivisorRow = $blankRow;
     $otFixedDivisorRow['ot_req_working_day_hrs'] = 1.5;
     // Deliberately a NON-standard working_days/working_mins for this period (22 real working days,
@@ -544,7 +543,7 @@ try {
     // verified expectation below, exactly as they reported happening in production.
     $otFixedDivisorRow['working_days'] = 22;
     $otFixedDivisorRow['working_mins'] = 22 * 8 * 60;
-    $r = $resolver->resolve($compId, $otFixedDivisorRow, 13500.0);
+    $r = $resolver->resolve($compId, $otFixedDivisorRow, 13500.0, [], [], null, null, true, [], $otRatesFixed);
     $otFixedLine = findLine($r['earning'], 'OT');
     checkTrue('OT line present', $otFixedLine !== null);
     check('13,500/30/8=56.25/hr, x1.5 OT rate=84.375/hr, x1.5h = 126.5625 -> 126.56, UNAFFECTED by working_days=22 in the row', $otFixedLine['amount'] ?? null, 126.56);
@@ -565,7 +564,7 @@ try {
     echo "=== OT: the SAME row's absence deduction (a DIFFERENT calculation) correctly STILL uses the actual working_days=22, proving the two are properly decoupled, not both accidentally fixed ===\n";
     $mixedOtAbsentRow = $otFixedDivisorRow;
     $mixedOtAbsentRow['absent_days'] = 1.0; // baseSalary(13500)/working_days(22)*1 = 613.64, NOT baseSalary/30*1=450.00
-    $r = $resolver->resolve($compId, $mixedOtAbsentRow, 13500.0);
+    $r = $resolver->resolve($compId, $mixedOtAbsentRow, 13500.0, [], [], null, null, true, [], $otRatesFixed);
     $mixedOtLine = findLine($r['earning'], 'OT');
     check('OT amount in the same row is still the fixed-divisor 126.56 (unaffected by the absence line existing too)', $mixedOtLine['amount'] ?? null, 126.56);
     $mixedAbsentLine = findLine($r['deduction'], 'ABSENT_DEDUCT');
@@ -655,6 +654,97 @@ try {
     $leaveWaitBothLines = array_values(array_filter($r['deduction'], fn($l) => $l['code'] === 'LEAVE_PENDING_DEDUCT'));
     check('exactly 1 LEAVE_PENDING_DEDUCT line (structured column + item_values duplicate, not double-deducted)', count($leaveWaitBothLines), 1);
     check('amount is 800.00, not 1600.00', $leaveWaitBothLines[0]['amount'] ?? null, 800.0);
+
+    // 2026-08-30 (Phase 2, T011, explicit request: "เพิ่มเบี้ยขยันเป็นเหตุการณ์ที่ดึงจาก Origami") --
+    // diligence has no structured payroll_sync_items column (only ever arrives via item_values, same
+    // as before this fix), but is now a proper KNOWN_ITEM_DEFS/EVENT_ALIASES entry -- matched via
+    // pedTypeBySourceEvent() instead of the generic item_code fallback loop. `note` prefix matching
+    // (not exact `code`), same robust-to-whatever-catalog-code-exists pattern as the trip_allowance
+    // deactivation test above, since comp_id=1's real catalog row (backfilled by
+    // 2026-08-30_11b_diligence_source_event_backfill.sql) resolves to ITS OWN item_code, not the
+    // hardcoded DILIGENCE_ALLOW fallback.
+    echo "=== 2026-08-30 (T011): Diligence Allowance -- item_values only (no structured column), resolved via source_event_code like OT/Trip Allowance, not the generic item_code fallback ===\n";
+    $diligenceRow = $blankRow;
+    $diligenceRow['item_values'] = [
+        ['item_id' => 501, 'item_code' => 'DILIGENCE', 'item_name' => 'Diligence Allowance', 'item_type' => 'INCOME', 'unit_type' => null, 'value' => 888.0, 'remark' => null],
+    ];
+    $r = $resolver->resolve($compId, $diligenceRow, $baseSalary);
+    $diligenceLines = array_values(array_filter($r['earning'], fn($l) => stripos((string)($l['note'] ?? ''), 'sync_diligence') !== false));
+    checkTrue('exactly 1 diligence earning line produced', count($diligenceLines) === 1);
+    check('diligence amount = face value 888.00 (direct passthrough, no rate math)', $diligenceLines[0]['amount'] ?? null, 888.0);
+    check('diligence line is NOT a generic CUSTOM: fallback (is_custom=false, backed by the real catalog row)', $diligenceLines[0]['is_custom'] ?? null, false);
+
+    echo "=== 2026-08-30 (T011): Diligence Allowance -- deactivating its catalog type excludes it entirely, no fallback leak (same fix class as trip_allowance above) ===\n";
+    // Same "reuse the real row if this dev DB has one, else insert a fixture" robustness as the
+    // trip_allowance deactivation test above -- must not silently no-op the UPDATE below if comp_id=1
+    // genuinely has no diligence-linked catalog row yet.
+    $stmtDiligenceType = $pdo->prepare("SELECT id FROM payroll_earning_deduction_types WHERE comp_id = :c AND source_event_code = 'diligence' AND deleted_at IS NULL LIMIT 1");
+    $stmtDiligenceType->execute([':c' => $compId]);
+    $diligenceType = $stmtDiligenceType->fetch(PDO::FETCH_ASSOC);
+    if ($diligenceType === false) {
+        $insDiligenceType = $pdo->prepare("INSERT INTO payroll_earning_deduction_types
+            (comp_id, item_code, item_name_th, item_name_en, item_type, calculation_method, tax_treatment, source_event_code, is_sync_only, status, created_by)
+            VALUES (:comp_id, 'DILIGENCE_TEST_FIXTURE', 'เบี้ยขยันทดสอบ', 'Test Diligence Allowance', 'earning', 'manual_entry', 'taxable', 'diligence', 1, 'active', :user_id)");
+        $insDiligenceType->execute([':comp_id' => $compId, ':user_id' => $userId]);
+        $diligenceTypeId = (int)$pdo->lastInsertId();
+    } else {
+        $diligenceTypeId = (int)$diligenceType['id'];
+    }
+    $pdo->prepare("UPDATE payroll_earning_deduction_types SET status = 'inactive' WHERE id = :id")->execute([':id' => $diligenceTypeId]);
+    $rDiligenceOff = $resolver->resolve($compId, $diligenceRow, $baseSalary);
+    $leakedDiligenceLines = array_filter($rDiligenceOff['earning'], fn($l) => stripos((string)($l['note'] ?? ''), 'sync_diligence') !== false);
+    check('diligence produces ZERO earning lines once its catalog type is deactivated', count($leakedDiligenceLines), 0);
+    $pdo->prepare("UPDATE payroll_earning_deduction_types SET status = 'active' WHERE id = :id")->execute([':id' => $diligenceTypeId]);
+
+    // 2026-08-30 (Phase 2, T013, explicit decision confirmed with user) -- OPT-IN only: a company
+    // that has NOT set source_event_code='student_loan'/'loan_repay' on its own catalog row must
+    // see ZERO behavior change from this feature -- it's confirmed unverified against real Origami
+    // data (see EVENT_ALIASES's own comment), so the existing manual employee_earning_deductions
+    // installment mechanism must keep working untouched unless an admin explicitly opts in.
+    echo "=== 2026-08-30 (T013): Student Loan / Loan Repay are OPT-IN -- with NO catalog row linking source_event_code, item_values matching this item_code is untouched (falls through to the SAME generic item_code-matching path this app already used before T013 existed -- comp_id=1's own real seeded STUDENT_LOAN row, no source_event_code, exercised here directly rather than a synthetic stand-in) ===\n";
+    $studentLoanNoOptInRow = $blankRow;
+    $studentLoanNoOptInRow['item_values'] = [
+        ['item_id' => 601, 'item_code' => 'STUDENT_LOAN', 'item_name' => 'Student Loan', 'item_type' => 'DEDUCTION', 'unit_type' => null, 'value' => 500.0, 'remark' => null],
+    ];
+    $pdo->prepare("UPDATE payroll_earning_deduction_types SET source_event_code = NULL WHERE comp_id = :c AND UPPER(item_code) IN ('STUDENT_LOAN','LOAN_REPAY')")->execute([':c' => $compId]);
+    $rNoOptIn = $resolver->resolve($compId, $studentLoanNoOptInRow, $baseSalary);
+    $noOptInLine = findLine($rNoOptIn['deduction'], 'STUDENT_LOAN');
+    checkTrue('with no opt-in, STILL resolves via the OLD generic item_code match against the real catalog row (not silently dropped, not a CUSTOM: fallback)', $noOptInLine !== null);
+    check('with no opt-in, is_custom=false (backed by the real, pre-existing catalog row)', $noOptInLine['is_custom'] ?? null, false);
+    check('with no opt-in, the amount is still the correct face value 500.00', $noOptInLine['amount'] ?? null, 500.0);
+
+    echo "=== 2026-08-30 (T013): Student Loan / Loan Repay -- once an admin opts in (source_event_code set), resolved via the SAME event-linked path as diligence/trip allowance ===\n";
+    $insStudentLoanType = $pdo->prepare("INSERT INTO payroll_earning_deduction_types
+        (comp_id, item_code, item_name_th, item_name_en, item_type, calculation_method, tax_deduction_impact, statutory_report_code, source_event_code, is_sync_only, status, created_by)
+        VALUES (:comp_id, 'STUDENT_LOAN_TEST', 'กยศ ทดสอบ', 'Test Student Loan', 'deduction', 'manual_entry', 'before_tax', 'TH_SLF', 'student_loan', 1, 'active', :user_id)");
+    $insStudentLoanType->execute([':comp_id' => $compId, ':user_id' => $userId]);
+    $studentLoanRow = $blankRow;
+    $studentLoanRow['item_values'] = [
+        ['item_id' => 602, 'item_code' => 'STUDENT_LOAN', 'item_name' => 'Student Loan', 'item_type' => 'DEDUCTION', 'unit_type' => null, 'value' => 500.0, 'remark' => null],
+    ];
+    $rOptedIn = $resolver->resolve($compId, $studentLoanRow, $baseSalary);
+    $optedInLine = findLine($rOptedIn['deduction'], 'STUDENT_LOAN_TEST');
+    checkTrue('once opted in, resolves to the REAL catalog code (STUDENT_LOAN_TEST), not a generic CUSTOM: line', $optedInLine !== null);
+    check('opted-in amount = face value 500.00', $optedInLine['amount'] ?? null, 500.0);
+    check('opted-in line is NOT a generic CUSTOM: fallback (is_custom=false, backed by the real catalog row)', $optedInLine['is_custom'] ?? null, false);
+
+    $insLoanRepayType = $pdo->prepare("INSERT INTO payroll_earning_deduction_types
+        (comp_id, item_code, item_name_th, item_name_en, item_type, calculation_method, tax_deduction_impact, source_event_code, is_sync_only, status, created_by)
+        VALUES (:comp_id, 'LOAN_REPAY_TEST', 'เงินกู้ทดสอบ', 'Test Loan Repay', 'deduction', 'manual_entry', 'after_tax', 'loan_repay', 1, 'active', :user_id)");
+    $insLoanRepayType->execute([':comp_id' => $compId, ':user_id' => $userId]);
+    $loanRepayRow = $blankRow;
+    $loanRepayRow['item_values'] = [
+        ['item_id' => 603, 'item_code' => 'LOAN_REPAY', 'item_name' => 'Loan Repayment', 'item_type' => 'DEDUCTION', 'unit_type' => null, 'value' => 1200.0, 'remark' => null],
+    ];
+    $rLoanRepayOptedIn = $resolver->resolve($compId, $loanRepayRow, $baseSalary);
+    $loanRepayLine = findLine($rLoanRepayOptedIn['deduction'], 'LOAN_REPAY_TEST');
+    checkTrue('LOAN_REPAY opted in resolves to the real catalog code too', $loanRepayLine !== null);
+    check('LOAN_REPAY opted-in amount = face value 1200.00', $loanRepayLine['amount'] ?? null, 1200.0);
+
+    // Cleanup -- these 2 test-only catalog rows would otherwise leak into OTHER sections of this
+    // same shared-transaction file if any ran after this point (none currently do, but matches this
+    // file's own defensive convention elsewhere).
+    $pdo->prepare("DELETE FROM payroll_earning_deduction_types WHERE comp_id = :c AND item_code IN ('STUDENT_LOAN_TEST','LOAN_REPAY_TEST')")->execute([':c' => $compId]);
 
 } finally {
     $pdo->rollBack();

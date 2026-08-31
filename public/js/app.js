@@ -65,14 +65,41 @@ let langChangeEpoch = 0;
 function reloadAllTablesForLanguageChange() {
     if (typeof $.fn.dataTable === 'undefined') return;
     langChangeEpoch++;
+    // 2026-08-30 (T004), real bug found and fixed: `$.fn.dataTable.tables({api:true})` (the STATIC
+    // function, called with no existing Api instance) returns a single multi-table `_Api` object --
+    // `.every()` is a method DataTables only registers on the result of the INSTANCE method
+    // `api.tables()` (called on an Api you already have), not on this static-function return value,
+    // even though both are named "tables". This call therefore threw `TypeError: ...every is not a
+    // function` EVERY time this function ran, on every page, on every language switch -- silently
+    // swallowed by the try/catch below (written as a defensive "no DataTables on this page" guard,
+    // but it was actually catching a real, always-firing bug on every page that DOES have
+    // DataTables). Confirmed empirically against this exact bundled DataTables version, not
+    // guessed. Net effect before this fix: NOTHING in this function ever ran -- table columns whose
+    // render function branches on `currentLang` (e.g. a `data_th`/`data_en` lookup) never actually
+    // got re-evaluated on a language switch, on any page, ever. Fixed using the plain, documented
+    // iteration pattern for this exact static function (see its own JSDoc example in
+    // node_modules/datatables.net/js/dataTables.js): `$.fn.dataTable.tables()` (no `{api:true}`)
+    // returns a plain array of `<table>` DOM nodes; `$(node).DataTable()` (no args) returns the
+    // EXISTING Api instance for a table already initialized elsewhere, not a new one. Same fix
+    // applied to refreshAllDataTablesLanguage() in this same file (verified independently there via
+    // a real jsdom + real bundled-DataTables functional test).
+    // Second real bug found and fixed in the same pass, verified via a real jsdom + real bundled-
+    // DataTables functional test: for a CLIENT-SIDE table (no `ajax:`), DataTables caches each
+    // row's already-rendered cell output and reuses it on a plain `.draw()` -- a render() callback
+    // that branches on `currentLang` does NOT get re-invoked by `.draw()` alone, confirmed directly
+    // (the rendered text stayed in the OLD language even after a successful, non-throwing
+    // `.draw(false)` call). `.rows().invalidate()` clears that cache so the next `.draw()` actually
+    // re-runs every column's render() fresh -- `structureTables`'s own entry in refreshAllTables()
+    // already does this correctly (`.rows().invalidate().draw(false)`), this branch just never
+    // matched that existing, working precedent.
     try {
-        $.fn.dataTable.tables({ visible: true, api: true }).every(function () {
-            const table = this;
+        $.each($.fn.dataTable.tables({ visible: true }), function (i, node) {
+            const table = $(node).DataTable();
             table.settings()[0]._langEpoch = langChangeEpoch;
             if (table.ajax.url()) {
                 table.ajax.reload(null, false);
             } else {
-                table.draw(false);
+                table.rows().invalidate().draw(false);
             }
         });
     } catch (e) { /* no DataTables on this page -- nothing to reload */ }
@@ -143,7 +170,9 @@ $(document).on('shown.bs.tab', function (e) {
         if (dt.ajax.url()) {
             dt.ajax.reload(null, false);
         } else {
-            dt.draw(false);
+            // Same fix as reloadAllTablesForLanguageChange() above -- see that function's own
+            // comment for why a plain .draw() alone never re-runs a client-side render() callback.
+            dt.rows().invalidate().draw(false);
         }
     });
 });
@@ -484,6 +513,23 @@ async function changeLanguage(lang) {
     // -- only defined when dashboard.js is loaded (dashboard page only), so this is a no-op
     // everywhere else. See dashboard.js's own renderDashboard() docblock.
     if (typeof loadDashboardSummary === 'function') loadDashboardSummary();
+    // 2026-08-30, same pattern: the Employee Sync modal's filter dropdowns are plain <option> tags
+    // rendered once from a fetched response, with no data-i18n path -- only defined when
+    // employee-sync.js is loaded (Employee List page only). See that file's own docblock.
+    if (typeof esRefreshFilterOptionsLanguage === 'function') esRefreshFilterOptionsLanguage();
+    // 2026-08-30 (T007), same pattern: the Earning/Deduction modal's title depends on which action
+    // opened it (add/edit/view) + the item type, so it can't carry a plain data-i18n -- only defined
+    // when employee/detail.js is loaded (Employee Detail page only).
+    if (typeof refreshEedModalTitleLanguage === 'function') refreshEedModalTitleLanguage();
+    // 2026-08-30 (T007), same pattern: the Organizational Structure Sync/Sync Log modal titles
+    // interpolate the entity type -- only defined when org-structure-sync.js is loaded (Organizational
+    // Structure tab of Company Profile only).
+    if (typeof orgSyncRefreshModalTitleLanguage === 'function') orgSyncRefreshModalTitleLanguage();
+    // 2026-08-30 (T017b, leftover from T008's modal audit -- the Earning/Deduction TYPE item modal,
+    // #itemModal, was touched extensively for T013b/T014 this same day): its title badge
+    // (#pedTypeModalBadge, "Income"/"Deduction") is plain JS-set text with no data-i18n, same shape
+    // as the T007 fixes above -- only defined when payroll-configuration.js is loaded.
+    if (typeof refreshPedTypeModalBadgeLanguage === 'function') refreshPedTypeModalBadgeLanguage();
 }
 // 2026-08-29, explicit request: per-user Font Size (S/M/L) + Language, persisted server-side (see
 // UserPreferenceModel's own docblock) -- FONT_SIZE_STEPS maps the Settings modal's 0-2 slider
@@ -891,4 +937,112 @@ function refreshAllTables() {
             }
         });
     }
+    refreshAllDataTablesLanguage();
+}
+// 2026-08-30 (T004), real bug found and fixed (explicit report: "DataTable pagination/search
+// wording ไม่เปลี่ยนภาษา...ต้อง re-init หรือ bind language object ใหม่ตอน toggle ภาษา ไม่ใช่แค่ตอน reload
+// หน้า") -- DataTables' own rendered UI strings (Search label, Show-N-entries label, First/Previous/
+// Next/Last, "Showing X to Y of Z entries") are ONLY ever set from the `language:` option passed at
+// `.DataTable({...})` construction time; nothing in this app ever re-passed it after that. A full
+// destroy-and-recreate per table was considered and rejected -- most pages keep their own page-level
+// variable (`tb_employee`, `tb_holiday`, ...) that OTHER code on that page calls methods on
+// afterward (`.ajax.reload()` etc.); destroying a table and creating a NEW DataTables instance via a
+// generic app.js-level sweep would silently orphan every such variable (it would still point at the
+// OLD, now-destroyed instance), breaking that page's Add/Edit/Delete/reload buttons until a full
+// page refresh -- a worse regression than the language bug this is fixing. This is a SAFE, purely
+// cosmetic fix instead: it never destroys/recreates anything or touches DataTables' functional
+// state, only the VISIBLE text of 3 things, each verified against this exact bundled DataTables
+// version's own source (node_modules/datatables.net/js/dataTables.js) rather than guessed:
+//   1. Pagination buttons (First/Previous/Next/Last) + the zero-records/processing/search strings --
+//      DataTables' `_pagingButtonInfo()` reads `settings.oLanguage.oPaginate` FRESH on every single
+//      draw (a live reference read off the shared `settings` object, not a value captured once) --
+//      confirmed by reading that function directly. So mutating `settings.oLanguage` in place, using
+//      the internal "Hungarian" property names (`sSearch`/`sLengthMenu`/`oPaginate.sFirst`/etc, NOT
+//      the camelCase `search`/`lengthMenu`/`paginate.first` getTableLang() itself returns --
+//      DataTables only converts camelCase->Hungarian ONCE, at init, via its own internal
+//      `_fnCamelToHungarian()`, so a later direct mutation has to already be in the Hungarian shape
+//      to take effect) + calling `table.draw(false)` genuinely re-renders these correctly.
+//   2. The Search box's "Search:" label and the "Show _MENU_ entries" length-menu label are NOT
+//      covered by the above -- both are built ONCE, into static DOM text, the FIRST time each
+//      feature is constructed (`DataTable.feature.register('search', ...)`/`('pageLength', ...)`),
+//      and never touched again by any redraw -- confirmed directly in the source, not assumed.
+//      Patched by finding the actual rendered `.dt-search > label`/`.dt-length > label` elements and
+//      replacing their text (the length-menu label wraps a live `<select>` inside two surrounding
+//      TEXT NODES -- only those text nodes are touched, the `<select>` element itself is left
+//      completely alone so its bound change handler / current value survive untouched).
+//   3. The "Showing X to Y of Z entries" info text is the one piece that's genuinely unreachable
+//      even via #1's settings-mutation trick -- DataTables' `info` feature captures its own `opts`
+//      snapshot in a closure at construction time and every redraw re-reads THAT closure, never
+//      `settings.oLanguage` again (also confirmed directly in the source) -- there is no public way
+//      to reach into that closure from outside. Rendered independently instead, using DataTables'
+//      own PUBLIC `table.page.info()` API (start/end/recordsTotal/recordsDisplay) combined with
+//      getTableLang()'s already-correct camelCase template strings -- this bypasses the closure
+//      entirely rather than trying to patch it.
+function refreshAllDataTablesLanguage() {
+    if (!$.fn.dataTable || typeof $.fn.dataTable.tables !== 'function') {
+        return;
+    }
+    const lang = getTableLang();
+    // $.fn.dataTable.tables() (no `{api:true}`) returns a plain array of <table> DOM nodes -- the
+    // DataTables-documented way to iterate every table on the page one at a time. `{api:true}`
+    // instead wraps ALL of them into a single multi-table Api context (no per-table `.every()`), so
+    // that form doesn't fit what this needs.
+    $.each($.fn.dataTable.tables(), function (i, node) {
+        const table = $(node).DataTable();
+        const settings = table.settings()[0];
+        if (!settings) {
+            return;
+        }
+        $.extend(true, settings.oLanguage, {
+            sSearch: lang.search,
+            sLengthMenu: lang.lengthMenu,
+            sZeroRecords: lang.zeroRecords,
+            sInfo: lang.info,
+            sInfoEmpty: lang.infoEmpty,
+            sInfoFiltered: lang.infoFiltered,
+            oPaginate: {
+                sFirst: lang.paginate.first,
+                sLast: lang.paginate.last,
+                sNext: lang.paginate.next,
+                sPrevious: lang.paginate.previous,
+            },
+        });
+        table.draw(false);
+
+        const $wrapper = $(table.table().container());
+        const searchLabelText = (lang.search || 'Search:').replace('_INPUT_', '').trim();
+        $wrapper.find('.dt-search > label').text(searchLabelText);
+
+        const menuTemplate = lang.lengthMenu || 'Show _MENU_ entries';
+        const menuIdx = menuTemplate.indexOf('_MENU_');
+        const menuBefore = menuIdx >= 0 ? menuTemplate.slice(0, menuIdx) : menuTemplate;
+        const menuAfter = menuIdx >= 0 ? menuTemplate.slice(menuIdx + '_MENU_'.length) : '';
+        $wrapper.find('.dt-length > label').each(function () {
+            const textNodes = Array.prototype.filter.call(this.childNodes, n => n.nodeType === 3);
+            if (textNodes.length >= 2) {
+                textNodes[0].textContent = menuBefore;
+                textNodes[textNodes.length - 1].textContent = menuAfter;
+            } else if (textNodes.length === 1) {
+                textNodes[0].textContent = menuBefore + menuAfter;
+            }
+        });
+
+        const info = table.page.info();
+        const $infoNode = $wrapper.find('.dt-info');
+        if ($infoNode.length) {
+            let text;
+            if (info.recordsDisplay === 0) {
+                text = lang.infoEmpty || 'Showing 0 to 0 of 0 entries';
+            } else {
+                text = (lang.info || 'Showing _START_ to _END_ of _TOTAL_ entries')
+                    .replace('_START_', info.start + 1)
+                    .replace('_END_', info.end)
+                    .replace('_TOTAL_', info.recordsTotal);
+                if (info.recordsDisplay !== info.recordsTotal) {
+                    text += ' ' + (lang.infoFiltered || '(filtered from _MAX_ total entries)').replace('_MAX_', info.recordsTotal);
+                }
+            }
+            $infoNode.text(text);
+        }
+    });
 }

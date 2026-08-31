@@ -1,0 +1,15 @@
+-- Real risk found and confirmed with the user before proceeding (not guessed): `employees.ot_eligible`
+-- has existed as a checkbox on Employee Detail's Salary tab since before this session, but was NEVER
+-- actually read by SyncPayResolver/PayrollRunModel -- every employee's OT was computed regardless of
+-- this flag. Its DB default is 0 ("ไม่มีสิทธิ์"), and ALL 28 real employees in this live company
+-- currently sit at ot_eligible=0 (confirmed via a direct query) precisely because nobody ever had a
+-- reason to check it. Wiring this flag into the real calculation as a hard gate (explicit request:
+-- "ถ้าติ๊กว่าไม่คำนวณ OT ต่อให้ส่งมาจาก Origami ก็จะไม่คำนวณ") WITHOUT this backfill first would silently
+-- stop OT pay for every employee currently in the system the moment that gate ships.
+--
+-- User confirmed via AskUserQuestion: backfill every EXISTING employee to ot_eligible=1 first (matches
+-- today's real, already-in-production behavior -- everyone currently gets OT calculated), so the gate
+-- change itself is a true no-op for anyone who exists today. New employees created AFTER this
+-- migration keep the column's own DEFAULT (0) -- an admin must now explicitly opt a NEW hire into OT,
+-- which is the actual behavior change this feature was requested for.
+UPDATE `employees` SET `ot_eligible` = 1 WHERE `ot_eligible` = 0 AND `deleted_at` IS NULL;

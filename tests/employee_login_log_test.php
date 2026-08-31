@@ -151,6 +151,53 @@ try {
     $otherFilterOptions = $model->distinctFilterValues($otherEmployeeId, $compId);
     check('a different employee with no login rows gets empty filter option lists, not this employee\'s own', $otherFilterOptions, ['device_types' => [], 'browser_names' => []]);
 
+    echo "=== 2026-08-30, Phase 7 (T037 \"1 User 1 Login\"): create() kicks out every OTHER active" .
+        " login for the SAME employee, isActive()/endSession() ===\n";
+    check('the FIRST fixture row (privateId) was already deactivated by the SECOND create() call' .
+        ' above (same employee) -- this is the actual T037 mechanism, already exercised incidentally' .
+        ' by the earlier fixture setup', $model->isActive($privateId, $employeeId), false);
+    checkTrue('the SECOND (most recent) row is still the active one', $model->isActive($publicId, $employeeId));
+    $deactivatedRow = $pdo->query("SELECT ended_reason FROM employee_login_logs WHERE id = {$privateId}")->fetch(PDO::FETCH_ASSOC);
+    check('the kicked row is tagged ended_reason=new_login', $deactivatedRow['ended_reason'], 'new_login');
+
+    // A third login for the SAME employee -- must ALSO kick the second one, proving this isn't a
+    // one-shot "only checks the immediately-prior row" mechanism.
+    $thirdId = $model->create($compId, $employeeId, '1.1.1.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
+    check('the second row (publicId) is now ALSO deactivated by the third login', $model->isActive($publicId, $employeeId), false);
+    checkTrue('the third (newest) row is the only one still active', $model->isActive($thirdId, $employeeId));
+
+    // isActive() is scoped per-employee -- never accidentally reports on a different employee's row.
+    checkTrue('isActive() with the WRONG employee_id never returns true for someone else\'s row', $model->isActive($thirdId, $otherEmployeeId) === false);
+
+    // A login for a DIFFERENT employee must NOT affect this employee's own active row at all.
+    $otherEmpLoginId = $model->create($compId, $otherEmployeeId, '2.2.2.2', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
+    checkTrue('a DIFFERENT employee logging in does not touch this employee\'s own active session', $model->isActive($thirdId, $employeeId));
+    checkTrue('the other employee\'s own new login is active', $model->isActive($otherEmpLoginId, $otherEmployeeId));
+
+    echo "=== endSession() (T038 idle timeout path) ===\n";
+    $model->endSession($thirdId, $compId, $employeeId, 'timeout');
+    check('endSession() deactivates the row', $model->isActive($thirdId, $employeeId), false);
+    $timeoutRow = $pdo->query("SELECT ended_reason, logout_at FROM employee_login_logs WHERE id = {$thirdId}")->fetch(PDO::FETCH_ASSOC);
+    check('ended_reason recorded as timeout', $timeoutRow['ended_reason'], 'timeout');
+    checkTrue('logout_at set by endSession() too (same "session over" moment)', !empty($timeoutRow['logout_at']));
+
+    // Real regression guard: endSession() must still apply even when the row was ALREADY inactive
+    // (e.g. a kicked device's tab eventually calls Switch App / times out on its own, unaware it
+    // was already superseded) -- logout_at is still a real fact worth recording, not silently
+    // dropped just because is_active was already 0. Caught and fixed for real while building this:
+    // an earlier version of endSession() required is_active=1 in its WHERE clause, which broke
+    // recordLogout() below for exactly this reason (2 logins for the same employeeId in this same
+    // fixture, privateId already kicked before recordLogout(privateId,...) runs) -- exercised here
+    // with a dedicated 4th row instead of privateId itself, so this sub-test doesn't collide with
+    // the recordLogout() section right below, which still needs privateId's logout_at to be null.
+    $fourthId = $model->create($compId, $employeeId, '3.3.3.3', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
+    check('the 4th login also kicked the 3rd (already-timed-out) row -- still deactivates cleanly regardless of how the prior one ended', $model->isActive($thirdId, $employeeId), false);
+    $model->endSession($fourthId, $compId, $employeeId, 'switch_app');
+    $model->endSession($fourthId, $compId, $employeeId, 'timeout');
+    $alreadyInactiveRow = $pdo->query("SELECT ended_reason, logout_at FROM employee_login_logs WHERE id = {$fourthId}")->fetch(PDO::FETCH_ASSOC);
+    checkTrue('endSession() called a SECOND time on an ALREADY-inactive row still updates logout_at (not silently a no-op)', !empty($alreadyInactiveRow['logout_at']));
+    check('ended_reason is updated to the latest call\'s reason (last-write-wins)', $alreadyInactiveRow['ended_reason'], 'timeout');
+
     echo "=== recordLogout() (2026-08-29, \"Logout คือตอน Switch ออกจาก Payroll ไปที่อื่น\") ===\n";
     $beforeLogout = $pdo->query("SELECT logout_at FROM employee_login_logs WHERE id = {$privateId}")->fetchColumn();
     check('logout_at is null until an explicit Switch-App-away logout is recorded', $beforeLogout, null);

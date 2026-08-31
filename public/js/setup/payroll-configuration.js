@@ -22,11 +22,32 @@ function statutoryReportTag(row) {
     const label = langData['statutory_report_' + row.statutory_report_code.toLowerCase()] || row.statutory_report_code;
     return `<div class="text-muted small mt-1"><i class="fa-solid fa-landmark me-1"></i>${label}</div>`;
 }
+// 2026-08-30 (Phase 2, T014, explicit request: "ย้าย 'สถานะ' ออกจาก modal ไปไว้ที่แถวในตาราง") -- was a
+// plain read-only badge; the Add/Edit modal no longer has a Status field at all (see the view/JS
+// changes this same round), so this row-level switch is now the ONLY way to change it. Same
+// `.form-check.form-switch` markup convention as setup-rules.js's own statusSwitch() for
+// Holiday/Leave Type/etc, reused here rather than duplicated as a shared global -- this file has no
+// dependency on setup-rules.js being loaded.
+function toggleItemStatus(id) {
+    $.ajax({
+        url: `${BASE_URL}/api/ped-type.toggle-status`, method: 'POST', contentType: 'application/json',
+        data: JSON.stringify({ id }), dataType: 'json',
+        success: function (res) {
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
+            // Both tables share the same underlying catalog -- only one of them actually has this
+            // row, but reloading whichever is currently initialized is cheap and avoids needing to
+            // know which table (earning/deduction) this id belongs to.
+            if (tb_earning_type) tb_earning_type.ajax.reload(null, false);
+            if (tb_deduction_type) tb_deduction_type.ajax.reload(null, false);
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred.'); }
+    });
+}
 function statusBadge(row) {
     const isActive = row.status === 'active';
-    const cls = isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary';
-    const text = isActive ? (langData['active'] || 'Active') : (langData['inactive'] || 'Inactive');
-    return `<span class="badge ${cls}">${text}</span>`;
+    return `<div class="form-check form-switch d-flex justify-content-center m-0">
+        <input class="form-check-input" type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleItemStatus(${row.id})">
+    </div>`;
 }
 function actionButtons(row) {
     return `<div class="btn-group border rounded-3 bg-white">
@@ -105,14 +126,16 @@ function initEarningTypeTable() {
             injectSeedDefaultsButton(self);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, server mode. Excludes the composite item-name+tags cell (1), the boolean
-            // calc_sso/calc_pf icons (4, 5), and actions (7).
+            // calc_sso/calc_pf icons (4, 5), and actions (7). 2026-08-30 (T014): status (6) ALSO
+            // excluded now that it's an interactive switch, not a plain display value -- same
+            // exemption category ("interactive widget, not a filterable value") as Holiday/Leave
+            // Type's own status-switch columns already established.
             initExcelColumnFilters(self, {
                 mode: 'server',
                 columns: [
                     { index: 0, key: 'item_code' },
                     { index: 2, key: 'calculation_method' },
                     { index: 3, key: 'tax_treatment' },
-                    { index: 6, key: 'status' },
                 ],
                 fetchValues: function (key, done) {
                     $.ajax({
@@ -177,13 +200,14 @@ function initDeductionTypeTable() {
             injectSeedDefaultsButton(self);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, server mode. Excludes the composite item-name+tags cell (1) and actions (5).
+            // 2026-08-30 (T014): status (4) ALSO excluded now that it's an interactive switch, same
+            // reasoning as initEarningTypeTable()'s own identical change just above.
             initExcelColumnFilters(self, {
                 mode: 'server',
                 columns: [
                     { index: 0, key: 'item_code' },
                     { index: 2, key: 'calculation_method' },
                     { index: 3, key: 'tax_deduction_impact' },
-                    { index: 4, key: 'status' },
                 ],
                 fetchValues: function (key, done) {
                     $.ajax({
@@ -216,6 +240,35 @@ function applyItemTypeFields(type, preserveSourceEvent) {
         initSelect2('#source_event_code', { mode: 'ajax' });
     }
 }
+// 2026-08-30 (Phase 2, T013b, full redesign confirmed with user) -- `amount_source` is a UI-only
+// concept ('event_linked'/'fixed_amount'/'percent_of_base_salary'/'manual_entry') that replaces the
+// old bare `calculation_method` dropdown as the form's primary choice. See modals.php's own comment
+// on `#amount_source` for the full "why" (calculation_method/fixed_amount/percent_rate never drove
+// automatic calculation for ANY item -- confirmed by an audit earlier this same day -- they only
+// ever matter as a suggested starting value pre-filled when HR assigns this item to an employee,
+// and even that suggestion is meaningless once an item is Origami-linked).
+function applyAmountSourceFields(amountSource) {
+    const isEventLinked = amountSource === 'event_linked';
+    const isFixed = amountSource === 'fixed_amount';
+    const isPercent = amountSource === 'percent_of_base_salary';
+    $('#source_event_code_wrapper').toggleClass('d-none', !isEventLinked);
+    $('#source_event_code').toggleClass('required', isEventLinked);
+    $('#fixed_amount_wrapper').toggleClass('d-none', !isFixed);
+    $('#fixed_amount').toggleClass('required', isFixed);
+    $('#percent_rate_wrapper').toggleClass('d-none', !isPercent);
+    $('#percent_rate').toggleClass('required', isPercent);
+    if (!isEventLinked) {
+        // Switching AWAY from event_linked must clear whatever event was selected -- otherwise a
+        // stale source_event_code could survive into collectPedTypeFormData() if something read the
+        // select's own value directly instead of going through amount_source (defense in depth; the
+        // actual submit path below always derives it from amount_source, but a stale UI selection
+        // left visible-if-re-shown would be confusing regardless).
+        $('#source_event_code').val('').trigger('change');
+    }
+}
+// Kept for the 3 real DB calculation_method values (fixed_amount/percent_of_base_salary/
+// manual_entry) -- amount_source='event_linked' has no calculation_method equivalent of its own
+// (see applyAmountSourceFields() above), so this is only ever called with one of those 3.
 function applyCalculationMethodFields(method) {
     $('#fixed_amount_wrapper').toggleClass('d-none', method !== 'fixed_amount');
     $('#percent_rate_wrapper').toggleClass('d-none', method !== 'percent_of_base_salary');
@@ -235,17 +288,31 @@ function applyPedTypeModalBadge(itemType) {
         .addClass(isEarning ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger')
         .text(isEarning ? (langData['earning_singular'] || 'Income') : (langData['deduction_singular'] || 'Deduction'));
 }
+// 2026-08-30 (T017b, leftover from T008's audit): re-applies the badge text in the NEW language
+// while #itemModal is still open -- applyPedTypeModalBadge() itself is only ever called when the
+// modal first opens (resetPedTypeForm()/populatePedTypeForm()), so without this hook the badge/
+// title stays in whatever language it was when the modal opened, same bug class as the T007 fixes
+// (refreshEedModalTitleLanguage()/orgSyncRefreshModalTitleLanguage()). Called from
+// changeLanguage() in app.js on every language switch; a no-op whenever #itemModal isn't open
+// (the hidden #ped_item_type still holds the last-set value, but re-painting a closed modal's
+// badge is harmless either way).
+function refreshPedTypeModalBadgeLanguage() {
+    const itemType = $('#ped_item_type').val();
+    if (itemType === 'earning' || itemType === 'deduction') {
+        applyPedTypeModalBadge(itemType);
+    }
+}
 function resetPedTypeForm(itemType) {
     $('#pedTypeForm')[0].reset();
     $('#ped_type_id').val('');
     $('.is-invalid').removeClass('is-invalid');
-    $('#calculation_method').val('').trigger('change');
+    $('#amount_source').val('').trigger('change');
+    $('#calculation_method').val('');
     $('#tax_treatment').val('').trigger('change');
     $('#tax_deduction_impact').val('').trigger('change');
     $('#statutory_report_code').val('').trigger('change');
-    $('#ped_status').val('active').trigger('change');
     applyItemTypeFields(itemType);
-    applyCalculationMethodFields('');
+    applyAmountSourceFields('');
     applyPedTypeModalBadge(itemType);
 }
 function populatePedTypeForm(row) {
@@ -253,7 +320,6 @@ function populatePedTypeForm(row) {
     $('#item_code').val(row.item_code);
     $('#item_name_en').val(row.item_name_en);
     $('#item_name_th').val(row.item_name_th);
-    $('#calculation_method').val(row.calculation_method).trigger('change');
     $('#fixed_amount').val(row.fixed_amount || '');
     $('#percent_rate').val(row.percent_rate || '');
     $('#tax_treatment').val(row.tax_treatment || '').trigger('change');
@@ -262,6 +328,11 @@ function populatePedTypeForm(row) {
     $('#calc_sso').prop('checked', Number(row.calc_sso) === 1);
     $('#calc_pf').prop('checked', Number(row.calc_pf) === 1);
     applyItemTypeFields(row.item_type, true);
+    // 2026-08-30 (T013b): amount_source is DERIVED from the existing row -- a linked event always
+    // wins the derivation regardless of whatever calculation_method happens to be stored underneath
+    // it (that column is just an inert placeholder, always 'manual_entry', for every event-linked
+    // row -- see seedDefaults()'s own event-linked defaults, they're all 'manual_entry').
+    const amountSource = row.source_event_code ? 'event_linked' : (row.calculation_method || 'manual_entry');
     if (row.source_event_code) {
         const label = (currentLang === 'th' ? row.source_event_name_th : row.source_event_name_en) || row.source_event_code;
         const opt = new Option(label, row.source_event_code, true, true);
@@ -269,8 +340,9 @@ function populatePedTypeForm(row) {
     } else {
         $('#source_event_code').val('').trigger('change');
     }
-    $('#ped_status').val(row.status || 'active').trigger('change');
-    applyCalculationMethodFields(row.calculation_method);
+    $('#amount_source').val(amountSource).trigger('change');
+    $('#calculation_method').val(row.calculation_method || 'manual_entry');
+    applyAmountSourceFields(amountSource);
     applyPedTypeModalBadge(row.item_type);
 }
 function validatePedTypeForm() {
@@ -289,22 +361,30 @@ function validatePedTypeForm() {
     return firstInvalid;
 }
 function collectPedTypeFormData() {
+    // 2026-08-30 (T013b/T014): amount_source is the single source of truth submitted by the user --
+    // calculation_method/source_event_code are DERIVED from it here, never read from their own
+    // controls directly (the hidden #calculation_method input is kept in sync as a convenience/
+    // debugging aid, not relied on). `status` is no longer part of this form at all (T014) -- the
+    // backend's own save() now preserves whatever status an existing row already had when the key is
+    // simply absent from the payload (see PayrollEarningDeductionTypeModel::save()'s own comment on
+    // this), and still defaults a brand-new row to 'active' same as before.
+    const amountSource = $('#amount_source').val();
+    const isEventLinked = amountSource === 'event_linked';
     return {
         id: $('#ped_type_id').val() || undefined,
         item_type: $('#ped_item_type').val(),
         item_code: $('#item_code').val().trim(),
         item_name_en: $('#item_name_en').val().trim(),
         item_name_th: $('#item_name_th').val().trim(),
-        calculation_method: $('#calculation_method').val(),
-        fixed_amount: $('#fixed_amount').val(),
-        percent_rate: $('#percent_rate').val(),
+        calculation_method: isEventLinked ? 'manual_entry' : (amountSource || 'manual_entry'),
+        fixed_amount: amountSource === 'fixed_amount' ? $('#fixed_amount').val() : '',
+        percent_rate: amountSource === 'percent_of_base_salary' ? $('#percent_rate').val() : '',
         tax_treatment: $('#tax_treatment').val(),
         tax_deduction_impact: $('#tax_deduction_impact').val(),
         statutory_report_code: $('#statutory_report_code').val(),
         calc_sso: $('#calc_sso').is(':checked'),
         calc_pf: $('#calc_pf').is(':checked'),
-        source_event_code: $('#source_event_code').val(),
-        status: $('#ped_status').val(),
+        source_event_code: isEventLinked ? $('#source_event_code').val() : '',
     };
 }
 $(document).ready(function () {
@@ -312,12 +392,14 @@ $(document).ready(function () {
     initPayrollCycleTable();
     initPayrollCycleUI();
     if (typeof initSelect2 === 'function') {
-        initSelect2('#calculation_method', { mode: 'static' });
+        // 2026-08-30 (T013b): #calculation_method is now a plain hidden input (no widget needed at
+        // all -- see collectPedTypeFormData()'s own comment); #amount_source is the new user-facing
+        // selector that replaces it. #ped_status is gone entirely (T014, moved to the table row).
+        initSelect2('#amount_source', { mode: 'static' });
         initSelect2('#tax_treatment', { mode: 'static' });
         initSelect2('#tax_deduction_impact', { mode: 'static' });
         initSelect2('#statutory_report_code', { mode: 'static', allowClear: true });
         initSelect2('#source_event_code', { mode: 'ajax', allowClear: true });
-        initSelect2('#ped_status', { mode: 'static' });
         initSelect2('#payroll_frequency', { mode: 'static' });
         initSelect2('#cutoff_day_of_week', { mode: 'static' });
         initSelect2('#payment_day_of_week', { mode: 'static' });
@@ -350,7 +432,9 @@ $(document).ready(function () {
 function applyPolicyPayBasisFields(payBasis) {
     $('#policyPayBasisSubOptions').toggleClass('d-none', payBasis !== 'schedule_based');
 }
-$(document).on('change', '#policyPayBasis', function () {
+// 2026-08-30 (Phase 2, T016) -- was a single <select id="policyPayBasis">, now 3 radio inputs
+// sharing name="policyPayBasisRadio" (see payroll-configuration.php's own comment on this block).
+$(document).on('change', 'input[name="policyPayBasisRadio"]', function () {
     applyPolicyPayBasisFields($(this).val());
 });
 function loadPayrollPolicies() {
@@ -362,8 +446,13 @@ function loadPayrollPolicies() {
             $('#policyProbationBaseSalaryRatio').val(d.probation_base_salary_ratio !== null && d.probation_base_salary_ratio !== undefined ? d.probation_base_salary_ratio : '');
             $('#policyProbationDeferPvd').prop('checked', !!d.probation_defer_pvd);
             $('#policyProbationDeferRecurringEarning').prop('checked', !!d.probation_defer_recurring_earning);
+            // 2026-08-31, direct mirror of the probation_* fields immediately above.
+            $('#policyInternBaseSalaryRatio').val(d.intern_base_salary_ratio !== null && d.intern_base_salary_ratio !== undefined ? d.intern_base_salary_ratio : '');
+            $('#policyInternDeferPvd').prop('checked', !!d.intern_defer_pvd);
+            $('#policyInternDeferRecurringEarning').prop('checked', !!d.intern_defer_recurring_earning);
             const payBasis = d.pay_basis || 'full_month';
-            $('#policyPayBasis').val(payBasis).trigger('change');
+            $('input[name="policyPayBasisRadio"]').prop('checked', false);
+            $('input[name="policyPayBasisRadio"][value="' + payBasis + '"]').prop('checked', true);
             $('#policyPayBasisDeductHolidays').prop('checked', !!d.pay_basis_deduct_holidays);
             $('#policyPayBasisDeductLeave').prop('checked', !!d.pay_basis_deduct_leave);
             applyPolicyPayBasisFields(payBasis);
@@ -377,6 +466,7 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
     const reopenDaysRaw = $('#policyReopenWindowDays').val();
     const probationDaysRaw = $('#policyProbationPeriodDays').val();
     const probationRatioRaw = $('#policyProbationBaseSalaryRatio').val();
+    const internRatioRaw = $('#policyInternBaseSalaryRatio').val();
     $btn.prop('disabled', true);
     $.ajax({
         url: `${BASE_URL}/api/payroll-policy.save`,
@@ -388,7 +478,11 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
             probation_base_salary_ratio: probationRatioRaw === '' ? null : probationRatioRaw,
             probation_defer_pvd: $('#policyProbationDeferPvd').is(':checked'),
             probation_defer_recurring_earning: $('#policyProbationDeferRecurringEarning').is(':checked'),
-            pay_basis: $('#policyPayBasis').val() || 'full_month',
+            // 2026-08-31, direct mirror of the probation_* fields immediately above.
+            intern_base_salary_ratio: internRatioRaw === '' ? null : internRatioRaw,
+            intern_defer_pvd: $('#policyInternDeferPvd').is(':checked'),
+            intern_defer_recurring_earning: $('#policyInternDeferRecurringEarning').is(':checked'),
+            pay_basis: $('input[name="policyPayBasisRadio"]:checked').val() || 'full_month',
             pay_basis_deduct_holidays: $('#policyPayBasisDeductHolidays').is(':checked'),
             pay_basis_deduct_leave: $('#policyPayBasisDeductLeave').is(':checked'),
         }),
@@ -406,8 +500,14 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
         },
     });
 });
-$(document).on('change', '#calculation_method', function () {
-    applyCalculationMethodFields($(this).val());
+// 2026-08-30 (Phase 2, T013b) -- replaces the old direct #calculation_method change handler
+// (that element is now a plain hidden input, never user-driven -- see collectPedTypeFormData()'s
+// own comment). #calculation_method is kept in sync here too (not just at submit time in
+// collectPedTypeFormData()) purely as a convenience/debugging aid -- nothing reads it before submit.
+$(document).on('change', '#amount_source', function () {
+    const val = $(this).val();
+    applyAmountSourceFields(val);
+    $('#calculation_method').val(val === 'event_linked' ? 'manual_entry' : (val || 'manual_entry'));
 });
 $(document).on('click', '.btn-add-ped-type', function () {
     const itemType = $(this).data('item-type');
@@ -882,6 +982,8 @@ let currentAttendanceEditingId = null; // null = creating a NEW variant (blank/c
 let currentAttendanceBrackets = [];
 const ATTENDANCE_EVENT_ICON = {
     late: { icon: 'fa-user-clock', rt: 'rt-1' },
+    // 2026-08-30, Phase 8 (T043) -- added alongside the original 4, same table/pattern.
+    early_leave: { icon: 'fa-door-open', rt: 'rt-2' },
     absent: { icon: 'fa-user-slash', rt: 'rt-4' },
     unpaid_leave: { icon: 'fa-calendar-xmark', rt: 'rt-3' },
     leave_pending: { icon: 'fa-hourglass-half', rt: 'rt-5' },
@@ -902,7 +1004,7 @@ function attendanceScopeBadgeHtml(row) {
     return `<span class="badge bg-info-subtle text-info">${scopeLabel}: ${escapeHtmlPc(row.scope_label || '?')}</span>`;
 }
 
-const ATTENDANCE_DEFAULT_RATE_UNIT = { late: 'minute', absent: 'day', unpaid_leave: 'day', leave_pending: 'day' };
+const ATTENDANCE_DEFAULT_RATE_UNIT = { late: 'minute', early_leave: 'minute', absent: 'day', unpaid_leave: 'day', leave_pending: 'day' };
 
 const ATTENDANCE_RATE_UNIT_LABELS = {
     minute: {
@@ -923,7 +1025,7 @@ const ATTENDANCE_RATE_UNIT_LABELS = {
 };
 
 function attendanceEventLabel(eventCode) {
-    const map = { late: 'attendance_deduction_event_late', absent: 'attendance_deduction_event_absent', unpaid_leave: 'attendance_deduction_event_unpaid_leave', leave_pending: 'attendance_deduction_event_leave_pending' };
+    const map = { late: 'attendance_deduction_event_late', early_leave: 'attendance_deduction_event_early_leave', absent: 'attendance_deduction_event_absent', unpaid_leave: 'attendance_deduction_event_unpaid_leave', leave_pending: 'attendance_deduction_event_leave_pending' };
     return langData[map[eventCode]] || eventCode;
 }
 
@@ -937,7 +1039,10 @@ function applyAttendanceDeductionMethodFields(method) {
     $('#attendanceFlatSection').toggleClass('d-none', method !== 'flat_amount');
     $('#attendancePercentSection').toggleClass('d-none', method !== 'percent_of_rate');
     $('#attendanceBracketSection').toggleClass('d-none', method !== 'tiered_bracket');
-    $('#attendanceRateUnitWrapper').toggleClass('d-none', method === 'percent_of_rate');
+    // 2026-08-30 (T015, "เพิ่มตัวเลือก 'ไม่หัก'") -- no_deduction has no rate/formula of its own at
+    // all, same as percent_of_rate already doesn't need the rate-unit picker (it's always
+    // minute-based internally regardless -- see SyncPayResolver's own docblock on that).
+    $('#attendanceRateUnitWrapper').toggleClass('d-none', method === 'percent_of_rate' || method === 'no_deduction');
     applyAttendanceRateUnitLabels($('#attendanceRateUnit').val() || 'minute');
 }
 $(document).on('change', '#attendanceDeductionMethod', function () {
@@ -1113,6 +1218,10 @@ function attendanceCalcPreviewFormulaStepsHtml(formula) {
         return `<div class="calc-preview-step">${langData['calc_preview_step_hourly_rate'] || 'Sample hourly rate'}: <code>${fmt(formula.hourly_rate)}</code></div>
             <div class="calc-preview-step">${langData['calc_preview_step_formula'] || 'Formula'}: <code>(${fmt(formula.hourly_rate)} &divide; 60) &times; ${formula.minutes} &times; ${formula.multiplier} = ${fmt(formula.result)}</code></div>`;
     }
+    // 2026-08-30 (T015) -- always zero, nothing to trace through a rate/multiplier for.
+    if (formula.type === 'attendance_no_deduction') {
+        return `<div class="calc-preview-step">${langData['calc_preview_step_no_deduction'] || 'This method always deducts 0, regardless of the sample minutes above.'}</div>`;
+    }
     return '';
 }
 function attendanceRateUnitShortLabel(unit) {
@@ -1264,6 +1373,13 @@ function attendanceDeductionMethodSummary(r) {
         const n = (r.brackets || []).length;
         return `<span class="badge bg-warning-subtle text-warning">${langData['attendance_deduction_method_tiered_bracket'] || 'Tiered Brackets'}</span> <span class="text-muted small ms-1">${n} ${langData['attendance_deduction_brackets'] || 'Brackets'}</span>`;
     }
+    // 2026-08-30 (T015, "เพิ่มตัวเลือก 'ไม่หัก'") -- checked explicitly, NOT folded into the trailing
+    // percent_of_rate fallback below (that fallback used to be an unconditional catch-all -- a real
+    // bug this new method_code would have hit immediately, showing a misleading "Percent of Rate
+    // (1.00x)" badge for a rule actually configured to deduct nothing at all).
+    if (r.method_code === 'no_deduction') {
+        return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_method_no_deduction'] || 'No Deduction'}</span>`;
+    }
     const mult = parseFloat(r.multiplier_rate || 1).toFixed(2);
     return `<span class="badge bg-success-subtle text-success">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'}</span> <span class="text-muted small ms-1">${mult}x</span>`;
 }
@@ -1325,8 +1441,10 @@ function attendanceDeductionEventCardHtml(eventCode) {
 function renderAttendanceDeductionCards() {
     // 2026-08-29: leave_pending added alongside the original 3 (explicit request -- leave still
     // awaiting approval is provisionally deducted like unpaid leave until approved, see
-    // AttendanceDeductionRuleModel's own docblock).
-    const events = ['late', 'absent', 'unpaid_leave', 'leave_pending'];
+    // AttendanceDeductionRuleModel's own docblock). 2026-08-30 (Phase 8, T043): early_leave added
+    // the same way -- was already computable via SyncPayResolver's own default formula, just never
+    // configurable here.
+    const events = ['late', 'early_leave', 'absent', 'unpaid_leave', 'leave_pending'];
     $('#attendanceDeductionCardsContainer').html(events.map(attendanceDeductionEventCardHtml).join(''));
 }
 function loadAttendanceDeductionCards() {

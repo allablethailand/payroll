@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/SetupRulesModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
+require_once __DIR__ . '/../models/OtRateSetModel.php';
 
 class SetupRulesController extends Controller {
     private SetupRulesModel $model;
@@ -249,21 +250,28 @@ class SetupRulesController extends Controller {
         $this->json($this->model->leaveTypeApplyDefaults((int)$compId, $this->userId()));
     }
 
-    /* ==================== OT RATE ==================== */
+    /* ==================== OT RATE SET ====================
+     * 2026-08-30: rebuilt around OtRateSetModel (one Set bundles ALL OT types as independently-
+     * configurable sub-rows + department/team/position/employee assignment + a mandatory
+     * company-wide Default) -- replaces the old flat one-row-per-scope `otRate*` CRUD entirely, see
+     * OtRateSetModel's own docblock. Method names kept as `otRate*`/route paths kept as
+     * `api/ot-rate.*` for continuity (still "the OT Rate settings page" to the frontend/URLs), but
+     * every method now delegates to OtRateSetModel instead of SetupRulesModel.
+     */
 
     public function otScopeOptions() {
         $this->json(['status' => true, 'data' => ['items' => $this->model->otScopeOptions(), 'total_count' => 0]]);
     }
 
     public function otRateList() {
-        $compId = getCompId();
-        $this->json(['status' => true, 'data' => $this->model->otRateList((int)$compId)]);
+        $compId = (int)getCompId();
+        $this->json(['status' => true, 'data' => (new OtRateSetModel())->list($compId)]);
     }
 
     public function otRateGet() {
-        $compId = getCompId();
+        $compId = (int)getCompId();
         $id = (int)($_GET['id'] ?? 0);
-        $row = $this->model->otRateGet($id, (int)$compId);
+        $row = (new OtRateSetModel())->get($id, $compId);
         if (!$row) {
             $this->json(['status' => false, 'message' => 'Record not found.']);
             return;
@@ -272,26 +280,56 @@ class SetupRulesController extends Controller {
     }
 
     public function otRateSave() {
-        $compId = getCompId();
+        $compId = (int)getCompId();
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         if (!is_array($data)) {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
-        $this->json($this->model->otRateSave($data, (int)$compId, $this->userId()));
+        $this->json((new OtRateSetModel())->save($data, $compId, $this->userId()));
     }
 
     public function otRateDelete() {
-        $compId = getCompId();
+        $compId = (int)getCompId();
         $id = (int)($_POST['id'] ?? 0);
-        $this->json($this->model->otRateDelete($id, (int)$compId, $this->userId()));
+        $this->json((new OtRateSetModel())->delete($id, $compId, $this->userId()));
     }
 
     public function otRateToggleStatus() {
-        $compId = getCompId();
+        $compId = (int)getCompId();
         $id = (int)($_POST['id'] ?? 0);
-        $this->json($this->model->otRateToggleStatus($id, (int)$compId, $this->userId()));
+        $this->json((new OtRateSetModel())->toggleStatus($id, $compId, $this->userId()));
+    }
+
+    public function otRateSetDefault() {
+        $compId = (int)getCompId();
+        $id = (int)($_POST['id'] ?? 0);
+        $this->json((new OtRateSetModel())->setDefault($id, $compId, $this->userId()));
+    }
+
+    public function otRateAssignableOptions() {
+        $compId = (int)getCompId();
+        $this->json(['status' => true, 'data' => (new OtRateSetModel())->assignableOptions($compId)]);
+    }
+
+    /**
+     * select2-remote ajax source for "which OT Rate Set" (Employee Detail's OT Rate Settings card,
+     * 2026-08-30: "ถ้าเลือกจาก OT ของระบบ จะมีให้เลือกเพิ่มว่า OT ไหน") -- standard
+     * `{status, data:{items:[{id,text_th,text_en}], total_count}}` shape every select2-remote in this
+     * app expects (see input.js's own initSelect2()). Only ACTIVE Sets are offered -- an employee
+     * should never be able to explicitly pick a Set that's currently deactivated.
+     */
+    public function otRateSetOptions() {
+        $compId = (int)getCompId();
+        $search = trim((string)($_POST['searchTerm'] ?? ''));
+        $sets = array_values(array_filter((new OtRateSetModel())->list($compId), fn($s) => $s['status'] === 'active'));
+        if ($search !== '') {
+            $needle = mb_strtolower($search);
+            $sets = array_values(array_filter($sets, fn($s) => strpos(mb_strtolower($s['name_th']), $needle) !== false || strpos(mb_strtolower($s['name_en']), $needle) !== false));
+        }
+        $items = array_map(fn($s) => ['id' => $s['id'], 'text_th' => $s['name_th'], 'text_en' => $s['name_en']], $sets);
+        $this->json(['status' => true, 'data' => ['items' => $items, 'total_count' => count($items)]]);
     }
 
     public function otRatePreview() {
@@ -303,6 +341,6 @@ class SetupRulesController extends Controller {
         }
         $sampleBaseSalary = isset($data['sample_base_salary']) && is_numeric($data['sample_base_salary']) ? (float)$data['sample_base_salary'] : 30000.0;
         $sampleHours = isset($data['sample_hours']) && is_numeric($data['sample_hours']) ? (float)$data['sample_hours'] : 2.0;
-        $this->json($this->model->otRatePreview($data, $sampleBaseSalary, $sampleHours));
+        $this->json((new OtRateSetModel())->previewCalculation($data, $sampleBaseSalary, $sampleHours));
     }
 }

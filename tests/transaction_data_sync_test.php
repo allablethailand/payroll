@@ -71,6 +71,14 @@ try {
     $origamiCompanyId = 90002;
     $fake = new FakeOrigamiSyncClient();
     $pdo->prepare("UPDATE companies SET ref_id = :ref WHERE id = :id")->execute([':ref' => $origamiCompanyId, ':id' => $compId]);
+    // 2026-08-31: hard-delete (not soft) any existing ot_rate_sets for this company inside this
+    // test's own rolled-back transaction -- needed so the "OtRateSyncer force-defaults its own
+    // auto-created Set when this is genuinely the company's FIRST Set ever" assertion below tests a
+    // real zero-Sets starting state (OtRateSyncer's own first-set check counts soft-deleted rows too,
+    // by design -- same as OtRateSetModel::save()'s own invariant -- so a soft-delete here would defeat this test).
+    $pdo->prepare("DELETE i FROM ot_rate_set_items i JOIN ot_rate_sets s ON s.id = i.set_id WHERE s.comp_id = :comp_id")->execute([':comp_id' => $compId]);
+    $pdo->prepare("DELETE a FROM ot_rate_set_assignments a JOIN ot_rate_sets s ON s.id = a.set_id WHERE s.comp_id = :comp_id")->execute([':comp_id' => $compId]);
+    $pdo->prepare("DELETE FROM ot_rate_sets WHERE comp_id = :comp_id")->execute([':comp_id' => $compId]);
 
     $masterOrch = new MasterDataSyncOrchestrator($pdo, $fake);
     $txOrch = new TransactionDataSyncOrchestrator($pdo, $fake);
@@ -102,6 +110,28 @@ try {
         checkTrue("fixture: {$type} master sync succeeds", $r['status']);
     }
     checkTrue('hasCompletedMasterDataSync() still false (department/position/holiday never run)', !$masterOrch->hasCompletedMasterDataSync($compId));
+
+    // 2026-08-31, real correctness bug found and fixed (explicit emphasis: "การตั้งค่าทุกอย่างต้องคำนวณ
+    // ออกมาได้ถูกต้อง") -- OtRateSyncer's own auto-created "Synced from Origami" Set used to NEVER
+    // become the company's mandatory Default, even when it was genuinely the company's only Set --
+    // meaning a company that only ever syncs OT rates from Origami (never touches the manual settings
+    // UI) would have had ZERO default Sets, silently zeroing out real OT pay for every eligible
+    // employee company-wide. Fixed to force-default it when (and only when) it's genuinely the FIRST
+    // Set this company has ever had.
+    $syncedSet = $pdo->prepare("SELECT id, is_default FROM ot_rate_sets WHERE comp_id = :comp_id AND name_en = 'Synced from Origami' AND deleted_at IS NULL");
+    $syncedSet->execute([':comp_id' => $compId]);
+    $syncedSetRow = $syncedSet->fetch(PDO::FETCH_ASSOC);
+    checkTrue('the auto-created "Synced from Origami" Set is forced default when it is the company\'s first-ever Set', (bool)($syncedSetRow['is_default'] ?? false));
+
+    // Re-syncing (the "already exists" branch, not the create branch) must be a pure no-op on
+    // is_default -- proves this doesn't ALSO fire on every subsequent sync, only genuinely once.
+    $reRun = $masterOrch->syncEntity($compId, 'ot_rate', $adminUserId);
+    checkTrue('fixture: re-running ot_rate sync succeeds', $reRun['status']);
+    checkTrue('exactly 1 "Synced from Origami" Set still exists after re-sync (not duplicated)',
+        (int)$pdo->query("SELECT COUNT(*) FROM ot_rate_sets WHERE comp_id = {$compId} AND name_en = 'Synced from Origami' AND deleted_at IS NULL")->fetchColumn() === 1);
+    $syncedSet->execute([':comp_id' => $compId]);
+    $syncedSetRowAfterResync = $syncedSet->fetch(PDO::FETCH_ASSOC);
+    checkTrue('still default after re-sync', (bool)($syncedSetRowAfterResync['is_default'] ?? false));
 
     // Run the remaining 3 (even with empty fetches) so the gate opens.
     foreach (['department', 'position', 'holiday'] as $type) {
@@ -146,6 +176,18 @@ try {
     $txOrch->syncEntity($compId, 'attendance', $adminUserId, '2026-03-01', '2026-03-31');
     $janStillAlive = $pdo->query("SELECT deleted_at FROM attendance_records WHERE origami_ref_id = 30001")->fetchColumn();
     check('January record untouched by a March-scoped sync (even with an empty fetch)', $janStillAlive, null);
+
+    // ---------- 2026-08-30 (Phase 5, conflict-prevention): data_source updates on every write ----------
+    echo "=== data_source updates on UPDATE, not just INSERT ===\n";
+    // Simulate the still-alive Jan 10 record (origami_ref_id=30001) having been hand-corrected via
+    // Manual Entry since it was first synced -- data_source should have flipped to 'manual' there.
+    $pdo->prepare("UPDATE attendance_records SET data_source = 'manual' WHERE origami_ref_id = 30001")->execute();
+    // Re-syncing the SAME ref_id (Origami re-sends it) must overwrite it back to 'sync', not leave
+    // the stale 'manual' badge in place -- this is the real bug this fix corrects.
+    $fake->attendance = [['ref_id' => 30001, 'employee_ref_id' => 11101, 'work_date' => '2026-01-10', 'status' => 'present']];
+    $txOrch->syncEntity($compId, 'attendance', $adminUserId, '2026-01-01', '2026-01-31');
+    $resyncedSource = $pdo->query("SELECT data_source FROM attendance_records WHERE origami_ref_id = 30001")->fetchColumn();
+    check('data_source flipped back to sync on re-sync (was stale "manual" before this fix)', $resyncedSource, 'sync');
 
     // ---------- LeaveRequestSyncer ----------
     echo "=== LeaveRequestSyncer ===\n";

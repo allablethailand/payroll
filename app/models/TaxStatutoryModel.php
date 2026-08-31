@@ -474,7 +474,7 @@ class TaxStatutoryModel {
 
     /**
      * 2026-08-30, calc-preview rollout (same pattern as AttendanceDeductionRuleModel::
-     * previewCalculation()/SetupRulesModel::otRatePreview()): runs a DRAFT/not-yet-saved rate
+     * previewCalculation()/OtRateSetModel::previewCalculation()): runs a DRAFT/not-yet-saved rate
      * version's fields through the SAME StatutoryCalculationEngine::computeXxx() static functions
      * real payroll calculation uses, against a sample base amount, so this can never silently
      * drift from what an actual payroll run would compute. calc_method/is_employee_applicable/

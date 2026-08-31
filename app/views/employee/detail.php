@@ -1,4 +1,18 @@
 <style>
+/* 2026-08-30 (T025) -- see this bar's own markup comment (search "employee-payroll-participant-bar")
+   for why: repoints the left-border accent from Bootstrap's stock amber .border-warning to this
+   app's real brand orange, matching the numbered section badges and toggle buttons right next to it. */
+.employee-payroll-participant-bar {
+    border-left-color: #FF9900 !important;
+}
+/* 2026-08-30 (T025, optional polish) -- see the Salary tab <li>'s own markup comment. A thin
+   vertical rule + extra left spacing right before the Salary tab, marking where "core HR" ends and
+   "payroll-specific" (the exact tabs T020 hides together for a staff-only employee) begins. */
+.employee-tab-group-divider {
+    margin-left: .5rem;
+    padding-left: .5rem;
+    border-left: 1px solid #dee2e6;
+}
 /* Employee Detail profile header + completeness (2026-08-19, explicit request). */
 .employee-avatar-lg {
     width: 56px;
@@ -200,7 +214,12 @@
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
             <button class="nav-link text-secondary" id="employment-tab" data-bs-toggle="tab" data-bs-target="#employment-pane" type="button" role="tab" aria-controls="employment-pane" aria-selected="false"><i class="fa-solid fa-building-user me-1"></i><span data-i18n="employment">Employment</span><span class="completeness-tab-badge d-none" data-tab-key="employment"></span></button>
         </li>
-        <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
+        <!-- 2026-08-30 (T025, optional polish per the fork's own audit -- "core HR" (Info/Contact/
+             Employment's org-placement half) vs "payroll-specific" (Salary through Family/Tax
+             Allowance, the exact tabs T020's Payroll Participation toggle hides together) is a REAL
+             functional boundary now, not just a visual grouping choice -- a thin divider here makes
+             it readable in the tab bar itself, even before an admin toggles that switch. -->
+        <li class="nav-item employee-secondary-tab employee-tab-group-divider<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
             <button class="nav-link text-secondary" id="salary-tab" data-bs-toggle="tab" data-bs-target="#salary-pane" type="button" role="tab" aria-controls="salary-pane" aria-selected="false"><i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="salary">Salary</span><span class="completeness-tab-badge d-none" data-tab-key="salary"></span></button>
         </li>
         <!-- Split out of the Salary tab (2026-08-19, explicit request: "รายรับ รายหัก อาจแยกออกมาจาก
@@ -257,6 +276,37 @@
                          populateEmployeeForm() sets it generically), set by uploadEmpPhotoBlob()'s
                          own AJAX call the moment a file is chosen -- not deferred until Save. -->
                     <input type="hidden" id="emp_profile_photo_path" name="profile_photo_path" value="">
+                </div>
+            </div>
+            <!-- 2026-08-30 (Phase 3, T020, explicit request: field "จ่าย/ไม่จ่ายเงินเดือน", default =
+                 จ่ายเงินเดือน) -- placed prominently above every tab's numbered section (not buried
+                 inside one tab) since it governs which tabs/fields the rest of the WHOLE form shows;
+                 lives outside #employeeProfileHeader (that card starts d-none until an existing
+                 employee's data loads, but this toggle must be settable on the New Employee flow too,
+                 before there's anything to summarize). Same .btn-check radio-group pattern as Employee
+                 Type/Gender elsewhere on this page, not a plain checkbox (this project's own
+                 established "checkbox -> Yes/No radio" convention). -->
+            <!-- 2026-08-30 (T025, real color clash found while auditing this page for "แก้สีที่แย่งกัน"):
+                 was Bootstrap's stock .border-warning (amber #ffc107, unmodified) -- sat directly
+                 above the "1" section badge (brand orange #FF9900, see this page's own numbered
+                 sections) and this same row's own brand-orange Yes/No toggle buttons, a 3rd distinct
+                 orange/amber tone in the same visual neighborhood. .employee-payroll-participant-bar
+                 (own rule, this file's <style> block) repoints the left border to brand orange --
+                 needs !important because Bootstrap's own .border-start utility sets border-left-color
+                 with !important too, same reason .border-warning won in the first place. -->
+            <div class="card-surface p-3 mb-4 border-start border-4 employee-payroll-participant-bar d-flex flex-wrap align-items-center justify-content-between gap-3" id="employeePayrollParticipantBar">
+                <div>
+                    <div class="fw-bold" data-i18n="payroll_participant_label">Payroll Participation</div>
+                    <div class="text-muted small" data-i18n="payroll_participant_hint">If set to "No Salary", every payroll-related field/tab is hidden and this employee is excluded from payroll runs and reports entirely.</div>
+                </div>
+                <div>
+                    <div class="btn-group d-block" role="group" aria-label="Payroll participation">
+                        <input type="radio" class="btn-check" name="is_payroll_participant_radio" id="payroll_participant_yes" value="1" checked>
+                        <label class="btn btn-outline-brand" for="payroll_participant_yes" data-i18n="payroll_participant_yes">Pays Salary</label>
+                        <input type="radio" class="btn-check" name="is_payroll_participant_radio" id="payroll_participant_no" value="0">
+                        <label class="btn btn-outline-brand" for="payroll_participant_no" data-i18n="payroll_participant_no">No Salary</label>
+                    </div>
+                    <input type="hidden" name="is_payroll_participant" id="is_payroll_participant" value="1">
                 </div>
             </div>
             <h6 class="text-secondary fw-bold mb-3 mt-2">
@@ -325,10 +375,12 @@
                     <input type="text" class="form-control required" name="name_th" id="name_th">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="surname_local">Surname (Local)</span> <span class="text-danger">*</span></label>
+                    <!-- 2026-08-30 (T023, explicit request: "นามสกุลไม่เป็น required field") -- red asterisk
+                         + .required removed; first name (name_th/name_en) stays required, surname does not. -->
+                    <label class="form-label"><span data-i18n="surname_local">Surname (Local)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="surname_th" id="surname_th">
+                    <input type="text" class="form-control" name="surname_th" id="surname_th">
                 </div>
             </div>
             <div class="row">
@@ -339,10 +391,10 @@
                     <input type="text" class="form-control required" name="name_en" id="name_en">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="surname_en">Surname (EN)</span> <span class="text-danger">*</span></label>
+                    <label class="form-label"><span data-i18n="surname_en">Surname (EN)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="surname_en" id="surname_en">
+                    <input type="text" class="form-control" name="surname_en" id="surname_en">
                 </div>
             </div>
             <!-- Hidden 2026-08-19 (not needed for Payroll): cosmetic-only, not used in any statutory
@@ -998,49 +1050,56 @@
                     </select>
                 </div>
             </div>
-            <h6 class="text-secondary fw-bold mb-3 mt-5">
-                <label class="label label-head bg-head-first rounded-2 text-white">3</label>
-                <span data-i18n="payment_information">Payment Information</span>
-            </h6>
-            <div class="row">
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="payment_type">Payment Type</span> <span class="text-danger">*</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <div class="btn-group d-block" role="group" aria-label="Payment type">
-                        <input type="radio" class="btn-check" name="payment_type_radio" id="payment_bank" value="bank" checked>
-                        <label class="btn btn-outline-brand" for="payment_bank" data-i18n="bank">Bank</label>
-                        <input type="radio" class="btn-check" name="payment_type_radio" id="payment_cash" value="cash">
-                        <label class="btn btn-outline-brand" for="payment_cash" data-i18n="cash">Cash</label>
+            <!-- 2026-08-30 (T020): wrapped in one container so applyPayrollParticipantVisibility()
+                 can hide the whole "Payment Information" section (header + both rows) at once for a
+                 staff-only employee -- payment_type/bank_id/bank_account_no are payroll-specific,
+                 unlike the rest of this Employment tab (org placement), per the explicit scope
+                 decision confirmed for T020. -->
+            <div id="employmentPaymentSection">
+                <h6 class="text-secondary fw-bold mb-3 mt-5">
+                    <label class="label label-head bg-head-first rounded-2 text-white">3</label>
+                    <span data-i18n="payment_information">Payment Information</span>
+                </h6>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="payment_type">Payment Type</span> <span class="text-danger">*</span></label>
                     </div>
-                    <input type="hidden" name="payment_type" id="payment_type" value="bank">
+                    <div class="col-sm-4 mt-3">
+                        <div class="btn-group d-block" role="group" aria-label="Payment type">
+                            <input type="radio" class="btn-check" name="payment_type_radio" id="payment_bank" value="bank" checked>
+                            <label class="btn btn-outline-brand" for="payment_bank" data-i18n="bank">Bank</label>
+                            <input type="radio" class="btn-check" name="payment_type_radio" id="payment_cash" value="cash">
+                            <label class="btn btn-outline-brand" for="payment_cash" data-i18n="cash">Cash</label>
+                        </div>
+                        <input type="hidden" name="payment_type" id="payment_type" value="bank">
+                    </div>
                 </div>
-            </div>
-            <div class="row" id="sectionBankPayment">
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="bank_name">Bank</span> <span class="text-danger">*</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <select class="form-select select2-remote" name="bank_id" id="bank_id" data-api="/api/bank.get" data-type="bank">
-                    </select>
-                </div>
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="bank_account_no">Bank Account No.</span> <span class="text-danger">*</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="bank_account_no" id="bank_account_no">
-                </div>
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="bank_account_name">Bank Account Name</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="bank_account_name" id="bank_account_name">
-                </div>
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="bank_branch">Bank Branch</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="bank_branch" id="bank_branch">
+                <div class="row" id="sectionBankPayment">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="bank_name">Bank</span> <span class="text-danger">*</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-remote" name="bank_id" id="bank_id" data-api="/api/bank.get" data-type="bank">
+                        </select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="bank_account_no">Bank Account No.</span> <span class="text-danger">*</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="bank_account_no" id="bank_account_no">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="bank_account_name">Bank Account Name</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="bank_account_name" id="bank_account_name">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="bank_branch">Bank Branch</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="bank_branch" id="bank_branch">
+                    </div>
                 </div>
             </div>
             <div class="d-flex justify-content-end mt-5">
@@ -1059,10 +1118,22 @@
                     <label class="form-label"><span data-i18n="salary_type">Salary Type</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
+                    <!-- 2026-08-31, explicit request/investigation: "ถ้าเป็นพนักงานรายวัน การระบุเงินเดือน
+                         และการคำนวณจะเป็นแบบไหนครับ รายสัปดาห์ด้วย และรายปักษ์...ต้องครอบคลุมทั้งหมด" -- weekly/
+                         semi_monthly/bi_weekly added, reusing the EXACT SAME enum values/i18n labels
+                         (freq_weekly/freq_semi_monthly/freq_bi_weekly) as payroll_cycles.
+                         payroll_frequency for internal consistency -- see PayrollRunModel::
+                         recalculate()'s own comment for how base_salary_amount is interpreted for
+                         each. Confirmed via AskUserQuestion: these employees should be assigned (via
+                         cycle_id below) to a Payroll Cycle of matching frequency, not the company's
+                         monthly cycle. -->
                     <select class="form-select select2-native required" name="salary_type" id="salary_type">
                         <option value="monthly" data-i18n="monthly">Monthly</option>
                         <option value="daily" data-i18n="daily">Daily</option>
                         <option value="hourly" data-i18n="hourly">Hourly</option>
+                        <option value="weekly" data-i18n="freq_weekly">Weekly</option>
+                        <option value="semi_monthly" data-i18n="freq_semi_monthly">Semi-Monthly</option>
+                        <option value="bi_weekly" data-i18n="freq_bi_weekly">Bi-Weekly</option>
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
@@ -1075,6 +1146,11 @@
                     </div>
                 </div>
             </div>
+            <!-- 2026-08-30, same-day follow-up ("ย้ายสิทธิ์การได้รับ OT มาไว้แทน รอบการจ่าย (Schedule)
+                 สลับกัน จะได้อยู่ด้วยกัน") -- Payroll Schedule swapped up next to Effective Date;
+                 OT Eligible swapped down to sit directly above the OT Rate Settings card it controls,
+                 so the whole OT block (eligible flag + rate source + per-scope table) reads as one
+                 group instead of being split across two separate rows. -->
             <div class="row">
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
@@ -1086,19 +1162,90 @@
                     </div>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="ot_eligible">OT Eligible</span></label>
-                </div>
-                <div class="col-sm-4 mt-3 pt-2">
-                    <input type="checkbox" class="me-2" name="ot_eligible" id="ot_eligible"><span data-i18n="eligible_for_overtime">Eligible for overtime pay</span>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="cycle_id" id="cycle_id" data-api="/api/payroll-cycle.options">
                     </select>
+                </div>
+            </div>
+            <!-- Explicit request: "OT Rate เพิ่มให้สามารถ Assing รายบุคคลได้ด้วย...ถ้ามีสิทธิ์ได้รับ OT ให้เลือก
+                 เพิ่มว่า จากการตั้งค่าหลัก หรือจะตั้งค่าแยก ตามประเภท OT" -- see EmployeeOtRateModel's own docblock
+                 for the full backend design.
+                 2026-08-30 follow-up: OT Rate Source changed from a select2 dropdown to a radio pair
+                 ("แหล่งที่มาอัตรา OT ปรับให้เป็น radio"), its own Save button removed -- saving now folds
+                 into the Salary tab's own #btnNextSalary click (see saveOtRateWithSalaryTab() in
+                 detail.js).
+                 2026-08-31 follow-up (OT Rate Set replacement, "ให้เอาสิทธิ์การได้รับ OT มาไว้ใน card ของ
+                 ตั้งค่าอัตรา OT เลย จะได้เห็นว่าเป็นชุดเดียวกัน") -- the OT Eligible checkbox moved INSIDE this
+                 card (was its own row above it) so the card itself is now ALWAYS visible -- only
+                 #otRateDependentWrap (source radio / Set picker / per-scope table) toggles with the
+                 checkbox, since hiding the whole card would also hide the checkbox that controls it.
+                 Also adds the "which OT Rate Set" picker (#otRateSetPickerWrapper, shown only while
+                 source=default) with a Recommend hint -- "ถ้าเลือกจาก OT ของระบบ จะมีให้เลือกเพิ่มว่า OT
+                 ไหน...เพิ่ม Remark ไว้ Recommend ไว้ว่า...ถ้ายังไม่เลือกว่า OT รายการไหน ให้ Default เป็นรายการ
+                 ที่ใกล้เคียง".
+                 2026-08-31 follow-up ("ใน Tab เงินเดือน OT ให้เพิ่มเป็นหัวข้อที่ 2 ไปเลย แล้วหัวข้อต่อไปก็แก้เป็น
+                 เลขต่อไป และปรับ Design ตรง OT ให้เหมือนหัวข้ออื่น") -- was an unnumbered card-surface
+                 "box" that visually stood out from every other section on this tab (all plain
+                 numbered headings + bare .row rows, no card wrapper) -- dropped the card-surface
+                 wrapper, added the numbered heading, and converted OT Eligible/OT Rate Source/OT Rate
+                 Set to the SAME col-sm-2 (label) + col-sm-4 (field) row shape Base Salary/Tax
+                 Information already use, instead of label-stacked-above-field within one wider
+                 column. Recurring Allowances/Recurring Deductions/Tax Information all shifted down
+                 by one number (2->3, 3->4/new, previous 3->5) to make room. -->
+            <h6 class="text-secondary fw-bold mb-3 mt-5">
+                <label class="label label-head bg-head-first rounded-2 text-white">2</label>
+                <span data-i18n="ot_rate_settings">OT Rate Settings</span>
+            </h6>
+            <div id="otRateSection">
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="ot_eligible">OT Eligible</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3 pt-2">
+                        <input type="checkbox" class="me-2" name="ot_eligible" id="ot_eligible"><span data-i18n="eligible_for_overtime">Eligible for overtime pay</span>
+                    </div>
+                </div>
+                <div id="otRateDependentWrap" class="d-none">
+                    <div class="row">
+                        <div class="col-sm-2 mt-3">
+                            <label class="form-label"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
+                        </div>
+                        <div class="col-sm-4 mt-3">
+                            <div class="btn-group d-block" role="group" id="otRateSourceRadioGroup">
+                                <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_default" value="default" checked>
+                                <label class="btn btn-outline-brand" for="ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
+                                <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_custom" value="custom">
+                                <label class="btn btn-outline-brand" for="ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
+                            </div>
+                        </div>
+                        <div class="col-sm-2 mt-3 ot-rate-set-picker-toggle">
+                            <label class="form-label"><span data-i18n="ot_rate_set_picker_label">OT Rate Set</span></label>
+                        </div>
+                        <div class="col-sm-4 mt-3 ot-rate-set-picker-toggle" id="otRateSetPickerWrapper">
+                            <select class="form-select select2-remote" id="ot_rate_set_id" data-api="/api/ot-rate.set-options" data-type="ot_rate_set"></select>
+                            <div class="small text-muted mt-1" id="otRateSetRecommendHint"></div>
+                        </div>
+                    </div>
+                    <!-- Per-scope table visibility UNCHANGED from the 2026-08-30 round (explicit
+                         confirmation: "ถ้าเลือก Default ไม่ต้องแสดงอะไรเพิ่มถูกแล้ว" -- Default hides it,
+                         Custom shows it, exactly as it already worked). -->
+                    <div id="otRateOverridesContainer" class="d-none mt-3">
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th data-i18n="ot_scope">OT Type</th>
+                                        <th data-i18n="calculation_method">Calculation Method</th>
+                                        <th data-i18n="rate">Rate</th>
+                                        <th data-i18n="calculation_base">Base</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="otRateOverridesBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
             <!-- 2026-08-26, explicit request: "ส่วนของเงินเดือน...จะมีรายรับที่ได้ทุกเดือนเช่นพวกค่าตำแหน่ง
@@ -1109,7 +1256,7 @@
                  docblock). Small embedded DataTable, same "list uses DataTables, Add injected into
                  .dt-search" convention as tableEarning/tableDeduction below. -->
             <h6 class="text-secondary fw-bold mb-3 mt-5">
-                <label class="label label-head bg-head-first rounded-2 text-white">2</label>
+                <label class="label label-head bg-head-first rounded-2 text-white">3</label>
                 <span data-i18n="recurring_earnings">Recurring Allowances</span>
             </h6>
             <p class="text-secondary small mb-3" data-i18n="recurring_earnings_hint">*Fixed monthly allowances (position/car/fuel allowance, etc.) that recur every payroll run until suspended or removed.</p>
@@ -1125,15 +1272,38 @@
                     </tr>
                 </thead>
             </table>
+            <!-- 2026-08-31, explicit request: "หน้า Employee Detail เพิ่มรายหักประจำด้วยครับ" -- direct
+                 mirror of Recurring Allowances immediately above (own #tableRecurringDeduction DataTable
+                 + #recurringDeductionModal), backed by EmployeeRecurringDeductionModel/the
+                 api/employee.recurring-deduction.* endpoints. Catalog dropdown is pre-filtered
+                 server-side to item_type='deduction' AND calculation_method='fixed_amount' items only,
+                 same as the earning side's own fixed_amount-only restriction. -->
             <h6 class="text-secondary fw-bold mb-3 mt-5">
-                <label class="label label-head bg-head-first rounded-2 text-white">3</label>
+                <label class="label label-head bg-head-first rounded-2 text-white">4</label>
+                <span data-i18n="recurring_deductions">Recurring Deductions</span>
+            </h6>
+            <p class="text-secondary small mb-3" data-i18n="recurring_deductions_hint">*Fixed monthly deductions (uniform fee, locker fee, etc.) that recur every payroll run until suspended or removed.</p>
+            <table class="table table-bordered table-sm align-middle" id="tableRecurringDeduction" style="width:100%">
+                <thead>
+                    <tr>
+                        <th data-i18n="item_name">Item</th>
+                        <th data-i18n="amount" style="width:130px;">Amount</th>
+                        <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
+                        <th data-i18n="suspend_period" style="width:170px;">Suspend Period</th>
+                        <th data-i18n="col_status" style="width:100px;">Status</th>
+                        <th style="width:90px;"></th>
+                    </tr>
+                </thead>
+            </table>
+            <h6 class="text-secondary fw-bold mb-3 mt-5">
+                <label class="label label-head bg-head-first rounded-2 text-white">5</label>
                 <span data-i18n="tax_information">Tax Information</span>
             </h6>
             <div class="row">
-                <div class="col-sm-2 mt-3">
+                <div class="col-sm-2 mt-3 tax-calc-method-toggle">
                     <label class="form-label"><span data-i18n="tax_calculation_method">Tax Calculation Method</span> <span class="text-danger">*</span></label>
                 </div>
-                <div class="col-sm-4 mt-3">
+                <div class="col-sm-4 mt-3 tax-calc-method-toggle">
                     <select class="form-select select2-native required" name="tax_calculation_method" id="tax_calculation_method">
                         <option value="" data-i18n="please_choose">Select an option</option>
                         <option value="average" data-i18n="average_method">Average</option>
@@ -1146,6 +1316,43 @@
                 <div class="col-sm-4 mt-3 pt-2">
                     <input type="checkbox" class="me-2" name="tax_exempt" id="tax_exempt"><span data-i18n="exempt_from_wht">Exempt from withholding tax</span>
                 </div>
+            </div>
+            <!-- 2026-08-31, explicit request: "และให้ครอบคลุมถึงเด็กฝึกงานบางคนที่ให้เงินเดือน แต่อยากให้ตั้ง
+                 เงื่อนไขได้แบบ Probation...หรือใน Tab เงินเดือน ของหน้าพนักงาน ตอนเลือกประเภท Type ให้เลือก Set
+                 ได้จากตรงนั้น เห็น Form แยกกันไปเลย...และในหน้าเงินเดือนก็แก้ไขได้เป็นรายบุคคลด้วย" -- confirmed
+                 via AskUserQuestion: the company-wide Internship Pay Conditions default lives in
+                 Payroll Configuration > Payroll Policies (own separate field set, mirrors Probation's
+                 own card there -- see PayrollPolicyModel::internSettings()), this section is ONLY the
+                 per-employee OVERRIDE of the ratio half of that (a toggle + a per-employee % field,
+                 not a full per-employee copy of every intern_* setting -- defer PVD/Recurring
+                 Allowances stay company-wide-only, same scope Probation itself has always had).
+                 `employment_type` lives on the Employment tab, not this one -- #internPolicySection
+                 shown/hidden here purely by reading that field's live value (applyInternPolicyVisibility()
+                 in detail.js), same "read a field that lives on another tab of the same form" pattern
+                 applyPayrollParticipantVisibility() itself already uses for #is_payroll_participant. -->
+            <div id="internPolicySection" class="d-none">
+                <h6 class="text-secondary fw-bold mb-3 mt-5">
+                    <label class="label label-head bg-head-first rounded-2 text-white">6</label>
+                    <span data-i18n="intern_pay_policy">Internship Pay Policy</span>
+                </h6>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="intern_base_salary_ratio_override_label">Override Intern Pay Ratio for This Employee</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3 pt-2">
+                        <input type="checkbox" class="me-2" id="internRatioOverrideToggle"><span data-i18n="override">Override</span>
+                    </div>
+                    <div class="col-sm-2 mt-3 d-none" id="internRatioOverrideFieldLabel">
+                        <label class="form-label"><span data-i18n="policy_intern_base_salary_ratio_label">Base Salary Ratio for Salaried Interns</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3 d-none" id="internRatioOverrideFieldWrap">
+                        <div class="input-group">
+                            <input type="number" min="1" max="100" step="0.01" class="form-control" name="intern_base_salary_ratio_override" id="intern_base_salary_ratio_override">
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-secondary small mb-0" data-i18n="intern_base_salary_ratio_override_hint">Leave off to use this company's own Internship Pay Conditions default (set in Payroll Configuration > Payroll Policies). Only applies while this employee's Employment Type is Internship.</p>
             </div>
             <div class="d-flex justify-content-end mt-5">
                 <button type="button" class="btn btn-primary" id="btnNextSocial">
@@ -1587,23 +1794,44 @@
              fuller collapsible .station-filter used on Employee List/Payroll Process, which is sized
              for a company-wide list with many more filterable dimensions than this 4-field tab needs). -->
         <div class="tab-pane fade" id="login-history-pane" role="tabpanel" aria-labelledby="login-history-tab" tabindex="0">
-            <div class="row g-2 align-items-end mb-3">
-                <div class="col-sm-3">
-                    <label class="form-label small mb-1" data-i18n="date_from">From</label>
-                    <input type="text" class="form-control form-control-sm datepicker" id="loginHistoryFilterDateFrom">
+            <!-- 2026-08-30, same-day follow-up: "Tab ประวัติการเข้าใช้งานใน Employee Detail ยังไม่ใช่
+                 Filter มาตรฐานครับ" -- was a bare `row g-2` (this project's own CLAUDE.md explicitly
+                 says never to build a filter row this way), now the standard .station-filter
+                 component (label + chevron-toggle + collapsible body + a separate Clear Filter
+                 button shown only when a filter is active), same pattern as Employee List/Payroll
+                 Process/Notifications. IDs on the 4 fields themselves are UNCHANGED, so
+                 detail.js's own initLoginHistoryTable()/loadLoginHistoryFilterOptions() needed no
+                 changes -- only the wrapper markup + a new toggle/clear-visibility JS pair. -->
+            <div class="station-filter" id="loginHistoryStationFilter">
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <button type="button" class="station-filter-toggle" id="loginHistoryStationFilterToggle" title="Toggle filter">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+                <div class="station-filter-body">
+                    <div class="row g-2">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label mb-1" data-i18n="date_from">From</label>
+                            <input type="text" class="form-control datepicker" id="loginHistoryFilterDateFrom">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label mb-1" data-i18n="date_to">To</label>
+                            <input type="text" class="form-control datepicker" id="loginHistoryFilterDateTo">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label mb-1" data-i18n="device">Device</label>
+                            <select class="form-select select2-native" id="loginHistoryFilterDevice"></select>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label mb-1" data-i18n="browser">Browser</label>
+                            <select class="form-select select2-native" id="loginHistoryFilterBrowser"></select>
+                        </div>
+                    </div>
                 </div>
-                <div class="col-sm-3">
-                    <label class="form-label small mb-1" data-i18n="date_to">To</label>
-                    <input type="text" class="form-control form-control-sm datepicker" id="loginHistoryFilterDateTo">
-                </div>
-                <div class="col-sm-3">
-                    <label class="form-label small mb-1" data-i18n="device">Device</label>
-                    <select class="form-select form-select-sm select2-native" id="loginHistoryFilterDevice"></select>
-                </div>
-                <div class="col-sm-3">
-                    <label class="form-label small mb-1" data-i18n="browser">Browser</label>
-                    <select class="form-select form-select-sm select2-native" id="loginHistoryFilterBrowser"></select>
-                </div>
+            </div>
+            <div class="d-flex justify-content-end mb-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearLoginHistoryFilter">
+                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+                </button>
             </div>
             <div class="table-responsive">
                 <table class="table table-bordered table-sm w-100" id="tableLoginHistory">
@@ -1617,6 +1845,12 @@
                             <th data-i18n="device">Device</th>
                             <th data-i18n="operating_system">OS</th>
                             <th data-i18n="browser">Browser</th>
+                            <!-- 2026-08-30, Phase 7 (T037/T038) -- surfaces the new is_active/ended_reason
+                                 columns (employee_login_logs) so this audit table actually shows whether a
+                                 session is still active and, if not, WHY it ended (new device login /
+                                 switched to Origami / idle timeout) -- appended at the end (not inserted
+                                 among the existing columns) so no existing column's sort index shifts. -->
+                            <th data-i18n="status">Status</th>
                         </tr>
                     </thead>
                     <tbody></tbody>

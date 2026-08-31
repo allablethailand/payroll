@@ -41,26 +41,12 @@
 </div>
 
 <!-- ===== Annual Income Summary (app/views/reports/annual-summary.php) ===== -->
-<div class="modal fade" id="aisFiscalYearSettingsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="fa-solid fa-gear me-2 text-brand"></i><span data-i18n="ais_fiscal_year_settings">Fiscal Year Settings</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <label class="form-label" data-i18n="fiscal_year_start_month">Fiscal Year Start Month</label>
-                <select class="form-select select2-static" id="aisFiscalYearStartMonth" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
-                <p class="text-muted small mt-2 mb-0" data-i18n="ais_fiscal_year_settings_hint">Sets which calendar month a fiscal year starts on for this report (1 = January is a plain calendar year). Applies company-wide.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                <button type="button" class="btn btn-primary btn-sm" id="btnSaveAisFiscalYearSetting"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
-            </div>
-        </div>
-    </div>
-</div>
-
+<!-- 2026-08-30 (Phase 4, T028, explicit request: "ตัดปุ่ม 'ตั้งค่าการตัดรอบปี' ออกจากหน้าสรุปรายได้ประจำปี
+     ใช้ค่าจาก Company Profile แทน") -- #aisFiscalYearSettingsModal removed. companies.
+     fiscal_year_start_month is still read here (AnnualIncomeSummaryController::fiscalStartMonth())
+     but is edited from Company Profile's own "Company Information" section only now -- that's
+     already its canonical home (see CompanyProfileModel::save()), this was a redundant second save
+     path. -->
 <div class="modal fade" id="aisCellDetailModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
@@ -634,12 +620,42 @@
                         <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
                         <span data-i18n="sec_calculation_rules">Calculation & Legal Settings</span>
                     </h6>
-                    <div class="row mb-3">
+                    <!-- 2026-08-30 (Phase 2, T013b, full redesign confirmed with user) -- `amount_source`
+                         is a UI-ONLY field (not sent to the backend directly, has no DB column of its
+                         own) that replaces the old bare `calculation_method` dropdown as the primary
+                         "how does this item get its value" choice. It resolves what used to be a real,
+                         confirmed source of confusion: `calculation_method`/`fixed_amount`/
+                         `percent_rate` NEVER drive automatic calculation for ANY item (an earlier
+                         audit this same day confirmed this -- the real per-employee amount always
+                         comes from a separate assignment, employee_earning_deductions/
+                         employee_recurring_earnings, entered independently) -- these 3 fields only
+                         ever matter as a SUGGESTED starting value pre-filled when HR assigns this item
+                         to an employee. For an item LINKED to an Origami event, even that suggestion
+                         is meaningless (the value is 100% automatic, every cycle, no assignment ever
+                         needed) -- collectPedTypeFormData()/populatePedTypeForm() (payroll-
+                         configuration.js) translate between this selector and the real
+                         calculation_method/source_event_code columns underneath. -->
+                    <div class="row mb-2">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="calculation_method">Calculation Method</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-0"><span data-i18n="amount_source">How is the amount determined?</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <select class="form-select select2-static required" id="calculation_method" name="calculation_method" data-option-keys="fixed_amount,percent_of_base_salary,manual_entry"></select>
+                            <select class="form-select select2-static required" id="amount_source" name="amount_source" data-option-keys="amount_source_event_linked,amount_source_fixed_amount,amount_source_percent_of_base_salary,amount_source_manual_entry" data-option-values="event_linked,fixed_amount,percent_of_base_salary,manual_entry"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-3"></div>
+                        <div class="col-sm-9">
+                            <p class="text-muted small mb-0" id="amountSourceHint" data-i18n="amount_source_hint">Fixed Amount/Percent of Base Salary are only a suggested starting value shown when HR assigns this item to an employee -- they don't calculate anything automatically. An Origami-linked item needs no assignment at all; its amount is pulled automatically every payroll cycle.</p>
+                        </div>
+                    </div>
+                    <input type="hidden" id="calculation_method" name="calculation_method">
+                    <div class="row mb-3 d-none" id="source_event_code_wrapper">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="source_event_code">Linked Attendance Event</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-remote" id="source_event_code" name="source_event_code" data-api="/api/ped-type.source-event-options" data-type="earning"></select>
                         </div>
                     </div>
                     <div class="row mb-3 d-none" id="fixed_amount_wrapper">
@@ -702,22 +718,6 @@
                             <div class="col-sm-9">
                                 <select class="form-select select2-static" id="statutory_report_code" name="statutory_report_code" data-option-keys="statutory_report_th_slf" data-option-values="TH_SLF"></select>
                             </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="source_event_code">Linked Attendance Event</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="source_event_code" name="source_event_code" data-api="/api/ped-type.source-event-options" data-type="earning"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="status">Status</label>
-                        </div>
-                        <div class="col-sm-3">
-                            <select class="form-select select2-static" id="ped_status" name="status" data-option-keys="active,inactive"></select>
                         </div>
                     </div>
                 </div>
@@ -1569,6 +1569,29 @@
     </div>
 </div>
 
+<!-- 2026-08-30 (Phase 5, T034) -- drill-down for one import batch's own records (manual-entry/index.php's Import tab). Edit/Delete row buttons reuse openAttendanceModal()/openLeaveModal()/openOvertimeModal()/askDeleteMe() already defined for the other 3 tabs -- no new edit surface, see ManualEntryController's own docblock. -->
+<div class="modal fade" id="importBatchDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="fa-solid fa-file-import"></i> <span data-i18n="import_batches">Import History</span></h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm" id="tb_import_batch_detail" style="width:100%">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button class="btn btn-light px-3" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===== Payroll Approval (app/views/payroll/approval.php) ===== -->
 <div class="modal fade" id="approveRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="approveRunModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1742,15 +1765,22 @@
                             <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_principal_amount" name="principal_amount">
                         </div>
                     </div>
+                    <!-- 2026-08-31, explicit request: "Form ที่เป็นรายการหัก ทุก Form ให้เพิ่มว่า คิดดอกเบี้ย
+                         ค่าธรรมเนียม หรือไม่มี" -- widened from a 2-state (none/has_interest) toggle to a
+                         3-state one (none/interest/fee); the interest sub-detail (fixed/reducing_balance
+                         + rate) is UNCHANGED from before, "Fee" is a new sibling, mutually-exclusive
+                         charge mode with its own sub-detail (#eedFeeDetailWrapper) -- never both set on
+                         the same assignment. -->
                     <div id="eedInterestSection">
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="interest_label">Interest</label>
+                                <label class="form-label mb-0" data-i18n="interest_label">Interest / Fee</label>
                             </div>
                             <div class="col-sm-9">
                                 <div class="btn-group btn-group-sm" role="group" id="eedInterestToggle">
-                                    <button type="button" class="btn btn-outline-brand active" data-value="none"><span data-i18n="interest_none">No Interest</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="has_interest"><span data-i18n="interest_has">With Interest</span></button>
+                                    <button type="button" class="btn btn-outline-brand active" data-value="none"><span data-i18n="interest_none">None</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-value="interest"><span data-i18n="interest_has">Interest</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-value="fee"><span data-i18n="fee_has">Fee</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1767,6 +1797,20 @@
                                     <input type="number" step="0.01" min="0.01" class="form-control" id="eed_interest_rate" name="interest_rate" placeholder="0.00">
                                     <span class="input-group-text" data-i18n="interest_rate_suffix">% / installment</span>
                                 </div>
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="eedFeeDetailWrapper">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0"><span data-i18n="fee_percent_label">Fee</span> <span class="text-danger">*</span></label>
+                            </div>
+                            <div class="col-sm-9 d-flex align-items-center flex-wrap gap-2">
+                                <div class="input-group input-group-sm" style="max-width:140px;">
+                                    <input type="number" step="0.01" min="0.01" class="form-control" id="eed_fee_percent" name="fee_percent" placeholder="0.00">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <span class="text-secondary small" data-i18n="fee_of">of</span>
+                                <select class="form-select form-select-sm select2-static" style="max-width:220px;" id="eed_fee_base" name="fee_base"
+                                        data-option-keys="fee_base_option_principal,fee_base_option_base_salary" data-option-values="principal_amount,base_salary"></select>
                             </div>
                         </div>
                     </div>
@@ -1902,6 +1946,127 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="ereSaveBtn" data-i18n="save_item">Save Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-08-31, direct mirror of #recurringEarningModal immediately above -- `erd` prefix instead
+     of `ere`, posts to api/employee.recurring-deduction.* instead of .recurring-earning.* -->
+<div class="modal fade" id="recurringDeductionModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="recurringDeductionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary" id="recurringDeductionModalLabel">
+                    <span data-i18n="add_recurring_deduction">Add Recurring Deduction</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="recurringDeductionForm" novalidate>
+                <input type="hidden" id="erd_id" name="id">
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <select class="form-select select2-remote required" id="erd_ped_type_id" name="ped_type_id" data-api="/api/employee.recurring-deduction.type-options"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="amount">Amount</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="input-group">
+                                <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="erd_amount" name="amount">
+                                <span class="input-group-text" data-i18n="thb">THB</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker required" id="erd_effective_date" name="effective_date" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 2026-08-31, explicit request: "Form ที่เป็นรายการหัก ทุก Form ให้เพิ่มว่า คิดดอกเบี้ย
+                         ค่าธรรมเนียม หรือไม่มี" -- "Interest" has NO equivalent here (no principal/
+                         installment-schedule concept exists on this table at all, see
+                         EmployeeRecurringDeductionModel's own migration comment), only "Fee" does: an
+                         ONGOING % of the employee's base salary, ADDED on top of `amount` fresh every
+                         payroll run (not baked in once) -- see PayrollRunModel::recurringDeductionAmountWithFee().
+                         Only one fee_base ever validates for this table (base_salary -- no
+                         'principal_amount' equivalent), so this is a plain fixed label, not a
+                         dropdown like #eedModal's own 2-option one. -->
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0" data-i18n="fee_percent_label">Fee</label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="btn-group btn-group-sm" role="group" id="erdFeeToggle">
+                                <button type="button" class="btn btn-outline-brand active" data-value="none"><span data-i18n="interest_none">None</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-value="fee"><span data-i18n="fee_has">Fee</span></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="erdFeeDetailWrapper">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="fee_percent_label">Fee</span> <span class="text-danger">*</span></label>
+                        </div>
+                        <div class="col-sm-8 d-flex align-items-center gap-2">
+                            <div class="input-group input-group-sm" style="max-width:140px;">
+                                <input type="number" step="0.01" min="0.01" class="form-control" id="erd_fee_percent" name="fee_percent" placeholder="0.00">
+                                <span class="input-group-text">%</span>
+                            </div>
+                            <span class="text-secondary small" data-i18n="fee_of">of</span>
+                            <span class="text-secondary small" data-i18n="fee_base_option_base_salary">Base Salary</span>
+                            <input type="hidden" id="erd_fee_base" name="fee_base" value="base_salary">
+                        </div>
+                    </div>
+                    <hr class="my-4 text-muted opacity-25">
+                    <h6 class="text-secondary fw-bold mb-2"><span data-i18n="suspend_period">Suspend Period</span></h6>
+                    <p class="text-secondary small mb-3" data-i18n="suspend_period_hint">*Optional. While set, this allowance is skipped in any payroll run whose pay period overlaps this range, then resumes automatically afterward.</p>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="suspend_from">Suspend From</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="erd_suspended_from" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0"><span data-i18n="suspend_to">Suspend To</span></label>
+                        </div>
+                        <div class="col-sm-8">
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="erd_suspended_to" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0" data-i18n="notes">Notes</label>
+                        </div>
+                        <div class="col-sm-8">
+                            <textarea class="form-control" id="erd_notes" rows="2" maxlength="255"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="erdSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
         </div>
@@ -2264,6 +2429,18 @@
                             </div>
                         </div>
                     </div>
+                    <!-- 2026-08-30 (Phase 8, T041) -- pulls sync-derived attendance EARNING lines
+                         only (OT/trip allowance/item_values), never the deduction side, computed
+                         through the real rate engine instead of a hand-typed manual amount. See
+                         PayrollRunModel::recalculate()'s own include_attendance_pay comment. -->
+                    <div class="row mb-3 d-none" id="run_include_attendance_pay_row">
+                        <div class="col-sm-9 offset-sm-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="run_include_attendance_pay">
+                                <label class="form-check-label" for="run_include_attendance_pay" data-i18n="include_attendance_pay_label">Include attendance-driven earnings (OT/trip allowance), calculated automatically</label>
+                            </div>
+                        </div>
+                    </div>
                     <div class="row mb-3" id="run_cycle_row">
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Schedule</span> <span class="text-danger">*</span></label>
@@ -2384,6 +2561,344 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-08-30 (Phase 3, T019, explicit request: "แก้ไขข้อมูลผ่าน Modal ได้จากหน้า List เลย", depends on
+     T018's Recheck tab) -- a quick-edit modal covering ONLY the fields the Recheck tab's own columns
+     check, so an admin can fix a gap without leaving the List page for the full Detail page.
+     IMPORTANT: EmployeeModel::save() always overwrites EVERY column from whatever's submitted (see
+     that method's own docblock) -- public/js/employee/list.js's own save handler for this modal
+     fetches the employee's FULL existing record first (GET api/employee.get), merges just this
+     form's fields into it, and submits the WHOLE merged object, exactly the same "always resubmit
+     everything" discipline collectEmployeeFormData() already follows on the real Detail page. Never
+     submits this form's fields alone -- doing so would silently blank out every OTHER field on the
+     employee (Documents, Family, etc. all untouched by this modal). employee_type/payment_type
+     themselves are shown read-only (badges) -- they decide WHICH identification/bank fields apply,
+     but changing either is a bigger structural edit better done on the full Detail page. -->
+<div class="modal fade" id="employeeRecheckEditModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="employeeRecheckEditModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="employeeRecheckEditModalLabel" data-i18n="recheck_data">Recheck Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="employeeRecheckEditForm" novalidate>
+                <input type="hidden" id="rc_id" name="id">
+                <input type="hidden" id="rc_employee_no" name="employee_no">
+                <div class="modal-body">
+                    <div class="d-flex align-items-center gap-2 mb-4">
+                        <span class="fw-bold" id="rcEditEmployeeNoLabel">-</span>
+                        <span class="badge bg-secondary-subtle text-secondary" id="rcEditTypeBadge"></span>
+                    </div>
+                    <!-- 2026-08-30, same-day follow-up ("Form จัดใหม่ ให้แยกตามประเภท และเติม Icon ลงไปด้วย")
+                         -- grouped into the same numbered-section convention every other form in this
+                         app uses (label.label-head.bg-head-first, see T025's own color fix on that
+                         shared class), each section's icon reused from its own corresponding TAB
+                         icon on the real Employee Detail page for visual continuity (Personal
+                         Information/Contact/Employment/Salary all mirror info-tab/contact-tab/
+                         employment-tab/salary-tab's own <i> icons exactly). -->
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
+                        <i class="fa-solid fa-circle-user text-secondary mx-1"></i>
+                        <span data-i18n="personal_information">Personal Information</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-3">
+                            <label class="form-label mb-0"><span data-i18n="title">Title</span></label>
+                            <select class="form-select select2-native" name="title" id="rc_title">
+                                <option value="" data-i18n="please_choose">Select an option</option>
+                                <option value="mr" data-i18n="title_mr">Mr.</option>
+                                <option value="mrs" data-i18n="title_mrs">Mrs.</option>
+                                <option value="ms" data-i18n="title_ms">Ms.</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-3">
+                            <label class="form-label mb-0" data-i18n="gender">Gender</label>
+                            <select class="form-select select2-native" name="gender" id="rc_gender">
+                                <option value="male" data-i18n="male">Male</option>
+                                <option value="female" data-i18n="female">Female</option>
+                                <option value="other" data-i18n="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-3">
+                            <label class="form-label mb-0" data-i18n="date_of_birth">Date of Birth</label>
+                            <input type="text" class="form-control datepicker" name="date_of_birth" id="rc_date_of_birth" autocomplete="off">
+                        </div>
+                        <div class="col-sm-3">
+                            <label class="form-label mb-0" data-i18n="nationality">Nationality</label>
+                            <select class="form-select select2-remote" name="nationality" id="rc_nationality" data-api="/api/nationality.get" data-type="nationality"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-sm-6">
+                            <label class="form-label mb-0" data-i18n="name_local">Name (Local)</label>
+                            <input type="text" class="form-control" name="name_th" id="rc_name_th">
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label mb-0" data-i18n="name_en">Name (EN)</label>
+                            <input type="text" class="form-control" name="name_en" id="rc_name_en">
+                        </div>
+                    </div>
+                    <!-- 2026-08-30, explicit request: "เพิ่มนามสกุล ไทย อังกฤษ ด้วยครับ แต่ไม่ Require Field"
+                         -- deliberately NOT .required (surname stopped being a required field entirely
+                         in T023, see EmployeeModel::requiredColumns()'s own docblock). -->
+                    <div class="row mb-4">
+                        <div class="col-sm-6">
+                            <label class="form-label mb-0" data-i18n="surname_local">Surname (Local)</label>
+                            <input type="text" class="form-control" name="surname_th" id="rc_surname_th">
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label mb-0" data-i18n="surname_en">Surname (EN)</label>
+                            <input type="text" class="form-control" name="surname_en" id="rc_surname_en">
+                        </div>
+                    </div>
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
+                        <i class="fa-solid fa-id-card text-secondary mx-1"></i>
+                        <span data-i18n="identification">Identification</span>
+                    </h6>
+                    <div class="row mb-4" id="rcDomesticIdWrap">
+                        <div class="col-sm-6">
+                            <label class="form-label mb-0" data-i18n="id_card_no">ID Card No.</label>
+                            <input type="text" class="form-control" name="id_card_no" id="rc_id_card_no" maxlength="13">
+                        </div>
+                    </div>
+                    <div class="row mb-4 d-none" id="rcForeignerIdWrap">
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="tax_id_no">Tax ID No.</label>
+                            <input type="text" class="form-control" name="tax_id_no" id="rc_tax_id_no">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="passport_no">Passport No.</label>
+                            <input type="text" class="form-control" name="passport_no" id="rc_passport_no">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="work_permit_no">Work Permit No.</label>
+                            <input type="text" class="form-control" name="work_permit_no" id="rc_work_permit_no">
+                        </div>
+                    </div>
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">3</label>
+                        <i class="fa-solid fa-address-book text-secondary mx-1"></i>
+                        <span data-i18n="contact">Contact</span>
+                    </h6>
+                    <div class="row mb-4">
+                        <div class="col-sm-6">
+                            <label class="form-label mb-0" data-i18n="personal_email">Personal Email Address</label>
+                            <input type="email" class="form-control" name="personal_email" id="rc_personal_email">
+                        </div>
+                        <!-- 2026-08-31, explicit request: "ใน Form ตรงที่เป็นเบอร์มือถือ อยากให้รูปแบบเดียวกับ
+                             ใน Employee Detail มี Prefix ด้วย" -- was a plain text input with no country-
+                             code concept; now uses the SAME intl-tel-input country flag/dial-code
+                             picker as Employee Detail's own #mobile_no (see detail.js's own
+                             initMobileIti()/syncMobileCountryCode(), mirrored here as
+                             initRcMobileIti()/syncRcMobileCountryCode() in list.js -- a separate
+                             instance since this modal is never on the same page as Employee Detail,
+                             but scoped independently rather than reusing window.mobileIti to avoid any
+                             cross-page global collision). rc_mobile_country_code mirrors
+                             mobile_country_code's own hidden-input shape 1:1. -->
+                        <div class="col-sm-6" id="rc_mobile_no_wrap">
+                            <label class="form-label mb-0" data-i18n="mobile_no">Mobile No.</label>
+                            <input type="tel" class="form-control" name="mobile_no" id="rc_mobile_no" maxlength="15">
+                            <input type="hidden" name="mobile_country_code" id="rc_mobile_country_code" value="+66">
+                        </div>
+                    </div>
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">4</label>
+                        <i class="fa-solid fa-building-user text-secondary mx-1"></i>
+                        <span data-i18n="employment">Employment</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="department">Department</label>
+                            <select class="form-select select2-remote" name="department_id" id="rc_department_id" data-api="/api/department.get" data-type="department"></select>
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="position">Position</label>
+                            <select class="form-select select2-remote" name="position_id" id="rc_position_id" data-api="/api/position.get" data-type="position"></select>
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="branch">Branch</label>
+                            <select class="form-select select2-remote" name="branch_id" id="rc_branch_id" data-api="/api/branch.get" data-type="branch"></select>
+                        </div>
+                    </div>
+                    <!-- 2026-08-31, explicit request: "ใน Form ตรงที่เป็น...ยังขาด ประเภทการจ้างงาน ด้วยนะครับ" --
+                         employment_type was tracked as a required field in EmployeeModel::
+                         requiredColumns()/fieldReadiness() already, but had no actual editable input
+                         anywhere in this modal to fix it from -- same select2-native shape as Employee
+                         Detail's own #employment_type (detail.php). employee_type (foreigner/domestic)
+                         stays read-only (#rcEditTypeBadge, unchanged) -- only employment_type
+                         (full-time/part-time/daily/internship) was missing, a different field. -->
+                    <div class="row mb-4">
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="employment_date">Employment Date</label>
+                            <input type="text" class="form-control datepicker" name="employment_date" id="rc_employment_date" autocomplete="off">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="employment_type">Employment Type</label>
+                            <select class="form-select select2-native" name="employment_type" id="rc_employment_type">
+                                <option value="" data-i18n="please_choose">Select an option</option>
+                                <option value="full_time" data-i18n="full_time">Full-time</option>
+                                <option value="part_time" data-i18n="part_time">Part-time</option>
+                                <option value="daily" data-i18n="daily">Daily wage</option>
+                                <option value="internship" data-i18n="internship">Internship</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- 2026-08-30, explicit request: "เพิ่มส่วนของ...ประเภทการจ่ายเงินเดือนให้เลือกด้วยครับ" --
+                         payment_type upgraded from a read-only badge (T019's original "changing this
+                         is a bigger structural edit left to the full Detail page" call) to a real,
+                         editable field, since the user explicitly asked for it selectable here.
+                         employee_type stays read-only (#rcEditTypeBadge, unchanged) -- only payment_type
+                         was named in this request. -->
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">5</label>
+                        <i class="fa-solid fa-building-columns text-secondary mx-1"></i>
+                        <span data-i18n="payment_information">Payment Information</span>
+                    </h6>
+                    <!-- 2026-08-31, explicit request: "ตรง ตรวจสอบข้อมูล Form ในหน้าตรวจสอบ ประเภทการจ่ายเงิน
+                         ให้เปลี่ยนเป็น radio ครับ" -- matches Employee Detail's own payment_type_radio
+                         btn-check pair + hidden mirror input exactly (see detail.php's own Payment
+                         Information section). -->
+                    <div class="row mb-3">
+                        <div class="col-sm-6">
+                            <label class="form-label mb-0" data-i18n="payment_type">Payment Type</label>
+                            <div class="btn-group d-block" role="group" aria-label="Payment type">
+                                <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_bank" value="bank" checked>
+                                <label class="btn btn-outline-brand" for="rc_payment_bank" data-i18n="bank">Bank</label>
+                                <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_cash" value="cash">
+                                <label class="btn btn-outline-brand" for="rc_payment_cash" data-i18n="cash">Cash</label>
+                            </div>
+                            <input type="hidden" name="payment_type" id="rc_payment_type" value="bank">
+                        </div>
+                    </div>
+                    <div id="rcPaymentSectionWrap">
+                        <!-- 2026-08-30: d-none moved to the PARENT #rcPaymentSectionWrap (hides the
+                             bank fields, see rcApplyIdentificationAndBankVisibility()). -->
+                        <div class="row mb-4" id="rcBankWrap">
+                            <div class="col-sm-6">
+                                <label class="form-label mb-0" data-i18n="bank_name">Bank</label>
+                                <select class="form-select select2-remote" name="bank_id" id="rc_bank_id" data-api="/api/bank.get" data-type="bank"></select>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label mb-0" data-i18n="bank_account_no">Bank Account No.</label>
+                                <input type="text" class="form-control" name="bank_account_no" id="rc_bank_account_no">
+                            </div>
+                        </div>
+                    </div>
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">6</label>
+                        <i class="fa-solid fa-file-invoice-dollar text-secondary mx-1"></i>
+                        <span data-i18n="salary">Salary</span>
+                    </h6>
+                    <div class="row mb-4">
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="base_salary_amount">Base Salary Amount</label>
+                            <input type="number" step="0.01" class="form-control text-end" name="base_salary_amount" id="rc_base_salary_amount">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="effective_date">Effective Date</label>
+                            <input type="text" class="form-control datepicker" name="salary_effective_date" id="rc_salary_effective_date" autocomplete="off">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="tax_calculation_method">Tax Calculation Method</label>
+                            <select class="form-select select2-native" name="tax_calculation_method" id="rc_tax_calculation_method">
+                                <option value="" data-i18n="please_choose">Select an option</option>
+                                <option value="average" data-i18n="average_method">Average</option>
+                                <option value="actual" data-i18n="actual_method">Actual</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- 2026-08-30, same-day follow-up: "รวมถึง Form ในหน้าตรวจสอบด้วยครับ" -- reversed
+                         the earlier "kept simple" call; the full per-OT-type override table now lives
+                         here too, same shape/behavior as Employee Detail's own Salary-tab OT section
+                         (radio source, table shown only for Custom, every row pre-filled from the
+                         this employee's own resolved OT Rate Set default when there's no override yet).
+                         Saved via its own separate api/employee.ot-rate.save call, folded into this
+                         form's own submit handler (Promise.all, one combined message) -- see
+                         list.js's own submit handler for #employeeRecheckEditForm. -->
+                    <h6 class="text-secondary fw-bold mb-3">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">7</label>
+                        <i class="fa-solid fa-clock text-secondary mx-1"></i>
+                        <span data-i18n="ot_rate_settings">OT Rate Settings</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0 d-block"><span data-i18n="ot_eligible">OT Eligible</span></label>
+                            <input type="checkbox" class="me-2" name="ot_eligible" id="rc_ot_eligible" value="1"><span data-i18n="eligible_for_overtime">Eligible for overtime pay</span>
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="rcOtRateSourceWrap">
+                        <div class="col-sm-6">
+                            <label class="form-label mb-1 d-block"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
+                            <div class="btn-group d-block" role="group">
+                                <input type="radio" class="btn-check" name="rc_ot_rate_source_radio" id="rc_ot_rate_source_default" value="default" checked>
+                                <label class="btn btn-outline-brand" for="rc_ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
+                                <input type="radio" class="btn-check" name="rc_ot_rate_source_radio" id="rc_ot_rate_source_custom" value="custom">
+                                <label class="btn btn-outline-brand" for="rc_ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="rcOtRateOverridesContainer" class="d-none">
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th data-i18n="ot_scope">OT Type</th>
+                                        <th data-i18n="calculation_method">Calculation Method</th>
+                                        <th data-i18n="rate">Rate</th>
+                                        <th data-i18n="calculation_base">Base</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rcOtRateOverridesBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- 2026-08-31, explicit request: "ตรงหน้าตรวจสอบเหมือนยังขาด ประกันสังคม ทั้งตารางและหน้า
+                         Form" -- same shape/behavior as Employee Detail's own Social Security Fund
+                         section (detail.php's social-pane), simplified to this modal's own plain-
+                         checkbox convention (matching #rc_ot_eligible right above) instead of Employee
+                         Detail's fancier Yes/No button toggle -- detail fields shown only while
+                         Enrolled is checked. -->
+                    <h6 class="text-secondary fw-bold mb-3 mt-4">
+                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">8</label>
+                        <i class="fa-solid fa-shield-halved text-secondary mx-1"></i>
+                        <span data-i18n="social_security_fund">Social Security Fund (SSO)</span>
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0 d-block"><span data-i18n="enrolled_in_sso">Enrolled in Social Security Fund</span></label>
+                            <input type="checkbox" class="me-2" name="sso_enrolled" id="rc_sso_enrolled" value="1"><span data-i18n="yes">Yes</span>
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="rcSsoDetailWrap">
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="sso_no">Social Security No.</label>
+                            <input type="text" class="form-control" name="sso_no" id="rc_sso_no" maxlength="13">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label mb-0" data-i18n="sso_start_date">SSO Start Date</label>
+                            <input type="text" class="form-control datepicker" name="sso_start_date" id="rc_sso_start_date" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer justify-content-between">
+                    <!-- 2026-08-30, explicit request: "เพิ่มปุ่มใน Form ตรวจสอบข้อมูล ให้กดแล้วไปหน้า Profile
+                         พนักงานคนนั้นเพื่อเข้าไปแก้ไขแบบเต็มได้เลย" -- opens in a NEW tab so the admin
+                         doesn't lose their place (current filter/scroll position) on the List page's
+                         own Recheck tab underneath. href set fresh each time the modal opens (see
+                         list.js's own .btn-recheck-edit click handler). -->
+                    <a href="#" class="btn btn-outline-secondary px-3" id="rcGoToFullProfileBtn" target="_blank" rel="noopener">
+                        <i class="fa-solid fa-arrow-up-right-from-square me-1"></i><span data-i18n="go_to_full_profile">Go to Full Profile</span>
+                    </a>
+                    <div>
+                        <button type="submit" class="btn btn-warning px-4" data-i18n="save">Save</button>
+                        <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
 </div>

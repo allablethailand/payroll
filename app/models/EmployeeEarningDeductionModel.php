@@ -141,19 +141,46 @@ class EmployeeEarningDeductionModel {
      *  'reducing_balance' = standard amortized-payment schedule (equal total payments, but the
      *  principal/interest split shifts each period) -- the LAST installment is deliberately
      *  "whatever balance remains + interest on it" rather than the regular payment amount, so the
-     *  schedule always exactly zeroes out regardless of per-installment rounding drift. */
-    public function computeInstallmentSchedule(float $principal, int $totalInstallments, string $interestType, ?float $interestRatePercent): array {
+     *  schedule always exactly zeroes out regardless of per-installment rounding drift.
+     *  'fee' (2026-08-31, explicit request: "Form ที่เป็นรายการหัก...ให้เพิ่มว่า คิดดอกเบี้ย ค่าธรรมเนียม
+     *  หรือไม่มี...ถ้าค่าธรรมเนียมให้ใส่ได้เป็น % คิดจากอะไร มีให้เลือกเช่นฐานเงินเดือนหรืออื่นๆ") -- a THIRD,
+     *  mutually-exclusive sibling of 'none'/'fixed'/'reducing_balance' (never combined with interest
+     *  on the same assignment), same "one-time charge added to principal, then spread evenly across
+     *  every installment" shape 'fixed' interest already uses above -- NOT a per-installment
+     *  recurring charge. $feeBase picks what $feePercent is a percentage OF: 'principal_amount'
+     *  (the loan amount itself, e.g. "processing fee = 2% of the loan") or 'base_salary' (the
+     *  employee's own base salary at assignment time, e.g. "administrative fee = 0.5% of salary") --
+     *  $baseSalaryForFee is REQUIRED (and only used) when $feeBase='base_salary', since this pure
+     *  method has no DB access of its own to look the employee up. */
+    public function computeInstallmentSchedule(float $principal, int $totalInstallments, string $interestType, ?float $interestRatePercent, ?float $feePercent = null, ?string $feeBase = null, ?float $baseSalaryForFee = null): array {
         if ($principal <= 0) {
             throw new InvalidArgumentException('principal must be greater than zero.');
         }
         if ($totalInstallments < 1) {
             throw new InvalidArgumentException('total_installments must be at least 1.');
         }
-        if (!in_array($interestType, ['none', 'fixed', 'reducing_balance'], true)) {
+        if (!in_array($interestType, ['none', 'fixed', 'reducing_balance', 'fee'], true)) {
             throw new InvalidArgumentException('Invalid interest_type.');
         }
         if ($interestType === 'none') {
             return $this->evenSplit($principal, $totalInstallments);
+        }
+        if ($interestType === 'fee') {
+            if ($feePercent === null || $feePercent <= 0) {
+                throw new InvalidArgumentException('fee_percent must be greater than zero when interest_type is fee.');
+            }
+            if (!in_array($feeBase, ['base_salary', 'principal_amount'], true)) {
+                throw new InvalidArgumentException('Invalid fee_base.');
+            }
+            if ($feeBase === 'base_salary') {
+                if ($baseSalaryForFee === null || $baseSalaryForFee <= 0) {
+                    throw new InvalidArgumentException('base_salary_for_fee must be greater than zero when fee_base is base_salary.');
+                }
+                $feeAmount = $baseSalaryForFee * ($feePercent / 100);
+            } else {
+                $feeAmount = $principal * ($feePercent / 100);
+            }
+            return $this->evenSplit($principal + $feeAmount, $totalInstallments);
         }
         if ($interestRatePercent === null || $interestRatePercent <= 0) {
             throw new InvalidArgumentException('interest_rate must be greater than zero when interest_type is not none.');
@@ -260,18 +287,34 @@ class EmployeeEarningDeductionModel {
         // annual, and the ALTER TABLE comment in database/payroll.sql for principal_amount vs
         // total_amount's split meaning.
         $interestType = !empty($data['interest_type']) ? (string)$data['interest_type'] : 'none';
-        if (!in_array($interestType, ['none', 'fixed', 'reducing_balance'], true)) {
+        if (!in_array($interestType, ['none', 'fixed', 'reducing_balance', 'fee'], true)) {
             return ['status' => false, 'message' => 'Invalid interest_type.'];
         }
         // 2026-08-21, explicit request ("รายรับให้ตัดเรื่องดอกเบี้ยไปเลย มีแค่รายหักที่บอกว่าคิดหรือ
         // ไม่คิดดอกเบี้ย") -- interest never applies to an earning. The modal already hides the whole
         // interest section for earnings (applyEedInterestVisibility() in detail.js), this is the
-        // server-side backstop against a malformed/direct API call.
+        // server-side backstop against a malformed/direct API call. 2026-08-31: 'fee' is the same
+        // kind of deduction-only charge, same backstop applies to it too.
         if ($interestType !== 'none' && $resolvedItemType === 'earning') {
-            return ['status' => false, 'message' => 'Interest is not applicable to earning items.'];
+            return ['status' => false, 'message' => 'Interest/fee is not applicable to earning items.'];
         }
         $interestRate = null;
-        if ($interestType !== 'none') {
+        $feePercent = null;
+        $feeBase = null;
+        // 2026-08-31, explicit request: "ค่าธรรมเนียมให้ใส่ได้เป็น % คิดจากอะไร มีให้เลือกเช่นฐานเงินเดือนหรือ
+        // อื่นๆตามที่เลือกได้" -- own mutually-exclusive branch from the interest_rate one below (never
+        // both set on the same assignment). See computeInstallmentSchedule()'s own updated docblock
+        // for how fee_percent/fee_base actually factor into the schedule.
+        if ($interestType === 'fee') {
+            if (!isset($data['fee_percent']) || !is_numeric($data['fee_percent']) || (float)$data['fee_percent'] <= 0) {
+                return ['status' => false, 'message' => 'fee_percent must be greater than zero when interest_type is fee.'];
+            }
+            $feePercent = round((float)$data['fee_percent'], 2);
+            $feeBase = (string)($data['fee_base'] ?? '');
+            if (!in_array($feeBase, ['base_salary', 'principal_amount'], true)) {
+                return ['status' => false, 'message' => 'Invalid fee_base.'];
+            }
+        } elseif ($interestType !== 'none') {
             if (!isset($data['interest_rate']) || !is_numeric($data['interest_rate']) || (float)$data['interest_rate'] <= 0) {
                 return ['status' => false, 'message' => 'interest_rate must be greater than zero when interest_type is not none.'];
             }
@@ -335,6 +378,7 @@ class EmployeeEarningDeductionModel {
                             ped_type_id = :ped_type_id, custom_item_name = :custom_item_name, custom_item_type = :custom_item_type,
                             total_installments = :total_installments,
                             amount_mode = :amount_mode, interest_type = :interest_type, interest_rate = :interest_rate,
+                            fee_percent = :fee_percent, fee_base = :fee_base,
                             total_amount = :total_amount, principal_amount = :principal_amount,
                             effective_date = :effective_date, notes = :notes, external_reference_no = :external_reference_no,
                             payee_employee_id = :payee_employee_id,
@@ -349,6 +393,8 @@ class EmployeeEarningDeductionModel {
                     ':amount_mode' => $amountMode,
                     ':interest_type' => $interestType,
                     ':interest_rate' => $interestRate,
+                    ':fee_percent' => $feePercent,
+                    ':fee_base' => $feeBase,
                     ':total_amount' => $totalAmount,
                     ':principal_amount' => $principalAmount,
                     ':effective_date' => $effectiveDate,
@@ -364,9 +410,9 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = $id;
             } else {
                 $sql = "INSERT INTO `employee_earning_deductions`
-                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, interest_type, interest_rate, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, created_by)
+                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, interest_type, interest_rate, fee_percent, fee_base, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, created_by)
                         VALUES
-                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :created_by)";
+                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :fee_percent, :fee_base, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :created_by)";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':employee_id' => $employeeId,
@@ -377,6 +423,8 @@ class EmployeeEarningDeductionModel {
                     ':amount_mode' => $amountMode,
                     ':interest_type' => $interestType,
                     ':interest_rate' => $interestRate,
+                    ':fee_percent' => $feePercent,
+                    ':fee_base' => $feeBase,
                     ':total_amount' => $totalAmount,
                     ':principal_amount' => $principalAmount,
                     ':effective_date' => $effectiveDate,

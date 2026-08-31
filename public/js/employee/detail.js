@@ -62,7 +62,48 @@ function applyEmployeeTypeRequired(type) {
         .toggleClass('required', type === 'foreigner').removeClass('is-invalid');
 }
 function applyPaymentTypeRequired(type) {
-    $('#bank_id, #bank_account_no').toggleClass('required', type === 'bank').removeClass('is-invalid');
+    // 2026-08-30 (T020): bank details are never required for a staff-only (is_payroll_participant=0)
+    // employee regardless of which Payment Type happens to be selected underneath -- checked here
+    // (not just in applyPayrollParticipantVisibility() below) so this stays correct even when the
+    // user changes Payment Type WHILE already set to "No Salary" (the payment_type_radio change
+    // handler calls this function directly, it doesn't know or care about the participant toggle).
+    const isParticipant = $('#is_payroll_participant').val() !== '0';
+    $('#bank_id, #bank_account_no').toggleClass('required', isParticipant && type === 'bank').removeClass('is-invalid');
+}
+// 2026-08-30 (Phase 3, T020, explicit request: field "จ่าย/ไม่จ่ายเงินเดือน", default = จ่าย) --
+// hides every payroll-specific tab/section for a staff-only employee. Employment tab's own org
+// placement fields (department/position/branch/employment_date/etc.) stay visible either way --
+// only its "Payment Information" sub-section (payment_type/bank details) is payroll-specific,
+// per the explicit scope decision confirmed for this ticket. Social Security/Family-Tax
+// Allowance tabs have no .required fields of their own to strip (already fully optional per
+// calculateCompleteness()'s own conditional checks), so only Salary's 4 required fields need it.
+const PAYROLL_ONLY_TAB_BUTTON_IDS = ['salary-tab', 'earningDeduction-tab', 'social-tab', 'family-tab'];
+function applyPayrollParticipantVisibility(isParticipant) {
+    // Sets the hidden field itself (not just left to whichever caller happens to have already set
+    // it) -- applyPaymentTypeRequired() below reads #is_payroll_participant directly, so this
+    // function must be self-contained/correct on its own regardless of call order, not rely on a
+    // caller (the radio's own change handler, populateEmployeeForm(), the post-save re-apply) having
+    // synced it first.
+    $('#is_payroll_participant').val(isParticipant ? '1' : '0');
+    const $payrollTabItems = $(PAYROLL_ONLY_TAB_BUTTON_IDS.map(id => `#${id}`).join(',')).closest('.nav-item');
+    if (isParticipant) {
+        // Only reveal if the new-employee progressive reveal has already unlocked these tabs at all
+        // (a not-yet-created employee has nothing on Salary/Social/Family to show either way) --
+        // mirrors the exact condition saveEmployee() itself checks before clearing
+        // .employee-secondary-tab's own d-none.
+        if ($('#employee_no').val()) {
+            $payrollTabItems.removeClass('d-none');
+        }
+    } else {
+        $payrollTabItems.addClass('d-none');
+    }
+    $('#employmentPaymentSection').toggleClass('d-none', !isParticipant);
+    $('#salary_type, #base_salary_amount, #salary_effective_date, #tax_calculation_method')
+        .toggleClass('required', isParticipant).removeClass('is-invalid');
+    applyPaymentTypeRequired($('#payment_type').val());
+    // Re-apply on top of the blanket required-toggle just above -- if Tax Exempt is also checked,
+    // Tax Calculation Method must stay hidden/non-required regardless of participant status.
+    applyTaxExemptVisibility();
 }
 // 2026-08-21, explicit request: resignation/termination fields (effective date, last date for
 // reports, reason) only make sense once Employment Status is actually Resigned/Terminated -- same
@@ -72,6 +113,29 @@ function applyPaymentTypeRequired(type) {
 function applyEmploymentEndFieldsVisibility() {
     const status = $('#employment_status').val();
     $('#employmentEndFields').toggleClass('d-none', status !== 'resigned' && status !== 'terminated');
+}
+// 2026-08-31, explicit request: "ใน Tab เงินเดือน...ตอนเลือกประเภท Type ให้เลือก Set ได้จากตรงนั้น เห็น Form
+// แยกกันไปเลย" -- #employment_type itself lives on the Employment tab, not this one, so
+// #internPolicySection (Salary tab) is shown/hidden purely by reading that field's live value, same
+// "read a field that lives on another tab of the same form" precedent
+// applyPayrollParticipantVisibility() already established for #is_payroll_participant.
+function applyInternPolicyVisibility() {
+    $('#internPolicySection').toggleClass('d-none', $('#employment_type').val() !== 'internship');
+}
+// 2026-08-31, explicit request: "ตรงหัวข้อภาษี ถ้าเลือก ยกเว้นภาษีไม่ต้องให้เลือก วิธีคำนวณภาษี ซ่อนไปเลย" --
+// Tax Calculation Method has nothing to mean once Tax Exempt is checked, so hide it entirely rather
+// than just leave it dead/disabled. Also strips its own `.required` class while hidden (same
+// reasoning as applyPayrollParticipantVisibility()'s own required-toggle on this field) so a hidden
+// required field can never silently block Save -- restored on uncheck only when this employee is
+// still a payroll participant, matching whatever applyPayrollParticipantVisibility() would have set.
+function applyTaxExemptVisibility() {
+    const exempt = $('#tax_exempt').is(':checked');
+    $('.tax-calc-method-toggle').toggleClass('d-none', exempt);
+    if (exempt) {
+        $('#tax_calculation_method').removeClass('required').removeClass('is-invalid');
+    } else if ($('#is_payroll_participant').val() !== '0') {
+        $('#tax_calculation_method').addClass('required');
+    }
 }
 function applyMilitaryStatusVisibility() {
     const isDomestic = $('input[name="employee_type_radio"]:checked').val() === 'domestic';
@@ -138,6 +202,16 @@ function populateEmployeeForm(data) {
     if (data.payment_type) {
         $(`input[name="payment_type_radio"][value="${data.payment_type}"]`).prop('checked', true).trigger('change');
     }
+    // 2026-08-31 -- the generic loop above already wrote the raw value into
+    // #intern_base_salary_ratio_override (it's an ordinary named number input, not excluded via
+    // remoteFields/checkbox/datepicker), this just syncs the UI-only override toggle + field
+    // visibility to match whatever value actually loaded.
+    const hasInternRatioOverride = data.intern_base_salary_ratio_override !== null && data.intern_base_salary_ratio_override !== undefined && data.intern_base_salary_ratio_override !== '';
+    $('#internRatioOverrideToggle').prop('checked', hasInternRatioOverride).trigger('change');
+    // 2026-08-30 (T020) -- data.is_payroll_participant is a DB tinyint (0/1, possibly returned as a
+    // numeric string), so compare loosely; defaults to paid (matches the DB column's own DEFAULT 1)
+    // when the key is genuinely absent from a get() response that predates this field somehow.
+    $(`input[name="is_payroll_participant_radio"][value="${(data.is_payroll_participant == 0) ? '0' : '1'}"]`).prop('checked', true).trigger('change');
     // Generic loop above already wrote the correct raw values into mobile_no (national digits)
     // and the mobile_country_code hidden input directly, so submission is correct even without
     // this -- this block only re-selects the flag in the intl-tel-input widget to match the
@@ -258,6 +332,11 @@ function applyEmployeeSaveSuccess(res, wasNew) {
     if (wasNew && res.id) {
         $('.employee-secondary-tab').removeClass('d-none');
         $('#bcSeparatorCurrent, #bcCurrent').removeClass('d-none');
+        // 2026-08-30 (T020) -- the blanket reveal just above would incorrectly re-show the payroll-
+        // specific tabs (Salary/Income & Deductions/Social Security/Family-Tax Allowance) even when
+        // this brand-new employee was created as "No Salary" -- re-apply right after so they stay
+        // hidden in that case.
+        applyPayrollParticipantVisibility($('#is_payroll_participant').val() !== '0');
     }
 }
 function saveEmployee($btn) {
@@ -586,6 +665,19 @@ $(function () {
         applyMilitaryStatusVisibility();
     }).filter(':checked').trigger('change');
     $('#employment_status').on('change', applyEmploymentEndFieldsVisibility).trigger('change');
+    $('#tax_exempt').on('change', applyTaxExemptVisibility).trigger('change');
+    $('#employment_type').on('change', applyInternPolicyVisibility).trigger('change');
+    // 2026-08-31, per-employee override of the company-wide intern pay ratio (see
+    // #internPolicySection's own comment in the view) -- unchecking clears the value so a save
+    // correctly submits null (generic empty-string-to-null coercion in EmployeeModel::save()) instead
+    // of silently keeping a stale hidden value.
+    $('#internRatioOverrideToggle').on('change', function () {
+        const checked = $(this).is(':checked');
+        $('#internRatioOverrideFieldLabel, #internRatioOverrideFieldWrap').toggleClass('d-none', !checked);
+        if (!checked) {
+            $('#intern_base_salary_ratio_override').val('');
+        }
+    });
     $('#use_register_address').on('change', function () {
         const checked = $(this).is(':checked');
         const pairs = [
@@ -607,6 +699,10 @@ $(function () {
         $('#payment_type').val(type);
         $('#sectionBankPayment').toggleClass('d-none', type !== 'bank');
         applyPaymentTypeRequired(type);
+    }).filter(':checked').trigger('change');
+    // 2026-08-30 (T020) -- applyPayrollParticipantVisibility() itself sets #is_payroll_participant.
+    $('input[name="is_payroll_participant_radio"]').on('change', function () {
+        applyPayrollParticipantVisibility($(this).val() === '1');
     }).filter(':checked').trigger('change');
     // 2026-08-19, explicit request: SSO detail fields (sso_no/sso_start_date) only show once
     // "Enrolled" is checked -- populateEmployeeForm()'s generic checkbox handling already calls
@@ -680,7 +776,7 @@ $(function () {
     // because they used to jump there on success; ids kept as-is, only the jump was removed).
     $('#btnNextContact').on('click', function () { saveEmployee($(this)); });
     $('#btnNextEmployment').on('click', function () { saveEmployee($(this)); });
-    $('#btnNextSalary').on('click', function () { saveEmployee($(this)); });
+    $('#btnNextSalary').on('click', function () { saveSalaryTab($(this)); });
     $('#btnNextSocial').on('click', function () { saveEmployee($(this)); });
     $('#btnNextFamily').on('click', function () { saveEmployee($(this)); });
     // 2026-08-20, explicit request ("ตัดให้เหลือปุ่ม Save แค่ปุ่มเดียว"): the Family tab's own
@@ -693,6 +789,8 @@ $(function () {
     initDocumentUpload();
     initEedUI();
     initRecurringEarningUI();
+    initRecurringDeductionUI();
+    initOtRateUI();
 });
 
 // 2026-08-29, explicit request: "ในหน้า Employee Detail ก็อยากให้คลิกที่ Tab ไหน ถ้า Refresh ให้อยู่ที่ Tab
@@ -785,6 +883,19 @@ function loadLoginHistoryFilterOptions() {
         $browser.trigger('change');
     });
 }
+// 2026-08-30, Phase 7 (T037/T038 follow-up: surfacing is_active/ended_reason in the existing Login
+// History audit table, which previously had no visual representation of either at all despite the
+// backend now tracking both). is_active can come back as a string "1"/"0" or a real int depending
+// on PDO's fetch mode -- Number(...) normalizes either.
+function loginHistoryStatusBadgeRd(row) {
+    if (Number(row.is_active) === 1) {
+        return `<span class="badge bg-success-subtle text-success">${langData['session_status_active'] || 'Active'}</span>`;
+    }
+    const reasonKey = { new_login: 'session_reason_new_login', switch_app: 'session_reason_switch_app', timeout: 'session_reason_timeout' }[row.ended_reason];
+    const label = (reasonKey && langData[reasonKey]) || langData['session_status_ended'] || 'Ended';
+    const tone = row.ended_reason === 'timeout' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary';
+    return `<span class="badge ${tone}">${escapeHtmlRd(label)}</span>`;
+}
 function initLoginHistoryTable() {
     if (!currentEmployeeId) return;
     if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
@@ -820,11 +931,43 @@ function initLoginHistoryTable() {
             { data: 'device_type', render: d => { const m = loginHistoryDeviceIconRd(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${escapeHtmlRd(d || '-')}`; } },
             { data: null, render: (d, t, row) => escapeHtmlRd([row.os_name, row.os_version].filter(Boolean).join(' ') || '-') },
             { data: null, render: (d, t, row) => escapeHtmlRd([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-') },
+            { data: null, orderable: false, render: (d, t, row) => loginHistoryStatusBadgeRd(row) },
         ],
+        // 2026-08-30, real gap found and fixed (explicit request: "จำนวนแสดงต่อหน้า 50 รายการเป็น
+        // Default...มีตารางอื่นที่ยังไม่ใช้ Format เดียวกันอีกไหมครับ", found via a full-codebase audit) --
+        // was missing entirely, silently falling back to DataTables' own built-in default of 10.
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
         language: getTableLang(),
     });
 }
+function updateClearLoginHistoryFilterVisibility() {
+    const hasFilter = !!($('#loginHistoryFilterDateFrom').val() || $('#loginHistoryFilterDateTo').val() || $('#loginHistoryFilterDevice').val() || $('#loginHistoryFilterBrowser').val());
+    $('#btnClearLoginHistoryFilter').toggleClass('d-none', !hasFilter);
+}
 $(document).on('change', '#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo, #loginHistoryFilterDevice, #loginHistoryFilterBrowser', function () {
+    updateClearLoginHistoryFilterVisibility();
+    if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
+        $('#tableLoginHistory').DataTable().ajax.reload();
+    }
+});
+// 2026-08-30, same-day follow-up ("Tab ประวัติการเข้าใช้งานใน Employee Detail ยังไม่ใช่ Filter มาตรฐาน")
+// -- the standard .station-filter toggle/clear pair, same idiom as Employee List's own station
+// filters.
+$(document).on('click', '#loginHistoryStationFilterToggle', function () {
+    const $filter = $('#loginHistoryStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+$(document).on('click', '#btnClearLoginHistoryFilter', function () {
+    $('#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo').val('');
+    if (typeof $.fn.datepicker === 'function') {
+        $('#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo').datepicker('update');
+    }
+    // 'change' (not 'change.select2') -- matches the exact same select2-native device/browser
+    // clear-pattern list.js's own Login History OVERVIEW tab already uses successfully.
+    $('#loginHistoryFilterDevice, #loginHistoryFilterBrowser').val(null).trigger('change');
+    updateClearLoginHistoryFilterVisibility();
     if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
         $('#tableLoginHistory').DataTable().ajax.reload();
     }
@@ -1159,6 +1302,7 @@ function loadAllChildTables() {
     });
     loadParentSlots();
     loadEarningDeductions();
+    loadOtRateForEmployee(currentEmployeeId);
     // 2026-08-29, real bug found and fixed (explicit urgent report: a newly-added Recurring
     // Allowance would disappear again shortly after saving, and reliably came back empty on a fresh
     // page load even though the rows genuinely existed in the DB) -- tbRecurringEarning's own
@@ -1173,6 +1317,8 @@ function loadAllChildTables() {
     // reload here closes the gap: one deliberate, correctly-parameterized reload once
     // currentEmployeeId is genuinely known, same pattern as every other child table on this page.
     if ($.fn.DataTable.isDataTable('#tableRecurringEarning')) $('#tableRecurringEarning').DataTable().ajax.reload(null, false);
+    // Same race/fix as tableRecurringEarning immediately above, mirrored for Recurring Deductions.
+    if ($.fn.DataTable.isDataTable('#tableRecurringDeduction')) $('#tableRecurringDeduction').DataTable().ajax.reload(null, false);
 }
 function initChildTables() {
     $('#hasChildrenToggle button').on('click', function () {
@@ -1286,6 +1432,15 @@ function eedActionButtons(row) {
 }
 function eedInterestSubLabel(row) {
     if (!row.interest_type || row.interest_type === 'none') return '';
+    // 2026-08-31: 'fee' is a 3rd sibling of 'fixed'/'reducing_balance' -- own sub-label shape (a %
+    // of a selectable base, not a per-installment rate) instead of the interest ones below.
+    if (row.interest_type === 'fee') {
+        const feeBaseLabel = row.fee_base === 'base_salary'
+            ? (langData['fee_base_option_base_salary'] || 'Base Salary')
+            : (langData['fee_base_option_principal'] || 'Principal Amount');
+        const feePct = parseFloat(row.fee_percent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return ` <span class="text-muted small">(${langData['fee_has'] || 'Fee'} ${feePct}% ${langData['fee_of'] || 'of'} ${feeBaseLabel})</span>`;
+    }
     const typeLabel = row.interest_type === 'fixed'
         ? (langData['interest_fixed'] || 'Flat')
         : (langData['interest_reducing_balance'] || 'Reducing Balance');
@@ -1447,12 +1602,20 @@ function renderInstallmentTable(amounts, installmentsData, readOnly) {
 }
 let eedReadOnly = false;
 let eedPreviewTimer = null;
+// 2026-08-31, widened from the old 2-state hasInterest/interestType shape to a 3-state
+// chargeType ('none'/'interest'/'fee') -- interestType/interestRate stay meaningful only while
+// chargeType='interest' (unchanged fixed/reducing_balance sub-toggle), feePercent/feeBase only
+// while chargeType='fee'. `interest_type` on the wire is still the SAME single column server-side
+// ('none'/'fixed'/'reducing_balance'/'fee' -- see EmployeeEarningDeductionModel's own docblock for
+// why 'fee' was added as a sibling value there rather than a parallel column).
 function eedInterestState() {
-    const hasInterest = $('#eedInterestToggle button.active').data('value') === 'has_interest';
+    const chargeType = $('#eedInterestToggle button.active').data('value') || 'none';
     return {
-        hasInterest: hasInterest,
-        interestType: hasInterest ? ($('#eedInterestTypeToggle button.active').data('value') || 'fixed') : 'none',
-        interestRate: hasInterest ? parseFloat($('#eed_interest_rate').val() || '0') : null
+        chargeType: chargeType,
+        interestType: chargeType === 'interest' ? ($('#eedInterestTypeToggle button.active').data('value') || 'fixed') : (chargeType === 'fee' ? 'fee' : 'none'),
+        interestRate: chargeType === 'interest' ? parseFloat($('#eed_interest_rate').val() || '0') : null,
+        feePercent: chargeType === 'fee' ? parseFloat($('#eed_fee_percent').val() || '0') : null,
+        feeBase: chargeType === 'fee' ? ($('#eed_fee_base').val() || null) : null
     };
 }
 // Debounced (2026-08-20) so the preview endpoint isn't hit on every single keystroke while typing
@@ -1471,14 +1634,24 @@ function fetchEedInstallmentPreview() {
         renderInstallmentTable(new Array(totalInstallments).fill(''), null, false);
         return;
     }
-    const { interestType, interestRate } = eedInterestState();
-    if (interestType !== 'none' && !(interestRate > 0)) {
-        return; // wait for a valid rate rather than previewing a misleading no-interest split
+    const { interestType, interestRate, feePercent, feeBase } = eedInterestState();
+    if (interestType === 'fixed' || interestType === 'reducing_balance') {
+        if (!(interestRate > 0)) return; // wait for a valid rate rather than previewing a misleading split
+    } else if (interestType === 'fee') {
+        if (!(feePercent > 0) || !feeBase) return; // wait for valid fee inputs, same reasoning
     }
+    // fee_base='base_salary' needs a real number to compute against -- the Salary tab's own
+    // #base_salary_amount input already holds the plaintext value on this same page (see
+    // EmployeeController::earningDeductionPreviewInstallments()'s own comment on why this is passed
+    // straight through rather than re-fetched/decrypted server-side).
+    const baseSalaryForFee = feeBase === 'base_salary' ? parseFloat($('#base_salary_amount').val() || '0') : undefined;
     $.ajax({
         url: `${BASE_URL}/api/employee.earning-deduction.preview-installments`,
         method: 'GET',
-        data: { principal: principal, total_installments: totalInstallments, interest_type: interestType, interest_rate: interestRate },
+        data: {
+            principal: principal, total_installments: totalInstallments, interest_type: interestType, interest_rate: interestRate,
+            fee_percent: feePercent, fee_base: feeBase, base_salary_for_fee: baseSalaryForFee
+        },
         dataType: 'json',
         success: function (res) {
             if (res.status && res.data && res.data.amounts) {
@@ -1487,12 +1660,17 @@ function fetchEedInstallmentPreview() {
         }
     });
 }
-function setEedInterestOn(on) {
-    $('#eedInterestToggle button').removeClass('active').filter(`[data-value="${on ? 'has_interest' : 'none'}"]`).addClass('active');
-    $('#eedInterestDetailWrapper').toggleClass('d-none', !on);
-    $('#eed_interest_rate').toggleClass('required', on);
-    $('#eed_principal_amount_label [data-i18n="total_amount"]').toggleClass('d-none', on);
-    $('#eed_principal_amount_label [data-i18n="principal_amount_label"]').toggleClass('d-none', !on);
+// 2026-08-31, replaces the old boolean setEedInterestOn(on) -- 3-state now (none/interest/fee).
+function setEedChargeType(type) {
+    if (type !== 'interest' && type !== 'fee') type = 'none';
+    $('#eedInterestToggle button').removeClass('active').filter(`[data-value="${type}"]`).addClass('active');
+    $('#eedInterestDetailWrapper').toggleClass('d-none', type !== 'interest');
+    $('#eed_interest_rate').toggleClass('required', type === 'interest');
+    $('#eedFeeDetailWrapper').toggleClass('d-none', type !== 'fee');
+    $('#eed_fee_percent, #eed_fee_base').toggleClass('required', type === 'fee');
+    const chargeOn = type !== 'none';
+    $('#eed_principal_amount_label [data-i18n="total_amount"]').toggleClass('d-none', chargeOn);
+    $('#eed_principal_amount_label [data-i18n="principal_amount_label"]').toggleClass('d-none', !chargeOn);
     scheduleEedPreviewFetch();
 }
 function setEedInterestType(type) {
@@ -1509,7 +1687,7 @@ function applyEedInterestVisibility() {
     const isDeduction = $('#eed_custom_item_type').val() === 'deduction';
     $('#eedInterestSection').toggleClass('d-none', !isDeduction);
     if (!isDeduction) {
-        setEedInterestOn(false);
+        setEedChargeType('none');
     }
     // Transfer-to-payee (2026-08-21) piggybacks on the same deduction-only toggle point as interest
     // above, rather than a parallel visibility mechanism -- both only make sense on a deduction.
@@ -1534,6 +1712,8 @@ function setEedMode(mode) {
 // see eedActionButtons()) -- one code path for both instead of a separate view-only modal.
 function setEedReadOnly(readOnly) {
     eedReadOnly = readOnly;
+    // #eedModal select already covers #eed_fee_base (a plain <select>, select2-static-initialized) --
+    // no separate handling needed, same as every other select2 field in this modal.
     $('#eedModal .required, #eedModal select, #eedModal input, #eedModal textarea, #eedModeToggle button, #eedInterestToggle button, #eedInterestTypeToggle button')
         .prop('disabled', readOnly);
     $('#eedSaveBtn').toggleClass('d-none', readOnly);
@@ -1560,6 +1740,22 @@ function eedModalTitle(action) {
     const [key, fallback] = keys[action][type];
     return langData[key] || fallback;
 }
+// 2026-08-30 (T007), real bug found and fixed (modal title audit) -- unlike the recurring-earning
+// titles above, this one can't just carry a static `data-i18n` (its result depends on BOTH which
+// action opened it AND #eed_custom_item_type's current value, so a plain key lookup at
+// updateText()-sweep time couldn't reproduce it). Remembers the last action this modal was opened
+// with so a language change can re-derive the same title fresh, without needing to re-open the
+// modal.
+let eedLastModalAction = null;
+function setEedModalTitle(action) {
+    eedLastModalAction = action;
+    $('#eedModalLabel').text(eedModalTitle(action));
+}
+function refreshEedModalTitleLanguage() {
+    if (eedLastModalAction && $('#eedModal').hasClass('show')) {
+        $('#eedModalLabel').text(eedModalTitle(eedLastModalAction));
+    }
+}
 function resetEedForm(context) {
     $('#eedForm')[0].reset();
     $('#eed_id').val('');
@@ -1571,16 +1767,18 @@ function resetEedForm(context) {
     // it to notify.
     $('#eed_custom_item_type').val(context || 'earning');
     $('.is-invalid').removeClass('is-invalid');
-    setEedInterestOn(false);
+    setEedChargeType('none');
     setEedInterestType('fixed');
     $('#eed_interest_rate').val('');
+    $('#eed_fee_percent').val('');
+    $('#eed_fee_base').val(null).trigger('change');
     // An employee can't be their own transfer payee -- excluded from the picker's own results the
     // same way #report_to_id already excludes self elsewhere (data-exclude-id, read fresh on every
     // ajax search by initSelect2's shared 'ajax' mode).
     $('#eed_payee_employee_id').attr('data-exclude-id', currentEmployeeId || '').val(null).trigger('change');
     applyEedInterestVisibility();
     renderInstallmentTable([], null, false);
-    $('#eedModalLabel').text(eedModalTitle('add'));
+    setEedModalTitle('add');
 }
 function populateEedForm(row, readOnly) {
     $('#eed_id').val(row.id);
@@ -1612,15 +1810,25 @@ function populateEedForm(row, readOnly) {
     } else {
         $('#eed_payee_employee_id').val(null).trigger('change');
     }
-    const hasInterest = !!row.interest_type && row.interest_type !== 'none';
-    setEedInterestOn(hasInterest);
-    setEedInterestType(hasInterest ? row.interest_type : 'fixed');
+    // 2026-08-31: row.interest_type is now one of 4 values ('none'/'fixed'/'reducing_balance'/'fee')
+    // -- 'fixed'/'reducing_balance' both mean chargeType='interest' (their own sub-toggle), 'fee'
+    // means chargeType='fee', anything else means 'none'.
+    const isFeeCharge = row.interest_type === 'fee';
+    const isInterestCharge = row.interest_type === 'fixed' || row.interest_type === 'reducing_balance';
+    setEedChargeType(isFeeCharge ? 'fee' : (isInterestCharge ? 'interest' : 'none'));
+    setEedInterestType(isInterestCharge ? row.interest_type : 'fixed');
     $('#eed_interest_rate').val(row.interest_rate || '');
+    $('#eed_fee_percent').val(row.fee_percent || '');
+    if (row.fee_base) {
+        $('#eed_fee_base').val(row.fee_base).trigger('change');
+    } else {
+        $('#eed_fee_base').val(null).trigger('change');
+    }
     applyEedInterestVisibility();
     const amounts = (row.installments || []).map(i => i.amount);
     renderInstallmentTable(amounts, row.installments || [], !!readOnly);
     setEedReadOnly(!!readOnly);
-    $('#eedModalLabel').text(eedModalTitle(readOnly ? 'view' : 'edit'));
+    setEedModalTitle(readOnly ? 'view' : 'edit');
 }
 function validateEedForm() {
     let firstInvalid = null;
@@ -1644,7 +1852,7 @@ function collectEedFormData() {
     // after), whether interest is on or not, so save()'s existing custom_per_installment path
     // (take these exact amounts verbatim) is always the right one. 'even_split' stays supported
     // server-side for any other caller, just no longer sent from this modal.
-    const { hasInterest, interestType, interestRate } = eedInterestState();
+    const { chargeType, interestType, interestRate, feePercent, feeBase } = eedInterestState();
     const data = {
         id: $('#eed_id').val() || undefined,
         employee_id: currentEmployeeId,
@@ -1658,8 +1866,11 @@ function collectEedFormData() {
         external_reference_no: $('#eed_external_reference_no').val().trim(),
         payee_employee_id: $('#eed_payee_employee_id').val() || undefined
     };
-    if (hasInterest) {
+    if (chargeType === 'interest') {
         data.interest_rate = interestRate;
+    } else if (chargeType === 'fee') {
+        data.fee_percent = feePercent;
+        data.fee_base = feeBase;
     }
     if (mode === 'custom') {
         data.custom_item_name = $('#eed_custom_item_name').val().trim();
@@ -1768,12 +1979,12 @@ function initEedUI() {
         openEedModalForId($(this).data('id'), true);
     });
     $(document).on('click', '#eedInterestToggle button', function () {
-        setEedInterestOn($(this).data('value') === 'has_interest');
+        setEedChargeType($(this).data('value'));
     });
     $(document).on('click', '#eedInterestTypeToggle button', function () {
         setEedInterestType($(this).data('value'));
     });
-    $(document).on('input change', '#eed_total_installments, #eed_principal_amount, #eed_interest_rate', function () {
+    $(document).on('input change', '#eed_total_installments, #eed_principal_amount, #eed_interest_rate, #eed_fee_percent, #eed_fee_base', function () {
         scheduleEedPreviewFetch();
     });
     $(document).on('submit', '#eedForm', function (e) {
@@ -1874,6 +2085,194 @@ function initEedUI() {
    Earning-Deduction (loans/installments) above. Mirrors initEedUI()'s own DataTable-list-+-modal
    shape, simplified: no catalog/custom toggle (catalog-only), no installment schedule, no interest. ==================== */
 let tbRecurringEarning;
+// 2026-08-31, direct mirror of tbRecurringEarning immediately above -- explicit request: "หน้า
+// Employee Detail เพิ่มรายหักประจำด้วยครับ". See EmployeeRecurringDeductionModel's own docblock.
+let tbRecurringDeduction;
+/* ==================== OT Rate Settings (Salary tab) -- explicit request: "OT Rate เพิ่มให้สามารถ
+   Assing รายบุคคลได้ด้วย...ให้ไป Set แยก ใน Employee ใน Tab ที่มีการติ๊กว่า ได้รับ OT ไหม". Shown only
+   while #ot_eligible is checked; the per-scope override rows only actionable once
+   ot_rate_source='custom'. See EmployeeOtRateModel's own docblock for the backend design.
+   ==================== */
+let otRateScopesData = [];
+function otRateOverrideRowHtml(scope) {
+    const name = currentLang === 'th' ? scope.scope_name_th : scope.scope_name_en;
+    const isFlat = scope.calculation_method === 'flat_amount';
+    return `<tr data-scope-id="${scope.ot_scope_id}">
+        <td>${escapeHtml(name)}</td>
+        <td>
+            <select class="form-select form-select-sm select2-static ot-rate-calc-method"
+                    data-option-keys="ot_calc_method_multiplier,ot_calc_method_flat_amount" data-option-values="multiplier,flat_amount"></select>
+        </td>
+        <td>
+            <div class="ot-rate-multiplier-wrap ${isFlat ? 'd-none' : ''}">
+                <input type="number" step="0.01" min="0.01" class="form-control form-control-sm ot-rate-multiplier-input" value="${scope.multiplier_rate}">
+            </div>
+            <div class="ot-rate-flat-wrap ${isFlat ? '' : 'd-none'}">
+                <input type="number" step="0.01" min="0.01" class="form-control form-control-sm ot-rate-flat-input" value="${scope.flat_amount_rate !== null && scope.flat_amount_rate !== undefined ? scope.flat_amount_rate : ''}">
+            </div>
+        </td>
+        <td>
+            <select class="form-select form-select-sm select2-static ot-rate-calc-base"
+                    data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select>
+        </td>
+    </tr>`;
+}
+// 2026-08-30, explicit request: "และตรง From ที่ให้ใส่ input ขึ้นตามประเภทที่เลือกของแต่ละประเภท OT โดยค่าเริ่ม
+// ให้ให้ดึงของที่บริษัทกำหนดมาถ้ายังไม่เคยใส่" -- every row's inputs are already pre-filled from the
+// RESOLVED value the backend returns (EmployeeOtRateModel::getForEmployee()'s own `source = override
+// ?? default`), so a scope with no override for this employee shows this employee's own resolved OT
+// Rate Set value (2026-08-30 replacement) with nothing extra needed here -- this function just
+// renders whatever the API already resolved.
+// 2026-08-31, real bug avoided proactively (not found live, same class as work_location_id/shift_id/
+// team_id's own documented gotcha): #ot_rate_set_id is select2-remote -- setting .val(id) with no
+// <option> preloaded yet silently no-ops, so the field would read empty and (per EmployeeOtRateModel
+// ::save()'s own "always write exactly what's passed, including null" contract) WIPE OUT a real saved
+// pick on next save. Always preload a real Option (id + localized text) before .val()+trigger.
+function populateOtRateSetPicker(id, nameObj) {
+    const $sel = $('#ot_rate_set_id');
+    $sel.empty();
+    if (id && nameObj) {
+        const text = currentLang === 'th' ? nameObj.name_th : nameObj.name_en;
+        $sel.append(new Option(text, id, true, true));
+    }
+    $sel.trigger('change.select2');
+}
+function updateOtRateSetRecommendHint(res) {
+    const $hint = $('#otRateSetRecommendHint');
+    if (!res.recommended_ot_rate_set_id || !res.recommended_ot_rate_set_name) {
+        $hint.text(langData['ot_rate_set_recommend_none'] || 'No matching OT Rate Set could be recommended yet.');
+        return;
+    }
+    const name = currentLang === 'th' ? res.recommended_ot_rate_set_name.name_th : res.recommended_ot_rate_set_name.name_en;
+    $hint.text(`${langData['ot_rate_set_recommend_prefix'] || 'Recommended:'} ${name}`);
+}
+function loadOtRateForEmployee(employeeId) {
+    if (!employeeId) return;
+    $.ajax({
+        url: `${BASE_URL}/api/employee.ot-rate.get`,
+        method: 'GET',
+        data: { employee_id: employeeId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            otRateScopesData = res.scopes || [];
+            $(`#ot_rate_source_${res.ot_rate_source === 'custom' ? 'custom' : 'default'}`).prop('checked', true);
+            $('#otRateOverridesContainer').toggleClass('d-none', res.ot_rate_source !== 'custom');
+            // Explicit toggle, same as the line above -- setting a radio's checked prop programmatically
+            // does NOT fire 'change', so the handler in initOtRateUI() alone would leave this stale on load.
+            // .ot-rate-set-picker-toggle (2026-08-31) covers BOTH the label and field columns together
+            // (split into col-sm-2/col-sm-4 to match the rest of this tab's row shape).
+            $('.ot-rate-set-picker-toggle').toggleClass('d-none', res.ot_rate_source === 'custom');
+            $('#otRateOverridesBody').html(otRateScopesData.map(otRateOverrideRowHtml).join(''));
+            initSelect2('#otRateOverridesBody .ot-rate-calc-method', { mode: 'static' });
+            initSelect2('#otRateOverridesBody .ot-rate-calc-base', { mode: 'static' });
+            otRateScopesData.forEach(function (scope) {
+                const $row = $(`#otRateOverridesBody tr[data-scope-id="${scope.ot_scope_id}"]`);
+                $row.find('.ot-rate-calc-method').val(scope.calculation_method).trigger('change.select2');
+                $row.find('.ot-rate-calc-base').val(scope.calculation_base).trigger('change.select2');
+            });
+            populateOtRateSetPicker(res.assigned_ot_rate_set_id, res.assigned_ot_rate_set_name);
+            updateOtRateSetRecommendHint(res);
+        }
+    });
+}
+function initOtRateUI() {
+    initSelect2('#ot_rate_set_id', { mode: 'ajax' });
+    // 2026-08-31, "ให้เอาสิทธิ์การได้รับ OT มาไว้ใน card ของ ตั้งค่าอัตรา OT เลย จะได้เห็นว่าเป็นชุดเดียวกัน" --
+    // the OT Eligible checkbox now lives INSIDE #otRateSection (always visible), so hiding the whole
+    // card on uncheck would also hide the checkbox that controls it -- only the DEPENDENT sub-parts
+    // (source radio / Set picker / per-scope table) toggle now, via #otRateDependentWrap.
+    $(document).on('change', '#ot_eligible', function () {
+        $('#otRateDependentWrap').toggleClass('d-none', !$(this).is(':checked'));
+    });
+    // 2026-08-30, explicit request: "แหล่งที่มาอัตรา OT ปรับให้เป็น radio" -- was a select2-static
+    // dropdown, now a plain Bootstrap btn-check radio pair (matches this app's own precedent for a
+    // simple 2-choice toggle, e.g. is_payroll_participant's own radio pair).
+    $(document).on('change', 'input[name="ot_rate_source_radio"]', function () {
+        const isCustom = $(this).val() === 'custom';
+        $('#otRateOverridesContainer').toggleClass('d-none', !isCustom);
+        // 2026-08-31, "ถ้าเลือกจาก OT ของระบบ จะมีให้เลือกเพิ่มว่า OT ไหน" -- the Set picker only makes
+        // sense while source=default (custom means every scope is hand-typed on this employee, no
+        // Set to pick from). .ot-rate-set-picker-toggle covers both the label and field columns.
+        $('.ot-rate-set-picker-toggle').toggleClass('d-none', isCustom);
+    });
+    $(document).on('change', '.ot-rate-calc-method', function () {
+        const $row = $(this).closest('tr');
+        const isFlat = $(this).val() === 'flat_amount';
+        $row.find('.ot-rate-multiplier-wrap').toggleClass('d-none', isFlat);
+        $row.find('.ot-rate-flat-wrap').toggleClass('d-none', !isFlat);
+    });
+}
+// 2026-08-30, explicit request: "ปุ่ม Save ให้ตัดออกไปรวมกับ Save ด้านล่าง" -- the OT Rate Settings
+// card's own standalone Save button is gone; saving now folds into the Salary tab's own
+// #btnNextSalary click, same "one Save button fires multiple related ajax calls together via
+// Promise.all, one combined message" pattern saveFamilyTab() already established for the Family/Tax
+// Allowance tab. OT rate is only saved when this employee already has an id (a brand-new employee's
+// first save has none yet -- same "save basic info first" precedent as Recurring Allowances) AND
+// OT Eligible is checked (nothing meaningful to save otherwise, the section is hidden).
+function saveSalaryTab($btn) {
+    const invalidEl = validateEmployeeForm($btn.closest('.tab-pane'));
+    if (invalidEl) {
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        jumpToField(invalidEl);
+        return;
+    }
+    const payload = collectEmployeeFormData();
+    const wasNew = !currentEmployeeId;
+    if (currentEmployeeId) {
+        payload.id = currentEmployeeId;
+    }
+    const originalHtml = $btn.html();
+    $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
+
+    const promises = [$.ajax({
+        url: `${BASE_URL}/api/employee.save`, method: 'POST',
+        contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload)
+    })];
+
+    if (currentEmployeeId && $('#ot_eligible').is(':checked')) {
+        const otRateSource = $('input[name="ot_rate_source_radio"]:checked').val() || 'default';
+        const overrides = [];
+        if (otRateSource === 'custom') {
+            $('#otRateOverridesBody tr').each(function () {
+                const $tr = $(this);
+                overrides.push({
+                    ot_scope_id: $tr.data('scope-id'),
+                    calculation_method: $tr.find('.ot-rate-calc-method').val(),
+                    multiplier_rate: $tr.find('.ot-rate-multiplier-input').val(),
+                    flat_amount_rate: $tr.find('.ot-rate-flat-input').val(),
+                    calculation_base: $tr.find('.ot-rate-calc-base').val(),
+                });
+            });
+        }
+        // assigned_ot_rate_set_id only meaningful while source=default -- omitted (null) for custom
+        // so switching to custom doesn't silently keep a stale explicit pick around unused.
+        const assignedOtRateSetId = otRateSource === 'default' ? ($('#ot_rate_set_id').val() || null) : null;
+        promises.push($.ajax({
+            url: `${BASE_URL}/api/employee.ot-rate.save`, method: 'POST',
+            contentType: 'application/json', dataType: 'json',
+            data: JSON.stringify({ employee_id: currentEmployeeId, ot_rate_source: otRateSource, overrides: overrides, assigned_ot_rate_set_id: assignedOtRateSetId })
+        }));
+    }
+
+    Promise.all(promises).then(function (results) {
+        $btn.prop('disabled', false).html(originalHtml);
+        if (typeof updateText === 'function') updateText($btn[0]);
+        const allOk = results.every(r => r && r.status);
+        if (allOk) {
+            showSuccess(langData['save_success'] || 'Saved successfully.');
+            applyEmployeeSaveSuccess(results[0], wasNew);
+            if (currentEmployeeId) loadOtRateForEmployee(currentEmployeeId);
+        } else {
+            const failed = results.find(r => !r || !r.status);
+            showWarning((failed && failed.message) || langData['save_failed'] || 'Failed to save data.');
+        }
+    }).catch(function () {
+        $btn.prop('disabled', false).html(originalHtml);
+        if (typeof updateText === 'function') updateText($btn[0]);
+        showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+    });
+}
 function recurringEarningStatusBadge(row) {
     if (row.is_suspended_now) {
         return `<span class="badge bg-warning-subtle text-warning">${langData['status_suspended'] || 'Suspended'}</span>`;
@@ -2086,7 +2485,13 @@ function resetRecurringEarningForm() {
     $('#ere_id').val('');
     $('#ere_ped_type_id').val(null).trigger('change');
     $('.is-invalid', '#recurringEarningModal').removeClass('is-invalid');
-    $('#recurringEarningModalLabel span').text(langData['add_recurring_earning'] || 'Add Recurring Allowance');
+    // 2026-08-30 (T007), real bug found and fixed (modal title audit: "Modal header ไม่เปลี่ยนภาษา
+    // ตอนเปลี่ยนภาษาขณะ modal เปิดอยู่") -- setting `data-i18n` alongside .text() (matching the
+    // existing correct pattern already used by company-profile.js's own #bffFieldModal title) lets
+    // the generic updateText(document) sweep (already run on every language change) keep this in
+    // sync for free -- no per-modal re-render hook needed since this title is a plain static string,
+    // not interpolated with any dynamic data.
+    $('#recurringEarningModalLabel span').attr('data-i18n', 'add_recurring_earning').text(langData['add_recurring_earning'] || 'Add Recurring Allowance');
 }
 function populateRecurringEarningForm(row) {
     $('#ere_id').val(row.id);
@@ -2103,11 +2508,267 @@ function populateRecurringEarningForm(row) {
     $('#ere_suspended_to').val(row.suspended_to ? toDisplayDate(row.suspended_to) : '');
     $('#ere_suspended_to').datepicker('update');
     $('#ere_notes').val(row.notes || '');
-    $('#recurringEarningModalLabel span').text(langData['edit_recurring_earning'] || 'Edit Recurring Allowance');
+    $('#recurringEarningModalLabel span').attr('data-i18n', 'edit_recurring_earning').text(langData['edit_recurring_earning'] || 'Edit Recurring Allowance');
 }
 function validateRecurringEarningForm() {
     let firstInvalid = null;
     $('#recurringEarningModal .required').each(function () {
+        const $el = $(this);
+        const value = ($el.val() || '').toString().trim();
+        if (!value) {
+            $el.addClass('is-invalid');
+            if (!firstInvalid) firstInvalid = $el;
+        } else {
+            $el.removeClass('is-invalid');
+        }
+    });
+    return firstInvalid;
+}
+
+/* ==================== Recurring Deductions (Salary tab) -- 2026-08-31, explicit request: "หน้า
+   Employee Detail เพิ่มรายหักประจำด้วยครับ และนำไปเพิ่มใน ตรงสรุปรายได้ประจำ ด้วย" -- direct mirror of the
+   Recurring Allowances block immediately above (own #tableRecurringDeduction DataTable +
+   #recurringDeductionModal, `erd` id prefix instead of `ere`, api/employee.recurring-deduction.*
+   instead of .recurring-earning.*). See EmployeeRecurringDeductionModel's own docblock for the
+   backend design (near-identical to EmployeeRecurringEarningModel, item_type='deduction' instead
+   of 'earning'). ==================== */
+function recurringDeductionStatusBadge(row) {
+    if (row.is_suspended_now) {
+        return `<span class="badge bg-warning-subtle text-warning">${langData['status_suspended'] || 'Suspended'}</span>`;
+    }
+    return `<span class="badge bg-success-subtle text-success">${langData['status_active'] || 'Active'}</span>`;
+}
+function recurringDeductionSuspendPeriodCell(row) {
+    if (!row.suspended_from || !row.suspended_to) return '-';
+    return `${toDisplayDate(row.suspended_from)} - ${toDisplayDate(row.suspended_to)}`;
+}
+// 2026-08-31, mirrors eedInterestSubLabel()'s own fee sub-label shape -- shown next to the flat
+// `amount`, since the ACTUAL deducted amount each run is `amount` + this fee (recomputed live
+// against the employee's current base salary, see PayrollRunModel::recurringDeductionAmountWithFee()),
+// not a static number this table's own `amount` column alone would represent.
+function recurringDeductionFeeSubLabel(row) {
+    if (!row.fee_percent) return '';
+    const pct = parseFloat(row.fee_percent).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return ` <span class="text-muted small">(+${pct}% ${langData['fee_of'] || 'of'} ${langData['fee_base_option_base_salary'] || 'Base Salary'})</span>`;
+}
+function initRecurringDeductionUI() {
+    tbRecurringDeduction = $('#tableRecurringDeduction').DataTable({
+        responsive: true,
+        // Same deferLoading:0 fix as tbRecurringEarning's own comment explains (currentEmployeeId
+        // isn't known yet when this table initializes synchronously at page load).
+        deferLoading: 0,
+        ajax: {
+            url: `${BASE_URL}/api/employee.recurring-deduction.list`,
+            data: function (d) { d.employee_id = currentEmployeeId; },
+            dataSrc: 'data'
+        },
+        columns: [
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '') },
+            { data: 'amount', className: 'text-end', render: { display: (d, t, row) => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + recurringDeductionFeeSubLabel(row), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+            { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
+            { data: null, render: (d, t, row) => recurringDeductionSuspendPeriodCell(row) },
+            { data: null, render: (d, t, row) => recurringDeductionStatusBadge(row) },
+            {
+                data: null, orderable: false, className: 'text-center all',
+                render: (d, t, row) => `
+                    <button type="button" class="btn btn-sm btn-link text-primary btn-edit-recurring-deduction" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                    <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-deduction" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
+                `
+            }
+        ],
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang(),
+        initComplete: function () {
+            const self = this.api();
+            const $wrapper = $(self.table().container());
+            const $searchDiv = $wrapper.find('.dt-search');
+            if ($searchDiv.find('.btn-add-recurring-deduction').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-primary btn-sm ms-1 btn-add-recurring-deduction">
+                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_recurring_deduction">${langData['add_recurring_deduction'] || 'Add Recurring Deduction'}</span>
+                    </button>
+                `);
+            }
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'item_name' },
+                    { index: 1, key: 'amount' },
+                    { index: 2, key: 'effective_date' },
+                    { index: 3, key: 'suspend_period' },
+                    { index: 4, key: 'status' },
+                ]
+            });
+        }
+    });
+    // Same hidden-tab-at-init width gotcha as tbRecurringEarning -- this table also lives on the
+    // Salary tab, which isn't the default-active tab on page load.
+    document.getElementById('salary-tab').addEventListener('shown.bs.tab', function () {
+        if (tbRecurringDeduction) tbRecurringDeduction.columns.adjust();
+    });
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#erd_ped_type_id', { mode: 'ajax' });
+    }
+    $(document).on('select2:select', '#erd_ped_type_id', function (e) {
+        const item = e.params && e.params.data;
+        if (!item) return;
+        const $amount = $('#erd_amount');
+        if (($amount.val() || '').toString().trim() !== '') return;
+        if (item.calculation_method === 'fixed_amount' && parseFloat(item.fixed_amount) > 0) {
+            $amount.val(parseFloat(item.fixed_amount));
+        }
+    });
+    $(document).on('click', '#erdFeeToggle button', function () {
+        setErdFeeOn($(this).data('value') === 'fee');
+    });
+    $(document).on('click', '.btn-add-recurring-deduction', function () {
+        if (!currentEmployeeId) {
+            showWarning(langData['save_basic_info_first'] || "Please save the employee's basic info first.");
+            return;
+        }
+        resetRecurringDeductionForm();
+        new bootstrap.Modal(document.getElementById('recurringDeductionModal')).show();
+    });
+    $(document).on('click', '.btn-edit-recurring-deduction', function () {
+        const id = $(this).data('id');
+        $.ajax({
+            url: `${BASE_URL}/api/employee.recurring-deduction.get`,
+            method: 'GET',
+            data: { id: id },
+            dataType: 'json',
+            success: function (res) {
+                if (res.status && res.data) {
+                    resetRecurringDeductionForm();
+                    populateRecurringDeductionForm(res.data);
+                    new bootstrap.Modal(document.getElementById('recurringDeductionModal')).show();
+                } else {
+                    showWarning(res.message || langData['load_employee_failed'] || 'Failed to load data.');
+                }
+            },
+            error: function () {
+                showWarning(langData['load_employee_failed'] || 'Failed to load data.');
+            }
+        });
+    });
+    $(document).on('submit', '#recurringDeductionForm', function (e) {
+        e.preventDefault();
+        const invalidEl = validateRecurringDeductionForm();
+        if (invalidEl) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        const suspendedFrom = toIsoDate($('#erd_suspended_from').val());
+        const suspendedTo = toIsoDate($('#erd_suspended_to').val());
+        if (!!suspendedFrom !== !!suspendedTo) {
+            showWarning(langData['suspend_period_both_required'] || 'Enter both a suspend start date and end date, or leave both blank.');
+            return;
+        }
+        const feeOn = $('#erdFeeToggle button.active').data('value') === 'fee';
+        const payload = {
+            id: $('#erd_id').val() || undefined,
+            employee_id: currentEmployeeId,
+            ped_type_id: $('#erd_ped_type_id').val(),
+            amount: $('#erd_amount').val(),
+            effective_date: toIsoDate($('#erd_effective_date').val()),
+            suspended_from: suspendedFrom || undefined,
+            suspended_to: suspendedTo || undefined,
+            notes: $('#erd_notes').val().trim()
+        };
+        if (feeOn) {
+            payload.fee_percent = $('#erd_fee_percent').val();
+            payload.fee_base = $('#erd_fee_base').val();
+        }
+        const $btn = $('#erdSaveBtn');
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
+        $.ajax({
+            url: `${BASE_URL}/api/employee.recurring-deduction.save`,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    bootstrap.Modal.getInstance(document.getElementById('recurringDeductionModal')).hide();
+                    if (tbRecurringDeduction) tbRecurringDeduction.ajax.reload(null, false);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+            }
+        });
+    });
+    $(document).on('click', '.btn-delete-recurring-deduction', function () {
+        const id = $(this).data('id');
+        const title = langData['confirm_delete_title'] || 'Confirm Delete';
+        const message = langData['confirm_delete_message'] || 'Are you sure you want to delete this item?';
+        showConfirm(title, message, function () {
+            $.ajax({
+                url: `${BASE_URL}/api/employee.recurring-deduction.delete`,
+                method: 'POST',
+                contentType: 'application/json',
+                dataType: 'json',
+                data: JSON.stringify({ id: id, employee_id: currentEmployeeId }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(langData['delete_success'] || 'Deleted successfully.');
+                        if (tbRecurringDeduction) tbRecurringDeduction.ajax.reload(null, false);
+                    } else {
+                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
+                    }
+                },
+                error: function () {
+                    showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
+                }
+            });
+        });
+    });
+}
+// 2026-08-31, mirrors setEedChargeType()'s own 2-choice-relevant slice (this table only ever has
+// None/Fee, no Interest -- see the markup comment above #erdFeeDetailWrapper).
+function setErdFeeOn(on) {
+    $('#erdFeeToggle button').removeClass('active').filter(`[data-value="${on ? 'fee' : 'none'}"]`).addClass('active');
+    $('#erdFeeDetailWrapper').toggleClass('d-none', !on);
+    $('#erd_fee_percent').toggleClass('required', on);
+}
+function resetRecurringDeductionForm() {
+    $('#recurringDeductionForm')[0].reset();
+    $('#erd_id').val('');
+    $('#erd_ped_type_id').val(null).trigger('change');
+    $('.is-invalid', '#recurringDeductionModal').removeClass('is-invalid');
+    setErdFeeOn(false);
+    $('#erd_fee_percent').val('');
+    $('#recurringDeductionModalLabel span').attr('data-i18n', 'add_recurring_deduction').text(langData['add_recurring_deduction'] || 'Add Recurring Deduction');
+}
+function populateRecurringDeductionForm(row) {
+    $('#erd_id').val(row.id);
+    const label = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || '';
+    const opt = new Option(`[${row.item_code}] ${label}`, row.ped_type_id, true, true);
+    $('#erd_ped_type_id').empty().append(opt).trigger('change');
+    $('#erd_amount').val(row.amount);
+    $('#erd_effective_date').val(toDisplayDate(row.effective_date));
+    $('#erd_effective_date').datepicker('update');
+    $('#erd_suspended_from').val(row.suspended_from ? toDisplayDate(row.suspended_from) : '');
+    $('#erd_suspended_from').datepicker('update');
+    $('#erd_suspended_to').val(row.suspended_to ? toDisplayDate(row.suspended_to) : '');
+    $('#erd_suspended_to').datepicker('update');
+    $('#erd_notes').val(row.notes || '');
+    const hasFee = !!row.fee_percent;
+    setErdFeeOn(hasFee);
+    $('#erd_fee_percent').val(hasFee ? row.fee_percent : '');
+    $('#recurringDeductionModalLabel span').attr('data-i18n', 'edit_recurring_deduction').text(langData['edit_recurring_deduction'] || 'Edit Recurring Deduction');
+}
+function validateRecurringDeductionForm() {
+    let firstInvalid = null;
+    $('#recurringDeductionModal .required').each(function () {
         const $el = $(this);
         const value = ($el.val() || '').toString().trim();
         if (!value) {

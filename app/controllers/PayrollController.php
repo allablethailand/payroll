@@ -569,6 +569,19 @@ class PayrollController extends Controller {
         $this->json(['status' => true, 'data' => $this->model->errorEmployeesForRun($id, (int)$compId)]);
     }
 
+    // 2026-08-30 (Phase 8, T041) -- reconciliation list for a sync-based run: employees who would
+    // normally be expected in payroll but Origami didn't send this time and nobody manually joined
+    // them either. See PayrollRunModel::syncMissingEmployees()'s own docblock.
+    public function syncMissingEmployees() {
+        $compId = getCompId();
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->syncMissingEmployees($id, (int)$compId)]);
+    }
+
     public function employeeCommentList() {
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;

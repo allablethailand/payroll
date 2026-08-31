@@ -19,7 +19,7 @@ class LeaveRequestModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
-    /** @param array $filters optional: employee_id, date_from, date_to */
+    /** @param array $filters optional: employee_id, date_from, date_to, batch_id (2026-08-30, Phase 5 T034 -- drill into one import batch's rows) */
     public function list(int $compId, array $filters = []): array {
         $where = "WHERE l.comp_id = :comp_id AND l.deleted_at IS NULL";
         $params = [':comp_id' => $compId];
@@ -34,6 +34,10 @@ class LeaveRequestModel {
         if (!empty($filters['date_to'])) {
             $where .= " AND l.end_date <= :date_to";
             $params[':date_to'] = $filters['date_to'];
+        }
+        if (!empty($filters['batch_id'])) {
+            $where .= " AND l.sync_batch_id = :batch_id";
+            $params[':batch_id'] = (int)$filters['batch_id'];
         }
         $sql = "SELECT l.*, e.employee_no, CONCAT(e.name_th, ' ', e.surname_th) AS employee_name_th, CONCAT(e.name_en, ' ', e.surname_en) AS employee_name_en,
                     t.name_th AS leave_type_name_th, t.name_en AS leave_type_name_en
@@ -85,6 +89,32 @@ class LeaveRequestModel {
         return (int)$stmt->fetchColumn() > 0;
     }
 
+    /**
+     * 2026-08-30 (Phase 5, conflict-prevention decision) -- widens isDuplicate()'s exact-match-only
+     * check: a manually-entered leave request whose dates merely OVERLAP (not equal) an existing
+     * row for the same employee+leave_type is now also rejected, not just an exact duplicate --
+     * same reasoning and same (employee_id, leave_type_id)-scoped conflict LeaveRequestSyncer::
+     * findOverlappingConflict() enforces for sync/import, kept consistent across all 3 entry paths
+     * now that they all write into the same table. See that method's own docblock for why this
+     * rejects rather than silently merges.
+     */
+    private function findOverlappingConflict(int $compId, int $employeeId, int $leaveTypeId, string $startDate, string $endDate, ?int $excludeId): ?array {
+        $sql = "SELECT id, start_date, end_date FROM leave_requests
+            WHERE comp_id = :comp_id AND employee_id = :employee_id AND leave_type_id = :leave_type_id AND deleted_at IS NULL
+              AND start_date <= :end_date AND end_date >= :start_date
+              AND NOT (start_date = :start_date2 AND end_date = :end_date2)";
+        $params = [':comp_id' => $compId, ':employee_id' => $employeeId, ':leave_type_id' => $leaveTypeId,
+            ':start_date' => $startDate, ':end_date' => $endDate, ':start_date2' => $startDate, ':end_date2' => $endDate];
+        if ($excludeId !== null) {
+            $sql .= " AND id != :exclude_id";
+            $params[':exclude_id'] = $excludeId;
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
     public function save(array $data, int $compId, int $userId): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
         $employeeId = (int)($data['employee_id'] ?? 0);
@@ -114,6 +144,10 @@ class LeaveRequestModel {
         if ($this->isDuplicate($compId, $employeeId, $leaveTypeId, $startDate, $endDate, $id)) {
             return ['status' => false, 'message' => 'A leave request for this employee, leave type, and date range already exists.'];
         }
+        $conflict = $this->findOverlappingConflict($compId, $employeeId, $leaveTypeId, $startDate, $endDate, $id);
+        if ($conflict !== null) {
+            return ['status' => false, 'message' => "Overlaps an existing leave request for this employee and leave type ({$conflict['start_date']} to {$conflict['end_date']})."];
+        }
 
         try {
             if ($id !== null) {
@@ -122,10 +156,11 @@ class LeaveRequestModel {
                 if (!$stmtCheck->fetch()) {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
+                // 2026-08-30, conflict-prevention fix -- see AttendanceRecordModel's own equivalent comment.
                 $stmt = $this->db->prepare("UPDATE leave_requests SET
                         employee_id = :employee_id, leave_type_id = :leave_type_id, start_date = :start_date, end_date = :end_date,
                         total_days = :total_days, reason = :reason, status = :status,
-                        updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+                        data_source = 'manual', updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id");
                 $stmt->execute([
                     ':employee_id' => $employeeId, ':leave_type_id' => $leaveTypeId, ':start_date' => $startDate, ':end_date' => $endDate,

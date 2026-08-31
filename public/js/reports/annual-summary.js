@@ -308,41 +308,267 @@ $(document).on('click', '#aisClearFilterBtn', function () {
     $('#aisFilterStatus').val('').trigger('change');
 });
 
-// 2026-08-29, explicit follow-up: "ยังไม่มีหน้าตั้งค่าการตัดรอบปี" -- quick-access Settings modal on
-// this page's own header. Loads the current value fresh every time the modal opens (not cached
-// from page load) so it's never stale if changed from Company Profile in another tab.
-$(document).on('show.bs.modal', '#aisFiscalYearSettingsModal', function () {
+/* ==================== Tab 2: Annual Withholding Tax (PIT) Summary (Phase 4, T027) ====================
+   Same shape/conventions as Tab 1 above (client-side, un-paginated, FixedColumns) -- tracking a
+   single tax_withheld figure per employee per month instead of gross/deduction/net. Cell click-to-
+   drill-down reuses the EXACT same #aisCellDetailModal/cellDetail() endpoint as Tab 1 -- that
+   endpoint already returns the full per-run breakdown (earning/deduction/statutory lines,
+   statutory including the TH_PIT line), so no separate PIT-specific detail view was needed.
+   Lazy-loaded on first shown.bs.tab (this app's own standing habit for a table built while its own
+   tab-pane is display:none -- see T018's own Recheck tab for the identical reasoning). ==================== */
+let aisPitTable = null;
+let aisPitLoaded = false;
+
+function aisPitCurrentFilters() {
+    return {
+        fiscal_year: $('#aisPitFiscalYear').val(),
+        department_id: $('#aisPitFilterDepartment').val() || '',
+        team_id: $('#aisPitFilterTeam').val() || '',
+        branch_id: $('#aisPitFilterBranch').val() || '',
+        role_id: $('#aisPitFilterRole').val() || '',
+        employee_status: $('#aisPitFilterStatus').val() || '',
+    };
+}
+function aisPitUpdateClearFilterVisibility() {
+    const f = aisPitCurrentFilters();
+    const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
+    $('#aisPitClearFilterBtn').toggleClass('d-none', !hasFilter);
+}
+function loadAisPitFiscalYears() {
     $.ajax({
-        url: `${BASE_URL}/api/annual-income-summary.fiscal-year-setting`, method: 'GET', dataType: 'json',
+        url: `${BASE_URL}/api/annual-income-summary.years`, method: 'GET', dataType: 'json',
         success: function (res) {
-            if (res.status) {
-                $('#aisFiscalYearStartMonth').val(String((res.data || {}).fiscal_year_start_month || 1)).trigger('change');
-            }
-        }
-    });
-});
-$(document).on('click', '#btnSaveAisFiscalYearSetting', function () {
-    const month = parseInt($('#aisFiscalYearStartMonth').val(), 10) || 1;
-    const $btn = $(this);
-    $btn.prop('disabled', true);
-    $.ajax({
-        url: `${BASE_URL}/api/annual-income-summary.fiscal-year-setting.save`, method: 'POST', contentType: 'application/json', dataType: 'json',
-        data: JSON.stringify({ fiscal_year_start_month: month }),
-        success: function (res) {
-            $btn.prop('disabled', false);
-            if (res.status) {
-                showSuccess(langData['save_success'] || 'Saved successfully.');
-                bootstrap.Modal.getInstance(document.getElementById('aisFiscalYearSettingsModal')).hide();
-                // The fiscal year boundaries themselves may have just changed (e.g. April -> January)
-                // -- reload the year list AND the currently-displayed summary so the page reflects
-                // the new setting immediately instead of requiring a manual refresh.
-                loadAisFiscalYears();
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-            }
+            if (!res.status) return;
+            const $select = $('#aisPitFiscalYear').empty();
+            const years = res.data && res.data.length ? res.data : [new Date().getFullYear()];
+            years.forEach(y => $select.append(new Option('FY ' + y, y)));
+            loadAisPitSummary();
         },
-        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
     });
+}
+function loadAisPitSummary() {
+    const filters = aisPitCurrentFilters();
+    if (!filters.fiscal_year) return;
+    $('#ais-pit-pane .ais-table-wrap').addClass('d-none');
+    $('#aisPitTableEmpty').addClass('d-none');
+    $.ajax({
+        url: `${BASE_URL}/api/annual-income-summary.pit-summary`, method: 'GET', dataType: 'json', data: filters,
+        success: function (res) {
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred while loading the data.'); return; }
+            $('#aisPitSummaryEmployeeCount').text(res.data.totals.employee_count || 0);
+            $('#aisPitSummaryTotal').text(aisFmt(res.data.totals.annual_tax_withheld));
+            aisRenderPitTable(res.data);
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+}
+function aisPitCellHtml(row, val, month) {
+    if (!val) return '<span class="text-muted">-</span>';
+    return `<button type="button" class="ais-cell-clickable" data-employee-id="${row.employee_id}" data-year="${month.year}" data-month="${month.month}">
+        <span class="ais-cell-net">${aisFmt(val)}</span>
+    </button>`;
+}
+function aisRenderPitTable(data) {
+    const months = data.months || [];
+    const employees = data.employees || [];
+
+    if (aisPitTable) {
+        aisPitTable.destroy();
+        aisPitTable = null;
+        $('#tb_ais_pit').empty().append('<thead></thead><tfoot></tfoot>');
+    }
+    if (!employees.length) {
+        $('#aisPitTableEmpty').removeClass('d-none');
+        $('#ais-pit-pane .ais-table-wrap').addClass('d-none');
+        return;
+    }
+    $('#ais-pit-pane .ais-table-wrap').removeClass('d-none');
+
+    let headHtml = '<tr><th>' + (langData['employee'] || 'Employee') + '</th>'
+        + '<th>' + (langData['department'] || 'Department') + '</th>'
+        + '<th>' + (langData['team'] || 'Team') + '</th>'
+        + '<th>' + (langData['position'] || 'Position') + '</th>';
+    months.forEach(m => { headHtml += `<th class="ais-month-${m.state}">${escapeHtmlAis(aisMonthLabel(m))}</th>`; });
+    headHtml += '<th>' + (langData['annual_total'] || 'Annual Total') + '</th></tr>';
+    $('#tb_ais_pit thead').html(headHtml);
+
+    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td>';
+    months.forEach(m => { footHtml += `<td class="text-end">${aisFmt((data.totals.months || {})[m.key] || 0)}</td>`; });
+    footHtml += `<td class="text-end"><span class="ais-total-value">${aisFmt(data.totals.annual_tax_withheld)}</span></td></tr>`;
+    $('#tb_ais_pit tfoot').html(footHtml);
+
+    const columns = [
+        { data: null, render: (row) => `<div class="ais-employee-no">${escapeHtmlAis(row.employee_no)}</div><div class="ais-employee-name">${escapeHtmlAis((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '')}</div>` },
+        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
+        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
+        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
+    ];
+    months.forEach(function (m, idx) {
+        columns.push({
+            data: null, className: 'text-end',
+            render: { display: (row) => aisPitCellHtml(row, row.months[idx], m), sort: (row) => row.months[idx] || 0, filter: (row) => row.months[idx] || 0 }
+        });
+    });
+    columns.push({
+        data: null, className: 'text-end',
+        render: { display: (row) => `<span class="ais-total-value">${aisFmt(row.annual_tax_withheld)}</span>`, sort: (row) => row.annual_tax_withheld, filter: (row) => row.annual_tax_withheld }
+    });
+
+    aisPitTable = $('#tb_ais_pit').DataTable({
+        data: employees, columns: columns, destroy: true, paging: false, info: false, order: [],
+        scrollX: true, scrollY: '60vh', scrollCollapse: true,
+        fixedColumns: { left: 4, right: 1 },
+        language: getTableLang(),
+    });
+    updateText($('#tb_ais_pit')[0]);
+}
+
+/* ==================== Tab 3: Monthly Withholding Tax (Phase 4, T026) ====================
+   Plain calendar year+month, not the fiscal-year abstraction -- see AnnualIncomeSummaryModel::
+   monthlyPitDetail()'s own docblock. A flat client-side table (no month columns to freeze, so no
+   FixedColumns needed here), same #tb_employee-style plain table this app otherwise defaults to.
+   ==================== */
+let aisMonthlyLoaded = false;
+let aisMonthlyTable = null;
+
+function aisMonthlyCurrentFilters() {
+    return {
+        year: $('#aisMonthlyYear').val(),
+        month: $('#aisMonthlyMonth').val(),
+        department_id: $('#aisMonthlyFilterDepartment').val() || '',
+        team_id: $('#aisMonthlyFilterTeam').val() || '',
+        branch_id: $('#aisMonthlyFilterBranch').val() || '',
+        role_id: $('#aisMonthlyFilterRole').val() || '',
+    };
+}
+function aisMonthlyUpdateClearFilterVisibility() {
+    const f = aisMonthlyCurrentFilters();
+    const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id);
+    $('#aisMonthlyClearFilterBtn').toggleClass('d-none', !hasFilter);
+}
+function loadAisMonthlyYears() {
+    $.ajax({
+        url: `${BASE_URL}/api/annual-income-summary.calendar-years`, method: 'GET', dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            const $select = $('#aisMonthlyYear').empty();
+            const currentYear = new Date().getFullYear();
+            const years = res.data && res.data.length ? res.data : [currentYear];
+            years.forEach(y => $select.append(new Option(y, y)));
+            const currentMonth = new Date().getMonth() + 1;
+            $('#aisMonthlyMonth').val(String(currentMonth)).trigger('change');
+            loadAisMonthlySummary();
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+}
+function loadAisMonthlySummary() {
+    const filters = aisMonthlyCurrentFilters();
+    if (!filters.year || !filters.month) return;
+    $.ajax({
+        url: `${BASE_URL}/api/annual-income-summary.monthly-pit`, method: 'GET', dataType: 'json', data: filters,
+        success: function (res) {
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred while loading the data.'); return; }
+            const totals = res.data.totals || {};
+            $('#aisMonthlySummaryEmployeeCount').text(totals.employee_count || 0);
+            $('#aisMonthlySummaryGross').text(aisFmt(totals.gross));
+            $('#aisMonthlySummaryDeduction').text(aisFmt(totals.deduction));
+            $('#aisMonthlySummaryTax').text(aisFmt(totals.tax_withheld));
+            aisRenderMonthlyTable(res.data.employees || []);
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+}
+// 2026-08-30, real gap avoided (same convention this app just finished auditing for app-wide --
+// see docs/ui-standards.md's own "DataTable default page length" section): every list table must
+// be a real DataTable, not a hand-appended <tbody>, and must default to 50/page like every other
+// table -- built as one from the start here rather than a plain table that would need fixing later.
+function aisRenderMonthlyTable(employees) {
+    if (aisMonthlyTable) {
+        aisMonthlyTable.destroy();
+        aisMonthlyTable = null;
+        $('#tb_ais_monthly tbody').empty();
+    }
+    if (!employees.length) {
+        $('#aisMonthlyTableEmpty').removeClass('d-none');
+        $('#tb_ais_monthly').closest('.table-responsive').addClass('d-none');
+        return;
+    }
+    $('#aisMonthlyTableEmpty').addClass('d-none');
+    $('#tb_ais_monthly').closest('.table-responsive').removeClass('d-none');
+    aisMonthlyTable = $('#tb_ais_monthly').DataTable({
+        data: employees,
+        destroy: true,
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        columns: [
+            { data: null, render: (row) => `<div class="ais-employee-no">${escapeHtmlAis(row.employee_no)}</div><div class="ais-employee-name">${escapeHtmlAis((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '')}</div>` },
+            { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
+            { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
+            { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
+            { data: 'gross_amount', className: 'text-end', render: (v) => aisFmt(v) },
+            { data: 'total_deduction_amount', className: 'text-end', render: (v) => aisFmt(v) },
+            { data: 'net_amount', className: 'text-end', render: (v) => aisFmt(v) },
+            { data: 'tax_withheld', className: 'text-end', render: (v) => `<span class="fw-semibold">${aisFmt(v)}</span>` },
+        ],
+        language: getTableLang(),
+    });
+    updateText($('#tb_ais_monthly')[0]);
+}
+
+$(document).on('click', '#aisPitStationFilterToggle', function () {
+    const $filter = $('#aisPitStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+$(document).on('change', '#aisPitFiscalYear, #aisPitFilterDepartment, #aisPitFilterTeam, #aisPitFilterBranch, #aisPitFilterRole, #aisPitFilterStatus', function () {
+    aisPitUpdateClearFilterVisibility();
+    loadAisPitSummary();
+});
+$(document).on('click', '#aisPitClearFilterBtn', function () {
+    $('#aisPitFilterDepartment, #aisPitFilterTeam, #aisPitFilterBranch, #aisPitFilterRole').val(null).trigger('change.select2');
+    $('#aisPitFilterStatus').val('').trigger('change');
+});
+
+$(document).on('click', '#aisMonthlyStationFilterToggle', function () {
+    const $filter = $('#aisMonthlyStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+$(document).on('change', '#aisMonthlyYear, #aisMonthlyMonth, #aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole', function () {
+    aisMonthlyUpdateClearFilterVisibility();
+    loadAisMonthlySummary();
+});
+$(document).on('click', '#aisMonthlyClearFilterBtn', function () {
+    $('#aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole').val(null).trigger('change.select2');
+});
+
+// Lazy-init both new tabs on first shown.bs.tab (same "DataTable built while display:none collapses
+// every column" gotcha this app has hit and documented many times already -- see docs/ui-standards.md).
+$(document).on('shown.bs.tab', '#ais-pit-tab', function () {
+    if (aisPitLoaded) return;
+    aisPitLoaded = true;
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#aisPitFilterDepartment', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisPitFilterTeam', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisPitFilterBranch', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisPitFilterRole', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisPitFilterStatus', { mode: 'static' });
+    }
+    loadAisPitFiscalYears();
+});
+$(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
+    if (aisMonthlyLoaded) return;
+    aisMonthlyLoaded = true;
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#aisMonthlyFilterDepartment', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisMonthlyFilterTeam', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisMonthlyFilterBranch', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisMonthlyFilterRole', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisMonthlyMonth', { mode: 'static' });
+    }
+    loadAisMonthlyYears();
 });
 
 $(document).ready(function () {
@@ -352,7 +578,6 @@ $(document).ready(function () {
         initSelect2('#aisFilterBranch', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterRole', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterStatus', { mode: 'static' });
-        initSelect2('#aisFiscalYearStartMonth', { mode: 'static' });
     }
     loadAisFiscalYears();
 });

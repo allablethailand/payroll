@@ -14,7 +14,6 @@
 let notifDropdownOffset = 0;
 let notifDropdownHasMore = true;
 let notifDropdownLoading = false;
-let notifDropdownOpenedOnce = false;
 const NOTIF_DROPDOWN_PAGE_SIZE = 10;
 
 function notifEscapeHtml(str) {
@@ -32,12 +31,16 @@ function notifTimeAgo(isoVal) {
     if (isNaN(d.getTime())) return String(isoVal);
     const diffMs = Date.now() - d.getTime();
     const mins = Math.floor(diffMs / 60000);
+    // 2026-08-31, explicit request: "1d ago 1h ago ยังไม่แปลภาษา ความจริงให้เป็นคำเต็มไปเลย โดยที่ไม่ต้อง
+    // ย่อ d h" -- full words in both languages now (see notif_minutes_ago/_hours_ago/_days_ago in
+    // en.json/th.json, e.g. "5 hour(s) ago"/"5 ชั่วโมงที่แล้ว" instead of "5h ago"/"5 ชม. ที่แล้ว") --
+    // fallback strings here updated to match in case langData somehow isn't loaded yet.
     if (mins < 1) return langData['notif_just_now'] || 'Just now';
-    if (mins < 60) return `${mins}${langData['notif_minutes_ago'] || 'm ago'}`;
+    if (mins < 60) return `${mins}${langData['notif_minutes_ago'] || ' minute(s) ago'}`;
     const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}${langData['notif_hours_ago'] || 'h ago'}`;
+    if (hours < 24) return `${hours}${langData['notif_hours_ago'] || ' hour(s) ago'}`;
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}${langData['notif_days_ago'] || 'd ago'}`;
+    if (days < 7) return `${days}${langData['notif_days_ago'] || ' day(s) ago'}`;
     return typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(isoVal).split(' ')[0] : String(isoVal).substring(0, 10);
 }
 // 2026-08-29, same-day follow-up: "Notification แยก Icon และสีแต่ละการแจ้งเตือน" -- every notification
@@ -97,6 +100,23 @@ function notifRefreshUnreadCount() {
         if (res.status) notifUpdateBadge(res.data.count || 0);
     });
 }
+// 2026-08-31, explicit request: "ตรง Notification ถ้ามีการคลิกเปิดมาแล้วให้ตัวเลขหายไปเลย และถ้ากดเปิดรอบที่
+// 2 ให้จุดสีส้มหายไปด้วย" -- a genuinely NEW behavior on top of the 2026-08-29 design documented at the
+// top of this file (that design deliberately never marked anything read just from opening -- only an
+// actual per-item click did). Now: opening the dropdown clears the badge COUNT immediately
+// (optimistic, in notifOpenDropdown() below, independent of server timing), and marks every currently
+// unread notification read IN THE BACKGROUND once the freshly-fetched page has finished rendering --
+// deliberately AFTER rendering, not before, so THIS open still shows the real unread dots for items
+// that were genuinely unread a moment ago (matching "เปิดรอบที่ 2 ถึงหาย" literally: the dots on the
+// items you're looking at right now don't vanish out from under you mid-view; only the NEXT time you
+// open it, once a fresh fetch reflects the mark-read that already happened in the background, do the
+// dots come back gone). Every open now re-fetches from scratch (notifDropdownOpenedOnce's old
+// "only ever fetch once per page load" gate removed) specifically so a later open CAN reflect that update.
+function notifMarkVisibleReadInBackground(rows) {
+    const unreadIds = (rows || []).filter(r => Number(r.is_read) === 0).map(r => r.id);
+    if (!unreadIds.length) return;
+    unreadIds.forEach(id => $.post(`${BASE_URL}/api/notification.mark-read`, JSON.stringify({ id: id })));
+}
 function notifLoadDropdownPage() {
     if (notifDropdownLoading || !notifDropdownHasMore) return;
     notifDropdownLoading = true;
@@ -111,18 +131,18 @@ function notifLoadDropdownPage() {
         notifDropdownOffset += rows.length;
         $('#notifMenuEmpty').toggleClass('d-none', notifDropdownOffset > 0 || rows.length > 0);
         rows.forEach(item => $('#notifMenuList').append(notifItemHtml(item)));
+        notifMarkVisibleReadInBackground(rows);
     }).fail(function () {
         notifDropdownLoading = false;
         $('#notifMenuList .nav-notif-loading').remove();
     });
 }
 function notifOpenDropdown() {
-    if (!notifDropdownOpenedOnce) {
-        notifDropdownOpenedOnce = true;
-        notifDropdownOffset = 0;
-        notifDropdownHasMore = true;
-        notifLoadDropdownPage();
-    }
+    notifUpdateBadge(0);
+    $('#notifMenuList').empty();
+    notifDropdownOffset = 0;
+    notifDropdownHasMore = true;
+    notifLoadDropdownPage();
 }
 // 2026-08-29: "คลิกจาก item นั้นแล้วไปหน้านั้นได้เลย" -- marks read then navigates. Delegated (not bound
 // at render time) since rows are appended dynamically as more pages load.

@@ -33,6 +33,15 @@
     // used to live-refresh the nav profile photo (#navProfilePhoto above) right after a photo
     // upload, without waiting for the next full page navigation to re-render it server-side.
     const SESSION_EMPLOYEE_ID = <?=(int)($_SESSION['user']['employee_id'] ?? 0)?>;
+    // 2026-08-30, Phase 7 (T037/T038/T039) -- session-guard.js's own idle-timer/heartbeat/popup
+    // needs both of these: where to send the user once their session ends (Origami's own base URL,
+    // not this app's /auth -- there is nothing to "log back into here" once the session is gone,
+    // only Origami itself), and the SAME 30-minute figure app/helpers/helpers.php's ensure_login()
+    // enforces server-side (this is the client-side COUNTDOWN only -- the server-side check is what
+    // actually matters, see that function's own docblock; kept as one shared number so the two
+    // can never quietly drift apart).
+    const ORIGAMI_BASE_URL = "<?=ORIGAMI_BASE_URL?>";
+    const SESSION_IDLE_TIMEOUT_SECONDS = <?=SESSION_IDLE_TIMEOUT_SECONDS?>;
     <?php
     // 2026-08-28, explicit request: "ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น รวมถึงใน
     // Process ด้วย จะไม่มีข้อมูลรอบที่ดึงมา" -- every Sync-from-Origami button (Employee/Holiday/
@@ -99,6 +108,10 @@ if ($navUserId > 0) {
 <script src="<?=BASE_URL?>/node_modules/jquery/dist/jquery.min.js"></script>
 <script src="<?=asset('public/js/app.js')?>"></script>
 <script src="<?=asset('public/js/alert.js')?>"></script>
+<!-- 2026-08-30, Phase 7 (T037/T038/T039) -- idle-timeout/duplicate-login popup, see the file's own
+     top-of-file docblock. Loaded on every logged-in page via this shared layout; auth/index.php and
+     auth/switch.php never include this file at all (standalone scripts, no session to guard yet). -->
+<script src="<?=asset('public/js/session-guard.js')?>"></script>
 <script src="<?=asset('public/js/input.js')?>"></script>
 <script src="<?=asset('public/js/table-column-filter.js')?>"></script>
 <script src="<?=asset('public/js/notifications.js')?>"></script>

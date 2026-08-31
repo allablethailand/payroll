@@ -1,7 +1,20 @@
 <?php
 declare(strict_types=1);
 
-/** Manual entry for overtime_records -- see AttendanceRecordModel's docblock for the overall rationale. */
+/**
+ * Manual entry for overtime_records -- see AttendanceRecordModel's docblock for the overall rationale.
+ *
+ * 2026-08-30: `ot_rate_id` FK's target was repointed from the now-retired flat `ot_rates` table to
+ * `ot_rate_set_items` (a single scope's rate row within an OT Rate Set -- see OtRateSetModel's own
+ * docblock for the full replacement). The actual multiplier/flat rate on the referenced row is NEVER
+ * read here or by TransactionDataPayAdapter -- only its `ot_scope_id` matters (which OT type this
+ * record belongs to); real payroll OT pay is always computed later via the scope-based Set-resolution
+ * path (OtRateSetModel::resolveRatesForEmployees()), same as a genuine Origami sync row. `r.ot_name_th`/
+ * `r.ot_name_en` (display label for the picker/list, unchanged shape for the frontend) now resolve via
+ * `master_ot_scope_types.name_th`/`name_en` (the OT TYPE's own name, e.g. "OT วันธรรมดา") rather than a
+ * free-text name a company typed on the old flat row -- a Set's own individual items were never
+ * separately named, only the containing Set was.
+ */
 class OvertimeRecordModel {
     private PDO $db;
 
@@ -9,7 +22,7 @@ class OvertimeRecordModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
-    /** @param array $filters optional: employee_id, date_from, date_to */
+    /** @param array $filters optional: employee_id, date_from, date_to, batch_id (2026-08-30, Phase 5 T034 -- drill into one import batch's rows) */
     public function list(int $compId, array $filters = []): array {
         $where = "WHERE o.comp_id = :comp_id AND o.deleted_at IS NULL";
         $params = [':comp_id' => $compId];
@@ -25,11 +38,16 @@ class OvertimeRecordModel {
             $where .= " AND o.ot_date <= :date_to";
             $params[':date_to'] = $filters['date_to'];
         }
+        if (!empty($filters['batch_id'])) {
+            $where .= " AND o.sync_batch_id = :batch_id";
+            $params[':batch_id'] = (int)$filters['batch_id'];
+        }
         $sql = "SELECT o.*, e.employee_no, CONCAT(e.name_th, ' ', e.surname_th) AS employee_name_th, CONCAT(e.name_en, ' ', e.surname_en) AS employee_name_en,
-                    r.ot_name_th, r.ot_name_en
+                    sc.name_th AS ot_name_th, sc.name_en AS ot_name_en
                 FROM overtime_records o
                 JOIN employees e ON e.id = o.employee_id
-                JOIN ot_rates r ON r.id = o.ot_rate_id
+                JOIN ot_rate_set_items r ON r.id = o.ot_rate_id
+                JOIN master_ot_scope_types sc ON sc.id = r.ot_scope_id
                 {$where}
                 ORDER BY o.ot_date DESC LIMIT 500";
         $stmt = $this->db->prepare($sql);
@@ -39,10 +57,11 @@ class OvertimeRecordModel {
 
     public function get(int $id, int $compId): ?array {
         $stmt = $this->db->prepare("SELECT o.*, e.employee_no, CONCAT(e.name_th, ' ', e.surname_th) AS employee_name_th, CONCAT(e.name_en, ' ', e.surname_en) AS employee_name_en,
-                    r.ot_name_th, r.ot_name_en
+                    sc.name_th AS ot_name_th, sc.name_en AS ot_name_en
                 FROM overtime_records o
                 JOIN employees e ON e.id = o.employee_id
-                JOIN ot_rates r ON r.id = o.ot_rate_id
+                JOIN ot_rate_set_items r ON r.id = o.ot_rate_id
+                JOIN master_ot_scope_types sc ON sc.id = r.ot_scope_id
                 WHERE o.id = :id AND o.comp_id = :comp_id AND o.deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -56,7 +75,9 @@ class OvertimeRecordModel {
     }
 
     private function otRateBelongsToCompany(int $otRateId, int $compId): bool {
-        $stmt = $this->db->prepare("SELECT id FROM ot_rates WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt = $this->db->prepare("SELECT i.id FROM ot_rate_set_items i
+            JOIN ot_rate_sets s ON s.id = i.set_id AND s.comp_id = :comp_id AND s.deleted_at IS NULL
+            WHERE i.id = :id");
         $stmt->execute([':id' => $otRateId, ':comp_id' => $compId]);
         return (bool)$stmt->fetch();
     }
@@ -106,9 +127,10 @@ class OvertimeRecordModel {
                 if (!$stmtCheck->fetch()) {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
+                // 2026-08-30, conflict-prevention fix -- see AttendanceRecordModel's own equivalent comment.
                 $stmt = $this->db->prepare("UPDATE overtime_records SET
                         employee_id = :employee_id, ot_rate_id = :ot_rate_id, ot_date = :ot_date, hours = :hours, amount = :amount, status = :status,
-                        updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+                        data_source = 'manual', updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id");
                 $stmt->execute([
                     ':employee_id' => $employeeId, ':ot_rate_id' => $otRateId, ':ot_date' => $otDate, ':hours' => $hours,

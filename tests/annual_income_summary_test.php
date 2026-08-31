@@ -100,6 +100,21 @@ try {
     // them up in any of the 3 fixture runs below -- a genuinely data-less employee, not an
     // artifact of creation order.
     $emp3NoData = insertAisEmployee($pdo, $compId, $deptId, '2027-06-01');
+    // 2026-08-30 (Phase 3, T021, explicit request: "ไม่จ่ายเงินเดือน...ไม่แสดงใน Report") -- a 4th
+    // employee, staff-only (is_payroll_participant=0), with an ELIGIBLE employment_date (2020-01-01,
+    // same as emp1/emp2 -- unlike emp3 above, this one isn't excluded by date range at all) so this
+    // specifically proves the exclusion is due to is_payroll_participant, not merely "no data yet".
+    $insUnpaidAisEmp = $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, employment_date, employment_status, employment_type,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         department_id, is_payroll_participant)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'AIS ไม่จ่าย', 'Test', 'AIS Unpaid', '1990-01-01', 'Thai',
+         :email, '0812345679', '2020-01-01', 'permanent', 'full_time',
+         'cash', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         :dept_id, 0)");
+    $insUnpaidAisEmp->execute([':comp_id' => $compId, ':employee_no' => 'AIS_UNPAID_' . uniqid(), ':email' => uniqid() . '@test.local', ':dept_id' => $deptId]);
+    $emp4Unpaid = (int)$pdo->lastInsertId();
 
     function makeAisRun(PDO $pdo, PayrollRunModel $runModel, int $compId, int $cycleId, int $userId, string $periodStart, string $periodEnd): int {
         $create = $runModel->create($compId, [
@@ -135,7 +150,10 @@ try {
     /* ---------- summary() ---------- */
     echo "=== summary() ===\n";
     $result = $model->summary($compId, 2026, 4, []);
-    check('3 employees in the FY2026 summary (incl. the one with zero payroll data this year)', count($result['employees']), 3);
+    check('3 employees in the FY2026 summary (incl. the one with zero payroll data this year) -- the 4th, staff-only fixture is correctly excluded', count($result['employees']), 3);
+    $emp4Row = null;
+    foreach ($result['employees'] as $e) { if ($e['employee_id'] === $emp4Unpaid) $emp4Row = $e; }
+    checkTrue('T021: the staff-only (is_payroll_participant=0) employee is NOT in the summary at all, despite an eligible employment_date identical to emp1/emp2', $emp4Row === null);
     $emp3Row = null;
     foreach ($result['employees'] as $e) { if ($e['employee_id'] === $emp3NoData) $emp3Row = $e; }
     checkTrue('the zero-data employee is included, not filtered out', $emp3Row !== null);
@@ -183,6 +201,86 @@ try {
     check('a non-matching department_id filter returns zero employees', count($filteredOut['employees']), 0);
     $searched = $model->summary($compId, 2026, 4, ['search' => $emp1Row['employee_no']]);
     check('search by exact employee_no returns exactly 1 employee', count($searched['employees']), 1);
+
+    /* ---------- Phase 4, T026/T027: annualPitSummary()/monthlyPitDetail() ---------- */
+    // Independently-derived reference value (same "don't assume a number, derive it separately"
+    // discipline $realNetFor() above already uses) -- sums the TH_PIT line out of the REAL
+    // statutory_breakdown JSON this fixture's own recalculate() calls actually produced, rather
+    // than assuming/guessing a withholding amount for a 30,000/month salary.
+    $stmtRealStatutory = $pdo->prepare(
+        "SELECT d.statutory_breakdown FROM payroll_run_details d INNER JOIN payroll_runs r ON r.id = d.run_id
+         WHERE d.employee_id = :emp AND r.comp_id = :comp AND YEAR(r.period_start_date) = :y AND MONTH(r.period_start_date) = :m"
+    );
+    $realPitFor = function (int $empId, int $y, int $m) use ($stmtRealStatutory, $compId): float {
+        $stmtRealStatutory->execute([':emp' => $empId, ':comp' => $compId, ':y' => $y, ':m' => $m]);
+        $raw = $stmtRealStatutory->fetchColumn();
+        if ($raw === false) return 0.0;
+        $pit = 0.0;
+        foreach (json_decode((string)$raw, true) ?? [] as $item) {
+            if (($item['code'] ?? null) === 'TH_PIT') { $pit += (float)($item['employee_amount'] ?? 0); }
+        }
+        return $pit;
+    };
+    $realPitApril = $realPitFor($emp1, 2026, 4);
+    $realPitFeb = $realPitFor($emp1, 2027, 2);
+
+    echo "=== Phase 4, T027: annualPitSummary() ===\n";
+    $pitResult = $model->annualPitSummary($compId, 2026, 4, []);
+    check('annualPitSummary(): 12 month columns, same shape as summary()', count($pitResult['months']), 12);
+    check('annualPitSummary(): 3 employees (T021 staff-only exclusion applies identically to this new method)', count($pitResult['employees']), 3);
+    $pitEmp4Row = null;
+    foreach ($pitResult['employees'] as $e) { if ($e['employee_id'] === $emp4Unpaid) $pitEmp4Row = $e; }
+    checkTrue('T021+T027: the staff-only employee is excluded from the PIT summary too', $pitEmp4Row === null);
+    $pitEmp1Row = null;
+    foreach ($pitResult['employees'] as $e) { if ($e['employee_id'] === $emp1) $pitEmp1Row = $e; }
+    checkTrue('employee 1 found in the PIT summary', $pitEmp1Row !== null);
+    checkTrue('employee 1 April 2026 (index 0) tax_withheld matches the real statutory_breakdown value', abs((float)$pitEmp1Row['months'][0] - $realPitApril) < 0.01);
+    checkTrue('employee 1 February 2027 (index 10) tax_withheld matches the real statutory_breakdown value', abs((float)$pitEmp1Row['months'][10] - $realPitFeb) < 0.01);
+    check('employee 1 May 2026 (index 1, no run that month) tax_withheld = 0', (float)$pitEmp1Row['months'][1], 0.0);
+    checkTrue('employee 1 annual_tax_withheld = April + February (only 2 of 3 runs fall inside FY2026)', abs((float)$pitEmp1Row['annual_tax_withheld'] - ($realPitApril + $realPitFeb)) < 0.01);
+    checkTrue('company-wide totals.annual_tax_withheld is exactly double one employee\'s figure (2 identical employees)', abs((float)$pitResult['totals']['annual_tax_withheld'] - 2 * $pitEmp1Row['annual_tax_withheld']) < 0.01);
+
+    echo "=== Phase 4, T026: monthlyPitDetail() ===\n";
+    $monthlyApril = $model->monthlyPitDetail($compId, 2026, 4, []);
+    check('monthlyPitDetail(April 2026): 2 employees paid that month (zero-data emp3/unpaid emp4 both correctly absent)', count($monthlyApril['employees']), 2);
+    $monthlyEmp1Row = null;
+    foreach ($monthlyApril['employees'] as $e) { if ($e['employee_id'] === $emp1) $monthlyEmp1Row = $e; }
+    checkTrue('employee 1 found in the April 2026 monthly detail', $monthlyEmp1Row !== null);
+    checkTrue('monthly detail tax_withheld matches the real statutory_breakdown value', abs((float)$monthlyEmp1Row['tax_withheld'] - $realPitApril) < 0.01);
+    checkTrue('monthly detail net_amount matches the real calculated value (same figure summary() already verified)', abs((float)$monthlyEmp1Row['net_amount'] - $realNetApril) < 0.01);
+    checkTrue('monthly totals.tax_withheld is exactly double one employee\'s figure', abs((float)$monthlyApril['totals']['tax_withheld'] - 2 * $realPitApril) < 0.01);
+    $monthlyMay = $model->monthlyPitDetail($compId, 2026, 5, []);
+    check('monthlyPitDetail(May 2026, no run that month) returns zero employees -- not an all-zero row per employee', count($monthlyMay['employees']), 0);
+
+    echo "=== Phase 4, T026: availableCalendarYears() ===\n";
+    $calYears = $model->availableCalendarYears($compId);
+    checkTrue('2026 is among the available calendar years', in_array(2026, $calYears, true));
+    checkTrue('2027 is among the available calendar years (the Feb 2027 run)', in_array(2027, $calYears, true));
+
+    /* ---------- Phase 4, T029: a DRAFT run's figures must never reach either new PIT report ---------- */
+    echo "=== Phase 4, T029 (\"ทุก Report ใหม่ต้องเช็คเงื่อนไขอนุมัติ/ปิดรอบ\"): draft run excluded from both new methods ===\n";
+    $draftCreate = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'AIS_DRAFT_RUN_' . uniqid(),
+        'period_start_date' => '2026-06-01', 'period_end_date' => '2026-06-30', 'payment_date' => '2026-06-30',
+    ], $userId, true);
+    checkTrue('fixture: draft run (June 2026, inside FY2026) created' . (empty($draftCreate['status']) ? " ({$draftCreate['message']})" : ''), $draftCreate['status']);
+    $draftRunId = $draftCreate['id'];
+    $draftRecalc = $runModel->recalculate($draftRunId, $compId, $userId, true);
+    checkTrue('fixture: draft run recalculated (still state=draft -- deliberately never submitted/approved)' . (empty($draftRecalc['status']) ? " ({$draftRecalc['message']})" : ''), $draftRecalc['status']);
+    // Sanity check the fixture itself actually produced real, non-zero figures for this draft run --
+    // otherwise "the draft run is excluded" would be trivially true for the wrong reason (nothing to
+    // exclude), not because the ALLOWED_STATES gate is doing real work.
+    $draftRealNet = $realNetFor($emp1, 2026, 6);
+    checkTrue('fixture sanity: the draft run has a real, non-zero net figure to potentially leak', $draftRealNet > 0);
+
+    $pitAfterDraft = $model->annualPitSummary($compId, 2026, 4, []);
+    $pitEmp1AfterDraft = null;
+    foreach ($pitAfterDraft['employees'] as $e) { if ($e['employee_id'] === $emp1) $pitEmp1AfterDraft = $e; }
+    check('T029: annualPitSummary() June 2026 (index 2) tax_withheld stays 0 -- the draft run never contributes', (float)$pitEmp1AfterDraft['months'][2], 0.0);
+    check('T029: annualPitSummary() annual_tax_withheld is UNCHANGED by the draft run existing', (float)$pitEmp1AfterDraft['annual_tax_withheld'], (float)$pitEmp1Row['annual_tax_withheld']);
+
+    $monthlyJune = $model->monthlyPitDetail($compId, 2026, 6, []);
+    check('T029: monthlyPitDetail() for June 2026 (the draft run\'s own month) returns ZERO employees -- the draft run\'s real data never surfaces', count($monthlyJune['employees']), 0);
 
     echo "\n--------------------------------------------------\n";
     echo "Passed: {$passes}, Failed: {$failures}\n";

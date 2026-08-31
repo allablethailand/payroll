@@ -3,7 +3,7 @@
         'name' => 'alb-charkit/payroll',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '4b5ec0225e95a0b4d1b8082e41aabb1f549c4233',
+        'reference' => '92c54647b39bfd082d8f2bf33cbbb894068f3770',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -13,7 +13,7 @@
         'alb-charkit/payroll' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '4b5ec0225e95a0b4d1b8082e41aabb1f549c4233',
+            'reference' => '92c54647b39bfd082d8f2bf33cbbb894068f3770',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

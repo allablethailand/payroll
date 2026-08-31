@@ -123,22 +123,76 @@ class EmployeeLoginLogModel {
      * Called from auth/index.php right after a successful SSO login establishes $_SESSION['user'].
      * Returns the new row's id so the caller can stash it (session) for recordTimezone() to find
      * later in the SAME browser session, without needing any other lookup key.
+     *
+     * 2026-08-30, Phase 7 T037 ("1 User 1 Login...ให้ session เก่าหลุดออกทันที"): every OTHER row
+     * still `is_active=1` for this SAME employee is deactivated FIRST, in the SAME transaction as
+     * the new row's insert -- this is the entire mechanism a duplicate/second login uses to kick
+     * every earlier session out. The kicked session(s) don't learn about this instantly (there is
+     * no push channel to an open browser tab in this app) -- they discover it on their own next
+     * request, via ensure_login()'s own per-request `is_active` check (see that function's
+     * docblock) or the client-side heartbeat poll (public/js/session-guard.js), whichever comes
+     * first -- the standard, practical meaning of "immediately" for a traditional request/response
+     * web app with no websocket/SSE infrastructure.
      */
     public function create(int $compId, int $employeeId, string $ipAddress, string $userAgent): int {
         $parsed = self::parseUserAgent($userAgent);
         $location = $this->resolveLocation($ipAddress);
-        $stmt = $this->db->prepare("INSERT INTO `employee_login_logs`
-            (comp_id, employee_id, ip_address, location_city, location_country, device_type, os_name, os_version, browser_name, browser_version, user_agent, login_at)
-            VALUES (:comp_id, :employee_id, :ip_address, :location_city, :location_country, :device_type, :os_name, :os_version, :browser_name, :browser_version, :user_agent, CURRENT_TIMESTAMP)");
-        $stmt->execute([
-            ':comp_id' => $compId, ':employee_id' => $employeeId,
-            ':ip_address' => $ipAddress !== '' ? $ipAddress : null,
-            ':location_city' => $location['city'], ':location_country' => $location['country'],
-            ':device_type' => $parsed['device_type'], ':os_name' => $parsed['os_name'], ':os_version' => $parsed['os_version'],
-            ':browser_name' => $parsed['browser_name'], ':browser_version' => $parsed['browser_version'],
-            ':user_agent' => $userAgent !== '' ? substr($userAgent, 0, 500) : null,
-        ]);
-        return (int)$this->db->lastInsertId();
+        $own = !$this->db->inTransaction();
+        try {
+            if ($own) {
+                $this->db->beginTransaction();
+            }
+            $this->db->prepare("UPDATE `employee_login_logs`
+                    SET is_active = 0, ended_reason = 'new_login'
+                    WHERE employee_id = :employee_id AND is_active = 1")
+                ->execute([':employee_id' => $employeeId]);
+            $stmt = $this->db->prepare("INSERT INTO `employee_login_logs`
+                (comp_id, employee_id, ip_address, location_city, location_country, device_type, os_name, os_version, browser_name, browser_version, user_agent, login_at, is_active)
+                VALUES (:comp_id, :employee_id, :ip_address, :location_city, :location_country, :device_type, :os_name, :os_version, :browser_name, :browser_version, :user_agent, CURRENT_TIMESTAMP, 1)");
+            $stmt->execute([
+                ':comp_id' => $compId, ':employee_id' => $employeeId,
+                ':ip_address' => $ipAddress !== '' ? $ipAddress : null,
+                ':location_city' => $location['city'], ':location_country' => $location['country'],
+                ':device_type' => $parsed['device_type'], ':os_name' => $parsed['os_name'], ':os_version' => $parsed['os_version'],
+                ':browser_name' => $parsed['browser_name'], ':browser_version' => $parsed['browser_version'],
+                ':user_agent' => $userAgent !== '' ? substr($userAgent, 0, 500) : null,
+            ]);
+            $newId = (int)$this->db->lastInsertId();
+            if ($own) {
+                $this->db->commit();
+            }
+            return $newId;
+        } catch (Throwable $e) {
+            if ($own) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /** T037: does this login_log_id still represent the currently-valid session for this employee? False once a NEWER login (or an explicit end -- switch/timeout) has superseded it. */
+    public function isActive(int $id, int $employeeId): bool {
+        $stmt = $this->db->prepare("SELECT is_active FROM `employee_login_logs` WHERE id = :id AND employee_id = :employee_id");
+        $stmt->execute([':id' => $id, ':employee_id' => $employeeId]);
+        $value = $stmt->fetchColumn();
+        return $value !== false && (bool)$value;
+    }
+
+    /**
+     * T038 (idle timeout) and the generic "end this session for a real reason" path -- sets
+     * logout_at/ended_reason/is_active together, scoped to (id, comp_id, employee_id) so one
+     * employee's session can never end another's row -- the ONLY guard; deliberately NOT also
+     * requiring `is_active = 1` currently (a row already deactivated by a NEWER login for the same
+     * employee -- see create()'s own docblock -- can still legitimately record a real logout_at
+     * later, e.g. a kicked device's own browser tab eventually triggers Switch App unaware it was
+     * already superseded; that's still a real, worth-recording event, last-write-wins on
+     * ended_reason if it happens to differ from whatever ended it first).
+     */
+    public function endSession(int $id, int $compId, int $employeeId, string $reason): void {
+        $stmt = $this->db->prepare("UPDATE `employee_login_logs`
+            SET is_active = 0, logout_at = CURRENT_TIMESTAMP, ended_reason = :reason
+            WHERE id = :id AND comp_id = :comp_id AND employee_id = :employee_id");
+        $stmt->execute([':reason' => $reason, ':id' => $id, ':comp_id' => $compId, ':employee_id' => $employeeId]);
     }
 
     /** Second-step capture -- see this table's own migration comment for why timezone can't be known at create() time. Scoped to comp_id/employee_id (not just the raw id) so one employee's session can never patch another's row. */
@@ -154,11 +208,11 @@ class EmployeeLoginLogModel {
 
     /** Called from auth/switch.php right before it destroys the session -- see that file's own
      *  docblock and the logout_at column's own migration comment for why "Switch App away from
-     *  Payroll" is this app's own definition of "logout". */
+     *  Payroll" is this app's own definition of "logout". 2026-08-30: now also flips
+     *  is_active=0/ended_reason='switch_app' via endSession() (Phase 7 T037) -- an explicit
+     *  app-switch is just as much "this session is over" as a timeout or a new login is. */
     public function recordLogout(int $id, int $compId, int $employeeId): bool {
-        $stmt = $this->db->prepare("UPDATE `employee_login_logs` SET logout_at = CURRENT_TIMESTAMP
-            WHERE id = :id AND comp_id = :comp_id AND employee_id = :employee_id");
-        $stmt->execute([':id' => $id, ':comp_id' => $compId, ':employee_id' => $employeeId]);
+        $this->endSession($id, $compId, $employeeId, 'switch_app');
         return true;
     }
 

@@ -62,6 +62,7 @@ function runTypeIconPr(row) {
     if (Number(row.compute_statutory) === 1) parts.push(langData['compute_statutory_label'] || 'Compute tax/SSO/PVD');
     if (Number(row.include_base_salary) === 1) parts.push(langData['include_base_salary_label'] || 'Include base salary');
     if (Number(row.include_standing_items) === 1) parts.push(langData['include_standing_items_label'] || 'Include standing items');
+    if (Number(row.include_attendance_pay) === 1) parts.push(langData['include_attendance_pay_label'] || 'Include attendance pay');
     const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment';
     const title = parts.length ? `${label}: ${parts.join(', ')}` : label;
     return `<i class="fa-solid fa-gift text-warning me-1" title="${escapeHtmlPr(title)}"></i>`;
@@ -323,12 +324,54 @@ function apvApprovalStageInfoPr(state) {
         default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
     }
 }
+// 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่า
+// ตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") -- renders approval_flow.steps (new, see
+// ApprovalRequestModel::stepBreakdown()) as a dot-per-step mini-stepper + one grouped approver list
+// per step, ONLY when present (a run actually routed through the Approval Workflow engine). Absent
+// for the flat department-scoped fallback, which has no step concept -- apvApprovalStageHtmlPr()
+// below falls back to the original flat .apv-substep pool exactly as before in that case.
+function apvStepDotTonePr(step) {
+    if (!step.unlocked) return 'apv-step-dot-locked';
+    if (step.status === 'approved') return 'apv-step-dot-approved';
+    if (step.status === 'rejected') return 'apv-step-dot-rejected';
+    return 'apv-step-dot-pending';
+}
+function apvStepDotsHtmlPr(steps) {
+    return `<div class="apv-step-dots">` + steps.map((s, i) => {
+        const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
+        const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
+        const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
+        return `<div class="apv-step-dot-wrap" title="${escapeHtmlPr(s.step_name || '')}">
+            <div class="apv-step-dot ${apvStepDotTonePr(s)}">${icon}</div>
+            ${lockIcon}
+        </div>${connector}`;
+    }).join('') + `</div>`;
+}
+function apvStepGroupHtmlPr(step) {
+    const badgeHtml = !step.unlocked
+        ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
+        : apvBadgeHtmlPr(apvApproverTonePr(step.status), apvApproverLabelPr(step.status));
+    const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
+    const approversHtml = step.approvers.length
+        ? step.approvers.map(apvApproverSubstepHtmlPr).join('')
+        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
+    return `<div class="apv-step-group">
+        <div class="apv-step-group-head">
+            <span class="apv-step-group-title">${escapeHtmlPr(stepLabel)}${step.step_name ? ': ' + escapeHtmlPr(step.step_name) : ''}</span>
+            ${badgeHtml}
+        </div>
+        <div class="apv-step-group-body">${approversHtml}</div>
+    </div>`;
+}
 function apvApprovalStageHtmlPr(run) {
     const info = apvApprovalStageInfoPr(run.state);
+    const steps = (run.approval_flow && run.approval_flow.steps) || null;
     const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
-    const bodyHtml = approvers.length
-        ? approvers.map(apvApproverSubstepHtmlPr).join('')
-        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
+    const bodyHtml = (steps && steps.length)
+        ? apvStepDotsHtmlPr(steps) + steps.map(apvStepGroupHtmlPr).join('')
+        : (approvers.length
+            ? approvers.map(apvApproverSubstepHtmlPr).join('')
+            : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`);
     return `
         <div class="apv-stage">
             <div class="apv-stage-marker">${apvIconHtmlPr(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
@@ -1018,6 +1061,7 @@ function resetRunForm() {
     $('#run_compute_statutory').prop('checked', true);
     $('#run_include_base_salary').prop('checked', false);
     $('#run_include_standing_items').prop('checked', false);
+    $('#run_include_attendance_pay').prop('checked', false);
     setOffCycleMode(false);
 }
 // Off-cycle runs (e.g. an out-of-cycle payment) skip the Payroll Cycle field entirely -- per
@@ -1054,7 +1098,7 @@ function setOffCycleMode(isOffCycle) {
 // no choice to offer.
 function updateComputeStatutoryVisibility() {
     const isIncentive = $('#run_purpose').val() === 'incentive';
-    $('#run_compute_statutory_row, #run_include_base_salary_row, #run_include_standing_items_row').toggleClass('d-none', !isIncentive);
+    $('#run_compute_statutory_row, #run_include_base_salary_row, #run_include_standing_items_row, #run_include_attendance_pay_row').toggleClass('d-none', !isIncentive);
 }
 // Auto-fills Period Start/End/Payment Date from the selected cycle's own configured cutoff/
 // payment day settings, per explicit request -- pure convenience default, every field stays
@@ -1115,6 +1159,7 @@ function collectRunFormData() {
         compute_statutory: runPurpose === 'incentive' && $('#run_compute_statutory').is(':checked') ? 1 : 0,
         include_base_salary: runPurpose === 'incentive' && $('#run_include_base_salary').is(':checked') ? 1 : 0,
         include_standing_items: runPurpose === 'incentive' && $('#run_include_standing_items').is(':checked') ? 1 : 0,
+        include_attendance_pay: runPurpose === 'incentive' && $('#run_include_attendance_pay').is(':checked') ? 1 : 0,
         run_name: $('#run_name').val().trim(),
         period_start_date: toIsoDatePr($('#run_period_start').val()),
         period_end_date: toIsoDatePr($('#run_period_end').val()),

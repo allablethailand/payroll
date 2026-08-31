@@ -4,15 +4,19 @@ require_once __DIR__ . '/EmployeeModel.php';
 require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
 require_once __DIR__ . '/../services/ThPitCalculator.php';
 require_once __DIR__ . '/../services/SyncPayResolver.php';
+require_once __DIR__ . '/../services/TransactionDataPayAdapter.php';
 require_once __DIR__ . '/../services/PayslipDeliveryService.php';
 require_once __DIR__ . '/../services/sync/MasterDataSyncOrchestrator.php';
 require_once __DIR__ . '/PayrollSyncModel.php';
 require_once __DIR__ . '/SetupRulesModel.php';
 require_once __DIR__ . '/ApprovalRequestModel.php';
 require_once __DIR__ . '/EmployeeRecurringEarningModel.php';
+require_once __DIR__ . '/EmployeeRecurringDeductionModel.php';
 require_once __DIR__ . '/AttendanceDeductionRuleModel.php';
+require_once __DIR__ . '/OtRateSetModel.php';
 require_once __DIR__ . '/PayrollPolicyModel.php';
 require_once __DIR__ . '/NotificationModel.php';
+require_once __DIR__ . '/AttendanceRecordModel.php';
 
 /**
  * Payroll Run state machine + calculation.
@@ -34,8 +38,11 @@ class PayrollRunModel {
     private SyncPayResolver $syncPayResolver;
     private SetupRulesModel $setupRulesModel;
     private EmployeeRecurringEarningModel $recurringEarningModel;
+    private EmployeeRecurringDeductionModel $recurringDeductionModel;
     private AttendanceDeductionRuleModel $attendanceDeductionRuleModel;
+    private OtRateSetModel $otRateSetModel;
     private PayrollPolicyModel $policyModel;
+    private AttendanceRecordModel $attendanceRecordModel;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
@@ -44,8 +51,11 @@ class PayrollRunModel {
         $this->syncPayResolver = new SyncPayResolver($this->db);
         $this->setupRulesModel = new SetupRulesModel($this->db);
         $this->recurringEarningModel = new EmployeeRecurringEarningModel($this->db);
+        $this->recurringDeductionModel = new EmployeeRecurringDeductionModel($this->db);
         $this->attendanceDeductionRuleModel = new AttendanceDeductionRuleModel($this->db);
+        $this->otRateSetModel = new OtRateSetModel($this->db);
         $this->policyModel = new PayrollPolicyModel($this->db);
+        $this->attendanceRecordModel = new AttendanceRecordModel($this->db);
     }
 
     /* ==================== READ ==================== */
@@ -270,6 +280,43 @@ class PayrollRunModel {
             unset($row['base_salary_override_action'], $row['run_excludes_base_salary']);
         }
         return $rows;
+    }
+
+    /**
+     * 2026-08-30 (Phase 8, T041, real gap found and fixed): a sync-based run's employee membership
+     * is (by design, see the eligibility query in recalculate()'s own comment) ONLY whoever Origami
+     * actually sent this time (plus anyone manually joined on top) -- an employee who would
+     * otherwise be expected in payroll (active, is_payroll_participant, employment date range
+     * overlapping the period, same cycle_id-or-unassigned rule as the T041 cross-cycle-leakage fix
+     * above) but simply wasn't in this sync payload is silently absent from the run with no visible
+     * sign anything is missing. This is a reconciliation check, purely informational (never blocks
+     * anything) -- returns who's missing so an admin at cutoff can tell "Origami hasn't sent
+     * everyone yet" apart from "this really is everyone this period" before submitting for approval.
+     * Returns [] for any run that isn't sync-based (nothing to reconcile against for a cycle-based
+     * or off-cycle run, whose membership rules are different).
+     * @return array<int,array{id:int,employee_no:string,name_th:string,surname_th:string,name_en:string,surname_en:string}>
+     */
+    public function syncMissingEmployees(int $runId, int $compId): array {
+        $run = $this->get($runId, $compId);
+        if (!$run || $run['sync_process_id'] === null) {
+            return [];
+        }
+        $stmt = $this->db->prepare("SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en
+            FROM `employees` e
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
+            AND e.employment_date <= :period_end
+            AND (e.employment_end_date IS NULL OR e.employment_end_date >= :period_start)
+            AND (e.cycle_id IS NULL OR e.cycle_id = :cycle_id)
+            AND NOT EXISTS (SELECT 1 FROM `payroll_sync_items` psi WHERE psi.process_id = :process_id AND psi.employee_id = e.id AND psi.mapping_status = 'mapped')
+            AND NOT EXISTS (SELECT 1 FROM `payroll_run_manual_employees` pme WHERE pme.run_id = :run_id AND pme.employee_id = e.id)
+            AND NOT EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id2 AND pex.employee_id = e.id)
+            ORDER BY e.employee_no ASC");
+        $stmt->execute([
+            ':comp_id' => $compId, ':period_end' => $run['period_end_date'], ':period_start' => $run['period_start_date'],
+            ':cycle_id' => $run['cycle_id'], ':process_id' => $run['sync_process_id'],
+            ':run_id' => $runId, ':run_id2' => $runId,
+        ]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /**
@@ -732,7 +779,15 @@ class PayrollRunModel {
                     'status' => $status, 'acted_at' => $actedAt, 'note' => $note,
                 ];
             }, $pool);
-            return ['run_state' => $run['state'], 'approvers' => $approvers];
+            // 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable
+            // พร้อมกันแบบจุดๆ") -- 'steps' is the NEW per-step breakdown (ApprovalRequestModel::
+            // stepBreakdown(), additive, see its own docblock) feeding the frontend's step-dot
+            // timeline; 'approvers' above is UNCHANGED (still the flattened "who can act right now"
+            // list every existing caller/UI already renders) so nothing that reads only 'approvers'
+            // needs to change. Only present for a run actually routed through the workflow engine --
+            // the flat department-scoped fallback below has no multi-step concept at all, 'steps'
+            // stays absent there, same as before this change.
+            return ['run_state' => $run['state'], 'approvers' => $approvers, 'steps' => $approvalRequestModel->stepBreakdown($compId, (int)$run['approval_request_id'])];
         }
 
         $departmentId = $this->submitterDepartmentId($run);
@@ -1096,6 +1151,14 @@ class PayrollRunModel {
         $computeStatutory = $runPurpose === 'incentive' ? (!empty($data['compute_statutory']) ? 1 : 0) : 1;
         $includeBaseSalary = $runPurpose === 'incentive' ? (!empty($data['include_base_salary']) ? 1 : 0) : 1;
         $includeStandingItems = $runPurpose === 'incentive' ? (!empty($data['include_standing_items']) ? 1 : 0) : 1;
+        // 2026-08-30 (Phase 8, T041, real gap found and fixed): a 3rd opt-in toggle, same pattern as
+        // the two above -- pulls sync-derived attendance EARNING lines only (OT/trip allowance/any
+        // other item_values-derived earning), never the deduction side (late/absent/unpaid leave/
+        // leave pending don't belong in a supplemental payout run). See recalculate()'s own
+        // $includeAttendancePay branch for exactly what this changes. A normal 'payroll' run has no
+        // meaning for this (it already pulls sync-derived lines unconditionally), so it stays 0 there
+        // same as include_base_salary/include_standing_items are forced to their normal-run value.
+        $includeAttendancePay = $runPurpose === 'incentive' ? (!empty($data['include_attendance_pay']) ? 1 : 0) : 0;
 
         // Auto-sync Origami HR master data (department/position/shift/employee) right before
         // pulling this process into a run, so the user doesn't have to run "Sync Now" as a
@@ -1135,12 +1198,13 @@ class PayrollRunModel {
         $notes = !empty($data['notes']) ? trim((string)$data['notes']) : null;
 
         $stmt = $this->db->prepare("INSERT INTO `payroll_runs`
-            (comp_id, cycle_id, sync_process_id, run_purpose, compute_statutory, include_base_salary, include_standing_items, run_name, period_start_date, period_end_date, payment_date, state, notes, created_by)
-            VALUES (:comp_id, :cycle_id, :sync_process_id, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :run_name, :start, :end, :pay_date, 'draft', :notes, :created_by)");
+            (comp_id, cycle_id, sync_process_id, run_purpose, compute_statutory, include_base_salary, include_standing_items, include_attendance_pay, run_name, period_start_date, period_end_date, payment_date, state, notes, created_by)
+            VALUES (:comp_id, :cycle_id, :sync_process_id, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :include_attendance_pay, :run_name, :start, :end, :pay_date, 'draft', :notes, :created_by)");
         $stmt->execute([
             ':comp_id' => $compId, ':cycle_id' => $cycleId, ':sync_process_id' => $syncProcessId,
             ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
             ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
+            ':include_attendance_pay' => $includeAttendancePay,
             ':run_name' => $runName,
             ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
             ':notes' => $notes, ':created_by' => $userId,
@@ -1206,6 +1270,7 @@ class PayrollRunModel {
         $computeStatutory = (int)$run['compute_statutory'];
         $includeBaseSalary = (int)$run['include_base_salary'];
         $includeStandingItems = (int)$run['include_standing_items'];
+        $includeAttendancePay = (int)$run['include_attendance_pay'];
         $isOffCycle = $run['cycle_id'] === null && $run['sync_process_id'] === null;
         $isSupplementalSync = $run['sync_process_id'] !== null && ($run['sync_run_kind'] ?? 'regular') === 'supplemental';
         if (($isOffCycle || $isSupplementalSync) && array_key_exists('run_purpose', $data)) {
@@ -1213,18 +1278,21 @@ class PayrollRunModel {
             $computeStatutory = $runPurpose === 'incentive' ? (!empty($data['compute_statutory']) ? 1 : 0) : 1;
             $includeBaseSalary = $runPurpose === 'incentive' ? (!empty($data['include_base_salary']) ? 1 : 0) : 1;
             $includeStandingItems = $runPurpose === 'incentive' ? (!empty($data['include_standing_items']) ? 1 : 0) : 1;
+            $includeAttendancePay = $runPurpose === 'incentive' ? (!empty($data['include_attendance_pay']) ? 1 : 0) : 0;
         }
 
         $stmt = $this->db->prepare("UPDATE `payroll_runs` SET run_name = :run_name, period_start_date = :start,
             period_end_date = :end, payment_date = :pay_date, notes = :notes,
             run_purpose = :run_purpose, compute_statutory = :compute_statutory,
             include_base_salary = :include_base_salary, include_standing_items = :include_standing_items,
+            include_attendance_pay = :include_attendance_pay,
             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
             WHERE id = :id");
         $stmt->execute([
             ':run_name' => $runName, ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
             ':notes' => $notes, ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
             ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
+            ':include_attendance_pay' => $includeAttendancePay,
             ':updated_by' => $userId, ':id' => $id,
         ]);
         $this->logAudit($id, 'draft', 'draft', 'update', $userId);
@@ -1292,6 +1360,23 @@ class PayrollRunModel {
      *    leavers (employment_end_date).
      * All of the above are flagged here and in the class docblock, not hidden.
      */
+    /**
+     * 2026-08-31, explicit request: "Form ที่เป็นรายการหัก...ถ้าค่าธรรมเนียมให้ใส่ได้เป็น % คิดจากอะไร...ต้อง
+     * นำไปรวมคำนวณได้ถูกต้อง" -- $rec is one row from EmployeeRecurringDeductionModel::activeForPeriod()
+     * (carries `amount`/`fee_percent`/`fee_base`), $baseSalary is THIS employee's own decrypted
+     * current base_salary_amount (already resolved earlier in the same per-employee iteration this
+     * is called from). fee_base only ever validates to 'base_salary' for this table (see that
+     * model's own migration comment -- no principal/loan-amount concept exists here), so this is
+     * intentionally a single-branch helper, not a mirror of the loan side's 2-option fee_base.
+     */
+    private function recurringDeductionAmountWithFee(array $rec, float $baseSalary): float {
+        $amount = (float)$rec['amount'];
+        if (!empty($rec['fee_percent']) && ($rec['fee_base'] ?? null) === 'base_salary') {
+            $amount += round($baseSalary * ((float)$rec['fee_percent'] / 100), 2);
+        }
+        return round($amount, 2);
+    }
+
     public function recalculate(int $id, int $compId, int $userId, bool $isAdmin): array {
         if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to calculate this payroll run.'];
@@ -1324,12 +1409,41 @@ class PayrollRunModel {
         $stmtProrateDivisor->execute([':id' => $compId]);
         $prorateDivisorDays = (int)($stmtProrateDivisor->fetchColumn() ?: 30);
 
+        // 2026-08-30 (Phase 8, T041): "no attendance/OT/leave data at all this period" is only a
+        // meaningful WARNING for a company actually linked to Origami Payroll sync (a company on
+        // that tier reasonably expects Origami to have sent SOMETHING every period) -- for a
+        // manual-entry-only or import-batch company (CLAUDE.md's "No HR user"/"External HR user"
+        // tiers) a genuinely empty period is completely normal and would make this warning pure
+        // noise on every single run. Fetched once per run, same "cheap company-wide singleton"
+        // precedent as $prorateDivisorDays above -- gates the advisory calc_errors note pushed per
+        // employee further down, see that block's own comment for the full reasoning.
+        $stmtOrigamiLinked = $this->db->prepare("SELECT origami_payroll_comp_code FROM `companies` WHERE id = :id");
+        $stmtOrigamiLinked->execute([':id' => $compId]);
+        $isOrigamiPayrollLinked = (string)($stmtOrigamiLinked->fetchColumn() ?: '') !== '';
+        // Same "genuine cycle-based run, not a sync-based one" test buildManualEmployeeWhere()'s own
+        // $isPureCycleRun already uses -- a sync-based run's eligibility query already guarantees
+        // every included employee has a $syncItemsByEmployee row (see that query's own
+        // `psi.employee_id IS NOT NULL OR pme.employee_id IS NOT NULL` condition), and an off-cycle
+        // run never populates $syncItemsByEmployee for anyone at all -- so this warning is only ever
+        // meaningful (and only ever false-positive-free) on THIS one run type.
+        $isPureCycleRunForDataWarning = $run['cycle_id'] !== null && $run['sync_process_id'] === null;
+
         // 2026-08-30, explicit request: probation pay conditions (Payroll Configuration > Payroll
         // Policies tab) -- fetched ONCE per run (company-wide singleton), not per employee. Gated
         // per employee below by `employees.employment_status === 'probation'` -- see
         // PayrollPolicyModel::probationSettings()'s own docblock for why that's the real gate, not
         // a day-count.
         $probationSettings = $this->policyModel->probationSettings($compId);
+        // 2026-08-31, explicit request: internship pay conditions ("เด็กฝึกงานบางคนที่ให้เงินเดือน แต่อยากให้
+        // ตั้งเงื่อนไขได้แบบ Probation") -- own separate field set, same "fetched once per run" shape as
+        // $probationSettings above. Gated by employees.employment_type === 'internship'.
+        // PRECEDENCE when an employee is somehow BOTH employment_type='internship' AND
+        // employment_status='probation' at once: internship settings take priority and probation's
+        // own settings are skipped entirely for that employee -- confirmed via AskUserQuestion, never
+        // stacking/multiplying both ratios together (a more specific worker classification wins over
+        // the more general one, same spirit as this project's own "employee > position > department >
+        // shift" Holiday-priority precedent elsewhere).
+        $internSettings = $this->policyModel->internSettings($compId);
         // 2026-08-30, explicit request: "จ่ายตามวันที่มาทำงาน หักวันหยุด หักวันลาไหม หรือจ่ายเต็มเดือน" --
         // same "fetched once per run, not per employee" precedent as $probationSettings above. See
         // SetupRulesModel::scheduledPayableDaysForEmployee()'s own docblock for the calculation this
@@ -1358,6 +1472,13 @@ class PayrollRunModel {
         //     bonus payout): NO automatic membership at all. Only employees explicitly "Joined" via
         //     joinEmployees() (payroll_run_manual_employees) are included -- an ad-hoc special
         //     payment should never silently default to "everyone currently employed."
+        // 2026-08-30 (Phase 3, T021, explicit request: "ไม่จ่ายเงินเดือน...ดึงไปทำรายการไม่ได้") -- ALL
+        // 3 branches below now also require e.is_payroll_participant = 1 (or the bare
+        // is_payroll_participant on the cycle branch, which doesn't alias the table). A staff-only
+        // employee is excluded even if they were previously manually joined/re-included before being
+        // marked unpaid -- the same buildManualEmployeeWhere() filter also stops the "Join Employees"
+        // picker from offering them in the first place, but this covers the case where the exclusion
+        // needs to win over already-existing membership too (e.g. marked unpaid AFTER being joined).
         if ($run['sync_process_id'] !== null) {
             // 2026-08-21, explicit request ("เพิ่มพนักงานเข้ามาในรอบได้แบบ Manual...ถ้าเป็นการ Sync")
             // -- membership is no longer sync-payload-only: an employee manually joined via
@@ -1369,13 +1490,14 @@ class PayrollRunModel {
             // both sides match, since that employee's real attendance data IS what's driving their
             // calculation regardless of also being manually rostered.
             $stmtEmp = $this->db->prepare("SELECT DISTINCT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
-                    e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready,
-                    e.has_spouse, e.tax_calculation_method, e.salary_type, e.department_id, e.team_id, e.employment_status,
+                    e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready, e.ot_eligible, e.ot_rate_source, e.assigned_ot_rate_set_id,
+                    e.has_spouse, e.tax_calculation_method, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
+                    e.employment_type, e.intern_base_salary_ratio_override,
                     CASE WHEN psi.employee_id IS NOT NULL THEN 'sync' ELSE 'manual' END AS data_source
                 FROM `employees` e
                 LEFT JOIN `payroll_sync_items` psi ON psi.process_id = :process_id AND psi.employee_id = e.id AND psi.mapping_status = 'mapped'
                 LEFT JOIN `payroll_run_manual_employees` pme ON pme.run_id = :run_id AND pme.employee_id = e.id
-                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
                 AND (psi.employee_id IS NOT NULL OR pme.employee_id IS NOT NULL)
                 AND NOT EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id_exclude AND pex.employee_id = e.id)");
             $stmtEmp->execute([':comp_id' => $compId, ':process_id' => $run['sync_process_id'], ':run_id' => $id, ':run_id_exclude' => $id]);
@@ -1395,21 +1517,40 @@ class PayrollRunModel {
             // 'calculated', so this can't reach approval half-finished -- completing the employee's
             // profile via the normal Employee edit form (which flips is_payroll_ready back to 1) and
             // recalculating is what clears it.
+            //
+            // 2026-08-30 (Phase 8, T041, real bug found and fixed -- reproduced live, not guessed:
+            // created 2 payroll_cycles on the same company, an employee assigned only to Cycle A via
+            // employees.cycle_id, then ran payroll under Cycle B for the same period -- the employee
+            // was pulled into and paid by Cycle B's run too, since this query never filtered by
+            // employees.cycle_id at all despite that column existing since 2026-08-19 specifically to
+            // assign an employee to one standing cycle [[project_employee_salary_cycle_field]]. Any
+            // company running more than one concurrent cycle was at real risk of cross-cycle
+            // double-inclusion/double-payment). Fixed with `e.cycle_id IS NULL OR e.cycle_id =
+            // :cycle_id`, NOT a strict equality-only filter -- employees.cycle_id is nullable/optional
+            // (a company that only ever runs a single cycle never has to assign it at all), so a
+            // strict filter would have silently dropped every never-assigned employee out of their
+            // only cycle's run. NULL = "not scoped to any particular cycle, eligible everywhere" (same
+            // "unassigned = general, explicitly assigned = scoped" convention this codebase already
+            // uses for Holiday/Payslip Template assignment); an employee with cycle_id explicitly set
+            // is eligible ONLY for that cycle's own runs, closing the leakage.
             $stmtEmp = $this->db->prepare("SELECT id, employee_no, base_salary_amount, key_version, employment_date, employment_end_date,
-                    sso_enrolled, pvd_enrolled, tax_exempt, is_payroll_ready,
-                    has_spouse, tax_calculation_method, salary_type, department_id, team_id, employment_status, 'manual' AS data_source
+                    sso_enrolled, pvd_enrolled, tax_exempt, is_payroll_ready, ot_eligible, ot_rate_source, assigned_ot_rate_set_id,
+                    has_spouse, tax_calculation_method, salary_type, department_id, team_id, position_id, employment_status,
+                    employment_type, intern_base_salary_ratio_override, 'manual' AS data_source
                 FROM `employees` e
-                WHERE comp_id = :comp_id AND deleted_at IS NULL
+                WHERE comp_id = :comp_id AND deleted_at IS NULL AND is_payroll_participant = 1
                 AND employment_date <= :period_end
                 AND (employment_end_date IS NULL OR employment_end_date >= :period_start)
+                AND (e.cycle_id IS NULL OR e.cycle_id = :cycle_id)
                 AND NOT EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id_exclude AND pex.employee_id = e.id)");
-            $stmtEmp->execute([':comp_id' => $compId, ':period_end' => $periodEnd, ':period_start' => $periodStart, ':run_id_exclude' => $id]);
+            $stmtEmp->execute([':comp_id' => $compId, ':period_end' => $periodEnd, ':period_start' => $periodStart, ':cycle_id' => $run['cycle_id'], ':run_id_exclude' => $id]);
         } else {
             $stmtEmp = $this->db->prepare("SELECT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
-                    e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready,
-                    e.has_spouse, e.tax_calculation_method, e.salary_type, e.department_id, e.team_id, e.employment_status, 'manual' AS data_source
+                    e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready, e.ot_eligible, e.ot_rate_source, e.assigned_ot_rate_set_id,
+                    e.has_spouse, e.tax_calculation_method, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
+                    e.employment_type, e.intern_base_salary_ratio_override, 'manual' AS data_source
                 FROM `payroll_run_manual_employees` pme
-                JOIN `employees` e ON e.id = pme.employee_id AND e.comp_id = :comp_id AND e.deleted_at IS NULL
+                JOIN `employees` e ON e.id = pme.employee_id AND e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
                 WHERE pme.run_id = :run_id");
             $stmtEmp->execute([':comp_id' => $compId, ':run_id' => $id]);
         }
@@ -1442,6 +1583,18 @@ class PayrollRunModel {
                 $psi['item_values'] = $psi['item_values'] !== null ? json_decode((string)$psi['item_values'], true) : [];
                 $syncItemsByEmployee[(int)$psi['employee_id']] = $psi; // last row wins if duplicates exist
             }
+        } elseif ($run['cycle_id'] !== null) {
+            // 2026-08-30 (Phase 5, T032, explicit request: "ถ้าข้อมูล match กับพนักงาน/งวดที่ถูกต้อง
+            // ให้นำไปใช้คำนวณ", confirmed via AskUserQuestion) -- a normal cycle-based (non-sync) run
+            // now ALSO feeds SyncPayResolver, using attendance_records/leave_requests/
+            // overtime_records (Sync/Import/Manual Entry all write into these same 3 tables) instead
+            // of payroll_sync_items -- see TransactionDataPayAdapter's own docblock for the full
+            // reasoning and its documented simplifications. Scoped to cycle-based runs only, same as
+            // PED assignments/recurring earnings just below -- an off-cycle/incentive run stays
+            // manually-picked-items-only, untouched by this branch.
+            $syncItemsByEmployee = TransactionDataPayAdapter::buildSyntheticRows(
+                $this->db, $compId, array_column($employees, 'id'), $periodStart, $periodEnd
+            );
         }
 
         // Per-run, per-employee, per-item overrides on a SYNC-COMPUTED deduction line (2026-08-21,
@@ -1468,6 +1621,42 @@ class PayrollRunModel {
         foreach ($stmtAttOverrides->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $attendanceOverridesByEmployee[(int)$row['employee_id']] = $row;
         }
+
+        // 2026-08-30, explicit request ("OT Rate...Assign รายบุคคลได้ด้วย"): every employee's OT rate
+        // override rows for this company, prefetched ONCE (not per employee/per scope) -- same
+        // "prefetch outside the per-employee loop" convention every other lookup on this page
+        // already follows. Keyed employee_id => scope_code => rate array (the exact shape
+        // SyncPayResolver::resolve()'s own $otOverridesByScope param expects), so the per-employee
+        // loop below just does `$otOverridesByEmployee[$employeeId] ?? []` -- filtering by
+        // ot_rate_source='custom' happens per employee below (not here), since a company can freely
+        // mix employees on 'default' and 'custom' -- fetching every row regardless of that flag is
+        // simpler than joining employees here just to filter, and any leftover override rows for a
+        // 'default' employee are simply never looked up. See EmployeeOtRateModel's own docblock.
+        $otOverridesByEmployee = [];
+        $stmtOtOverrides = $this->db->prepare("SELECT o.employee_id, s.code AS scope_code, o.multiplier_rate, o.calculation_base, o.calculation_method, o.flat_amount_rate
+            FROM `employee_ot_rate_overrides` o
+            JOIN `master_ot_scope_types` s ON s.id = o.ot_scope_id
+            WHERE o.comp_id = :comp_id");
+        $stmtOtOverrides->execute([':comp_id' => $compId]);
+        foreach ($stmtOtOverrides->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $otOverridesByEmployee[(int)$row['employee_id']][$row['scope_code']] = [
+                'multiplier_rate' => (float)$row['multiplier_rate'], 'calculation_base' => (string)$row['calculation_base'],
+                'calculation_method' => (string)$row['calculation_method'],
+                'flat_amount_rate' => $row['flat_amount_rate'] !== null ? (float)$row['flat_amount_rate'] : 0.0,
+            ];
+        }
+
+        // 2026-08-30, real gap found and fixed (previous version read the flat `ot_rates` table
+        // directly, keyed only by scope, with no way to disambiguate multiple rows for the same
+        // scope beyond an arbitrary `ORDER BY id ASC LIMIT 1` -- the exact ambiguity the user's own
+        // report named: "ถ้าบันทึกข้อมูลซ้ำ แต่คนละ Rate จะแก้ไขยังไง"). Batched ONCE per run (same
+        // "prefetch outside the per-employee loop" convention as every other lookup here) via
+        // OtRateSetModel::resolveRatesForEmployees() -- explicit assigned_ot_rate_set_id wins, else
+        // employee>team>position>department assignment match, else the company's mandatory Default
+        // set. Keyed employee_id => scope_code => rate array, same shape $otOverridesByEmployee
+        // above already uses -- $otOverridesByEmployee (the CUSTOM per-employee override) always
+        // wins over this when both exist for the same scope, see resolve()'s own docblock.
+        $otRateSetRatesByEmployee = $this->otRateSetModel->resolveRatesForEmployees($employees, $compId);
 
         // Per-run, per-employee tax/SSO exemption (2026-08-21, explicit request: "จัดการได้ว่า
         // คนนี้ไม่ต้องคำนวณภาษี ไม่นำส่งประกันสังคมในรอบนี้") -- prefetched once, merged into
@@ -1592,13 +1781,33 @@ class PayrollRunModel {
         //     always runs, and the exact same two-panel Earning/Deduction type-selection UI
         //     (payroll_run_ped_type_settings, see that table's own docblock) an admin already uses to
         //     narrow a normal run's items, now also usable on an incentive run once this is on.
-        //     Deliberately does NOT include attendance bonus or sync-derived lines -- both are tied
-        //     to a real pay period/cycle or a pulled sync process, neither of which an off-cycle
-        //     incentive run has.
+        //   - include_attendance_pay (2026-08-30, Phase 8 T041, real gap found and fixed): pulls
+        //     sync-derived attendance EARNING lines only (OT/trip allowance/any other item_values-
+        //     derived earning) -- the deduction side (late/absent/unpaid leave/leave pending) never
+        //     applies here, doesn't belong in a supplemental payout run. An off-cycle incentive run
+        //     with neither cycle_id nor sync_process_id has no attendance_records/overtime_records
+        //     period to read from automatically, so this branch calls
+        //     TransactionDataPayAdapter::buildSyntheticRows() directly, scoped to just this run's own
+        //     manually-joined roster and its own period -- see the $isIncentive block further down
+        //     for exactly where this is consumed.
         $isIncentive = ($run['run_purpose'] ?? 'payroll') === 'incentive';
         $computeStatutory = $isIncentive ? !empty($run['compute_statutory']) : true;
         $includeBaseSalary = $isIncentive ? !empty($run['include_base_salary']) : true;
         $includeStandingItems = $isIncentive ? !empty($run['include_standing_items']) : true;
+        $includeAttendancePay = $isIncentive && !empty($run['include_attendance_pay']);
+        if ($includeAttendancePay && empty($syncItemsByEmployee)) {
+            // Genuine off-cycle run (no cycle_id/sync_process_id already populated it above) -- pull
+            // directly, scoped to just this run's own manually-joined roster (payroll_run_manual_employees)
+            // rather than the whole company, since an off-cycle run has no automatic membership.
+            $stmtIncentiveRoster = $this->db->prepare("SELECT employee_id FROM `payroll_run_manual_employees` WHERE run_id = :run_id");
+            $stmtIncentiveRoster->execute([':run_id' => $id]);
+            $incentiveRosterIds = array_map('intval', $stmtIncentiveRoster->fetchAll(PDO::FETCH_COLUMN));
+            if (!empty($incentiveRosterIds)) {
+                $syncItemsByEmployee = TransactionDataPayAdapter::buildSyntheticRows(
+                    $this->db, $compId, $incentiveRosterIds, $periodStart, $periodEnd
+                );
+            }
+        }
 
         // 2026-08-29, explicit follow-up request: "ตอนนี้ 2 รายการเงินได้/เงินหักที่ใช้ในรอบนี้ จะไม่ซ้ำซ้อน
         // กับการตั้งค่าของรอบใช่ไหมครับ" -- confirmed genuine overlap (both this OLD per-run standing-
@@ -1774,24 +1983,70 @@ class PayrollRunModel {
                     $effectiveStart = $employmentDate > $periodStart ? $employmentDate : $periodStart;
                     $effectiveEnd = ($employmentEndDate !== null && $employmentEndDate < $periodEnd) ? $employmentEndDate : $periodEnd;
 
-                    if ($salaryType === 'daily') {
+                    // 2026-08-31, explicit request/investigation: "ถ้าเป็นพนักงานรายวัน การระบุเงินเดือน และ
+                    // การคำนวณจะเป็นแบบไหนครับ รายสัปดาห์ด้วย และรายปักษ์...ต้องครอบคลุมทั้งหมด" -- widened from
+                    // 'daily'-only to also cover 'weekly'/'semi_monthly'/'bi_weekly' (employees.
+                    // salary_type, confirmed via AskUserQuestion to reuse payroll_cycles.
+                    // payroll_frequency's own vocabulary/i18n labels for consistency -- these
+                    // employees are expected to be assigned, via employees.cycle_id, to a Payroll
+                    // Cycle of the SAME frequency, whose own period-boundary math
+                    // (PayrollCycleModel::suggestNextPeriod()) already correctly produces a ~7/~15/14-
+                    // day run period -- this branch doesn't need to know or care which cycle produced
+                    // $periodStart/$periodEnd, only how to prorate base_salary_amount across
+                    // whatever period this run actually covers).
+                    //
+                    // Reuses the EXACT SAME payableDaysForEmployee()-based proration 'daily' already
+                    // had (shift pattern + company holidays, excludes weekly off-days) -- the only new
+                    // piece is converting base_salary_amount into an EFFECTIVE DAILY RATE first, via a
+                    // FIXED divisor per type (same "fixed legal divisor, not the period's own actual
+                    // length" convention the monthly branch below already uses for its own 30-day
+                    // divisor -- a semi-monthly period's real length varies 13-18 days depending on
+                    // the company's chosen cutoff day and the month, so a fixed 15 keeps this
+                    // predictable/consistent rather than silently shifting rate depending on which
+                    // half of which month a run happens to fall in). 'daily' itself keeps its
+                    // original divisor of 1 (base_salary_amount already IS a per-day rate) --
+                    // zero behavior change for any employee already on 'daily'.
+                    $salaryTypeDayDivisors = ['daily' => 1, 'weekly' => 7, 'semi_monthly' => 15, 'bi_weekly' => 14];
+                    if (isset($salaryTypeDayDivisors[$salaryType])) {
+                        $effectiveDailyRate = $baseSalary / $salaryTypeDayDivisors[$salaryType];
                         $payable = $this->setupRulesModel->payableDaysForEmployee($employeeId, $compId, $effectiveStart, $effectiveEnd);
                         // Repurposed, not renamed -- same "X/Y days" breakdown display fields the
                         // monthly path below still uses, now showing payable/total days instead of
                         // a calendar prorate ratio.
                         $prorateDays = $payable['payable_days'];
                         $prorateTotalDays = $payable['total_days'];
-                        $effectiveBase = round($baseSalary * $payable['payable_days'], 2);
+                        $effectiveBase = round($effectiveDailyRate * $payable['payable_days'], 2);
                         if (!$payable['has_shift_pattern']) {
                             // No shift assigned -- still pays for every non-holiday day in range as
                             // the safe default (see docblock), just flagged visibly instead of
                             // silently guessing a Mon-Fri pattern for someone with no data.
                             $errors[] = 'daily_salary_no_shift_pattern';
                         }
-                    } else {
-                        if ($salaryType === 'hourly') {
-                            $errors[] = 'salary_type_hourly_not_supported';
+                    } elseif ($salaryType === 'hourly') {
+                        // 2026-08-31, real gap fixed (was previously flagged
+                        // salary_type_hourly_not_supported and silently fell through to the monthly-
+                        // prorate formula below -- a wrong number, not just an unsupported one, since
+                        // base_salary_amount for an hourly employee is a per-HOUR rate, not a monthly
+                        // salary). Sums REAL worked minutes from attendance_records (Sync/Import/
+                        // Manual Entry alike -- see AttendanceRecordModel::totalWorkedMinutesForEmployee()'s
+                        // own docblock for why this is a genuine "what happened" data source, not a
+                        // guess) across this employee's own effective range, converts to hours, and
+                        // multiplies by the hourly rate -- same spirit as 'daily' paying for actual
+                        // payable days, just hours instead of days and real clock data instead of a
+                        // shift pattern (there is no safe DEFAULT hours-worked assumption the way
+                        // "every non-holiday weekday" was defensible for daily, so a genuine data gap
+                        // here pays 0 with a visible flag rather than guessing).
+                        $workedMinutes = $this->attendanceRecordModel->totalWorkedMinutesForEmployee($employeeId, $compId, $effectiveStart, $effectiveEnd);
+                        $prorateDays = $workedMinutes['days_with_data'];
+                        $prorateTotalDays = (int)((strtotime($effectiveEnd) - strtotime($effectiveStart)) / 86400) + 1;
+                        $effectiveBase = round($baseSalary * ($workedMinutes['total_minutes'] / 60.0), 2);
+                        if ($workedMinutes['days_with_data'] === 0) {
+                            // No attendance data reached us for this employee's own effective range at
+                            // all (distinct from "attendance rows exist but summed to 0 minutes", e.g.
+                            // an employee on leave the whole period, which is a real, correctly-$0 result).
+                            $errors[] = 'hourly_salary_no_attendance_data';
                         }
+                    } else {
                         // 2026-08-30, explicit request: Payroll Policy "pay_basis" -- 'schedule_based'
                         // replaces the flat-then-mid-period-prorate formula below entirely with
                         // SetupRulesModel::scheduledPayableDaysForEmployee()'s own ratio, uniformly
@@ -1878,14 +2133,29 @@ class PayrollRunModel {
                 // further multiplier on top of whichever of THOSE already ran, not a replacement for
                 // any of them. Gated by the real, HR-maintained employment_status, not a day-count
                 // (see PayrollPolicyModel::probationSettings()'s own docblock).
-                if ($probationSettings['base_salary_ratio'] !== null && ($emp['employment_status'] ?? null) === 'probation') {
+                // 2026-08-31, explicit request: internship pay conditions, same "further multiplier"
+                // shape -- $isIntern takes PRECEDENCE over the probation gate below when an employee
+                // is somehow both (see $internSettings' own comment above for why). The employee's
+                // own intern_base_salary_ratio_override (Salary tab, "Set ได้จากตรงนั้น...แก้ไขได้เป็น
+                // รายบุคคล") wins over the company-wide intern_base_salary_ratio default when set.
+                $isIntern = ($emp['employment_type'] ?? null) === 'internship';
+                $isProbation = ($emp['employment_status'] ?? null) === 'probation';
+                if ($isIntern) {
+                    $internRatio = $emp['intern_base_salary_ratio_override'] ?? $internSettings['base_salary_ratio'];
+                    if ($internRatio !== null) {
+                        $effectiveBase = round($effectiveBase * ((float)$internRatio / 100), 2);
+                    }
+                } elseif ($probationSettings['base_salary_ratio'] !== null && $isProbation) {
                     $effectiveBase = round($effectiveBase * ($probationSettings['base_salary_ratio'] / 100), 2);
                 }
                 // 2026-08-30, explicit request: defer Recurring Allowances until probation passes --
                 // read below by BOTH the incentive-run branch's own conditional include and the
                 // normal-run branch's unconditional include (two separate `activeForPeriod()` call
-                // sites further down), same gate either way.
-                $deferRecurringEarningForThisEmployee = $probationSettings['defer_recurring_earning'] && ($emp['employment_status'] ?? null) === 'probation';
+                // sites further down), same gate either way. 2026-08-31: intern equivalent, same
+                // precedence-over-probation rule as the ratio just above.
+                $deferRecurringEarningForThisEmployee = $isIntern
+                    ? $internSettings['defer_recurring_earning']
+                    : ($probationSettings['defer_recurring_earning'] && $isProbation);
 
                 $earningLines = [];
                 $deductionLines = [];
@@ -1896,10 +2166,13 @@ class PayrollRunModel {
                     // the SAME two sources the normal-run branch below always does (standing PED
                     // assignments + Recurring Earnings), gated by the SAME $pedRestrictSql/
                     // payroll_run_ped_type_settings two-panel selection an admin already uses on a
-                    // normal run. Deliberately does NOT also pull attendance bonus or sync-derived
-                    // lines here (see $includeStandingItems' own docblock above for why -- neither
-                    // has an off-cycle-run equivalent). This is a duplicated copy of those two
-                    // specific queries from the `else` branch below, not a shared helper -- matches
+                    // normal run. Sync-derived EARNING lines (OT/trip allowance/item_values) are now
+                    // ALSO available here, but only opt-in via the separate include_attendance_pay
+                    // toggle below (2026-08-30, Phase 8 T041) -- attendance bonus stays out entirely
+                    // (see [[SyncPayResolver's own DILIGENCE comment]], nothing left in this codebase
+                    // that can produce a source==='attendance_bonus' line at all any more). This is a
+                    // duplicated copy of those two specific queries from the `else` branch below, not
+                    // a shared helper -- matches
                     // this method's own existing precedent of duplicating the payroll_run_manual_lines
                     // query per-branch instead (see the "Ad-hoc per-employee adjustments" comment
                     // further down, same SQL as this branch's own manual-lines query below).
@@ -1951,12 +2224,29 @@ class PayrollRunModel {
                                 'is_custom' => false,
                             ];
                         }
+                        // 2026-08-31, explicit request: "หน้า Employee Detail เพิ่มรายหักประจำด้วยครับ" --
+                        // mirrors Recurring Earnings exactly, deducting instead of adding. Deliberately
+                        // NOT gated by $deferRecurringEarningForThisEmployee (that Payroll Policy field
+                        // is specifically an EARNING-allowance concept, e.g. defer a car allowance
+                        // during probation -- a recurring FEE deduction has no equivalent "defer during
+                        // probation" precedent asked for here, so it's unconditionally included).
+                        foreach ($this->recurringDeductionModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                            $deductionLines[] = [
+                                'source' => 'recurring_deduction',
+                                'recurring_id' => (int)$rec['recurring_id'],
+                                'code' => $rec['item_code'],
+                                'name_th' => $rec['item_name_th'],
+                                'name_en' => $rec['item_name_en'],
+                                'amount' => $this->recurringDeductionAmountWithFee($rec, $baseSalary),
+                                'is_custom' => false,
+                            ];
+                        }
                     }
 
                     // Manually-picked items (see joinEmployees()/addManualLine() docblocks) --
                     // additive on top of the standing items above when include_standing_items is on,
                     // or the ONLY source when it's off (today's original/default incentive-run
-                    // behavior, unchanged). No attendance bonus, no sync-derived lines, ever.
+                    // behavior, unchanged).
                     $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.payee_employee_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
@@ -1982,13 +2272,38 @@ class PayrollRunModel {
                             $deductionLines[] = $entry;
                         }
                     }
+
+                    // 2026-08-30 (Phase 8, T041, real gap found and fixed): sync-derived attendance
+                    // EARNING lines (OT/trip allowance/item_values), additive on top of everything
+                    // above -- $syncItemsByEmployee was either populated at the top of this method (a
+                    // supplemental sync-linked or cycle-tagged incentive run) or by the
+                    // TransactionDataPayAdapter fallback right above the $isIncentive gate for a
+                    // genuine ad-hoc off-cycle run. Deliberately keeps ONLY $syncResult['earning'] --
+                    // the deduction side (late/absent/unpaid leave/leave pending) is discarded
+                    // entirely, never applied here; a supplemental OT/trip payout run is not the place
+                    // to also dock someone's pay for lateness.
+                    if ($includeAttendancePay && isset($syncItemsByEmployee[$employeeId])) {
+                        $employeeDepartmentIdForSync = isset($emp['department_id']) && $emp['department_id'] !== null ? (int)$emp['department_id'] : null;
+                        $employeeTeamIdForSync = isset($emp['team_id']) && $emp['team_id'] !== null ? (int)$emp['team_id'] : null;
+                        $syncResultIncentive = $this->syncPayResolver->resolve($compId, $syncItemsByEmployee[$employeeId], $baseSalary,
+                            $attendanceOverridesByEmployee[$employeeId] ?? [], [], $employeeDepartmentIdForSync, $employeeTeamIdForSync,
+                            (bool)($emp['ot_eligible'] ?? true), $otOverridesByEmployee[$employeeId] ?? [], $otRateSetRatesByEmployee[$employeeId]['rates'] ?? []);
+                        foreach ($syncResultIncentive['earning'] as $line) {
+                            $earningLines[] = $line;
+                        }
+                        foreach ($syncResultIncentive['errors'] as $syncError) {
+                            $errors[] = $syncError;
+                        }
+                    }
+
                     // Genuinely nothing at all for this employee -- no manual lines picked, no
                     // standing items pulled in (either because include_standing_items is off, or on
-                    // but nothing matched), and no base salary either. Almost certainly an oversight,
-                    // same spirit as missing_base_salary for a normal payroll row. Widened from the
-                    // original "just check $manualLines" version (2026-08-27) so turning on
-                    // include_base_salary/include_standing_items alone no longer falsely flags an
-                    // employee who has real pay lines from those sources but never got a manual line.
+                    // but nothing matched), no attendance pay pulled in either, and no base salary
+                    // either. Almost certainly an oversight, same spirit as missing_base_salary for a
+                    // normal payroll row. Widened from the original "just check $manualLines" version
+                    // (2026-08-27) so turning on include_base_salary/include_standing_items/
+                    // include_attendance_pay alone no longer falsely flags an employee who has real
+                    // pay lines from those sources but never got a manual line.
                     if (empty($manualLines) && empty($earningLines) && empty($deductionLines) && $effectiveBase <= 0) {
                         $errors[] = 'no_manual_lines';
                     }
@@ -2049,6 +2364,20 @@ class PayrollRunModel {
                             'name_th' => $rec['item_name_th'],
                             'name_en' => $rec['item_name_en'],
                             'amount' => (float)$rec['amount'],
+                            'is_custom' => false,
+                        ];
+                    }
+                    // 2026-08-31, explicit request: "หน้า Employee Detail เพิ่มรายหักประจำด้วยครับ" -- see
+                    // this same block's own comment further up in this method for the full reasoning
+                    // (mirrors Recurring Earnings, unconditionally included -- not probation-deferred).
+                    foreach ($this->recurringDeductionModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                        $deductionLines[] = [
+                            'source' => 'recurring_deduction',
+                            'recurring_id' => (int)$rec['recurring_id'],
+                            'code' => $rec['item_code'],
+                            'name_th' => $rec['item_name_th'],
+                            'name_en' => $rec['item_name_en'],
+                            'amount' => $this->recurringDeductionAmountWithFee($rec, $baseSalary),
                             'is_custom' => false,
                         ];
                     }
@@ -2117,7 +2446,8 @@ class PayrollRunModel {
                             $compId, $employeeId, $employeeDepartmentId, $employeeTeamId
                         );
                         $syncResult = $this->syncPayResolver->resolve($compId, $syncItemsByEmployee[$employeeId], $baseSalary,
-                            $attendanceOverridesByEmployee[$employeeId] ?? [], $exemptEventCodes, $employeeDepartmentId, $employeeTeamId);
+                            $attendanceOverridesByEmployee[$employeeId] ?? [], $exemptEventCodes, $employeeDepartmentId, $employeeTeamId,
+                            (bool)($emp['ot_eligible'] ?? true), $otOverridesByEmployee[$employeeId] ?? [], $otRateSetRatesByEmployee[$employeeId]['rates'] ?? []);
                         foreach ($syncResult['earning'] as $line) {
                             $earningLines[] = $line;
                         }
@@ -2127,6 +2457,19 @@ class PayrollRunModel {
                         foreach ($syncResult['errors'] as $syncError) {
                             $errors[] = $syncError;
                         }
+                    } elseif ($isPureCycleRunForDataWarning && $isOrigamiPayrollLinked) {
+                        // 2026-08-30 (Phase 8, T041, real gap found and fixed): before this, an
+                        // employee with literally zero attendance_records/leave_requests/
+                        // overtime_records rows for the whole period was calculated completely
+                        // silently -- base salary only, no visible sign anything might be missing.
+                        // An admin had no way to tell "genuinely nothing to report this period" apart
+                        // from "Origami hasn't finished sending this employee's data yet at cutoff."
+                        // Advisory only (same precedent as daily_salary_no_shift_pattern/
+                        // salary_type_hourly_not_supported below -- excluded from $blockingErrors,
+                        // never flips calc_status to 'error', never blocks submit()) since a
+                        // genuinely empty period IS sometimes correct (e.g. a brand-new hire with no
+                        // attendance history yet) -- this is a prompt to verify, not a hard failure.
+                        $errors[] = 'no_attendance_data_this_period';
                     }
                 }
 
@@ -2331,7 +2674,14 @@ class PayrollRunModel {
                 // separate, PVD-specific gate; StatutoryCalculationEngine::calculate()'s own
                 // $employeeFlags['pvd_enrolled'] is read the same way whether it came from the
                 // employee's own permanent setting or this override).
-                if ($probationSettings['defer_pvd'] && ($emp['employment_status'] ?? null) === 'probation') {
+                // 2026-08-31: intern equivalent, same "internship takes precedence over probation"
+                // rule as the base-salary ratio/Recurring Allowances gates in Pass 1 above -- this is
+                // a SEPARATE loop iteration (Pass 2, see this method's own "Pass 1"/"Pass 2" comments),
+                // so $isIntern/$isProbation from Pass 1 are out of scope here and recomputed fresh
+                // from the same $emp row instead of being threaded through.
+                $isInternPass2 = ($emp['employment_type'] ?? null) === 'internship';
+                $isProbationPass2 = ($emp['employment_status'] ?? null) === 'probation';
+                if ($isInternPass2 ? $internSettings['defer_pvd'] : ($probationSettings['defer_pvd'] && $isProbationPass2)) {
                     $employeeFlags['pvd_enrolled'] = false;
                 }
 
@@ -2475,12 +2825,17 @@ class PayrollRunModel {
 
                 $totalDeductionAmount = round($pedDeductionTotal + $statutoryEmployeeTotal, 2);
                 $netAmount = round($grossAmount - $totalDeductionAmount, 2);
-                // daily_salary_no_shift_pattern/salary_type_hourly_not_supported are advisory only
+                // daily_salary_no_shift_pattern/hourly_salary_no_attendance_data are advisory only
                 // (same spirit as no_rate_ever_configured above) -- surfaced as a visible Remark via
                 // calc_errors so the admin can act on them, but the run still pays out using its
-                // documented safe-default fallback, so they must NOT flip calc_status to 'error' and
-                // block submit() the way missing_base_salary/no_rate_configured genuinely should.
-                $blockingErrors = array_diff($errors, ['daily_salary_no_shift_pattern', 'salary_type_hourly_not_supported']);
+                // documented safe-default fallback (a $0 base for the hourly case specifically -- see
+                // that branch's own comment on why there's no safe non-zero default to guess), so
+                // they must NOT flip calc_status to 'error' and block submit() the way
+                // missing_base_salary/no_rate_configured genuinely should. salary_type_hourly_not_supported
+                // itself is retired (2026-08-31, real hourly formula now exists) but harmless to leave
+                // in this list in case an already-approved/locked older run still carries it in its
+                // preserved calc_errors.
+                $blockingErrors = array_diff($errors, ['daily_salary_no_shift_pattern', 'salary_type_hourly_not_supported', 'hourly_salary_no_attendance_data', 'no_attendance_data_this_period', 'ot_not_calculated_ineligible']);
                 $calcStatus = empty($blockingErrors) ? 'calculated' : 'error';
                 if ($calcStatus === 'error') {
                     $anyError = true;
@@ -2757,6 +3112,11 @@ class PayrollRunModel {
                 $params[':run_id2'] = $runId;
             }
         }
+        // 2026-08-30 (Phase 3, T021, explicit request: "ไม่จ่ายเงินเดือน...ดึงไปทำรายการไม่ได้") -- a
+        // staff-only employee can never be offered by this picker, on ANY run type/branch above
+        // (including the pure-cycle-run "re-include a previously-excluded employee" case -- being
+        // marked unpaid overrides even an earlier manual re-inclusion decision).
+        $where .= " AND e.is_payroll_participant = 1";
         if (!empty($filters['department_id'])) {
             $where .= " AND e.department_id = :department_id";
             $params[':department_id'] = (int)$filters['department_id'];

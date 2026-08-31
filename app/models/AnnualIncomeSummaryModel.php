@@ -27,27 +27,6 @@ class AnnualIncomeSummaryModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
-    /**
-     * 2026-08-29, explicit follow-up: "ยังไม่มีหน้าตั้งค่าการตัดรอบปี ที่เอาไปเป็นเงื่อนไขในการแสดงผล
-     * Report ประจำปี" -- companies.fiscal_year_start_month already existed (set from Company
-     * Profile's own "Company Information" section, the field's original/canonical home) but wasn't
-     * reachable from anywhere near the report that actually uses it, so it read as "there's no
-     * settings page for this at all" from this report's own context. This is a second, narrow save
-     * path scoped to JUST this one column -- reusing CompanyProfileController's own full save()
-     * would require resubmitting every other required company field (address, tax id, etc.) just to
-     * change one month, which is both unnecessary and risky (a stale/incomplete payload could
-     * silently blank other fields). A quick-access "Settings" button on the Annual Income Summary
-     * page itself now opens a single-field modal calling this method directly.
-     */
-    public function saveFiscalYearStartMonth(int $compId, int $month): array {
-        if ($month < 1 || $month > 12) {
-            return ['status' => false, 'message' => 'Invalid month.'];
-        }
-        $stmt = $this->db->prepare("UPDATE `companies` SET fiscal_year_start_month = :month WHERE id = :id");
-        $stmt->execute([':month' => $month, ':id' => $compId]);
-        return ['status' => true, 'message' => 'Saved successfully.'];
-    }
-
     private function fiscalYearBounds(int $fiscalYear, int $fiscalStartMonth): array {
         $start = sprintf('%04d-%02d-01', $fiscalYear, $fiscalStartMonth);
         $endYear = $fiscalStartMonth === 1 ? $fiscalYear : $fiscalYear + 1;
@@ -125,40 +104,7 @@ class AnnualIncomeSummaryModel {
             ];
         }
 
-        // ---------- employee identity + filters (same filter columns Employee List uses) ----------
-        // 2026-08-29, explicit follow-up: "สามารถดึงพนักงานทั้งหมดเลยได้ไหมครับ" -- every employee
-        // matching the filters is listed, not just the ones with at least one payroll run this
-        // fiscal year (that used to be the whole employee-source query, driven off $byEmployee's
-        // own keys) -- an employee with no data that year just renders as an all-zero row/-'s.
-        $where = 'e.comp_id = ? AND e.deleted_at IS NULL';
-        $params = [$compId];
-        if (!empty($filters['department_id'])) { $where .= ' AND e.department_id = ?'; $params[] = (int)$filters['department_id']; }
-        if (!empty($filters['team_id'])) { $where .= ' AND e.team_id = ?'; $params[] = (int)$filters['team_id']; }
-        if (!empty($filters['branch_id'])) { $where .= ' AND e.branch_id = ?'; $params[] = (int)$filters['branch_id']; }
-        if (!empty($filters['role_id'])) { $where .= ' AND e.role_id = ?'; $params[] = (int)$filters['role_id']; }
-        if (!empty($filters['employee_status'])) { $where .= ' AND e.employee_status = ?'; $params[] = (string)$filters['employee_status']; }
-        if (!empty($filters['search'])) {
-            $where .= ' AND (e.employee_no LIKE ? OR e.name_th LIKE ? OR e.surname_th LIKE ? OR e.name_en LIKE ? OR e.surname_en LIKE ?)';
-            $term = '%' . $filters['search'] . '%';
-            array_push($params, $term, $term, $term, $term, $term);
-        }
-        // 2026-08-30, explicit request: "ปรับให้มี Department team position เพิ่ม...ให้ Fixed Column
-        // ส่วนของข้อมูลพนักงาน ไว้" -- team/position joined alongside the existing department join,
-        // same LEFT JOIN pattern, so a report row is still complete even when one of these is unset.
-        $stmtEmp = $this->db->prepare(
-            "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.employee_status,
-                    dep.department_name_th, dep.department_name_en,
-                    tm.team_name_th, tm.team_name_en,
-                    p.position_name_th, p.position_name_en
-             FROM employees e
-             LEFT JOIN structure_departments dep ON dep.id = e.department_id
-             LEFT JOIN structure_teams tm ON tm.id = e.team_id
-             LEFT JOIN structure_positions p ON p.id = e.position_id
-             WHERE {$where}
-             ORDER BY e.employee_no ASC"
-        );
-        $stmtEmp->execute($params);
-        $employeeRows = $stmtEmp->fetchAll(PDO::FETCH_ASSOC);
+        $employeeRows = $this->employeeRowsForFilters($compId, $filters);
 
         $employees = [];
         $totals = $this->emptyTotals($monthDefs);
@@ -250,6 +196,219 @@ class AnnualIncomeSummaryModel {
             ];
         }
         return $runs;
+    }
+
+    /**
+     * Employee identity + station filters (same filter columns Employee List uses) -- shared by
+     * summary(), annualPitSummary(), and monthlyPitDetail() below, extracted out of summary()'s own
+     * original inline query (Phase 4, T026/T027) so all 3 tabs of the combined page use identical
+     * eligibility rules. Every matching employee is listed regardless of whether they have any
+     * payroll data in the requested period (an employee with none just renders as an all-zero/'-'
+     * row) -- staff-only employees (is_payroll_participant=0) are excluded outright (Phase 3, T021).
+     */
+    private function employeeRowsForFilters(int $compId, array $filters): array {
+        $where = 'e.comp_id = ? AND e.deleted_at IS NULL AND e.is_payroll_participant = 1';
+        $params = [$compId];
+        if (!empty($filters['department_id'])) { $where .= ' AND e.department_id = ?'; $params[] = (int)$filters['department_id']; }
+        if (!empty($filters['team_id'])) { $where .= ' AND e.team_id = ?'; $params[] = (int)$filters['team_id']; }
+        if (!empty($filters['branch_id'])) { $where .= ' AND e.branch_id = ?'; $params[] = (int)$filters['branch_id']; }
+        if (!empty($filters['role_id'])) { $where .= ' AND e.role_id = ?'; $params[] = (int)$filters['role_id']; }
+        if (!empty($filters['employee_status'])) { $where .= ' AND e.employee_status = ?'; $params[] = (string)$filters['employee_status']; }
+        if (!empty($filters['search'])) {
+            $where .= ' AND (e.employee_no LIKE ? OR e.name_th LIKE ? OR e.surname_th LIKE ? OR e.name_en LIKE ? OR e.surname_en LIKE ?)';
+            $term = '%' . $filters['search'] . '%';
+            array_push($params, $term, $term, $term, $term, $term);
+        }
+        $stmtEmp = $this->db->prepare(
+            "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.employee_status,
+                    dep.department_name_th, dep.department_name_en,
+                    tm.team_name_th, tm.team_name_en,
+                    p.position_name_th, p.position_name_en
+             FROM employees e
+             LEFT JOIN structure_departments dep ON dep.id = e.department_id
+             LEFT JOIN structure_teams tm ON tm.id = e.team_id
+             LEFT JOIN structure_positions p ON p.id = e.position_id
+             WHERE {$where}
+             ORDER BY e.employee_no ASC"
+        );
+        $stmtEmp->execute($params);
+        return $stmtEmp->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** Distinct plain calendar years (not fiscal-year labels) with at least one finalized run --
+     *  backs the Monthly PIT tab's (T026) own year picker, which deliberately uses a plain
+     *  calendar year + month selection rather than the fiscal-year abstraction the other 2 tabs
+     *  use: "which month" is naturally a calendar concept, same framing PndOneReport/
+     *  PndOneKorSummaryReport already use for their own period selection. */
+    public function availableCalendarYears(int $compId): array {
+        $stmt = $this->db->prepare(
+            "SELECT DISTINCT YEAR(period_start_date) AS y FROM payroll_runs
+             WHERE comp_id = :comp_id AND state IN ('approved','paid','locked') AND status = 'active' AND deleted_at IS NULL
+             ORDER BY y DESC"
+        );
+        $stmt->execute([':comp_id' => $compId]);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * Raw per-employee-per-run-month rows within a date range (Phase 4, T026/T027) -- shared
+     * plumbing for both annualPitSummary()'s grid and monthlyPitDetail()'s single-month list, since
+     * both need to extract the TH_PIT line from `statutory_breakdown` (JSON), which can't be summed
+     * in portable SQL the way gross/deduction/net can. Same ALLOWED_STATES gate as summary()/
+     * cellDetail() -- satisfies T029 ("ทุก Report ใหม่ต้องเช็คเงื่อนไขอนุมัติ/ปิดรอบ") by construction,
+     * since every caller of this method inherits the same gate rather than needing its own.
+     */
+    private function rawPitRows(int $compId, string $dateFrom, string $dateTo): array {
+        $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
+        $stmt = $this->db->prepare(
+            "SELECT d.employee_id, YEAR(r.period_start_date) AS y, MONTH(r.period_start_date) AS m,
+                    d.gross_amount, d.total_deduction_amount, d.net_amount, d.statutory_breakdown
+             FROM payroll_run_details d
+             INNER JOIN payroll_runs r ON r.id = d.run_id
+             WHERE r.comp_id = ? AND r.status = 'active' AND r.deleted_at IS NULL
+               AND r.state IN ({$placeholders})
+               AND r.period_start_date >= ? AND r.period_start_date <= ?"
+        );
+        $stmt->execute(array_merge([$compId], self::ALLOWED_STATES, [$dateFrom, $dateTo]));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$row) {
+            $pit = 0.0;
+            foreach (json_decode((string)$row['statutory_breakdown'], true) ?? [] as $item) {
+                if (($item['code'] ?? null) === 'TH_PIT') {
+                    $pit += (float)($item['employee_amount'] ?? 0);
+                }
+            }
+            $row['tax_withheld'] = $pit;
+        }
+        unset($row);
+        return $rows;
+    }
+
+    /**
+     * Phase 4, T027 -- annual PIT-withheld grid, same shape as summary() (per-employee, per-month,
+     * + annual total + company-wide totals row) but tracking tax_withheld instead of gross/
+     * deduction/net. Same fiscal-year concept (fiscal_year_start_month from Company Profile, T028)
+     * as the Annual Income Summary tab it's paired with.
+     * @param array $filters { department_id?, team_id?, branch_id?, role_id?, employee_status?, search? }
+     * @return array{months: array, employees: array, totals: array}
+     */
+    public function annualPitSummary(int $compId, int $fiscalYear, int $fiscalStartMonth, array $filters = []): array {
+        [$fyStart, $fyEnd] = $this->fiscalYearBounds($fiscalYear, $fiscalStartMonth);
+        $monthDefs = $this->monthsInFiscalYear($fiscalYear, $fiscalStartMonth);
+
+        $byEmployee = [];
+        foreach ($this->rawPitRows($compId, $fyStart, $fyEnd) as $row) {
+            $empId = (int)$row['employee_id'];
+            $key = $row['y'] . '-' . $row['m'];
+            $byEmployee[$empId][$key] = ($byEmployee[$empId][$key] ?? 0.0) + (float)$row['tax_withheld'];
+        }
+
+        $employeeRows = $this->employeeRowsForFilters($compId, $filters);
+        $employees = [];
+        $totalsMonths = [];
+        foreach ($monthDefs as $md) { $totalsMonths[$md['year'] . '-' . $md['month']] = 0.0; }
+        $annualTotal = 0.0;
+        $employeeCount = 0;
+        foreach ($employeeRows as $emp) {
+            $empId = (int)$emp['id'];
+            $months = [];
+            $annualTax = 0.0;
+            foreach ($monthDefs as $md) {
+                $key = $md['year'] . '-' . $md['month'];
+                $val = $byEmployee[$empId][$key] ?? 0.0;
+                $months[] = $val;
+                $annualTax += $val;
+                $totalsMonths[$key] += $val;
+            }
+            $employees[] = [
+                'employee_id' => $empId,
+                'employee_no' => $emp['employee_no'],
+                'name_th' => trim(($emp['name_th'] ?? '') . ' ' . ($emp['surname_th'] ?? '')),
+                'name_en' => trim(($emp['name_en'] ?? '') . ' ' . ($emp['surname_en'] ?? '')),
+                'employee_status' => $emp['employee_status'],
+                'department_name_th' => $emp['department_name_th'],
+                'department_name_en' => $emp['department_name_en'],
+                'team_name_th' => $emp['team_name_th'],
+                'team_name_en' => $emp['team_name_en'],
+                'position_name_th' => $emp['position_name_th'],
+                'position_name_en' => $emp['position_name_en'],
+                'months' => $months,
+                'annual_tax_withheld' => $annualTax,
+            ];
+            $annualTotal += $annualTax;
+            $employeeCount++;
+        }
+
+        return [
+            'months' => $this->buildMonthMeta($monthDefs, $compId, $fyStart, $fyEnd),
+            'employees' => $employees,
+            'totals' => ['months' => $totalsMonths, 'annual_tax_withheld' => $annualTotal, 'employee_count' => $employeeCount],
+        ];
+    }
+
+    /**
+     * Phase 4, T026 -- detailed PIT breakdown for ONE specific calendar month (not a fiscal year) --
+     * income/deductions/net (same shape summary()'s own per-month cell already has) PLUS tax
+     * withheld, per employee, for the selected month. Multiple runs landing in the same month
+     * (a regular run plus an off-cycle incentive run) are summed per employee, not listed
+     * separately -- per-run detail is still available via cellDetail() if needed (same drill-down
+     * modal reused by all 3 tabs).
+     * @param array $filters same shape as summary()/annualPitSummary()
+     * @return array{employees: array, totals: array}
+     */
+    public function monthlyPitDetail(int $compId, int $year, int $month, array $filters = []): array {
+        $dateFrom = sprintf('%04d-%02d-01', $year, $month);
+        $dateTo = date('Y-m-t', strtotime($dateFrom));
+
+        $byEmployee = [];
+        foreach ($this->rawPitRows($compId, $dateFrom, $dateTo) as $row) {
+            $empId = (int)$row['employee_id'];
+            if (!isset($byEmployee[$empId])) {
+                $byEmployee[$empId] = ['gross' => 0.0, 'deduction' => 0.0, 'net' => 0.0, 'tax_withheld' => 0.0];
+            }
+            $byEmployee[$empId]['gross'] += (float)$row['gross_amount'];
+            $byEmployee[$empId]['deduction'] += (float)$row['total_deduction_amount'];
+            $byEmployee[$empId]['net'] += (float)$row['net_amount'];
+            $byEmployee[$empId]['tax_withheld'] += (float)$row['tax_withheld'];
+        }
+
+        $employeeRows = $this->employeeRowsForFilters($compId, $filters);
+        $employees = [];
+        $totals = ['gross' => 0.0, 'deduction' => 0.0, 'net' => 0.0, 'tax_withheld' => 0.0, 'employee_count' => 0];
+        foreach ($employeeRows as $emp) {
+            $empId = (int)$emp['id'];
+            $cell = $byEmployee[$empId] ?? ['gross' => 0.0, 'deduction' => 0.0, 'net' => 0.0, 'tax_withheld' => 0.0];
+            // Skip employees with genuinely nothing this month -- unlike the 12-month grids above
+            // (where an all-zero row still marks "no run for them yet this year"), a flat single-
+            // month list is more useful scoped to "who was actually paid this month".
+            if ($cell['gross'] <= 0 && $cell['tax_withheld'] <= 0) {
+                continue;
+            }
+            $employees[] = [
+                'employee_id' => $empId,
+                'employee_no' => $emp['employee_no'],
+                'name_th' => trim(($emp['name_th'] ?? '') . ' ' . ($emp['surname_th'] ?? '')),
+                'name_en' => trim(($emp['name_en'] ?? '') . ' ' . ($emp['surname_en'] ?? '')),
+                'employee_status' => $emp['employee_status'],
+                'department_name_th' => $emp['department_name_th'],
+                'department_name_en' => $emp['department_name_en'],
+                'team_name_th' => $emp['team_name_th'],
+                'team_name_en' => $emp['team_name_en'],
+                'position_name_th' => $emp['position_name_th'],
+                'position_name_en' => $emp['position_name_en'],
+                'gross_amount' => $cell['gross'],
+                'total_deduction_amount' => $cell['deduction'],
+                'net_amount' => $cell['net'],
+                'tax_withheld' => $cell['tax_withheld'],
+            ];
+            $totals['gross'] += $cell['gross'];
+            $totals['deduction'] += $cell['deduction'];
+            $totals['net'] += $cell['net'];
+            $totals['tax_withheld'] += $cell['tax_withheld'];
+            $totals['employee_count']++;
+        }
+
+        return ['employees' => $employees, 'totals' => $totals];
     }
 
     private function emptyTotals(array $monthDefs): array {

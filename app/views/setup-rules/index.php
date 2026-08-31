@@ -100,14 +100,19 @@
                 </table>
             </div>
         </div>
+        <!-- 2026-08-30, OT Rate Set replacement -- one row per Set (bundles ALL 3 OT types, not one
+             row per scope) plus Assign-To/Default columns -- see OtRateSetModel's own docblock. -->
         <div class="tab-pane fade" id="ot-rate-pane" role="tabpanel" aria-labelledby="ot-rate-tab" tabindex="0">
             <div class="mt-5 mb-5 table-responsive">
                 <table class="table" id="tb_ot" style="width:100%">
                     <thead>
                         <tr>
-                            <th data-i18n="ot_name">OT Name</th>
-                            <th data-i18n="applies_to">Applies To</th>
-                            <th data-i18n="multiplier">Multiplier</th>
+                            <th data-i18n="ot_rate_set_name">Set Name</th>
+                            <th data-i18n="ot_scope_weekday">Weekday</th>
+                            <th data-i18n="ot_scope_weekend">Weekend</th>
+                            <th data-i18n="holiday">Holiday</th>
+                            <th data-i18n="ot_rate_set_assign_title">Assign To</th>
+                            <th data-i18n="ot_rate_set_default_column" class="text-center">Default</th>
                             <th data-i18n="status" class="text-center">Status</th>
                             <th class="text-end"></th>
                         </tr>
@@ -421,8 +426,14 @@
         </div>
     </div>
 </div>
+<!-- 2026-08-30, OT Rate Set replacement -- 1 Set bundles ALL 3 OT types as independently-configurable
+     sub-rows (#otItemsBody, one row per master_ot_scope_types row) plus department/team/position/
+     employee assignment (disabled while this Set is the company Default, since Default is always the
+     assignment-free catch-all -- see OtRateSetModel's own docblock). Explicit request: "ตอนกดบวก
+     รายการ ให้ขึ้นมาเลยเป็นชุดของ OT Type แล้วมี form ในแต่ละ Type ให้ระบุ...แต่สามารถจัดการแยกกันได้แต่ละ
+     type ในแถวเดียวกัน". -->
 <div class="modal fade" id="otModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h6 class="modal-title" id="otModalTitle"><i class="fa-solid fa-coins"></i> <span data-i18n="ot_rate">OT Rate</span></h6>
@@ -432,61 +443,85 @@
                 <input type="hidden" id="otId">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="ot_name">OT Name</span> <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control required" id="otNameTh" data-i18n="ot_name_placeholder" placeholder="e.g., OT วันธรรมดา">
+                        <label class="form-label"><span data-i18n="ot_rate_set_name">Set Name</span> <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control required" id="otNameTh" data-i18n="ot_rate_set_name_placeholder" placeholder="e.g., Standard OT Set">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">&nbsp;</label>
-                        <input type="text" class="form-control" id="otNameEn" placeholder="e.g., Weekday OT">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label" data-i18n="applies_to">Applies To</label>
-                        <select class="form-select select2-remote required" id="otScope" data-api="/api/ot-rate.scope-options" data-type="ot_scope"></select>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label" data-i18n="calculation_base">Calculation Base</label>
-                        <select class="form-select select2-static" id="otBase" data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label" data-i18n="ot_calculation_method">Calculation Method</label>
-                        <select class="form-select select2-static" id="otCalcMethod" data-option-keys="ot_calc_method_multiplier,ot_calc_method_flat_amount" data-option-values="multiplier,flat_amount"></select>
-                    </div>
-                    <div class="col-12" id="otMultiplierWrapper">
-                        <label class="form-label" data-i18n="multiplier_rate">Multiplier Rate (x)</label>
-                        <input type="number" step="0.1" min="0.1" class="form-control" id="otMultiplier" value="1.5">
-                    </div>
-                    <div class="col-12 d-none" id="otFlatAmountWrapper">
-                        <label class="form-label" data-i18n="ot_flat_amount_rate">Flat Amount (per hour/day)</label>
-                        <input type="number" step="0.01" min="0.01" class="form-control" id="otFlatAmountRate" placeholder="e.g., 100.00">
-                    </div>
-                    <div class="col-12 d-flex align-items-center gap-2 mt-1">
-                        <div class="form-check form-switch m-0">
-                            <input class="form-check-input" type="checkbox" id="otStatus" checked>
-                        </div>
-                        <label class="form-label m-0" for="otStatus" data-i18n="enable_this_rate">Enable this rate</label>
+                        <input type="text" class="form-control" id="otNameEn" placeholder="e.g., Standard OT Set">
                     </div>
                 </div>
-                <!-- 2026-08-30, explicit request: same calculation-preview feature as Attendance
-                     Deduction Rule's own Configure modal (see that modal's own comment for the full
-                     "ทำ OT ต่อเลยครับ" context) -- computes against whatever is CURRENTLY typed above,
-                     via SetupRulesModel::otRatePreview(), the exact same formula real OT payroll uses. -->
+
                 <hr class="my-3 text-muted opacity-25">
-                <div class="calc-preview-box" id="otCalcPreviewBox">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="fw-bold mb-0 text-secondary"><i class="fa-solid fa-calculator me-2 text-brand"></i><span data-i18n="calc_preview_title">Calculation Preview</span></h6>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnOtCalcPreview"><i class="fa-solid fa-play me-1"></i><span data-i18n="calc_preview_button">Preview</span></button>
+                <table class="table table-sm align-middle mb-0" id="otItemsTable">
+                    <thead>
+                        <tr>
+                            <th data-i18n="applies_to">Applies To</th>
+                            <th data-i18n="ot_calculation_method">Calculation Method</th>
+                            <th data-i18n="calculation_base">Calculation Base</th>
+                            <th style="width:140px" data-i18n="multiplier_rate">Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody id="otItemsBody"></tbody>
+                </table>
+
+                <hr class="my-3 text-muted opacity-25">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                    <label class="form-label fw-bold mb-0" for="otIsDefault">
+                        <i class="fa-solid fa-star text-warning me-1"></i><span data-i18n="ot_rate_set_default_badge">Default</span>
+                    </label>
+                    <div class="form-check form-switch m-0">
+                        <input class="form-check-input" type="checkbox" id="otIsDefault">
                     </div>
-                    <div class="row g-2 mb-2">
-                        <div class="col-6">
-                            <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_salary">Sample Base Salary</label>
-                            <input type="number" min="1" step="0.01" class="form-control form-control-sm" id="otCalcPreviewBaseSalary" value="30000">
+                </div>
+                <div class="small text-muted" data-i18n="ot_rate_set_default_hint">Every OT-eligible employee not covered by an assigned Set below uses the company Default. Exactly one Set must always be the Default.</div>
+
+                <hr class="my-3 text-muted opacity-25">
+                <h6 class="fw-bold text-secondary mb-1"><span data-i18n="ot_rate_set_assign_title">Assign To</span></h6>
+                <div class="small text-muted mb-2" data-i18n="ot_rate_set_assign_hint">Applies only to the department/team/position/employee selected below (most specific wins: employee > team > position > department). A scope already assigned to another active Set will be rejected with an error naming the conflict.</div>
+                <div class="small text-warning d-none mb-2" id="otAssignDisabledHint" data-i18n="ot_rate_set_assign_disabled_hint">The company Default Set always applies to everyone not covered elsewhere -- assignment is unavailable while this Set is the Default.</div>
+                <!-- 2026-08-31, explicit follow-up ("ปรับ 3 จุดด้านบน") -- each column gained a
+                     search box + "select all" master checkbox, same convention Payslip/Employment
+                     Certificate Template's own "Assign To" checkbox lists already established
+                     (pst_assign_*/ect_assign_* pattern), for companies with long department/team/
+                     position/employee lists. -->
+                <div class="row g-3" id="otAssignWrap">
+                    <div class="col-md-3">
+                        <div class="fw-bold small mb-1" data-i18n="department">Department</div>
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                            <input type="checkbox" class="form-check-input ot-assign-select-all" data-scope-type="department" id="otAssignSelectAllDepartments">
+                            <label class="form-check-label small mb-0" for="otAssignSelectAllDepartments" data-i18n="select_all">Select All</label>
                         </div>
-                        <div class="col-6">
-                            <label class="form-label small mb-1" data-i18n="calc_preview_sample_ot_hours">Sample OT Hours</label>
-                            <input type="number" min="0" step="0.5" class="form-control form-control-sm" id="otCalcPreviewHours" value="2">
-                        </div>
+                        <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="department" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
+                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignDepartments" style="max-height:150px;overflow-y:auto;"></div>
                     </div>
-                    <div class="calc-preview-result d-none" id="otCalcPreviewResult"></div>
+                    <div class="col-md-3">
+                        <div class="fw-bold small mb-1" data-i18n="team">Team</div>
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                            <input type="checkbox" class="form-check-input ot-assign-select-all" data-scope-type="team" id="otAssignSelectAllTeams">
+                            <label class="form-check-label small mb-0" for="otAssignSelectAllTeams" data-i18n="select_all">Select All</label>
+                        </div>
+                        <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="team" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
+                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignTeams" style="max-height:150px;overflow-y:auto;"></div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold small mb-1" data-i18n="position">Position</div>
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                            <input type="checkbox" class="form-check-input ot-assign-select-all" data-scope-type="position" id="otAssignSelectAllPositions">
+                            <label class="form-check-label small mb-0" for="otAssignSelectAllPositions" data-i18n="select_all">Select All</label>
+                        </div>
+                        <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="position" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
+                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignPositions" style="max-height:150px;overflow-y:auto;"></div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold small mb-1" data-i18n="employee">Employee</div>
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                            <input type="checkbox" class="form-check-input ot-assign-select-all" data-scope-type="employee" id="otAssignSelectAllEmployees">
+                            <label class="form-check-label small mb-0" for="otAssignSelectAllEmployees" data-i18n="select_all">Select All</label>
+                        </div>
+                        <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="employee" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
+                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignEmployees" style="max-height:150px;overflow-y:auto;"></div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">

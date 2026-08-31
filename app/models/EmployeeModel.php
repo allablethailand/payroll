@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/EmployeeOtRateModel.php';
 class EmployeeModel {
     private $db;
     public function __construct() {
@@ -58,6 +59,11 @@ class EmployeeModel {
             // upload-then-hidden-field convention as Company Profile's own signature_path), plain
             // passthrough column here like profile_photo_path above.
             'signature_path',
+            // 2026-08-30 (Phase 3, T020, explicit request: field "จ่าย/ไม่จ่ายเงินเดือน", default = จ่าย)
+            // -- boolean, see booleanColumns() below. 0 excludes this employee from payroll entirely
+            // (missingPayrollFields()/calculateCompleteness() below, PayrollRunModel eligibility for
+            // T021) and hides payroll-specific fields/tabs on the Detail form (detail.js).
+            'is_payroll_participant',
             'employee_type', 'employee_status', 'title', 'gender', 'name_th', 'surname_th', 'name_en', 'surname_en',
             'nickname_th', 'nickname_en', 'date_of_birth', 'nationality', 'religion', 'marital_status', 'military_status',
             'id_card_no', 'id_card_expire_date', 'tax_id_no', 'passport_no', 'passport_expire_date',
@@ -73,10 +79,13 @@ class EmployeeModel {
             'emergency_name', 'emergency_surname', 'emergency_relationship', 'emergency_mobile',
             'department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id', 'cycle_id',
             'employment_date', 'employment_status', 'employment_status_effective_date', 'employment_end_date', 'employment_end_reason',
-            'employment_type', 'report_to_id', 'date_contract_expire',
+            // 2026-08-31, explicit request: internship pay conditions -- per-employee override of
+            // company_payroll_policies.intern_base_salary_ratio (Salary tab, only meaningful/shown
+            // while employment_type=internship). NULL = no override, use the company default.
+            'employment_type', 'intern_base_salary_ratio_override', 'report_to_id', 'date_contract_expire',
             'holiday_calendar_id', 'driver_license_no', 'workforce_type', 'record_time_method',
             'payment_type', 'bank_id', 'bank_account_no', 'bank_account_name', 'bank_branch',
-            'salary_type', 'base_salary_amount', 'salary_effective_date', 'ot_eligible', 'tax_calculation_method', 'tax_exempt',
+            'salary_type', 'base_salary_amount', 'salary_effective_date', 'ot_eligible', 'ot_rate_source', 'tax_calculation_method', 'tax_exempt',
             'sso_enrolled', 'sso_no', 'sso_hospital_id', 'sso_start_date', 'sso_contribution_rate',
             'pvd_enrolled', 'pvd_fund_name', 'pvd_start_date', 'pvd_employee_rate', 'pvd_employer_rate',
             'insurance_plan_id', 'insurance_start_date',
@@ -86,7 +95,7 @@ class EmployeeModel {
 
     private function booleanColumns(): array {
         return ['send_signin_email', 'send_preboarding_email', 'use_register_address', 'ot_eligible', 'tax_exempt',
-                'sso_enrolled', 'pvd_enrolled', 'has_spouse'];
+                'sso_enrolled', 'pvd_enrolled', 'has_spouse', 'is_payroll_participant'];
     }
 
     private function intColumns(): array {
@@ -138,8 +147,12 @@ class EmployeeModel {
     // established for team_id (see detail.php's own Team section comment). Still nullable in schema
     // either way (`role_id int(11) DEFAULT NULL`), so no migration was needed.
     private function requiredColumns(): array {
+        // 2026-08-30 (T023, explicit request: "นามสกุลไม่เป็น required field") -- surname_th/surname_en
+        // dropped from this list. First name (name_th/name_en) stays required; a missing surname no
+        // longer blocks is_payroll_ready/"Verify Status" (see missingPayrollFields()/verifyStatus()
+        // below, both driven off this list) or shows up in a Recheck-tab-style missing-field flag.
         return [
-            'employee_no', 'employee_type', 'employee_status', 'title', 'gender', 'name_th', 'surname_th', 'name_en', 'surname_en',
+            'employee_no', 'employee_type', 'employee_status', 'title', 'gender', 'name_th', 'name_en',
             'date_of_birth', 'nationality', 'personal_email', 'mobile_no',
             'department_id', 'position_id', 'branch_id',
             'employment_date', 'employment_status', 'employment_type', 'payment_type',
@@ -159,8 +172,23 @@ class EmployeeModel {
      * every row just to check presence would be real per-page-load overhead for zero benefit.
      */
     public function completenessColumns(): array {
+        // 2026-08-30 (T023): surname_th/surname_en dropped -- calculateCompleteness() no longer
+        // reads them (surname is not required, see requiredColumns()'s own comment), so selecting
+        // them here would just be dead weight on every list() page load.
         return [
-            'employee_type', 'title', 'gender', 'name_th', 'surname_th', 'name_en', 'surname_en',
+            // 2026-08-30 (T020): needed by calculateCompleteness() to auto-pass payroll-specific
+            // checklist items for a staff-only employee.
+            'is_payroll_participant',
+            // 2026-08-30, real bug found and fixed (caught while building recheckList() for T018,
+            // but this ALSO affects list()'s own long-standing Salary-tab completeness % below --
+            // base_salary_amount has been AES-256-GCM ciphertext since 2026-08-26 (see
+            // encryptedColumns()), but calculateCompleteness()'s own `(float)(...) > 0` threshold
+            // check needs the real plaintext number, not just presence -- a non-numeric ciphertext
+            // string casts to 0.0, so this check has silently read as "not filled" on every row ever
+            // since salary encryption shipped. key_version is needed to decrypt it (see list()'s own
+            // decryption step, right before calculateCompleteness() is called).
+            'key_version',
+            'employee_type', 'title', 'gender', 'name_th', 'name_en',
             'date_of_birth', 'nationality', 'id_card_no', 'tax_id_no', 'passport_no', 'work_permit_no',
             'personal_email', 'mobile_no', 'line_id',
             'department_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id',
@@ -215,6 +243,14 @@ class EmployeeModel {
      * checklist per employee rather than penalizing a field that plainly doesn't apply to them.
      */
     public function calculateCompleteness(array $e): array {
+        // 2026-08-30 (T020) -- payroll-specific checklist items (bank details within Employment,
+        // and the whole Salary/Social Security/Family-Tax Allowance tabs) auto-pass for a staff-only
+        // employee, same reasoning as missingPayrollFields()'s own early-return just above this
+        // method: none of that data applies to them, so it shouldn't read as "incomplete" on a
+        // completeness bar the Recheck tab (T018)/Employee Detail page both show. Info/Contact and
+        // Employment's own org-placement checks (department/position/branch/work_location/shift/
+        // employment_date) are UNCHANGED -- those still matter for staff-only records too.
+        $isPayrollParticipant = (int)($e['is_payroll_participant'] ?? 1) === 1;
         $isForeigner = ($e['employee_type'] ?? 'domestic') === 'foreigner';
         $identificationOk = $isForeigner
             ? ($this->isCompletenessValueFilled($e['tax_id_no'] ?? null)
@@ -226,8 +262,11 @@ class EmployeeModel {
         $tabs['info'] = $this->scoreChecklist([
             $this->isCompletenessValueFilled($e['title'] ?? null),
             $this->isCompletenessValueFilled($e['gender'] ?? null),
-            $this->isCompletenessValueFilled($e['name_th'] ?? null) && $this->isCompletenessValueFilled($e['surname_th'] ?? null),
-            $this->isCompletenessValueFilled($e['name_en'] ?? null) && $this->isCompletenessValueFilled($e['surname_en'] ?? null),
+            // 2026-08-30 (T023): surname is no longer required -- checks first name alone now, so an
+            // employee with a genuinely blank surname (not a required field's own placeholder-empty
+            // state) doesn't get unfairly dinged on this checklist item.
+            $this->isCompletenessValueFilled($e['name_th'] ?? null),
+            $this->isCompletenessValueFilled($e['name_en'] ?? null),
             $this->isCompletenessValueFilled($e['date_of_birth'] ?? null),
             $this->isCompletenessValueFilled($e['nationality'] ?? null),
             $identificationOk,
@@ -237,9 +276,9 @@ class EmployeeModel {
             $this->isCompletenessValueFilled($e['mobile_no'] ?? null),
             $this->isCompletenessValueFilled($e['line_id'] ?? null),
         ]);
-        $bankOk = ($e['payment_type'] ?? null) === 'bank'
-            ? ($this->isCompletenessValueFilled($e['bank_id'] ?? null) && $this->isCompletenessValueFilled($e['bank_account_no'] ?? null))
-            : true;
+        $bankOk = !$isPayrollParticipant || ($e['payment_type'] ?? null) !== 'bank'
+            ? true
+            : ($this->isCompletenessValueFilled($e['bank_id'] ?? null) && $this->isCompletenessValueFilled($e['bank_account_no'] ?? null));
         $tabs['employment'] = $this->scoreChecklist([
             !empty($e['department_id']), !empty($e['position_id']), !empty($e['branch_id']),
             !empty($e['work_location_id']), !empty($e['shift_id']),
@@ -247,16 +286,16 @@ class EmployeeModel {
             $bankOk,
         ]);
         $tabs['salary'] = $this->scoreChecklist([
-            $this->isCompletenessValueFilled($e['salary_type'] ?? null),
-            (float)($e['base_salary_amount'] ?? 0) > 0,
-            $this->isCompletenessValueFilled($e['salary_effective_date'] ?? null),
-            $this->isCompletenessValueFilled($e['tax_calculation_method'] ?? null),
+            !$isPayrollParticipant || $this->isCompletenessValueFilled($e['salary_type'] ?? null),
+            !$isPayrollParticipant || (float)($e['base_salary_amount'] ?? 0) > 0,
+            !$isPayrollParticipant || $this->isCompletenessValueFilled($e['salary_effective_date'] ?? null),
+            !$isPayrollParticipant || $this->isCompletenessValueFilled($e['tax_calculation_method'] ?? null),
         ]);
         $tabs['social'] = $this->scoreChecklist([
-            empty($e['sso_enrolled']) || $this->isCompletenessValueFilled($e['sso_no'] ?? null),
+            !$isPayrollParticipant || empty($e['sso_enrolled']) || $this->isCompletenessValueFilled($e['sso_no'] ?? null),
         ]);
         $tabs['family'] = $this->scoreChecklist([
-            empty($e['has_spouse']) || $this->isCompletenessValueFilled($e['spouse_name'] ?? null),
+            !$isPayrollParticipant || empty($e['has_spouse']) || $this->isCompletenessValueFilled($e['spouse_name'] ?? null),
         ]);
 
         $totalDone = array_sum(array_column($tabs, 'done'));
@@ -273,7 +312,7 @@ class EmployeeModel {
     private function requiredFieldTabs(): array {
         return [
             'employee_no' => 'employment', 'employee_status' => 'info', 'title' => 'info',
-            'name_th' => 'info', 'surname_th' => 'info', 'name_en' => 'info', 'surname_en' => 'info',
+            'name_th' => 'info', 'name_en' => 'info',
             'date_of_birth' => 'info', 'nationality' => 'info', 'id_card_no' => 'info',
             'tax_id_no' => 'info', 'passport_no' => 'info', 'work_permit_no' => 'info',
             'personal_email' => 'contact', 'mobile_no' => 'contact',
@@ -296,6 +335,15 @@ class EmployeeModel {
      * columns, no decryption needed, same as calculateCompleteness(). Empty return = fully ready.
      */
     private function missingPayrollFields(array $values, bool $isThCompany): array {
+        // 2026-08-30 (T020, explicit request: field "จ่าย/ไม่จ่ายเงินเดือน") -- a staff-only (not paid
+        // through payroll) employee is never "missing" anything payroll-related, because none of it
+        // applies to them at all; "ready for payroll" is a moot question, not a failing one. This is
+        // also what keeps a staff-only employee's is_payroll_ready from flipping to 0 the moment
+        // is_payroll_participant is turned off, which would otherwise misleadingly flag them as an
+        // incomplete profile on the Recheck tab (T018)/Employee Detail's own Verify Status badge.
+        if (empty($values['is_payroll_participant']) && array_key_exists('is_payroll_participant', $values)) {
+            return [];
+        }
         $requiredColumns = $this->requiredColumns();
         if (!$isThCompany) {
             $requiredColumns = array_diff($requiredColumns, ['master_address_id_register', 'master_address_id_contact', 'tax_calculation_method']);
@@ -438,6 +486,13 @@ class EmployeeModel {
             $where .= " AND e.branch_id = :branch_id";
             $params[':branch_id'] = (int)$filters['branch_id'];
         }
+        // 2026-08-30 (Phase 3, T022) -- !empty() would silently never apply this filter for value
+        // '0' (No Salary), unlike every other filter above (all FK ids/non-empty-string enums,
+        // where '0' is never a real value) -- checked explicitly instead.
+        if (isset($filters['is_payroll_participant']) && $filters['is_payroll_participant'] !== '') {
+            $where .= " AND e.is_payroll_participant = :is_payroll_participant";
+            $params[':is_payroll_participant'] = (int)$filters['is_payroll_participant'];
+        }
         if (!empty($filters['created_date_from'])) {
             $where .= " AND DATE(e.created_at) >= :created_date_from";
             $params[':created_date_from'] = $filters['created_date_from'];
@@ -475,6 +530,40 @@ class EmployeeModel {
         }
 
         return [$where, $params];
+    }
+
+    /**
+     * Per-station employee counts for the Employee tab's own station-card pipeline (Phase 3, T024,
+     * explicit request: "แสดงจำนวนพนักงานต่อ station ด้วย") -- respects every
+     * OTHER active filter (department/team/shift/branch/role/date range/is_payroll_participant/
+     * search) exactly like list() itself, EXCLUDING status/employment_status (those ARE the station
+     * selector -- a count scoped to itself would be meaningless). #tb_employee is serverSide:true,
+     * so client-side row-counting (the technique Payroll Process's own updateStationCounts() uses)
+     * only ever sees the current page's rows, not the true total -- this is a real aggregate query.
+     * NOTE (confirmed against the real markup, not assumed): Active/Probation/Resign all read
+     * employee_status (which has both an 'active' and a separate 'probation' value); Permanent
+     * alone reads employment_status instead -- a pre-existing quirk, not something this method
+     * invented or needs to normalize.
+     */
+    public function stationCounts(int $compId, array $filters, string $search, string $lang = 'th'): array {
+        $filters['status'] = '';
+        $filters['employment_status'] = '';
+        [$whereSql, $params] = $this->buildListWhere($compId, $filters, $search, $lang);
+        $sql = "SELECT
+                    SUM(CASE WHEN e.employee_status = 'active' THEN 1 ELSE 0 END) AS active,
+                    SUM(CASE WHEN e.employee_status = 'probation' THEN 1 ELSE 0 END) AS probation,
+                    SUM(CASE WHEN e.employment_status = 'permanent' THEN 1 ELSE 0 END) AS permanent,
+                    SUM(CASE WHEN e.employee_status = 'resigned' THEN 1 ELSE 0 END) AS resigned
+                " . self::LIST_JOINS . " WHERE {$whereSql}";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        return [
+            'active' => (int)($row['active'] ?? 0),
+            'probation' => (int)($row['probation'] ?? 0),
+            'permanent' => (int)($row['permanent'] ?? 0),
+            'resigned' => (int)($row['resigned'] ?? 0),
+        ];
     }
 
     public function list(int $compId, int $start, int $length, array $filters, string $search, int $colIndex, string $orderDir, string $lang = 'th'): array {
@@ -564,7 +653,13 @@ class EmployeeModel {
         $completenessCols = $this->completenessColumns();
         foreach ($data as &$row) {
             $row['status'] = $row['status'] === 'active' ? 'Active' : ucfirst((string)$row['status']);
-            $row['completeness'] = $this->calculateCompleteness($row)['percent'];
+            // 2026-08-30, real bug fix (see completenessColumns()'s own comment on key_version) --
+            // decrypt base_salary_amount to plaintext just for this ONE threshold check, same
+            // on-demand-decrypt-at-point-of-use convention as PayrollRunModel::recalculate()'s own
+            // identical decryption step.
+            $completenessRow = $row;
+            $completenessRow['base_salary_amount'] = self::decryptSalaryValue($row['base_salary_amount'] ?? null, isset($row['key_version']) ? (int)$row['key_version'] : null);
+            $row['completeness'] = $this->calculateCompleteness($completenessRow)['percent'];
             // Raw checklist-only columns (some of them ciphertext) never need to reach the frontend
             // beyond the computed percent above -- drop them from the row DataTables actually renders.
             foreach ($completenessCols as $col) {
@@ -581,6 +676,327 @@ class EmployeeModel {
 
     private function langNameCol(string $lang, string $prefix): string {
         return $lang === 'en' ? "{$prefix}_en" : "{$prefix}_th";
+    }
+
+    /* ==================== RECHECK TAB (Phase 3, T018, explicit request: "แสดงเป็น column-by-
+     * column ว่าข้อมูลจำเป็นสำหรับทำเงินเดือนครบหรือไม่") ==================== */
+
+    /**
+     * Every field this employee needs for payroll, each as its own boolean (true = filled) --
+     * field-level detail underneath missingPayrollFields()'s flat "missing" list, keyed by column
+     * name for direct per-field column rendering on the Recheck tab. Same checks, just exploded to
+     * field granularity instead of a single ready/not-ready verdict. $e must carry every column
+     * requiredColumns() -- adjusted per $isThCompany -- plus id_card_no/tax_id_no/passport_no/
+     * work_permit_no/bank_id/bank_account_no (recheckList() below selects exactly this set).
+     * @return array<string,bool>
+     */
+    public function fieldReadiness(array $e, bool $isThCompany): array {
+        $missing = $this->missingPayrollFields($e, $isThCompany);
+        $fields = $this->requiredColumns();
+        if (!$isThCompany) {
+            $fields = array_diff($fields, ['master_address_id_register', 'master_address_id_contact', 'tax_calculation_method']);
+        }
+        // Conditional fields missingPayrollFields() also evaluates but that aren't in
+        // requiredColumns() itself (identification shape varies by employee_type, bank details only
+        // apply when payment_type='bank') -- surfaced as their own columns too, same reasoning
+        // calculateCompleteness() already applies for these exact 2 conditions.
+        $extra = (($e['employee_type'] ?? 'domestic') === 'foreigner')
+            ? ['tax_id_no', 'passport_no', 'work_permit_no']
+            : ['id_card_no'];
+        if (($e['payment_type'] ?? null) === 'bank') {
+            $extra = array_merge($extra, ['bank_id', 'bank_account_no']);
+        }
+        $result = [];
+        foreach (array_values(array_unique(array_merge($fields, $extra))) as $f) {
+            $result[$f] = !in_array($f, $missing, true);
+        }
+        return $result;
+    }
+
+    /** Every column fieldReadiness() might read across BOTH the domestic and foreigner paths, plus
+     *  bank details -- the fixed SELECT list recheckList() below always pulls, regardless of any one
+     *  row's own employee_type/payment_type (which branch fieldReadiness() actually uses at render
+     *  time). Deliberately a superset, not conditional per-row -- one query, same shape every time. */
+    private function recheckColumns(): array {
+        return array_values(array_unique(array_merge($this->requiredColumns(), [
+            'id_card_no', 'tax_id_no', 'passport_no', 'work_permit_no', 'bank_id', 'bank_account_no',
+        ])));
+    }
+
+    /**
+     * Server-side DataTables source for the Recheck tab -- one row per employee, each carrying a
+     * `field_readiness` map (fieldReadiness() above) + an overall `is_ready` flag, for a column-by-
+     * column payroll-data-completeness grid. Reuses the SAME station filters/search as list() (via
+     * buildListWhere()) so an admin can narrow this down by department/team/etc. exactly like the
+     * main Employee tab. A staff-only employee (is_payroll_participant=0, see T020/T021) is excluded
+     * entirely -- nothing here is relevant to them, same reasoning as their exclusion from every
+     * payroll report (AnnualIncomeSummaryModel, PayrollReportDataModel::getResignedEmployeesInMonth()).
+     */
+    public function recheckList(int $compId, int $start, int $length, array $filters, string $search, string $lang = 'th'): array {
+        $isThCompany = $this->getCompanyCountry($compId) === 'TH';
+        $exprMap = $this->listColumnExprMap($lang);
+        // Always forces staff-only (is_payroll_participant=0) employees out, on top of whatever
+        // station filters the caller passed in -- same "total = station filters, no search yet"
+        // vs. "filtered = station filters + search" split list() itself uses.
+        $filters['is_payroll_participant'] = '1';
+        [$baseWhere, $baseParams] = $this->buildListWhere($compId, $filters, '', $lang);
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) " . self::LIST_JOINS . " WHERE {$baseWhere}");
+        $totalStmt->execute($baseParams);
+        $recordsTotal = (int)$totalStmt->fetchColumn();
+
+        [$whereSql, $params] = $this->buildListWhere($compId, $filters, $search, $lang);
+
+        $countStmt = $this->db->prepare("SELECT COUNT(*) " . self::LIST_JOINS . " WHERE {$whereSql}");
+        $countStmt->execute($params);
+        $recordsFiltered = (int)$countStmt->fetchColumn();
+
+        $recheckCols = $this->recheckColumns();
+        // key_version/ot_eligible/ot_rate_source selected separately (not part of recheckColumns()/
+        // requiredColumns() -- none of these are "required field" readiness concepts) -- key_version
+        // needed to decrypt base_salary_amount below (same real bug/fix as list()'s own
+        // completenessCols); ot_eligible/ot_rate_source needed to build ot_summary below (explicit
+        // request: "เพิ่ม Column OT เพิ่มว่าคิดหรือไม่คิด ถ้าคิดคิด Rate ของ OT แต่ละประเภท").
+        // team_id/assigned_ot_rate_set_id (2026-08-30, OT Rate Set replacement) needed by
+        // EmployeeOtRateModel::summaryForEmployees() below -- department_id/position_id are already
+        // in $recheckCols via requiredColumns(), but team_id is deliberately NOT a required field
+        // (Team is optional company-wide, see CLAUDE.md's own Team section) so it's never in that
+        // list and must be added here explicitly, same as key_version/ot_eligible/ot_rate_source are.
+        // 2026-08-31, explicit request: "ตรงหน้าตรวจสอบเหมือนยังขาด ประกันสังคม ทั้งตารางและหน้า Form" --
+        // sso_enrolled/sso_no (ciphertext) added the same way ot_eligible/ot_rate_source were --
+        // stripped raw below, exposed only as a computed `sso_status` summary (see below) since SSO
+        // enrollment is legitimately sometimes false for valid reasons (not every employee must be
+        // enrolled), so this is an informational status column, not a pass/fail requiredColumns()
+        // entry -- sso_no's ciphertext is only ever checked for IS NULL/NOT NULL here, never decrypted
+        // (the actual editable plaintext value the modal shows/saves comes from the SAME
+        // api/employee.get call the Recheck modal already makes for every other field).
+        $selectCols = implode(', ', array_map(fn($c) => "e.`{$c}`", $recheckCols)) . ', e.key_version, e.ot_eligible, e.ot_rate_source, e.team_id, e.assigned_ot_rate_set_id, e.sso_enrolled, e.sso_no';
+        $dataSql = "SELECT e.id, {$exprMap['employee_no']} AS employee_no, {$exprMap['name']} AS name, {$selectCols}
+                    " . self::LIST_JOINS . "
+                    WHERE {$whereSql}
+                    ORDER BY e.employee_no ASC
+                    LIMIT :limit OFFSET :offset";
+        $dataStmt = $this->db->prepare($dataSql);
+        foreach ($params as $key => $val) {
+            $dataStmt->bindValue($key, $val);
+        }
+        $dataStmt->bindValue(':limit', $length, PDO::PARAM_INT);
+        $dataStmt->bindValue(':offset', $start, PDO::PARAM_INT);
+        $dataStmt->execute();
+        $data = $dataStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // 2026-08-30, explicit request: "ในข้อมูลบัญชีธนาคาร ให้บอกประเภทการจ่ายเงิน เป็นเงินสุด หรือบัญชี ถ้า
+        // บัญชี มีเลขบัญชีหรือยัง" -- the Bank Details column needs payment_type's RAW value (cash vs
+        // bank), not just its readiness boolean, to render that distinction -- excluded from the
+        // strip list below same as employee_no is, for the same reason (frontend display need).
+        $otSummaryByEmployee = (new EmployeeOtRateModel($this->db))->summaryForEmployees($data, $compId);
+
+        // 'employee_no'/'payment_type' are deliberately excluded from the strip list below -- both
+        // are also recheckColumns()/requiredColumns() entries (needed by fieldReadiness()'s presence
+        // check), but the frontend needs their raw values too (employee_no for row identity/display,
+        // already aliased in via $exprMap above under the exact same key; payment_type for the Bank
+        // Details column's cash-vs-bank display, see above). key_version/ot_eligible/ot_rate_source
+        // are added to the strip list (never needed raw by the frontend -- ot_summary below already
+        // carries everything the UI needs from them).
+        $rawColsToStrip = array_merge(array_diff($recheckCols, ['employee_no', 'payment_type']), ['key_version', 'ot_eligible', 'ot_rate_source', 'team_id', 'assigned_ot_rate_set_id', 'sso_enrolled', 'sso_no']);
+        foreach ($data as &$row) {
+            $row['base_salary_amount'] = self::decryptSalaryValue($row['base_salary_amount'] ?? null, isset($row['key_version']) ? (int)$row['key_version'] : null);
+            $row['field_readiness'] = $this->fieldReadiness($row, $isThCompany);
+            $row['is_ready'] = !in_array(false, $row['field_readiness'], true);
+            $row['ot_summary'] = $otSummaryByEmployee[(int)$row['id']] ?? null;
+            if (!(bool)($row['sso_enrolled'] ?? false)) {
+                $row['sso_status'] = 'not_enrolled';
+            } elseif ($row['sso_no'] === null || $row['sso_no'] === '') {
+                $row['sso_status'] = 'enrolled_missing_no';
+            } else {
+                $row['sso_status'] = 'enrolled_complete';
+            }
+            foreach ($rawColsToStrip as $col) {
+                unset($row[$col]);
+            }
+        }
+
+        return ['total' => $recordsTotal, 'filtered' => $recordsFiltered, 'data' => $data];
+    }
+
+    /* ==================== STANDING ITEMS SUMMARY TAB (explicit request: "สรุปรวมรายได้รายหักที่
+     * หักหรือได้ประจำ รวมถึงฐานเงินและ และรายได้ รายหักที่ได้รับเป็นรอบ ให้แสดงตัวเลขในรอบที่รอจ่าย รอหัก และ
+     * บอกด้วยว่า งวดที่เท่าไหร่จากทั้งหมดกี่งวด") ==================== */
+
+    /**
+     * Batched per-employee summary of base salary + Recurring Earnings (EmployeeRecurringEarningModel,
+     * indefinite/no installment schedule) + the NEXT PENDING installment of every active PED
+     * assignment (employee_earning_deductions -- its own total_installments/current_installment
+     * columns map directly onto "งวดที่เท่าไหร่จากทั้งหมดกี่งวด", no cycle-date math needed). "รอจ่าย/
+     * รอหัก" (pending to be paid/deducted) means each item's own status='active'(recurring)/
+     * 'pending'(installment) state -- this is a snapshot of what's CURRENTLY configured to be paid
+     * next, not a specific calendar period resolved against any one payroll cycle.
+     *
+     * Batched via WHERE employee_id IN (...) for BOTH recurring earnings and PED assignments+
+     * installments (2 queries total, not N) -- same "prefetch once, not per row" convention
+     * EmployeeOtRateModel::summaryForEmployees() already established for this exact page.
+     * base_salary_amount is AES-256-GCM ciphertext (can't SUM in SQL), so it's decrypted per row here
+     * same as every other consumer of that column.
+     * @param int[] $employeeIds
+     * @return array<int,array> keyed by employee_id
+     */
+    private function standingSummaryForEmployees(array $employeeIds, int $compId): array {
+        if (empty($employeeIds)) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+
+        $stmtBase = $this->db->prepare("SELECT id, base_salary_amount, key_version FROM `employees` WHERE id IN ({$placeholders})");
+        $stmtBase->execute($employeeIds);
+        $result = [];
+        foreach ($stmtBase->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $result[(int)$row['id']] = [
+                'base_salary_amount' => self::decryptSalaryValue($row['base_salary_amount'] ?? null, isset($row['key_version']) ? (int)$row['key_version'] : null),
+                'recurring' => [], 'recurring_total' => 0.0,
+                'recurring_deduction' => [], 'recurring_deduction_total' => 0.0,
+                'ped_earning' => [], 'ped_earning_total' => 0.0,
+                'ped_deduction' => [], 'ped_deduction_total' => 0.0,
+            ];
+        }
+
+        $today = date('Y-m-d');
+        $stmtRecurring = $this->db->prepare("SELECT ere.employee_id, ere.amount, ere.suspended_from, ere.suspended_to,
+                pt.item_name_th, pt.item_name_en
+            FROM `employee_recurring_earnings` ere
+            JOIN `payroll_earning_deduction_types` pt ON pt.id = ere.ped_type_id
+            WHERE ere.employee_id IN ({$placeholders}) AND ere.status = 'active' AND ere.deleted_at IS NULL");
+        $stmtRecurring->execute($employeeIds);
+        foreach ($stmtRecurring->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $employeeId = (int)$row['employee_id'];
+            if (!isset($result[$employeeId])) continue;
+            $isSuspended = $row['suspended_from'] !== null && $row['suspended_to'] !== null
+                && $row['suspended_from'] <= $today && $row['suspended_to'] >= $today;
+            if ($isSuspended) continue; // suspended = not pending to be paid this round, excluded entirely.
+            $amount = (float)$row['amount'];
+            $result[$employeeId]['recurring'][] = ['name_th' => $row['item_name_th'], 'name_en' => $row['item_name_en'], 'amount' => $amount];
+            $result[$employeeId]['recurring_total'] += $amount;
+        }
+
+        // 2026-08-31, explicit request: "หน้า Employee Detail เพิ่มรายหักประจำด้วยครับ และนำไปเพิ่มใน ตรงสรุป
+        // รายได้ประจำ ด้วย" -- direct mirror of the Recurring Earnings query immediately above,
+        // against employee_recurring_deductions instead (see EmployeeRecurringDeductionModel).
+        $stmtRecurringDed = $this->db->prepare("SELECT erd.employee_id, erd.amount, erd.suspended_from, erd.suspended_to,
+                pt.item_name_th, pt.item_name_en
+            FROM `employee_recurring_deductions` erd
+            JOIN `payroll_earning_deduction_types` pt ON pt.id = erd.ped_type_id
+            WHERE erd.employee_id IN ({$placeholders}) AND erd.status = 'active' AND erd.deleted_at IS NULL");
+        $stmtRecurringDed->execute($employeeIds);
+        foreach ($stmtRecurringDed->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $employeeId = (int)$row['employee_id'];
+            if (!isset($result[$employeeId])) continue;
+            $isSuspended = $row['suspended_from'] !== null && $row['suspended_to'] !== null
+                && $row['suspended_from'] <= $today && $row['suspended_to'] >= $today;
+            if ($isSuspended) continue;
+            $amount = (float)$row['amount'];
+            $result[$employeeId]['recurring_deduction'][] = ['name_th' => $row['item_name_th'], 'name_en' => $row['item_name_en'], 'amount' => $amount];
+            $result[$employeeId]['recurring_deduction_total'] += $amount;
+        }
+
+        // Every active assignment's NEXT pending installment (lowest installment_no with status=
+        // 'pending') -- a correlated subquery, not a JOIN+GROUP BY, since we need exactly ONE row
+        // per assignment (the earliest pending one), not every pending installment summed together.
+        $stmtPed = $this->db->prepare("SELECT eed.employee_id, eed.total_installments, eed.current_installment,
+                COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
+                COALESCE(pt.item_name_th, eed.custom_item_name) AS item_name_th,
+                COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
+                i.installment_no, i.amount
+            FROM `employee_earning_deductions` eed
+            LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
+            JOIN `employee_earning_deduction_installments` i ON i.assignment_id = eed.id AND i.status = 'pending'
+                AND i.installment_no = (SELECT MIN(i2.installment_no) FROM `employee_earning_deduction_installments` i2 WHERE i2.assignment_id = eed.id AND i2.status = 'pending')
+            WHERE eed.employee_id IN ({$placeholders}) AND eed.status = 'active' AND eed.deleted_at IS NULL");
+        $stmtPed->execute($employeeIds);
+        foreach ($stmtPed->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $employeeId = (int)$row['employee_id'];
+            if (!isset($result[$employeeId])) continue;
+            $amount = (float)$row['amount'];
+            $item = [
+                'name_th' => $row['item_name_th'], 'name_en' => $row['item_name_en'], 'amount' => $amount,
+                'installment_no' => (int)$row['installment_no'], 'total_installments' => (int)$row['total_installments'],
+            ];
+            if ($row['item_type'] === 'earning') {
+                $result[$employeeId]['ped_earning'][] = $item;
+                $result[$employeeId]['ped_earning_total'] += $amount;
+            } else {
+                $result[$employeeId]['ped_deduction'][] = $item;
+                $result[$employeeId]['ped_deduction_total'] += $amount;
+            }
+        }
+
+        foreach ($result as &$r) {
+            $r['total_earning'] = round($r['base_salary_amount'] + $r['recurring_total'] + $r['ped_earning_total'], 2);
+            $r['total_deduction'] = round($r['recurring_deduction_total'] + $r['ped_deduction_total'], 2);
+            $r['net_total'] = round($r['total_earning'] - $r['total_deduction'], 2);
+        }
+        unset($r);
+        return $result;
+    }
+
+    /**
+     * Server-side DataTables source for the Summary tab -- same station filters/search as
+     * recheckList(), plus company-wide TOTALS across the whole filtered set (not just the current
+     * page -- same "footer reflects every filtered row, not just what's currently rendered"
+     * precedent AnnualIncomeSummaryModel's own report totals already established, needed here since
+     * this table is serverSide:true so DataTables' own client-side footerCallback would only ever see
+     * the current page).
+     */
+    public function standingSummaryList(int $compId, int $start, int $length, array $filters, string $search, string $lang = 'th'): array {
+        $exprMap = $this->listColumnExprMap($lang);
+        $filters['is_payroll_participant'] = '1';
+        [$baseWhere, $baseParams] = $this->buildListWhere($compId, $filters, '', $lang);
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) " . self::LIST_JOINS . " WHERE {$baseWhere}");
+        $totalStmt->execute($baseParams);
+        $recordsTotal = (int)$totalStmt->fetchColumn();
+
+        [$whereSql, $params] = $this->buildListWhere($compId, $filters, $search, $lang);
+        $countStmt = $this->db->prepare("SELECT COUNT(*) " . self::LIST_JOINS . " WHERE {$whereSql}");
+        $countStmt->execute($params);
+        $recordsFiltered = (int)$countStmt->fetchColumn();
+
+        $allIdsStmt = $this->db->prepare("SELECT e.id " . self::LIST_JOINS . " WHERE {$whereSql}");
+        foreach ($params as $key => $val) {
+            $allIdsStmt->bindValue($key, $val);
+        }
+        $allIdsStmt->execute();
+        $allFilteredIds = array_map('intval', $allIdsStmt->fetchAll(PDO::FETCH_COLUMN));
+
+        $summaryByEmployee = $this->standingSummaryForEmployees($allFilteredIds, $compId);
+
+        $totals = ['base_salary_amount' => 0.0, 'recurring_total' => 0.0, 'recurring_deduction_total' => 0.0, 'ped_earning_total' => 0.0, 'ped_deduction_total' => 0.0, 'total_earning' => 0.0, 'total_deduction' => 0.0, 'net_total' => 0.0];
+        foreach ($summaryByEmployee as $s) {
+            foreach ($totals as $key => &$val) {
+                $val += $s[$key] ?? 0;
+            }
+            unset($val);
+        }
+        foreach ($totals as &$val) {
+            $val = round($val, 2);
+        }
+        unset($val);
+
+        $dataSql = "SELECT e.id, {$exprMap['employee_no']} AS employee_no, {$exprMap['name']} AS name
+                    " . self::LIST_JOINS . "
+                    WHERE {$whereSql}
+                    ORDER BY e.employee_no ASC
+                    LIMIT :limit OFFSET :offset";
+        $dataStmt = $this->db->prepare($dataSql);
+        foreach ($params as $key => $val) {
+            $dataStmt->bindValue($key, $val);
+        }
+        $dataStmt->bindValue(':limit', $length, PDO::PARAM_INT);
+        $dataStmt->bindValue(':offset', $start, PDO::PARAM_INT);
+        $dataStmt->execute();
+        $data = $dataStmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($data as &$row) {
+            $row['summary'] = $summaryByEmployee[(int)$row['id']] ?? null;
+        }
+        unset($row);
+
+        return ['total' => $recordsTotal, 'filtered' => $recordsFiltered, 'data' => $data, 'totals' => $totals];
     }
 
     /**
@@ -753,6 +1169,49 @@ class EmployeeModel {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
         $isThCompany = $this->getCompanyCountry($compId) === 'TH';
 
+        // 2026-08-30 (T020): looked up up-front (not just inside the UPDATE branch further down) so
+        // it's available before is_payroll_ready is computed below too -- same "fetch the row's own
+        // current value first, fall back to THAT instead of a hardcoded default when the payload
+        // omits the key" pattern already established for status in
+        // PayrollEarningDeductionTypeModel::save() (see this project's own CLAUDE.md). Only matters
+        // for an UPDATE from a caller that doesn't send this field at all; every real save from the
+        // Employee Detail form always sends it (hidden input, collectEmployeeFormData()'s generic loop).
+        $existingIsPayrollParticipant = null;
+        if ($id !== null) {
+            $stmtExistingParticipant = $this->db->prepare("SELECT is_payroll_participant FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+            $stmtExistingParticipant->execute([':id' => $id, ':comp_id' => $compId]);
+            $existingVal = $stmtExistingParticipant->fetchColumn();
+            if ($existingVal !== false) {
+                $existingIsPayrollParticipant = (int)$existingVal;
+            }
+        }
+
+        // 2026-08-30, real bug found and fixed BEFORE shipping (not guessed -- caught while reasoning
+        // through EmployeeOtRateModel's own OT rate feature): `ot_rate_source` is a plain enum column
+        // (NOT boolean/int), so it falls into the generic `$val = $data[$col] ?? null;` branch further
+        // down -- an absent key would have written a literal NULL into a NOT NULL column on EVERY
+        // save. The real Employee Detail page's own #ot_rate_source select deliberately has NO `name`
+        // attribute (its own dedicated api/employee.ot-rate.save endpoint owns writing it, see that
+        // section's own comment) -- meaning EVERY save from that page's normal tabs (collect the WHOLE
+        // form, submit regardless of which tab's button was clicked) would have hit exactly this,
+        // breaking every employee save the moment ot_rate_source was added to allColumns() below.
+        // Same "fetch existing value first, fall back to THAT instead of a hardcoded default when the
+        // payload omits the key" pattern as is_payroll_participant just above -- only the Recheck
+        // modal's own #rc_ot_rate_source (which DOES carry a name, saving through this generic path)
+        // and the dedicated OT endpoint ever need to actually change it.
+        if (!array_key_exists('ot_rate_source', $data)) {
+            $existingOtRateSource = 'default';
+            if ($id !== null) {
+                $stmtExistingOtSource = $this->db->prepare("SELECT ot_rate_source FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+                $stmtExistingOtSource->execute([':id' => $id, ':comp_id' => $compId]);
+                $existingOtVal = $stmtExistingOtSource->fetchColumn();
+                if ($existingOtVal !== false && $existingOtVal !== null && $existingOtVal !== '') {
+                    $existingOtRateSource = (string)$existingOtVal;
+                }
+            }
+            $data['ot_rate_source'] = $existingOtRateSource;
+        }
+
         // employee_no is the ONLY field that still blocks a save outright, on every tab -- it's the
         // row's business identity (NOT NULL, no DB default, used as the URL/lookup key everywhere).
         // Every other field below used to be required on EVERY save regardless of which tab was open
@@ -807,6 +1266,15 @@ class EmployeeModel {
         }
         if (!empty($data['profile_photo_path']) && !self::isValidPhotoPath((string)$data['profile_photo_path'], $compId)) {
             return ['status' => false, 'message' => 'Invalid photo path.'];
+        }
+        // 2026-08-31, explicit request: internship pay conditions, per-employee ratio override --
+        // same 0(exclusive)-100 validation shape as PayrollPolicyModel::save()'s own
+        // intern_base_salary_ratio/probation_base_salary_ratio. Blank/absent is fine (null = no
+        // override, use the company default) -- only a NON-EMPTY, out-of-range value is rejected.
+        if (isset($data['intern_base_salary_ratio_override']) && $data['intern_base_salary_ratio_override'] !== '' && $data['intern_base_salary_ratio_override'] !== null) {
+            if (!is_numeric($data['intern_base_salary_ratio_override']) || (float)$data['intern_base_salary_ratio_override'] <= 0 || (float)$data['intern_base_salary_ratio_override'] > 100) {
+                return ['status' => false, 'message' => 'Intern base salary ratio override must be a percentage between 0 (exclusive) and 100, or left blank for no override.'];
+            }
         }
 
         $fkChecks = [
@@ -871,7 +1339,20 @@ class EmployeeModel {
         $plainBaseSalaryForReadyCheck = null;
         foreach ($this->allColumns() as $col) {
             if (in_array($col, $booleans, true)) {
-                $values[$col] = !empty($data[$col]) ? 1 : 0;
+                // 2026-08-30 (T020): every OTHER boolean here safely defaults to 0/false when the
+                // payload just doesn't mention it (not-enrolled/not-eligible/no-spouse are all
+                // reasonable "unless explicitly set" defaults) -- is_payroll_participant is the one
+                // exception, since a caller that doesn't yet know about this new field (e.g. an
+                // older sync/import code path) must not silently exclude the employee from payroll,
+                // NOR silently flip an already-unpaid employee back to paid. Only an EXPLICIT falsy
+                // value in the payload turns it off; an absent key keeps whatever this employee
+                // already had (existing row on UPDATE, via $existingIsPayrollParticipant fetched
+                // above) or the DB column's own DEFAULT 1 (paid, on a brand-new INSERT).
+                if ($col === 'is_payroll_participant' && !array_key_exists($col, $data)) {
+                    $values[$col] = $existingIsPayrollParticipant ?? 1;
+                } else {
+                    $values[$col] = !empty($data[$col]) ? 1 : 0;
+                }
                 continue;
             }
             if (in_array($col, $ints, true)) {

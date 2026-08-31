@@ -272,8 +272,6 @@ class PayrollEarningDeductionTypeModel {
 
         $calcSso = !empty($data['calc_sso']) ? 1 : 0;
         $calcPf = !empty($data['calc_pf']) ? 1 : 0;
-        $statusInput = $data['status'] ?? 'active';
-        $status = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : 'active';
         $itemNameTh = trim((string)$data['item_name_th']);
         $itemNameEn = trim((string)$data['item_name_en']);
 
@@ -292,12 +290,11 @@ class PayrollEarningDeductionTypeModel {
             ':country_code' => $countryCode,
             ':source_event_code' => $sourceEventCode,
             ':statutory_report_code' => $statutoryReportCode,
-            ':status' => $status,
         ];
 
         try {
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id, is_sync_only FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                $stmtCheck = $this->db->prepare("SELECT id, is_sync_only, status FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
                 $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
                 if (!$existing) {
@@ -306,6 +303,14 @@ class PayrollEarningDeductionTypeModel {
                 if ((int)$existing['is_sync_only'] === 1) {
                     return ['status' => false, 'message' => 'This item is managed by system sync and cannot be edited manually.'];
                 }
+                // 2026-08-30 (Phase 2, T014, explicit request: "ย้าย 'สถานะ' ออกจาก modal ไปไว้ที่แถวใน
+                // ตาราง") -- the Add/Edit modal no longer has a Status field at all (status changes
+                // ONLY through the new dedicated toggleStatus() below now) -- an UPDATE must therefore
+                // preserve whatever status the row already had rather than defaulting to 'active' the
+                // way `$data['status'] ?? 'active'` used to (that default is still correct, and still
+                // used, for a brand-new row further down -- see the INSERT branch).
+                $statusInput = $data['status'] ?? $existing['status'];
+                $params[':status'] = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : $existing['status'];
                 $sql = "UPDATE `payroll_earning_deduction_types` SET
                             item_code = :item_code, item_name_th = :item_name_th, item_name_en = :item_name_en,
                             item_type = :item_type, calculation_method = :calculation_method,
@@ -330,6 +335,8 @@ class PayrollEarningDeductionTypeModel {
                         (:comp_id, :item_code, :item_name_th, :item_name_en, :item_type, :calculation_method,
                          :fixed_amount, :percent_rate, :tax_treatment, :tax_deduction_impact, :calc_sso, :calc_pf,
                          :country_code, :source_event_code, :statutory_report_code, 0, :status, :created_by)";
+            $statusInput = $data['status'] ?? 'active';
+            $params[':status'] = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : 'active';
             $params[':comp_id'] = $compId;
             $params[':created_by'] = $userId;
             $stmt = $this->db->prepare($sql);
@@ -357,7 +364,17 @@ class PayrollEarningDeductionTypeModel {
             ['item_code' => 'OT', 'item_name_th' => 'ค่าล่วงเวลา', 'item_name_en' => 'Overtime Pay', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1, 'source_event_code' => 'ot_hours'],
             ['item_code' => 'TRIP_ALLOW', 'item_name_th' => 'ค่าเที่ยว', 'item_name_en' => 'Trip Allowance', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable', 'source_event_code' => 'trip_allowance'],
             ['item_code' => 'POSITION_ALLOW', 'item_name_th' => 'ค่าตำแหน่ง', 'item_name_en' => 'Position Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1],
-            ['item_code' => 'DILIGENCE', 'item_name_th' => 'เบี้ยขยัน', 'item_name_en' => 'Diligence Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1],
+            // 2026-08-30 (Phase 2, T011): promoted from a plain fixed_amount=0 manual item to a
+            // proper source_event_code link, same treatment as OT/Trip Allowance above -- the
+            // amount was NEVER actually read from fixed_amount here (that column only matters for a
+            // manual per-employee assignment, which this item was never meant to have -- see
+            // PayrollRunModel.php's own 2026-08-29 comment on this same item, "จะเชื่อมมาจาก Origami
+            // แทน"), so fixed_amount=0 was silently inert either way -- this just makes the wiring
+            // explicit/discoverable via the "Linked Attendance Event" dropdown instead of relying on
+            // SyncPayResolver's generic item_code fallback matching. See
+            // database/migrations/2026-08-30_11b_diligence_source_event_backfill.sql for the
+            // existing-row backfill this required.
+            ['item_code' => 'DILIGENCE', 'item_name_th' => 'เบี้ยขยัน', 'item_name_en' => 'Diligence Allowance', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1, 'source_event_code' => 'diligence'],
             ['item_code' => 'MEAL_ALLOW', 'item_name_th' => 'ค่าอาหาร', 'item_name_en' => 'Meal Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'non_taxable'],
             ['item_code' => 'PHONE_ALLOW', 'item_name_th' => 'ค่าโทรศัพท์', 'item_name_en' => 'Phone Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'taxable'],
             ['item_code' => 'BONUS', 'item_name_th' => 'โบนัส', 'item_name_en' => 'Bonus', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable'],
@@ -409,5 +426,26 @@ class PayrollEarningDeductionTypeModel {
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
+    }
+
+    /**
+     * 2026-08-30 (Phase 2, T014, explicit request: "ย้าย 'สถานะ' ออกจาก modal ไปไว้ที่แถวในตาราง") --
+     * plain active/inactive flip, same shape as SetupRulesModel::holidayToggleStatus(). Deliberately
+     * has NO `is_sync_only` guard (unlike delete() above) -- deactivating a sync-detected/event-linked
+     * item is a legitimate, expected admin action (see SyncPayResolver's own deactivation handling,
+     * e.g. the Trip Allowance/Diligence "admin deactivates -> excluded from calculation entirely"
+     * tests), only CREATE/EDIT/DELETE are blocked for a system-managed row.
+     */
+    public function toggleStatus(int $compId, int $id, int $userId): array {
+        $stmt = $this->db->prepare("SELECT status FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $id, ':comp_id' => $compId]);
+        $current = $stmt->fetchColumn();
+        if ($current === false) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $newStatus = $current === 'active' ? 'inactive' : 'active';
+        $this->db->prepare("UPDATE `payroll_earning_deduction_types` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
+            ->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+        return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
     }
 }
