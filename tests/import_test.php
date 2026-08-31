@@ -20,6 +20,7 @@ require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/services/import/ImportFileParser.php';
 require_once __DIR__ . '/../app/services/import/ImportService.php';
 require_once __DIR__ . '/../app/models/SyncBatchModel.php';
+require_once __DIR__ . '/../app/models/AttendanceRecordModel.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
@@ -201,6 +202,74 @@ try {
     $attRows2 = [['employee_no' => 'NOT_A_REAL_EMPLOYEE', 'work_date' => '2026-02-11', 'status' => 'present']];
     $attImportRes2 = $importService->commit($compId, 'attendance', $attRows2, $adminUserId);
     check('unknown employee_no rejected as a row error', $attImportRes2['error'], 1);
+
+    // ---------- 2026-08-30 (Phase 5, conflict-prevention): cross-source overwrite is reported ----------
+    echo "=== Cross-source conflict reporting (import overwriting a sync-sourced row) ===\n";
+    // Simulate the Feb 10 attendance row (created via import above) having actually come from a
+    // real Origami sync on a previous pull, then re-import the SAME employee_no+work_date.
+    $pdo->prepare("UPDATE attendance_records SET data_source = 'sync' WHERE employee_id = :emp AND work_date = '2026-02-10'")
+        ->execute([':emp' => $employeeId]);
+    $attReimportRes = $importService->commit($compId, 'attendance', $attRows, $adminUserId);
+    checkTrue('re-import over a sync-sourced row still succeeds (not blocked)', $attReimportRes['status']);
+    check('re-import: action is updated', $attReimportRes['row_results'][0]['action'], 'updated');
+    checkTrue('re-import: source_conflict flagged', !empty($attReimportRes['row_results'][0]['source_conflict']));
+    check('re-import: previous_source reported as sync', $attReimportRes['row_results'][0]['previous_source'], 'sync');
+    check('re-import: conflict count is 1', $attReimportRes['conflict'], 1);
+    $attAfterReimport = $pdo->prepare("SELECT data_source FROM attendance_records WHERE employee_id = :emp AND work_date = '2026-02-10'");
+    $attAfterReimport->execute([':emp' => $employeeId]);
+    check('data_source now reflects the LATEST write (import), not left stale as sync', $attAfterReimport->fetchColumn(), 'import');
+
+    // A normal import with no prior different-source row must NOT be flagged.
+    $attRowsFresh = [['employee_no' => 'IMP_EMP_1', 'work_date' => '2026-02-12', 'status' => 'present']];
+    $attFreshRes = $importService->commit($compId, 'attendance', $attRowsFresh, $adminUserId);
+    checkTrue('fresh import (no prior row) is NOT flagged as a conflict', empty($attFreshRes['row_results'][0]['source_conflict']));
+    check('fresh import: conflict count is 0', $attFreshRes['conflict'], 0);
+
+    // ---------- 2026-08-30 (Phase 5, conflict-prevention): leave date-range OVERLAP is rejected ----------
+    echo "=== Leave import: overlap-aware conflict rejection ===\n";
+    $categoryId = (int)$pdo->query("SELECT id FROM master_leave_categories LIMIT 1")->fetchColumn();
+    checkTrue('fixture: a leave category exists to attach the test leave type to', $categoryId > 0);
+    $pdo->prepare("INSERT INTO leave_types (comp_id, category_id, code, name_th, name_en, quota_amount, status, data_source)
+            VALUES (:comp_id, :category_id, 'IMP_LEAVE_TYPE', 'ลาทดสอบนำเข้า', 'Import Test Leave', 5, 'active', 'manual')")
+        ->execute([':comp_id' => $compId, ':category_id' => $categoryId]);
+    $leaveTypeIdForOverlap = (int)$pdo->lastInsertId();
+
+    $leaveRowsFirst = [['employee_no' => 'IMP_EMP_1', 'leave_type_code' => 'IMP_LEAVE_TYPE', 'start_date' => '2026-03-01', 'end_date' => '2026-03-03', 'total_days' => 3, 'status' => 'approved']];
+    $leaveFirstRes = $importService->commit($compId, 'leave', $leaveRowsFirst, $adminUserId);
+    checkTrue('first leave import (no conflict) succeeds', $leaveFirstRes['status']);
+    check('first leave import: 1 success', $leaveFirstRes['success'], 1);
+
+    // Overlapping (not identical) date range, same employee + same leave type -- must be rejected.
+    $leaveRowsOverlap = [['employee_no' => 'IMP_EMP_1', 'leave_type_code' => 'IMP_LEAVE_TYPE', 'start_date' => '2026-03-02', 'end_date' => '2026-03-05', 'total_days' => 4, 'status' => 'approved']];
+    $leaveOverlapRes = $importService->commit($compId, 'leave', $leaveRowsOverlap, $adminUserId);
+    check('overlapping leave import: 0 success, 1 error', [$leaveOverlapRes['success'], $leaveOverlapRes['error']], [0, 1]);
+    checkTrue('overlap error message names the conflicting range', strpos($leaveOverlapRes['errors'][0]['message'], '2026-03-01') !== false);
+    $leaveCountRealAfterOverlap = (int)$pdo->query("SELECT COUNT(*) FROM leave_requests WHERE employee_id = {$employeeId} AND leave_type_id = {$leaveTypeIdForOverlap} AND deleted_at IS NULL")->fetchColumn();
+    check('overlapping row was NOT inserted', $leaveCountRealAfterOverlap, 1);
+
+    // A DIFFERENT (non-overlapping) date range for the same employee+leave type is still allowed.
+    $leaveRowsSeparate = [['employee_no' => 'IMP_EMP_1', 'leave_type_code' => 'IMP_LEAVE_TYPE', 'start_date' => '2026-04-01', 'end_date' => '2026-04-01', 'total_days' => 1, 'status' => 'approved']];
+    $leaveSeparateRes = $importService->commit($compId, 'leave', $leaveRowsSeparate, $adminUserId);
+    checkTrue('non-overlapping second leave request for the same employee+type is allowed', $leaveSeparateRes['status'] && $leaveSeparateRes['success'] === 1);
+
+    // Re-importing the EXACT same range again is a legitimate UPDATE, not a self-conflict.
+    $leaveRowsSame = $leaveRowsFirst;
+    $leaveRowsSame[0]['total_days'] = 2.5; // a real correction
+    $leaveSameRes = $importService->commit($compId, 'leave', $leaveRowsSame, $adminUserId);
+    checkTrue('re-importing the exact same date range updates cleanly (not a self-conflict)', $leaveSameRes['status'] && $leaveSameRes['success'] === 1);
+    check('re-import: action is updated, not a rejected overlap', $leaveSameRes['row_results'][0]['action'], 'updated');
+
+    // ---------- 2026-08-30 (Phase 5, T034): AttendanceRecordModel::list()'s new batch_id filter ----------
+    echo "=== list() batch_id filter (drill into one import batch's rows) ===\n";
+    $attBatchRow = $pdo->prepare("SELECT sync_batch_id FROM attendance_records WHERE employee_id = :emp AND work_date = '2026-02-10'");
+    $attBatchRow->execute([':emp' => $employeeId]);
+    $importBatchId = (int)$attBatchRow->fetchColumn();
+    checkTrue('fixture: the Feb 10 attendance row has a real sync_batch_id', $importBatchId > 0);
+    $attModel = new AttendanceRecordModel($pdo);
+    $batchRows = $attModel->list($compId, ['batch_id' => $importBatchId]);
+    checkTrue('list(batch_id=...) returns exactly the rows from that one batch', count($batchRows) === 1 && (int)$batchRows[0]['employee_id'] === $employeeId);
+    $unrelatedBatchRows = $attModel->list($compId, ['batch_id' => 999999999]);
+    check('an unknown batch_id returns an empty list, not everything', $unrelatedBatchRows, []);
 
     // ---------- SyncBatchModel: source filtering ----------
     echo "=== SyncBatchModel source filtering ===\n";

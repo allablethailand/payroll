@@ -321,3 +321,69 @@ $(document).on('select2:select', '.select2-remote', function (e) {
     const data = e.params.data;
     $(this).find('option:selected').data('data', data);
 });
+
+// ============================================================================
+// Dev Standards Phase 0 (T001/T002) -- see docs/ui-standards.md for the written standard.
+// Both are zero-config: apply automatically to every matching element app-wide, current and
+// future, with no per-page opt-in call needed (input.js loads on every page via header.php).
+// ============================================================================
+
+// T001 -- every <input type="number"> selects its whole value on focus, so typing immediately
+// replaces it instead of requiring a manual select-all/backspace first. Delegated to `document` so
+// it covers elements that don't exist yet at page-load time (SweetAlert2 modals, DataTables filter
+// popovers, anything injected later) -- no per-field/per-page wiring required. Plain text inputs are
+// deliberately NOT included (a text field's cursor position usually matters; a number field's
+// almost never does -- you're replacing the whole number, not editing a substring of it).
+$(document).on('focus', 'input[type="number"]', function () {
+    this.select();
+});
+
+// T002 -- every <textarea> grows to fit its content (no scrollbar, no clipped text), both on initial
+// render (a long pre-filled value must already be fully expanded the moment it appears) and while
+// typing.
+function autoExpandTextarea(el) {
+    if (!el || el.tagName !== 'TEXTAREA') {
+        return;
+    }
+    // Reset to 'auto' first, THEN read scrollHeight -- reading scrollHeight without resetting height
+    // first would just report the CURRENT (possibly too-small) height back, since a taller content
+    // can't shrink an already-fixed height down again on its own.
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+}
+// Typing.
+$(document).on('input', 'textarea', function () {
+    autoExpandTextarea(this);
+});
+// Initial render pass -- covers every textarea already on the page with server-rendered content the
+// moment the DOM is ready. A textarea that's inside a `display:none` ancestor at this point (a
+// not-yet-shown Bootstrap modal/tab pane) reads scrollHeight as if empty -- re-expanded once it
+// actually becomes visible, see the shown.bs.modal/shown.bs.tab handler below.
+$(document).ready(function () {
+    document.querySelectorAll('textarea').forEach(autoExpandTextarea);
+});
+$(document).on('shown.bs.modal shown.bs.tab', function (e) {
+    $(e.target).find('textarea').each(function () { autoExpandTextarea(this); });
+});
+// Zero-config coverage for a value set PROGRAMMATICALLY (jQuery's `.val(x)` on a textarea sets
+// `.value` under the hood, same as plain `el.value = x`) -- e.g. populateEmployeeForm()-style code
+// loading an existing record's long saved text into a textarea well after the initial-render pass
+// above already ran. Wrapping the native `value` SETTER on the prototype (rather than requiring
+// every such call site to remember an explicit follow-up call) is deliberate: this app already has
+// one well-documented bug class from exactly that "caller forgot the required follow-up call"
+// pattern (bootstrap-datepicker's `.datepicker('update')`, see CLAUDE.md's Date Picker section) --
+// this makes the same mistake structurally impossible for textareas instead of relying on every
+// future page remembering a convention.
+(function () {
+    const nativeValueDescriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+    if (nativeValueDescriptor && nativeValueDescriptor.configurable && nativeValueDescriptor.set) {
+        Object.defineProperty(HTMLTextAreaElement.prototype, 'value', {
+            get: nativeValueDescriptor.get,
+            set: function (val) {
+                nativeValueDescriptor.set.call(this, val);
+                autoExpandTextarea(this);
+            },
+            configurable: true,
+        });
+    }
+})();

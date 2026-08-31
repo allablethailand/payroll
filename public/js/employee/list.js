@@ -42,8 +42,31 @@ if (typeof watchTabDirty === 'function') {
         if ($.fn.DataTable.isDataTable('#tb_employee')) {
             $('#tb_employee').DataTable().ajax.reload(null, false);
         }
+        // 2026-08-30 (T024) -- an edit elsewhere (Detail page, this Recheck modal) may have changed
+        // which station an employee belongs to (e.g. Probation -> Permanent) -- refresh counts too.
+        refreshEmployeeStationCounts();
     });
 }
+// 2026-08-30, explicit request: "/payroll/employees กดเลือก Tab ไหน Refresh แล้วให้อยู่ tab เดิม" --
+// same URL-hash + history.replaceState mechanism already built for Employee Detail's own #employeeTabs
+// (detail.js's activateEmployeeTabFromHash()/shown.bs.tab handler), applied here to this page's
+// top-level #employeeTopTabs instead. A tab switch replaces the URL hash (no new history entry, no
+// page reload) with that tab button's own id; a hash present on load re-shows that same tab via
+// Bootstrap's own Tab API, which also correctly re-fires shown.bs.tab so each tab's own lazy-init
+// (DataTable init, station counts, etc.) still runs exactly as it would on a real click.
+function activateEmployeeTopTabFromHash() {
+    const hash = (location.hash || '').replace('#', '');
+    if (!hash) return;
+    const $btn = $('#' + CSS.escape(hash));
+    if ($btn.length && $btn.attr('data-bs-toggle') === 'tab' && $btn.closest('#employeeTopTabs').length) {
+        bootstrap.Tab.getOrCreateInstance($btn[0]).show();
+    }
+}
+$(document).on('shown.bs.tab', '#employeeTopTabs button[data-bs-toggle="tab"]', function (e) {
+    if (history.replaceState) {
+        history.replaceState(null, '', '#' + e.target.id);
+    }
+});
 $(document).ready(function () {
     initEmployeeTable();
     if (typeof initDatepicker === 'function') {
@@ -54,6 +77,9 @@ $(document).ready(function () {
         initSelect2('#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch', { mode: 'ajax', allowClear: true });
     }
     updateClearEmployeeFilterVisibility();
+    refreshEmployeeStationCounts();
+    activateEmployeeTopTabFromHash();
+    initRcMobileIti();
 });
 let tb_employee;
 // 2026-08-29, explicit request: "ในหน้า List เพิ่ม checkbox ด้านหน้า เพื่อให้เลือกหลายรายการแล้วกด Sync
@@ -71,6 +97,10 @@ function currentStatusFilters() {
     };
 }
 function currentEmployeeExtraFilters() {
+    // 2026-08-30 (Phase 3, T022) -- 'all' (the dropdown's own default) maps back to '' (no filter);
+    // '1'/'0' pass through as-is. See list.php's own comment on why 'all' is used instead of a
+    // genuinely blank data-option-values entry.
+    const payrollParticipantRaw = $('#employee_filter_payroll_participant').val() || 'all';
     return {
         created_date_from: toIsoDateEmp($('#employee_filter_date_from').val()),
         created_date_to: toIsoDateEmp($('#employee_filter_date_to').val()),
@@ -78,7 +108,8 @@ function currentEmployeeExtraFilters() {
         department_id: $('#employee_filter_department').val() || '',
         team_id: $('#employee_filter_team').val() || '',
         shift_id: $('#employee_filter_shift').val() || '',
-        branch_id: $('#employee_filter_branch').val() || ''
+        branch_id: $('#employee_filter_branch').val() || '',
+        is_payroll_participant: payrollParticipantRaw === 'all' ? '' : payrollParticipantRaw
     };
 }
 function toIsoDateEmp(displayVal) {
@@ -90,8 +121,27 @@ function toIsoDateEmp(displayVal) {
 }
 function updateClearEmployeeFilterVisibility() {
     const f = currentEmployeeExtraFilters();
-    const hasFilter = !!(f.created_date_from || f.created_date_to || f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id);
+    const hasFilter = !!(f.created_date_from || f.created_date_to || f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id || f.is_payroll_participant !== '');
     $('#btnClearEmployeeFilter').toggleClass('d-none', !hasFilter);
+}
+// 2026-08-30 (Phase 3, T024) -- populates the station-card pipeline's own .station-count spans.
+// Deliberately does NOT send the free-text search term (station counts represent "how many
+// employees are in this station" as a stable navigational aid, not "how many match what I just
+// typed") -- only the SAME station-independent filters (department/team/shift/branch/role/date
+// range/is_payroll_participant) currentEmployeeExtraFilters() already builds for the main table.
+function refreshEmployeeStationCounts() {
+    const f = currentEmployeeExtraFilters();
+    $.post(`${BASE_URL}/api/employee.station-counts`, {
+        role_id: f.role_id, department_id: f.department_id, team_id: f.team_id,
+        shift_id: f.shift_id, branch_id: f.branch_id, is_payroll_participant: f.is_payroll_participant,
+        created_date_from: f.created_date_from, created_date_to: f.created_date_to
+    }, function (res) {
+        if (!res || !res.status || !res.data) return;
+        $('#tab-emp-active .station-count').text(res.data.active || 0);
+        $('#tab-emp-probation .station-count').text(res.data.probation || 0);
+        $('#tab-emp-permanent .station-count').text(res.data.permanent || 0);
+        $('#tab-emp-resign .station-count').text(res.data.resigned || 0);
+    });
 }
 $(document).on('click', '#employeeStationFilterToggle', function () {
     const $filter = $('#employeeStationFilter').toggleClass('collapsed');
@@ -103,10 +153,12 @@ $(document).on('click', '#employeeStationFilterToggle', function () {
 $(document).on('changeDate', '#employee_filter_date_from, #employee_filter_date_to', function () {
     updateClearEmployeeFilterVisibility();
     if (tb_employee) tb_employee.ajax.reload(null, true);
+    refreshEmployeeStationCounts();
 });
-$(document).on('change', '#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch', function () {
+$(document).on('change', '#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch, #employee_filter_payroll_participant', function () {
     updateClearEmployeeFilterVisibility();
     if (tb_employee) tb_employee.ajax.reload(null, true);
+    refreshEmployeeStationCounts();
 });
 $(document).on('click', '#btnClearEmployeeFilter', function () {
     // Clear every control WITHOUT letting each one's own change handler fire its own
@@ -114,9 +166,13 @@ $(document).on('click', '#btnClearEmployeeFilter', function () {
     // 'changeDate' event is left to fire on the date fields same as the Process page's own Clear
     // Filter (2 reloads there already, accepted) -- one explicit reload below covers the rest.
     $('#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch').val(null).trigger('change.select2');
+    // 2026-08-30 (T022) -- reset to its own real 'all' option, not null (this dropdown has no blank
+    // placeholder option the way the select2-remote ones above do).
+    $('#employee_filter_payroll_participant').val('all').trigger('change.select2');
     $('#employee_filter_date_from, #employee_filter_date_to').datepicker('clearDates');
     updateClearEmployeeFilterVisibility();
     if (tb_employee) tb_employee.ajax.reload(null, true);
+    refreshEmployeeStationCounts();
 });
 function initEmployeeTable() {
     if ($.fn.DataTable.isDataTable('#tb_employee')) {
@@ -326,9 +382,19 @@ function initEmployeeTable() {
                 $lengthDiv.append(bulkSyncBtn);
             }
             if ($searchDiv.find('.manage-employee').length === 0) {
+                // 2026-08-30, real bug found and fixed (explicit report: "ปุ่ม 'เพิ่มพนักงานใหม่' ไม่เปลี่ยน
+                // ภาษา") -- this button is built ONCE by initComplete, which only re-fires on a true
+                // DataTables re-init; the `$searchDiv.find('.manage-employee').length === 0` guard
+                // above means it's never rebuilt again after that (initEmployeeTable()'s own re-call
+                // path just does an ajax.reload(), it doesn't re-run initComplete at all -- see that
+                // function's own docblock). Since the label text was plain-templated with no
+                // `data-i18n`, it stayed frozen in whatever language was active the first time this
+                // table ever initialized. Adding `data-i18n` lets the EXISTING generic
+                // updateText(document) sweep (already run on every language change via
+                // applyLanguage()) pick it up for free -- no table-rebuild needed at all.
                 let btn = `
                     <button class="btn btn-primary manage-employee ms-1" data-id="">
-                        <i class="fa-solid fa-plus me-2"></i><span>${langData['employee'] || 'Employee'}</span>
+                        <i class="fa-solid fa-plus me-2"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span>
                     </button>
                 `;
                 $searchDiv.append(btn);
@@ -644,6 +710,16 @@ function loadLoginHistoryOverviewFilterOptions() {
         $browser.trigger('change');
     });
 }
+// 2026-08-30, Phase 7 (T037/T038 follow-up) -- see employee/detail.js's own equivalent comment.
+function loginHistoryOverviewStatusBadge(row) {
+    if (Number(row.is_active) === 1) {
+        return `<span class="badge bg-success-subtle text-success">${langData['session_status_active'] || 'Active'}</span>`;
+    }
+    const reasonKey = { new_login: 'session_reason_new_login', switch_app: 'session_reason_switch_app', timeout: 'session_reason_timeout' }[row.ended_reason];
+    const label = (reasonKey && langData[reasonKey]) || langData['session_status_ended'] || 'Ended';
+    const tone = row.ended_reason === 'timeout' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary';
+    return `<span class="badge ${tone}">${$('<div>').text(label).html()}</span>`;
+}
 function initLoginHistoryOverviewTable() {
     if ($.fn.DataTable.isDataTable('#tb_login_history_overview')) {
         tb_login_history_overview.ajax.reload();
@@ -669,7 +745,14 @@ function initLoginHistoryOverviewTable() {
             { data: 'device_type', render: d => { const m = loginHistoryOverviewDeviceIcon(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${$('<div>').text(d || '-').html()}`; } },
             { data: null, render: (d, t, row) => $('<div>').text([row.os_name, row.os_version].filter(Boolean).join(' ') || '-').html() },
             { data: null, render: (d, t, row) => $('<div>').text([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-').html() },
+            { data: null, orderable: false, render: (d, t, row) => loginHistoryOverviewStatusBadge(row) },
         ],
+        // 2026-08-30, real gap found and fixed (explicit request: "จำนวนแสดงต่อหน้า 50 รายการเป็น
+        // Default...มีตารางอื่นที่ยังไม่ใช้ Format เดียวกันอีกไหมครับ") -- was missing entirely, silently
+        // falling back to DataTables' own built-in default of 10 instead of this app's real system-
+        // wide default (see app.js's own `const pageLength = 50`/`lengthMenu`, loaded on every page).
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
         language: getTableLang(),
     });
 }
@@ -698,4 +781,628 @@ $(document).on('click', '#btnClearLoginHistoryOverviewFilter', function () {
     if (typeof $.fn.datepicker === 'function') $('#loginHistoryOverviewFilterDateTo').datepicker('update');
     $('#loginHistoryOverviewFilterDevice').val(null).trigger('change');
     $('#loginHistoryOverviewFilterBrowser').val(null).trigger('change');
+});
+
+/* ==================== Recheck ข้อมูล tab (Phase 3, T018/T019, 2026-08-30) ====================
+   Server-side (unbounded employee count, same convention as #tb_employee). Lazy-inits on first
+   shown.bs.tab (this app's own standing habit -- a DataTable built while its own tab-pane is
+   display:none collapses every column to 0 width). Each per-field column is a derived boolean, not
+   a raw sortable/filterable value -- no Excel-column-filter/per-column sort here, just the shared
+   station filter (role/department/team/shift/branch, same fields as the main Employee tab) + search.
+   ==================== */
+let tb_employee_recheck;
+function recheckFieldIcon(ready) {
+    return ready
+        ? '<i class="fa-solid fa-circle-check text-success" title="' + (langData['ready'] || 'Ready') + '"></i>'
+        : '<i class="fa-solid fa-circle-xmark text-danger" title="' + (langData['not_ready'] || 'Not Ready') + '"></i>';
+}
+// Identification is always applicable (every employee needs SOME form of ID) -- fieldReadiness()
+// only ever returns id_card_no (domestic) XOR tax_id_no+passport_no+work_permit_no (foreigner), so
+// which key(s) are actually present tells us which shape this row is.
+function recheckIdentificationHtml(fr) {
+    const ready = ('id_card_no' in fr) ? !!fr.id_card_no : !!(fr.tax_id_no && fr.passport_no && fr.work_permit_no);
+    return recheckFieldIcon(ready);
+}
+// 2026-08-30, explicit request: "และในข้อมูลบัญชีธนาคาร ให้บอกประเภทการจ่ายเงิน เป็นเงินสุด หรือบัญชี ถ้าบัญชี
+// มีเลขบัญชีหรือยัง" -- widened from a bare ready/not-ready icon to also show WHICH payment type this
+// employee is actually on (payment_type's raw value, not just field_readiness's bank_id/
+// bank_account_no readiness booleans -- see recheckList()'s own comment on why payment_type is
+// exempted from the raw-column strip list). Cash needs no bank details at all (shown as its own
+// badge, not the old bare dash) -- Bank shows the same ready/not-ready icon as before, now labeled.
+function recheckBankDetailsHtml(row) {
+    const fr = row.field_readiness || {};
+    if (row.payment_type === 'cash') {
+        return `<span class="badge bg-secondary-subtle text-secondary">${langData['payment_type_cash'] || 'Cash'}</span>`;
+    }
+    if (row.payment_type === 'bank') {
+        const hasAccount = !!(fr.bank_id && fr.bank_account_no);
+        const cls = hasAccount ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger';
+        const label = hasAccount ? (langData['payment_type_bank_ready'] || 'Bank: Account set') : (langData['payment_type_bank_missing'] || 'Bank: No account yet');
+        return `<span class="badge ${cls}">${label}</span>`;
+    }
+    // payment_type genuinely never set at all (not even cash) -- distinct dash state, same as before.
+    return '<span class="text-muted">-</span>';
+}
+// 2026-08-31, explicit request: "ตรงหน้าตรวจสอบเหมือนยังขาด ประกันสังคม ทั้งตารางและหน้า Form" -- sso_status
+// comes pre-computed from EmployeeModel::recheckList() (never_enrolled/enrolled_missing_no/
+// enrolled_complete -- see that model's own comment). Deliberately NOT the same red/green ready/
+// not-ready binary as the other field_readiness columns -- "not enrolled" is a valid real state (not
+// every employee must be SSO-enrolled), only "enrolled but no SSO number recorded" is an actual gap.
+function recheckSsoStatusHtml(status) {
+    if (status === 'enrolled_complete') {
+        return `<span class="badge bg-success-subtle text-success">${langData['sso_status_enrolled'] || 'Enrolled'}</span>`;
+    }
+    if (status === 'enrolled_missing_no') {
+        return `<span class="badge bg-danger-subtle text-danger">${langData['sso_status_missing_no'] || 'Enrolled, No. Missing'}</span>`;
+    }
+    return `<span class="badge bg-secondary-subtle text-secondary">${langData['sso_status_not_enrolled'] || 'Not Enrolled'}</span>`;
+}
+// 2026-08-30, explicit request: "เพิ่ม Column OT เพิ่มว่าคิดหรือไม่คิด ถ้าคิดคิด Rate ของ OT แต่ละประเภท" --
+// ot_summary comes from EmployeeOtRateModel::summaryForEmployees() (see EmployeeModel::recheckList()).
+// A scope with has_rate=false means NEITHER this employee's own override NOR their resolved OT Rate
+// Set (2026-08-30 replacement) has that scope configured -- shown as "not set" in the tooltip rather
+// than silently omitted, since that's exactly the gap that would make real OT payroll calculation fail for this
+// employee (missing_ot_rate_{scope} in SyncPayResolver).
+function recheckOtSummaryHtml(otSummary) {
+    if (!otSummary || !otSummary.eligible) {
+        return `<span class="badge bg-secondary-subtle text-secondary">${langData['ot_not_eligible_short'] || 'Not Eligible'}</span>`;
+    }
+    const scopeLines = (otSummary.scopes || []).map(function (s) {
+        const name = currentLang === 'th' ? s.scope_name_th : s.scope_name_en;
+        if (!s.has_rate) {
+            return `${name}: ${langData['ot_rate_not_configured'] || 'not configured'}`;
+        }
+        const rateText = s.calculation_method === 'flat_amount'
+            ? `${Number(s.flat_amount_rate || 0).toFixed(2)}/${s.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}`
+            : `${s.multiplier_rate}x`;
+        const overrideMark = s.is_override ? ' *' : '';
+        return `${name}: ${rateText}${overrideMark}`;
+    });
+    const title = scopeLines.join(' | ') + (otSummary.rate_source === 'custom' ? ` (${langData['ot_rate_source_custom'] || 'Set Individually per OT Type'}, * = ${langData['ot_rate_override_mark'] || 'custom'})` : '');
+    return `<span class="badge bg-success-subtle text-success" title="${escapeHtmlList(title)}">${langData['ot_eligible_short'] || 'Eligible'}</span>`;
+}
+function currentEmployeeRecheckFilters() {
+    return {
+        role_id: $('#employee_recheck_filter_role').val() || '',
+        department_id: $('#employee_recheck_filter_department').val() || '',
+        team_id: $('#employee_recheck_filter_team').val() || '',
+        shift_id: $('#employee_recheck_filter_shift').val() || '',
+        branch_id: $('#employee_recheck_filter_branch').val() || ''
+    };
+}
+function updateClearEmployeeRecheckFilterVisibility() {
+    const f = currentEmployeeRecheckFilters();
+    const hasFilter = !!(f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id);
+    $('#btnClearEmployeeRecheckFilter').toggleClass('d-none', !hasFilter);
+}
+function initEmployeeRecheckTable() {
+    if ($.fn.DataTable.isDataTable('#tb_employee_recheck')) {
+        tb_employee_recheck.ajax.reload(null, false);
+        return;
+    }
+    tb_employee_recheck = $('#tb_employee_recheck').DataTable({
+        serverSide: true,
+        processing: true,
+        ordering: false,
+        // 2026-08-30, same-day follow-up: "ปรับให้เป็น table responsive เหมือนเพื่อนไปเลยครับ ให้ Column
+        // แรกกับ Column สุดท้าย อยู่ตำแหน่งเดิม แล้วไป expand ส่วนอื่น" -- reverted from the previous
+        // round's scrollX+fixedColumns treatment to this app's own STANDARD responsive:true pattern,
+        // matching #tb_employee exactly: a dedicated expand-control column at index 0 (`details.type:
+        // 'column', target:0`, see that table's own comment on why a SEPARATE column instead of
+        // embedding the toggle into the first data column), and responsivePriority pinning Employee
+        // identity + Actions (the "first and last column stay in place" ask) as the 2 columns that
+        // never collapse -- every field-readiness/Identification/Bank Details/Status column in
+        // between collapses into the expand row first when space is tight (uniform low priority,
+        // there's no reason to rank one of these 16 above another).
+        responsive: { details: { type: 'column', target: 0 } },
+        ajax: {
+            url: `${BASE_URL}/api/employee.recheck-list`,
+            type: 'POST',
+            data: function (d) { Object.assign(d, currentEmployeeRecheckFilters()); }
+        },
+        columns: [
+            { data: null, orderable: false, className: 'dtr-control', defaultContent: '' },
+            // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
+            // one column with employee_no/name stacked as 2 divs, split into 2 real columns (matches
+            // the main #tb_employee table's own convention, which already had them separate).
+            { data: 'employee_no', responsivePriority: 1, render: d => escapeHtmlList(d || '-') },
+            { data: 'name', responsivePriority: 1, render: d => escapeHtmlList(d || '-') },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.title) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.gender) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_th) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_en) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.date_of_birth) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.nationality) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckIdentificationHtml(row.field_readiness) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.personal_email) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.mobile_no) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.department_id) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.position_id) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.branch_id) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.employment_date) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckOtSummaryHtml(row.ot_summary) },
+            { data: 'sso_status', className: 'text-center', responsivePriority: 10, render: d => recheckSsoStatusHtml(d) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckBankDetailsHtml(row) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.base_salary_amount) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.salary_effective_date) },
+            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.tax_calculation_method) },
+            { data: 'is_ready', className: 'text-center', responsivePriority: 10, render: d => d ? `<span class="badge bg-success-subtle text-success">${langData['ready'] || 'Ready'}</span>` : `<span class="badge bg-danger-subtle text-danger">${langData['not_ready'] || 'Not Ready'}</span>` },
+            {
+                data: null, className: 'text-center', orderable: false, responsivePriority: 1, render: (d, t, row) => `<div class="btn-group border rounded-3 bg-white">
+                    <button type="button" class="btn btn-link btn-sm text-secondary btn-recheck-edit" data-employee-no="${escapeHtmlList(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>
+                </div>`
+            },
+        ],
+        // 2026-08-30, real gap found and fixed (same audit as tb_login_history_overview above) --
+        // was missing entirely on this table too, same fix.
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang(),
+    });
+}
+$(document).on('shown.bs.tab', '#employee-recheck-top-tab', function () {
+    initEmployeeRecheckTable();
+});
+$(document).on('click', '#employeeRecheckStationFilterToggle', function () {
+    const $filter = $('#employeeRecheckStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+$(document).on('change', '#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch', function () {
+    updateClearEmployeeRecheckFilterVisibility();
+    if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);
+});
+$(document).on('click', '#btnClearEmployeeRecheckFilter', function () {
+    $('#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch').val(null).trigger('change.select2');
+    updateClearEmployeeRecheckFilterVisibility();
+    if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);
+});
+// Reuses the same bfcache/cross-tab-open staleness fixes #tb_employee's own init already has above.
+if (typeof watchTabDirty === 'function') {
+    watchTabDirty('employee_list_dirty', function () {
+        if ($.fn.DataTable.isDataTable('#tb_employee_recheck')) {
+            $('#tb_employee_recheck').DataTable().ajax.reload(null, false);
+        }
+    });
+}
+
+/* ==================== Standing Items Summary tab (2026-08-30, explicit request: "ต้องการอีก Tab
+   ต่อจาก Tab ตรวจสอบข้อมูล เป็น Tab สรุปรวมรายได้รายหักที่ หักหรือได้ประจำ...ให้แสดงตัวเลขในรอบที่รอจ่าย รอหัก
+   และบอกด้วยว่า งวดที่เท่าไหร่จากทั้งหมดกี่งวด และมีสรุปรวมใน Column ท้าย และ Footer") ====================
+   Server-computed totals (EmployeeModel::standingSummaryList()'s own `totals` key, covering the WHOLE
+   filtered set, not just the current page -- this table is serverSide:true so DataTables' own
+   client-side footerCallback would only ever see the current page) rendered into a real <tfoot> via
+   ajax.dataSrc, same "server totals in a real tfoot" precedent AnnualIncomeSummaryModel's own report
+   already established. ==================== */
+let tb_employee_summary;
+function fmtMoneyList(n) {
+    const v = Number(n) || 0;
+    return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+// Recurring Earnings has no installment concept (indefinite) -- Pending PED items DO ("งวดที่ X จาก Y",
+// employee_earning_deductions' own total_installments/current_installment columns, no cycle-date math
+// needed -- see standingSummaryForEmployees()'s own docblock for why).
+function summaryBadgeHtml(items, total, opts) {
+    opts = opts || {};
+    if (!items || !items.length) {
+        return '<span class="text-muted">-</span>';
+    }
+    const lines = items.map(function (it) {
+        const name = currentLang === 'th' ? it.name_th : it.name_en;
+        const installmentSuffix = opts.showInstallment ? ` (${it.installment_no}/${it.total_installments})` : '';
+        return `${name}${installmentSuffix}: ${fmtMoneyList(it.amount)}`;
+    });
+    const cls = opts.deduction ? 'bg-danger-subtle text-danger' : 'bg-success-subtle text-success';
+    return `<span class="badge ${cls}" title="${escapeHtmlList(lines.join(' | '))}">${items.length} ${langData['items_short'] || 'item(s)'} — ${fmtMoneyList(total)}</span>`;
+}
+function currentEmployeeSummaryFilters() {
+    return {
+        role_id: $('#employee_summary_filter_role').val() || '',
+        department_id: $('#employee_summary_filter_department').val() || '',
+        team_id: $('#employee_summary_filter_team').val() || '',
+        shift_id: $('#employee_summary_filter_shift').val() || '',
+        branch_id: $('#employee_summary_filter_branch').val() || ''
+    };
+}
+function updateClearEmployeeSummaryFilterVisibility() {
+    const f = currentEmployeeSummaryFilters();
+    const hasFilter = !!(f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id);
+    $('#btnClearEmployeeSummaryFilter').toggleClass('d-none', !hasFilter);
+}
+function renderEmployeeSummaryFooter(totals) {
+    if (!totals) return;
+    const footHtml = `<tr>
+        <td></td>
+        <td></td>
+        <td class="fw-bold">${langData['total'] || 'Total'}</td>
+        <td class="text-end fw-bold">${fmtMoneyList(totals.base_salary_amount)}</td>
+        <td class="text-end fw-bold">${fmtMoneyList(totals.recurring_total)}</td>
+        <td class="text-end fw-bold">${fmtMoneyList(totals.recurring_deduction_total)}</td>
+        <td class="text-end fw-bold">${fmtMoneyList(totals.ped_earning_total)}</td>
+        <td class="text-end fw-bold">${fmtMoneyList(totals.ped_deduction_total)}</td>
+        <td class="text-end fw-bold">${fmtMoneyList(totals.total_earning)}</td>
+        <td class="text-end fw-bold">${fmtMoneyList(totals.total_deduction)}</td>
+        <td class="text-end fw-bold">${fmtMoneyList(totals.net_total)}</td>
+    </tr>`;
+    $('#tb_employee_summary tfoot').html(footHtml);
+}
+function initEmployeeSummaryTable() {
+    if ($.fn.DataTable.isDataTable('#tb_employee_summary')) {
+        tb_employee_summary.ajax.reload(null, false);
+        return;
+    }
+    tb_employee_summary = $('#tb_employee_summary').DataTable({
+        serverSide: true,
+        processing: true,
+        ordering: false,
+        responsive: { details: { type: 'column', target: 0 } },
+        ajax: {
+            url: `${BASE_URL}/api/employee.standing-summary-list`,
+            type: 'POST',
+            data: function (d) { Object.assign(d, currentEmployeeSummaryFilters()); },
+            dataSrc: function (json) {
+                renderEmployeeSummaryFooter(json.totals);
+                return json.data || [];
+            }
+        },
+        columns: [
+            { data: null, orderable: false, className: 'dtr-control', defaultContent: '' },
+            // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
+            // one column with employee_no/name stacked, split into 2 (matches #tb_employee's own
+            // convention, and the same fix just applied to #tb_employee_recheck above).
+            { data: 'employee_no', responsivePriority: 1, render: d => escapeHtmlList(d || '-') },
+            { data: 'name', responsivePriority: 1, render: d => escapeHtmlList(d || '-') },
+            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.base_salary_amount : 0) },
+            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.recurring, row.summary.recurring_total, {}) : '-' },
+            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.recurring_deduction, row.summary.recurring_deduction_total, { deduction: true }) : '-' },
+            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.ped_earning, row.summary.ped_earning_total, { showInstallment: true }) : '-' },
+            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.ped_deduction, row.summary.ped_deduction_total, { showInstallment: true, deduction: true }) : '-' },
+            { data: null, className: 'text-end fw-bold', responsivePriority: 5, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.total_earning : 0) },
+            { data: null, className: 'text-end fw-bold', responsivePriority: 5, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.total_deduction : 0) },
+            { data: null, className: 'text-end fw-bold', responsivePriority: 1, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.net_total : 0) },
+        ],
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang(),
+    });
+}
+$(document).on('shown.bs.tab', '#employee-summary-top-tab', function () {
+    initEmployeeSummaryTable();
+});
+$(document).on('click', '#employeeSummaryStationFilterToggle', function () {
+    const $filter = $('#employeeSummaryStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+$(document).on('change', '#employee_summary_filter_role, #employee_summary_filter_department, #employee_summary_filter_team, #employee_summary_filter_shift, #employee_summary_filter_branch', function () {
+    updateClearEmployeeSummaryFilterVisibility();
+    if (tb_employee_summary) tb_employee_summary.ajax.reload(null, true);
+});
+$(document).on('click', '#btnClearEmployeeSummaryFilter', function () {
+    $('#employee_summary_filter_role, #employee_summary_filter_department, #employee_summary_filter_team, #employee_summary_filter_shift, #employee_summary_filter_branch').val(null).trigger('change.select2');
+    updateClearEmployeeSummaryFilterVisibility();
+    if (tb_employee_summary) tb_employee_summary.ajax.reload(null, true);
+});
+if (typeof watchTabDirty === 'function') {
+    watchTabDirty('employee_list_dirty', function () {
+        if ($.fn.DataTable.isDataTable('#tb_employee_summary')) {
+            $('#tb_employee_summary').DataTable().ajax.reload(null, false);
+        }
+    });
+}
+
+/* ==================== Recheck quick-edit modal (T019, 2026-08-30) ====================
+   CRITICAL: EmployeeModel::save() always overwrites EVERY column from whatever's submitted (an
+   absent key is treated as NULL, not "leave unchanged" -- see that method's own docblock). This
+   modal only ever shows ~18 of the employee's ~80 columns, so its Save handler fetches the FULL
+   existing record first (rcFullData below) and submits that WHOLE object with just this form's own
+   fields merged in on top -- never the form's fields alone, which would silently blank out every
+   other tab's data (Documents, Family, Contact address, etc.) on this employee. Exactly the same
+   "always resubmit everything" discipline collectEmployeeFormData() already follows on the real
+   Employee Detail page. ==================== */
+let rcFullData = null;
+function toDisplayDateRc(isoVal) {
+    if (!isoVal) return '';
+    const parts = String(isoVal).split('-');
+    if (parts.length !== 3) return isoVal;
+    const [yyyy, mm, dd] = parts;
+    return `${dd}/${mm}/${yyyy}`;
+}
+function populateSelect2FieldRc(name, id, textTh, textEn) {
+    const $sel = $(`#employeeRecheckEditModal [name="${name}"]`);
+    if (!$sel.length || !id) return;
+    const label = (currentLang === 'th' ? (textTh || textEn) : (textEn || textTh)) || String(id);
+    $sel.empty().append(new Option(label, id, true, true)).trigger('change');
+}
+function rcApplyIdentificationAndBankVisibility(employeeType, paymentType) {
+    $('#rcDomesticIdWrap').toggleClass('d-none', employeeType === 'foreigner');
+    $('#rcForeignerIdWrap').toggleClass('d-none', employeeType !== 'foreigner');
+    // 2026-08-30, same-day follow-up (form reorganized into numbered sections) -- hides the WHOLE
+    // "5. Payment Information" section (its own numbered header included, #rcPaymentSectionWrap),
+    // not just the field row underneath -- a cash-paid employee has no payment info to show at all,
+    // and an empty numbered section with no fields under it would read as a rendering glitch.
+    $('#rcPaymentSectionWrap').toggleClass('d-none', paymentType !== 'bank');
+}
+// 2026-08-30, explicit request: payment_type is now a real editable field in this modal (was a
+// read-only badge) -- live-toggles the bank section the moment the admin switches it, same as the
+// real Employee Detail page's own payment_type_radio change handler already does.
+// 2026-08-31, explicit request: "ประเภทการจ่ายเงิน ให้เปลี่ยนเป็น radio" -- was a select2-static dropdown,
+// now a plain Bootstrap btn-check radio pair + hidden mirror input (#rc_payment_type), matching
+// Employee Detail's own payment_type_radio pattern exactly (detail.js:652).
+$(document).on('change', 'input[name="rc_payment_type_radio"]', function () {
+    const type = $(this).val();
+    $('#rc_payment_type').val(type);
+    rcApplyIdentificationAndBankVisibility($('#rcEditTypeBadge').data('employeeType'), type);
+});
+// 2026-08-30, explicit request: "รวมถึง Form ในหน้าตรวจสอบด้วยครับ" -- the Recheck modal's OT section
+// now mirrors Employee Detail's own Salary-tab OT section (radio source + per-scope override table),
+// duplicated here rather than shared across files -- same "each page-specific JS file owns its own
+// small helpers" convention this app already follows for e.g. fmtNumRd/fmtNumPr/fmtNumAp.
+function rcOtRateOverrideRowHtml(scope) {
+    const name = currentLang === 'th' ? scope.scope_name_th : scope.scope_name_en;
+    const isFlat = scope.calculation_method === 'flat_amount';
+    return `<tr data-scope-id="${scope.ot_scope_id}">
+        <td>${escapeHtmlList(name)}</td>
+        <td>
+            <select class="form-select form-select-sm select2-static rc-ot-rate-calc-method"
+                    data-option-keys="ot_calc_method_multiplier,ot_calc_method_flat_amount" data-option-values="multiplier,flat_amount"></select>
+        </td>
+        <td>
+            <div class="rc-ot-rate-multiplier-wrap ${isFlat ? 'd-none' : ''}">
+                <input type="number" step="0.01" min="0.01" class="form-control form-control-sm rc-ot-rate-multiplier-input" value="${scope.multiplier_rate}">
+            </div>
+            <div class="rc-ot-rate-flat-wrap ${isFlat ? '' : 'd-none'}">
+                <input type="number" step="0.01" min="0.01" class="form-control form-control-sm rc-ot-rate-flat-input" value="${scope.flat_amount_rate !== null && scope.flat_amount_rate !== undefined ? scope.flat_amount_rate : ''}">
+            </div>
+        </td>
+        <td>
+            <select class="form-select form-select-sm select2-static rc-ot-rate-calc-base"
+                    data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select>
+        </td>
+    </tr>`;
+}
+let rcOtRateScopesData = [];
+function loadOtRateForRc(employeeId) {
+    if (!employeeId) return;
+    $.ajax({
+        url: `${BASE_URL}/api/employee.ot-rate.get`,
+        method: 'GET',
+        data: { employee_id: employeeId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            rcOtRateScopesData = res.scopes || [];
+            $(`#rc_ot_rate_source_${res.ot_rate_source === 'custom' ? 'custom' : 'default'}`).prop('checked', true);
+            // Gated on BOTH OT Eligible being checked AND source=custom -- loadOtRateForRc() runs
+            // async after #rc_ot_eligible's own synchronous change-handler already set the baseline
+            // visibility, so this must re-check the checkbox itself rather than assume it's still on.
+            $('#rcOtRateOverridesContainer').toggleClass('d-none', !($('#rc_ot_eligible').is(':checked') && res.ot_rate_source === 'custom'));
+            $('#rcOtRateOverridesBody').html(rcOtRateScopesData.map(rcOtRateOverrideRowHtml).join(''));
+            if (typeof initSelect2 === 'function') {
+                initSelect2('#rcOtRateOverridesBody .rc-ot-rate-calc-method', { mode: 'static' });
+                initSelect2('#rcOtRateOverridesBody .rc-ot-rate-calc-base', { mode: 'static' });
+            }
+            rcOtRateScopesData.forEach(function (scope) {
+                const $row = $(`#rcOtRateOverridesBody tr[data-scope-id="${scope.ot_scope_id}"]`);
+                $row.find('.rc-ot-rate-calc-method').val(scope.calculation_method).trigger('change.select2');
+                $row.find('.rc-ot-rate-calc-base').val(scope.calculation_base).trigger('change.select2');
+            });
+        }
+    });
+}
+$(document).on('change', '#rc_ot_eligible', function () {
+    $('#rcOtRateSourceWrap').toggleClass('d-none', !$(this).is(':checked'));
+    if (!$(this).is(':checked')) {
+        $('#rcOtRateOverridesContainer').addClass('d-none');
+    }
+});
+// 2026-08-31, explicit request: "ตรงหน้าตรวจสอบเหมือนยังขาด ประกันสังคม ทั้งตารางและหน้า Form" -- same
+// show/hide-on-checkbox convention as #rc_ot_eligible right above.
+$(document).on('change', '#rc_sso_enrolled', function () {
+    $('#rcSsoDetailWrap').toggleClass('d-none', !$(this).is(':checked'));
+});
+$(document).on('change', 'input[name="rc_ot_rate_source_radio"]', function () {
+    $('#rcOtRateOverridesContainer').toggleClass('d-none', $(this).val() !== 'custom');
+});
+$(document).on('change', '.rc-ot-rate-calc-method', function () {
+    const $row = $(this).closest('tr');
+    const isFlat = $(this).val() === 'flat_amount';
+    $row.find('.rc-ot-rate-multiplier-wrap').toggleClass('d-none', isFlat);
+    $row.find('.rc-ot-rate-flat-wrap').toggleClass('d-none', !isFlat);
+});
+// 2026-08-31, explicit request: "ใน Form ตรงที่เป็นเบอร์มือถือ อยากให้รูปแบบเดียวกับใน Employee Detail มี
+// Prefix ด้วย" -- same intl-tel-input country flag/dial-code picker as Employee Detail's own
+// #mobile_no/initMobileIti()/syncMobileCountryCode() (detail.js), mirrored here under its own
+// window.rcMobileIti/#rc_mobile_country_code names (a separate instance -- this modal is never on
+// the same page as Employee Detail, but scoped independently rather than reusing the same globals).
+function initRcMobileIti() {
+    if (typeof intlTelInput !== 'function') return;
+    const el = document.getElementById('rc_mobile_no');
+    if (!el) return;
+    window.rcMobileIti = intlTelInput(el, {
+        initialCountry: 'th', separateDialCode: true, numberDisplayFormat: 'NATIONAL',
+        // formatAsYouType/strictMode off: mobile_no is validated/stored server-side as plain digits
+        // only -- the library's live formatting inserts spaces per country, which would fail that.
+        formatAsYouType: false, strictMode: false, countrySearch: true
+    });
+    syncRcMobileCountryCode();
+    el.addEventListener('countrychange', syncRcMobileCountryCode);
+}
+function syncRcMobileCountryCode() {
+    if (!window.rcMobileIti) return;
+    const c = window.rcMobileIti.getSelectedCountry();
+    $('#rc_mobile_country_code').val(c && c.dialCode ? ('+' + c.dialCode) : '+66');
+}
+$(document).on('click', '.btn-recheck-edit', function () {
+    const employeeNo = $(this).data('employee-no');
+    const $btn = $(this);
+    $btn.prop('disabled', true);
+    $.getJSON(`${BASE_URL}/api/employee.get`, { employee_no: employeeNo }, function (res) {
+        $btn.prop('disabled', false);
+        if (!res.status || !res.data) {
+            showWarning(res.message || langData['load_failed'] || 'Failed to load data.');
+            return;
+        }
+        rcFullData = res.data;
+        const d = res.data;
+        $('#rc_id').val(d.id);
+        $('#rc_employee_no').val(d.employee_no);
+        $('#rcEditEmployeeNoLabel').text(d.employee_no || '');
+        $('#rcEditTypeBadge').text(d.employee_type === 'foreigner' ? (langData['foreigner'] || 'Foreigner') : (langData['domestic'] || 'Domestic')).data('employeeType', d.employee_type);
+        $(`input[name="rc_payment_type_radio"][value="${d.payment_type === 'bank' ? 'bank' : 'cash'}"]`).prop('checked', true).trigger('change');
+        $('#rc_title').val(d.title || '').trigger('change');
+        $('#rc_gender').val(d.gender || 'male').trigger('change');
+        $('#rc_date_of_birth').val(toDisplayDateRc(d.date_of_birth));
+        if (typeof $.fn.datepicker === 'function') $('#rc_date_of_birth').datepicker('update');
+        $('#rc_name_th').val(d.name_th || '');
+        $('#rc_name_en').val(d.name_en || '');
+        $('#rc_surname_th').val(d.surname_th || '');
+        $('#rc_surname_en').val(d.surname_en || '');
+        $('#rc_id_card_no').val(d.id_card_no || '');
+        $('#rc_tax_id_no').val(d.tax_id_no || '');
+        $('#rc_passport_no').val(d.passport_no || '');
+        $('#rc_work_permit_no').val(d.work_permit_no || '');
+        $('#rc_personal_email').val(d.personal_email || '');
+        $('#rc_mobile_no').val(d.mobile_no || '');
+        // Generic .val() above already writes the correct raw values -- this only re-selects the
+        // flag in the intl-tel-input widget to match the loaded country (same "setNumber() re-
+        // formats with spaces, strip back to plain digits after" precedent as detail.js's own
+        // identical block).
+        if (window.rcMobileIti && d.mobile_no) {
+            window.rcMobileIti.setNumber((d.mobile_country_code || '+66') + d.mobile_no);
+            const $rcMobileNo = $('#rc_mobile_no');
+            $rcMobileNo.val(($rcMobileNo.val() || '').replace(/\D/g, ''));
+            syncRcMobileCountryCode();
+        }
+        $('#rc_employment_date').val(toDisplayDateRc(d.employment_date));
+        if (typeof $.fn.datepicker === 'function') $('#rc_employment_date').datepicker('update');
+        $('#rc_employment_type').val(d.employment_type || '').trigger('change');
+        $('#rc_sso_enrolled').prop('checked', d.sso_enrolled == 1 || d.sso_enrolled === true).trigger('change');
+        $('#rc_sso_no').val(d.sso_no || '');
+        $('#rc_sso_start_date').val(toDisplayDateRc(d.sso_start_date));
+        if (typeof $.fn.datepicker === 'function') $('#rc_sso_start_date').datepicker('update');
+        $('#rc_bank_account_no').val(d.bank_account_no || '');
+        $('#rc_base_salary_amount').val(d.base_salary_amount || '');
+        $('#rc_salary_effective_date').val(toDisplayDateRc(d.salary_effective_date));
+        if (typeof $.fn.datepicker === 'function') $('#rc_salary_effective_date').datepicker('update');
+        $('#rc_tax_calculation_method').val(d.tax_calculation_method || '').trigger('change');
+        $('#rc_ot_eligible').prop('checked', d.ot_eligible == 1 || d.ot_eligible === true).trigger('change');
+        // 2026-08-30, explicit request: "เพิ่มปุ่มใน Form ตรวจสอบข้อมูล ให้กดแล้วไปหน้า Profile พนักงานคนนั้น"
+        $('#rcGoToFullProfileBtn').attr('href', `${BASE_URL}/employees/${d.employee_no}`);
+        loadOtRateForRc(d.id);
+        populateSelect2FieldRc('nationality', d.nationality, d.nationality_name_th, d.nationality_name_en);
+        populateSelect2FieldRc('department_id', d.department_id, d.department_name_th, d.department_name_en);
+        populateSelect2FieldRc('position_id', d.position_id, d.position_name_th, d.position_name_en);
+        populateSelect2FieldRc('branch_id', d.branch_id, d.branch_name_th, d.branch_name_en);
+        if (d.bank_id) {
+            const prefix = d.bank_code ? `${d.bank_code} - ` : '';
+            populateSelect2FieldRc('bank_id', d.bank_id, prefix + (d.bank_name_th || ''), prefix + (d.bank_name_en || ''));
+        } else {
+            $('#employeeRecheckEditModal [name="bank_id"]').empty().trigger('change');
+        }
+        rcApplyIdentificationAndBankVisibility(d.employee_type, d.payment_type);
+        new bootstrap.Modal(document.getElementById('employeeRecheckEditModal')).show();
+    }).fail(function () {
+        $btn.prop('disabled', false);
+        showWarning(langData['load_failed'] || 'Failed to load data.');
+    });
+});
+function collectRcFormData() {
+    const data = {};
+    $('#employeeRecheckEditForm [name]').each(function () {
+        const $el = $(this);
+        const name = $el.attr('name');
+        if (!name) return;
+        // 2026-08-30, explicit request adding rc_ot_eligible (this modal's first-ever checkbox field
+        // -- real bug avoided, not fixed after the fact: without this branch, .val() on a checkbox
+        // returns its `value` ATTRIBUTE ("1") regardless of checked state, so ot_eligible would have
+        // always saved as true even when the box was left unchecked).
+        if ($el.is(':checkbox')) {
+            data[name] = $el.is(':checked');
+            return;
+        }
+        if ($el.hasClass('datepicker')) {
+            data[name] = toIsoDateEmp($el.val());
+            return;
+        }
+        data[name] = $el.val();
+    });
+    return data;
+}
+$(document).on('submit', '#employeeRecheckEditForm', function (e) {
+    e.preventDefault();
+    if (!rcFullData) return;
+    // Merges this form's edited fields ON TOP of the full existing record fetched when the modal
+    // opened -- submits the WHOLE merged object, per this section's own top-of-block warning.
+    const payload = Object.assign({}, rcFullData, collectRcFormData());
+    payload.id = $('#rc_id').val();
+    const employeeId = payload.id;
+    const $btn = $('#employeeRecheckEditForm button[type="submit"]');
+    const originalHtml = $btn.html();
+    $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
+
+    // 2026-08-30, explicit request: the OT rate override rows now live in this same form -- saved via
+    // their own separate api/employee.ot-rate.save call (same reasoning as Employee Detail's own
+    // saveSalaryTab(): the override rows live in a different table, api/employee.save has no idea
+    // about them). rc_ot_rate_source_radio deliberately has NO `name="ot_rate_source"` attribute, so
+    // collectRcFormData() never picks it up into payload above -- api/employee.save preserves
+    // whatever ot_rate_source this employee already had (same NOT-NULL safety fix as the Detail page),
+    // and THIS call is the one that actually changes it.
+    const promises = [$.ajax({
+        url: `${BASE_URL}/api/employee.save`, method: 'POST',
+        contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload)
+    })];
+    if ($('#rc_ot_eligible').is(':checked')) {
+        const otRateSource = $('input[name="rc_ot_rate_source_radio"]:checked').val() || 'default';
+        const overrides = [];
+        if (otRateSource === 'custom') {
+            $('#rcOtRateOverridesBody tr').each(function () {
+                const $tr = $(this);
+                overrides.push({
+                    ot_scope_id: $tr.data('scope-id'),
+                    calculation_method: $tr.find('.rc-ot-rate-calc-method').val(),
+                    multiplier_rate: $tr.find('.rc-ot-rate-multiplier-input').val(),
+                    flat_amount_rate: $tr.find('.rc-ot-rate-flat-input').val(),
+                    calculation_base: $tr.find('.rc-ot-rate-calc-base').val(),
+                });
+            });
+        }
+        promises.push($.ajax({
+            url: `${BASE_URL}/api/employee.ot-rate.save`, method: 'POST',
+            contentType: 'application/json', dataType: 'json',
+            data: JSON.stringify({ employee_id: employeeId, ot_rate_source: otRateSource, overrides: overrides })
+        }));
+    }
+
+    Promise.all(promises).then(function (results) {
+        $btn.prop('disabled', false).html(originalHtml);
+        const allOk = results.every(r => r && r.status);
+        if (allOk) {
+            showSuccess(langData['save_success'] || 'Saved successfully.');
+            bootstrap.Modal.getInstance(document.getElementById('employeeRecheckEditModal'))?.hide();
+            if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, false);
+            if (typeof markTabDirty === 'function') markTabDirty('employee_list_dirty');
+        } else {
+            const failed = results.find(r => !r || !r.status);
+            showWarning((failed && failed.message) || langData['save_failed'] || 'Failed to save data.');
+        }
+    }).catch(function () {
+        $btn.prop('disabled', false).html(originalHtml);
+        showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+    });
+});
+$(document).on('shown.bs.tab', '#employee-recheck-top-tab', function () {
+    // Lazy-init this modal's own datepicker/select2 controls once (idempotent -- initDatepicker/
+    // initSelect2 both no-op harmlessly if called again on an already-initialized element).
+    if (typeof initDatepicker === 'function') {
+        initDatepicker('#employeeRecheckEditModal .datepicker');
+    }
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#employeeRecheckEditModal .select2-remote', { mode: 'ajax' });
+        initSelect2('#employeeRecheckEditModal .select2-native', { mode: 'native' });
+        // 2026-08-30, explicit request: payment_type (now editable, was a badge) + the new OT section's
+        // ot_rate_source -- both static (fixed 2-choice) enums, same select2-static/data-option-keys
+        // convention every other small enum select in this app uses.
+        initSelect2('#employeeRecheckEditModal .select2-static', { mode: 'static' });
+    }
 });

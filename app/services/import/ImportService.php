@@ -100,17 +100,18 @@ class ImportService {
     }
 
     /**
-     * @return array{status: bool, batch_id: ?int, total: int, success: int, error: int,
-     *         errors: array<array{row:int, message:string}>, row_results: array<array{row:int, status:string, action?:string, message?:string}>}
+     * @return array{status: bool, batch_id: ?int, total: int, success: int, error: int, conflict: int,
+     *         errors: array<array{row:int, message:string}>,
+     *         row_results: array<array{row:int, status:string, action?:string, message?:string, source_conflict?:bool, previous_source?:string}>}
      */
-    private function runImport(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, bool $commit): array {
+    private function runImport(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, bool $commit, ?string $ipAddress = null, ?string $userAgent = null): array {
         $importer = $this->getImporter($entityType);
         if (!$importer) {
-            return ['status' => false, 'batch_id' => null, 'total' => 0, 'success' => 0, 'error' => 0, 'errors' => [], 'row_results' => [],
+            return ['status' => false, 'batch_id' => null, 'total' => 0, 'success' => 0, 'error' => 0, 'conflict' => 0, 'errors' => [], 'row_results' => [],
                 'message' => "Unknown entity type: {$entityType}"];
         }
         if (empty($mappedRows)) {
-            return ['status' => false, 'batch_id' => null, 'total' => 0, 'success' => 0, 'error' => 0, 'errors' => [], 'row_results' => [],
+            return ['status' => false, 'batch_id' => null, 'total' => 0, 'success' => 0, 'error' => 0, 'conflict' => 0, 'errors' => [], 'row_results' => [],
                 'message' => 'The file has no data rows.'];
         }
 
@@ -127,7 +128,7 @@ class ImportService {
         }
         try {
             $batchModel = new SyncBatchModel($this->db);
-            $batchId = $batchModel->start($compId, $entityType, 'import', 'manual', $triggeredBy);
+            $batchId = $batchModel->start($compId, $entityType, 'import', 'manual', $triggeredBy, null, null, $ipAddress, $userAgent);
 
             $success = 0;
             $errors = [];
@@ -137,7 +138,15 @@ class ImportService {
                 try {
                     $result = $importer->importRow($compId, $row, $batchId, $triggeredBy);
                     $success++;
-                    $rowResults[] = ['row' => $rowNumber, 'status' => 'ok', 'action' => $result['action']];
+                    $rowResult = ['row' => $rowNumber, 'status' => 'ok', 'action' => $result['action']];
+                    // 2026-08-30, conflict-prevention (explicit decision): surface, don't silently
+                    // allow, an import row that overwrites a record another source (sync/manual)
+                    // last touched -- see AbstractTransactionDataSyncer::importRow()'s own docblock.
+                    if (!empty($result['source_conflict'])) {
+                        $rowResult['source_conflict'] = true;
+                        $rowResult['previous_source'] = $result['previous_source'];
+                    }
+                    $rowResults[] = $rowResult;
                 } catch (Throwable $e) {
                     $errors[] = ['row' => $rowNumber, 'message' => $e->getMessage()];
                     $rowResults[] = ['row' => $rowNumber, 'status' => 'error', 'message' => $e->getMessage()];
@@ -157,26 +166,27 @@ class ImportService {
             } else {
                 $this->db->rollBack();
             }
+            $conflictCount = count(array_filter($rowResults, fn($r) => !empty($r['source_conflict'])));
             return ['status' => true, 'batch_id' => $commit ? $batchId : null, 'total' => count($mappedRows),
-                'success' => $success, 'error' => count($errors), 'errors' => $errors, 'row_results' => $rowResults];
+                'success' => $success, 'error' => count($errors), 'conflict' => $conflictCount, 'errors' => $errors, 'row_results' => $rowResults];
         } catch (Throwable $e) {
             if ($nested) {
                 $this->db->exec('ROLLBACK TO SAVEPOINT import_run');
             } elseif ($this->db->inTransaction()) {
                 $this->db->rollBack();
             }
-            return ['status' => false, 'batch_id' => null, 'total' => count($mappedRows), 'success' => 0, 'error' => count($mappedRows),
+            return ['status' => false, 'batch_id' => null, 'total' => count($mappedRows), 'success' => 0, 'error' => count($mappedRows), 'conflict' => 0,
                 'errors' => [], 'row_results' => [], 'message' => 'Import failed: ' . $e->getMessage()];
         }
     }
 
     /** Dry run -- validates and would-be-upserts every row inside a transaction that ALWAYS rolls back. Nothing is persisted, including the batch row itself. */
-    public function preview(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy): array {
-        return $this->runImport($compId, $entityType, $mappedRows, $triggeredBy, false);
+    public function preview(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, ?string $ipAddress = null, ?string $userAgent = null): array {
+        return $this->runImport($compId, $entityType, $mappedRows, $triggeredBy, false, $ipAddress, $userAgent);
     }
 
-    /** Same validation/upsert pass as preview(), but commits. */
-    public function commit(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy): array {
-        return $this->runImport($compId, $entityType, $mappedRows, $triggeredBy, true);
+    /** Same validation/upsert pass as preview(), but commits. $ipAddress/$userAgent are the real request's own -- captured on the persisted sync_batches row for audit (2026-08-30, see SyncBatchModel::start()'s own docblock). */
+    public function commit(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, ?string $ipAddress = null, ?string $userAgent = null): array {
+        return $this->runImport($compId, $entityType, $mappedRows, $triggeredBy, true, $ipAddress, $userAgent);
     }
 }

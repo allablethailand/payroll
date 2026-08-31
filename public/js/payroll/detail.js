@@ -83,9 +83,16 @@ function calcErrorsRemarkRd(calcErrors) {
         if (code === 'profile_incomplete') return langData['calc_error_profile_incomplete'] || 'Employee profile is incomplete -- complete it via Employee Detail, then recalculate.';
         if (code === 'missing_base_salary') return langData['calc_error_missing_base_salary'] || 'Missing base salary.';
         if (code === 'no_manual_lines') return langData['calc_error_no_manual_lines'] || 'No payment items added yet -- use "Items" to add one.';
-        if (code === 'daily_salary_no_shift_pattern') return langData['calc_error_daily_salary_no_shift_pattern'] || 'Daily salary type but no Shift assigned -- paid for every non-holiday day; assign a Shift to exclude weekly off-days.';
-        if (code === 'salary_type_hourly_not_supported') return langData['calc_error_salary_type_hourly_not_supported'] || 'Hourly salary type is not yet supported -- calculated using the monthly formula instead.';
+        if (code === 'daily_salary_no_shift_pattern') return langData['calc_error_daily_salary_no_shift_pattern'] || 'This salary type is paid per day/week/period but no Shift is assigned -- paid for every non-holiday day; assign a Shift to exclude weekly off-days.';
+        // 2026-08-31, real hourly formula now exists (was previously flagged unsupported and
+        // silently used the monthly formula) -- salary_type_hourly_not_supported itself is retired
+        // going forward but kept translatable here in case an older, already-calculated run still
+        // carries it in its preserved calc_errors.
+        if (code === 'salary_type_hourly_not_supported') return langData['calc_error_salary_type_hourly_not_supported'] || 'Hourly salary type was not yet supported when this was calculated -- used the monthly formula instead. Recalculate to use the real hourly formula.';
+        if (code === 'hourly_salary_no_attendance_data') return langData['calc_error_hourly_salary_no_attendance_data'] || 'Hourly salary type but no attendance data (clock in/out) was found for this employee this period -- paid 0 for base salary; verify attendance has been recorded/synced.';
         if (code === 'sync_actual_days_no_data') return langData['calc_error_sync_actual_days_no_data'] || 'Base Salary Basis is "Actual Days (Origami Sync)" but no PROBATION_WORKING_DAYS was available for this employee this cycle -- paid in full instead.';
+        if (code === 'no_attendance_data_this_period') return langData['calc_error_no_attendance_data_this_period'] || 'No attendance/OT/leave data found for this employee this period -- verify Origami sync has completed, or confirm this is expected.';
+        if (code === 'ot_not_calculated_ineligible') return langData['calc_error_ot_not_calculated_ineligible'] || 'This employee is not marked eligible for OT -- Origami sent OT hours this period, but they were NOT calculated. Verify with the employee/HR whether this is correct.';
         if (code.indexOf('no_rate_configured:') === 0) {
             const item = code.substring('no_rate_configured:'.length);
             const tpl = langData['calc_error_no_rate_configured'] || 'No statutory rate configured for {item}.';
@@ -545,6 +552,10 @@ $(document).on('click', '.btn-report-history', function () {
             { data: 'ip_address', render: (v) => escapeHtmlRd(v || '-') },
             { data: 'source', render: (v) => escapeHtmlRd(v || '-') },
         ],
+        // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
+        // entirely, silently falling back to DataTables' own built-in default of 10.
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
         initComplete: function () {
             // 2026-08-29, same-day follow-up: system-wide table audit punch-list item -- every
             // categorical column here (By/Language/Device/Browser/IP/Source) is a real filter
@@ -619,12 +630,13 @@ function runTypeLabelRd(run) {
     if (Number(run.compute_statutory) === 1) parts.push(langData['compute_statutory_short'] || langData['compute_statutory_label'] || 'Tax/SSO/PVD');
     if (Number(run.include_base_salary) === 1) parts.push(langData['include_base_salary_short'] || langData['include_base_salary_label'] || 'Base salary');
     if (Number(run.include_standing_items) === 1) parts.push(langData['include_standing_items_short'] || langData['include_standing_items_label'] || 'Standing items');
+    if (Number(run.include_attendance_pay) === 1) parts.push(langData['include_attendance_pay_short'] || langData['include_attendance_pay_label'] || 'Attendance pay');
     const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment (no base salary)';
     return parts.length ? `${label} (${parts.join(', ')})` : label;
 }
 function updateEditRunTypeVisibility() {
     const isIncentive = $('#edit_run_purpose').val() === 'incentive';
-    $('#edit_run_compute_statutory_row, #edit_run_include_base_salary_row, #edit_run_include_standing_items_row').toggleClass('d-none', !isIncentive);
+    $('#edit_run_compute_statutory_row, #edit_run_include_base_salary_row, #edit_run_include_standing_items_row, #edit_run_include_attendance_pay_row').toggleClass('d-none', !isIncentive);
 }
 $(document).on('change', '#edit_run_purpose', updateEditRunTypeVisibility);
 
@@ -688,7 +700,48 @@ function renderRunHeader(run) {
     renderSectionButtons(run);
     loadRunReportsTab();
     renderRunSettingsPanel(run);
+    loadSyncMissingEmployeesBanner(run);
 }
+
+/* 2026-08-30 (Phase 8, T041) -- reconciliation warning for a sync-based run. Draft-only (same
+   convention as the Run Settings panel just below -- once submitted, the roster is effectively
+   locked in for this run; the warning would just be stale noise past that point) and sync-only
+   (api/payroll-run.sync-missing-employees itself returns [] for anything else, but skipping the
+   fetch entirely for a cycle-based/off-cycle run avoids a pointless round trip on every page load). */
+function loadSyncMissingEmployeesBanner(run) {
+    if (!run.sync_process_id || run.state !== 'draft') {
+        $('#syncMissingEmployeesBanner').addClass('d-none');
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.sync-missing-employees`,
+        method: 'GET',
+        data: { id: run.id },
+        success: function (res) {
+            const list = (res && res.status && Array.isArray(res.data)) ? res.data : [];
+            if (list.length === 0) {
+                $('#syncMissingEmployeesBanner').addClass('d-none');
+                return;
+            }
+            const tpl = langData['sync_missing_employees_banner'] || '{count} employee(s) who would normally be expected in this payroll were NOT in this Origami sync -- verify whether their data has arrived yet before submitting.';
+            $('#syncMissingEmployeesBannerText').text(tpl.replace('{count}', list.length));
+            $('#syncMissingEmployeesBanner').removeClass('d-none').data('list', list);
+        },
+        error: function () {
+            $('#syncMissingEmployeesBanner').addClass('d-none');
+        },
+    });
+}
+$(document).on('click', '#syncMissingEmployeesViewBtn', function () {
+    const list = $('#syncMissingEmployeesBanner').data('list') || [];
+    const listHtml = list.map(e => `<li class="text-start">${escapeHtmlRd(e.employee_no)} — ${escapeHtmlRd((currentLang === 'th' ? `${e.name_th} ${e.surname_th}` : `${e.name_en} ${e.surname_en}`).trim())}</li>`).join('');
+    Swal.fire({
+        title: langData['sync_missing_employees_title'] || 'Not in This Sync',
+        html: `<ul class="ps-3 mb-0">${listHtml}</ul>`,
+        icon: 'warning',
+        confirmButtonText: langData['close'] || 'Close',
+    });
+});
 
 /* ---------- "Run Settings" panel (2026-08-29) -- see PayrollRunModel::runSettingsGet()'s own
    docblock. Draft-only (hidden entirely once a run has moved on, same convention as the bulk
@@ -928,12 +981,51 @@ function apvApprovalStageInfoRd(state) {
         default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
     }
 }
+// 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่า
+// ตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") -- see index.js's own equivalent comment for
+// the full reasoning (mirrored here per this file's own "duplicate, don't share across pages" convention).
+function apvStepDotToneRd(step) {
+    if (!step.unlocked) return 'apv-step-dot-locked';
+    if (step.status === 'approved') return 'apv-step-dot-approved';
+    if (step.status === 'rejected') return 'apv-step-dot-rejected';
+    return 'apv-step-dot-pending';
+}
+function apvStepDotsHtmlRd(steps) {
+    return `<div class="apv-step-dots">` + steps.map((s, i) => {
+        const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
+        const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
+        const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
+        return `<div class="apv-step-dot-wrap" title="${escapeHtmlRd(s.step_name || '')}">
+            <div class="apv-step-dot ${apvStepDotToneRd(s)}">${icon}</div>
+            ${lockIcon}
+        </div>${connector}`;
+    }).join('') + `</div>`;
+}
+function apvStepGroupHtmlRd(step) {
+    const badgeHtml = !step.unlocked
+        ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
+        : apvBadgeHtmlRd(apvApproverToneRd(step.status), apvApproverLabelRd(step.status));
+    const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
+    const approversHtml = step.approvers.length
+        ? step.approvers.map(apvApproverSubstepHtmlRd).join('')
+        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
+    return `<div class="apv-step-group">
+        <div class="apv-step-group-head">
+            <span class="apv-step-group-title">${escapeHtmlRd(stepLabel)}${step.step_name ? ': ' + escapeHtmlRd(step.step_name) : ''}</span>
+            ${badgeHtml}
+        </div>
+        <div class="apv-step-group-body">${approversHtml}</div>
+    </div>`;
+}
 function apvApprovalStageHtmlRd(run) {
     const info = apvApprovalStageInfoRd(run.state);
+    const steps = (run.approval_flow && run.approval_flow.steps) || null;
     const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
-    const bodyHtml = approvers.length
-        ? approvers.map(apvApproverSubstepHtmlRd).join('')
-        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
+    const bodyHtml = (steps && steps.length)
+        ? apvStepDotsHtmlRd(steps) + steps.map(apvStepGroupHtmlRd).join('')
+        : (approvers.length
+            ? approvers.map(apvApproverSubstepHtmlRd).join('')
+            : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`);
     return `
         <div class="apv-stage">
             <div class="apv-stage-marker">${apvIconHtmlRd(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
@@ -1305,7 +1397,11 @@ function runDetailActionsRd(row) {
    own placeholder-vs-ThPitCalculator-corrected note, a few static engine notes) -- a line with
    neither gets no button at all rather than a misleading/empty popover. ---------- */
 const FORMULA_EVENT_LABELS_RD = {
-    late: 'formula_event_late', absent: 'formula_event_absent',
+    // 2026-08-30, Phase 8 (T043) -- early_leave notes (e.g. "sync_early_leave_45minutes") have been
+    // producible since SyncPayResolver's own early_leave fix, but had no translated label here at
+    // all -- fell back to the raw, untranslated "early_leave" event key in this popover. Real bug,
+    // found and fixed as part of this same round, not a UI addition tied to the new settings tab.
+    late: 'formula_event_late', early_leave: 'formula_event_early_leave', absent: 'formula_event_absent',
     unpaid_leave: 'formula_event_unpaid_leave', leave_pending: 'formula_event_leave_pending',
     trip_allowance: 'formula_event_trip_allowance',
     weekday: 'formula_event_ot_weekday', weekend: 'formula_event_ot_weekend', holiday: 'formula_event_ot_holiday',
@@ -1369,6 +1465,16 @@ function buildFormulaStepsRd(formula) {
         }
         case 'passthrough': {
             steps.push(formulaStepRd(`${langData['formula_reported_value'] || 'Reported value'}: ${fmtNumRd(formula.raw_value)}${formula.unit ? ' ' + (langData[FORMULA_UNIT_LABELS_RD[formula.unit] || ''] || formula.unit) : ''} = ${fmtNumRd(formula.result)}`));
+            return steps.join('');
+        }
+        // 2026-08-30 (T015, "เพิ่มตัวเลือก 'ไม่หัก'") -- in practice a no_deduction result (amount=0)
+        // never actually reaches this modal today (the RULE_DRIVEN_ITEM_DEFS loop only adds a
+        // deduction line when amount>0 or the employee is exempt, so a plain no_deduction
+        // configuration produces no line to explain at all) -- added anyway for the same defensive
+        // completeness every other formula type here already has, in case that gating logic is ever
+        // extended to surface a zero-amount line for this method specifically.
+        case 'attendance_no_deduction': {
+            steps.push(formulaStepRd(langData['formula_no_deduction'] || 'This method always deducts 0.'));
             return steps.join('');
         }
         default:
@@ -2737,10 +2843,15 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
     // counted -- once include_base_salary/include_standing_items is on for this run (see
     // PayrollRunModel::recalculate()'s own docblock), manual lines here are additive on top of
     // those, same spirit (if not the exact same wording) as a normal run's own hint.
+    // 2026-08-30 (Phase 8, T041, real gap found and fixed): include_attendance_pay is a 3rd source
+    // that can ALSO be on alongside/instead of the two above -- the "partial" branch's condition
+    // was missing it entirely, so an OT/trip-only run (include_attendance_pay on, the other two off
+    // -- exactly the scenario this toggle was built for) would have wrongly shown the "no base
+    // salary, no standing items" hint, silently omitting that attendance pay is ALSO being counted.
     let hint;
     if (!isIncentive) {
         hint = langData['manage_items_hint_adjustment'] || 'Added on top of this employee\'s normal calculation, for this run only.';
-    } else if (currentRun.include_base_salary || currentRun.include_standing_items) {
+    } else if (currentRun.include_base_salary || currentRun.include_standing_items || currentRun.include_attendance_pay) {
         hint = langData['manage_items_hint_incentive_partial'] || 'Added on top of this run\'s own settings (base salary and/or standing earning/deduction items, as configured for this run), for this employee only.';
     } else {
         hint = langData['manage_items_hint_incentive'] || 'These are the only items counted for this employee -- no base salary, no standing income/deduction assignments.';
@@ -2901,6 +3012,10 @@ function initJoinEmployeesTable() {
         ],
         order: [],
         searching: false,
+        // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
+        // entirely, silently falling back to DataTables' own built-in default of 10.
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
         language: getTableLang(),
         initComplete: function () {
             const self = this.api();
@@ -3069,6 +3184,7 @@ $(document).on('click', '#btnEditRun', function () {
         $('#edit_run_compute_statutory').prop('checked', Number(currentRun.compute_statutory) === 1);
         $('#edit_run_include_base_salary').prop('checked', Number(currentRun.include_base_salary) === 1);
         $('#edit_run_include_standing_items').prop('checked', Number(currentRun.include_standing_items) === 1);
+        $('#edit_run_include_attendance_pay').prop('checked', Number(currentRun.include_attendance_pay) === 1);
         updateEditRunTypeVisibility();
     }
     $('.is-invalid').removeClass('is-invalid');
@@ -3106,6 +3222,7 @@ $(document).on('submit', '#editRunForm', function (e) {
         payload.compute_statutory = $('#edit_run_compute_statutory').is(':checked');
         payload.include_base_salary = $('#edit_run_include_base_salary').is(':checked');
         payload.include_standing_items = $('#edit_run_include_standing_items').is(':checked');
+        payload.include_attendance_pay = $('#edit_run_include_attendance_pay').is(':checked');
     }
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.save`,

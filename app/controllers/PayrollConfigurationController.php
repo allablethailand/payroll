@@ -336,6 +336,31 @@ class PayrollConfigurationController extends Controller {
         $this->json($result);
     }
 
+    /**
+     * 2026-08-30 (Phase 2, T014, explicit request: "ย้าย 'สถานะ' ออกจาก modal ไปไว้ที่แถวในตาราง") --
+     * a lightweight row-level active/inactive flip, same shape as SetupRulesController's own
+     * holidayToggleStatus()/leaveTypeToggleStatus()/etc -- the Add/Edit modal no longer has a Status
+     * field at all (see the view/JS changes this same round), so this is now the ONLY way to change
+     * an item's status.
+     */
+    public function pedTypeToggleStatus() {
+        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $result = $this->pedTypeModel->toggleStatus((int)$compId, $id, $this->userId());
+        $this->json($result);
+    }
+
     /* ==================== PAYROLL POLICIES (2026-08-30, new tab) ==================== */
 
     public function policyGet() {

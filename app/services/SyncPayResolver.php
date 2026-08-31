@@ -120,6 +120,30 @@ class SyncPayResolver {
         // Attendance Event" dropdown -- master_payroll_source_events has always had 'early_leave' --
         // but nothing in this class ever computed it).
         'early_leave' => ['EARLYLEAVE'],
+        // 2026-08-30 (Phase 2, T011, explicit request: "เพิ่มเบี้ยขยันเป็นเหตุการณ์ที่ดึงจาก Origami
+        // (ไม่ใช่กรอกเองในหน้านี้)") -- before this, "DILIGENCE" was matched purely by an admin-typed
+        // catalog item_code coincidentally equalling Origami's real item_code (the generic
+        // item_values fallback loop at the bottom of resolve(), via pedTypeByItemCode()) -- fragile,
+        // and NOT discoverable via the "Linked Attendance Event" dropdown the way every other synced
+        // event is. Promoted to a proper KNOWN_ITEM_DEFS entry below (source_event_code='diligence',
+        // now selectable in that dropdown, matched here the same alias-based way as every other
+        // event) -- see KNOWN_ITEM_DEFS['diligence']'s own comment for why this changes
+        // isKnownEventItemCode()'s answer for this one item_code (it now excludes DILIGENCE from
+        // autoCreateMissingPedTypes()'s auto-catalog step, same as OT/trip_allowance/etc already are).
+        'diligence' => ['DILIGENCE'],
+        // 2026-08-30 (Phase 2, T013, explicit decision confirmed with user) -- OPT-IN only, unlike
+        // every other entry in this array: this app has NO confirmed evidence of Origami's real
+        // item_code for either of these (unlike DILIGENCE/ASSISTANCE, verified in this session's own
+        // item_master payload testing) -- guessed as matching this catalog's OWN existing item_code
+        // convention (STUDENT_LOAN/LOAN_REPAY, same as seedDefaults() already seeds), same "don't
+        // write what isn't verified" posture as this project's DRAFT statutory exporters elsewhere.
+        // A company only starts using this path at all once an admin explicitly selects the new
+        // "Linked Attendance Event" dropdown option for their own STUDENT_LOAN/LOAN_REPAY catalog
+        // item (seedDefaults() itself was deliberately NOT changed to auto-link -- see that method's
+        // own comment) -- until then, the existing employee_earning_deductions manual installment
+        // mechanism keeps working completely unchanged for every company, verified or not.
+        'student_loan' => ['STUDENT_LOAN', 'STUDENTLOAN', 'SLF'],
+        'loan_repay' => ['LOAN_REPAY', 'LOANREPAY', 'LOAN'],
     ];
 
     /**
@@ -132,6 +156,39 @@ class SyncPayResolver {
         'trip_allowance' => [
             'default_code' => 'TRIP_ALLOW', 'name_th' => 'ค่าเที่ยว', 'name_en' => 'Trip Allowance', 'kind' => 'earning',
             'structured' => [['column' => 'trip_allowance', 'unit' => null]],
+        ],
+        // 2026-08-30 (Phase 2, T011) -- unlike trip_allowance, diligence has no dedicated structured
+        // `payroll_sync_items` column of its own (Origami only ever sends it inside the generic
+        // `item_values[]` array, same as any other custom item) -- an intentionally EMPTY
+        // 'structured' array is enough: the shared loop below just produces zero structured
+        // candidates and falls through entirely to pullKnownEventCandidates() (EVENT_ALIASES-based
+        // item_values matching), no special-casing needed anywhere else in this class.
+        'diligence' => [
+            'default_code' => 'DILIGENCE_ALLOW', 'name_th' => 'เบี้ยขยัน', 'name_en' => 'Diligence Allowance', 'kind' => 'earning',
+            'structured' => [],
+        ],
+        // 2026-08-30 (Phase 2, T013) -- same "no structured column, item_values only" shape as
+        // diligence, but `opt_in_only=true` (see the resolve() loop's own handling of this flag):
+        // UNLIKE every other entry here, this event must have ZERO effect on a company that hasn't
+        // explicitly linked a catalog row to it via source_event_code -- these item_codes (unlike
+        // DILIGENCE/OT/ROUND) already have a REAL, pre-existing catalog row for most companies
+        // (STUDENT_LOAN/LOAN_REPAY are seeded defaults, matched via the OLD generic item_code path,
+        // carrying real tax_deduction_impact/statutory_report_code/calc_sso/calc_pf configuration).
+        // Falling back to this array's own hardcoded default (is_custom=true, none of that real
+        // configuration) the moment an alias matches -- the behavior every OTHER KNOWN_ITEM_DEFS
+        // entry deliberately has -- would silently DISCARD that real configuration for every company
+        // that hasn't opted in yet, a genuine regression from the pre-T013 behavior. `opt_in_only`
+        // makes the loop skip this event ENTIRELY (not even calling pullKnownEventCandidates(), so
+        // the item_values group is left untouched in $groupedByCode) whenever no catalog row has
+        // actually linked source_event_code -- only once an admin opts in does this event start
+        // intercepting matching item_values rows at all.
+        'student_loan' => [
+            'default_code' => 'STUDENT_LOAN', 'name_th' => 'หักเงินกู้ยืม กยศ.', 'name_en' => 'Student Loan Deduction', 'kind' => 'deduction',
+            'structured' => [], 'opt_in_only' => true,
+        ],
+        'loan_repay' => [
+            'default_code' => 'LOAN_REPAY', 'name_th' => 'หักเงินกู้ยืมพนักงาน', 'name_en' => 'Employee Loan Repayment', 'kind' => 'deduction',
+            'structured' => [], 'opt_in_only' => true,
         ],
     ];
 
@@ -243,9 +300,37 @@ class SyncPayResolver {
      *              event. Both null (the default) behaves exactly as before this param existed:
      *              every event resolves to its company-wide default row, same as when only one row
      *              per event could ever exist.
+     * @param bool $otEligible Real gap found and fixed (2026-08-30): employees.ot_eligible has
+     *              existed as an Employee Detail checkbox since before this feature, but was NEVER
+     *              actually read anywhere in this class -- OT was always computed regardless of it.
+     *              Defaults to true (backward compatible with every existing caller that doesn't
+     *              pass it) -- PayrollRunModel::recalculate() is the only real caller and always
+     *              passes the employee's own actual flag. When false, the entire OT scope loop below
+     *              is skipped -- if the sync payload still carries nonzero OT hours anyway (Origami
+     *              sent it, the employee is just flagged not to receive it), an advisory
+     *              'ot_not_calculated_ineligible' error is pushed instead so
+     *              PayrollRunModel::recalculate() can surface it as a non-blocking Remark (same
+     *              precedent as daily_salary_no_shift_pattern/no_attendance_data_this_period) --
+     *              never silently drops the discrepancy.
+     * @param array<string,array{multiplier_rate:float,calculation_base:string,calculation_method:string,flat_amount_rate:float}> $otOverridesByScope
+     *              2026-08-30, explicit request ("OT Rate...Assign รายบุคคลได้ด้วย"): this employee's
+     *              own per-scope CUSTOM OT rate overrides, keyed by scope code (weekday/weekend/
+     *              holiday) -- already resolved to ONLY the scopes this employee actually has a
+     *              custom row for. Wins outright over $otRateSetRatesByScope below when present for
+     *              a given scope -- see EmployeeOtRateModel's own docblock for why this is prefetched
+     *              by the caller rather than queried here.
+     * @param array<string,array{multiplier_rate:float,calculation_base:string,calculation_method:string,flat_amount_rate:float}> $otRateSetRatesByScope
+     *              2026-08-30 (real gap found and fixed -- previously read the flat `ot_rates` table
+     *              directly via a now-removed otRateForScope(), which had no way to disambiguate
+     *              multiple rows for the same scope beyond an arbitrary `ORDER BY id ASC LIMIT 1`):
+     *              this employee's already-RESOLVED OT Rate Set (OtRateSetModel::
+     *              resolveRatesForEmployees() -- explicit assigned_ot_rate_set_id pick, else
+     *              employee>team>position>department assignment match, else the company's mandatory
+     *              Default set), keyed by scope code. Used only for a scope $otOverridesByScope
+     *              doesn't already cover.
      * @return array{earning:array,deduction:array,errors:array}
      */
-    public function resolve(int $compId, array $syncItemRow, float $baseSalary, array $attendanceOverrides = [], array $exemptEventCodes = [], ?int $departmentId = null, ?int $teamId = null): array {
+    public function resolve(int $compId, array $syncItemRow, float $baseSalary, array $attendanceOverrides = [], array $exemptEventCodes = [], ?int $departmentId = null, ?int $teamId = null, bool $otEligible = true, array $otOverridesByScope = [], array $otRateSetRatesByScope = []): array {
         $earning = [];
         $deduction = [];
         $errors = [];
@@ -295,6 +380,12 @@ class SyncPayResolver {
         $otDisabled = is_array($otMapped) && !empty($otMapped['disabled']);
         $otResolved = $otDisabled ? null : ($otMapped ?? ['code' => 'OT', 'name_th' => 'ค่าล่วงเวลา', 'name_en' => 'Overtime Pay', 'is_custom' => true]);
         $this->pullKnownEventCandidates($groupedByCode, 'ot_hours', $otDisabled ? 'OT' : $otResolved['code']); // discarded -- no scope info to merge, structured columns only.
+        // 2026-08-30, real gap found and fixed: $otEligible used to never be checked at all here --
+        // OT was computed regardless of employees.ot_eligible. The loop still RUNS regardless (so
+        // real, present hours can be detected and flagged) but every scope skips computing an actual
+        // amount when ineligible, pushing ONE advisory error (not per-scope) if any hours existed at
+        // all -- see this method's own docblock for the full reasoning.
+        $otHoursIgnoredDueToIneligibility = false;
         foreach (($otDisabled ? [] : self::OT_SCOPE_COLUMNS) as $column => $scopeCode) {
             // 2026-08-21: an active attendance-data override wins outright -- no candidate pool
             // involved for OT hours at all (item_values OT rows are already always excluded, see
@@ -305,7 +396,16 @@ class SyncPayResolver {
             if ($hours <= 0) {
                 continue;
             }
-            $rate = $this->otRateForScope($compId, $scopeCode);
+            if (!$otEligible) {
+                $otHoursIgnoredDueToIneligibility = true;
+                continue;
+            }
+            // 2026-08-30, explicit request ("OT Rate...Assign รายบุคคลได้ด้วย"): this employee's own
+            // CUSTOM rate for this scope wins outright over the resolved OT Rate Set -- no partial
+            // merge, a scope this employee has NOT customized still falls through to whatever Set
+            // was already resolved for them (OtRateSetModel::resolveRatesForEmployees(), see this
+            // method's own docblock for the full priority chain).
+            $rate = $otOverridesByScope[$scopeCode] ?? $otRateSetRatesByScope[$scopeCode] ?? null;
             if ($rate === null) {
                 $errors[] = "missing_ot_rate_{$scopeCode}";
                 continue;
@@ -327,6 +427,9 @@ class SyncPayResolver {
                 'is_custom' => $otResolved['is_custom'],
                 'formula' => $formula,
             ];
+        }
+        if ($otHoursIgnoredDueToIneligibility) {
+            $errors[] = 'ot_not_calculated_ineligible';
         }
 
         // Late / Absent / Unpaid Leave -- same candidate-pool dedup as trip allowance below, but the
@@ -419,6 +522,15 @@ class SyncPayResolver {
             // see pedTypeBySourceEvent()'s own docblock. Still discard any item_values rows tagged
             // with its code first, so they don't leak through as a generic/custom item below.
             $mapped = $this->pedTypeBySourceEvent($compId, $sourceEventCode);
+            // 2026-08-30 (Phase 2, T013): an opt_in_only event with NO catalog row linked at all
+            // (never configured -- $mapped === null, not the "explicitly deactivated" disabled case
+            // just below) must not touch $groupedByCode -- leaving its item_values group completely
+            // untouched lets the generic fallback loop further down find the real, pre-existing
+            // catalog row via its own item_code match instead, preserving that row's real
+            // configuration. See KNOWN_ITEM_DEFS['student_loan']'s own comment for the full reasoning.
+            if (!empty($def['opt_in_only']) && $mapped === null) {
+                continue;
+            }
             if (is_array($mapped) && !empty($mapped['disabled'])) {
                 $this->pullKnownEventCandidates($groupedByCode, $sourceEventCode, $def['default_code']);
                 continue;
@@ -672,7 +784,8 @@ class SyncPayResolver {
      * docblock for why OT deliberately does NOT use the variable, sync-derived working-days divisor
      * every other calculation in this class uses).
      * @param array $rate {calculation_method, calculation_base, flat_amount_rate, multiplier_rate} --
-     *   same shape otRateForScope() returns, or an equivalent draft array from a form.
+     *   same shape OtRateSetModel::resolveRatesForEmployees()/EmployeeOtRateModel's own item rows
+     *   return, or an equivalent draft array from a form.
      * @return array{amount:float,formula:array}
      */
     public static function computeOtAmountFromConfig(array $rate, float $baseSalary, float $hours): array {
@@ -727,6 +840,15 @@ class SyncPayResolver {
     public static function computeAttendanceDeductionFromConfig(array $rule, array $brackets, float $minutes, float $hourlyRate): array {
         $methodCode = $rule['method_code'] ?? 'percent_of_rate';
         $rateUnit = $rule['rate_unit'] ?? 'minute';
+
+        // 2026-08-30 (T015, "เพิ่มตัวเลือก 'ไม่หัก'") -- always zero, no matter how many minutes the
+        // employee was late/absent -- no rate/formula to configure, unlike every other method here.
+        // Deliberately checked FIRST, before minutes/hourlyRate ever matter for anything.
+        if ($methodCode === 'no_deduction') {
+            return ['amount' => 0.0, 'errors' => [], 'formula' => [
+                'type' => 'attendance_no_deduction', 'minutes' => $minutes, 'result' => 0.0,
+            ]];
+        }
 
         // 2026-08-29, explicit request: "ให้เป็น Format นี้ทุกสูตรการคำนวณที่แสดงผล" -- same structured
         // 'formula' trace convention as the OT block above, one shape per method_code (see
@@ -954,27 +1076,6 @@ class SyncPayResolver {
             unset($groupedByCode[$key]);
         }
         return $candidates;
-    }
-
-    /** @return array{multiplier_rate:float,calculation_base:string}|null */
-    private function otRateForScope(int $compId, string $scopeCode): ?array {
-        $stmt = $this->db->prepare("SELECT r.multiplier_rate, r.calculation_base, r.calculation_method, r.flat_amount_rate
-            FROM `ot_rates` r
-            JOIN `master_ot_scope_types` s ON s.id = r.ot_scope_id
-            WHERE r.comp_id = :comp_id AND r.status = 'active' AND r.deleted_at IS NULL
-                AND s.code = :scope_code
-            ORDER BY r.id ASC LIMIT 1");
-        $stmt->execute([':comp_id' => $compId, ':scope_code' => $scopeCode]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$row) {
-            return null;
-        }
-        return [
-            'multiplier_rate' => (float)$row['multiplier_rate'],
-            'calculation_base' => (string)$row['calculation_base'],
-            'calculation_method' => (string)($row['calculation_method'] ?? 'multiplier'),
-            'flat_amount_rate' => $row['flat_amount_rate'] !== null ? (float)$row['flat_amount_rate'] : 0.0,
-        ];
     }
 
     /**

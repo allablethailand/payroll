@@ -98,6 +98,28 @@ $spouseNoName = array_merge(fullyFilledDomestic(), ['has_spouse' => 1, 'spouse_n
 $spouseRes = $model->calculateCompleteness($spouseNoName);
 check('has_spouse=1 with no spouse_name scores Family 0%', $spouseRes['tabs']['family']['percent'], 0);
 
+echo "=== 2026-08-30 (Phase 3, T020, field \"จ่าย/ไม่จ่ายเงินเดือน\"): staff-only (is_payroll_participant=0) employee auto-passes every payroll-specific checklist item ===\n";
+$staffOnly = array_merge(fullyFilledDomestic(), [
+    'is_payroll_participant' => 0,
+    // Every payroll-specific field genuinely blank -- would score 0% on Salary/Social/Family and
+    // fail the bank-details check on Employment if is_payroll_participant weren't honored.
+    'payment_type' => 'bank', 'bank_id' => null, 'bank_account_no' => null,
+    'salary_type' => null, 'base_salary_amount' => 0, 'salary_effective_date' => null, 'tax_calculation_method' => null,
+    'sso_enrolled' => 1, 'sso_no' => null,
+    'has_spouse' => 1, 'spouse_name' => null,
+]);
+$staffOnlyRes = $model->calculateCompleteness($staffOnly);
+check('staff-only employee scores 100% overall despite every payroll field being blank', $staffOnlyRes['percent'], 100);
+check('Employment tab is 100% (bank-details check auto-passes)', $staffOnlyRes['tabs']['employment']['percent'], 100);
+check('Salary tab is 100% (auto-passes, not 0%)', $staffOnlyRes['tabs']['salary']['percent'], 100);
+check('Social tab is 100% (auto-passes despite sso_enrolled=1 with no sso_no)', $staffOnlyRes['tabs']['social']['percent'], 100);
+check('Family tab is 100% (auto-passes despite has_spouse=1 with no spouse_name)', $staffOnlyRes['tabs']['family']['percent'], 100);
+check('Info tab is still scored normally (name_th/surname/etc. all genuinely filled here)', $staffOnlyRes['tabs']['info']['percent'], 100);
+
+$staffOnlyIncompleteInfo = array_merge($staffOnly, ['name_th' => null]);
+$staffOnlyIncompleteRes = $model->calculateCompleteness($staffOnlyIncompleteInfo);
+checkTrue('a staff-only employee with a genuinely missing NON-payroll field (name_th) still scores below 100% -- is_payroll_participant only exempts payroll-specific checks, not everything', $staffOnlyIncompleteRes['percent'] < 100);
+
 echo "\n--------------------------------------------------\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";
 if ($failures > 0) {

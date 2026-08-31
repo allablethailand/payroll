@@ -31,6 +31,14 @@
     </div>
 
     <div class="alert alert-danger small d-none" id="validationErrorsBanner"></div>
+    <!-- 2026-08-30 (Phase 8, T041): reconciliation warning for a sync-based run -- employees who
+         would normally be expected in payroll but weren't in this Origami sync payload and nobody
+         manually joined them either. Advisory only (alert-warning, not alert-danger) -- never blocks
+         submit, just a prompt to verify before doing so. See PayrollRunModel::syncMissingEmployees(). -->
+    <div class="alert alert-warning small d-none d-flex justify-content-between align-items-center flex-wrap gap-2" id="syncMissingEmployeesBanner">
+        <span id="syncMissingEmployeesBannerText"></span>
+        <button type="button" class="btn btn-sm btn-outline-dark" id="syncMissingEmployeesViewBtn" data-i18n="view_list">View List</button>
+    </div>
 
     <ul class="nav nav-tabs" id="runDetailTabs" role="tablist">
         <li class="nav-item" role="presentation">
@@ -636,6 +644,14 @@
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="edit_run_include_standing_items">
                                         <label class="form-check-label" for="edit_run_include_standing_items" data-i18n="include_standing_items_label">Include configured income/deduction items (standing PED assignments + Recurring Allowances)</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mb-3 d-none" id="edit_run_include_attendance_pay_row">
+                                <div class="col-sm-9 offset-sm-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="edit_run_include_attendance_pay">
+                                        <label class="form-check-label" for="edit_run_include_attendance_pay" data-i18n="include_attendance_pay_label">Include attendance-driven earnings (OT/trip allowance), calculated automatically</label>
                                     </div>
                                 </div>
                             </div>

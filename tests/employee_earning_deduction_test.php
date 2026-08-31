@@ -224,6 +224,70 @@ try {
     ], $userId);
     checkFalse('save() rejects interest_type != none on an earning item', $rInterestOnEarning['status']);
 
+    // ---------- Fee support (2026-08-31, explicit request: "Form ที่เป็นรายการหัก...ให้เพิ่มว่า
+    // คิดดอกเบี้ย ค่าธรรมเนียม หรือไม่มี...ถ้าค่าธรรมเนียมให้ใส่ได้เป็น % คิดจากอะไร มีให้เลือกเช่นฐานเงินเดือน
+    // หรืออื่นๆตามที่เลือกได้") -- a 3rd sibling of interest_type='fixed'/'reducing_balance', own
+    // fee_percent/fee_base pair, mutually exclusive with interest_rate. ----------
+    $feePrincipalBased = $eedModel->computeInstallmentSchedule(10000.0, 10, 'fee', null, 2.0, 'principal_amount');
+    // feeAmount = 10000 * 0.02 = 200; totalRepay = 10200; /10 = 1020 each
+    check('computeInstallmentSchedule(fee, principal_amount) fee is % of principal, split evenly', $feePrincipalBased, array_fill(0, 10, 1020.0));
+
+    $feeBaseSalaryBased = $eedModel->computeInstallmentSchedule(10000.0, 10, 'fee', null, 5.0, 'base_salary', 20000.0);
+    // feeAmount = 20000(base salary) * 0.05 = 1000; totalRepay = 11000; /10 = 1100 each
+    check('computeInstallmentSchedule(fee, base_salary) fee is % of the PASSED-IN base salary, not principal', $feeBaseSalaryBased, array_fill(0, 10, 1100.0));
+
+    $threw = false;
+    try { $eedModel->computeInstallmentSchedule(1000, 12, 'fee', null, null, 'principal_amount'); } catch (InvalidArgumentException $e) { $threw = true; }
+    checkTrue('computeInstallmentSchedule() rejects interest_type=fee with no fee_percent', $threw);
+    $threw = false;
+    try { $eedModel->computeInstallmentSchedule(1000, 12, 'fee', null, 2.0, 'not_a_real_base'); } catch (InvalidArgumentException $e) { $threw = true; }
+    checkTrue('computeInstallmentSchedule() rejects an invalid fee_base', $threw);
+    $threw = false;
+    try { $eedModel->computeInstallmentSchedule(1000, 12, 'fee', null, 2.0, 'base_salary', null); } catch (InvalidArgumentException $e) { $threw = true; }
+    checkTrue('computeInstallmentSchedule() rejects fee_base=base_salary with no base_salary_for_fee passed in', $threw);
+
+    // save()/get() round-trip for fee_percent/fee_base -- interest_rate stays null (mutually exclusive).
+    $rFee = $eedModel->save($employeeId, $compId, [
+        'custom_item_name' => 'ค่าธรรมเนียมทดสอบ', 'custom_item_type' => 'deduction',
+        'total_installments' => 2, 'amount_mode' => 'custom_per_installment',
+        'installment_amounts' => [510.0, 510.0],
+        'interest_type' => 'fee', 'fee_percent' => 2.0, 'fee_base' => 'principal_amount', 'principal_amount' => 1000,
+        'effective_date' => '2026-01-01',
+    ], $userId);
+    checkTrue('save() accepts interest_type=fee with fee_percent/fee_base' . (empty($rFee['status']) ? " ({$rFee['message']})" : ''), $rFee['status']);
+    $feeId = $rFee['id'] ?? null;
+    if ($feeId) {
+        $gotFee = $eedModel->get($feeId, $compId);
+        checkTrue('get() finds the fee-bearing row', $gotFee !== null);
+        if ($gotFee) {
+            check('get() round-trips interest_type=fee', $gotFee['interest_type'], 'fee');
+            check('get() round-trips fee_percent', (float)$gotFee['fee_percent'], 2.0);
+            check('get() round-trips fee_base', $gotFee['fee_base'], 'principal_amount');
+            check('get() interest_rate stays null for a fee-type row (mutually exclusive)', $gotFee['interest_rate'], null);
+        }
+    }
+
+    $rFeeMissingPercent = $eedModel->save($employeeId, $compId, [
+        'custom_item_name' => 'ควรถูกปฏิเสธ', 'custom_item_type' => 'deduction',
+        'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 200,
+        'interest_type' => 'fee', 'fee_base' => 'base_salary', 'effective_date' => '2026-01-01',
+    ], $userId);
+    checkFalse('save() rejects interest_type=fee with no fee_percent', $rFeeMissingPercent['status']);
+
+    $rFeeInvalidBase = $eedModel->save($employeeId, $compId, [
+        'custom_item_name' => 'ควรถูกปฏิเสธเช่นกัน', 'custom_item_type' => 'deduction',
+        'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 200,
+        'interest_type' => 'fee', 'fee_percent' => 2, 'fee_base' => 'not_a_real_base', 'effective_date' => '2026-01-01',
+    ], $userId);
+    checkFalse('save() rejects an invalid fee_base', $rFeeInvalidBase['status']);
+
+    $rFeeOnEarning = $eedModel->save($employeeId, $compId, [
+        'custom_item_name' => 'ควรถูกปฏิเสธเช่นกัน', 'custom_item_type' => 'earning',
+        'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 200,
+        'interest_type' => 'fee', 'fee_percent' => 2, 'fee_base' => 'base_salary', 'effective_date' => '2026-01-01',
+    ], $userId);
+    checkFalse('save() rejects interest_type=fee on an earning item (same backstop as interest)', $rFeeOnEarning['status']);
+
     // ---------- payee_employee_id (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร โดยเลือก
     // พนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- only meaningful on a deduction; forced null on an
     // earning; must belong to the same company and cannot be the deducted employee themself. See

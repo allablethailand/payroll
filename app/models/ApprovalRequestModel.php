@@ -403,6 +403,129 @@ class ApprovalRequestModel {
         return array_values($byEmp);
     }
 
+    /**
+     * 2026-08-30, explicit follow-up ("งาน UI ที่ยังไม่เสร็จ...4. ยังไม่ได้ปรับ UI ฝั่ง Monitor/Approve
+     * modal ให้แสดงหลาย step ที่ actionable พร้อมกันแบบ 'จุดๆ ว่าตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้น
+     * อนุมัติหรือยัง'") -- the per-step counterpart to currentStepApprovers() above, which
+     * deliberately FLATTENS/dedupes across every simultaneously-unlocked step (that method answers
+     * "who can act right now", one list). This one answers "what does the WHOLE chain look like,
+     * step by step" for a timeline/stepper UI -- one entry PER STEP (in step_order), locked or not,
+     * decided or not, with that step's own approver breakdown nested inside it. A step's overall
+     * status uses the EXACT SAME rule recomputeVerdict()'s own stepResult() closure already applies
+     * (approved_count >= total => approved; rejected_count > 0 => rejected; else pending) so the
+     * timeline can never show a step as "approved" that the verdict engine wouldn't also treat as
+     * approved.
+     *
+     * Per-step approver list: joint_approve_mode='all' always lists every eligible person with
+     * their OWN real per-row status (each person's decision matters individually). For ='any'
+     * (one shared pool, first-to-act decides it), listing every pool member as still "pending"
+     * once the step has ALREADY been decided would misrepresent a closed step as still open with
+     * 4 people waiting -- so once decided, only the person who actually acted (acted_by) is shown;
+     * while still pending, the whole pool is shown (any of them could still act).
+     *
+     * @return array<int,array{step_order:int,step_name:?string,group_type:string,
+     *   requires_previous_step:bool,joint_approve_mode:string,unlocked:bool,status:string,
+     *   approvers:array<int,array{id:int,employee_no:string,name_th:string,name_en:string,status:string,acted_at:?string,note:?string}>}>
+     */
+    public function stepBreakdown(int $compId, int $requestId): array {
+        $request = $this->get($compId, $requestId);
+        if (!$request) {
+            return [];
+        }
+        $stmt = $this->db->prepare("SELECT * FROM `approval_request_step_approvers`
+            WHERE request_id = :request_id ORDER BY step_order ASC, id ASC");
+        $stmt->execute([':request_id' => $requestId]);
+        $allRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($allRows)) {
+            return [];
+        }
+
+        $empIds = [];
+        foreach ($allRows as $r) {
+            foreach (explode(',', (string)$r['eligible_employee_ids']) as $idStr) {
+                if ($idStr !== '') {
+                    $empIds[] = (int)$idStr;
+                }
+            }
+        }
+        $empIds = array_values(array_unique($empIds));
+        $empById = [];
+        if (!empty($empIds)) {
+            $placeholders = implode(',', array_fill(0, count($empIds), '?'));
+            $stmtEmp = $this->db->prepare("SELECT id, employee_no, name_th, name_en FROM `employees` WHERE id IN ({$placeholders})");
+            $stmtEmp->execute($empIds);
+            foreach ($stmtEmp->fetchAll(PDO::FETCH_ASSOC) as $e) {
+                $empById[(int)$e['id']] = $e;
+            }
+        }
+
+        $stepResult = function (int $total, int $approvedCount, int $rejectedCount): string {
+            if ($approvedCount >= $total) {
+                return 'approved';
+            }
+            if ($rejectedCount > 0) {
+                return 'rejected';
+            }
+            return 'pending';
+        };
+
+        $rowsByStep = [];
+        foreach ($allRows as $r) {
+            $rowsByStep[(int)$r['step_order']][] = $r;
+        }
+
+        $steps = [];
+        foreach ($rowsByStep as $stepOrder => $rows) {
+            $total = count($rows);
+            $approvedCount = count(array_filter($rows, fn($r) => $r['status'] === 'approved'));
+            $rejectedCount = count(array_filter($rows, fn($r) => $r['status'] === 'rejected'));
+            $status = $stepResult($total, $approvedCount, $rejectedCount);
+            $jointMode = (string)$rows[0]['joint_approve_mode'];
+
+            $approvers = [];
+            if ($jointMode === 'all') {
+                foreach ($rows as $r) {
+                    foreach (explode(',', (string)$r['eligible_employee_ids']) as $idStr) {
+                        if ($idStr === '' || !isset($empById[(int)$idStr])) {
+                            continue;
+                        }
+                        $approvers[] = array_merge($empById[(int)$idStr], [
+                            'status' => $r['status'], 'acted_at' => $r['acted_at'], 'note' => $r['note'],
+                        ]);
+                    }
+                }
+            } else {
+                $row = $rows[0]; // 'any' mode is always exactly one shared row per step.
+                if ($status === 'pending') {
+                    foreach (explode(',', (string)$row['eligible_employee_ids']) as $idStr) {
+                        if ($idStr === '' || !isset($empById[(int)$idStr])) {
+                            continue;
+                        }
+                        $approvers[] = array_merge($empById[(int)$idStr], ['status' => 'pending', 'acted_at' => null, 'note' => null]);
+                    }
+                } elseif ($row['acted_by'] !== null && isset($empById[(int)$row['acted_by']])) {
+                    $approvers[] = array_merge($empById[(int)$row['acted_by']], [
+                        'status' => $row['status'], 'acted_at' => $row['acted_at'], 'note' => $row['note'],
+                    ]);
+                }
+            }
+
+            $steps[] = [
+                'step_order' => (int)$stepOrder,
+                'step_name' => $rows[0]['step_name_snapshot'],
+                'group_type' => $rows[0]['group_type'],
+                'requires_previous_step' => (bool)$rows[0]['requires_previous_step'],
+                'joint_approve_mode' => $jointMode,
+                'unlocked' => $this->isStepUnlocked($requestId, (int)$stepOrder),
+                'status' => $status,
+                'approvers' => $approvers,
+            ];
+        }
+        // Already in step_order-ascending order -- $rowsByStep's own keys were populated by
+        // iterating $allRows, which the SQL above already returned ORDER BY step_order ASC.
+        return $steps;
+    }
+
     /** Resets a completed request back to 'pending' at its FIRST step -- used by
      *  PayrollRunModel::revert() when undoing an already-decided run that went through this
      *  engine, so it can be re-approved cleanly through the same chain. Clears the old snapshot

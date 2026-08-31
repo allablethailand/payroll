@@ -122,11 +122,26 @@ function orgSyncFetchCandidates() {
     });
 }
 
+// 2026-08-30 (T007), real bug found and fixed (modal title audit) -- `orgSyncCurrentEntityType`
+// is already tracked module-level state (department/position/team), so this title is re-derivable
+// on a language change without needing to re-open the modal, same "remember + re-run" pattern as
+// employee/detail.js's own eedModalTitle() fix.
+function orgSyncRenderModalTitle() {
+    const typeLabel = langData[orgSyncCurrentEntityType] || orgSyncCurrentEntityType;
+    $('#orgStructureSyncModalLabelText').text(`${langData['employee_sync_button'] || 'Sync from Origami'} — ${typeLabel}`);
+}
+function orgSyncRefreshModalTitleLanguage() {
+    if (orgSyncCurrentEntityType && $('#orgStructureSyncModal').hasClass('show')) {
+        orgSyncRenderModalTitle();
+    }
+    if (orgSyncCurrentEntityType && $('#orgStructureSyncLogModal').hasClass('show')) {
+        orgSyncRenderLogModalTitle();
+    }
+}
 $(document).on('click', '.btn-open-org-sync', function () {
     orgSyncCurrentEntityType = $(this).data('entity-type');
     orgSyncResetModal();
-    const typeLabel = langData[orgSyncCurrentEntityType] || orgSyncCurrentEntityType;
-    $('#orgStructureSyncModalLabelText').text(`${langData['employee_sync_button'] || 'Sync from Origami'} — ${typeLabel}`);
+    orgSyncRenderModalTitle();
     new bootstrap.Modal(document.getElementById('orgStructureSyncModal')).show();
     orgSyncFetchCandidates();
 });
@@ -194,10 +209,13 @@ function orgSyncStatusBadge(status) {
     return `<span class="badge ${cls}">${text}</span>`;
 }
 
-$(document).on('click', '.btn-open-org-sync-log', function () {
-    orgSyncCurrentEntityType = $(this).data('entity-type');
+function orgSyncRenderLogModalTitle() {
     const typeLabel = langData[orgSyncCurrentEntityType] || orgSyncCurrentEntityType;
     $('#orgStructureSyncLogModalLabelText').text(`${langData['employee_sync_log_button'] || 'Sync Log'} — ${typeLabel}`);
+}
+$(document).on('click', '.btn-open-org-sync-log', function () {
+    orgSyncCurrentEntityType = $(this).data('entity-type');
+    orgSyncRenderLogModalTitle();
     new bootstrap.Modal(document.getElementById('orgStructureSyncLogModal')).show();
     $('#tb_org_structure_sync_log tbody').html(`<tr><td colspan="6" class="text-center text-muted py-3"><i class="fa-solid fa-spinner fa-spin me-1"></i>${langData['loading'] || 'Loading...'}</td></tr>`);
     $.ajax({

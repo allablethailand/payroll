@@ -694,14 +694,16 @@ class PayrollSyncModel {
      * whether anyone actually carries a value for it this cycle. Per explicit request ("พวกรายได้
      * รายหักเรื่อง item เงินได้เงินหักถ้ารายการไหนยังไม่มีให้ insert auto ไปได้เลยไหม"), auto-creates a
      * `payroll_earning_deduction_types` row for any item_code this company doesn't already have one
-     * for -- so a brand-new custom item (DILIGENCE/ASSISTANCE/PHONE_ALLOWANCE/LOAN/STUDENT_LOAN/...)
+     * for -- so a brand-new custom item (ASSISTANCE/PHONE_ALLOWANCE/LOAN/STUDENT_LOAN/...)
      * shows up in Payroll Configuration > Earning-Deduction Types ready to review/adjust (tax
      * treatment, SSO/PF, statutory report tag), instead of silently landing every pull as an
      * anonymous "CUSTOM:<name>" line (SyncPayResolver::resolve()'s own generic item_values fallback)
      * with no tax categorization and nothing an admin can configure.
      *
      * Deliberately SKIPS any item_code SyncPayResolver::isKnownEventItemCode() recognizes (OT, trip
-     * allowance/"ROUND", late, absent, early leave, unpaid leave, leave pending) -- see that
+     * allowance/"ROUND", late, absent, early leave, unpaid leave, leave pending, and -- as of
+     * 2026-08-30's Phase 2 T011 -- diligence/"DILIGENCE" too, promoted out of the generic-item
+     * fallback into its own KNOWN_ITEM_DEFS entry the same day) -- see that
      * method's own docblock for why an item_code-matched row for one of those would be an inert
      * decoy. Also skips item_type='INFO' (LEAVE_APPROVED/PROBATION_WORKING_DAYS) --
      * `payroll_earning_deduction_types.item_type` is a hard enum('earning','deduction') and an INFO

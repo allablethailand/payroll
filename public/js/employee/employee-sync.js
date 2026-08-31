@@ -166,6 +166,49 @@ function esOptionsHtml(items, valueKey, labelFn) {
     return placeholder + items.map(item => `<option value="${esEscapeHtml(item[valueKey])}">${esEscapeHtml(labelFn(item))}</option>`).join('');
 }
 
+// 2026-08-30, real bug found and fixed (explicit report: "Select option 'Sync' modal ไม่เปลี่ยน
+// ภาษา") -- esOptionsHtml() bakes both the "Select..." placeholder AND every real option's label
+// (department/position names picked by currentLang at the moment this ran) into plain <option>
+// tags ONCE, when the modal's filter-options fetch completes -- there was no code path that ever
+// rebuilt them again. applyLanguage()'s existing `.select2-native` sweep only re-inits Select2's
+// own chrome (destroys/rebuilds the overlay widget), it never touches the underlying <option>
+// elements' text at all, so the options stayed frozen in whichever language was active the moment
+// the modal was first opened, even after a language switch or on a later re-open in the same page
+// session. Fixed by caching the last-fetched response and extracting the option-rendering into its
+// own re-callable function, wired into changeLanguage() the same way dashboard.js's own
+// loadDashboardSummary() already is (a `typeof x === 'function'` guard, since this file only loads
+// on the Employee List page).
+let esLastFilterOptionsRes = null;
+function esRenderFilterOptions(res) {
+    // Preserve whatever's currently selected in each dropdown across the rebuild -- same
+    // capture-before/restore-after convention applyLanguage()'s own .select2-remote/.select2-static
+    // sweeps already use, so switching language mid-filter doesn't silently clear the user's picks.
+    const selected = {
+        department: $('#sync_filter_department').val(),
+        position: $('#sync_filter_position').val(),
+        team: $('#sync_filter_team').val(),
+        type: $('#sync_filter_type').val(),
+    };
+    $('#sync_filter_department').html(esOptionsHtml(res.departments || [], 'ref_id', d => (currentLang === 'en' ? (d.name_en || d.name_th) : (d.name_th || d.name_en))));
+    $('#sync_filter_position').html(esOptionsHtml(res.positions || [], 'ref_id', p => (currentLang === 'en' ? (p.name_en || p.name_th) : (p.name_th || p.name_en))));
+    $('#sync_filter_team').html(esOptionsHtml(res.teams || [], 'ref_id', t => t.name));
+    $('#sync_filter_type').html(esOptionsHtml(res.types || [], 'value', t => (currentLang === 'en' ? t.label_en : t.label_th)));
+    if (selected.department) $('#sync_filter_department').val(selected.department);
+    if (selected.position) $('#sync_filter_position').val(selected.position);
+    if (selected.team) $('#sync_filter_team').val(selected.team);
+    if (selected.type) $('#sync_filter_type').val(selected.type);
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#sync_filter_department, #sync_filter_position, #sync_filter_team, #sync_filter_type', { mode: 'native' });
+    }
+}
+// Called from changeLanguage() (app.js) -- a no-op if the modal was never opened this page session
+// (nothing cached yet) or the Sync modal isn't currently showing any filter row at all.
+function esRefreshFilterOptionsLanguage() {
+    if (esLastFilterOptionsRes) {
+        esRenderFilterOptions(esLastFilterOptionsRes);
+    }
+}
+
 // 2026-08-28, explicit request: "ถ้ายังเชื่อมไม่ได้ก็ควรแจ้งว่าเชื่อมไม่ได้ ไม่ใช่ Mock Data" -- checked
 // fresh every time the modal opens (no caching flag) since whether Origami is connected could
 // change without a page reload. A `not_connected: true` response shows the blocked-state panel
@@ -189,13 +232,8 @@ function esLoadFilterOptions() {
             }
             $('#employeeSyncNotConnected').addClass('d-none');
             $('#employeeSyncFilterRow').removeClass('d-none');
-            $('#sync_filter_department').html(esOptionsHtml(res.departments || [], 'ref_id', d => (currentLang === 'en' ? (d.name_en || d.name_th) : (d.name_th || d.name_en))));
-            $('#sync_filter_position').html(esOptionsHtml(res.positions || [], 'ref_id', p => (currentLang === 'en' ? (p.name_en || p.name_th) : (p.name_th || p.name_en))));
-            $('#sync_filter_team').html(esOptionsHtml(res.teams || [], 'ref_id', t => t.name));
-            $('#sync_filter_type').html(esOptionsHtml(res.types || [], 'value', t => (currentLang === 'en' ? t.label_en : t.label_th)));
-            if (typeof initSelect2 === 'function') {
-                initSelect2('#sync_filter_department, #sync_filter_position, #sync_filter_team, #sync_filter_type', { mode: 'native' });
-            }
+            esLastFilterOptionsRes = res;
+            esRenderFilterOptions(res);
         },
         error: function () {
             showWarning(langData['employee_sync_fetch_failed'] || 'Failed to load filter options.');

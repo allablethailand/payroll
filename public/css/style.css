@@ -927,8 +927,13 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .label-head {
     padding: 0.5em 0.7em;
 }
+/* 2026-08-30 (Phase 3, T025, explicit request: "แก้สีที่แย่งกัน") -- was #ec6622, a visibly
+   different/darker orange from this app's real brand color #FF9900 (used everywhere else on the
+   same pages this class appears on: buttons, active nav states, the avatar/icon gradients). Shared
+   by every numbered section-header badge across the app (Employee Detail, Payroll Process Detail,
+   several modals in layout/modals.php) -- one shared class, one fix covers all of them. */
 .bg-head-first {
-    background-color: #ec6622;
+    background-color: #FF9900;
 }
 /* Company Profile — Logo upload card (2026-08-24, explicit request: "ปรับให้ Logo Upload อยู่ยนสุดของ
    Form ขอ Design สวยๆ รวมถึงมี Preview ด้วย") -- own section at the bottom of the form, replacing the
@@ -2212,6 +2217,34 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .apv-timeline-log .apv-log-date { font-size: 0.9167rem; color: #9ca3af; }
 .apv-timeline-log .apv-log-action { font-weight: 600; color: #374151; font-size: 1.0833rem; }
 .apv-timeline-log .apv-log-meta { font-size: 0.9167rem; color: #9ca3af; }
+
+/* 2026-08-30, multi-step workflow step-dot visualization (explicit follow-up: "ยังไม่ได้ปรับ UI...
+   ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่าตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") --
+   only rendered when approval_flow.steps is present (a run routed through the real Approval
+   Workflow engine, ApprovalRequestModel::stepBreakdown()); the flat .apv-substep pool above stays
+   exactly as it was for the flat department-scoped fallback, which has no step concept at all. */
+.apv-step-dots { display: flex; align-items: center; margin: 10px 0 14px; flex-wrap: wrap; }
+.apv-step-dot-wrap { display: flex; align-items: center; position: relative; }
+.apv-step-dot {
+    width: 30px; height: 30px; border-radius: 50%; flex: none; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.9167rem; color: #fff; border: 2px solid #fff;
+}
+.apv-step-dot-approved { background: #16a34a; box-shadow: 0 0 0 2px #16a34a; }
+.apv-step-dot-rejected { background: #ef4444; box-shadow: 0 0 0 2px #ef4444; }
+.apv-step-dot-pending { background: #f59e0b; box-shadow: 0 0 0 2px #f59e0b; }
+.apv-step-dot-locked { background: #cbd5e1; box-shadow: 0 0 0 2px #e5e7eb; }
+.apv-step-dot-lock-icon {
+    position: absolute; bottom: -3px; right: -6px; width: 16px; height: 16px; border-radius: 50%;
+    background: #fff; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; color: #6b7280; z-index: 1;
+}
+.apv-step-dot-connector { width: 26px; height: 2px; background: #e5e7eb; flex: none; }
+.apv-step-dot-connector-done { background: #16a34a; }
+.apv-step-group { margin-bottom: 14px; }
+.apv-step-group:last-child { margin-bottom: 0; }
+.apv-step-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.apv-step-group-title { font-weight: 600; color: #374151; font-size: 0.9167rem; }
 .apv-timeline-log .apv-log-note { font-size: 1rem; color: #4b5563; margin-top: 2px; }
 
 /* 2026-08-29, explicit follow-up request: "ปรับ Action History ให้เป็น Timeline แบบเดิมดูดีกว่าครับ แต่เพิ่ม
@@ -2393,16 +2426,21 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    employeeCommentTagMeta() in detail.js) so picking a tag and seeing it on a saved comment feel
    like the same visual language. Still plain radio .btn-check inputs underneath (hidden via
    Bootstrap's own .btn-check rule) -- only the sibling <label> is restyled here. */
-.apv-comment-tag-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 2026-08-31, explicit request: "ตรงส่วนที่ใส่ Comment Tag ใหญ่ไปอยากให้ลดขนาด และบังคับให้อยู่แถวเดียว" --
+   smaller pills (padding/font-size/icon-size all reduced) + flex-wrap changed from wrap to nowrap so
+   the 4 options never break onto a second row; overflow-x:auto is a safety net (not the primary fix)
+   for a genuinely too-narrow container, so a pill scrolls into view instead of being clipped/forcing
+   the row to wrap anyway. */
+.apv-comment-tag-picker { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
 .apv-comment-tag-option {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 6px 12px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+    padding: 3px 8px; border-radius: 999px;
     border: 1.5px solid #e5e7eb; background: #fff; color: #6b7280;
-    font-size: 1rem; font-weight: 600; cursor: pointer;
+    font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap;
     transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
     user-select: none;
 }
-.apv-comment-tag-option i { font-size: 0.9167rem; }
+.apv-comment-tag-option i { font-size: 0.6875rem; }
 .apv-comment-tag-option:hover { border-color: #ffd699; color: #b45f00; background: #fff8ee; }
 .apv-comment-tag-picker input:checked + .apv-comment-tag-opt-none { background: linear-gradient(135deg,#9aa3ad,#6b7280); border-color: #6b7280; color: #fff; box-shadow: 0 2px 6px rgba(107,114,128,.3); }
 .apv-comment-tag-picker input:checked + .apv-comment-tag-opt-in_progress { background: linear-gradient(135deg,#f59e0b,#d97706); border-color: #d97706; color: #fff; box-shadow: 0 2px 6px rgba(217,119,6,.3); }
@@ -5973,4 +6011,12 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .modal-header .modal-title {
     flex: 1 1 auto;
     margin-left: .75rem;
+}
+/* 2026-08-31, Recheck modal's Mobile No. field (app/views/layout/modals.php) -- same intl-tel-input
+   country flag/dial-code picker as Employee Detail's own #mobile_no, same fix needed: the library's
+   own .iti wrapper defaults to display:inline-block sized to its content, so it doesn't stretch to
+   fill the .col-sm-6 the way every other .form-control in this form does. */
+#rc_mobile_no_wrap .iti {
+    display: block;
+    width: 100%;
 }

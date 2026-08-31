@@ -3,8 +3,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../services/SyncPayResolver.php';
 
 /**
- * Company-configurable "how is this deduction calculated" for the 4 attendance-driven deduction
- * events sourced from Origami sync data (2026-08-20, explicit request -- originally built Late-only
+ * Company-configurable "how is this deduction calculated" for the 5 attendance-driven deduction
+ * events sourced from Origami sync/import/manual data (2026-08-20, explicit request -- originally built Late-only
  * as SetupRulesModel::lateDeductionRule*() under Time & Leave, then generalized/relocated to Payroll
  * Configuration the same day, before any real company had configured it, to cover Absent and Unpaid
  * Leave too: "รองรับการ Set เงื่อนของ สาย ขาดงาน ลาไม่รับเงินด้วย...ดึงไปใช้ในการทำ Process เงินเดือนด้วย").
@@ -50,11 +50,21 @@ class AttendanceDeductionRuleModel {
     // which point it stops appearing in payroll_sync_items as pending), same reasoning/company-
     // configurable rule mechanism as late/absent/unpaid_leave. See SyncPayResolver's own
     // RULE_DRIVEN_ITEM_DEFS['leave_pending'].
-    private const EVENT_CODES = ['late', 'absent', 'unpaid_leave', 'leave_pending'];
+    // 2026-08-30, Phase 8 (T043, explicit request: "เพิ่ม 'กลับก่อนเวลา' ตั้งค่าได้แบบเดียวกับ 'มาสาย'") --
+    // the CALCULATION side (SyncPayResolver::RULE_DRIVEN_ITEM_DEFS['early_leave'], structured
+    // `early_mins` column) has computed this event since an earlier fix the same day (see that
+    // class's own docblock) -- attendanceDeductionRuleFor() there already queries generically by
+    // event_code, no hardcoded event list of its own, so it was ALREADY able to pick up a configured
+    // early_leave rule the moment one existed. The gap was entirely here + the settings UI: nothing
+    // let an admin actually create one, so early_leave silently ALWAYS used the bare
+    // percent_of_rate @ 1.00 default. Added exactly like the other 4 -- same table, same
+    // ruleSave()/ruleGetAll()/ruleDelete()/previewCalculation(), zero new methods needed.
+    private const EVENT_CODES = ['late', 'early_leave', 'absent', 'unpaid_leave', 'leave_pending'];
     private const RATE_UNITS = ['minute', 'hour', 'day'];
-    /** Sensible starting point per event when no rule has been saved yet -- late naturally reads as
-     *  "per minute", absent/unpaid_leave/leave_pending as "per day"; freely changeable once a rule is saved. */
-    private const DEFAULT_RATE_UNIT = ['late' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day', 'leave_pending' => 'day'];
+    /** Sensible starting point per event when no rule has been saved yet -- late/early_leave naturally
+     *  read as "per minute" (both are structured *_mins columns), absent/unpaid_leave/leave_pending as
+     *  "per day"; freely changeable once a rule is saved. */
+    private const DEFAULT_RATE_UNIT = ['late' => 'minute', 'early_leave' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day', 'leave_pending' => 'day'];
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
@@ -78,7 +88,7 @@ class AttendanceDeductionRuleModel {
     }
 
     /**
-     * @return array<string,array> keyed by event_code ('late'/'absent'/'unpaid_leave'/'leave_pending'),
+     * @return array<string,array> keyed by event_code ('late'/'early_leave'/'absent'/'unpaid_leave'/'leave_pending'),
      *   each value a LIST of rule-variant rows for that event -- the company-wide default row always
      *   first (real if saved, else a synthesized virtual one, same shape either way), followed by any
      *   team/department-scoped variants (real rows only, ordered by scope_type then label). Each row
@@ -347,7 +357,7 @@ class AttendanceDeductionRuleModel {
             if ($multiplierRate <= 0) {
                 $multiplierRate = 1.00;
             }
-        } else { // tiered_bracket
+        } elseif ($methodCode === 'tiered_bracket') {
             $brackets = is_array($data['brackets'] ?? null) ? $data['brackets'] : [];
             if (empty($brackets)) {
                 return ['status' => false, 'message' => 'At least one bracket is required.'];
@@ -359,6 +369,12 @@ class AttendanceDeductionRuleModel {
             }
             usort($brackets, fn($a, $b) => ((float)$a['min_units']) <=> ((float)$b['min_units']));
         }
+        // 2026-08-30 (T015, "เพิ่มตัวเลือก 'ไม่หัก'") -- 'no_deduction' needs no extra config at all
+        // (ratePerUnit/multiplierRate/brackets all correctly stay at their null/empty defaults set
+        // above). This used to be an unconditional trailing `else` that assumed anything not
+        // flat_amount/percent_of_rate MUST be tiered_bracket -- a real bug this new method_code
+        // would have hit immediately (silently requiring a bracket row for a method that has no
+        // brackets at all) had this stayed a catch-all instead of an explicit elseif chain.
 
         $own = !$this->db->inTransaction();
         try {

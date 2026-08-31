@@ -140,7 +140,7 @@ class PayrollReportDataModel {
         $sql = "SELECT e.*, dep.department_name_th, dep.department_name_en
                 FROM `employees` e
                 LEFT JOIN `structure_departments` dep ON dep.id = e.department_id
-                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
                 AND e.employment_end_date IS NOT NULL
                 AND YEAR(e.employment_end_date) = :year AND MONTH(e.employment_end_date) = :month
                 ORDER BY e.employment_end_date ASC";
