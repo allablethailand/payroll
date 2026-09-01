@@ -184,7 +184,17 @@ class BankTransferFileReport implements ReportGeneratorInterface {
                 $skipped[] = $d['employee_no'];
                 continue;
             }
-            $amount = (float)$d['net_amount'];
+            // 2026-08-31: net_amount_due (not the plain net_amount column) -- the DELTA still owed
+            // this payment cycle after subtracting whatever payroll_run_payment_events already
+            // recorded as disbursed on a prior cycle (0 for the overwhelmingly common case of a
+            // run's first-ever payment, where this is byte-identical to net_amount). An employee
+            // with nothing new to disburse this cycle (e.g. untouched by whatever merge triggered
+            // this reopen+repay) is skipped entirely -- see PayrollReportDataModel::getRunDetails()'s
+            // own docblock on these columns.
+            $amount = (float)($d['net_amount_due'] ?? $d['net_amount']);
+            if ($amount <= 0) {
+                continue;
+            }
             $total += $amount;
             $lines[] = implode(',', [
                 $this->csvField($accountNo),
@@ -247,7 +257,14 @@ class BankTransferFileReport implements ReportGeneratorInterface {
                 $skippedCount++;
                 continue;
             }
-            $total += (float)$d['net_amount'];
+            // 2026-08-31: net_amount_due, same delta reasoning as renderGenericFallback() above --
+            // skip an employee with nothing new to disburse this payment cycle.
+            $dueAmount = (float)($d['net_amount_due'] ?? $d['net_amount']);
+            if ($dueAmount <= 0) {
+                $skippedCount++;
+                continue;
+            }
+            $total += $dueAmount;
             $included[] = $d;
         }
         if (empty($included)) {
@@ -443,7 +460,10 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             case 'employee_no': return $d !== null ? (string)($d['employee_no'] ?? '') : '';
             case 'employee_name': return $d !== null ? $this->employeeDisplayName($d, $language) : '';
             case 'id_card_no': return $d !== null ? (string)$this->decryptEmployeeField($d, 'id_card_no') : '';
-            case 'net_amount': return $d !== null ? (string)((float)($d['net_amount'] ?? 0)) : '';
+            // 2026-08-31: net_amount_due (see renderGenericFallback()'s own comment on this same
+            // column) -- $d here is already one of renderConfigured()'s own $included rows, which
+            // are pre-filtered to due>0, so this always reflects a real amount being transferred.
+            case 'net_amount': return $d !== null ? (string)((float)($d['net_amount_due'] ?? $d['net_amount'] ?? 0)) : '';
             case 'sequence_no': return (string)($context['sequence_no'] ?? '');
             case 'total_amount': return (string)($context['total_amount'] ?? 0);
             case 'total_count': return (string)($context['total_count'] ?? 0);

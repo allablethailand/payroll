@@ -353,6 +353,33 @@ try {
     foreach ($recheckList2['data'] as $r) { if ($r['employee_no'] === $unpaidPayload['employee_no']) $recheckRowUnpaid = $r; }
     checkTrue('T018+T021: the staff-only (is_payroll_participant=0) employee is EXCLUDED from recheckList() entirely', $recheckRowUnpaid === null);
 
+    // ---------- 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee
+    // ที่ไม่ทำจ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- recheckList()'s new $participantMode='excluded' view
+    // (the "Not in Payroll" list) + setPayrollParticipant() (the Remove/Add-back toggle). Reuses
+    // $rUnpaid (already is_payroll_participant=0 from its own fixture above). ----------
+    $recheckExcluded = $model->recheckList($compId, 0, 50, [], '', 'en', 'excluded');
+    $recheckExcludedRow = null;
+    foreach ($recheckExcluded['data'] as $r) { if ($r['employee_no'] === $unpaidPayload['employee_no']) $recheckExcludedRow = $r; }
+    checkTrue('recheckList(participantMode=excluded) INCLUDES the staff-only employee', $recheckExcludedRow !== null);
+    $recheckExcludedDefault = $model->recheckList($compId, 0, 50, [], '', 'en');
+    $recheckExcludedInDefault = null;
+    foreach ($recheckExcludedDefault['data'] as $r) { if ($r['employee_no'] === $unpaidPayload['employee_no']) $recheckExcludedInDefault = $r; }
+    checkTrue('default recheckList() (participantMode=participant) still excludes it', $recheckExcludedInDefault === null);
+
+    $addBackOk = $model->setPayrollParticipant((int)$rUnpaid['id'], $compId, true);
+    checkTrue('setPayrollParticipant(true) succeeds', $addBackOk);
+    $rowAfterAddBack = $model->get($compId, $unpaidPayload['employee_no']);
+    check('is_payroll_participant is now 1 after Add Back', (int)($rowAfterAddBack['is_payroll_participant'] ?? 0), 1);
+    $recheckAfterAddBack = $model->recheckList($compId, 0, 50, [], '', 'en');
+    $foundInParticipantViewNow = null;
+    foreach ($recheckAfterAddBack['data'] as $r) { if ($r['employee_no'] === $unpaidPayload['employee_no']) $foundInParticipantViewNow = $r; }
+    checkTrue('after Add Back, employee now appears in the default (In Payroll) view', $foundInParticipantViewNow !== null);
+
+    $removeOk = $model->setPayrollParticipant((int)$rUnpaid['id'], $compId, false);
+    checkTrue('setPayrollParticipant(false) succeeds', $removeOk);
+    $rowAfterRemove = $model->get($compId, $unpaidPayload['employee_no']);
+    check('is_payroll_participant is back to 0 after Remove', (int)($rowAfterRemove['is_payroll_participant'] ?? 1), 0);
+
     // ---------- 2026-08-30 (Phase 3, T024, explicit request: "แสดงจำนวนพนักงานต่อ station ด้วย") --
     // EmployeeModel::stationCounts(), the aggregate query backing the station-card pipeline's own
     // .station-count spans. Reuses $paidForListPayload (employee_status='active' by default) and

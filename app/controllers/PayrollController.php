@@ -2,9 +2,88 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/PayrollRunModel.php';
 require_once __DIR__ . '/../services/IdCodec.php';
+require_once __DIR__ . '/../models/PermissionModel.php';
 class PayrollController extends Controller {
     private $model;
-    public function __construct(){ $this->model = new PayrollRunModel(); }
+    private PermissionModel $permissionModel;
+    public function __construct(){
+        $this->model = new PayrollRunModel();
+        $this->permissionModel = new PermissionModel();
+    }
+
+    /**
+     * 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถคำนวณเงินเดือน
+     * ...ได้ตามสิทธิ์" -- masking ONLY happens here, at the response-shaping layer, never inside
+     * PayrollRunModel (recalculate()/getDetails()/etc. never call through this check at all, see
+     * PermissionModel's own top-of-file docblock -- calculation stays correct regardless of who is
+     * looking at the result). `own_only` scope has no single meaningful "subject" for a whole
+     * payroll run's aggregate totals (a run isn't "owned" by one employee the way an Employee
+     * Detail profile is) -- resolveSalaryVisibility() already degrades own_only to masked when no
+     * $subjectEmployeeId is given, which is exactly the right behavior here: 'own_only' effectively
+     * means "no access to run-level figures" for this module, only 'all' (or admin) sees them.
+     */
+    private function maskRunMonetaryFields(array $row, int $compId): array {
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
+        if ($visibility['full']) {
+            return $row;
+        }
+        foreach (['total_gross_amount', 'total_deduction_amount', 'total_net_amount'] as $field) {
+            if (array_key_exists($field, $row)) {
+                $row[$field] = PermissionModel::MASK_VALUE;
+            }
+        }
+        return $row;
+    }
+
+    /**
+     * Same decision, applied to the Detail page's own per-employee `details` rows (getDetails()'s
+     * own return shape) -- 'full' shows everything unchanged; 'masked' (no grant at all) replaces
+     * every monetary field AND every itemized breakdown line's amount; 'summary_only'
+     * (detail_level='summary') shows the row-level totals but still masks the itemized breakdown
+     * lines -- the same "summary vs full" distinction PermissionModel's own docblock describes.
+     */
+    private function maskRunDetailRows(array $details, int $compId): array {
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
+        if ($visibility['full']) {
+            return $details;
+        }
+        $totalsFields = ['base_salary_amount', 'gross_amount', 'taxable_gross_amount', 'total_deduction_amount', 'net_amount', 'employer_cost_amount'];
+        $breakdownFields = ['earning_breakdown', 'deduction_breakdown', 'statutory_breakdown'];
+        foreach ($details as &$d) {
+            if ($visibility['masked']) {
+                foreach ($totalsFields as $field) {
+                    if (array_key_exists($field, $d)) {
+                        $d[$field] = PermissionModel::MASK_VALUE;
+                    }
+                }
+            }
+            // Itemized lines are masked whenever the caller doesn't have FULL detail -- both the
+            // fully-masked case above AND the summary_only case (row totals stay visible, but the
+            // line-by-line breakdown does not).
+            if ($visibility['masked'] || $visibility['summary_only']) {
+                foreach ($breakdownFields as $field) {
+                    if (!empty($d[$field]) && is_array($d[$field])) {
+                        foreach ($d[$field] as &$line) {
+                            if (!is_array($line)) {
+                                continue;
+                            }
+                            // earning_breakdown/deduction_breakdown lines use 'amount';
+                            // statutory_breakdown lines use 'employee_amount'/'employer_amount'
+                            // (StatutoryCalculationEngine's own shape) -- mask whichever are present.
+                            foreach (['amount', 'employee_amount', 'employer_amount'] as $amountKey) {
+                                if (array_key_exists($amountKey, $line)) {
+                                    $line[$amountKey] = PermissionModel::MASK_VALUE;
+                                }
+                            }
+                        }
+                        unset($line);
+                    }
+                }
+            }
+        }
+        unset($d);
+        return $details;
+    }
 
     public function index() {
         $this->view('payroll/index');
@@ -24,6 +103,14 @@ class PayrollController extends Controller {
             echo '404 - Not Found';
             return;
         }
+        // 2026-08-31, same-day follow-up (item 9c): log every open of this page, not every AJAX
+        // data-refresh the page itself later triggers -- see PayrollRunModel::logViewDetail()'s own
+        // docblock. compId may legitimately be 0 (no active company selected yet) -- logViewDetail()
+        // itself no-ops cleanly when the run/company don't match, same as any bad/stale id.
+        $compId = (int)(getCompId() ?? 0);
+        if ($compId > 0) {
+            $this->model->logViewDetail($runId, $compId, $this->userId());
+        }
         $this->view('payroll/detail', ['runId' => $runId]);
     }
 
@@ -38,7 +125,11 @@ class PayrollController extends Controller {
         $search = (string)($_POST['searchTerm'] ?? '');
         $statesParam = (string)($_POST['states'] ?? '');
         $allowedStates = $statesParam !== '' ? explode(',', $statesParam) : null;
-        $data = $this->model->options((int)$compId, $search, $page, $limit, $allowedStates);
+        // 2026-09-01: data-exclude-id, same generic convention every other select2-remote field in
+        // this app already uses -- first consumer here is the Detail page's own "Target Round"
+        // merge-target picker, excluding the run being edited from its own dropdown.
+        $excludeId = !empty($_POST['exclude_id']) ? (int)$_POST['exclude_id'] : null;
+        $data = $this->model->options((int)$compId, $search, $page, $limit, $allowedStates, $excludeId);
         $this->json(['status' => true, 'data' => $data]);
     }
 
@@ -89,6 +180,7 @@ class PayrollController extends Controller {
         foreach ($rows as &$row) {
             $row['public_id'] = IdCodec::encode((int)$row['id']);
             $row['can_finalize_payroll'] = $canFinalize;
+            $row = $this->maskRunMonetaryFields($row, (int)$compId);
         }
         unset($row);
         $this->json(['status' => true, 'data' => $rows]);
@@ -107,6 +199,10 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Record not found.']);
             return;
         }
+        // NOTE: can_approve_payroll/can_process_payroll/can_finalize_payroll are computed on the
+        // UNMASKED $row (they only ever read state/approval_request_id fields, never money) --
+        // masking is applied last, right before the response goes out, so it can never accidentally
+        // feed a masked value into an approval/permission decision.
         $row['details'] = $this->model->getDetails($id, (int)$compId);
         $row['audit_log'] = $this->model->getAuditLog($id, (int)$compId);
         $row['approval_flow'] = $this->model->approvalFlow($id, (int)$compId);
@@ -118,6 +214,10 @@ class PayrollController extends Controller {
         $calcApplicability = $this->model->calcApplicabilitySummary($id, (int)$compId);
         $row['any_tax_applicable'] = $calcApplicability['any_tax'];
         $row['any_sso_applicable'] = $calcApplicability['any_sso'];
+        // 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถคำนวณ
+        // เงินเดือน...ได้ตามสิทธิ์" -- see maskRunMonetaryFields()/maskRunDetailRows()'s own docblocks.
+        $row['details'] = $this->maskRunDetailRows($row['details'], (int)$compId);
+        $row = $this->maskRunMonetaryFields($row, (int)$compId);
         $this->json(['status' => true, 'data' => $row]);
     }
 
@@ -161,6 +261,44 @@ class PayrollController extends Controller {
             ? $this->model->update($id, (int)$compId, $data, $this->userId(), $this->isAdmin())
             : $this->model->create((int)$compId, $data, $this->userId(), $this->isAdmin());
         $this->json($result);
+    }
+
+    /** 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- Pending Pull's "Merge into Target"
+     *  action for a supplemental process attributed tax_treatment='merge'. See
+     *  PayrollRunModel::mergeSupplementalIntoRun()'s own docblock for the full mechanism. */
+    public function mergeSupplemental() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $syncProcessId = (is_array($data) && isset($data['sync_process_id'])) ? (int)$data['sync_process_id'] : 0;
+        if (!$compId || $syncProcessId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing sync_process_id.']);
+            return;
+        }
+        // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย") -- explicit opt-in to auto-revert a
+        // pending_approval/approved/rejected/need_info (not yet paid) target back to draft before
+        // merging. Defaults false, same safe refusal as before this flag existed.
+        $allowRevert = !empty($data['allow_revert_non_draft_target']);
+        // Separate, higher-risk opt-in: reopen a paid/locked target (money may have already
+        // moved) via PayrollRunModel::reopen() -- see mergeSupplementalIntoRun()'s own docblock.
+        $allowReopen = !empty($data['allow_reopen_paid_target']);
+        $this->json($this->model->mergeSupplementalIntoRun($syncProcessId, (int)$compId, $this->userId(), $this->isAdmin(), $allowRevert, $allowReopen));
+    }
+
+    /** 2026-09-01, explicit request: "ให้มี radio เลือกว่า เปิดรอบใหม่ หรืออ้างอิงถึงรอบ" -- the plain
+     *  "Add" flow's own equivalent of mergeSupplemental() above, for a run the admin built up
+     *  manually (never Origami-sourced). See PayrollRunModel::mergeIntoExistingRun()'s own docblock. */
+    public function mergeIntoExistingRun() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $sourceRunId = (is_array($data) && isset($data['source_run_id'])) ? (int)$data['source_run_id'] : 0;
+        $targetRunId = (is_array($data) && isset($data['target_run_id'])) ? (int)$data['target_run_id'] : 0;
+        if (!$compId || $sourceRunId <= 0 || $targetRunId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing source_run_id/target_run_id.']);
+            return;
+        }
+        $allowRevert = !empty($data['allow_revert_non_draft_target']);
+        $allowReopen = !empty($data['allow_reopen_paid_target']);
+        $this->json($this->model->mergeIntoExistingRun($sourceRunId, $targetRunId, (int)$compId, $this->userId(), $this->isAdmin(), $allowRevert, $allowReopen));
     }
 
     public function delete() {
@@ -313,11 +451,15 @@ class PayrollController extends Controller {
         $customItemType = (is_array($data) && isset($data['custom_item_type'])) ? (string)$data['custom_item_type'] : null;
         $payeeEmployeeIdRaw = (is_array($data) && isset($data['payee_employee_id'])) ? (int)$data['payee_employee_id'] : 0;
         $payeeEmployeeId = $payeeEmployeeIdRaw > 0 ? $payeeEmployeeIdRaw : null;
+        // 2026-08-31, same-day follow-up ("รายการหัก...ในหน้าทำรอบ...ให้เพิ่มเติมตรงที่หักไปที่ไหน") --
+        // see PayrollRunModel::addManualLine()'s own docblock for validation/defaulting.
+        $payeeType = (is_array($data) && !empty($data['payee_type'])) ? (string)$data['payee_type'] : null;
+        $includeInCashSummary = (is_array($data) && array_key_exists('include_in_cash_summary', $data)) ? (bool)$data['include_in_cash_summary'] : null;
         if (!$compId || $id <= 0 || $employeeId <= 0 || ($pedTypeId === null && ($customItemName === null || trim($customItemName) === ''))) {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType, $payeeEmployeeId));
+        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary));
     }
 
     public function removeManualLine() {
@@ -385,6 +527,38 @@ class PayrollController extends Controller {
             return;
         }
         $this->json($this->model->lineOverrideRemove($id, (int)$compId, $employeeId, $itemCode, $this->userId(), $this->isAdmin()));
+    }
+
+    // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9a): same shape as
+    // lineOverrideSave()/lineOverrideRemove() above, one level up (statutory item code, not a
+    // general item_code) -- see PayrollRunModel::statutoryLineOverrideSave()'s own docblock.
+    public function statutoryLineOverrideSave() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $itemCode = (is_array($data) && isset($data['item_code'])) ? (string)$data['item_code'] : '';
+        $action = (is_array($data) && isset($data['action'])) ? (string)$data['action'] : '';
+        $overrideAmount = (is_array($data) && isset($data['override_amount']) && is_numeric($data['override_amount'])) ? (float)$data['override_amount'] : null;
+        $note = (is_array($data) && isset($data['note'])) ? (string)$data['note'] : null;
+        if (!$compId || $id <= 0 || $employeeId <= 0 || $itemCode === '') {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->statutoryLineOverrideSave($id, (int)$compId, $employeeId, $itemCode, $action, $overrideAmount, $note, $this->userId(), $this->isAdmin()));
+    }
+
+    public function statutoryLineOverrideRemove() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
+        $itemCode = (is_array($data) && isset($data['item_code'])) ? (string)$data['item_code'] : '';
+        if (!$compId || $id <= 0 || $employeeId <= 0 || $itemCode === '') {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->statutoryLineOverrideRemove($id, (int)$compId, $employeeId, $itemCode, $this->userId(), $this->isAdmin()));
     }
 
     /* ==================== RAW ATTENDANCE DATA OVERRIDES (2026-08-21) ==================== */
@@ -491,6 +665,22 @@ class PayrollController extends Controller {
         $this->json($this->model->runSettingsSave($id, (int)$compId, $taxCalculateDefault, $ssoCalculateDefault, $excludedItemCodes, $this->userId(), $this->isAdmin()));
     }
 
+    /**
+     * 2026-08-31, explicit request: per-run "auto-recalculate immediately after edits" checkbox --
+     * see PayrollRunModel::setAutoRecalculate()'s own docblock for the full design.
+     */
+    public function autoRecalculateSave() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $value = is_array($data) && !empty($data['value']);
+        if (!$compId || $id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->setAutoRecalculate($id, (int)$compId, $value, $this->userId(), $this->isAdmin()));
+    }
+
     /* ==================== Employee Verify / Lock / Comments (2026-08-29) ==================== */
 
     public function employeeVerifySave() {
@@ -506,19 +696,6 @@ class PayrollController extends Controller {
         $this->json($this->model->setEmployeeVerified($id, (int)$compId, $employeeId, $verified, $this->userId(), $this->isAdmin()));
     }
 
-    public function employeeLockSave() {
-        $compId = getCompId();
-        $data = json_decode(file_get_contents('php://input'), true);
-        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
-        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
-        $locked = is_array($data) && !empty($data['locked']);
-        if (!$compId || $id <= 0 || $employeeId <= 0) {
-            $this->json(['status' => false, 'message' => 'Invalid ID.']);
-            return;
-        }
-        $this->json($this->model->setEmployeeLocked($id, (int)$compId, $employeeId, $locked, $this->userId(), $this->isAdmin()));
-    }
-
     public function employeeVerifyBulk() {
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
@@ -532,17 +709,22 @@ class PayrollController extends Controller {
         $this->json($this->model->bulkSetEmployeeVerified($id, (int)$compId, $employeeIds, $verified, $this->userId(), $this->isAdmin()));
     }
 
-    public function employeeLockBulk() {
+    /**
+     * 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ให้ Verify ได้ทั้ง Process ทั้ง
+     * Detail และหน้า List" -- verifies every employee currently in the run at once. Reachable from
+     * either page: the Detail page's own bulk bar area, or a per-row action on the List page (which
+     * has no employee roster loaded client-side at all, hence a run_id-only endpoint rather than
+     * requiring the caller to already know every employee_id).
+     */
+    public function employeeVerifyAll() {
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
-        $employeeIds = (is_array($data) && is_array($data['employee_ids'] ?? null)) ? array_map('intval', $data['employee_ids']) : [];
-        $locked = is_array($data) && !empty($data['locked']);
         if (!$compId || $id <= 0) {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->bulkSetEmployeeLocked($id, (int)$compId, $employeeIds, $locked, $this->userId(), $this->isAdmin()));
+        $this->json($this->model->verifyAllEmployeesForRun($id, (int)$compId, $this->userId(), $this->isAdmin()));
     }
 
     public function employeeCommentAdd() {
@@ -627,7 +809,9 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->submit($id, (int)$compId, $this->userId(), $this->isAdmin()));
+        $result = $this->model->submit($id, (int)$compId, $this->userId(), $this->isAdmin());
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_submitted');
+        $this->json($result);
     }
 
     public function revert() {
@@ -644,7 +828,9 @@ class PayrollController extends Controller {
         // run still at pending_approval, which has only one possible target anyway) falls back to
         // the model's own default.
         $toState = !empty($data['to_state']) ? (string)$data['to_state'] : null;
-        $this->json($this->model->revert($id, (int)$compId, $this->userId(), $this->isAdmin(), $note, $toState));
+        $result = $this->model->revert($id, (int)$compId, $this->userId(), $this->isAdmin(), $note, $toState);
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_reverted');
+        $this->json($result);
     }
 
     public function approve() {
@@ -656,7 +842,9 @@ class PayrollController extends Controller {
             return;
         }
         $note = !empty($data['note']) ? (string)$data['note'] : null;
-        $this->json($this->model->approve($id, (int)$compId, $this->userId(), $this->isAdmin(), $note));
+        $result = $this->model->approve($id, (int)$compId, $this->userId(), $this->isAdmin(), $note);
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_approved');
+        $this->json($result);
     }
 
     public function reject() {
@@ -668,7 +856,9 @@ class PayrollController extends Controller {
             return;
         }
         $reason = (string)($data['reason'] ?? '');
-        $this->json($this->model->reject($id, (int)$compId, $this->userId(), $this->isAdmin(), $reason));
+        $result = $this->model->reject($id, (int)$compId, $this->userId(), $this->isAdmin(), $reason);
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_rejected');
+        $this->json($result);
     }
 
     public function bulkApprove() {
@@ -680,7 +870,9 @@ class PayrollController extends Controller {
             return;
         }
         $note = !empty($data['note']) ? (string)$data['note'] : null;
-        $this->json($this->model->bulkApprove($ids, (int)$compId, $this->userId(), $this->isAdmin(), $note));
+        $result = $this->model->bulkApprove($ids, (int)$compId, $this->userId(), $this->isAdmin(), $note);
+        $this->pushOrigamiRunStatusForIds($result['results'] ?? [], (int)$compId, 'run_approved');
+        $this->json($result);
     }
 
     public function bulkReject() {
@@ -692,7 +884,9 @@ class PayrollController extends Controller {
             return;
         }
         $reason = (string)($data['reason'] ?? '');
-        $this->json($this->model->bulkReject($ids, (int)$compId, $this->userId(), $this->isAdmin(), $reason));
+        $result = $this->model->bulkReject($ids, (int)$compId, $this->userId(), $this->isAdmin(), $reason);
+        $this->pushOrigamiRunStatusForIds($result['results'] ?? [], (int)$compId, 'run_rejected');
+        $this->json($result);
     }
 
     public function cancel() {
@@ -704,7 +898,9 @@ class PayrollController extends Controller {
             return;
         }
         $reason = (string)($data['reason'] ?? '');
-        $this->json($this->model->cancel($id, (int)$compId, $this->userId(), $this->isAdmin(), $reason));
+        $result = $this->model->cancel($id, (int)$compId, $this->userId(), $this->isAdmin(), $reason);
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_cancelled');
+        $this->json($result);
     }
 
     public function reviseAfterReject() {
@@ -715,7 +911,9 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->reviseAfterReject($id, (int)$compId, $this->userId(), $this->isAdmin()));
+        $result = $this->model->reviseAfterReject($id, (int)$compId, $this->userId(), $this->isAdmin());
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_revised');
+        $this->json($result);
     }
 
     public function requestInfo() {
@@ -727,7 +925,9 @@ class PayrollController extends Controller {
             return;
         }
         $reason = (string)($data['reason'] ?? '');
-        $this->json($this->model->requestInfo($id, (int)$compId, $this->userId(), $this->isAdmin(), $reason));
+        $result = $this->model->requestInfo($id, (int)$compId, $this->userId(), $this->isAdmin(), $reason);
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_need_info');
+        $this->json($result);
     }
 
     public function bulkRequestInfo() {
@@ -739,7 +939,9 @@ class PayrollController extends Controller {
             return;
         }
         $reason = (string)($data['reason'] ?? '');
-        $this->json($this->model->bulkRequestInfo($ids, (int)$compId, $this->userId(), $this->isAdmin(), $reason));
+        $result = $this->model->bulkRequestInfo($ids, (int)$compId, $this->userId(), $this->isAdmin(), $reason);
+        $this->pushOrigamiRunStatusForIds($result['results'] ?? [], (int)$compId, 'run_need_info');
+        $this->json($result);
     }
 
     public function reviseAfterNeedInfo() {
@@ -750,7 +952,9 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->reviseAfterNeedInfo($id, (int)$compId, $this->userId(), $this->isAdmin()));
+        $result = $this->model->reviseAfterNeedInfo($id, (int)$compId, $this->userId(), $this->isAdmin());
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_revised');
+        $this->json($result);
     }
 
     public function markPaid() {
@@ -761,7 +965,40 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->markPaid($id, (int)$compId, $this->userId(), $this->isAdmin(), $data));
+        $result = $this->model->markPaid($id, (int)$compId, $this->userId(), $this->isAdmin(), $data);
+        $this->pushOrigamiRunStatus($result, $id, (int)$compId, 'run_paid');
+        $this->json($result);
+    }
+
+    /** 2026-08-31, explicit request: push a payroll run's status to Origami on every state change
+     *  (submit/approve/reject/markPaid) -- see OrigamiPayrollStatusClient's own docblock for the
+     *  full contract/reasoning. Best-effort: only fires when the state change itself actually
+     *  succeeded, and any push failure is logged (origami_status_push_logs) but never surfaced to
+     *  the caller -- a down/unreachable Origami must never look like the payroll action itself failed. */
+    private function pushOrigamiRunStatus(array $result, int $runId, int $compId, string $eventType): void {
+        if (empty($result['status'])) {
+            return;
+        }
+        try {
+            $run = $this->model->get($runId, $compId);
+            if ($run) {
+                require_once __DIR__ . '/../services/OrigamiPayrollStatusClient.php';
+                (new OrigamiPayrollStatusClient())->pushRunStatus($run, $eventType);
+            }
+        } catch (Throwable $e) {
+            // Never let a push-logging problem affect the HTTP response for the real action.
+        }
+    }
+
+    /** Same as pushOrigamiRunStatus() above, for a bulk*() action's own per-id $result['results']
+     *  map -- only the ids whose OWN sub-result succeeded get pushed (a bulk action can partially
+     *  fail, e.g. one run in the batch not actually being at the right state for that action). */
+    private function pushOrigamiRunStatusForIds(array $resultsById, int $compId, string $eventType): void {
+        foreach ($resultsById as $runId => $subResult) {
+            if (!empty($subResult['status'])) {
+                $this->pushOrigamiRunStatus($subResult, (int)$runId, $compId, $eventType);
+            }
+        }
     }
 
     public function lock() {

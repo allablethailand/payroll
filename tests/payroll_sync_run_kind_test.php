@@ -126,9 +126,67 @@ try {
     $supplementalResult = $syncModel->ingest($supplementalPayload);
     checkTrue('supplemental payload ingest succeeds' . (empty($supplementalResult['status']) ? " ({$supplementalResult['message']})" : ''), $supplementalResult['status']);
     $supplementalProcessRowId = $supplementalResult['process_row_id'];
-    $row2 = $pdo->query("SELECT process_start, run_kind FROM payroll_sync_processes WHERE id = {$supplementalProcessRowId}")->fetch(PDO::FETCH_ASSOC);
+    $row2 = $pdo->query("SELECT process_start, run_kind, attribution_tax_treatment FROM payroll_sync_processes WHERE id = {$supplementalProcessRowId}")->fetch(PDO::FETCH_ASSOC);
     check('process_start is null when Origami sends none', $row2['process_start'], null);
     check('run_kind stored as supplemental', $row2['run_kind'], 'supplemental');
+    check('attribution absent -> tax_treatment stays null (fully stand-alone, today\'s existing behavior)', $row2['attribution_tax_treatment'], null);
+
+    // ---------- 2026-08-31, PAYROLL_SYNC_API.md revision: `attribution` -- confirmed & built on
+    // Origami's side. Only meaningful when run_kind='supplemental'. ----------
+    echo "=== Ingest: supplemental with attribution.tax_treatment='merge' ===\n";
+    $mergePayload = $supplementalPayload;
+    $mergePayload['process_id'] = random_int(100000, 999999);
+    $mergePayload['process_no'] = 'SUPP-MERGE-1';
+    $mergeTargetOrigamiId = random_int(100000, 999999);
+    $mergePayload['attribution'] = ['target_process_id' => $mergeTargetOrigamiId, 'target_process_no' => 'ORIGAMI-2026-00024', 'tax_treatment' => 'merge'];
+    $mergeResult = $syncModel->ingest($mergePayload);
+    checkTrue('supplemental+merge payload ingests' . (empty($mergeResult['status']) ? " ({$mergeResult['message']})" : ''), $mergeResult['status']);
+    $mergeRow = $pdo->query("SELECT attribution_target_origami_process_id, attribution_target_process_no, attribution_tax_treatment FROM payroll_sync_processes WHERE id = {$mergeResult['process_row_id']}")->fetch(PDO::FETCH_ASSOC);
+    check('attribution_target_origami_process_id stored', (int)$mergeRow['attribution_target_origami_process_id'], $mergeTargetOrigamiId);
+    check('attribution_target_process_no stored', $mergeRow['attribution_target_process_no'], 'ORIGAMI-2026-00024');
+    check('attribution_tax_treatment stored as merge', $mergeRow['attribution_tax_treatment'], 'merge');
+
+    echo "=== Ingest: supplemental with attribution.tax_treatment='separate' ===\n";
+    $separatePayload = $supplementalPayload;
+    $separatePayload['process_id'] = random_int(100000, 999999);
+    $separatePayload['process_no'] = 'SUPP-SEPARATE-1';
+    $separateTargetOrigamiId = random_int(100000, 999999);
+    $separatePayload['attribution'] = ['target_process_id' => $separateTargetOrigamiId, 'target_process_no' => 'ORIGAMI-2026-00030', 'tax_treatment' => 'separate'];
+    $separateResult = $syncModel->ingest($separatePayload);
+    checkTrue('supplemental+separate payload ingests' . (empty($separateResult['status']) ? " ({$separateResult['message']})" : ''), $separateResult['status']);
+    $separateRow = $pdo->query("SELECT attribution_tax_treatment FROM payroll_sync_processes WHERE id = {$separateResult['process_row_id']}")->fetch(PDO::FETCH_ASSOC);
+    check('attribution_tax_treatment stored as separate', $separateRow['attribution_tax_treatment'], 'separate');
+
+    echo "=== Ingest: attribution ignored on a REGULAR process even if Origami sends one anyway ===\n";
+    $regularWithAttribution = $regularPayload;
+    $regularWithAttribution['process_id'] = random_int(100000, 999999);
+    $regularWithAttribution['process_no'] = 'REG-WITH-ATTR-1';
+    $regularWithAttribution['attribution'] = ['target_process_id' => 999, 'target_process_no' => 'SHOULD-BE-IGNORED', 'tax_treatment' => 'merge'];
+    $regularAttrResult = $syncModel->ingest($regularWithAttribution);
+    checkTrue('regular+attribution payload still ingests', $regularAttrResult['status']);
+    $regularAttrRow = $pdo->query("SELECT attribution_target_origami_process_id, attribution_tax_treatment FROM payroll_sync_processes WHERE id = {$regularAttrResult['process_row_id']}")->fetch(PDO::FETCH_ASSOC);
+    checkTrue('attribution_target_origami_process_id is null (run_kind=regular, attribution never applies)', $regularAttrRow['attribution_target_origami_process_id'] === null);
+    checkTrue('attribution_tax_treatment is null (run_kind=regular, attribution never applies)', $regularAttrRow['attribution_tax_treatment'] === null);
+
+    echo "=== Ingest: malformed attribution (no target_process_id) degrades to no-attribution ===\n";
+    $malformedPayload = $supplementalPayload;
+    $malformedPayload['process_id'] = random_int(100000, 999999);
+    $malformedPayload['process_no'] = 'SUPP-MALFORMED-ATTR-1';
+    $malformedPayload['attribution'] = ['tax_treatment' => 'merge']; // no target_process_id at all
+    $malformedResult = $syncModel->ingest($malformedPayload);
+    checkTrue('supplemental with a target-less attribution object still ingests (never throws)', $malformedResult['status']);
+    $malformedRow = $pdo->query("SELECT attribution_tax_treatment FROM payroll_sync_processes WHERE id = {$malformedResult['process_row_id']}")->fetch(PDO::FETCH_ASSOC);
+    checkTrue('degrades to no-attribution (same as attribution:null) rather than half-populating', $malformedRow['attribution_tax_treatment'] === null);
+
+    echo "=== Ingest: attribution.tax_treatment absent defaults to 'separate' when a target IS given ===\n";
+    $noTreatmentPayload = $supplementalPayload;
+    $noTreatmentPayload['process_id'] = random_int(100000, 999999);
+    $noTreatmentPayload['process_no'] = 'SUPP-NO-TREATMENT-1';
+    $noTreatmentPayload['attribution'] = ['target_process_id' => random_int(100000, 999999), 'target_process_no' => 'ORIGAMI-2026-00040'];
+    $noTreatmentResult = $syncModel->ingest($noTreatmentPayload);
+    checkTrue('supplemental with a target but no explicit tax_treatment still ingests', $noTreatmentResult['status']);
+    $noTreatmentRow = $pdo->query("SELECT attribution_tax_treatment FROM payroll_sync_processes WHERE id = {$noTreatmentResult['process_row_id']}")->fetch(PDO::FETCH_ASSOC);
+    check('defaults to separate per Origami\'s own doc ("defaults to separate whenever no target is chosen" -- same safe default applied here for a missing treatment string)', $noTreatmentRow['attribution_tax_treatment'], 'separate');
 
     echo "=== Ingest: missing/unrecognized run_kind defaults safely to regular ===\n";
     $noRunKindPayload = $regularPayload;
@@ -142,7 +200,7 @@ try {
 
     echo "=== pendingList() surfaces the new fields ===\n";
     $pending = $syncModel->pendingList($compId);
-    check('2 distinct pending processes visible (regular + supplemental; the no-run-kind one duplicated the same process_no fixture but is a real 3rd row)', count($pending), 3);
+    check('8 distinct pending processes visible (regular + supplemental + the 5 attribution fixtures + the no-run-kind fixture, none pulled into a run yet)', count($pending), 8);
     $pendingRegular = null;
     $pendingSupplemental = null;
     foreach ($pending as $p) {
@@ -155,6 +213,13 @@ try {
     check('pendingList() exposes run_kind', $pendingRegular['run_kind'], 'regular');
     checkTrue('supplemental process found in pendingList()', $pendingSupplemental !== null);
     check('pendingList() exposes run_kind=supplemental', $pendingSupplemental['run_kind'], 'supplemental');
+    checkTrue('pendingList() plain no-attribution supplemental has null attribution_tax_treatment', $pendingSupplemental['attribution_tax_treatment'] === null);
+
+    $pendingMerge = null;
+    foreach ($pending as $p) { if ((int)$p['id'] === (int)$mergeResult['process_row_id']) $pendingMerge = $p; }
+    checkTrue('the merge-attributed process found in pendingList()', $pendingMerge !== null);
+    check('pendingList() exposes attribution_tax_treatment=merge', $pendingMerge['attribution_tax_treatment'], 'merge');
+    check('pendingList() exposes attribution_target_process_no', $pendingMerge['attribution_target_process_no'], 'ORIGAMI-2026-00024');
 
     echo "=== PayrollRunModel::create() -- regular sync pull keeps existing strict rules ===\n";
     $runModel = new PayrollRunModel($pdo);

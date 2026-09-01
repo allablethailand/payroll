@@ -50,4 +50,56 @@ class EmailQueueModel {
             WHERE id = :id");
         $stmt->execute([':error' => substr($errorMessage, 0, 60000), ':id' => $id]);
     }
+
+    /**
+     * 2026-08-31, explicit request: an admin-facing log/summary page for this queue (Phase 1 of that
+     * day's batch). Mirrors PayslipDeliveryLogModel::list()'s own dynamic-WHERE pattern. Scoped to
+     * `comp_id = :comp_id` (excludes NULL-comp_id rows -- see this table's own migration comment on
+     * why comp_id is nullable/no-FK -- a company-scoped log page has no meaningful way to show a row
+     * with no company at all, same reasoning report_export_logs' own company-scoped views use).
+     * @param array $filters optional: status, date_from, date_to (both YYYY-MM-DD, against created_at), to_address (LIKE, partial match)
+     */
+    public function list(int $compId, array $filters = []): array {
+        [$where, $params] = $this->buildFilterWhere($compId, $filters);
+        $sql = "SELECT * FROM `email_queue` {$where} ORDER BY created_at DESC LIMIT 200";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** Same filters as list() (so the stat cards always reflect whatever the table is currently filtered to), grouped counts by status -- pending/sent/failed always present (0 if none), never an absent key the frontend would have to guard against. */
+    public function summary(int $compId, array $filters = []): array {
+        [$where, $params] = $this->buildFilterWhere($compId, $filters);
+        $sql = "SELECT status, COUNT(*) AS cnt FROM `email_queue` {$where} GROUP BY status";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $counts = ['pending' => 0, 'sent' => 0, 'failed' => 0];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $counts[$row['status']] = (int)$row['cnt'];
+        }
+        $counts['total'] = $counts['pending'] + $counts['sent'] + $counts['failed'];
+        return $counts;
+    }
+
+    private function buildFilterWhere(int $compId, array $filters): array {
+        $where = "WHERE comp_id = :comp_id";
+        $params = [':comp_id' => $compId];
+        if (!empty($filters['status'])) {
+            $where .= " AND status = :status";
+            $params[':status'] = $filters['status'];
+        }
+        if (!empty($filters['date_from'])) {
+            $where .= " AND created_at >= :date_from";
+            $params[':date_from'] = $filters['date_from'] . ' 00:00:00';
+        }
+        if (!empty($filters['date_to'])) {
+            $where .= " AND created_at <= :date_to";
+            $params[':date_to'] = $filters['date_to'] . ' 23:59:59';
+        }
+        if (!empty($filters['to_address'])) {
+            $where .= " AND to_address LIKE :to_address";
+            $params[':to_address'] = '%' . $filters['to_address'] . '%';
+        }
+        return [$where, $params];
+    }
 }

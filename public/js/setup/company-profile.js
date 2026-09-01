@@ -629,12 +629,12 @@ function initStructure(page) {
             initStructureTable('rank', '#tb_rank');
             break;
         case 'p6':
-            $structureContent.html($('#tmpl-permission-pane').html());
+            // 2026-08-31: was tmpl-permission-pane (RBAC Permission Matrix + this section together)
+            // -- the Permission Matrix moved out to its own standalone page (setup/permissions),
+            // this pill now shows only the unrelated Notification Preferences by Role section that
+            // happened to share the same tab before.
+            $structureContent.html($('#tmpl-notification-role-pane').html());
             updateText($structureContent[0]);
-            if (typeof initPermissionMatrix === 'function') { initPermissionMatrix(); }
-            // 2026-08-29, explicit follow-up: "ผูกกับ user preference ในระดับ role ได้ด้วยถ้าไม่ซับซ้อนเกินไป"
-            // -- same tab, own section/container below the Permission Matrix grid (see
-            // tmpl-permission-pane's own markup).
             if (typeof initNotificationRoleMatrix === 'function') { initNotificationRoleMatrix(); }
             break;
         // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการ
@@ -768,16 +768,44 @@ function initStructureTable(type, tableId) {
         }
     });
 }
+// 2026-08-31, explicit request: Assign Employees modal -- attribute-safe escaping for the button's
+// own data-label (a plain .text().html() escapes <,>,& but not the double quote a data- attribute
+// needs, same bug class documented elsewhere in this app, e.g. escapeAttrEct() in
+// employment-certificate-template.js).
+function escapeAttrCp(str) {
+    return $('<div>').text(str === null || str === undefined ? '' : str).html().replace(/"/g, '&quot;');
+}
+// Maps a structureConfig() type to the *_name_th/*_name_en column prefix getLocaleText() below
+// already reads for every OTHER column in this same table -- every one of the 6 types follows this
+// exact "{type}_name_th"/"{type}_name_en" naming convention (confirmed against structureConfig()
+// itself), so one small map covers all of them instead of a switch per type.
+function structureNameFieldByType(type) {
+    return `${type}_name`;
+}
 function getStructureColumns(type) {
+    // 2026-08-31, explicit request: "เพิ่มปุ่มให้สามารถ Assign ได้...และมีอีกปุ่มสำหรับกด View เพื่อดูเฉพาะ
+    // พนักงานที่อยู่ใน Master นั้น" -- ONE shared helper called for all 6 structure types (see the 6
+    // getStructureColumns() call sites below), so adding these 2 buttons here applies everywhere
+    // with zero per-type special-casing (same "one shared mechanism" precedent Edit/Delete already
+    // established). Both open #structureAssignModal (public/js/setup/structure-assign.js), a fully
+    // generic component driven by data-type/data-id/data-label -- View pre-filters to the
+    // "employees in this Master" card only (same modal, different initial state).
     const getActionButtons = (row, type) => {
+        const label = getLocaleText(row, structureNameFieldByType(type)) || '';
         return `
             <div class="btn-group border rounded-3 bg-white">
                 <button class="btn btn-link text-warning btn-open-modal manage-${type}" data-action="edit" data-type="${type}" data-id="${row.id}" data-i18n-title="edit">
                     <i class="fa-solid fa-pen-to-square"></i>
                 </button>
+                <button class="btn btn-link py-1 text-primary border-start btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttrCp(label)}" data-i18n-title="assign_employees">
+                    <i class="fa-solid fa-user-plus"></i>
+                </button>
+                <button class="btn btn-link py-1 text-secondary border-start btn-structure-view-assigned" data-type="${type}" data-id="${row.id}" data-label="${escapeAttrCp(label)}" data-i18n-title="view_assigned_employees">
+                    <i class="fa-solid fa-users"></i>
+                </button>
                 <button class="btn btn-link py-1 text-danger border-start btn-delete-item delete-${type}" data-type="${type}" data-id="${row.id}" data-i18n-title="delete">
                     <i class="fa-solid fa-trash-can"></i>
-                </button> 
+                </button>
             </div>
         `;
     };

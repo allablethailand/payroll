@@ -437,6 +437,13 @@ function applyPolicyPayBasisFields(payBasis) {
 $(document).on('change', 'input[name="policyPayBasisRadio"]', function () {
     applyPolicyPayBasisFields($(this).val());
 });
+// 2026-08-31, direct mirror of applyPolicyPayBasisFields()/its own change handler immediately above.
+function applyPolicyInternPayBasisFields(payBasis) {
+    $('#policyInternPayBasisSubOptions').toggleClass('d-none', payBasis !== 'schedule_based');
+}
+$(document).on('change', 'input[name="policyInternPayBasisRadio"]', function () {
+    applyPolicyInternPayBasisFields($(this).val());
+});
 function loadPayrollPolicies() {
     $.get(`${BASE_URL}/api/payroll-policy.get`, function (res) {
         if (res && res.status && res.data) {
@@ -456,6 +463,15 @@ function loadPayrollPolicies() {
             $('#policyPayBasisDeductHolidays').prop('checked', !!d.pay_basis_deduct_holidays);
             $('#policyPayBasisDeductLeave').prop('checked', !!d.pay_basis_deduct_leave);
             applyPolicyPayBasisFields(payBasis);
+            // 2026-08-31, direct mirror of the pay_basis block immediately above.
+            const internPayBasis = d.intern_pay_basis || 'full_month';
+            $('input[name="policyInternPayBasisRadio"]').prop('checked', false);
+            $('input[name="policyInternPayBasisRadio"][value="' + internPayBasis + '"]').prop('checked', true);
+            $('#policyInternPayBasisDeductHolidays').prop('checked', !!d.intern_pay_basis_deduct_holidays);
+            $('#policyInternPayBasisDeductLeave').prop('checked', !!d.intern_pay_basis_deduct_leave);
+            applyPolicyInternPayBasisFields(internPayBasis);
+            // 2026-08-31, same-day follow-up (Origami `attribution` plan's item 3).
+            $('#policySupplementalFlatTaxRate').val(d.supplemental_flat_tax_rate_percent !== null && d.supplemental_flat_tax_rate_percent !== undefined ? d.supplemental_flat_tax_rate_percent : '');
         }
     });
 }
@@ -467,6 +483,7 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
     const probationDaysRaw = $('#policyProbationPeriodDays').val();
     const probationRatioRaw = $('#policyProbationBaseSalaryRatio').val();
     const internRatioRaw = $('#policyInternBaseSalaryRatio').val();
+    const flatTaxRateRaw = $('#policySupplementalFlatTaxRate').val();
     $btn.prop('disabled', true);
     $.ajax({
         url: `${BASE_URL}/api/payroll-policy.save`,
@@ -485,6 +502,12 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
             pay_basis: $('input[name="policyPayBasisRadio"]:checked').val() || 'full_month',
             pay_basis_deduct_holidays: $('#policyPayBasisDeductHolidays').is(':checked'),
             pay_basis_deduct_leave: $('#policyPayBasisDeductLeave').is(':checked'),
+            // 2026-08-31, direct mirror of the pay_basis fields immediately above.
+            intern_pay_basis: $('input[name="policyInternPayBasisRadio"]:checked').val() || 'full_month',
+            intern_pay_basis_deduct_holidays: $('#policyInternPayBasisDeductHolidays').is(':checked'),
+            intern_pay_basis_deduct_leave: $('#policyInternPayBasisDeductLeave').is(':checked'),
+            // 2026-08-31, direct mirror of the fields above (Origami `attribution` plan's item 3).
+            supplemental_flat_tax_rate_percent: flatTaxRateRaw === '' ? null : flatTaxRateRaw,
         }),
         success: function (res) {
             $btn.prop('disabled', false);

@@ -98,6 +98,59 @@ try {
     $runRow = current(array_filter($reloaded, fn($r) => $r['document_type_code'] === 'PAYROLL_RUN'));
     check('PAYROLL_RUN untouched by the PAYSLIP save', $runRow['prefix_format'], 'PR-{YYYY}-');
 
+    // ---------- generateNext() (2026-09-02, explicit request: "ในตารางให้แสดง Code ของรอบด้วยครับ") ----------
+    // First real consumer of prefix_format/digit_count/current_number/reset_cycle -- was flagged in
+    // this model's own docblock since 2026-08-23 as never wired to anything.
+    echo "=== generateNext(): sequential numbering + prefix placeholder substitution ===\n";
+    $model->save($compId, 'PAYROLL_RUN', ['prefix_format' => 'PR-{YYYY}-', 'digit_count' => 3, 'current_number' => 0, 'reset_cycle' => 'never'], $userId);
+    $expectedPrefix = 'PR-' . date('Y') . '-';
+    $code1 = $model->generateNext($compId, 'PAYROLL_RUN');
+    check('first code is 001', $code1, $expectedPrefix . '001');
+    $code2 = $model->generateNext($compId, 'PAYROLL_RUN');
+    check('second code increments to 002', $code2, $expectedPrefix . '002');
+    $code3 = $model->generateNext($compId, 'PAYROLL_RUN');
+    check('third code increments to 003', $code3, $expectedPrefix . '003');
+    $afterGen = current(array_filter($model->list($compId), fn($r) => $r['document_type_code'] === 'PAYROLL_RUN'));
+    check('current_number persisted at 3 after 3 calls', (int)$afterGen['current_number'], 3);
+
+    echo "=== generateNext(): unknown document_type_code returns null, never throws ===\n";
+    check('unknown type returns null', $model->generateNext($compId, 'NOT_A_REAL_TYPE'), null);
+
+    echo "=== generateNext(): digit_count padding respected ===\n";
+    $model->save($compId, 'BANK_TRANSFER', ['prefix_format' => 'BT-{YYYYMMDD}-', 'digit_count' => 2, 'current_number' => 0, 'reset_cycle' => 'never'], $userId);
+    $btCode = $model->generateNext($compId, 'BANK_TRANSFER');
+    check('BT code padded to 2 digits', $btCode, 'BT-' . date('Ymd') . '-01');
+
+    echo "=== generateNext(): reset_cycle='yearly' resets to 1 when last_reset_key is a different year ===\n";
+    $model->save($compId, 'WHT_CERT', ['prefix_format' => 'WHT-{YYYY}-', 'digit_count' => 3, 'current_number' => 50, 'reset_cycle' => 'yearly'], $userId);
+    // Simulate "last generated in a prior year" directly -- generateNext() itself has no way to
+    // fast-forward the wall clock, so this is the only way to exercise the reset branch without
+    // waiting for an actual year boundary.
+    $pdo->prepare("UPDATE document_numbering_settings SET last_reset_key = '2020' WHERE comp_id = :c AND document_type_code = 'WHT_CERT'")->execute([':c' => $compId]);
+    $whtResetCode = $model->generateNext($compId, 'WHT_CERT');
+    check('yearly reset: counter resets to 001 despite current_number being 50', $whtResetCode, 'WHT-' . date('Y') . '-001');
+    $whtRow = current(array_filter($model->list($compId), fn($r) => $r['document_type_code'] === 'WHT_CERT'));
+    check('last_reset_key updated to the current year', $whtRow['last_reset_key'], date('Y'));
+    $whtNextCode = $model->generateNext($compId, 'WHT_CERT');
+    check('a 2nd call in the SAME year continues from 002, not resetting again', $whtNextCode, 'WHT-' . date('Y') . '-002');
+
+    echo "=== generateNext(): reset_cycle='monthly' uses YYYY-MM as its reset key ===\n";
+    $model->save($compId, 'PAYSLIP', ['prefix_format' => 'PS-{YYYY}{MM}-', 'digit_count' => 4, 'current_number' => 10, 'reset_cycle' => 'monthly'], $userId);
+    $pdo->prepare("UPDATE document_numbering_settings SET last_reset_key = '2020-01' WHERE comp_id = :c AND document_type_code = 'PAYSLIP'")->execute([':c' => $compId]);
+    $slipResetCode = $model->generateNext($compId, 'PAYSLIP');
+    check('monthly reset: counter resets to 0001', $slipResetCode, 'PS-' . date('Y') . date('m') . '-0001');
+    $slipRow = current(array_filter($model->list($compId), fn($r) => $r['document_type_code'] === 'PAYSLIP'));
+    check('last_reset_key updated to YYYY-MM', $slipRow['last_reset_key'], date('Y-m'));
+
+    echo "=== generateNext(): a fresh company gets auto-seeded (ensureSeeded()) so it never fails on a first call ===\n";
+    $freshCompCode = 'DOCNUM_' . uniqid();
+    $insComp = $pdo->prepare("INSERT INTO companies (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name, setup_status, origami_payroll_comp_code)
+        VALUES (:name, :name, 'TH', '1234567890123', 'Test Address', 'Tester', 'active', :comp_code)");
+    $insComp->execute([':name' => 'DocNum Test Co ' . uniqid(), ':comp_code' => $freshCompCode]);
+    $freshCompId = (int)$pdo->lastInsertId();
+    $freshCode = $model->generateNext($freshCompId, 'PAYROLL_RUN');
+    check('fresh, never-touched company still gets a real code on the first call', $freshCode, 'PR-' . date('Y') . '-001');
+
 } finally {
     $pdo->rollBack();
 }

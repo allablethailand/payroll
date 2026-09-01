@@ -508,9 +508,16 @@
                         <i class="fa-solid fa-people-group me-2"></i><span data-i18n="team">Team</span>
                     </button>
                 </li>
+                <!-- 2026-08-31, explicit request: "สิทธิ์การใช้งาน...อยากให้แยกออกมาเป็นอีก Menu ไปเลย" --
+                     the actual RBAC Permission Matrix moved out to its own standalone top-level
+                     page (setup/permissions). This pill KEPT its id="structure-tab-p6"/data-page="p6"
+                     unchanged (same "don't renumber, just relabel" precedent Team's own reorder
+                     already established) but now shows ONLY the Notification Preferences by Role
+                     section that happened to share the same tab/template before this split --
+                     unrelated to RBAC, a role-level notification default, not moved. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p6" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p6">
-                        <i class="fa-solid fa-shield-halved me-2"></i><span data-i18n="permissions">Permissions</span>
+                        <i class="fa-solid fa-bell me-2"></i><span data-i18n="notification_role_matrix_title">Notification Preferences by Role</span>
                     </button>
                 </li>
             </ul>
@@ -599,24 +606,18 @@
         </table>
     </div>
 </template>
-<template id="tmpl-permission-pane">
-    <div class="mt-5 mb-5">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-            <p class="text-muted small mb-0" data-i18n="permission_matrix_hint">Check the boxes to grant each role access. Roles are managed in the Role tab.</p>
-            <button type="button" class="btn btn-primary btn-sm" id="btnSavePermissionMatrix">
-                <i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span>
-            </button>
-        </div>
-        <div id="permissionMatrixContainer" class="table-responsive"></div>
-    </div>
+
+<!-- 2026-08-31: was tmpl-permission-pane -- the RBAC Permission Matrix section that used to sit
+     above the Notification Preferences section below moved out to its own standalone page
+     (app/views/setup/permissions.php), since it's an unrelated concern that only shared this tab
+     by convenience (see this pill's own comment above). Renamed for clarity now that this
+     template's only remaining content is notification defaults, not permissions. -->
+<template id="tmpl-notification-role-pane">
     <!-- 2026-08-29, explicit follow-up request: "ทำ Notification Settings...ผูกกับ user preference ใน
-         ระดับ role ได้ด้วยถ้าไม่ซับซ้อนเกินไป" -- same grid pattern/markup shape as the Permission
-         Matrix right above (notification-preferences-matrix.js is a direct structural clone of
-         permission-matrix.js), own section on the same tab since both are role-config concerns for
-         the same admin audience. A checked cell means that role receives this notification type BY
-         DEFAULT -- an individual's own personal Settings-modal preference, if they ever set one,
-         still wins (see NotificationModel::shouldNotify()'s own docblock). -->
-    <div class="mt-5 mb-5 border-top pt-4">
+         ระดับ role ได้ด้วยถ้าไม่ซับซ้อนเกินไป" -- a checked cell means that role receives this
+         notification type BY DEFAULT -- an individual's own personal Settings-modal preference, if
+         they ever set one, still wins (see NotificationModel::shouldNotify()'s own docblock). -->
+    <div class="mt-5 mb-5">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <div>
                 <h6 class="mb-1 text-secondary fw-bold"><i class="fa-solid fa-bell me-2 text-brand"></i><span data-i18n="notification_role_matrix_title">Notification Preferences by Role</span></h6>
@@ -648,6 +649,6 @@
      app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 
 <script src="<?=asset('public/js/setup/company-profile.js')?>"></script>
-<script src="<?=asset('public/js/setup/permission-matrix.js')?>"></script>
+<script src="<?=asset('public/js/setup/structure-assign.js')?>"></script>
 <script src="<?=asset('public/js/setup/notification-preferences-matrix.js')?>"></script>
 <script src="<?=asset('public/js/setup/org-structure-sync.js')?>"></script>

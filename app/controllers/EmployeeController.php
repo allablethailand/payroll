@@ -147,13 +147,35 @@ class EmployeeController extends Controller {
         ];
         $search = (string)($_POST['search']['value'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
-        $res = $this->model->recheckList((int)$compId, $start, $length, $filters, $search, (string)$lang);
+        $participantMode = ($_POST['view'] ?? '') === 'excluded' ? 'excluded' : 'participant';
+        $res = $this->model->recheckList((int)$compId, $start, $length, $filters, $search, (string)$lang, $participantMode);
         $this->json([
             "draw" => intval($_POST['draw'] ?? 1),
             "recordsTotal" => $res['total'],
             "recordsFiltered" => $res['filtered'],
             "data" => $res['data']
         ]);
+    }
+    /** 2026-08-31, explicit request -- Recheck tab's "Remove from Payroll"/"Add Back" row action.
+     *  Reads a plain JSON body ({id, is_payroll_participant}) same as save()'s own convention on
+     *  this controller. Gated by employee.manage (same permission save() itself requires) since this
+     *  changes a real payroll-eligibility flag, not just a display filter. */
+    public function setPayrollParticipant() {
+        if (!$this->requirePermission('employee.manage')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $employeeId = (int)($data['id'] ?? 0);
+        if ($employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid employee id.']);
+            return;
+        }
+        $participant = !empty($data['is_payroll_participant']);
+        $ok = $this->model->setPayrollParticipant($employeeId, (int)$compId, $participant);
+        $this->json(['status' => $ok]);
     }
     /** 2026-08-30 (Phase 3, T024) -- powers the Employee tab's own station-card pipeline counts.
      *  Same station filters (department/team/shift/branch/role/date range/is_payroll_participant)
@@ -222,6 +244,19 @@ class EmployeeController extends Controller {
         }
         $employee = $this->model->get((int)$compId, $employeeNo);
         if ($employee) {
+            // 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถ
+            // คำนวณเงินเดือน...ได้ตามสิทธิ์" -- masking ONLY happens here, at the response-shaping
+            // layer, never inside EmployeeModel::get() itself (that method's decryption/return
+            // value stays correct for every OTHER caller, e.g. payroll calculation, which never
+            // goes through this permission check at all -- see PermissionModel's own docblock).
+            // own_only scope: subject = the employee whose profile this IS (row itself), compared
+            // against the ACTING user's own id.
+            $visibility = $this->permissionModel->resolveSalaryVisibility(
+                $this->userId(), 'employee', $this->isAdmin(), (int)$compId, (int)($employee['id'] ?? 0)
+            );
+            if (!$visibility['full']) {
+                $employee['base_salary_amount'] = PermissionModel::MASK_VALUE;
+            }
             $this->json(['status' => true, 'data' => $employee]);
         } else {
             $this->json(['status' => false, 'message' => 'Employee not found.']);

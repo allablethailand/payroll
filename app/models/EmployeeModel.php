@@ -436,6 +436,13 @@ class EmployeeModel {
             'branch' => "b.{$branchCol}",
             'start_work_date' => 'e.employment_date',
             'status' => 'e.employee_status',
+            // 2026-08-31, explicit request: badge column for the List table's own "จ่ายเงินเดือน"
+            // filter -- raw here (0/1), same as 'status' above; both listColumnValues() and
+            // buildListWhere()'s column_filters loop special-case this key into human-readable
+            // "Yes"/"No" text for the Excel-style filter dropdown, same precedent as 'status'
+            // there (also not localized at this layer -- matches that existing precedent, not a
+            // new gap this change introduces).
+            'payroll_participant' => 'e.is_payroll_participant',
         ];
     }
 
@@ -518,7 +525,9 @@ class EmployeeModel {
             if (empty($values)) {
                 continue;
             }
-            $expr = $col === 'status' ? "IF(e.employee_status = 'active', 'Active', CONCAT(UCASE(LEFT(e.employee_status,1)), SUBSTRING(e.employee_status,2)))" : $exprMap[$col];
+            $expr = $col === 'status'
+                ? "IF(e.employee_status = 'active', 'Active', CONCAT(UCASE(LEFT(e.employee_status,1)), SUBSTRING(e.employee_status,2)))"
+                : ($col === 'payroll_participant' ? "IF(e.is_payroll_participant = 1, 'Yes', 'No')" : $exprMap[$col]);
             $placeholders = [];
             foreach ($values as $v) {
                 $paramIdx++;
@@ -587,6 +596,10 @@ class EmployeeModel {
         // by 1), and an Email column (orderable:false, e.personal_email -- already selected, just
         // not previously rendered) was inserted right after Phone (pushes role-onward down by 1
         // MORE, since it lands strictly before them in column order).
+        // 2026-08-31, explicit request: a new sortable "จ่ายเงินเดือน" badge column was inserted
+        // right after Status (index 16) and before the existing orderable:false Completeness column
+        // -- since it's the LAST sortable entry in the run and everything after it in this map was
+        // already non-sortable/absent, no OTHER index in this map needed to shift.
         $sortColumns = [
             3 => '`e`.`employee_no`',
             5 => '`e`.`name_th`',
@@ -599,6 +612,7 @@ class EmployeeModel {
             13 => "`b`.`" . $this->langNameCol($lang, 'branch_name') . "`",
             14 => '`e`.`employment_date`',
             15 => '`e`.`employee_status`',
+            16 => '`e`.`is_payroll_participant`',
         ];
         $sortColumn = $sortColumns[$colIndex] ?? '`e`.`id`';
         $orderDir = strtoupper($orderDir) === 'DESC' ? 'DESC' : 'ASC';
@@ -624,6 +638,12 @@ class EmployeeModel {
         // tax_id_no/passport_no/bank_account_no/sso_no), never the plaintext, so no per-row
         // decryption cost is paid just to render this list (see completenessColumns()'s docblock).
         $completenessSelect = implode(', ', array_map(fn($c) => "e.`{$c}`", $this->completenessColumns()));
+        // 2026-08-31, explicit request: new "จ่ายเงินเดือน" badge column, aliased below to a
+        // DIFFERENT key than the bare `is_payroll_participant` completeness column already selected
+        // via $completenessSelect -- that one gets stripped from every row before it reaches the
+        // frontend (see the unset() loop right after this query, which drops every
+        // completenessColumns() key on purpose, is_payroll_participant included), so reusing the
+        // same key here would just get silently deleted again the same way.
         $dataSql = "SELECT e.id, e.employee_no, e.data_source, e.origami_ref_id, e.profile_photo_path,
                         {$exprMap['name']} AS name,
                         e.personal_email AS email,
@@ -636,6 +656,7 @@ class EmployeeModel {
                         COALESCE({$exprMap['branch']}, '') AS branch,
                         {$exprMap['start_work_date']} AS start_work_date,
                         {$exprMap['status']} AS status,
+                        e.is_payroll_participant AS payroll_participant_flag,
                         {$completenessSelect}
                     " . self::LIST_JOINS . "
                     WHERE {$whereSql}
@@ -731,14 +752,22 @@ class EmployeeModel {
      * main Employee tab. A staff-only employee (is_payroll_participant=0, see T020/T021) is excluded
      * entirely -- nothing here is relevant to them, same reasoning as their exclusion from every
      * payroll report (AnnualIncomeSummaryModel, PayrollReportDataModel::getResignedEmployeesInMonth()).
+     *
+     * 2026-08-31, explicit request: add a "Remove from Payroll"/"Add Back" action pair to this tab --
+     * $participantMode ('participant' default, or 'excluded') lets the SAME query/columns/readiness
+     * logic serve a second, opt-in view of the employees this tab normally hides (is_payroll_
+     * participant=0) so an admin can find and re-include them, instead of only being able to turn the
+     * flag off from Employee Detail's own Salary tab with no way back from here. See
+     * setPayrollParticipant() below for the actual toggle.
      */
-    public function recheckList(int $compId, int $start, int $length, array $filters, string $search, string $lang = 'th'): array {
+    public function recheckList(int $compId, int $start, int $length, array $filters, string $search, string $lang = 'th', string $participantMode = 'participant'): array {
         $isThCompany = $this->getCompanyCountry($compId) === 'TH';
         $exprMap = $this->listColumnExprMap($lang);
         // Always forces staff-only (is_payroll_participant=0) employees out, on top of whatever
         // station filters the caller passed in -- same "total = station filters, no search yet"
-        // vs. "filtered = station filters + search" split list() itself uses.
-        $filters['is_payroll_participant'] = '1';
+        // vs. "filtered = station filters + search" split list() itself uses. $participantMode='excluded'
+        // flips this to show ONLY the staff-only employees instead (the "Not in Payroll" view).
+        $filters['is_payroll_participant'] = $participantMode === 'excluded' ? '0' : '1';
         [$baseWhere, $baseParams] = $this->buildListWhere($compId, $filters, '', $lang);
         $totalStmt = $this->db->prepare("SELECT COUNT(*) " . self::LIST_JOINS . " WHERE {$baseWhere}");
         $totalStmt->execute($baseParams);
@@ -816,6 +845,20 @@ class EmployeeModel {
         }
 
         return ['total' => $recordsTotal, 'filtered' => $recordsFiltered, 'data' => $data];
+    }
+
+    /**
+     * 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่ไม่ทำ
+     * จ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- a deliberately minimal, single-purpose UPDATE rather than
+     * routing through the generic save() pipeline: save() computes is_payroll_ready/completeness and
+     * a dozen other derived fields from a full form payload, none of which are relevant to this one
+     * explicit toggle action, and going through it would risk save()'s own "absent key keeps existing
+     * value" guard (see save()'s own 2026-08-30 comment) silently no-op'ing if this caller ever forgot
+     * to also resend every other column. This method only ever touches this one column.
+     */
+    public function setPayrollParticipant(int $employeeId, int $compId, bool $participant): bool {
+        $stmt = $this->db->prepare("UPDATE `employees` SET is_payroll_participant = :val WHERE id = :id AND comp_id = :comp_id");
+        return $stmt->execute([':val' => $participant ? 1 : 0, ':id' => $employeeId, ':comp_id' => $compId]);
     }
 
     /* ==================== STANDING ITEMS SUMMARY TAB (explicit request: "สรุปรวมรายได้รายหักที่
@@ -1016,7 +1059,7 @@ class EmployeeModel {
         }
         $expr = $column === 'status'
             ? "IF(e.employee_status = 'active', 'Active', CONCAT(UCASE(LEFT(e.employee_status,1)), SUBSTRING(e.employee_status,2)))"
-            : $exprMap[$column];
+            : ($column === 'payroll_participant' ? "IF(e.is_payroll_participant = 1, 'Yes', 'No')" : $exprMap[$column]);
         [$where, $params] = $this->buildListWhere($compId, $filters, $search, $lang, $column);
         $sql = "SELECT DISTINCT {$expr} AS value " . self::LIST_JOINS . "
                 WHERE {$where} AND {$expr} IS NOT NULL AND {$expr} != ''
@@ -1337,7 +1380,41 @@ class EmployeeModel {
         // fine on ciphertext) -- captured here, BEFORE encryption, and substituted back in just for
         // that one readiness check below.
         $plainBaseSalaryForReadyCheck = null;
+        // 2026-08-31, explicit request ("สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX"): a user with
+        // masked salary visibility never sees the real base_salary_amount on their own Salary tab
+        // (EmployeeController::get() replaces it with PermissionModel::MASK_VALUE = 'XXXX' before
+        // it ever reaches the browser) -- but collectEmployeeFormData() in detail.js always resends
+        // the WHOLE form on every save, regardless of which tab was actually edited. Without this
+        // guard, saving ANY tab while masked would literally encrypt the string "XXXX" over the
+        // employee's real salary, permanently destroying it. Detected here (not trusted from the
+        // frontend alone, in case of a direct/forged API call) and treated as "leave the existing
+        // encrypted value untouched" -- same "fetch existing, fall back" pattern
+        // is_payroll_participant/ot_rate_source above already use for their own omitted-key case.
+        // Known, accepted limitation: key_version is one column per ROW (shared by every encrypted
+        // field), so if this save also genuinely re-encrypts another field (e.g. id_card_no) the
+        // row's key_version advances while this preserved ciphertext stays at whatever version it
+        // was already at -- a real mismatch only if this app ever actually rotates keys, which it
+        // has never done in practice (currentKeyVersion() has only ever returned one constant).
+        $preserveExistingBaseSalary = false;
+        $existingEncryptedBaseSalary = null;
+        if ($id !== null && ($data['base_salary_amount'] ?? null) === 'XXXX') {
+            $stmtExistingSalary = $this->db->prepare("SELECT base_salary_amount, key_version FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+            $stmtExistingSalary->execute([':id' => $id, ':comp_id' => $compId]);
+            $existingSalaryRow = $stmtExistingSalary->fetch(PDO::FETCH_ASSOC);
+            if ($existingSalaryRow !== false) {
+                $preserveExistingBaseSalary = true;
+                $existingEncryptedBaseSalary = $existingSalaryRow['base_salary_amount'];
+                // Decrypted server-side ONLY for the is_payroll_ready threshold check further down
+                // -- never included in save()'s own return value (status/message only, no employee
+                // data echoed back), so this never re-exposes the real number to a masked caller.
+                $plainBaseSalaryForReadyCheck = self::decryptSalaryValue($existingEncryptedBaseSalary, isset($existingSalaryRow['key_version']) ? (int)$existingSalaryRow['key_version'] : null);
+            }
+        }
         foreach ($this->allColumns() as $col) {
+            if ($col === 'base_salary_amount' && $preserveExistingBaseSalary) {
+                $values[$col] = $existingEncryptedBaseSalary;
+                continue;
+            }
             if (in_array($col, $booleans, true)) {
                 // 2026-08-30 (T020): every OTHER boolean here safely defaults to 0/false when the
                 // payload just doesn't mention it (not-enrolled/not-eligible/no-spouse are all

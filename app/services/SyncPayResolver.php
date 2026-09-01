@@ -651,6 +651,15 @@ class SyncPayResolver {
                     'amount' => $amount,
                     'note' => $first['remark'] ?? null,
                     'is_custom' => false,
+                    // 2026-08-31, same-day follow-up (Origami's `scheduled_item_occurrences[]`
+                    // proposal) -- the RAW item_code Origami sent, preserved alongside the resolved
+                    // 'code' above. Usually identical here (pedTypeByItemCode() matches BY item_code,
+                    // so $catalog['code'] already equals $itemCode modulo casing) but kept as its own
+                    // explicit field rather than relied on as an invariant, since the CUSTOM: fallback
+                    // branch just below genuinely does differ (see that line's own comment) --
+                    // PayrollRunModel::syncDeductionLinesForEmployee() needs this to correlate a
+                    // resolved breakdown line back to occurrence rows keyed by Origami's own raw code.
+                    'sync_item_code' => $itemCode,
                 ];
                 if ($catalog['item_type'] === 'earning') {
                     $earning[] = $line;
@@ -672,6 +681,10 @@ class SyncPayResolver {
                 'amount' => $amount,
                 'note' => $first['remark'] ?? null,
                 'is_custom' => true,
+                // See the catalog-match branch's own comment just above -- HERE is where 'code' and
+                // the raw item_code genuinely diverge ('CUSTOM:{name}' vs the real item_code), which
+                // is exactly why this field exists as its own thing rather than being inferred.
+                'sync_item_code' => $itemCode,
             ];
             if ($payloadIsDeduction) {
                 $deduction[] = $line;

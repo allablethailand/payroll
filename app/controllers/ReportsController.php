@@ -2,14 +2,21 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../services/reports/ReportRegistry.php';
 require_once __DIR__ . '/../services/reports/LocalizedException.php';
+require_once __DIR__ . '/../services/reports/ExcelRendererTrait.php';
 require_once __DIR__ . '/../models/ReportExportLogModel.php';
 require_once __DIR__ . '/../models/PayrollRunModel.php';
 require_once __DIR__ . '/../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../models/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../models/PermissionModel.php';
 
 class ReportsController extends Controller {
+    use ExcelRendererTrait;
+
     private $logModel;
     private PayrollRunModel $payrollRunModel;
     private PayrollReportDataModel $reportDataModel;
+    private PermissionModel $permissionModel;
+    private ?bool $companySsoActiveCache = null;
 
     /**
      * 2026-08-27: the "Per-Cycle Reports" matrix table lists one row per run in any of these
@@ -26,6 +33,7 @@ class ReportsController extends Controller {
         $this->logModel = new ReportExportLogModel();
         $this->payrollRunModel = new PayrollRunModel();
         $this->reportDataModel = new PayrollReportDataModel();
+        $this->permissionModel = new PermissionModel();
     }
 
     private function userId(): int {
@@ -49,20 +57,57 @@ class ReportsController extends Controller {
         $this->view('reports/index');
     }
 
+    /**
+     * 2026-08-31, explicit request: "รายการการนำส่งประกันสังคม...ต้องให้ยึดตามสิทธิ์ว่า ถ้าบริษัทไม่หัก
+     * ประกันสังคม ก็จะไม่เห็น Report ส่วนนี้" -- a COMPANY-WIDE gate, distinct from the existing
+     * per-RUN `any_sso` applicability check (calcApplicabilitySummary()) already used below --
+     * `any_sso` can be false just because one particular run happened to have zero SSO-enrolled
+     * employees, while this checks whether the company has TH_SSO turned on at all
+     * (company_statutory_settings' own effective_status, same fallback-to-default logic
+     * CompanyStatutorySettingModel::list() already implements -- not reimplemented here). A non-TH
+     * company (no TH_SSO row in its own country's statutory_items at all) is treated the same as
+     * "inactive" -- never shows SSO reports. Cached per-request since this is checked from multiple
+     * methods below (list()/runReportsSummary()/runCycleReportsSummary()) that can all be hit in
+     * the same page load.
+     */
+    private function companySsoActive(int $compId): bool {
+        if ($this->companySsoActiveCache !== null) {
+            return $this->companySsoActiveCache;
+        }
+        $active = false;
+        foreach ((new CompanyStatutorySettingModel())->list($compId) as $item) {
+            if ($item['code'] === 'TH_SSO') {
+                $active = $item['effective_status'] === 'active';
+                break;
+            }
+        }
+        $this->companySsoActiveCache = $active;
+        return $active;
+    }
+
+    // 2026-08-31: SSO report codes gated company-wide, see companySsoActive()'s own docblock --
+    // this is the single list() every page's report list (incl. the Annual Reports tab's own
+    // client-side REPORT_META filtering) ultimately derives from.
+    private const SSO_REPORT_CODES = ['TH_SSO110', 'TH_SSO609'];
     public function list() {
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
             return;
         }
-        $data = array_map(function ($report) {
-            return [
+        $ssoActive = $this->companySsoActive((int)$compId);
+        $data = [];
+        foreach (ReportRegistry::all() as $report) {
+            if (!$ssoActive && in_array($report->code(), self::SSO_REPORT_CODES, true)) {
+                continue;
+            }
+            $data[] = [
                 'code' => $report->code(),
                 'report_type' => $report->reportType(),
                 'label' => $report->label(),
                 'supported_formats' => $report->supportedFormats(),
             ];
-        }, ReportRegistry::all());
+        }
         $this->json(['status' => true, 'data' => $data]);
     }
 
@@ -87,6 +132,21 @@ class ReportsController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
             return;
         }
+        // 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถคำนวณ
+        // เงินเดือน...ได้ตามสิทธิ์" -- unlike Employee/Payroll Process, this gates the WHOLE download
+        // rather than masking individual figures: a generated PDF/Excel file is a static artifact,
+        // not a live response this app can selectively redact fields from after the fact. Every
+        // registered report is inherently a payroll/financial document (statutory/payment/internal
+        // -- there is no "money-free" report type in this app), so salary_amount.view_reports gates
+        // generate() uniformly. own_only/summary have no meaningful application to a whole-file
+        // download (no single "subject employee" the file is about, and no way to redact a PDF's
+        // own line items after PhpSpreadsheet/dompdf has already rendered them) -- only a real
+        // 'full' grant (or admin) can generate/preview/download ANY report.
+        $reportVisibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'reports', $this->isAdmin(), (int)$compId);
+        if (!$reportVisibility['full']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to view salary amounts in reports.']);
+            return;
+        }
         $code = (string)($_GET['report_code'] ?? '');
         $format = (string)($_GET['format'] ?? '');
         $report = ReportRegistry::get($code);
@@ -106,7 +166,12 @@ class ReportsController extends Controller {
         // only consumer, see its own generate()) can pick th/en for the employee name field; any
         // report that doesn't read context['language'] simply ignores it, same as an unused
         // year/month/employee_id already does today.
-        foreach (['year', 'month', 'run_id', 'employee_id', 'language'] as $key) {
+        // 2026-08-31: 'state'/'date_from'/'date_to' whitelisted for PAYROLL_RUN_LIST_SUMMARY (the
+        // ONLY consumer today) -- mirrors the exact same filter shape the Process List page's own
+        // PayrollRunModel::list() already accepts, so the export reflects whatever the admin is
+        // currently looking at, same "unused key is simply ignored" tolerance as every other
+        // report not reading a given context key.
+        foreach (['year', 'month', 'run_id', 'employee_id', 'language', 'state', 'date_from', 'date_to'] as $key) {
             if (isset($_GET[$key]) && $_GET[$key] !== '') {
                 $context[$key] = $_GET[$key];
             }
@@ -181,6 +246,13 @@ class ReportsController extends Controller {
         ['code' => 'TH_SSO110', 'format' => 'pdf', 'requires' => 'sso'],
         ['code' => 'TH_PND1', 'format' => 'pdf', 'requires' => 'tax'],
         ['code' => 'BANK_TRANSFER_FILE', 'format' => 'csv', 'requires' => null],
+        // 2026-08-31, explicit request: "ในหน้า List และ Detail ของการทำรอบ อยากให้มีการ Export Excel ได้
+        // ไม่ว่าจะสถานะไหน...เป็นตารางเพื่อดึงแต่ละค่า รวมถึงยอดสรุป" -- PAYROLL_REGISTER already exists
+        // (internal report, no assertRunStateOrThrow() call at all -- allowed on ANY state including
+        // draft, exactly what "ไม่ว่าจะสถานะไหน" asks for) and already produces a full itemized
+        // per-employee breakdown; just needed surfacing here so it's directly downloadable from the
+        // Detail page's own Reports tab, not only reachable via the separate Reports page.
+        ['code' => 'PAYROLL_REGISTER', 'format' => 'excel', 'requires' => null],
     ];
     public function runReportsSummary() {
         if (!$this->requireViewAccess()) return;
@@ -193,9 +265,12 @@ class ReportsController extends Controller {
         $applicability = $this->payrollRunModel->calcApplicabilitySummary($runId, (int)$compId);
         $downloadSummary = $this->logModel->summaryForRun((int)$compId, $runId);
         $rows = [];
+        $ssoActive = $this->companySsoActive((int)$compId);
         foreach (self::RUN_REPORT_SHORTCUTS as $shortcut) {
             if ($shortcut['requires'] === 'tax' && !$applicability['any_tax']) continue;
-            if ($shortcut['requires'] === 'sso' && !$applicability['any_sso']) continue;
+            // 2026-08-31: company-wide gate (companySsoActive()) alongside the existing per-run
+            // `any_sso` -- either one being false hides the row.
+            if ($shortcut['requires'] === 'sso' && (!$applicability['any_sso'] || !$ssoActive)) continue;
             $report = ReportRegistry::get($shortcut['code']);
             if (!$report) continue;
             $summary = $downloadSummary[$shortcut['code']] ?? ['download_count' => 0, 'last_downloaded_at' => null];
@@ -206,6 +281,11 @@ class ReportsController extends Controller {
                 'label' => $report->label(),
                 'download_count' => $summary['download_count'],
                 'last_downloaded_at' => $summary['last_downloaded_at'],
+                // 2026-08-31: lets the frontend gate readiness PER ROW instead of one blanket
+                // approved/paid/locked check for the whole table -- PAYROLL_REGISTER (internal,
+                // no assertRunStateOrThrow() call) is downloadable on ANY state including draft,
+                // unlike the statutory/payment shortcuts above it in RUN_REPORT_SHORTCUTS.
+                'report_type' => $report->reportType(),
             ];
         }
         $this->json(['status' => true, 'data' => $rows]);
@@ -234,9 +314,12 @@ class ReportsController extends Controller {
         $applicability = $this->payrollRunModel->calcApplicabilitySummary($runId, (int)$compId);
         $downloadSummary = $this->logModel->summaryForRun((int)$compId, $runId);
         $rows = [];
+        $ssoActive = $this->companySsoActive((int)$compId);
         foreach (self::CYCLE_REPORT_CODES as $code) {
             if ($code === 'TH_PND1' && !$applicability['any_tax']) continue;
-            if ($code === 'TH_SSO110' && !$applicability['any_sso']) continue;
+            // 2026-08-31: company-wide gate (companySsoActive()) alongside the existing per-run
+            // `any_sso` -- either one being false hides the row.
+            if ($code === 'TH_SSO110' && (!$applicability['any_sso'] || !$ssoActive)) continue;
             $report = ReportRegistry::get($code);
             if (!$report) continue;
             $formats = $report->supportedFormats();
@@ -355,5 +438,124 @@ class ReportsController extends Controller {
             'date_to' => (string)($_GET['date_to'] ?? ''),
         ];
         $this->json(['status' => true, 'data' => $this->logModel->list((int)$compId, $filters)]);
+    }
+
+    /* ==================== Payroll Run Audit (2026-08-31, item 10, "Design ให้หน่อยครับ No Idea")
+       ====================
+       A drill-down diff report over payroll_run_line_override_history (see PayrollRunModel's own
+       runAuditList()/lineOverrideAuditDiff()) -- interactive list+detail page, not a
+       generate-and-download document, so it's a plain page action + JSON endpoints here rather than
+       a ReportGeneratorInterface/ReportRegistry entry (same "interactive page" precedent
+       AnnualIncomeSummaryController already established). Reuses requireViewAccess() (same gate
+       every other report in this controller already uses) rather than inventing a new permission
+       key nothing in this batch's request asked for. */
+
+    public function runAudit() {
+        if (!$this->payrollRunModel->canView($this->userId(), $this->isAdmin())) {
+            $this->view('permission');
+            return;
+        }
+        $this->view('reports/run-audit');
+    }
+
+    public function runAuditList() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => []]);
+            return;
+        }
+        $dateFrom = (string)($_GET['date_from'] ?? '');
+        $dateTo = (string)($_GET['date_to'] ?? '');
+        $this->json(['status' => true, 'data' => $this->payrollRunModel->runAuditList((int)$compId, $dateFrom ?: null, $dateTo ?: null)]);
+    }
+
+    /**
+     * 2026-08-31: masks every itemized old_value/new_value/original_value/current_value with
+     * PermissionModel::MASK_VALUE when the caller doesn't have FULL salary_amount.view_payroll_process
+     * visibility -- this report is entirely itemized payroll figures, so anything short of 'full'
+     * (masked outright, or 'summary' detail_level which only ever means totals/net figures are
+     * visible, never a line-by-line breakdown) must not see the real numbers here. Same
+     * response-layer-only masking convention as PayrollController::maskRunMonetaryFields() -- never
+     * touches the underlying model/calculation.
+     */
+    private function maskAuditDiffLines(array $lines, int $compId): array {
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
+        if ($visibility['full']) {
+            return $lines;
+        }
+        foreach ($lines as &$line) {
+            $line['original_value'] = $line['original_value'] !== null ? PermissionModel::MASK_VALUE : null;
+            $line['current_value'] = $line['current_value'] !== null ? PermissionModel::MASK_VALUE : null;
+            foreach ($line['edits'] as &$edit) {
+                $edit['old_value'] = $edit['old_value'] !== null ? PermissionModel::MASK_VALUE : null;
+                $edit['new_value'] = $edit['new_value'] !== null ? PermissionModel::MASK_VALUE : null;
+            }
+            unset($edit);
+        }
+        unset($line);
+        return $lines;
+    }
+
+    public function runAuditDiff() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = isset($_GET['run_id']) ? (int)$_GET['run_id'] : 0;
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing run_id.']);
+            return;
+        }
+        $result = $this->payrollRunModel->lineOverrideAuditDiff($runId, (int)$compId);
+        $result['lines'] = $this->maskAuditDiffLines($result['lines'], (int)$compId);
+        $this->json(['status' => true, 'data' => $result]);
+    }
+
+    /** Excel export of the currently-viewed diff table (one row per employee/item, one column per edit). */
+    public function runAuditExport() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = isset($_GET['run_id']) ? (int)$_GET['run_id'] : 0;
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing run_id.']);
+            return;
+        }
+        $run = $this->payrollRunModel->get($runId, (int)$compId);
+        if (!$run) {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+            return;
+        }
+        $result = $this->payrollRunModel->lineOverrideAuditDiff($runId, (int)$compId);
+        $lines = $this->maskAuditDiffLines($result['lines'], (int)$compId);
+
+        $maxEdits = 0;
+        foreach ($lines as $l) {
+            $maxEdits = max($maxEdits, count($l['edits']));
+        }
+        $headers = ['Employee No', 'Employee Name', 'Line Type', 'Item Code', 'Original'];
+        for ($i = 1; $i <= $maxEdits; $i++) {
+            $headers[] = "Edit {$i}";
+        }
+        $headers[] = 'Current';
+
+        $rows = [];
+        foreach ($lines as $l) {
+            $row = [
+                $l['employee_no'], $l['employee_name_th'], $l['line_type'], $l['item_code'],
+                $l['original_value'],
+            ];
+            for ($i = 0; $i < $maxEdits; $i++) {
+                $edit = $l['edits'][$i] ?? null;
+                $row[] = $edit ? ($edit['new_value'] . ' (' . ($edit['changed_by_name_th'] ?? '') . ', ' . $edit['changed_at'] . ')') : '';
+            }
+            $row[] = $l['current_value'];
+            $rows[] = $row;
+        }
+
+        $bytes = $this->renderExcelFromRows($headers, $rows, 'Run Audit');
+        $filename = 'payroll_run_audit_' . $runId . '.xlsx';
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . strlen($bytes));
+        echo $bytes;
     }
 }

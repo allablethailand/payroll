@@ -2541,6 +2541,15 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     font-weight: 700;
     color: #212529;
 }
+/* 2026-09-01: compact 2nd line inside a stat-card (e.g. Process Detail's "Employees" card, a
+   Bank/Cash breakdown right under the total count) -- smaller/muted than .stat-card-value on
+   purpose, a supporting detail rather than the card's own headline number. Empty when unset (no
+   fixed height reserved) so cards that never populate it don't show a blank gap. */
+.stat-card-sub {
+    font-size: 0.72rem;
+    color: #8a92a0;
+    margin-top: 2px;
+}
 .stat-card-info { border-left-color: #0dcaf0; }
 .stat-card-info .stat-card-icon { background: linear-gradient(135deg, #e0f7fb, #b6ecf6); color: #087990; }
 .stat-card-success { border-left-color: #198754; }
@@ -2550,6 +2559,13 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .stat-card-primary { border-left-color: #FF9900; }
 .stat-card-primary .stat-card-icon { background: linear-gradient(135deg, #ffe9c2, #ffd591); color: #b45f00; }
 .stat-card-primary .stat-card-value { color: #b45f00; }
+/* 2026-08-31: 2 new tones for the Process Detail page's payment-method summary cards (Bank
+   Transfer/Cash) -- distinct from the 4 tones above (already used by Employees/Gross/Deduction/Net
+   right above this same grid) so all 6 cards read as visually separate at a glance. */
+.stat-card-purple { border-left-color: #6f42c1; }
+.stat-card-purple .stat-card-icon { background: linear-gradient(135deg, #f1eaf9, #ded0f0); color: #6f42c1; }
+.stat-card-warning { border-left-color: #ffc107; }
+.stat-card-warning .stat-card-icon { background: linear-gradient(135deg, #fff8e1, #ffecb3); color: #a1750a; }
 
 /* ==========================================================================
    .card-surface -- used as the page-section card wrapper across this app (Payroll Process,
@@ -5937,13 +5953,12 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 
 /* Payroll Run Detail: Employee Breakdown table (2026-08-29, explicit follow-up request:
    "รายการให้แสดงให้ต่างกับรายการที่ยังไม่ Verify หรือ Lock ตรงเงินได้เงินหักสุทธิ์ ปรับการแสดงผลให้ชัดขึ้น") --
-   a verified and/or locked row gets its own background tint (set via createdRow in
-   public/js/payroll/detail.js) so it reads as visually distinct from a plain, not-yet-actioned row
-   at a glance; a row that is BOTH verified and locked gets locked's tint (locked is the "further
-   along" / more final state of the two, so it should visually win when both apply) plus a solid
-   left border in verified's own green as a secondary cue that both are true. .rd-net-pill makes the
-   Net Pay column read clearly as the one figure people scan for first, distinct from the plain-text
-   Base Salary/Gross/Deduction cells beside it. */
+   a verified row gets its own background tint (set via createdRow in public/js/payroll/detail.js)
+   so it reads as visually distinct from a plain, not-yet-actioned row at a glance. Lock was retired
+   entirely 2026-08-31 (Verify itself now carries the freeze-from-recalculation behavior Lock used
+   to have) -- its own .rd-row-locked tint/border rules were removed along with it. .rd-net-pill
+   makes the Net Pay column read clearly as the one figure people scan for first, distinct from the
+   plain-text Base Salary/Gross/Deduction cells beside it. */
 /* --bs-table-hover-bg is overridden per-row too (not just background-color) -- Bootstrap 5's
    .table-hover paints the hover tint on the <td>/<th> cells themselves (via that CSS variable),
    which sits on top of a plain background-color set on the <tr>, so without this override the
@@ -5951,13 +5966,6 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 #tb_run_detail tbody tr.rd-row-verified {
     --bs-table-hover-bg: #e3faea;
     background-color: #f0fdf4;
-}
-#tb_run_detail tbody tr.rd-row-locked {
-    --bs-table-hover-bg: #eef2f7;
-    background-color: #f8fafc;
-    border-left: 3px solid #64748b;
-}
-#tb_run_detail tbody tr.rd-row-verified.rd-row-locked {
     border-left: 3px solid #16a34a;
 }
 .rd-net-pill {
@@ -6019,4 +6027,156 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 #rc_mobile_no_wrap .iti {
     display: block;
     width: 100%;
+}
+/* 2026-09-02, explicit request: "ตรง Open a new round กับ Reference an existing round อยากให้ Design
+   ให้สวยๆ" -- shared by #payrollRunModal's own runMergeChoice radio (Create/Pull form) and
+   #editRunModal's own editRunMergeChoice equivalent (Edit form) -- 2 selectable cards instead of
+   plain inline radio buttons, same hover/active brand-orange convention as .ect-preset-card
+   (border rgba(255,153,0,.5) + lift on hover, solid #FF9900 + glow ring when active). Toggled via
+   .active on the <label> itself (setMergeChoiceMode()/its Edit-form mirror in detail.js), the same
+   JS that already gates the target picker's own visibility -- one source of truth, not a separate
+   CSS :checked-sibling selector duplicating the same logic. */
+.run-choice-toggle {
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+.run-choice-card {
+    flex: 1 1 200px;
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    border: 1.5px solid #eef0f2;
+    border-radius: 10px;
+    padding: .65rem .9rem;
+    cursor: pointer;
+    background: #fff;
+    margin-bottom: 0;
+    transition: border-color .15s, box-shadow .15s, transform .15s, background .15s;
+}
+.run-choice-card:hover {
+    border-color: rgba(255, 153, 0, .5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(16, 24, 40, .08);
+}
+.run-choice-card.active {
+    border-color: #FF9900;
+    background: linear-gradient(135deg, rgba(255, 153, 0, .09), rgba(255, 153, 0, .02));
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, .2);
+}
+.run-choice-card input[type="radio"] {
+    margin: 0;
+    accent-color: #FF9900;
+    flex-shrink: 0;
+}
+.run-choice-card-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f3f5;
+    color: #868e96;
+    font-size: .9rem;
+    flex-shrink: 0;
+    transition: background .15s, color .15s;
+}
+.run-choice-card.active .run-choice-card-icon {
+    background: #FF9900;
+    color: #fff;
+}
+.run-choice-card-label {
+    font-size: .85rem;
+    font-weight: 600;
+    color: #495057;
+}
+.run-choice-card.active .run-choice-card-label {
+    color: #b45f00;
+}
+/* 2026-09-02, same-day follow-up: a card that needs a short explanatory sub-line under its label
+   (e.g. #run_offcycle_row/#edit_run_offcycle_row's own 2-option schedule-choice cards) wraps
+   label+sub in .run-choice-card-body instead of putting the label directly under the icon. */
+.run-choice-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    min-width: 0;
+}
+.run-choice-card-sub {
+    font-size: .72rem;
+    font-weight: 400;
+    color: #868e96;
+    line-height: 1.25;
+}
+.run-choice-card.active .run-choice-card-sub {
+    color: #b45f00;
+    opacity: .8;
+}
+/* 2026-09-02, 2nd same-day follow-up, explicit request: "พอเป็น Design แบบเดียวกันแล้วดูแปลกๆครับ" -- the
+   merge-choice radio ("เปิดรอบใหม่/อ้างอิงถึงรอบ") used the SAME big .run-choice-card treatment as the
+   schedule-choice radio right above it, reading as two equally-weighted top-level decisions stacked
+   back to back -- when in reality the merge choice only ever means anything AFTER "off-schedule" is
+   picked (see #run_offcycle_panel below), a SUB-decision, not a sibling one. Redesigned as a compact
+   segmented pill control instead, visually smaller/quieter than the schedule cards on purpose, and
+   now genuinely nested inside #run_offcycle_panel/#edit_run_offcycle_panel (only ever visible
+   together with the off-schedule option it belongs to -- see setOffCycleMode()'s own comment for the
+   real validation-gap fix that came with this, not just a visual one). */
+.run-subchoice-toggle {
+    display: inline-flex;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+}
+.run-subchoice-btn {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .4rem .85rem;
+    font-size: .8rem;
+    font-weight: 600;
+    color: #6c757d;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+    margin-bottom: 0;
+}
+.run-subchoice-btn + .run-subchoice-btn {
+    border-left: 1.5px solid #e5e7eb;
+}
+.run-subchoice-btn:hover {
+    background: #fbf6ee;
+    color: #b45f00;
+}
+.run-subchoice-btn.active {
+    background: #FF9900;
+    color: #fff;
+}
+.run-subchoice-btn input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+/* The off-schedule-only settings block (merge choice + Run Purpose/Compute Statutory/.../Use Flat
+   Tax Rate) -- a visually distinct panel (dashed brand-orange border, faint tint) so it reads as
+   "options that appeared because you picked off-schedule" rather than more plain form rows
+   indistinguishable from the always-shown fields around them. */
+.run-offcycle-panel {
+    border: 1.5px dashed rgba(255, 153, 0, .35);
+    border-radius: 12px;
+    background: rgba(255, 153, 0, .035);
+    padding: 1rem 1.1rem .1rem;
+    margin-bottom: 1rem;
+}
+.run-offcycle-panel-title {
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #b45f00;
+    margin-bottom: .85rem;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
 }

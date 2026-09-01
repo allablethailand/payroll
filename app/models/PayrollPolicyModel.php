@@ -44,6 +44,18 @@ class PayrollPolicyModel {
             $row['intern_defer_pvd'] = (bool)($row['intern_defer_pvd'] ?? false);
             $row['intern_defer_recurring_earning'] = (bool)($row['intern_defer_recurring_earning'] ?? false);
             $row['intern_base_salary_ratio'] = $row['intern_base_salary_ratio'] !== null ? (float)$row['intern_base_salary_ratio'] : null;
+            // 2026-08-31, explicit request: "เงื่อนไขการจ่ายเงินเด็กฝึกงาน...จ่ายเต็มเดือน หรือจ่ายแค่วันที่มา
+            // ทำจริง หักลา หักวันหยุดไหม เหมือน Probation" -- own separate mirror of pay_basis/
+            // pay_basis_deduct_holidays/pay_basis_deduct_leave immediately above, same shape.
+            $row['intern_pay_basis'] = $row['intern_pay_basis'] ?? 'full_month';
+            $row['intern_pay_basis_deduct_holidays'] = (bool)($row['intern_pay_basis_deduct_holidays'] ?? false);
+            $row['intern_pay_basis_deduct_leave'] = (bool)($row['intern_pay_basis_deduct_leave'] ?? false);
+            // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย"): a company-configured flat
+            // withholding rate for a supplemental sync run pulled with attribution_tax_treatment=
+            // 'separate' -- Origami's own PAYROLL_SYNC_API.md is explicit it has no tax-rate
+            // concept of its own, so this is entirely this app's own configurable policy, never a
+            // hardcoded "correct" rate -- see flatTaxRateSettings() below.
+            $row['supplemental_flat_tax_rate_percent'] = $row['supplemental_flat_tax_rate_percent'] !== null ? (float)$row['supplemental_flat_tax_rate_percent'] : null;
             return $row;
         }
         return [
@@ -52,7 +64,18 @@ class PayrollPolicyModel {
             'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null,
             'pay_basis' => 'full_month', 'pay_basis_deduct_holidays' => false, 'pay_basis_deduct_leave' => false,
             'intern_defer_pvd' => false, 'intern_defer_recurring_earning' => false, 'intern_base_salary_ratio' => null,
+            'intern_pay_basis' => 'full_month', 'intern_pay_basis_deduct_holidays' => false, 'intern_pay_basis_deduct_leave' => false,
+            'supplemental_flat_tax_rate_percent' => null,
         ];
+    }
+
+    /** Precomputed-flags-param convention, same as probationSettings()/payBasisSettings() above --
+     *  PayrollRunModel::recalculate() calls this ONCE per run. Returns null (never a default
+     *  fallback number) when the company hasn't configured a rate -- a run with
+     *  use_flat_tax_rate=1 but no rate configured falls back to the normal PIT calculation rather
+     *  than silently withholding 0% or guessing a rate, see recalculate()'s own use of this. */
+    public function flatTaxRatePercent(int $compId): ?float {
+        return $this->get($compId)['supplemental_flat_tax_rate_percent'];
     }
 
     /**
@@ -103,6 +126,19 @@ class PayrollPolicyModel {
         ];
     }
 
+    /** Direct mirror of payBasisSettings() above, own separate field set -- gated by
+     *  employees.employment_type === 'internship' instead of employment_status === 'probation' (see
+     *  PayrollRunModel::recalculate()'s own precedence comment for what happens when an employee is
+     *  somehow both). */
+    public function internPayBasisSettings(int $compId): array {
+        $row = $this->get($compId);
+        return [
+            'pay_basis' => $row['intern_pay_basis'],
+            'deduct_holidays' => $row['intern_pay_basis_deduct_holidays'],
+            'deduct_leave' => $row['intern_pay_basis_deduct_leave'],
+        ];
+    }
+
     public function save(int $compId, array $data, int $userId): array {
         $reopenWindowDays = null;
         if (isset($data['reopen_window_days']) && $data['reopen_window_days'] !== '' && $data['reopen_window_days'] !== null) {
@@ -147,15 +183,33 @@ class PayrollPolicyModel {
         $payBasisDeductHolidays = !empty($data['pay_basis_deduct_holidays']) ? 1 : 0;
         $payBasisDeductLeave = !empty($data['pay_basis_deduct_leave']) ? 1 : 0;
 
+        // 2026-08-31, explicit request: intern pay_basis -- direct mirror of pay_basis/
+        // pay_basis_deduct_holidays/pay_basis_deduct_leave immediately above, own separate columns.
+        $internPayBasis = in_array($data['intern_pay_basis'] ?? '', ['full_month', 'schedule_based', 'sync_actual_days'], true) ? $data['intern_pay_basis'] : 'full_month';
+        $internPayBasisDeductHolidays = !empty($data['intern_pay_basis_deduct_holidays']) ? 1 : 0;
+        $internPayBasisDeductLeave = !empty($data['intern_pay_basis_deduct_leave']) ? 1 : 0;
+
+        // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย"): flat withholding rate for a
+        // supplemental run's own 'separate' tax treatment -- see flatTaxRatePercent()'s own docblock.
+        $supplementalFlatTaxRatePercent = null;
+        if (isset($data['supplemental_flat_tax_rate_percent']) && $data['supplemental_flat_tax_rate_percent'] !== '' && $data['supplemental_flat_tax_rate_percent'] !== null) {
+            if (!is_numeric($data['supplemental_flat_tax_rate_percent']) || (float)$data['supplemental_flat_tax_rate_percent'] < 0 || (float)$data['supplemental_flat_tax_rate_percent'] > 100) {
+                return ['status' => false, 'message' => 'Supplemental flat tax rate must be a percentage between 0 and 100, or left blank.'];
+            }
+            $supplementalFlatTaxRatePercent = (float)$data['supplemental_flat_tax_rate_percent'];
+        }
+
         $stmt = $this->db->prepare(
-            "INSERT INTO `company_payroll_policies` (comp_id, reopen_window_days, probation_period_days, probation_defer_pvd, probation_defer_recurring_earning, probation_base_salary_ratio, intern_defer_pvd, intern_defer_recurring_earning, intern_base_salary_ratio, pay_basis, pay_basis_deduct_holidays, pay_basis_deduct_leave, updated_by)
-             VALUES (:comp_id, :reopen_window_days, :probation_period_days, :probation_defer_pvd, :probation_defer_recurring_earning, :probation_base_salary_ratio, :intern_defer_pvd, :intern_defer_recurring_earning, :intern_base_salary_ratio, :pay_basis, :pay_basis_deduct_holidays, :pay_basis_deduct_leave, :updated_by)
+            "INSERT INTO `company_payroll_policies` (comp_id, reopen_window_days, probation_period_days, probation_defer_pvd, probation_defer_recurring_earning, probation_base_salary_ratio, intern_defer_pvd, intern_defer_recurring_earning, intern_base_salary_ratio, pay_basis, pay_basis_deduct_holidays, pay_basis_deduct_leave, intern_pay_basis, intern_pay_basis_deduct_holidays, intern_pay_basis_deduct_leave, supplemental_flat_tax_rate_percent, updated_by)
+             VALUES (:comp_id, :reopen_window_days, :probation_period_days, :probation_defer_pvd, :probation_defer_recurring_earning, :probation_base_salary_ratio, :intern_defer_pvd, :intern_defer_recurring_earning, :intern_base_salary_ratio, :pay_basis, :pay_basis_deduct_holidays, :pay_basis_deduct_leave, :intern_pay_basis, :intern_pay_basis_deduct_holidays, :intern_pay_basis_deduct_leave, :supplemental_flat_tax_rate_percent, :updated_by)
              ON DUPLICATE KEY UPDATE reopen_window_days = VALUES(reopen_window_days), probation_period_days = VALUES(probation_period_days),
                 probation_defer_pvd = VALUES(probation_defer_pvd), probation_defer_recurring_earning = VALUES(probation_defer_recurring_earning),
                 probation_base_salary_ratio = VALUES(probation_base_salary_ratio),
                 intern_defer_pvd = VALUES(intern_defer_pvd), intern_defer_recurring_earning = VALUES(intern_defer_recurring_earning),
                 intern_base_salary_ratio = VALUES(intern_base_salary_ratio),
                 pay_basis = VALUES(pay_basis), pay_basis_deduct_holidays = VALUES(pay_basis_deduct_holidays), pay_basis_deduct_leave = VALUES(pay_basis_deduct_leave),
+                intern_pay_basis = VALUES(intern_pay_basis), intern_pay_basis_deduct_holidays = VALUES(intern_pay_basis_deduct_holidays), intern_pay_basis_deduct_leave = VALUES(intern_pay_basis_deduct_leave),
+                supplemental_flat_tax_rate_percent = VALUES(supplemental_flat_tax_rate_percent),
                 updated_by = VALUES(updated_by)"
         );
         $stmt->execute([
@@ -171,6 +225,10 @@ class PayrollPolicyModel {
             ':intern_defer_pvd' => $internDeferPvd,
             ':intern_defer_recurring_earning' => $internDeferRecurringEarning,
             ':intern_base_salary_ratio' => $internBaseSalaryRatio,
+            ':intern_pay_basis' => $internPayBasis,
+            ':intern_pay_basis_deduct_holidays' => $internPayBasisDeductHolidays,
+            ':intern_pay_basis_deduct_leave' => $internPayBasisDeductLeave,
+            ':supplemental_flat_tax_rate_percent' => $supplementalFlatTaxRatePercent,
             ':updated_by' => $userId,
         ]);
 

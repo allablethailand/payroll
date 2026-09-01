@@ -339,6 +339,76 @@ try {
             $listedRow = current(array_filter($listWithPayee, fn($r) => (int)$r['id'] === (int)$rValidPayee['id']));
             checkTrue('list() also carries payee_employee_id/payee_employee_no', $listedRow !== false && (int)($listedRow['payee_employee_id'] ?? 0) === $payeeEmployeeId && !empty($listedRow['payee_employee_no'] ?? null));
         }
+
+        // ---------- 2026-08-31, explicit request: "และถ้าหักไปจ่ายใคร หรือจ่ายเข้าบัญชีบริษัท ให้ติ๊กเพิ่มได้
+        // ว่า รวมไปใน cashlink หรือแยก cash link" -- payee_type widening + include_in_cash_summary. ----------
+        checkTrue('sanity: the backward-compat save above (no payee_type sent) still round-trips payee_type=employee', $eedModel->get((int)$rValidPayee['id'], $compId)['payee_type'] === 'employee');
+
+        $rInvalidPayeeType = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'ประเภทผู้รับผิด', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 100,
+            'effective_date' => '2026-01-01', 'payee_type' => 'bogus',
+        ], $userId);
+        checkFalse('save() rejects an invalid payee_type', $rInvalidPayeeType['status']);
+
+        $rEmployeeTypeNoId = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'ไม่ระบุผู้รับ', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 100,
+            'effective_date' => '2026-01-01', 'payee_type' => 'employee',
+        ], $userId);
+        checkFalse('save() rejects payee_type=employee with no payee_employee_id', $rEmployeeTypeNoId['status']);
+
+        $rCompanyPayee = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'หักเข้าบัญชีบริษัท', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 500,
+            'effective_date' => '2026-01-01', 'payee_type' => 'company',
+        ], $userId);
+        checkTrue('save() accepts payee_type=company with no payee_employee_id' . (empty($rCompanyPayee['status']) ? " ({$rCompanyPayee['message']})" : ''), $rCompanyPayee['status']);
+        if (!empty($rCompanyPayee['id'])) {
+            $gotCompanyPayee = $eedModel->get((int)$rCompanyPayee['id'], $compId);
+            check('payee_type=company persisted', $gotCompanyPayee['payee_type'], 'company');
+            check('payee_employee_id stays NULL for a company payee', $gotCompanyPayee['payee_employee_id'], null);
+            check('include_in_cash_summary defaults to 1 (included) when payee_type is set but the key is omitted', (int)$gotCompanyPayee['include_in_cash_summary'], 1);
+
+            $rCompanyPayeeExcluded = $eedModel->save($employeeId, $compId, array_merge([
+                'custom_item_name' => 'หักเข้าบัญชีบริษัท', 'custom_item_type' => 'deduction',
+                'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 500,
+                'effective_date' => '2026-01-01', 'payee_type' => 'company', 'include_in_cash_summary' => false,
+            ], ['id' => $rCompanyPayee['id']]), $userId);
+            checkTrue('save() accepts include_in_cash_summary=false explicitly', $rCompanyPayeeExcluded['status']);
+            $gotExcluded = $eedModel->get((int)$rCompanyPayee['id'], $compId);
+            check('include_in_cash_summary is 0 when explicitly unchecked', (int)$gotExcluded['include_in_cash_summary'], 0);
+        }
+
+        $rNoPayeeAtAll = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'หักธรรมดา ไม่มีผู้รับ', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 200,
+            'effective_date' => '2026-01-01',
+        ], $userId);
+        checkTrue('save() with no payee_type at all still succeeds' . (empty($rNoPayeeAtAll['status']) ? " ({$rNoPayeeAtAll['message']})" : ''), $rNoPayeeAtAll['status']);
+        if (!empty($rNoPayeeAtAll['id'])) {
+            $gotNoPayee = $eedModel->get((int)$rNoPayeeAtAll['id'], $compId);
+            check('payee_type stays NULL with no payee at all', $gotNoPayee['payee_type'], null);
+            check('include_in_cash_summary defaults to 1 even with no payee (harmless, unused default)', (int)$gotNoPayee['include_in_cash_summary'], 1);
+        }
+
+        // ---------- 2026-08-31, same-day follow-up: "รายการหัก...ให้เพิ่มเติมตรงที่หักไปที่ไหนได้เพิ่มว่า
+        // ไม่หักไปที่ไหน เพราะเป็นการหักเพื่อไม่ทำจ่ายเฉยๆ โดยเงินไม่ออกจากกองทุน" -- a genuinely new 4th
+        // payee_type value, distinct from NULL (which still reduces net pay, a real fund outflow). ----------
+        $rNotDisbursed = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'หักแบบไม่มีเงินออกจากกองทุน', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 150,
+            'effective_date' => '2026-01-01', 'payee_type' => 'not_disbursed',
+            // Deliberately sent true -- the model must force this to 0 regardless.
+            'include_in_cash_summary' => true,
+        ], $userId);
+        checkTrue('save() accepts payee_type=not_disbursed' . (empty($rNotDisbursed['status']) ? " ({$rNotDisbursed['message']})" : ''), $rNotDisbursed['status']);
+        if (!empty($rNotDisbursed['id'])) {
+            $gotNotDisbursed = $eedModel->get((int)$rNotDisbursed['id'], $compId);
+            check('payee_type=not_disbursed persisted', $gotNotDisbursed['payee_type'], 'not_disbursed');
+            check('payee_employee_id stays NULL for not_disbursed', $gotNotDisbursed['payee_employee_id'], null);
+            check('include_in_cash_summary FORCED to 0 for not_disbursed even though true was sent', (int)$gotNotDisbursed['include_in_cash_summary'], 0);
+        }
     }
 
 } finally {

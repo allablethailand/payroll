@@ -24,7 +24,15 @@
                  moved into its own "Reports" tab (#run-reports-pane) instead. The List page's own
                  row dropdown (public/js/payroll/index.js) is UNCHANGED, still a dropdown there --
                  this request was specifically about the Detail page. -->
-
+            <!-- 2026-08-31, same-day follow-up, explicit request: "ปุ่ม Export Excel ไม่ควรไปรวมอยู่ใน
+                 รายงาน ย้ายไปอยู่กับ Timeline ดูตรงการจัดตำแหน่งให้หน่อยครับ ขอสวยๆ" -- this slot sat empty
+                 since the dropdown above it was removed; reused here for PAYROLL_REGISTER's own
+                 dedicated one-click export (this run's employee-by-employee register), directly
+                 above the Timeline it now sits with instead of buried as one row among the
+                 statutory/payment reports in the Reports tab. -->
+            <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunRegister">
+                <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
+            </button>
         </div>
         <div class="process-timeline-wrap" id="runProcessTimeline"></div>
         <div id="nextStepBanner" class="next-step-banner"></div>
@@ -39,6 +47,18 @@
         <span id="syncMissingEmployeesBannerText"></span>
         <button type="button" class="btn btn-sm btn-outline-dark" id="syncMissingEmployeesViewBtn" data-i18n="view_list">View List</button>
     </div>
+    <!-- 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรือ
+         อ้างอิงถึงรอบ" -- shown whenever this run was created with "อ้างอิงถึงรอบ" ticked
+         (payroll_runs.merge_target_run_id set) and is still a draft, off-cycle run (matches
+         PayrollRunModel::mergeIntoExistingRun()'s own eligibility check server-side). Build this
+         run up normally first (Join Employees/Manage Items below), then click the button here
+         when ready -- folds this run's resolved amounts into the target and soft-deletes this one
+         (same mechanics/confirmation dance as the Pending-Pull table's own "Merge into Target"
+         action, see PayrollRunModel::performRunMerge()'s own docblock). -->
+    <div class="alert alert-info small d-none d-flex justify-content-between align-items-center flex-wrap gap-2" id="mergeTargetBanner">
+        <span id="mergeTargetBannerText"></span>
+        <button type="button" class="btn btn-sm btn-primary" id="btnMergeIntoTarget"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">Merge into Target</span></button>
+    </div>
 
     <ul class="nav nav-tabs" id="runDetailTabs" role="tablist">
         <li class="nav-item" role="presentation">
@@ -52,6 +72,26 @@
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-reports-tab" data-bs-toggle="tab" data-bs-target="#run-reports-pane" type="button" role="tab" aria-controls="run-reports-pane" aria-selected="false">
                 <i class="fa-solid fa-file-export me-1"></i><span data-i18n="tab_reports">Reports</span>
+            </button>
+        </li>
+        <!-- 2026-08-31, explicit request: "เพิ่มอีก Tab ที่สรุปรวมว่า บัญชีกี่คน เงินสดกี่คน และเป็นรายการตาราง
+             พนักงานพร้อมช่อง รายได้ รายหัก แบบละเอียด และแสดงยอดสุทธิ มีสรุปใน Footer" -- distinct from Cash
+             Payments' own operational mark-as-paid workflow just below (gated to approved+, since it
+             snapshots amounts once) -- this is a plain read-only breakdown, available at any state
+             the employee table itself is, reusing the SAME per-employee rows already loaded for
+             #tb_run_detail (see initPaymentSummaryTable() in detail.js) rather than a new endpoint. -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link text-secondary" id="run-payment-tab" data-bs-toggle="tab" data-bs-target="#run-payment-pane" type="button" role="tab" aria-controls="run-payment-pane" aria-selected="false">
+                <i class="fa-solid fa-chart-pie me-1"></i><span data-i18n="tab_payment_summary">Payment Method Summary</span>
+            </button>
+        </li>
+        <!-- 2026-08-31, explicit request: "ถ้าพนักงานรับเงินสด...แยก Report ตามแยก ว่าจ่ายเงินสดเท่าไหร่ โอน
+             ผ่านธนาคารเท่าไหร่ และสามารถใส่ Status ว่าจ่ายแล้ว" -- interactive per-employee cash payment
+             status, separate from the static Reports tab's own CASH_PAYMENT_SUMMARY export (see that
+             report's own docblock on why both exist). -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link text-secondary" id="run-cash-tab" data-bs-toggle="tab" data-bs-target="#run-cash-pane" type="button" role="tab" aria-controls="run-cash-pane" aria-selected="false">
+                <i class="fa-solid fa-money-bill-wave me-1"></i><span data-i18n="tab_cash_payments">Cash Payments</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -119,6 +159,29 @@
                 </h6>
                 <div id="runRecalculateButtonWrap"></div>
             </div>
+            <!-- 2026-08-31, explicit request: "ต้องการให้มี Block เตือนว่า...ให้กดคำนวณใหม่ทุกครั้ง...และเพิ่ม
+                 Function ให้มี checkbox ติ๊กว่าคำนวณอัตโนมัติหลังจากที่แก้ไขข้อมูลทันที...แต่ถ้าติ๊กคำนวณอัตโนมัติ
+                 Recommend ให้กดจะไม่แสดง" -- the checkbox itself (persisted per-run, see
+                 PayrollRunModel::setAutoRecalculate()) is ALWAYS visible so its current state is
+                 never ambiguous; the reminder banner beneath toggles with it (renderRecalcReminder()
+                 in detail.js) -- hidden while auto-recalculate is on, shown otherwise. Draft-only
+                 (recalculate() itself is only ever meaningful for a draft run), same visibility gate
+                 as #runRecalculateButtonWrap's own buttons. -->
+            <div class="d-flex align-items-center gap-2 mb-2 d-none" id="autoRecalculateWrap">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="chkAutoRecalculate">
+                    <label class="form-check-label small text-secondary" for="chkAutoRecalculate" data-i18n="auto_recalculate_label">Automatically recalculate right after editing data</label>
+                </div>
+            </div>
+            <div class="alert alert-warning small d-none align-items-center gap-2 mb-3" id="recalcReminderBanner">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span data-i18n="recalc_reminder_message">If you've edited employee data or anything related to these numbers, click "Recalculate" every time to keep this run up to date.</span>
+            </div>
+            <!-- 2026-09-01, explicit follow-up correction: "ให้ขึ้นใน card พนักงานครับ มีแค่ 4 Card
+                 เหมือนเดิม" -- the 2026-08-31 attempt (a genuinely separate 2nd grid row, 2 more
+                 cards) was wrong; stays 4 cards total. The Bank/Cash breakdown now lives as a small
+                 subtext line INSIDE the existing "Employees" card instead (see #infoPaymentBreakdown,
+                 populated by updatePaymentMethodSummary() in detail.js). -->
             <div class="row g-3 mb-5">
                 <div class="col-6 col-md-3">
                     <div class="stat-card stat-card-info">
@@ -126,6 +189,7 @@
                         <div>
                             <div class="stat-card-label" data-i18n="table_employee_count">Employees</div>
                             <div class="stat-card-value" id="infoEmployeeCount">-</div>
+                            <div class="stat-card-sub" id="infoPaymentBreakdown"></div>
                         </div>
                     </div>
                 </div>
@@ -247,14 +311,39 @@
                 <i class="fa-solid fa-calculator fa-2x mb-3 text-secondary opacity-50"></i>
                 <span data-i18n="no_details_yet">No employees calculated yet. Click "Recalculate" to compute this run.</span>
             </div>
-            <!-- 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify และ Lock"
-                 -- same visual language as .bulk-pull-bar elsewhere in this app (warning/amber tint),
-                 hidden until at least one row checkbox is checked. -->
-            <div class="bulk-pull-bar d-none d-inline-flex" id="runDetailBulkBar">
-                <span class="bulk-pull-bar-count"><span id="runDetailBulkCount">0</span> <span data-i18n="employees_selected">employee(s) selected</span></span>
-                <button type="button" class="btn btn-sm btn-outline-success" id="btnBulkVerify"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify">Verify</span></button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkLock"><i class="fa-solid fa-lock me-1"></i><span data-i18n="action_lock">Lock</span></button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkUnlock"><i class="fa-solid fa-lock-open me-1"></i><span data-i18n="action_unlock">Unlock</span></button>
+            <!-- 2026-08-31, explicit request: "ก่อนตารางพนักงาน ให้มี checkbox ขึ้นมาเพื่อให้เลือกกรองข้อมูล
+                 พนักงานที่รับผ่านบัญชี และเงินสดครับ" -- confirmed via AskUserQuestion: 2 independent
+                 checkboxes (not a 3-way radio), both checked by default (= show everyone); unticking
+                 one hides that group. Filters #tb_run_detail client-side against its own payment_type
+                 column (see registerPaymentMethodSearchFilter() in detail.js) -- purely a view filter,
+                 changes nothing about the underlying data. -->
+            <div class="d-flex align-items-center gap-3 mb-2" id="paymentMethodFilterWrap">
+                <span class="small text-muted" data-i18n="table_payment_method">Payment Method</span>
+                <div class="form-check form-check-inline m-0">
+                    <input class="form-check-input" type="checkbox" id="filterPaymentBank" checked>
+                    <label class="form-check-label small" for="filterPaymentBank" data-i18n="table_payment_bank">Bank Transfer</label>
+                </div>
+                <div class="form-check form-check-inline m-0">
+                    <input class="form-check-input" type="checkbox" id="filterPaymentCash" checked>
+                    <label class="form-check-label small" for="filterPaymentCash" data-i18n="table_payment_cash">Cash</label>
+                </div>
+            </div>
+            <!-- 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify" -- same
+                 visual language as .bulk-pull-bar elsewhere in this app (warning/amber tint), hidden
+                 until at least one row checkbox is checked. Lock retired 2026-08-31 (Verify itself now
+                 freezes recalculation). 2026-08-31, same-day layout review (explicit request: "ช่วยดูเรื่อง
+                 Process ส่วนนี้ไม่ให้มีความซ้ำซ้อน...จัดวางปุ่ม") -- #btnVerifyAllEmployees moved here (was
+                 in the section header next to Join Employees/Recalculate, competing with them for
+                 attention) so every "Verify" action lives in one place, right where its own
+                 selection-scoped sibling already is, instead of being split across 2 different rows
+                 of the page. Always visible (not gated on a selection existing) since it's a
+                 whole-process action independent of the checkboxes below it. -->
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <div class="bulk-pull-bar d-none d-inline-flex mb-0" id="runDetailBulkBar">
+                    <span class="bulk-pull-bar-count"><span id="runDetailBulkCount">0</span> <span data-i18n="employees_selected">employee(s) selected</span></span>
+                    <button type="button" class="btn btn-sm btn-outline-success" id="btnBulkVerify"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify">Verify</span></button>
+                </div>
+                <div id="runVerifyAllButtonWrap" class="ms-auto"></div>
             </div>
             <!-- 2026-08-29, explicit request: "ตารางตรงพนักงาน ปรับให้แสดงเป็น 2 แถวแบบไม่ hide column
                  ไหมครับ เพราะ expand ดูไม่สะดวก" -- was 12 separate DataTables Responsive columns
@@ -425,6 +514,104 @@
             </div>
         </div>
 
+        <div class="tab-pane fade" id="run-payment-pane" role="tabpanel" aria-labelledby="run-payment-tab" tabindex="0">
+            <div id="runPaymentSummaryEmpty" class="text-center text-secondary py-4 d-none">
+                <i class="fa-solid fa-chart-pie fa-2x mb-3 text-secondary opacity-50"></i>
+                <span data-i18n="no_details_yet">No employees calculated yet. Click "Recalculate" to compute this run.</span>
+            </div>
+            <div id="runPaymentSummaryContent">
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card stat-card-purple">
+                            <div class="stat-card-icon"><i class="fa-solid fa-building-columns"></i></div>
+                            <div>
+                                <div class="stat-card-label" data-i18n="table_payment_bank">Bank Transfer</div>
+                                <div class="stat-card-value" id="paymentSummaryBankCount">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card stat-card-warning">
+                            <div class="stat-card-icon"><i class="fa-solid fa-money-bill-wave"></i></div>
+                            <div>
+                                <div class="stat-card-label" data-i18n="table_payment_cash">Cash</div>
+                                <div class="stat-card-value" id="paymentSummaryCashCount">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                <table class="table table-hover table-border align-middle w-100" id="tb_run_payment_summary">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th data-i18n="table_employee">Employee</th>
+                            <th data-i18n="table_payment_method">Payment Method</th>
+                            <th class="text-end" data-i18n="table_base_salary">Base Salary</th>
+                            <th class="text-end" data-i18n="table_gross_amount">Gross</th>
+                            <th class="text-end" data-i18n="table_deduction_amount">Deductions</th>
+                            <th class="text-end" data-i18n="table_net_pay">Net Pay</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                    <tfoot class="table-light text-secondary">
+                        <tr>
+                            <th id="paymentSummaryFootEmployeeCount"></th>
+                            <th></th>
+                            <th class="text-end" id="paymentSummaryFootBaseSalary"></th>
+                            <th class="text-end" id="paymentSummaryFootGross"></th>
+                            <th class="text-end" id="paymentSummaryFootDeduction"></th>
+                            <th class="text-end" id="paymentSummaryFootNet"></th>
+                        </tr>
+                    </tfoot>
+                </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="run-cash-pane" role="tabpanel" aria-labelledby="run-cash-tab" tabindex="0">
+            <div id="runCashNotReady" class="text-center text-secondary py-4 d-none">
+                <i class="fa-solid fa-money-bill-wave fa-2x mb-3 text-secondary opacity-50"></i>
+                <span id="runCashNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            </div>
+            <div id="runCashContent" class="d-none">
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card stat-card-info h-100">
+                            <div class="stat-card-icon"><i class="fa-solid fa-money-bill-wave"></i></div>
+                            <div>
+                                <div class="stat-card-label" data-i18n="total_cash_payment">Total Cash</div>
+                                <div class="stat-card-value" id="runCashTotalCash">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card stat-card-primary h-100">
+                            <div class="stat-card-icon"><i class="fa-solid fa-building-columns"></i></div>
+                            <div>
+                                <div class="stat-card-label" data-i18n="total_bank_payment">Total Bank Transfer</div>
+                                <div class="stat-card-value" id="runCashTotalBank">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle w-100">
+                        <thead class="table-light text-secondary">
+                            <tr>
+                                <th data-i18n="employee_no">Employee No.</th>
+                                <th data-i18n="employee">Employee</th>
+                                <th class="text-end" data-i18n="amount">Amount</th>
+                                <th class="text-center" data-i18n="status">Status</th>
+                                <th data-i18n="table_paid_at">Paid At</th>
+                                <th class="text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="runCashTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- Preview & Download modal -- opened from a report row's own button. The iframe only
              loads for a report that supports a PDF preview (row.supports_preview, see
              ReportsController::runReportsSummary()); a CSV-only report like the bank transfer file
@@ -571,6 +758,117 @@
                 </div>
                 <form id="editRunForm" novalidate>
                     <div class="modal-body">
+                        <!-- 2026-09-01, explicit request: "ในการดึงข้อมูลมาทำรอบที่ส่งมาจาก Origami รวมถึงการ
+                             สร้างเอง ให้สามารถเลือกอ้างอิงรอบได้เหมือนตอน Origami และในหน้า Detail ก็สามารถ
+                             แก้ไขเพิ่มได้ Form เหมือนหน้าสร้างเลยครับ" -- the Create form's own Payroll
+                             Schedule picker (#run_cycle_id in #payrollRunModal), now also editable from
+                             here. Confirmed via AskUserQuestion: cycle_id is a REAL, eligibility-
+                             affecting field (recalculate()'s own cycle-based employee-matching keys off
+                             it), not a soft reference label.
+                             2026-09-01, same-day follow-up (explicit push-back: "เหตุผลอะไรบ้างในหน้า
+                             Edit ที่ไม่สามารถแก้ไขได้ ควรเปิดให้แก้ไขได้") -- ALWAYS enabled now, no
+                             blanket employee_count lock (see editRunCycleToggleRiskyRd() in detail.js
+                             and PayrollRunModel::update()'s own matching comment for the precise
+                             remaining risk: only flipping a non-sync run between off-cycle and
+                             cycle-linked while it already has employees can silently drop manually-
+                             joined ones -- switching between two real cycles, or on a sync-linked
+                             run, is exactly as safe as editing period_start/period_end already is
+                             with zero gating). #editRunCycleLockedHint now shows/hides live as the
+                             admin picks, warning ONLY for that one specific risky transition, instead
+                             of disabling the field outright. Clearable (allowClear) -- an empty
+                             selection means "off-schedule/no cycle", the same either/or
+                             #run_cycle_id itself represents on the Create form. -->
+                        <!-- 2026-09-02, same-day follow-up, explicit request: "ยังไม่เหมือนหน้าเพิ่มรอบในหน้า
+                             List ครับ ขาด รอบพิเศษนอกรอบเงินเดือน" then "พอมีแค่...ให้ติ๊กออกแล้วค่อยให้เลือก
+                             รอบ...ดูงงๆ ช่วยเพิ่มเป็น radio ให้เลือก...ถ้าเลือก option 1 ให้ขึ้นรอบให้เลือก ถ้าเลือก
+                             option 2 ไม่ขึ้นให้เลือก" -- mirrors #run_offcycle_row on the Create form 1:1
+                             (same 2-option .run-choice-card radio, same i18n labels) instead of a single
+                             checkbox whose "unchecked" state doubled as a double-negative AND the trigger
+                             to reveal the cycle field. Hidden entirely for a sync-linked run (same
+                             reasoning #run_offcycle_row is hidden for a Pull-sync create -- that data is
+                             inherently cycle-based, or for a supplemental pull, optionally cycle-linked
+                             via a DIFFERENT mechanism -- see updateEditRunTypeSectionRd()'s own
+                             isSupplementalSync branch, untouched by this radio).
+                             2026-09-02, 4th same-day follow-up, explicit request: "อยากให้แสดงเต็มแถวเลยครับ...
+                             ถ้าเลือกตามรอบดูสวย แต่พอเลือกนอกรอบดูแหว่งๆ" -- dropped the col-sm-9/offset-sm-3
+                             split here too, same reasoning as #run_offcycle_row on the Create form. -->
+                        <div class="mb-3" id="edit_run_offcycle_row">
+                            <div class="run-choice-toggle">
+                                <label class="run-choice-card" for="edit_run_schedule_choice_cycle">
+                                    <input class="form-check-input" type="radio" name="editRunScheduleChoice" id="edit_run_schedule_choice_cycle" value="cycle" checked>
+                                    <span class="run-choice-card-icon"><i class="fa-solid fa-calendar-check"></i></span>
+                                    <span class="run-choice-card-body">
+                                        <span class="run-choice-card-label" data-i18n="run_schedule_choice_cycle">Follow a payroll schedule</span>
+                                        <span class="run-choice-card-sub" data-i18n="run_schedule_choice_cycle_sub">Pick from your configured payroll schedules</span>
+                                    </span>
+                                </label>
+                                <label class="run-choice-card" for="edit_run_schedule_choice_offcycle">
+                                    <input class="form-check-input" type="radio" name="editRunScheduleChoice" id="edit_run_schedule_choice_offcycle" value="offcycle">
+                                    <span class="run-choice-card-icon"><i class="fa-solid fa-money-bill-transfer"></i></span>
+                                    <span class="run-choice-card-body">
+                                        <span class="run-choice-card-label" data-i18n="offcycle_run_label">Off-schedule run</span>
+                                        <span class="run-choice-card-sub" data-i18n="offcycle_run_label_sub">No payroll schedule needed -- e.g. an out-of-schedule payment</span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="row mb-3" id="edit_run_cycle_row">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-remote" id="edit_run_cycle_id" name="cycle_id" data-api="/api/payroll-cycle.options"></select>
+                                <div class="form-text small text-warning d-none" id="editRunCycleLockedHint" data-i18n="edit_run_cycle_locked_hint">This run already has calculated employees. Saving this change will automatically recalculate the run right away so the employee list stays accurate.</div>
+                            </div>
+                        </div>
+                        <!-- 2026-09-01/02, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" then "ขาด...
+                             เปิดรอบใหม่ อ้างอิงถึงรอบที่มีอยู่ และไม่ติ๊ก Auto" then "พอเป็น Design แบบเดียวกันแล้วดู
+                             แปลกๆครับ ช่วย Design Form ให้ใหม่" -- merge_target_run_id (the "อ้างอิงถึงรอบ"
+                             radio's own target) was set-once at creation with no way to change/clear it,
+                             then a plain always-shown select with no "new vs reference" choice, then a
+                             2nd big .run-choice-card block identical to the schedule cards right above it
+                             (read as 2 equally-weighted top-level decisions) -- now a genuinely NESTED
+                             sub-panel (.run-offcycle-panel, same design/reasoning as #run_offcycle_panel
+                             on the Create form) with a compact .run-subchoice-toggle pill control inside,
+                             defaulting to "new" (unticked/no reference) unless the run already genuinely
+                             has one set (see #btnEditRun's own click handler in detail.js). Same
+                             visibility gate as #edit_run_type_section right below (only meaningful for a
+                             genuinely off-cycle run, updated live as the cycle dropdown above changes,
+                             see updateEditRunTypeSectionRd() in detail.js). Target picker clearable
+                             (allowClear) -- an empty selection when "reference" is chosen is invalid
+                             (required), same as the Create form's own #run_merge_target_id. -->
+                        <div class="run-offcycle-panel d-none" id="edit_run_offcycle_panel">
+                            <div class="run-offcycle-panel-title"><i class="fa-solid fa-sliders"></i> <span data-i18n="run_offcycle_panel_title">Off-schedule round options</span></div>
+                            <div class="row mb-3" id="edit_run_merge_choice_row">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-0" data-i18n="run_merge_choice_label">Create this round as</label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <div class="run-subchoice-toggle">
+                                        <label class="run-subchoice-btn active" for="edit_run_merge_choice_new">
+                                            <input type="radio" name="editRunMergeChoice" id="edit_run_merge_choice_new" value="new" checked>
+                                            <i class="fa-solid fa-file-circle-plus"></i>
+                                            <span data-i18n="run_merge_choice_new">Open a new round</span>
+                                        </label>
+                                        <label class="run-subchoice-btn" for="edit_run_merge_choice_reference">
+                                            <input type="radio" name="editRunMergeChoice" id="edit_run_merge_choice_reference" value="reference">
+                                            <i class="fa-solid fa-link"></i>
+                                            <span data-i18n="run_merge_choice_reference">Reference an existing round</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mb-3 d-none" id="edit_run_merge_target_row">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-0" data-i18n="run_merge_target_label">Target Round</label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <select class="form-select select2-remote" id="edit_run_merge_target_id" name="merge_target_run_id"
+                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked" data-exclude-id=""></select>
+                                    <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" above to fold it into the round selected here.</div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
                                 <label class="form-label mb-0"><span data-i18n="modal_run_name">Run Name</span> <span class="text-danger">*</span></label>
@@ -771,13 +1069,37 @@
                                      โดยเลือกพนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- only meaningful when
                                      the item being added is a deduction, toggled alongside the existing
                                      earning/deduction type preview (updateManualLineTypePreviewRd() in
-                                     detail.js). Reuses /api/employee.report_to.get (data-exclude-id set to
-                                     the employee this modal is currently managing) rather than a new
-                                     endpoint. -->
+                                     detail.js).
+                                     2026-08-31, same-day follow-up: widened to the SAME 4-way
+                                     None/Employee/Company/Not-Disbursed payee_type toggle Employee
+                                     Detail's own #eedPayeeTypeToggle already has (this modal never had
+                                     any payee-routing concept beyond the bare employee picker until
+                                     now). Employee picker reuses /api/employee.report_to.get
+                                     (data-exclude-id set to the employee this modal is currently
+                                     managing) rather than a new endpoint. -->
+                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLinePayeeTypeWrapper">
+                                    <div class="col-12">
+                                        <label class="form-label mb-1 small text-muted" data-i18n="payee_type_label">Deducted Money Goes To</label>
+                                        <div class="btn-group btn-group-sm flex-wrap" role="group" id="manualLinePayeeTypeToggle">
+                                            <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
+                                            <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
+                                            <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
+                                            <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="row g-2 align-items-end mt-1 d-none" id="manualLinePayeeWrapper">
                                     <div class="col-12">
                                         <label class="form-label mb-1 small text-muted" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                                         <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                    </div>
+                                </div>
+                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineIncludeCashSummaryWrapper">
+                                    <div class="col-12">
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" id="manualLineIncludeCashSummary" checked>
+                                            <label class="form-check-label small" for="manualLineIncludeCashSummary" data-i18n="include_in_cash_summary_label">Include in Cash Payment Summary Report</label>
+                                        </div>
                                     </div>
                                 </div>
                                 <div id="manualLineTypePreview" class="small mt-2 d-none"></div>
