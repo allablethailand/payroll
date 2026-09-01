@@ -10,7 +10,10 @@ require_once __DIR__ . '/statutory/th/StudentLoanReport.php';
 require_once __DIR__ . '/payment/PaySlipReport.php';
 require_once __DIR__ . '/payment/BankTransferFileReport.php';
 require_once __DIR__ . '/payment/PaymentVoucherReport.php';
+require_once __DIR__ . '/payment/CashPaymentSummaryReport.php';
 require_once __DIR__ . '/internal/PayrollRegisterReport.php';
+require_once __DIR__ . '/internal/PayrollRunListSummaryReport.php';
+require_once __DIR__ . '/internal/ScheduledItemOccurrenceReconciliationReport.php';
 
 /**
  * Central lookup for all registered ReportGeneratorInterface implementations.
@@ -35,7 +38,10 @@ class ReportRegistry {
         self::register(new PaySlipReport());
         self::register(new BankTransferFileReport());
         self::register(new PaymentVoucherReport());
+        self::register(new CashPaymentSummaryReport());
         self::register(new PayrollRegisterReport());
+        self::register(new PayrollRunListSummaryReport());
+        self::register(new ScheduledItemOccurrenceReconciliationReport());
         self::$initialized = true;
     }
 

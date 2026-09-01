@@ -167,12 +167,46 @@ function collectEmployeeFormData() {
         }
         data[name] = $el.val();
     });
+    // 2026-08-31: send the mask marker back verbatim while masked (the readonly input itself is
+    // blank, see applyEmployeeSalaryMaskUi()) -- EmployeeModel::save() specifically detects this
+    // literal string and preserves the existing encrypted value instead of overwriting it, so
+    // saving an unrelated tab while masked can never zero out the real salary.
+    if (employeeSalaryMasked) {
+        data.base_salary_amount = 'XXXX';
+    }
     return data;
+}
+// 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถคำนวณเงินเดือน...
+// ได้ตามสิทธิ์" -- EmployeeController::get() replaces base_salary_amount with the literal string
+// "XXXX" (PermissionModel::MASK_VALUE) when the viewer's grant doesn't cover this employee. A
+// plain generic-loop `.val('XXXX')` onto #base_salary_amount would silently fail (it's a real
+// type="number" input -- the browser rejects non-numeric text and just leaves it BLANK, not
+// showing "XXXX" at all, and collectEmployeeFormData() would then read back an EMPTY string on
+// save, NOT the mask marker EmployeeModel::save()'s own preservation guard looks for -- corrupting
+// the real salary the moment ANY tab gets saved). Tracked via a module-level flag + the input's
+// own readonly state (readonly, not disabled, so it still submits/serializes via jQuery .val()).
+let employeeSalaryMasked = false;
+function applyEmployeeSalaryMaskUi(masked) {
+    employeeSalaryMasked = masked;
+    const $input = $('#base_salary_amount');
+    $input.prop('readonly', masked);
+    if (masked) {
+        $input.val('').attr('placeholder', langData['salary_amount_masked_placeholder'] || 'No permission to view');
+    } else {
+        $input.removeAttr('placeholder');
+    }
 }
 function populateEmployeeForm(data) {
     const remoteFields = ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'bank_id', 'report_to_id', 'nationality', 'religion', 'cycle_id', 'work_location_id', 'shift_id'];
+    applyEmployeeSalaryMaskUi(data.base_salary_amount === 'XXXX');
     Object.keys(data).forEach(function (key) {
         if (remoteFields.indexOf(key) !== -1) return;
+        // Masked case handled explicitly by applyEmployeeSalaryMaskUi() above instead -- the
+        // generic .val() write below would silently fail on this field's real type="number" input
+        // when the value is the non-numeric "XXXX" mask marker (browser rejects it, field goes
+        // blank with no placeholder). When NOT masked, fall through to the normal generic write
+        // below exactly as before -- only the masked case needs different handling.
+        if (key === 'base_salary_amount' && employeeSalaryMasked) return;
         const $el = $(`#employeeTabsContent [name="${key}"]`);
         if (!$el.length) return;
         if ($el.is(':checkbox')) {
@@ -1463,9 +1497,18 @@ function eedItemNameCell(row) {
     const label = escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '');
     const badge = row.ped_type_id ? '' : ` <span class="badge bg-secondary-subtle text-secondary">${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
     const codeLine = row.item_code ? escapeHtml(row.item_code) : '';
-    const payeeTag = row.payee_employee_id
-        ? `<div class="text-muted small"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(row.payee_employee_no || ('#' + row.payee_employee_id))}</div>`
-        : '';
+    // 2026-08-31: payee_type widened beyond "always another employee" -- 'company' has no
+    // payee_employee_id at all (see EmployeeEarningDeductionModel::save()'s own docblock), so this
+    // now branches on payee_type first rather than assuming a non-null payee_employee_id.
+    let payeeTag = '';
+    if (row.payee_type === 'employee' && row.payee_employee_id) {
+        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(row.payee_employee_no || ('#' + row.payee_employee_id))}</div>`;
+    } else if (row.payee_type === 'company') {
+        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+    } else if (row.payee_type === 'not_disbursed') {
+        // 2026-08-31, same-day follow-up.
+        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
+    }
     return `<div><strong>${label}</strong>${badge}</div><div class="text-muted small">${codeLine}</div>${payeeTag}`;
 }
 // Progress bar instead of plain "N/M" text (2026-08-20, table redesign request) -- reuses the same
@@ -1693,8 +1736,24 @@ function applyEedInterestVisibility() {
     // above, rather than a parallel visibility mechanism -- both only make sense on a deduction.
     $('#eedPayeeWrapper').toggleClass('d-none', !isDeduction);
     if (!isDeduction) {
+        setEedPayeeType('none');
+    }
+}
+// 2026-08-31, explicit request: "หักไปจ่ายใคร หรือจ่ายเข้าบัญชีบริษัท ให้ติ๊กเพิ่มได้ว่า รวมไปใน cashlink
+// หรือแยก cash link" -- single source of truth for the payee-type toggle's own dependent field
+// visibility (employee picker only for 'employee', the cash-summary checkbox for either non-'none'
+// choice), mirroring setEedChargeType()'s own toggle-button + dependent-fields pattern.
+function setEedPayeeType(type) {
+    $('#eedPayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
+    $('#eedPayeeEmployeeWrapper').toggleClass('d-none', type !== 'employee');
+    $('#eed_payee_employee_id').toggleClass('required', type === 'employee');
+    if (type !== 'employee') {
         $('#eed_payee_employee_id').val(null).trigger('change');
     }
+    // 2026-08-31, same-day follow-up: 'not_disbursed' never shows this checkbox -- forced excluded
+    // at the model layer (EmployeeEarningDeductionModel::save()'s own comment), a toggle here would
+    // be misleading since unchecking/checking it would have no actual effect.
+    $('#eedIncludeCashSummaryWrapper').toggleClass('d-none', type === 'none' || type === 'not_disbursed');
 }
 // Catalog vs custom item toggle (2026-08-19, explicit request). #eed_ped_type_id stays required only
 // in catalog mode, the custom pair only in custom mode -- validateEedForm() already skips anything
@@ -1776,6 +1835,8 @@ function resetEedForm(context) {
     // same way #report_to_id already excludes self elsewhere (data-exclude-id, read fresh on every
     // ajax search by initSelect2's shared 'ajax' mode).
     $('#eed_payee_employee_id').attr('data-exclude-id', currentEmployeeId || '').val(null).trigger('change');
+    $('#eed_include_in_cash_summary').prop('checked', true);
+    setEedPayeeType('none');
     applyEedInterestVisibility();
     renderInstallmentTable([], null, false);
     setEedModalTitle('add');
@@ -1804,12 +1865,22 @@ function populateEedForm(row, readOnly) {
     $('#eed_principal_amount').val(row.principal_amount != null ? row.principal_amount : row.total_amount);
     $('#eed_notes').val(row.notes || '');
     $('#eed_external_reference_no').val(row.external_reference_no || '');
-    if (row.payee_employee_id) {
+    if (row.payee_type === 'employee' && row.payee_employee_id) {
         const payeeLabel = row.payee_employee_no || `#${row.payee_employee_id}`;
         $('#eed_payee_employee_id').empty().append(new Option(payeeLabel, row.payee_employee_id, true, true)).trigger('change');
+        setEedPayeeType('employee');
+    } else if (row.payee_type === 'company') {
+        setEedPayeeType('company');
+    } else if (row.payee_type === 'not_disbursed') {
+        // 2026-08-31, same-day follow-up -- without this branch an existing not_disbursed row
+        // would silently fall into the 'else' below and reset to 'none' every time it's reopened.
+        $('#eed_payee_employee_id').val(null).trigger('change');
+        setEedPayeeType('not_disbursed');
     } else {
         $('#eed_payee_employee_id').val(null).trigger('change');
+        setEedPayeeType('none');
     }
+    $('#eed_include_in_cash_summary').prop('checked', row.include_in_cash_summary === undefined ? true : !!row.include_in_cash_summary);
     // 2026-08-31: row.interest_type is now one of 4 values ('none'/'fixed'/'reducing_balance'/'fee')
     // -- 'fixed'/'reducing_balance' both mean chargeType='interest' (their own sub-toggle), 'fee'
     // means chargeType='fee', anything else means 'none'.
@@ -1864,8 +1935,13 @@ function collectEedFormData() {
         interest_type: interestType,
         notes: $('#eed_notes').val().trim(),
         external_reference_no: $('#eed_external_reference_no').val().trim(),
-        payee_employee_id: $('#eed_payee_employee_id').val() || undefined
+        payee_type: $('#eedPayeeTypeToggle button.active').data('payee-type') || 'none',
+        payee_employee_id: $('#eed_payee_employee_id').val() || undefined,
+        include_in_cash_summary: $('#eed_include_in_cash_summary').is(':checked')
     };
+    if (data.payee_type === 'none') {
+        delete data.payee_type;
+    }
     if (chargeType === 'interest') {
         data.interest_rate = interestRate;
     } else if (chargeType === 'fee') {
@@ -1933,6 +2009,9 @@ function initEedUI() {
     });
     $(document).on('click', '#eedModeToggle button', function () {
         setEedMode($(this).data('mode'));
+    });
+    $(document).on('click', '#eedPayeeTypeToggle button', function () {
+        setEedPayeeType($(this).data('payee-type'));
     });
     $(document).on('click', '.btn-add-earning', function () {
         if (!currentEmployeeId) {

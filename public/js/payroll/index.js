@@ -31,7 +31,12 @@ function toLocalDateOnlyPr(value) {
 function escapeHtmlPr(str) {
     return $('<div>').text(str === null || str === undefined ? '' : str).html();
 }
+// 2026-08-31, explicit request ("สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX"): PayrollController may
+// send the literal string "XXXX" instead of a real number for a masked figure -- passed through
+// as-is rather than formatted (Number('XXXX') is NaN, which .toLocaleString() would otherwise
+// render as the confusing literal text "NaN").
 function fmtNumPr(n) {
+    if (n === 'XXXX') return n;
     return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function stateBadgePr(state) {
@@ -56,6 +61,28 @@ function stateBadgePr(state) {
 // no icon (the common case, nothing to flag); an incentive/off-cycle run gets a gift icon whose
 // title lists exactly which of the 3 flags are on, reusing the same i18n strings the Create/Edit
 // run modals already use for those checkboxes so there's no new translation to keep in sync.
+// 2026-09-01, explicit request: "ในตาราง Process แสดง List ควรมีสัญลักษณ์หรือ label บอก" -- where a run's
+// data actually CAME FROM (pulled from Origami sync vs. tied to a Payroll Schedule/cycle vs. a
+// genuine off-schedule/manual run) had no visual cue anywhere on this page before -- sync_process_id/
+// cycle_id are already in every row (PayrollRunModel::list()'s own `r.*`), just never surfaced. See
+// runOriginBadgePr() below.
+function runOriginBadgePr(row) {
+    if (row.sync_process_id) {
+        return `<i class="fa-solid fa-cloud-arrow-down text-primary me-1" title="${escapeHtmlPr(langData['run_origin_sync'] || 'Pulled from Origami')}"></i>`;
+    }
+    if (row.cycle_id) {
+        return `<i class="fa-solid fa-rotate text-info me-1" title="${escapeHtmlPr(langData['run_origin_cycle'] || 'Payroll Schedule (Cycle)')}"></i>`;
+    }
+    return `<i class="fa-solid fa-hand-holding-dollar text-secondary me-1" title="${escapeHtmlPr(langData['run_origin_manual'] || 'Off-schedule / Manual')}"></i>`;
+}
+// 2026-09-01: pure classification helper (no markup) -- shared between the badge above and the new
+// Origin filter's own client-side DataTables search function, so the 2 never define "what counts as
+// sync/cycle/manual" differently from each other.
+function runOriginKeyPr(row) {
+    if (row.sync_process_id) return 'sync';
+    if (row.cycle_id) return 'cycle';
+    return 'manual';
+}
 function runTypeIconPr(row) {
     if (row.run_purpose !== 'incentive') return '';
     const parts = [];
@@ -66,6 +93,30 @@ function runTypeIconPr(row) {
     const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment';
     const title = parts.length ? `${label}: ${parts.join(', ')}` : label;
     return `<i class="fa-solid fa-gift text-warning me-1" title="${escapeHtmlPr(title)}"></i>`;
+}
+// 2026-09-01, explicit request: "หน้า List page ควรมี indicator บอกด้วยว่ารอบนี้ตั้งค่าไว้ให้ไปรวมกับรอบไหน" --
+// this was the 2nd of the 2 known gaps flagged after the Detail-page merge-target-editing feature
+// shipped (the 1st, editing it from the Detail page, is done -- see that page's own #edit_run_merge_
+// target_id). merge_target_run_id survives past the source run's own soft-delete-on-merge (the row
+// itself just stops existing in this list, same as it always has), so this only ever shows on a run
+// that HASN'T been merged yet.
+// 2026-09-02, same-day follow-up, explicit request: "ในตารางให้แสดง Code ของรอบด้วยครับ และถ้ามีการอ้างอิงถึง
+// รอบก็ให้แสดงด้วยครับ" -- was a hover-only icon prepended to Run Name (mergeTargetIconPr(), now retired);
+// moved into the new dedicated Code column as always-visible text instead, right under the run's own
+// code, so the reference is readable without hovering anything. Reuses run_merge_reference_inline
+// ("{target}" placeholder) -- a short inline label, distinct from #mergeTargetBanner's own longer
+// sentence-form copy (merge_target_banner_text) on the Detail page, which stays as-is.
+function runCodeCellHtmlPr(row) {
+    const ownCode = row.run_code
+        ? `<span class="badge bg-light text-dark border font-monospace fw-normal">${escapeHtmlPr(row.run_code)}</span>`
+        : '<span class="text-muted">-</span>';
+    if (!row.merge_target_run_id) {
+        return ownCode;
+    }
+    const targetLabel = row.merge_target_run_code || row.merge_target_run_name || `#${row.merge_target_run_id}`;
+    const tpl = langData['run_merge_reference_inline'] || 'Merges into: {target}';
+    const refLine = `<div class="small text-primary mt-1" title="${escapeHtmlPr(targetLabel)}"><i class="fa-solid fa-code-merge me-1"></i>${escapeHtmlPr(tpl.replace('{target}', targetLabel))}</div>`;
+    return ownCode + refLine;
 }
 function employeeNamePr(row) {
     return (currentLang === 'th' ? row.created_by_name_th : row.created_by_name_en) || row.created_by_name_th || row.created_by_name_en || '-';
@@ -160,7 +211,10 @@ function miniTimelineQuickActionHtml(row) {
         return `<button type="button" class="btn btn-sm btn-primary mt-quick-action-btn btn-quick-mark-paid-run" data-id="${row.id}" data-payment-date="${row.payment_date || ''}"><i class="fa-solid fa-money-check-dollar me-1"></i>${langData['action_mark_paid'] || 'Mark as Paid'}</button>`;
     }
     if (row.state === 'paid' && row.can_finalize_payroll) {
-        return `<button type="button" class="btn btn-sm btn-primary mt-quick-action-btn btn-quick-lock-run" data-id="${row.id}"><i class="fa-solid fa-lock me-1"></i>${langData['action_lock'] || 'Lock'}</button>`;
+        // 2026-08-31, explicit request: same run-level Lock->Verify rename as detail.js's own
+        // .btn-tl-lock (pure re-wording, same api/payroll-run.lock endpoint underneath) -- see that
+        // file's own comment for why this uses action_verify_run, not action_lock.
+        return `<button type="button" class="btn btn-sm btn-primary mt-quick-action-btn btn-quick-lock-run" data-id="${row.id}"><i class="fa-solid fa-check-double me-1"></i>${langData['action_verify_run'] || 'Verify'}</button>`;
     }
     return '';
 }
@@ -426,7 +480,9 @@ function auditActionLabelPr(action) {
         create: 'action_create', update: 'action_edit', recalculate: 'action_recalculate',
         submit: 'action_submit', revert: 'action_revert', approve: 'action_approve',
         reject: 'action_reject', reviseAfterReject: 'action_revise', markPaid: 'action_mark_paid',
-        lock: 'action_lock', delete: 'action_delete', cancel: 'action_cancel',
+        // 2026-08-31: same Lock->Verify rename as detail.js's own auditActionLabel() -- see that
+        // file's own comment.
+        lock: 'action_verify_run', delete: 'action_delete', cancel: 'action_cancel',
         request_info: 'action_request_info', reviseAfterNeedInfo: 'action_revise',
     };
     const key = map[action];
@@ -554,6 +610,20 @@ function renderRunActionsPr(row) {
     const viewTitleKey = isDraft ? 'action_edit' : 'print_reports';
     const viewTitleFallback = isDraft ? 'Edit' : 'Print Reports';
     html += `<a href="${viewHref}" target="_blank" rel="noopener" class="btn ${isDraft ? 'btn-link text-warning' : 'btn-link text-info'}" title="${langData[viewTitleKey] || viewTitleFallback}"><i class="fa-solid ${viewIcon}"></i></a>`;
+    // 2026-08-31, same-day follow-up, explicit request: "Excel ให้ออกมาสรุปเป็น Column By Column
+    // พนักงาน...สามารถ Export ได้จากหน้า List เอง...ให้ Export รายงวดเท่านั้น" -- per-row export
+    // (PAYROLL_REGISTER, this ONE run's own employee-by-employee breakdown) is deliberately the
+    // ONLY export entry point left on this page (the earlier whole-list-summary and occurrence-
+    // reconciliation buttons were both removed per explicit follow-up request). Available for every
+    // state (internal report, no state gate).
+    html += `<button type="button" class="btn btn-link text-success border-start btn-export-run-register" data-id="${row.id}" title="${langData['export_excel'] || 'Export Excel'}"><i class="fa-solid fa-file-excel"></i></button>`;
+    // 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ให้ Verify ได้ทั้ง Process ทั้ง Detail
+    // และหน้า List" -- same action as the Detail page's #btnVerifyAllEmployees button, just reachable
+    // without opening the run first. Draft-only (PayrollRunModel::setEmployeeVerified() itself
+    // refuses any other state), matching the Detail-page button's own visibility gate.
+    if (isDraft) {
+        html += `<button type="button" class="btn btn-link text-success border-start btn-verify-all-run" data-id="${row.id}" title="${langData['action_verify_all'] || 'Verify All'}"><i class="fa-solid fa-check-double"></i></button>`;
+    }
     if (['draft', 'pending_approval', 'approved', 'rejected'].includes(row.state)) {
         html += `<button type="button" class="btn btn-link text-danger border-start btn-cancel-run" data-id="${row.id}" title="${langData['action_cancel'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
     }
@@ -581,13 +651,27 @@ function refreshAfterRunMutation() {
 // updateStationCounts()). Scoped to this one table by id so it never affects other DataTables.
 // Registered inside $(document).ready() below (not at parse time) -- this script tag runs before
 // footer.php's <script src=".../dataTables.js">, so $.fn.dataTable doesn't exist yet up here.
+// 2026-09-01, explicit request: "ในส่วนของ Filter สามารถเพิ่มอะไรได้อีกไหม" -- Origin/Payroll Schedule/
+// Run Purpose all joined the SAME client-side search function the Station cards themselves already
+// use (no ajax.reload needed, every field is already in each row's own loaded data) rather than 3
+// separate ext.search.push() entries.
 function registerStationSearchFilter() {
     $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
-        if (settings.nTable.id !== 'tb_payroll_run') return true;
-        if (!currentStation || currentStation === 'pending_sync') return true;
-        return !!rowData && rowData.state === currentStation;
+        if (settings.nTable.id !== 'tb_payroll_run' || !rowData) return true;
+        if (currentStation && currentStation !== 'pending_sync' && rowData.state !== currentStation) return false;
+        const origin = $('#filter_run_origin').val();
+        if (origin && origin !== 'all' && runOriginKeyPr(rowData) !== origin) return false;
+        const cycleFilter = $('#filter_run_cycle').val();
+        if (cycleFilter && String(rowData.cycle_id || '') !== String(cycleFilter)) return false;
+        const purpose = $('#filter_run_purpose').val();
+        if (purpose && purpose !== 'all' && (rowData.run_purpose || 'payroll') !== purpose) return false;
+        return true;
     });
 }
+$(document).on('change', '#filter_run_origin, #filter_run_cycle, #filter_run_purpose', function () {
+    updateClearFilterVisibility();
+    if (tb_payroll_run) tb_payroll_run.draw();
+});
 
 function updateStationCounts() {
     if (!tb_payroll_run) return;
@@ -610,7 +694,9 @@ function initPayrollRunTable() {
     }
     tb_payroll_run = $('#tb_payroll_run').DataTable({
         responsive: true,
-        order: [[1, 'desc']],
+        // 2026-09-02: index 1 (was 0 before the new Code column at index 0 shifted everything else
+        // over by one) -- sorts by Pay Period descending, unchanged behavior.
+        order: [[2, 'desc']],
         ajax: {
             url: `${BASE_URL}/api/payroll-run.list`,
             dataSrc: 'data',
@@ -621,16 +707,25 @@ function initPayrollRunTable() {
             }
         },
         columns: [
+            // 2026-09-02, explicit request: "ในตารางให้แสดง Code ของรอบด้วยครับ และถ้ามีการอ้างอิงถึงรอบก็ให้แสดง
+            // ด้วยครับ" -- new dedicated Code column (run_code + a visible reference line when this run
+            // has a merge_target_run_id set) -- see runCodeCellHtmlPr()'s own comment for why this
+            // replaced the old hover-only icon on Run Name. Object-form render for the same sort-safety
+            // reason as run_name below -- sort/filter key off the raw run_code, not the badge HTML.
+            { data: 'run_code', render: {
+                display: (d, t, row) => runCodeCellHtmlPr(row),
+                sort: d => d || '',
+                filter: d => d || '',
+            } },
             // Object-form render (not a plain function) so client-side sort/filter still operate on
             // the raw run_name string, not the display HTML with the conditional icon prefixed --
             // same DataTables sort-safety rule CLAUDE.md documents for formatted-date columns.
             { data: 'run_name', render: {
-                display: (d, t, row) => `${runTypeIconPr(row)}<strong class="text-dark">${escapeHtmlPr(d)}</strong>`,
+                display: (d, t, row) => `${runOriginBadgePr(row)}${runTypeIconPr(row)}<strong class="text-dark">${escapeHtmlPr(d)}</strong>`,
                 sort: d => d,
                 filter: d => d,
             } },
             { data: null, render: (d, t, row) => `${toDisplayDatePr(row.period_start_date)} - ${toDisplayDatePr(row.period_end_date)}` },
-            { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
             // 2026-08-29, explicit request: "ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน Lock
             // ข้อมูลแล้วกี่คน" -- object-form render (display/sort/filter split, same DataTables sort-
             // safety convention this app already uses for formatted date/badge columns) so sorting by
@@ -644,11 +739,9 @@ function initPayrollRunTable() {
             { data: 'employee_count', className: 'text-end', render: {
                 display: (d, t, row) => {
                     const verified = Number(row.verified_employee_count || 0);
-                    const locked = Number(row.locked_employee_count || 0);
                     const errors = Number(row.error_employee_count || 0);
                     const pills = [];
                     if (verified) pills.push(`<span class="badge rounded-pill bg-success-subtle text-success" title="${langData['verified'] || 'Verified'}"><i class="fa-solid fa-check-double me-1"></i>${verified}</span>`);
-                    if (locked) pills.push(`<span class="badge rounded-pill bg-secondary-subtle text-secondary" title="${langData['locked'] || 'Locked'}"><i class="fa-solid fa-lock me-1"></i>${locked}</span>`);
                     if (errors) pills.push(`<button type="button" class="badge rounded-pill bg-danger-subtle text-danger border-0 btn-view-run-errors" data-id="${row.id}" title="${langData['incomplete_data'] || 'Incomplete data'}"><i class="fa-solid fa-triangle-exclamation me-1"></i>${errors}<i class="fa-solid fa-circle-info ms-1"></i></button>`);
                     const pillRow = pills.length ? `<div class="d-flex gap-1 justify-content-end flex-wrap mt-1">${pills.join('')}</div>` : '';
                     return `<div class="fw-semibold">${d} <i class="fa-solid fa-users text-muted ms-1 small"></i></div>${pillRow}`;
@@ -666,6 +759,11 @@ function initPayrollRunTable() {
             // date column in this app) so client-side sort operates on the raw updated_at timestamp,
             // not the dd/mm/yyyy display string.
             { data: 'updated_at', render: { display: (v) => v ? formatDisplayDateTime(v) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
+            // 2026-09-02, explicit request: "Column Status ควรมาอยู่รองสุดท้าย" -- moved from right after
+            // Pay Period to right before Updated By (this table's own convention has kept
+            // orderable:false/no-single-filterable-value widget columns like this one and Actions
+            // excluded from initExcelColumnFilters() below all along -- only its position changed).
+            { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
             { data: null, render: (d, t, row) => escapeHtmlPr(updatedByNamePr(row)) },
             // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น
             // ตัว expand แทน" -- className:'all' (dtr-all) keeps this last, already-actions column
@@ -688,18 +786,23 @@ function initPayrollRunTable() {
                 `);
             }
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the status-timeline widget (2, a visual component with
-            // no single filterable value) and the actions column (6).
+            // rollout, client mode. Excludes the status-timeline widget (a visual component with no
+            // single filterable value) and the actions column.
+            // 2026-09-02: Code column inserted at index 0 (shifted everything else +1), then Status
+            // moved from index 3 to index 7 ("Column Status ควรมาอยู่รองสุดท้าย") -- shifting
+            // employee_count/total_net_amount/employee_name/updated_at each DOWN by 1 in turn, while
+            // updated_by (already past where Status landed) stays put at 8.
             initExcelColumnFilters(self, {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'run_name' },
-                    { index: 1, key: 'period' },
+                    { index: 0, key: 'run_code' },
+                    { index: 1, key: 'run_name' },
+                    { index: 2, key: 'period' },
                     { index: 3, key: 'employee_count' },
                     { index: 4, key: 'total_net_amount' },
                     { index: 5, key: 'employee_name' },
                     { index: 6, key: 'updated_at' },
-                    { index: 7, key: 'updated_by' },
+                    { index: 8, key: 'updated_by' },
                 ]
             });
         },
@@ -740,6 +843,38 @@ function loadPendingSyncCount() {
     });
 }
 
+// 2026-08-31, same-day follow-up -- see #blockedSyncUpdatesCard's own comment in index.php. Reused
+// after apply/dismiss the same way loadPendingSyncCount() is reused after reject/pull actions.
+function blockedSyncUpdateRowHtml(row) {
+    const subtitle = row.process_subject ? ` - ${escapeHtmlPr(row.process_subject)}` : '';
+    const runLink = `<a href="${BASE_URL}/payroll-process/${row.public_run_id}" target="_blank">${escapeHtmlPr(row.run_name)}</a>`;
+    return `<div class="d-flex justify-content-between align-items-center border rounded-3 p-2 mb-2 flex-wrap gap-2" data-id="${row.id}">
+        <div>
+            <div class="fw-semibold">${escapeHtmlPr(row.process_no)}${subtitle}</div>
+            <div class="small text-muted">
+                <span data-i18n="blocked_update_linked_run">${langData['blocked_update_linked_run'] || 'Linked run'}</span>: ${runLink}
+                (${escapeHtmlPr(row.run_state)}) &middot;
+                <span data-i18n="table_received_at">${langData['table_received_at'] || 'Received'}</span>: ${row.received_at ? formatDisplayDateTime(row.received_at) : '-'}
+            </div>
+        </div>
+        <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-outline-primary btn-apply-blocked-update" data-id="${row.id}">
+                <i class="fa-solid fa-check me-1"></i><span data-i18n="btn_apply_update">${langData['btn_apply_update'] || 'Apply'}</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary btn-dismiss-blocked-update" data-id="${row.id}">
+                <span data-i18n="btn_dismiss_update">${langData['btn_dismiss_update'] || 'Dismiss'}</span>
+            </button>
+        </div>
+    </div>`;
+}
+function loadBlockedSyncUpdates() {
+    $.getJSON(`${BASE_URL}/api/payroll-sync.blocked-updates-list`, function (res) {
+        const rows = (res && res.data) || [];
+        $('#blockedSyncUpdatesCard').toggleClass('d-none', rows.length === 0);
+        $('#blockedSyncUpdatesList').html(rows.map(blockedSyncUpdateRowHtml).join(''));
+    });
+}
+
 function updateBulkPullBar() {
     const count = Object.keys(selectedPendingSync).length;
     $('#bulkPullCount').text(count);
@@ -777,7 +912,19 @@ function initPendingSyncTable() {
                     const badge = isSupplemental
                         ? `<span class="badge bg-warning-subtle text-warning ms-1">${langData['sync_run_kind_supplemental'] || 'Supplemental'}</span>`
                         : '';
-                    return `<strong class="text-dark">${escapeHtmlPr(d)}</strong>${badge}`;
+                    // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- a second badge on a
+                    // supplemental row showing its routing intent BEFORE an admin pulls it, so
+                    // "→ Merge into ORIGAMI-2026-00024" or "→ Separate" is visible at a glance
+                    // instead of only surfacing after the fact. Only ever set on a supplemental row
+                    // (see PayrollSyncModel::normalizeAttribution()'s own docblock).
+                    let attrBadge = '';
+                    if (isSupplemental && row.attribution_tax_treatment === 'merge') {
+                        const target = escapeHtmlPr(row.attribution_target_process_no || `#${row.attribution_target_origami_process_id}`);
+                        attrBadge = `<span class="badge bg-info-subtle text-info ms-1">${(langData['sync_attribution_merge_into'] || '→ Merge into {target}').replace('{target}', target)}</span>`;
+                    } else if (isSupplemental && row.attribution_tax_treatment === 'separate') {
+                        attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1">${langData['sync_attribution_separate'] || '→ Separate'}</span>`;
+                    }
+                    return `<strong class="text-dark">${escapeHtmlPr(d)}</strong>${badge}${attrBadge}`;
                 }
             },
             { data: 'period_name', render: d => escapeHtmlPr(d || '-') },
@@ -798,18 +945,37 @@ function initPendingSyncTable() {
                 // this row's own Origami cycle identity through to .btn-pull-sync's click handler,
                 // which pre-fills (regular) or unlocks run_purpose (supplemental) from them --
                 // explicit request: use what Origami already sent instead of re-entering by hand.
-                render: (d, t, row) => `
+                render: (d, t, row) => {
+                    // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- a supplemental row
+                    // attributed tax_treatment='merge' gets an extra "Merge into Target" action
+                    // alongside the existing "Pull to Run" (which still pulls it as its own
+                    // standalone run -- always left available, e.g. for when the target run isn't
+                    // draft anymore, see PayrollRunModel::mergeSupplementalIntoRun()'s own refusal
+                    // paths).
+                    const mergeBtn = (row.run_kind === 'supplemental' && row.attribution_tax_treatment === 'merge')
+                        ? `<button type="button" class="btn btn-info btn-merge-sync" data-id="${row.id}"
+                            data-label="${escapeHtmlPr(row.process_subject || row.process_no)}"
+                            data-target="${escapeHtmlPr(row.attribution_target_process_no || ('#' + row.attribution_target_origami_process_id))}"
+                            title="${langData['btn_merge_sync'] || 'Merge into Target'}"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">${langData['btn_merge_sync'] || 'Merge into Target'}</span></button>`
+                        : '';
+                    return `
                     <div class="btn-group rounded-3 row-actions" role="group">
-                        <button type="button" class="btn btn-warning btn-pull-sync" data-id="${row.id}"
+                        <button type="button" class="btn btn-warning btn-pull-sync text-nowrap" data-id="${row.id}"
                             data-label="${escapeHtmlPr(row.process_subject || row.process_no)}"
                             data-subject="${escapeHtmlPr(row.process_subject || '')}"
                             data-description="${escapeHtmlPr(row.process_description || '')}"
                             data-start="${row.process_start || ''}" data-end="${row.process_end || ''}" data-paid="${row.process_paid || ''}"
                             data-run-kind="${row.run_kind || 'regular'}"
+                            data-tax-treatment="${row.attribution_tax_treatment || ''}"
+                            data-matched-cycle-id="${row.matched_cycle_id || ''}"
+                            data-matched-cycle-name="${escapeHtmlPr(row.matched_cycle_name || '')}"
                             title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">${langData['btn_pull_to_run'] || 'Pull to Run'}</span></button>
+                        ${mergeBtn}
                         <button type="button" class="btn btn-outline-info btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
+                        <button type="button" class="btn btn-outline-danger btn-reject-sync" data-id="${row.id}" data-label="${escapeHtmlPr(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-ban"></i></button>
                     </div>
-                `
+                `;
+                }
             },
         ],
         pageLength: pageLength,
@@ -1055,24 +1221,71 @@ function resetRunForm() {
     $('.is-invalid').removeClass('is-invalid');
     $('#run_cycle_id').val('').trigger('change');
     $('#run_sync_process_id').val('');
-    $('#run_is_offcycle').prop('checked', false);
+    $('#run_schedule_choice_cycle').prop('checked', true);
     $('#run_offcycle_row').removeClass('d-none');
     $('#run_purpose').val('payroll').trigger('change');
     $('#run_compute_statutory').prop('checked', true);
     $('#run_include_base_salary').prop('checked', false);
     $('#run_include_standing_items').prop('checked', false);
     $('#run_include_attendance_pay').prop('checked', false);
+    // 2026-08-31, same-day follow-up (Origami `attribution` plan's item 3).
+    $('#run_use_flat_tax_rate').prop('checked', false);
+    $('#run_use_flat_tax_rate_row').addClass('d-none');
+    // 2026-09-01: "เปิดรอบใหม่ / อ้างอิงถึงรอบ" radio -- see setMergeChoiceMode()'s own comment.
+    // #run_merge_choice_row itself no longer needs its own d-none reset -- it lives inside
+    // #run_offcycle_panel now, whose visibility setOffCycleMode(false) below already owns.
+    $('#run_merge_choice_new').prop('checked', true);
+    $('#run_merge_target_id').val('').trigger('change');
+    setMergeChoiceMode('new');
     setOffCycleMode(false);
 }
+// 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรืออ้างอิงถึง
+// รอบ" -- shows/requires the target picker only when "reference" is chosen. #run_merge_choice_row
+// itself is hidden entirely for a Pull-sync create (see .btn-pull-sync's own handler), same gate
+// #run_offcycle_row already uses -- this function is simply never called with anything but 'new' on
+// that flow, so it's a no-op there either way.
+function setMergeChoiceMode(choice) {
+    const isReference = choice === 'reference';
+    $('#run_merge_target_row').toggleClass('d-none', !isReference);
+    $('#run_merge_target_id').toggleClass('required', isReference);
+    if (!isReference) {
+        $('#run_merge_target_id').val('').trigger('change').removeClass('is-invalid');
+    }
+    // 2026-09-02, 2nd same-day follow-up: .active on the pill <label> itself -- see
+    // .run-subchoice-btn in style.css (was .run-choice-card until this round's panel redesign).
+    $('#run_merge_choice_row .run-subchoice-btn').removeClass('active');
+    $(isReference ? '#run_merge_choice_reference' : '#run_merge_choice_new').closest('.run-subchoice-btn').addClass('active');
+}
+$(document).on('change', 'input[name="runMergeChoice"]', function () {
+    setMergeChoiceMode($(this).val());
+});
 // Off-cycle runs (e.g. an out-of-cycle payment) skip the Payroll Cycle field entirely -- per
 // explicit request. Only offered on the standalone "Add" flow; Pull-to-run hides the toggle
 // entirely (that data is inherently cycle-based) via #run_offcycle_row.addClass('d-none').
+// 2026-09-02, same-day follow-up: was a single checkbox (unchecked = off-cycle) -- "ให้ติ๊กออกแล้วค่อยให้
+// เลือกรอบ...ดูงงๆ" (unchecking something to REVEAL a field reads backwards) -- now a 2-option radio
+// (#run_schedule_choice_cycle/#run_schedule_choice_offcycle), this function's own bool param
+// unchanged so every existing caller (resetRunForm(), the change handler below) needed no rework.
 function setOffCycleMode(isOffCycle) {
     $('#run_cycle_row').toggleClass('d-none', isOffCycle);
     $('#run_cycle_id').toggleClass('required', !isOffCycle);
     if (isOffCycle) {
         $('#run_cycle_id').val('').trigger('change');
         $('#run_cycle_id').removeClass('is-invalid');
+    }
+    $('#run_offcycle_row .run-choice-card').removeClass('active');
+    $(isOffCycle ? '#run_schedule_choice_offcycle' : '#run_schedule_choice_cycle').closest('.run-choice-card').addClass('active');
+    // 2026-09-02, 2nd same-day follow-up: #run_offcycle_panel (merge choice + its target picker)
+    // only ever makes sense together with off-schedule -- PayrollRunModel::create() itself refuses
+    // a merge target the instant cycle_id is set, so this ALSO closes a real gap where the merge
+    // choice used to stay reachable (and its selection submittable) even with a cycle picked,
+    // guaranteeing a backend rejection on save. Forced back to "new"/no-target the moment off-cycle
+    // is turned off, same reasoning updateEditRunTypeSectionRd()'s own equivalent reset already
+    // uses on the Edit form.
+    $('#run_offcycle_panel').toggleClass('d-none', !isOffCycle);
+    if (!isOffCycle) {
+        $('#run_merge_choice_new').prop('checked', true);
+        setMergeChoiceMode('new');
     }
     // Period Start/End are only required for a cycle-based run -- an off-cycle run (e.g. a
     // special bonus payout) doesn't always have a meaningful attendance period, per explicit
@@ -1099,6 +1312,14 @@ function setOffCycleMode(isOffCycle) {
 function updateComputeStatutoryVisibility() {
     const isIncentive = $('#run_purpose').val() === 'incentive';
     $('#run_compute_statutory_row, #run_include_base_salary_row, #run_include_standing_items_row, #run_include_attendance_pay_row').toggleClass('d-none', !isIncentive);
+    // #run_use_flat_tax_rate_row is only ever SHOWN by setSupplementalPullMode() (needs
+    // taxTreatment==='separate', not just isIncentive) -- but it must still hide the moment the
+    // admin flips run_purpose back to 'payroll' on this same open modal, same as the other
+    // incentive-only rows above.
+    if (!isIncentive) {
+        $('#run_use_flat_tax_rate_row').addClass('d-none');
+        $('#run_use_flat_tax_rate').prop('checked', false);
+    }
 }
 // Auto-fills Period Start/End/Payment Date from the selected cycle's own configured cutoff/
 // payment day settings, per explicit request -- pure convenience default, every field stays
@@ -1117,9 +1338,12 @@ function applySuggestedPeriod(cycleId) {
             if (!res.status) {
                 return;
             }
-            $('#run_period_start').val(toDisplayDatePr(res.period_start_date));
-            $('#run_period_end').val(toDisplayDatePr(res.period_end_date));
-            $('#run_payment_date').val(toDisplayDatePr(res.payment_date));
+            // .datepicker('update') after each programmatic .val() -- see CLAUDE.md's
+            // bootstrap-datepicker note (widget state goes stale otherwise, blanking the field on
+            // next click-away).
+            $('#run_period_start').val(toDisplayDatePr(res.period_start_date)).datepicker('update');
+            $('#run_period_end').val(toDisplayDatePr(res.period_end_date)).datepicker('update');
+            $('#run_payment_date').val(toDisplayDatePr(res.payment_date)).datepicker('update');
             $('#run_period_start, #run_period_end, #run_payment_date').removeClass('is-invalid');
         }
     });
@@ -1139,7 +1363,7 @@ function validateRunForm() {
     return firstInvalid;
 }
 function collectRunFormData() {
-    const isOffCycle = $('#run_is_offcycle').is(':checked');
+    const isOffCycle = $('input[name="runScheduleChoice"]:checked').val() === 'offcycle';
     // 2026-08-29: run_purpose used to be forced to 'payroll' whenever the manual off-cycle
     // checkbox wasn't ticked -- but setSupplementalPullMode() now also shows #run_purpose_row
     // (Payroll/Incentive-Other-Payment) for a supplemental sync pull, which never touches that
@@ -1160,12 +1384,21 @@ function collectRunFormData() {
         include_base_salary: runPurpose === 'incentive' && $('#run_include_base_salary').is(':checked') ? 1 : 0,
         include_standing_items: runPurpose === 'incentive' && $('#run_include_standing_items').is(':checked') ? 1 : 0,
         include_attendance_pay: runPurpose === 'incentive' && $('#run_include_attendance_pay').is(':checked') ? 1 : 0,
+        // 2026-08-31, same-day follow-up (Origami `attribution` plan's item 3) -- only ever
+        // meaningful/visible for a supplemental pull attributed tax_treatment='separate', but the
+        // backend itself also forces this to 0 for any non-incentive run (create()/update()'s own
+        // comments), so reading it unconditionally here is safe either way.
+        use_flat_tax_rate: runPurpose === 'incentive' && $('#run_use_flat_tax_rate').is(':checked') ? 1 : 0,
         run_name: $('#run_name').val().trim(),
         period_start_date: toIsoDatePr($('#run_period_start').val()),
         period_end_date: toIsoDatePr($('#run_period_end').val()),
         payment_date: toIsoDatePr($('#run_payment_date').val()),
         notes: $('#run_notes').val().trim(),
         sync_process_id: $('#run_sync_process_id').val() || null,
+        // 2026-09-01, explicit request: "เปิดรอบใหม่ / อ้างอิงถึงรอบ" radio -- only sent when the row is
+        // actually showing (mirrors the run-type-fields pattern right above: honest about what's
+        // actually visible/being set, same as this whole form's other conditional fields).
+        merge_target_run_id: $('#run_merge_target_row').hasClass('d-none') ? null : ($('#run_merge_target_id').val() || null),
     };
 }
 
@@ -1215,7 +1448,16 @@ $(document).on('click', '#stationFilterToggle', function () {
 // Clear Filter only makes sense (and only shows) once at least one of the two fields actually has
 // a value -- per explicit request, hidden by default rather than always visible.
 function updateClearFilterVisibility() {
-    const hasFilter = !!($('#filter_date_from').val() || $('#filter_date_to').val());
+    // 2026-09-01: widened to cover the 3 new filters too, not just the date range -- one shared
+    // "Clear Filter" button/visibility rule for the whole station-filter box, same convention this
+    // app's own .station-filter component uses elsewhere (e.g. Employee List). Origin/Run Purpose
+    // are select2-static with a literal "all" option as their own neutral/no-op value (same
+    // "all" convention #employee_filter_payroll_participant already established) -- excluded here
+    // the same way, or the button would show permanently from page load.
+    const origin = $('#filter_run_origin').val();
+    const purpose = $('#filter_run_purpose').val();
+    const hasFilter = !!($('#filter_date_from').val() || $('#filter_date_to').val()
+        || (origin && origin !== 'all') || $('#filter_run_cycle').val() || (purpose && purpose !== 'all'));
     $('#btnClearDateFilter').toggleClass('d-none', !hasFilter);
 }
 $(document).on('changeDate', '#filter_date_from, #filter_date_to', function () {
@@ -1235,6 +1477,13 @@ $(document).on('click', '#btnClearDateFilter', function () {
     // 'changeDate' itself and the handler above reloads both tables (and re-hides this button)
     // automatically -- no need to duplicate that here.
     $('#filter_date_from, #filter_date_to').datepicker('clearDates');
+    // 2026-09-01: clears the 3 new filters too -- 'all' is Origin/Run Purpose's own neutral value
+    // (see updateClearFilterVisibility()'s own comment), an empty selection is Payroll Schedule's.
+    // .trigger('change') fires the '#filter_run_origin, #filter_run_cycle, #filter_run_purpose'
+    // handler above, which redraws the table -- no separate reload call needed here either.
+    $('#filter_run_origin').val('all').trigger('change');
+    $('#filter_run_cycle').val(null).trigger('change');
+    $('#filter_run_purpose').val('all').trigger('change');
 });
 $(document).on('click', '.btn-add-run', function () {
     resetRunForm();
@@ -1246,15 +1495,27 @@ $(document).on('click', '.btn-add-run', function () {
 // auto-match the way a regular sync-matched pull is, so run_purpose becomes choosable (same
 // Payroll/Incentive-Other-Payment choice a genuine off-cycle run already offers, confirmed via
 // AskUserQuestion) and the payroll cycle becomes optional rather than required. Deliberately does
-// NOT touch #run_cycle_row's own visibility or #run_is_offcycle's checked state -- a supplemental
+// NOT touch #run_cycle_row's own visibility or the runScheduleChoice radio's checked state -- a supplemental
 // sync pull is still sync-linked (sync_process_id set), never truly "off-cycle" the way the
 // standalone Add-flow toggle means it; the cycle field just stops being mandatory.
-function setSupplementalPullMode(isSupplemental) {
+// taxTreatment ('merge'/'separate'/'') -- 2026-08-31 same-day follow-up (Origami `attribution`
+// plan's item 3): only a 'separate'-attributed supplemental process ever shows the flat-tax-rate
+// opt-in row at all (a 'merge'-attributed one doesn't withhold on its own -- its items get folded
+// into the target run's own tax calc instead; a plain unattributed supplemental pull has no
+// Origami-side hint either way, so it stays hidden and the admin can still tick
+// #run_compute_statutory for the normal average/actual calculation same as before). Pre-checked
+// (not just shown) when Origami explicitly said "separate", per the same "use what Origami already
+// sent instead of re-entering by hand" precedent #run_period_start/.../#run_payment_date already
+// established -- still fully editable/un-tickable afterward.
+function setSupplementalPullMode(isSupplemental, taxTreatment) {
     $('#run_cycle_id').toggleClass('required', !isSupplemental);
     $('#run_purpose_row').toggleClass('d-none', !isSupplemental);
     if (!isSupplemental) {
         $('#run_purpose').val('payroll').trigger('change');
     }
+    const showFlatTax = isSupplemental && taxTreatment === 'separate';
+    $('#run_use_flat_tax_rate_row').toggleClass('d-none', !showFlatTax);
+    $('#run_use_flat_tax_rate').prop('checked', showFlatTax);
     updateComputeStatutoryVisibility();
 }
 $(document).on('click', '.btn-pull-sync', function () {
@@ -1271,6 +1532,19 @@ $(document).on('click', '.btn-pull-sync', function () {
     // (a DIFFERENT concept, see setSupplementalPullMode()'s own comment) doesn't apply here, so
     // hide it entirely rather than just leaving it unchecked -- unchanged from before.
     $('#run_offcycle_row').addClass('d-none');
+    // 2026-09-02, explicit request (same message): "ตอนกดก็อยากให้เลือกได้เหมือนกันว่าเปิดรอบใหม่ หรืออ้างอิงถึง
+    // รอบไหน" -- investigated enabling this for Pull too, found a real backend conflict, and kept it
+    // hidden here rather than ship a UI path that always fails on save: PayrollRunModel::create()
+    // rejects merge_target_run_id outright whenever sync_process_id is set (line ~1342, "A merge
+    // target only applies to a genuine off-schedule run"), and mergeIntoExistingRun() itself refuses
+    // any sync-linked source too. Widening BOTH would mean building a second, competing "merge intent"
+    // signal on top of the one that already exists for sync pulls specifically -- Origami's own
+    // attribution_target_origami_process_id/tax_treatment='merge' (surfaced as the separate
+    // .btn-merge-sync button on a supplemental row right in this same Pending Pull table). Flagged to
+    // the user rather than silently deciding either way -- see the chat reply for the actual question.
+    // (#run_merge_choice_row's own parent, #run_offcycle_panel, is already hidden by resetRunForm()'s
+    // setOffCycleMode(false) call above -- nothing further to hide here since this round's panel
+    // redesign.)
     $('#run_sync_process_id').val($btn.data('id'));
     $('#run_name').val(subject || $btn.data('label'));
     if (description) {
@@ -1282,23 +1556,41 @@ $(document).on('click', '.btn-pull-sync', function () {
     // AskUserQuestion) instead of leaving the admin to re-enter what Origami already sent. A
     // SUPPLEMENTAL sync process has no period to auto-match, so there's nothing to pre-fill here --
     // setSupplementalPullMode() below is what makes that case usable instead.
+    // .datepicker('update') after each programmatic .val() -- see CLAUDE.md's bootstrap-datepicker
+    // note (widget state goes stale otherwise, blanking the field on next click-away).
     if (start && end) {
-        $('#run_period_start').val(toDisplayDatePr(start));
-        $('#run_period_end').val(toDisplayDatePr(end));
+        $('#run_period_start').val(toDisplayDatePr(start)).datepicker('update');
+        $('#run_period_end').val(toDisplayDatePr(end)).datepicker('update');
         $('#run_period_start, #run_period_end').removeClass('is-invalid');
     }
     if (paid) {
-        $('#run_payment_date').val(toDisplayDatePr(paid));
+        $('#run_payment_date').val(toDisplayDatePr(paid)).datepicker('update');
         $('#run_payment_date').removeClass('is-invalid');
     } else if (end) {
-        $('#run_payment_date').val(toDisplayDatePr(end));
+        $('#run_payment_date').val(toDisplayDatePr(end)).datepicker('update');
     }
 
-    setSupplementalPullMode(runKind === 'supplemental');
+    // 2026-09-01, same-day follow-up, explicit request: "ข้อมูลรอบ และวันที่ ต่างๆ ถูกส่งมาอยู่แล้ว อยากให้กดแล้ว
+    // Default ค่าที่ส่งมา Origami เลยโดยที่ไม่ต้องเลือกใหม่...ถ้า Map ได้ ถ้า Map ไม่ได้ก็ไม่ต้อง Default เลือก" --
+    // matched-cycle-id/name (PayrollSyncModel::pendingList()'s own new best-effort match, see
+    // PayrollCycleModel::matchForSyncProcess()'s docblock for the heuristic and its real limits)
+    // pre-selects the Payroll Schedule dropdown too, when confident. .trigger('change.select2') only
+    // (NOT plain 'change') -- updates the select2 widget's own display without firing
+    // applySuggestedPeriod()'s handler below, which would otherwise silently overwrite the more
+    // precise period/payment dates Origami itself already sent (just above) with a generically-
+    // computed "suggested" period instead. Left blank (no auto-select) whenever nothing confidently
+    // matched -- the admin picks manually, same as before this feature existed.
+    const matchedCycleId = ($btn.data('matched-cycle-id') || '').toString();
+    if (matchedCycleId) {
+        const matchedCycleName = ($btn.data('matched-cycle-name') || '').toString();
+        $('#run_cycle_id').empty().append(new Option(matchedCycleName || ('#' + matchedCycleId), matchedCycleId, true, true)).trigger('change.select2');
+    }
+
+    setSupplementalPullMode(runKind === 'supplemental', ($btn.data('tax-treatment') || '').toString());
     new bootstrap.Modal(document.getElementById('payrollRunModal')).show();
 });
-$(document).on('change', '#run_is_offcycle', function () {
-    setOffCycleMode($(this).is(':checked'));
+$(document).on('change', 'input[name="runScheduleChoice"]', function () {
+    setOffCycleMode($(this).val() === 'offcycle');
 });
 $(document).on('change', '#run_cycle_id', function () {
     applySuggestedPeriod($(this).val());
@@ -1321,6 +1613,151 @@ $(document).on('click', '.btn-view-sync', function () {
             $('#pendingSyncViewBody').html(`<div class="text-danger">${langData['save_failed'] || 'An error occurred while saving the data.'}</div>`);
         });
 });
+// 2026-08-31, explicit request: "เพิ่มให้สามารถตีกลับเอกสารที่ยังไม่ดึงมาทำรอบได้ โดยที่ต้องใส่ Comment เข้าไป
+// ด้วยครับ" -- SweetAlert2's own built-in `input: 'textarea'` (a required comment, enforced via
+// inputValidator, not a separate custom form) -- see PayrollSyncModel::rejectProcess()'s own
+// docblock for the backend contract (also pushes the rejection to Origami, best-effort).
+$(document).on('click', '.btn-reject-sync', function () {
+    const id = $(this).data('id');
+    const label = $(this).data('label');
+    Swal.fire({
+        icon: 'warning',
+        title: (langData['confirm_reject_sync_title'] || 'Reject "{label}"?').replace('{label}', label),
+        input: 'textarea',
+        inputPlaceholder: langData['reject_sync_comment_placeholder'] || 'Reason for rejecting this document...',
+        inputValidator: (value) => {
+            if (!value || !value.trim()) {
+                return langData['reject_sync_comment_required'] || 'A comment is required.';
+            }
+        },
+        showCancelButton: true,
+        confirmButtonText: langData['btn_reject_sync'] || 'Reject',
+        cancelButtonText: langData['cancel'] || 'Cancel',
+        confirmButtonColor: '#dc3545',
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        $.ajax({
+            url: `${BASE_URL}/api/payroll-sync.reject`, method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ id, comment: result.value }), dataType: 'json',
+            success: function (res) {
+                if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                if (tb_pending_sync) tb_pending_sync.ajax.reload(null, false);
+                loadPendingSyncCount();
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        });
+    });
+});
+
+// 2026-08-31, same-day follow-up -- see #blockedSyncUpdatesCard's own comment in index.php.
+// Apply is deliberately a warning-tone confirm (not just an info toast) -- it changes the linked
+// run's own SOURCE data, and the run itself still needs a separate, explicit Recalculate afterward
+// (this action never recalculates automatically, see PayrollSyncModel::applyBlockedUpdate()'s own
+// docblock).
+$(document).on('click', '.btn-apply-blocked-update', function () {
+    const id = $(this).data('id');
+    Swal.fire({
+        icon: 'warning',
+        title: langData['confirm_apply_blocked_update_title'] || 'Apply this update?',
+        text: langData['confirm_apply_blocked_update_message'] || 'This will overwrite the sync data for the linked run with what Origami sent. The run itself will NOT be recalculated automatically -- do that separately afterward.',
+        showCancelButton: true,
+        confirmButtonText: langData['btn_apply_update'] || 'Apply',
+        cancelButtonText: langData['cancel'] || 'Cancel',
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        $.ajax({
+            url: `${BASE_URL}/api/payroll-sync.blocked-update-apply`, method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ id }), dataType: 'json',
+            success: function (res) {
+                if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                loadBlockedSyncUpdates();
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        });
+    });
+});
+$(document).on('click', '.btn-dismiss-blocked-update', function () {
+    const id = $(this).data('id');
+    showConfirm(
+        langData['confirm_dismiss_blocked_update_title'] || 'Dismiss this update?',
+        langData['confirm_dismiss_blocked_update_message'] || 'The attempted update will be discarded without being applied. The linked run keeps its current data unchanged.',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-sync.blocked-update-dismiss`, method: 'POST', contentType: 'application/json',
+                data: JSON.stringify({ id }), dataType: 'json',
+                success: function (res) {
+                    if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    loadBlockedSyncUpdates();
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            });
+        }
+    );
+});
+// 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- "Merge into Target" action, see
+// PayrollRunModel::mergeSupplementalIntoRun()'s own docblock for the mechanism. Reports
+// merged_line_count/skipped_employee_ids from the result so an admin sees exactly what happened,
+// not just a bare success message.
+function requestMergeSupplemental(id, allowRevert, allowReopen, onDone) {
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.merge-supplemental`, method: 'POST', contentType: 'application/json',
+        data: JSON.stringify({ sync_process_id: id, allow_revert_non_draft_target: !!allowRevert, allow_reopen_paid_target: !!allowReopen }), dataType: 'json',
+        success: function (res) { onDone(res); },
+        error: function () { onDone({ status: false, message: langData['save_failed'] || 'An error occurred while saving.' }); }
+    });
+}
+function handleMergeSyncResult(id, label, target, res) {
+    if (res.status) {
+        let msg = (langData['merge_sync_success'] || 'Merged {count} line(s) into the target run.').replace('{count}', res.merged_line_count || 0);
+        if ((res.skipped_employee_ids || []).length > 0) {
+            msg += ' ' + (langData['merge_sync_skipped_note'] || '{count} employee(s) were skipped (not part of the target run).').replace('{count}', res.skipped_employee_ids.length);
+        }
+        showSuccess(msg);
+        if (tb_pending_sync) tb_pending_sync.ajax.reload(null, false);
+        loadPendingSyncCount();
+        return;
+    }
+    // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย") -- the target run isn't draft yet; offer a
+    // SECOND, more serious confirmation naming exactly what will be undone before retrying with the
+    // opt-in flag. Never auto-retries silently -- reverting someone else's approval decision always
+    // needs its own explicit click.
+    if (res.needs_revert_confirmation) {
+        const title = langData['confirm_revert_merge_title'] || 'This Will Undo an Existing Decision';
+        const message = (langData['confirm_revert_merge_message'] || 'The target run "{target}" is already {state}. Merging will REVERT that decision back to draft, requiring a fresh submit and approval. Continue?')
+            .replace('{target}', target).replace('{state}', res.target_state || '');
+        showConfirm(title, message, function () {
+            requestMergeSupplemental(id, true, false, function (retryRes) { handleMergeSyncResult(id, label, target, retryRes); });
+        });
+        return;
+    }
+    // Item 2 of the same follow-up: a paid/locked target needs its OWN, even more serious
+    // confirmation (money may have already moved) before reopening -- a genuinely different risk
+    // level than an undecided/decided-but-unpaid target above, so a separate dialog/wording, never
+    // silently folded into the same confirm as needs_revert_confirmation.
+    if (res.needs_reopen_confirmation) {
+        const title = langData['confirm_reopen_merge_title'] || 'This Will Reopen an Already-Paid Run';
+        const message = (langData['confirm_reopen_merge_message'] || 'The target run "{target}" is already {state} -- money may have already moved. Merging will REOPEN it back to draft (clearing its paid/locked/approval status), requiring a fresh recalculate, submit, approve, and pay cycle. This is a higher-risk action -- continue?')
+            .replace('{target}', target).replace('{state}', res.target_state || '');
+        showConfirm(title, message, function () {
+            requestMergeSupplemental(id, false, true, function (retryRes) { handleMergeSyncResult(id, label, target, retryRes); });
+        });
+        return;
+    }
+    showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+}
+$(document).on('click', '.btn-merge-sync', function () {
+    const id = $(this).data('id');
+    const label = $(this).data('label');
+    const target = $(this).data('target');
+    const title = langData['confirm_merge_sync_title'] || 'Merge into Target Cycle?';
+    const message = (langData['confirm_merge_sync_message'] || 'Merge "{label}" into "{target}"? This will add its amounts to that run\'s own gross pay before withholding.').replace('{label}', label).replace('{target}', target);
+    showConfirm(title, message, function () {
+        requestMergeSupplemental(id, false, false, function (res) { handleMergeSyncResult(id, label, target, res); });
+    });
+});
 $(document).on('change', '.pending-sync-checkbox', function () {
     const id = $(this).val();
     if (this.checked) {
@@ -1334,6 +1771,45 @@ $(document).on('change', '.pending-sync-checkbox', function () {
 });
 $(document).on('change', '#pendingSyncSelectAll', function () {
     $('#tb_pending_sync tbody .pending-sync-checkbox').prop('checked', this.checked).trigger('change');
+});
+// 2026-08-31, explicit request: "ปุ่ม Export กระทบยอดรายการตามงวด ตัดออกได้เลยครับ และปุ่ม Export งวด
+// ทังหมดตัดออก ให้ Export รายงวดเท่านั้น" -- the whole-list summary export (.btn-export-run-list,
+// PAYROLL_RUN_LIST_SUMMARY) and the occurrence-reconciliation export
+// (#btnExportOccurrenceReconciliation, SCHEDULED_ITEM_OCCURRENCE_RECONCILIATION) are both removed
+// from this page -- only the per-row export just below (one specific run/period at a time) stays.
+// Neither report itself was deleted (still registered, still reachable via their own tests/API),
+// just these 2 trigger buttons.
+$(document).on('click', '.btn-export-run-register', function () {
+    const params = new URLSearchParams();
+    params.set('report_code', 'PAYROLL_REGISTER');
+    params.set('format', 'excel');
+    params.set('run_id', $(this).data('id'));
+    params.set('source', 'payroll_process_list_row');
+    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
+});
+// 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ให้ Verify ได้ทั้ง Process ทั้ง Detail
+// และหน้า List" -- List page's own entry point for the same api/payroll-run.employee-verify.all
+// endpoint the Detail page's #btnVerifyAllEmployees button calls, so a whole run can be verified
+// without opening it first.
+$(document).on('click', '.btn-verify-all-run', function () {
+    const id = $(this).data('id');
+    showConfirm(langData['confirm_verify_all_title'] || 'Verify all employees in this run?',
+        langData['confirm_verify_all_message'] || 'Every employee in this run will no longer be recalculated and cannot be edited until unverified.',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-run.employee-verify.all`, method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify({ id: id }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                        if (tb_payroll_run) tb_payroll_run.ajax.reload(null, false);
+                    } else {
+                        showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                    }
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            });
+        });
 });
 $(document).on('click', '#btnBulkPull', function () {
     const ids = Object.keys(selectedPendingSync);
@@ -1654,8 +2130,8 @@ $(document).on('submit', '#runMarkPaidForm', function (e) {
 $(document).on('click', '.btn-quick-lock-run', function (e) {
     e.stopPropagation();
     const id = $(this).data('id');
-    const title = langData['confirm_lock_title'] || 'Lock this entry?';
-    const message = langData['confirm_lock_message'] || 'Once locked, this entry can no longer be edited or deleted.';
+    const title = langData['confirm_verify_run_title'] || 'Verify this payroll run?';
+    const message = langData['confirm_verify_run_message'] || 'Once verified, this run can no longer be recalculated.';
     showConfirm(title, message, function () {
         $.ajax({
             url: `${BASE_URL}/api/payroll-run.lock`,
@@ -1718,10 +2194,17 @@ $(document).ready(function () {
     restoreStationFromHash();
     if (typeof IS_ORIGAMI_PAYROLL_LINKED === 'undefined' || IS_ORIGAMI_PAYROLL_LINKED) {
         loadPendingSyncCount();
+        loadBlockedSyncUpdates();
     }
     if (typeof initSelect2 === 'function') {
         initSelect2('#run_cycle_id', { mode: 'ajax' });
         initSelect2('#run_purpose', { mode: 'static' });
+        // 2026-09-01, explicit request: "เปิดรอบใหม่ / อ้างอิงถึงรอบ" radio's own target picker.
+        initSelect2('#run_merge_target_id', { mode: 'ajax' });
+        // 2026-09-01, explicit request: 3 new filters (Origin/Payroll Schedule/Run Purpose).
+        initSelect2('#filter_run_origin', { mode: 'static' });
+        initSelect2('#filter_run_cycle', { mode: 'ajax', allowClear: true });
+        initSelect2('#filter_run_purpose', { mode: 'static' });
     }
     updateComputeStatutoryVisibility();
     if (typeof initDatepicker === 'function') {

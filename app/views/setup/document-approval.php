@@ -21,6 +21,7 @@
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
     <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button" role="tab"><i class="fa-solid fa-diagram-project me-1"></i> <span data-i18n="approval_workflow">Approval Workflow</span></button></li>
     <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-run" type="button" role="tab"><i class="fa-solid fa-hashtag me-1"></i> <span data-i18n="document_running_number">Document Numbering</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" id="emailQueueLogTabBtn" data-bs-toggle="tab" data-bs-target="#tab-email-log" type="button" role="tab"><i class="fa-solid fa-envelope-circle-check me-1"></i> <span data-i18n="email_queue_log">Email Log</span></button></li>
   </ul>
 
   <div class="tab-content">
@@ -109,9 +110,95 @@
       </table>
     </div>
 
+    <!-- EMAIL LOG (2026-08-31, explicit request: "สร้าง Cronjob สำหรับการส่งอีเมล และเพิ่มหน้าให้ดู Log
+         การส่งได้ มี Filter และตาราง รวมถึง Summary" -- the cron itself (cron/send_queued_emails.php)
+         already existed from Phase 7 (T040); this is the new admin log/summary page on top of it.
+         Summary = stat cards (same .stat-card markup as dashboard.php's own), filter = the shared
+         .station-filter pattern (per CLAUDE.md's own Table convention), table = a plain client-side
+         DataTable (unbounded-but-capped at 200 rows server-side, LIMIT 200 in EmailQueueModel::
+         list(), same "recent window, not a full unbounded archive" convention every other
+         audit-log-style table in this app already uses -- e.g. PayslipDeliveryLogModel::list()). -->
+    <div class="tab-pane fade" id="tab-email-log">
+      <div class="row g-3 mb-4" id="emailQueueStatRow">
+        <div class="col-6 col-lg-4">
+          <div class="stat-card stat-card-info h-100">
+            <div class="stat-card-icon"><i class="fa-solid fa-clock"></i></div>
+            <div>
+              <div class="stat-card-label" data-i18n="email_queue_status_pending">Pending</div>
+              <div class="stat-card-value" id="emailQueueStatPending">-</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-4">
+          <div class="stat-card stat-card-success h-100">
+            <div class="stat-card-icon"><i class="fa-solid fa-circle-check"></i></div>
+            <div>
+              <div class="stat-card-label" data-i18n="email_queue_status_sent">Sent</div>
+              <div class="stat-card-value" id="emailQueueStatSent">-</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-4">
+          <div class="stat-card stat-card-danger h-100">
+            <div class="stat-card-icon"><i class="fa-solid fa-circle-xmark"></i></div>
+            <div>
+              <div class="stat-card-label" data-i18n="email_queue_status_failed">Failed</div>
+              <div class="stat-card-value" id="emailQueueStatFailed">-</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="station-filter" id="emailQueueStationFilter">
+        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <button type="button" class="station-filter-toggle" id="emailQueueStationFilterToggle" title="Toggle filter">
+          <i class="fas fa-chevron-up"></i>
+        </button>
+        <div class="station-filter-body">
+          <div class="row g-2">
+            <div class="col-6 col-md-4 col-lg-3">
+              <label class="form-label mb-1" data-i18n="status">Status</label>
+              <select class="form-select select2-static" id="emailQueueFilterStatus" data-option-keys="email_queue_status_pending,email_queue_status_sent,email_queue_status_failed" data-option-values="pending,sent,failed"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-3">
+              <label class="form-label mb-1" data-i18n="date_from">From</label>
+              <input type="text" class="form-control datepicker" id="emailQueueFilterDateFrom" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-4 col-lg-3">
+              <label class="form-label mb-1" data-i18n="date_to">To</label>
+              <input type="text" class="form-control datepicker" id="emailQueueFilterDateTo" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-4 col-lg-3">
+              <label class="form-label mb-1" data-i18n="recipient">Recipient</label>
+              <input type="text" class="form-control" id="emailQueueFilterToAddress" autocomplete="off">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="d-flex justify-content-end mb-3">
+        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearEmailQueueFilter">
+          <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+        </button>
+      </div>
+      <table class="table table-striped table-hover" id="tb_email_queue_log">
+        <thead class="table-light text-secondary">
+          <tr>
+            <th data-i18n="recipient">Recipient</th>
+            <th data-i18n="email_subject">Subject</th>
+            <th data-i18n="status">Status</th>
+            <th data-i18n="email_attempts">Attempts</th>
+            <th data-i18n="email_error">Error</th>
+            <th data-i18n="created_at">Created At</th>
+            <th data-i18n="email_sent_at">Sent At</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
   </div>
 
   <!-- documentNumberingModal moved to app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 </div>
 <script src="<?=asset('public/js/setup/approval-workflow.js')?>"></script>
 <script src="<?=asset('public/js/setup/document-numbering.js')?>"></script>
+<script src="<?=asset('public/js/setup/email-queue-log.js')?>"></script>

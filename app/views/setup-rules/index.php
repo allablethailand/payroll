@@ -659,4 +659,5 @@
 </div>
 
 <script src="<?=asset('public/js/setup/setup-rules.js')?>"></script>
+<script src="<?=asset('public/js/setup/structure-assign.js')?>"></script>
 <script src="<?=asset('public/js/setup/holiday-sync.js')?>"></script>

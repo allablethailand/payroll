@@ -165,6 +165,47 @@ try {
     ], $adminUserId);
     checkFalse('saveMatrix rejects a nonexistent permission_id', $invalidPerm['status']);
 
+    // ---------- 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...แยกสิทธิ์ย่อยหลายระดับ" --
+    // allow_scope widened with 'own_only', new detail_level column, and resolveSalaryVisibility(). ----------
+    echo "=== salary_amount.* permissions: allow_scope='own_only' + detail_level ===\n";
+    checkTrue('salary_amount.view_employee is seeded', isset($byKey['salary_amount.view_employee']));
+    checkTrue('salary_amount.view_payroll_process is seeded', isset($byKey['salary_amount.view_payroll_process']));
+    checkTrue('salary_amount.view_reports is seeded', isset($byKey['salary_amount.view_reports']));
+
+    $salarySave = $model->saveMatrix($compId, [
+        ['role_id' => $roleManager, 'permission_id' => $byKey['holiday.manage'], 'allow_scope' => 'all'],
+        ['role_id' => $roleManager, 'permission_id' => $byKey['salary_amount.view_employee'], 'allow_scope' => 'own_only', 'detail_level' => 'summary'],
+    ], $adminUserId);
+    checkTrue('saveMatrix accepts allow_scope=own_only + detail_level=summary', $salarySave['status']);
+    $matrixAfterSalary = $model->matrix($compId);
+    $salaryGrant = current(array_filter($matrixAfterSalary['grants'], fn($g) => $g['role_id'] === $roleManager && $g['permission_id'] === $byKey['salary_amount.view_employee']));
+    check('allow_scope round-trips as own_only', $salaryGrant['allow_scope'] ?? null, 'own_only');
+    check('detail_level round-trips as summary', $salaryGrant['detail_level'] ?? null, 'summary');
+
+    $invalidScopeSave = $model->saveMatrix($compId, [
+        ['role_id' => $roleManager, 'permission_id' => $byKey['salary_amount.view_employee'], 'allow_scope' => 'not_a_real_scope', 'detail_level' => 'not_a_real_level'],
+    ], $adminUserId);
+    checkTrue('saveMatrix() still succeeds with an invalid scope/detail_level (falls back, does not reject the whole save)', $invalidScopeSave['status']);
+    $matrixAfterInvalid = $model->matrix($compId);
+    $invalidGrant = current(array_filter($matrixAfterInvalid['grants'], fn($g) => $g['role_id'] === $roleManager && $g['permission_id'] === $byKey['salary_amount.view_employee']));
+    check('invalid allow_scope silently falls back to all', $invalidGrant['allow_scope'] ?? null, 'all');
+    check('invalid detail_level silently falls back to full', $invalidGrant['detail_level'] ?? null, 'full');
+
+    echo "=== PermissionModel::resolveSalaryVisibility() ===\n";
+    $model->saveMatrix($compId, [
+        ['role_id' => $roleManager, 'permission_id' => $byKey['salary_amount.view_employee'], 'allow_scope' => 'own_only', 'detail_level' => 'full'],
+    ], $adminUserId);
+    $mgrOwnVisibility = $model->resolveSalaryVisibility($empManager, 'employee', false, $compId, $empManager);
+    checkTrue('own_only grant, viewing self: in_scope', $mgrOwnVisibility['in_scope']);
+    checkFalse('own_only grant, viewing self: not masked', $mgrOwnVisibility['masked']);
+    $mgrOtherVisibility = $model->resolveSalaryVisibility($empManager, 'employee', false, $compId, $empStaff);
+    checkFalse('own_only grant, viewing someone else: not in_scope', $mgrOtherVisibility['in_scope']);
+    checkTrue('own_only grant, viewing someone else: masked', $mgrOtherVisibility['masked']);
+    $staffNoGrantVisibility = $model->resolveSalaryVisibility($empStaff, 'employee', false, $compId, $empStaff);
+    checkTrue('a role with no salary_amount.view_employee grant at all is masked even viewing themselves', $staffNoGrantVisibility['masked']);
+    $adminVisibility = $model->resolveSalaryVisibility($empManager, 'employee', true, $compId, $empStaff);
+    checkTrue('isAdmin bypasses everything, always full', $adminVisibility['full']);
+
 } finally {
     $pdo->rollBack();
 }

@@ -202,6 +202,14 @@ function initSelect2(selector, options = {}) {
                         if (excludeId !== undefined && excludeId !== '') {
                             extraData.exclude_id = excludeId;
                         }
+                        // 2026-09-01: same "read fresh from the live DOM attribute on every search"
+                        // pattern as data-exclude-id above -- generic comma-separated state filter,
+                        // first consumer is the Payroll Run "merge target" picker
+                        // (api/payroll-run.options already reads a `states` POST param).
+                        const states = $this.attr('data-states');
+                        if (states !== undefined && states !== '') {
+                            extraData.states = states;
+                        }
                         return $.extend({
                             searchTerm: params.term,
                             page: params.page || 1,

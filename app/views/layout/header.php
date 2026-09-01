@@ -90,6 +90,17 @@ if ($compIdForOrigamiFlags > 0) {
     $canViewApprovalWorkflowMenu = (new PermissionModel())->checkPermission($menuUserId, 'approval_workflow.view', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
 }
 
+// 2026-08-31, explicit request: "สิทธิ์การใช้งาน...อยากให้แยกออกมาเป็นอีก Menu ไปเลย" -- same
+// single-purpose-page hide-the-whole-entry gate as $canViewApprovalWorkflowMenu directly above,
+// gated by rbac.manage (the same permission PermissionController's own matrix()/save() actions
+// already require).
+$canViewPermissionsMenu = true;
+if ($compIdForOrigamiFlags > 0) {
+    $menuUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
+    $menuIsAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
+    $canViewPermissionsMenu = (new PermissionModel())->checkPermission($menuUserId, 'rbac.manage', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
+}
+
 // 2026-08-29, explicit request: "ให้ดึงรูปไปแสดงที่ header ด้วยครับ" -- the logged-in user's own profile
 // photo (employees.profile_photo_path) shown in the top-right nav dropdown, which previously always
 // hardcoded the generic placeholder (userNoImage.jpg) regardless of who was logged in. A direct,
@@ -329,6 +340,18 @@ if ($navUserId > 0) {
                         <span class="submenu-text" data-i18n="annual_income_summary">Annual Income Summary</span>
                     </a>
                 </li>
+                <!-- 2026-08-31, same-day follow-up (item 10, explicit request: "Design ให้หน่อยครับ No
+                     Idea" -- diff-history audit of every payroll run's manual edits). Same "interactive
+                     page, not a generate-and-download document" reasoning as Annual Income Summary
+                     above -- hangs off the same Reports submenu rather than a new top-level icon. -->
+                <li>
+                    <a href="<?=BASE_URL?>/reports/run-audit" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Payroll Run Audit">
+                        </span>
+                        <span class="submenu-text" data-i18n="payroll_run_audit_menu">Payroll Run Audit</span>
+                    </a>
+                </li>
             </ul>
         </li>
         <!-- 2026-08-24, explicit request: "Menu Employment Ceritficate น่าจะนำไปรวมใน Play Slip แต่เปลี่ยน
@@ -405,6 +428,26 @@ if ($navUserId > 0) {
                 </li>
             </ul>
         </li>
+        <!-- 2026-08-31, explicit request: "สิทธิ์การใช้งาน...อยากให้แยกออกมาเป็นอีก Menu ไปเลย" -- was
+             pill p6 inside Organizational Structure (Company Profile settings); moved here as its
+             own single-link top-level entry (grouping into module categories happens WITHIN
+             permissions.php itself via pill sub-tabs, not another sidebar submenu level). Reuses
+             APPROVAL.svg (no dedicated shield/lock icon exists in this asset set -- same "reuse an
+             existing icon" precedent Employment Certificate's own menu item already established
+             with REPORT.svg, see CLAUDE.md). Gated by $canViewPermissionsMenu (computed above,
+             same single-purpose-page hide-the-whole-entry pattern as
+             $canViewApprovalWorkflowMenu). Placed directly above Settings per that section's own
+             "any future top-level menu item goes ABOVE this one" comment. -->
+        <?php if ($canViewPermissionsMenu): ?>
+        <li class="menu-item">
+            <a href="<?=BASE_URL?>/setup/permissions" class="menu-link">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Permissions">
+                </span>
+                <span class="menu-text" data-i18n="permissions_menu">Permissions</span>
+            </a>
+        </li>
+        <?php endif; ?>
         <!-- 2026-08-30, explicit request: "การจัดเรียง Menu Setting อยู่ท้ายสุดเสมอครับ" -- already the
              last top-level <li> in $sidebarMenuList (verified, no other file renders this menu) --
              keep it that way: any future top-level menu item goes ABOVE this one, not below. -->

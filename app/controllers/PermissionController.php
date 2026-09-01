@@ -17,6 +17,13 @@ class PermissionController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    // 2026-08-31, explicit request: "สิทธิ์การใช้งาน...อยากให้แยกออกมาเป็นอีก Menu ไปเลย" -- was pill
+    // p6 inside Company Profile's Organizational Structure tab, now its own standalone page. The
+    // API actions below (matrix()/save()) are unchanged -- only this new page/route is added.
+    public function index() {
+        $this->view('setup/permissions');
+    }
+
     public function matrix() {
         $compId = getCompId();
         if (!$this->isAdmin()) {

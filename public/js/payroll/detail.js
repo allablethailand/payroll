@@ -41,7 +41,12 @@ function escapeHtmlRd(str) {
 function escapeAttrRd(str) {
     return escapeHtmlRd(str).replace(/"/g, '&quot;');
 }
+// 2026-08-31, explicit request ("สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX"): PayrollController may
+// send the literal string "XXXX" instead of a real number for a masked figure -- passed through
+// as-is rather than formatted (Number('XXXX') is NaN, which .toLocaleString() would otherwise
+// render as the confusing literal text "NaN").
 function fmtNumRd(n) {
+    if (n === 'XXXX') return n;
     return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function stateBadgeRd(state) {
@@ -321,7 +326,18 @@ function timelineStepActionsHtml(i, run, currentIndex) {
             // fully built (and already had a quick-action shortcut on the Process LIST page's mini
             // timeline, see index.js's miniTimelineQuickActionHtml()) but the Detail page's own
             // step-by-step timeline never got an equivalent button at the "Paid" step.
-            buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-lock" title="${langData['action_lock'] || 'Lock'}"><i class="fa-solid fa-lock me-1"></i>${langData['action_lock'] || 'Lock'}</button>`);
+            // 2026-08-31, explicit request: "ในหน้าทำรอบจ่าย ให้ตัด Process ของปุ่ม Lock ออก ให้เหลือแค่
+            // ปุ่ม Verify" -- pure rename/re-wording, NOT a state-machine change: same endpoint
+            // (api/payroll-run.lock), same PayrollRunModel::lock() method, same paid->locked
+            // transition -- reopen()'s own locked-vs-paid branching and every other 'locked'-state
+            // consumer keep working unchanged, this only relabels the button/confirm copy so the
+            // operator sees "Verify" (with an explicit "can't recalculate again" warning) instead
+            // of the more technical-sounding "Lock". Uses a NEW key (action_verify_run), NOT a
+            // repurposed action_lock -- that key is still legitimately used elsewhere for the
+            // UNRELATED per-employee QA Lock toggle (see verifyLockButtonsRd()) and the Process
+            // List page's own quick-action shortcut for this SAME run-level action (index.js's
+            // miniTimelineQuickActionHtml(), updated to match).
+            buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-lock" title="${langData['action_verify_run'] || 'Verify'}"><i class="fa-solid fa-check-double me-1"></i>${langData['action_verify_run'] || 'Verify'}</button>`);
             // 2026-08-29, explicit request: "รายการที่ติ๊กว่าทำจ่ายแล้ว หรือปิดรอบไปแล้ว สามารถเปิดให้กลับมา
             // แก้ไขได้และส่งอนุมัติใหม่ได้ครับ" -- see PayrollRunModel::reopen()'s own docblock.
             buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-tl-reopen" title="${langData['action_reopen'] || 'Reopen for Editing'}"><i class="fa-solid fa-unlock me-1"></i>${langData['action_reopen'] || 'Reopen for Editing'}</button>`);
@@ -416,30 +432,128 @@ function rdReportBrowserLabel(row) {
 // calculated" here), only the action buttons are disabled until the run reaches an allowed state.
 function loadRunReportsTab() {
     if (!PAYROLL_RUN_ID || !currentRun) return;
-    const isReady = RD_REPORT_ALLOWED_STATES.includes(currentRun.state);
-    $('#runReportsNotReadyBanner').toggleClass('d-none', isReady);
+    const stateIsReady = RD_REPORT_ALLOWED_STATES.includes(currentRun.state);
+    // 2026-08-31, explicit request: "ในหน้า List และ Detail ของการทำรอบ อยากให้มีการ Export Excel ได้
+    // ไม่ว่าจะสถานะไหน" -- an `internal` report (PAYROLL_REGISTER) has no state gate at all
+    // server-side, so it must never be blocked by this table's own state-based disable either;
+    // only the banner (a generic "not everything is ready yet" hint) still reflects the OVERALL
+    // state, since most rows in this table genuinely do still require approved/paid/locked.
+    $('#runReportsNotReadyBanner').toggleClass('d-none', stateIsReady);
     $.getJSON(`${BASE_URL}/api/report.run-summary`, { run_id: PAYROLL_RUN_ID }, function (res) {
         if (!res.status) return;
-        rdReportsRows = res.data || [];
+        // 2026-08-31, explicit request: "ปุ่ม Export Excel ไม่ควรไปรวมอยู่ในรายงาน ย้ายไปอยู่กับ Timeline" --
+        // PAYROLL_REGISTER (this run's own employee-by-employee register) is deliberately excluded
+        // from this generic list -- it now has its own dedicated button next to the Timeline (see
+        // #btnExportRunRegister), not mixed in among the statutory/payment reports here. Still the
+        // exact same download (same api/report.generate call, same report_export_logs tracking) --
+        // only WHERE the trigger lives on this page changed.
+        rdReportsRows = (res.data || []).filter(row => row.code !== 'PAYROLL_REGISTER');
         $('#runReportsNotReady').toggleClass('d-none', rdReportsRows.length > 0);
         $('#tb_run_reports').toggleClass('d-none', rdReportsRows.length === 0);
-        const disabledAttr = isReady ? '' : 'disabled';
         const notReadyTitle = langData['reports_available_after_approval'] || 'Reports are available once this run is approved.';
-        $('#runReportsTableBody').html(rdReportsRows.map(row => `
+        $('#runReportsTableBody').html(rdReportsRows.map(row => {
+            const rowIsReady = row.report_type === 'internal' ? true : stateIsReady;
+            const disabledAttr = rowIsReady ? '' : 'disabled';
+            return `
             <tr>
                 <td>${escapeHtmlRd(rdReportLabel(row))}</td>
                 <td class="text-center">${Number(row.download_count) || 0}</td>
                 <td>${row.last_downloaded_at ? formatDisplayDateTime(row.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`}</td>
                 <td class="text-center">
                     <div class="btn-group border rounded-3 bg-white">
-                        <button type="button" class="btn btn-link text-primary btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${isReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
-                        <button type="button" class="btn btn-link text-secondary border-start btn-report-history" data-code="${row.code}" ${disabledAttr} title="${isReady ? (langData['report_view_history'] || 'View Download History') : notReadyTitle}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                        <button type="button" class="btn btn-link text-primary btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
+                        <button type="button" class="btn btn-link text-secondary border-start btn-report-history" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_view_history'] || 'View Download History') : notReadyTitle}"><i class="fa-solid fa-clock-rotate-left"></i></button>
                     </div>
                 </td>
             </tr>
-        `).join(''));
+        `;
+        }).join(''));
     });
 }
+// 2026-08-31, same-day follow-up -- see #btnExportRunRegister's own comment in detail.php. Direct
+// download, same convention public/js/payroll/index.js's own per-row .btn-export-run-register
+// button already uses (no preview modal -- Excel has no inline preview path anyway).
+$(document).on('click', '#btnExportRunRegister', function () {
+    if (!PAYROLL_RUN_ID) return;
+    const params = new URLSearchParams();
+    params.set('report_code', 'PAYROLL_REGISTER');
+    params.set('format', 'excel');
+    params.set('run_id', PAYROLL_RUN_ID);
+    params.set('source', 'payroll_process_detail');
+    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
+});
+// 2026-08-31, explicit request: "ถ้าพนักงานรับเงินสด...แยก Report ตามแยก ว่าจ่ายเงินสดเท่าไหร่ โอนผ่าน
+// ธนาคารเท่าไหร่ และสามารถใส่ Status ว่าจ่ายแล้ว" -- interactive per-employee cash payment status.
+// Same ALLOWED_STATES gate as the Reports tab (PayrollRunCashPaymentModel enforces this
+// server-side too -- the client-side check here is purely to show the right empty-state message
+// without an extra round trip).
+function loadRunCashTab() {
+    if (!PAYROLL_RUN_ID || !currentRun) return;
+    const isReady = RD_REPORT_ALLOWED_STATES.includes(currentRun.state);
+    $('#runCashNotReady').toggleClass('d-none', isReady);
+    $('#runCashContent').toggleClass('d-none', !isReady);
+    if (!isReady) return;
+    $.getJSON(`${BASE_URL}/api/payroll-run-cash-payment.list`, { run_id: PAYROLL_RUN_ID }, function (res) {
+        if (!res.status) {
+            $('#runCashNotReady').removeClass('d-none').find('#runCashNotReadyMessage').text(res.message || '');
+            $('#runCashContent').addClass('d-none');
+            return;
+        }
+        const data = res.data;
+        $('#runCashTotalCash').text(fmtNumRd(data.total_cash));
+        $('#runCashTotalBank').text(fmtNumRd(data.total_bank));
+        $('#runCashTableBody').html((data.rows || []).map(row => {
+            const name = escapeHtmlRd((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
+            const isPaid = row.status === 'paid';
+            const badge = isPaid
+                ? `<span class="badge bg-success-subtle text-success">${langData['status_paid'] || 'Paid'}</span>`
+                : `<span class="badge bg-secondary-subtle text-secondary">${langData['status_unpaid'] || 'Unpaid'}</span>`;
+            const paidByName = currentLang === 'th' ? row.paid_by_name_th : row.paid_by_name_en;
+            const paidAtCell = isPaid ? `${formatDisplayDateTime(row.paid_at)}${paidByName ? `<div class="text-muted small">${escapeHtmlRd(paidByName)}</div>` : ''}` : '-';
+            const actionBtn = isPaid
+                ? `<button type="button" class="btn btn-link btn-sm text-secondary btn-cash-mark-unpaid" data-id="${row.id}" title="${langData['mark_as_unpaid'] || 'Mark as Unpaid'}"><i class="fa-solid fa-rotate-left"></i></button>`
+                : `<button type="button" class="btn btn-link btn-sm text-success btn-cash-mark-paid" data-id="${row.id}" title="${langData['mark_as_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-check"></i></button>`;
+            return `<tr>
+                <td>${escapeHtmlRd(row.employee_no)}</td>
+                <td>${name}</td>
+                <td class="text-end">${fmtNumRd(row.amount)}</td>
+                <td class="text-center">${badge}</td>
+                <td>${paidAtCell}</td>
+                <td class="text-center"><div class="btn-group border rounded-3 bg-white">${actionBtn}</div></td>
+            </tr>`;
+        }).join('') || `<tr><td colspan="6" class="text-center text-secondary py-3">${langData['no_cash_payments'] || 'No cash-paying employees in this run.'}</td></tr>`);
+    });
+}
+function setRunCashPaymentStatus(id, status) {
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run-cash-payment.set-status`, method: 'POST',
+        contentType: 'application/json', data: JSON.stringify({ id, status }), dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            loadRunCashTab();
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+}
+$(document).on('click', '.btn-cash-mark-paid', function () {
+    const id = $(this).data('id');
+    showConfirm(
+        langData['confirm_mark_paid_title'] || 'Mark as Paid',
+        langData['confirm_mark_paid_message'] || 'Confirm this cash payment has been handed over to the employee?',
+        function () { setRunCashPaymentStatus(id, 'paid'); }
+    );
+});
+$(document).on('click', '.btn-cash-mark-unpaid', function () {
+    const id = $(this).data('id');
+    showConfirm(
+        langData['confirm_mark_unpaid_title'] || 'Mark as Unpaid',
+        langData['confirm_mark_unpaid_message'] || 'Revert this back to unpaid?',
+        function () { setRunCashPaymentStatus(id, 'unpaid'); }
+    );
+});
 $(document).on('click', '.btn-report-preview', function () {
     const row = rdReportsRows.find(r => r.code === $(this).data('code'));
     if (!row) return;
@@ -594,11 +708,22 @@ $(document).on('click', '#btnReportHistoryClearFilter', function () {
 function renderSectionButtons(run) {
     const $editWrap = $('#runEditButtonWrap').empty();
     const $recalcWrap = $('#runRecalculateButtonWrap').empty();
+    const $verifyAllWrap = $('#runVerifyAllButtonWrap').empty();
+    $('#autoRecalculateWrap').addClass('d-none');
+    $('#recalcReminderBanner').addClass('d-none');
     if (run.state !== 'draft') {
         return;
     }
     $editWrap.append(`<button type="button" id="btnEditRun" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">${langData['action_edit'] || 'Edit'}</span></button>`);
-    $recalcWrap.append(`<button type="button" id="btnRecalculate" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-rotate me-1"></i><span data-i18n="action_recalculate">${langData['action_recalculate'] || 'Recalculate'}</span></button>`);
+    // 2026-08-31, explicit request: "ปุ่ม เพิ่มพนักงาน และคำนวณใหม่ ตอนนี้ดูจมอยู่ไม่เด่น" -- both were
+    // small outline buttons sitting quietly next to a plain text header; restyled to full-size solid
+    // buttons (Join Employees = brand orange/.btn-primary, this app's own "Add" convention; Recalculate
+    // = solid dark so it reads as the OTHER most-important action here without competing for the same
+    // "primary" visual weight) so they read as real calls to action, not decoration. Verify All moved
+    // OUT of this cluster entirely (see runVerifyAllButtonWrap below, now grouped with the bulk-verify
+    // bar instead) -- 3 buttons crammed into one header row was exactly the "ไม่ให้มีความซ้ำซ้อน" this
+    // same request asked to review.
+    $recalcWrap.append(`<button type="button" id="btnRecalculate" class="btn btn-dark"><i class="fa-solid fa-rotate me-1"></i><span data-i18n="action_recalculate">${langData['action_recalculate'] || 'Recalculate'}</span></button>`);
     // Join Employees is now shown on EVERY draft run (2026-08-21, explicit request -- this is also
     // the undo path for removeEmployeeButtonRd()'s now-universal remove). For an off-cycle/sync-based
     // run it still adds someone to payroll_run_manual_employees exactly as before. For a genuine
@@ -606,7 +731,31 @@ function renderSectionButtons(run) {
     // re-include a previously-removed employee -- see PayrollRunModel::joinEmployees()'s cycle-only
     // branch and manualEmployeeOptions(), which restricts that run type's picker to just the
     // currently-excluded employees.
-    $recalcWrap.append(`<button type="button" id="btnJoinEmployees" class="btn btn-sm btn-outline-primary ms-2"><i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">${langData['action_join_employees'] || 'Join Employees'}</span></button>`);
+    $recalcWrap.append(`<button type="button" id="btnJoinEmployees" class="btn btn-primary ms-2"><i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">${langData['action_join_employees'] || 'Join Employees'}</span></button>`);
+    // 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ในหน้า Detail ช่วยดูเรื่องตำแหน่งการ
+    // จัดวางครับ"; same-day layout review moved this OUT of the section header (see this function's
+    // own comment above) into #runVerifyAllButtonWrap, right beside the selection-scoped bulk-verify
+    // bar just above the employee table -- every "Verify" action now lives in exactly one place.
+    $verifyAllWrap.append(`<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-success"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`);
+
+    // 2026-08-31, explicit request: auto-recalculate checkbox + reminder banner, draft-only (see
+    // PayrollRunModel::setAutoRecalculate()'s own docblock). Checkbox always visible once a run is
+    // draft; renderRecalcReminder() (called right below) decides the banner's own visibility.
+    $('#autoRecalculateWrap').removeClass('d-none');
+    $('#chkAutoRecalculate').prop('checked', !!run.auto_recalculate);
+    renderRecalcReminder(run);
+}
+
+/**
+ * 2026-08-31: the reminder banner is a plain, always-the-same-text nudge -- this run has no way to
+ * detect an edit made somewhere ELSE (Employee Detail's salary/PED tab, Setup & Rules, Payroll
+ * Configuration, ...), so it can't tell "you changed something, go recalculate" apart from "nothing
+ * changed" -- it just reminds every time, unless auto-recalculate is on (in which case there's
+ * nothing to remind about, see maybeAutoRecalculateOnLoad() below for what that checkbox actually does).
+ */
+function renderRecalcReminder(run) {
+    const show = run.state === 'draft' && !run.auto_recalculate;
+    $('#recalcReminderBanner').toggleClass('d-none', !show).css('display', show ? 'flex' : '');
 }
 
 // A run pulled from a cycle or a REGULAR sync process is always full payroll -- editable for a
@@ -699,8 +848,27 @@ function renderRunHeader(run) {
     renderProcessTimeline(run);
     renderSectionButtons(run);
     loadRunReportsTab();
+    loadRunCashTab();
     renderRunSettingsPanel(run);
     loadSyncMissingEmployeesBanner(run);
+    renderMergeTargetBanner(run);
+}
+
+// 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรืออ้างอิงถึง
+// รอบ" -- shown whenever this run was created with a merge target set and is still eligible to
+// merge (draft, genuinely off-cycle -- matches PayrollRunModel::mergeIntoExistingRun()'s own
+// server-side check exactly, so the button never appears somewhere the backend would just refuse
+// anyway). No AJAX round trip needed -- merge_target_run_id/_name/_state all come back on the
+// normal api/payroll-run.get payload already (see PayrollRunModel::get()'s own LEFT JOIN).
+function renderMergeTargetBanner(run) {
+    const eligible = !!run.merge_target_run_id && run.state === 'draft' && !run.cycle_id && !run.sync_process_id;
+    if (!eligible) {
+        $('#mergeTargetBanner').addClass('d-none');
+        return;
+    }
+    const tpl = langData['merge_target_banner_text'] || 'This run is set to merge into "{target}" once ready.';
+    $('#mergeTargetBannerText').text(tpl.replace('{target}', run.merge_target_run_name || `#${run.merge_target_run_id}`));
+    $('#mergeTargetBanner').removeClass('d-none');
 }
 
 /* 2026-08-30 (Phase 8, T041) -- reconciliation warning for a sync-based run. Draft-only (same
@@ -1119,7 +1287,7 @@ function renderRunTimelineModal(run) {
         buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-mark-paid"><i class="fa-solid fa-money-check-dollar me-1"></i>${langData['action_mark_paid'] || 'Mark as Paid'}</button>`);
     }
     if (run.state === 'paid' && run.can_finalize_payroll) {
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-lock"><i class="fa-solid fa-lock me-1"></i>${langData['action_lock'] || 'Lock'}</button>`);
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-lock"><i class="fa-solid fa-check-double me-1"></i>${langData['action_verify_run'] || 'Verify'}</button>`);
     }
     // 2026-08-23, explicit request ("ในกรณีที่ส่ง Approve แล้วยังไม่มีใคร Approve สามารถดึง Process
     // กลับได้") -- pending_approval's own revert is open to the submitter (can_process_payroll) as
@@ -1223,7 +1391,7 @@ $(document).on('click', '.btn-tl-revert', function (e) {
 });
 $(document).on('click', '.btn-tl-lock', function (e) {
     e.stopPropagation();
-    showConfirm(langData['confirm_lock_title'] || 'Lock this entry?', langData['confirm_lock_message'] || 'Once locked, this entry can no longer be edited or deleted.', function () {
+    showConfirm(langData['confirm_verify_run_title'] || 'Verify this payroll run?', langData['confirm_verify_run_message'] || 'Once verified, this run can no longer be recalculated.', function () {
         const inst = bootstrap.Modal.getInstance(document.getElementById('runTimelineModal'));
         if (inst) inst.hide();
         callRunAction('/api/payroll-run.lock', {}, langData['save_success']);
@@ -1333,29 +1501,28 @@ function removeEmployeeButtonRd(row) {
 // left it the one inconsistent holdout after the sitewide sweep standardized everything else to
 // this exact pattern; matched here now).
 // 2026-08-29, explicit request: "อยากให้มีปุ่ม Verify ของแต่ละคน และสามารถ Lock Unlock ได้", then split
-// out the same day: "ปุ่ม verify กับ Lock แยกออกมาอีก 1 Column ครับ" -- own button-group in the
-// dedicated "Verify / Lock" column (initRunDetailTable()'s column 10), not bundled into the general
-// Actions group anymore. Available on any draft run only (same gating as manageItemsButtonRd()/
-// removeEmployeeButtonRd()); the button's own current-state is read back off `data-*` by the click
-// handlers (.btn-verify-employee/.btn-lock-employee) so a toggle click always flips whatever the
-// row is CURRENTLY showing, not a stale value captured at render time. Read-only when the run isn't
-// draft (past that point verifying/locking has no meaning) -- shows plain badges instead.
+// out the same day: "ปุ่ม verify กับ Lock แยกออกมาอีก 1 Column ครับ" -- own button in the dedicated
+// "Verify" column (initRunDetailTable()'s column 10), not bundled into the general Actions group.
+// 2026-08-31, explicit follow-up: "ตัดปุ่ม Lock ออกไปเลยครับ ให้เหลือแค่ Verify ถ้า Verify แล้ว จะไม่คำนวณ
+// อีกต่อไป" -- Lock removed entirely; Verify itself now carries the "freeze from recalculation,
+// refuse further edits" behavior Lock used to have (see PayrollRunModel::isEmployeeVerifiedForRun()).
+// Available on any draft run only (same gating as manageItemsButtonRd()/removeEmployeeButtonRd());
+// the button's own current-state is read back off `data-*` by the click handler (.btn-verify-
+// employee) so a toggle click always flips whatever the row is CURRENTLY showing, not a stale value
+// captured at render time. Read-only when the run isn't draft -- shows a plain badge instead.
 function verifyLockButtonsRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
-        const verified = row.is_verified ? `<span class="badge bg-success-subtle text-success" title="${langData['verify_status_verified'] || 'Verified'}"><i class="fa-solid fa-check-double"></i></span>` : '';
-        const locked = row.is_locked ? `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${langData['lock_status_locked'] || 'Locked'}"><i class="fa-solid fa-lock"></i></span>` : '';
-        return (verified + locked) || '<span class="text-muted">-</span>';
+        return row.is_verified
+            ? `<span class="badge bg-success-subtle text-success" title="${langData['verify_status_verified'] || 'Verified'}"><i class="fa-solid fa-check-double"></i></span>`
+            : '<span class="text-muted">-</span>';
     }
     const verifyTitle = row.is_verified ? (langData['action_unverify'] || 'Unverify') : (langData['action_verify'] || 'Verify');
     // 2026-08-29, explicit follow-up request: "ปุ่ม Lock Verify ถ้ากดแล้วให้เปลี่ยนสีครับ" -- was a
     // btn-link with just a text-color swap (subtle, easy to miss); pressed state is now a solid
     // filled button so it's unmistakable at a glance, not just a slightly different icon tint.
     const verifyBtnCls = row.is_verified ? 'btn-success text-white' : 'btn-outline-secondary';
-    const lockTitle = row.is_locked ? (langData['action_unlock'] || 'Unlock') : (langData['action_lock'] || 'Lock');
-    const lockBtnCls = row.is_locked ? 'btn-danger text-white' : 'btn-outline-secondary';
     return `<div class="btn-group border rounded-3 bg-white">
         <button type="button" class="btn ${verifyBtnCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
-        <button type="button" class="btn ${lockBtnCls} border-start btn-lock-employee" data-employee-id="${row.employee_id}" data-locked="${row.is_locked ? 'true' : 'false'}" title="${lockTitle}"><i class="fa-solid ${row.is_locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
     </div>`;
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
@@ -1561,9 +1728,19 @@ function breakdownLineRowsRd(lines) {
         } else {
             codeHtml = `<code class="fw-bold text-dark">${escapeHtmlRd(line.code || '-')}</code>`;
         }
-        const payeeHtml = line.payee_employee_id
-            ? `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`
-            : '';
+        // 2026-08-31, same-day follow-up: payee_type widened to 'company'/'not_disbursed' too --
+        // same branching as manualLineListItemHtml()'s own payeeHtml.
+        let payeeHtml = '';
+        if (line.payee_type === 'employee' && line.payee_employee_id) {
+            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
+        } else if (!line.payee_type && line.payee_employee_id) {
+            // Backward-compat: a row saved before payee_type existed only ever meant 'employee'.
+            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
+        } else if (line.payee_type === 'company') {
+            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+        } else if (line.payee_type === 'not_disbursed') {
+            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
+        }
         const exemptBadge = line.is_exempted ? `<span class="badge bg-warning-subtle text-warning-emphasis ms-1">${langData['attendance_deduction_exempted_badge'] || 'Exempted'}</span>` : '';
         return `<tr class="${line.is_exempted ? 'text-muted' : ''}">
             <td>${codeHtml}</td>
@@ -1804,7 +1981,57 @@ $(document).on('click', '.btn-raw-sync-data', function () {
     });
 });
 
+// 2026-08-31, explicit request: "ใน Sumary card ของพนักงานแยกเป็น 2 grid ตรงตัวเลขครับ" (2nd grid = Bank/
+// Cash counts) -- computed client-side from the SAME details array already loaded for
+// #tb_run_detail (payment_type added to PayrollRunModel::getDetails() this same round), no separate
+// request needed. Called from both branches of initRunDetailTable() (rebuild and reload-existing).
+function updatePaymentMethodSummary(details) {
+    const bankCount = details.filter(d => (d.payment_type || 'bank') === 'bank').length;
+    const cashCount = details.filter(d => d.payment_type === 'cash').length;
+    // 2026-09-01, explicit correction: "ให้ขึ้นใน card พนักงานครับ มีแค่ 4 Card เหมือนเดิม" -- no longer
+    // its own 2-card grid; a compact subtext line inside the existing "Employees" card instead.
+    const bankLabel = langData['table_payment_bank'] || 'Bank Transfer';
+    const cashLabel = langData['table_payment_cash'] || 'Cash';
+    $('#infoPaymentBreakdown').html(`<i class="fa-solid fa-building-columns me-1"></i>${bankLabel} ${bankCount} <span class="mx-1">·</span><i class="fa-solid fa-money-bill-wave me-1"></i>${cashLabel} ${cashCount}`);
+    // The Payment Method Summary tab's own pair of cards (#run-payment-pane) stayed a genuine
+    // separate grid -- that request never asked to change that tab, only this Employee Breakdown
+    // section's own card -- see refreshPaymentSummaryTable() for those 2 counts.
+}
+// 2026-08-31, explicit request: "ก่อนตารางพนักงาน ให้มี checkbox ขึ้นมาเพื่อให้เลือกกรองข้อมูล พนักงานที่รับผ่าน
+// บัญชี และเงินสด" -- registered ONCE (guarded the same way registerStationSearchFilter() in
+// payroll/index.js is, scoped to this one table's id so it never affects any other DataTable on the
+// page) rather than re-pushed every time initRunDetailTable() runs.
+let paymentMethodSearchFilterRegistered = false;
+function registerPaymentMethodSearchFilter() {
+    if (paymentMethodSearchFilterRegistered) return;
+    paymentMethodSearchFilterRegistered = true;
+    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
+        if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
+        const bankOn = $('#filterPaymentBank').is(':checked');
+        const cashOn = $('#filterPaymentCash').is(':checked');
+        const type = (rowData && rowData.payment_type) || 'bank';
+        return type === 'cash' ? cashOn : bankOn;
+    });
+}
+// Confirmed via AskUserQuestion: 2 independent checkboxes, both checked by default (show everyone);
+// unticking one hides that group; unticking BOTH is disallowed -- falls back to Bank rather than
+// letting the table go empty with no visible way back in.
+$(document).on('change', '#filterPaymentBank, #filterPaymentCash', function () {
+    if (!$('#filterPaymentBank').is(':checked') && !$('#filterPaymentCash').is(':checked')) {
+        $('#filterPaymentBank').prop('checked', true);
+    }
+    if (tb_run_detail) tb_run_detail.draw();
+});
+
+// 2026-08-31: raw per-employee rows kept module-level so the new "Payment Method Summary" tab
+// (initPaymentSummaryTable() below) can build/refresh its own DataTable off the exact same data
+// #tb_run_detail already has, without a second AJAX round trip.
+let currentRunDetails = [];
 function initRunDetailTable(details) {
+    currentRunDetails = details;
+    registerPaymentMethodSearchFilter();
+    updatePaymentMethodSummary(details);
+    refreshPaymentSummaryTable();
     $('#noDetailsYet').toggleClass('d-none', details.length > 0);
     $('#tb_run_detail').toggleClass('d-none', details.length === 0);
     // 2026-08-29, real bug found and fixed (explicit report: "checkbox ในกรณีที่ส่งไปอนุมัติแล้วยังขึ้นอยู่
@@ -1911,17 +2138,16 @@ function initRunDetailTable(details) {
         // orderable flag, it only blocks the USER from re-triggering it via the header. The data
         // already arrives pre-sorted by employee_no ASC from PayrollRunModel::getDetails()'s own
         // SQL, so this is a belt-and-braces guarantee it stays that way across every later
-        // rows.add().draw() reload too (recalculate/verify/lock/etc.), not just the first render.
+        // rows.add().draw() reload too (recalculate/verify/etc.), not just the first render.
         order: [[1, 'asc']],
-        // 2026-08-29, explicit follow-up request: "รายการให้แสดงให้ต่างกับรายการที่ยังไม่ Verify หรือ Lock"
-        // -- a verified and/or locked row gets its own background tint (rd-row-verified/
-        // rd-row-locked, see style.css) so it reads as visually distinct from a plain not-yet-
-        // actioned row at a glance, not just via the Verify/Lock column's own button state.
-        // createdRow fires once per row (including on rows.add() during a later reload), so this
-        // stays correct across recalculate()/verify/lock round trips without any extra wiring.
+        // 2026-08-29, explicit follow-up request: "รายการให้แสดงให้ต่างกับรายการที่ยังไม่ Verify" -- a
+        // verified row gets its own background tint (rd-row-verified, see style.css) so it reads as
+        // visually distinct from a plain not-yet-actioned row at a glance, not just via the Verify
+        // column's own button state. createdRow fires once per row (including on rows.add() during a
+        // later reload), so this stays correct across recalculate()/verify round trips with no extra
+        // wiring. rd-row-locked retired 2026-08-31 along with Lock itself.
         createdRow: function (row, data) {
             $(row).toggleClass('rd-row-verified', !!data.is_verified);
-            $(row).toggleClass('rd-row-locked', !!data.is_locked);
         },
         drawCallback: function () { getTableLang(); updateRunDetailBulkBar(); applyRunDetailViewMode(); },
         // 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี Summary
@@ -1939,8 +2165,7 @@ function initRunDetailTable(details) {
             $('#rdFootDeduction').text(fmtNumRd(sumColRd(5)));
             $('#rdFootNet').text(fmtNumRd(sumColRd(6)));
             const verifiedCount = visibleRows.filter(r => r.is_verified).length;
-            const lockedCount = visibleRows.filter(r => r.is_locked).length;
-            $('#rdFootVerifyLock').html(`<i class="fa-solid fa-check-double text-success me-1" title="${langData['verify_status_verified'] || 'Verified'}"></i>${verifiedCount} <i class="fa-solid fa-lock text-secondary ms-2 me-1" title="${langData['lock_status_locked'] || 'Locked'}"></i>${lockedCount}`);
+            $('#rdFootVerifyLock').html(`<i class="fa-solid fa-check-double text-success me-1" title="${langData['verify_status_verified'] || 'Verified'}"></i>${verifiedCount}`);
         },
         // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
         // rollout, client mode (plain `data:` array, no ajax at all). employee_no/name stay excluded
@@ -1962,6 +2187,82 @@ function initRunDetailTable(details) {
         }
     });
 }
+
+/* ==================== Payment Method Summary tab (2026-08-31) ====================
+   Explicit request: "เพิ่มอีก Tab ที่สรุปรวมว่า บัญชีกี่คน เงินสดกี่คน และเป็นรายการตารางพนักงานพร้อมช่อง
+   รายได้ รายหัก แบบละเอียด และแสดงยอดสุทธิ มีสรุปใน Footer" -- a plain, read-only itemized table (same
+   Base Salary/Gross/Deduction/Net columns #tb_run_detail already has, plus a Payment Method column,
+   minus the checkbox/Verify/Actions columns that only make sense on the editable Details tab)
+   backed by the SAME currentRunDetails array, not a new endpoint. Built lazily on the tab's own
+   FIRST shown.bs.tab (same "never construct a DataTable while its Bootstrap tab pane is
+   display:none" rule this app follows everywhere else -- columns collapse to 0 width otherwise);
+   every later data reload just updates it in place via refreshPaymentSummaryTable(), whether or not
+   the tab happens to be visible at that moment. ==================== */
+let tb_run_payment_summary;
+let paymentSummaryTableBuilt = false;
+function buildPaymentSummaryTable() {
+    if (paymentSummaryTableBuilt) {
+        tb_run_payment_summary.columns.adjust().draw();
+        return;
+    }
+    paymentSummaryTableBuilt = true;
+    tb_run_payment_summary = $('#tb_run_payment_summary').DataTable({
+        responsive: false,
+        data: currentRunDetails,
+        columns: [
+            { data: 'employee_no', render: (d, t, row) => `<div class="fw-semibold">${escapeHtmlRd(employeeDisplayNameRd(row))}</div><div class="small text-muted">${escapeHtmlRd(d)}</div>` },
+            { data: 'payment_type', className: 'text-center', render: d => d === 'cash'
+                ? `<span class="badge bg-warning-subtle text-warning-emphasis"><i class="fa-solid fa-money-bill-wave me-1"></i>${langData['table_payment_cash'] || 'Cash'}</span>`
+                : `<span class="badge bg-info-subtle text-info-emphasis"><i class="fa-solid fa-building-columns me-1"></i>${langData['table_payment_bank'] || 'Bank Transfer'}</span>` },
+            { data: 'base_salary_amount', className: 'text-end', render: {
+                display: (d, t, row) => row.base_salary_excluded
+                    ? `<span class="text-danger fw-semibold small">${langData['base_salary_excluded_label'] || 'Not Calculated'}</span>`
+                    : `<span class="text-muted">${fmtNumRd(d)}</span>`,
+                sort: d => d,
+                filter: d => d,
+            } },
+            { data: 'gross_amount', className: 'text-end text-success fw-semibold', render: d => fmtNumRd(d) },
+            { data: 'total_deduction_amount', className: 'text-end text-danger fw-semibold', render: d => fmtNumRd(d) },
+            { data: 'net_amount', className: 'text-end', render: d => `<span class="rd-net-pill">${fmtNumRd(d)}</span>` },
+        ],
+        paging: false,
+        searching: currentRunDetails.length > 10,
+        info: false,
+        language: getTableLang(),
+        order: [[0, 'asc']],
+        footerCallback: function () {
+            const api = this.api();
+            const sumColRd = idx => api.column(idx, { search: 'applied' }).data().toArray().reduce((a, b) => a + (parseFloat(b) || 0), 0);
+            const visibleRows = api.rows({ search: 'applied' }).data().toArray();
+            $('#paymentSummaryFootEmployeeCount').text(`${langData['table_employee'] || 'Employee'}: ${visibleRows.length}`);
+            $('#paymentSummaryFootBaseSalary').text(fmtNumRd(sumColRd(2)));
+            $('#paymentSummaryFootGross').text(fmtNumRd(sumColRd(3)));
+            $('#paymentSummaryFootDeduction').text(fmtNumRd(sumColRd(4)));
+            $('#paymentSummaryFootNet').text(fmtNumRd(sumColRd(5)));
+        },
+        initComplete: function () {
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 1, key: 'payment_type' },
+                    { index: 2, key: 'base_salary_amount' },
+                    { index: 3, key: 'gross_amount' },
+                    { index: 4, key: 'total_deduction_amount' },
+                    { index: 5, key: 'net_amount' },
+                ]
+            });
+        }
+    });
+}
+function refreshPaymentSummaryTable() {
+    $('#runPaymentSummaryEmpty').toggleClass('d-none', currentRunDetails.length > 0);
+    $('#runPaymentSummaryContent').toggleClass('d-none', currentRunDetails.length === 0);
+    $('#paymentSummaryBankCount').text(currentRunDetails.filter(d => (d.payment_type || 'bank') === 'bank').length);
+    $('#paymentSummaryCashCount').text(currentRunDetails.filter(d => d.payment_type === 'cash').length);
+    if (!paymentSummaryTableBuilt) return;
+    tb_run_payment_summary.clear().rows.add(currentRunDetails).draw();
+}
+$(document).on('shown.bs.tab', '#run-payment-tab', buildPaymentSummaryTable);
 
 /* ==================== View Mode (2026-08-29) ====================
    Explicit request: "ตอน View Mode ในกรณีที่แก้ไขหรือทำอะไรไม่ได้แล้ว ส่วนของการแสดงผล อยากให้ปรับให้ดูเป็น
@@ -2029,20 +2330,15 @@ function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage) {
         });
     });
 }
+// 2026-08-31: Verify now carries the freeze-from-recalculation behavior Lock used to have (Lock
+// itself was retired entirely -- see PayrollRunModel::isEmployeeVerifiedForRun()/recalculate()) so
+// every path that turns verification ON must confirm first ("ก่อนกดให้มี Confirm Sweet2 ก่อน").
+// Turning it back OFF (un-verify) needs no confirm -- it only restores normal recalculation, the
+// same low-stakes direction Lock's own "Unlock" never required a confirm for either.
 $(document).on('click', '#btnBulkVerify', function () {
     bulkVerifyLockRd('/api/payroll-run.employee-verify.bulk', { verified: true },
         langData['confirm_bulk_verify_title'] || 'Verify selected employees?',
-        langData['confirm_bulk_verify_message'] || 'Mark all selected employees as verified.');
-});
-$(document).on('click', '#btnBulkLock', function () {
-    bulkVerifyLockRd('/api/payroll-run.employee-lock.bulk', { locked: true },
-        langData['confirm_bulk_lock_title'] || 'Lock selected employees?',
-        langData['confirm_bulk_lock_message'] || 'Locked employees will not be recalculated and cannot be edited until unlocked.');
-});
-$(document).on('click', '#btnBulkUnlock', function () {
-    bulkVerifyLockRd('/api/payroll-run.employee-lock.bulk', { locked: false },
-        langData['confirm_bulk_unlock_title'] || 'Unlock selected employees?',
-        langData['confirm_bulk_unlock_message'] || 'Unlocked employees will be recalculated again normally.');
+        langData['confirm_bulk_verify_message'] || 'Verified employees will no longer be recalculated and cannot be edited until unverified.');
 });
 function singleVerifyLockRd(url, employeeId, payload, successMsgKey) {
     $.ajax({
@@ -2062,18 +2358,36 @@ function singleVerifyLockRd(url, employeeId, payload, successMsgKey) {
 $(document).on('click', '.btn-verify-employee', function () {
     const employeeId = $(this).data('employee-id');
     const nowVerified = $(this).data('verified') !== true && $(this).data('verified') !== 'true';
-    singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: nowVerified }, 'save_success');
-});
-$(document).on('click', '.btn-lock-employee', function () {
-    const employeeId = $(this).data('employee-id');
-    const nowLocked = !($(this).data('locked') === true || $(this).data('locked') === 'true');
-    if (nowLocked) {
-        showConfirm(langData['confirm_lock_employee_title'] || 'Lock this employee?',
-            langData['confirm_lock_employee_message'] || 'This employee will not be recalculated and cannot be edited until unlocked.',
-            function () { singleVerifyLockRd('/api/payroll-run.employee-lock.save', employeeId, { locked: true }, 'save_success'); });
+    if (nowVerified) {
+        showConfirm(langData['confirm_verify_employee_title'] || 'Verify this employee?',
+            langData['confirm_verify_employee_message'] || 'This employee will no longer be recalculated and cannot be edited until unverified.',
+            function () { singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: true }, 'save_success'); });
     } else {
-        singleVerifyLockRd('/api/payroll-run.employee-lock.save', employeeId, { locked: false }, 'save_success');
+        singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: false }, 'save_success');
     }
+});
+// 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ให้ Verify ได้ทั้ง Process ทั้ง Detail
+// และหน้า List" -- verifies every employee currently in the run in one action. Section-header button
+// (see renderSectionButtons()), not part of the selection-scoped bulk bar, so it always needs its own
+// confirm regardless of what (if anything) is currently checked.
+$(document).on('click', '#btnVerifyAllEmployees', function () {
+    showConfirm(langData['confirm_verify_all_title'] || 'Verify all employees in this run?',
+        langData['confirm_verify_all_message'] || 'Every employee in this run will no longer be recalculated and cannot be edited until unverified.',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-run.employee-verify.all`, method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify({ id: PAYROLL_RUN_ID }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                        loadRunDetail();
+                    } else {
+                        showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                    }
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            });
+        });
 });
 
 let employeeCommentEmployeeId = null;
@@ -2245,7 +2559,11 @@ function auditActionLabel(action) {
         create: 'action_create', update: 'action_edit', recalculate: 'action_recalculate',
         submit: 'action_submit', revert: 'action_revert', approve: 'action_approve',
         reject: 'action_reject', reviseAfterReject: 'action_revise', markPaid: 'action_mark_paid',
-        lock: 'action_lock', delete: 'action_delete', cancel: 'action_cancel', reopen: 'action_reopen',
+        // 2026-08-31: the backend audit action string is still literally 'lock' (PayrollRunModel::
+        // lock() itself is unchanged), but displayed with the SAME "Verify" label the button/confirm
+        // dialog now use, not the old "Lock" wording -- action_lock itself stays untouched (still
+        // legitimately used by the unrelated per-employee QA Lock toggle).
+        lock: 'action_verify_run', delete: 'action_delete', cancel: 'action_cancel', reopen: 'action_reopen',
         add_manual_line: 'action_add_manual_line', remove_manual_line: 'action_remove_manual_line',
         line_override_save: 'action_line_override_save', line_override_remove: 'action_line_override_remove',
         attendance_override_save: 'action_attendance_override_save', attendance_override_remove: 'action_attendance_override_remove',
@@ -2344,6 +2662,12 @@ function renderAuditHistoryTimelineRd(auditLog) {
     $('#run_audit_timeline').html(auditHistoryEntries.map((entry, i) => auditHistoryRowHtmlRd(entry, i, i === auditHistoryEntries.length - 1)).join(''));
 }
 
+// 2026-08-31: fires the auto-recalculate-on-load check exactly once per page session (see
+// loadRunDetail()'s own use of it) -- every mutation this page's own actions make already
+// recalculate internally and then call loadRunDetail() again themselves, so without this guard a
+// draft run with auto-recalculate on would silently re-trigger recalculate() -> loadRunDetail() ->
+// recalculate() forever.
+let autoRecalcOnLoadChecked = false;
 function loadRunDetail() {
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.get`,
@@ -2352,6 +2676,24 @@ function loadRunDetail() {
         dataType: 'json',
         success: function (res) {
             if (res.status) {
+                // 2026-08-31, explicit request: auto-recalculate checkbox -- when on, silently
+                // recalculate BEFORE rendering the first time this run's data loads in this page
+                // session, so a returning admin always sees numbers that reflect anything edited
+                // elsewhere (Employee Detail's salary/PED tab, Setup & Rules, ...) since this run's
+                // last calculation, without an extra manual click. See
+                // PayrollRunModel::setAutoRecalculate()'s own docblock for why this page can never
+                // detect an out-of-page edit directly and this is the closest practical substitute.
+                if (!autoRecalcOnLoadChecked) {
+                    autoRecalcOnLoadChecked = true;
+                    if (res.data.state === 'draft' && Number(res.data.auto_recalculate) === 1) {
+                        $.ajax({
+                            url: `${BASE_URL}/api/payroll-run.recalculate`, method: 'POST',
+                            contentType: 'application/json', dataType: 'json',
+                            data: JSON.stringify({ id: PAYROLL_RUN_ID }),
+                        }).always(function () { loadRunDetail(); });
+                        return;
+                    }
+                }
                 renderRunHeader(res.data);
                 initRunDetailTable(res.data.details || []);
                 renderAuditHistoryTimelineRd(res.data.audit_log || []);
@@ -2402,6 +2744,89 @@ $(document).on('click', '#btnRecalculate', function () {
         callRunAction('/api/payroll-run.recalculate', {}, langData['save_success']);
     });
 });
+// 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรืออ้างอิงถึง
+// รอบ" -- same confirm/needs_revert_confirmation/needs_reopen_confirmation escalation dance as
+// payroll/index.js's own .btn-merge-sync handler for the Origami-driven equivalent (deliberately
+// mirrored, not shared -- this page has no access to that file's own module-scope helpers).
+function requestMergeIntoTarget(allowRevert, allowReopen, onDone) {
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.merge-into-existing`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({
+            source_run_id: PAYROLL_RUN_ID, target_run_id: currentRun.merge_target_run_id,
+            allow_revert_non_draft_target: !!allowRevert, allow_reopen_paid_target: !!allowReopen,
+        }),
+        success: function (res) { onDone(res); },
+        error: function () { onDone({ status: false, message: langData['save_failed'] || 'An error occurred while saving.' }); }
+    });
+}
+function handleMergeIntoTargetResult(res) {
+    const target = currentRun.merge_target_run_name || `#${currentRun.merge_target_run_id}`;
+    if (res.status) {
+        let msg = (langData['merge_sync_success'] || 'Merged {count} line(s) into the target run.').replace('{count}', res.merged_line_count || 0);
+        if ((res.skipped_employee_ids || []).length > 0) {
+            msg += ' ' + (langData['merge_sync_skipped_note'] || '{count} employee(s) were skipped (not part of the target run).').replace('{count}', res.skipped_employee_ids.length);
+        }
+        showSuccess(msg);
+        // This run was just soft-deleted by the merge -- nothing left here to reload; the target
+        // run is where the merged amounts now live. Same "notify the other tab" mechanism the List
+        // page's own dirty-reload already uses elsewhere on this page.
+        if (typeof markTabDirty === 'function') markTabDirty('payroll_run_list_dirty');
+        window.location.href = `${BASE_URL}/payroll-process/${currentRun.merge_target_run_id}`;
+        return;
+    }
+    if (res.needs_revert_confirmation) {
+        const title = langData['confirm_revert_merge_title'] || 'This Will Undo an Existing Decision';
+        const message = (langData['confirm_revert_merge_message'] || 'The target run "{target}" is already {state}. Merging will REVERT that decision back to draft, requiring a fresh submit and approval. Continue?')
+            .replace('{target}', target).replace('{state}', res.target_state || '');
+        showConfirm(title, message, function () {
+            requestMergeIntoTarget(true, false, handleMergeIntoTargetResult);
+        });
+        return;
+    }
+    if (res.needs_reopen_confirmation) {
+        const title = langData['confirm_reopen_merge_title'] || 'This Will Reopen an Already-Paid Run';
+        const message = (langData['confirm_reopen_merge_message'] || 'The target run "{target}" is already {state} -- money may have already moved. Merging will REOPEN it back to draft (clearing its paid/locked/approval status), requiring a fresh recalculate, submit, approve, and pay cycle. This is a higher-risk action -- continue?')
+            .replace('{target}', target).replace('{state}', res.target_state || '');
+        showConfirm(title, message, function () {
+            requestMergeIntoTarget(false, true, handleMergeIntoTargetResult);
+        });
+        return;
+    }
+    showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+}
+$(document).on('click', '#btnMergeIntoTarget', function () {
+    const target = currentRun.merge_target_run_name || `#${currentRun.merge_target_run_id}`;
+    const title = langData['confirm_merge_sync_title'] || 'Merge into Target?';
+    const message = (langData['confirm_merge_into_target_message'] || 'Merge this run into "{target}"? This will add its amounts to that run\'s own gross pay before withholding, and this run will be closed.').replace('{target}', target);
+    showConfirm(title, message, function () {
+        requestMergeIntoTarget(false, false, handleMergeIntoTargetResult);
+    });
+});
+// 2026-08-31, explicit request: auto-recalculate checkbox saves instantly on toggle (same "no
+// separate Save button for a single switch" convention this app uses elsewhere) -- reverts the
+// checkbox visually on failure since currentRun.auto_recalculate would otherwise disagree with what
+// the box shows.
+$(document).on('change', '#chkAutoRecalculate', function () {
+    const $chk = $(this);
+    const value = $chk.is(':checked');
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.auto-recalculate.save`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({ id: PAYROLL_RUN_ID, value: value }),
+        success: function (res) {
+            if (res.status) {
+                if (currentRun) currentRun.auto_recalculate = value ? 1 : 0;
+                renderRecalcReminder(currentRun || { state: 'draft', auto_recalculate: value ? 1 : 0 });
+            } else {
+                $chk.prop('checked', !value);
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            $chk.prop('checked', !value);
+            showWarning(langData['save_failed'] || 'An error occurred while saving.');
+        }
+    });
+});
 /* ---------- Manage Payment Items modal: per-employee earning/deduction lines, add one at a time,
    remove any individually. Split into two panels (Earnings/Deductions, same visual language as
    section 2's item-selection panels) with running subtotals + a net-adjustment total, rather than
@@ -2417,9 +2842,16 @@ function manualLineListItemHtml(line) {
     const name = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en;
     const amtCls = line.item_type === 'earning' ? 'text-success' : 'text-danger';
     const commentHtml = line.note ? `<div class="small text-muted fst-italic mt-1"><i class="fa-regular fa-comment me-1"></i>${escapeHtmlRd(line.note)}</div>` : '';
-    const payeeHtml = line.payee_employee_id
-        ? `<div class="small text-muted mt-1"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`
-        : '';
+    // 2026-08-31, same-day follow-up: payee_type widened to 'company'/'not_disbursed' too (was
+    // 'employee' transfer only) -- same branching as Employee Detail's own eedItemNameCell().
+    let payeeHtml = '';
+    if (line.payee_type === 'employee' && line.payee_employee_id) {
+        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
+    } else if (line.payee_type === 'company') {
+        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+    } else if (line.payee_type === 'not_disbursed') {
+        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
+    }
     return `<li class="list-group-item d-flex justify-content-between align-items-start px-0 py-2">
         <div>
             ${manualLineTagHtml(line)}
@@ -2573,13 +3005,21 @@ function syncLineOverrideRowHtml(line) {
     const isExcluded = line.override_action === 'exclude';
     const amountValue = line.override_action === 'override_amount' ? line.override_amount : line.current_amount;
     const hasOverride = line.override_action !== null;
-    return `<div class="border rounded-3 p-2 mb-2" data-item-code="${escapeHtmlRd(line.code)}">
+    // 2026-08-31, same-day follow-up (item 9a): 'statutory' rows must route Save/Reset to
+    // api/payroll-run.statutory-line-override.* instead of the general .line-override.* endpoints --
+    // the general endpoint has no knowledge of statutoryOverrideCode()'s reserved-sentinel wrapping
+    // and would silently save under the wrong (unwrapped) item_code, never actually applied by
+    // recalculate()'s statutory-check loop. See PayrollRunModel::syncDeductionLinesForEmployee()'s
+    // own line_type tagging.
+    const lineType = line.line_type || 'earning_deduction';
+    return `<div class="border rounded-3 p-2 mb-2" data-item-code="${escapeHtmlRd(line.code)}" data-line-type="${escapeHtmlRd(lineType)}">
         <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-1">
             <div>
                 <code class="fw-bold text-dark">${escapeHtmlRd(line.code)}</code> ${escapeHtmlRd(name)}${syncLineOverrideBadge(line)}
+                ${lineType === 'statutory' ? `<span class="badge bg-info-subtle text-info ms-1">${langData['sync_line_statutory_badge'] || 'Statutory'}</span>` : ''}
                 <div class="small text-muted">${langData['sync_line_override_computed'] || 'Current'}: ${fmtNumRd(line.current_amount)}</div>
             </div>
-            ${hasOverride ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-sync-line-reset" data-item-code="${escapeHtmlRd(line.code)}">${langData['sync_line_override_reset'] || 'Reset to computed'}</button>` : ''}
+            ${hasOverride ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-sync-line-reset" data-item-code="${escapeHtmlRd(line.code)}" data-line-type="${escapeHtmlRd(lineType)}">${langData['sync_line_override_reset'] || 'Reset to computed'}</button>` : ''}
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap sync-line-controls">
             <input type="number" step="0.01" min="0" class="form-control form-control-sm sync-line-amount-input" style="max-width:140px;" value="${amountValue}" ${isExcluded ? 'disabled' : ''}>
@@ -2610,6 +3050,25 @@ function syncLineOverrideRowHtml(line) {
                  button's own handler) lets .closest() correctly skip past it to the real row div. -->
             <button type="button" class="btn btn-sm btn-primary btn-sync-line-save">${langData['save'] || 'Save'}</button>
         </div>
+        ${syncLineOccurrenceBreakdownHtml(line.occurrences)}
+    </div>`;
+}
+// 2026-08-31, same-day follow-up (Origami's `scheduled_item_occurrences[]` proposal) -- an
+// optional per-installment breakdown of a line's summed total (e.g. "LOAN installment 2 of 12"),
+// only present when PayrollRunModel::syncDeductionLinesForEmployee() found real occurrence data for
+// this line (see that method's own docblock -- earning/deduction lines from a synced Origami
+// process only, never base salary/statutory/manual lines). Read-only display -- occurrences aren't
+// individually editable here, only the summed line itself is (via the existing Save/Reset above).
+function syncLineOccurrenceBreakdownHtml(occurrences) {
+    if (!occurrences || !occurrences.length) return '';
+    const rows = occurrences.map(o => `<div class="d-flex justify-content-between small">
+        <span>${langData['sync_line_occurrence_installment'] || 'Installment'} ${o.installment_no != null ? escapeHtmlRd(o.installment_no) : '-'}
+            ${o.occurrence_code ? `<code class="text-muted ms-1">${escapeHtmlRd(o.occurrence_code)}</code>` : ''}</span>
+        <span>${fmtNumRd(o.amount)}${o.applied_at ? ` <span class="text-muted">(${formatDisplayDate(o.applied_at)})</span>` : ''}</span>
+    </div>`).join('');
+    return `<div class="mt-2 pt-2 border-top">
+        <div class="small text-muted mb-1"><i class="fa-solid fa-list-ol me-1"></i>${langData['sync_line_occurrence_breakdown'] || 'Occurrence breakdown'}</div>
+        ${rows}
     </div>`;
 }
 // 2026-08-29, explicit follow-up request: "อยากให้มี List รายการและติ๊กเข้าออกได้เหมือนตอนที่ Set ทั้ง
@@ -2734,19 +3193,26 @@ $(document).on('change', '.sync-line-exclude-check', function () {
 $(document).on('click', '.btn-sync-line-save', function () {
     const $row = $(this).closest('[data-item-code]');
     const itemCode = $row.data('item-code');
+    const lineType = $row.data('line-type') || 'earning_deduction';
     const isExcluded = $row.find('.sync-line-exclude-check').is(':checked');
     const amount = parseFloat($row.find('.sync-line-amount-input').val());
     if (!isExcluded && (isNaN(amount) || amount < 0)) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
+    // 2026-08-31, same-day follow-up (item 9a): a 'statutory' row's itemCode is always the BARE
+    // TH_SSO/TH_PVD/TH_PIT/etc. code -- statutoryLineOverrideSave() wraps it via
+    // statutoryOverrideCode() internally, so it must never be pre-wrapped here.
+    const url = lineType === 'statutory'
+        ? `${BASE_URL}/api/payroll-run.statutory-line-override.save`
+        : `${BASE_URL}/api/payroll-run.line-override.save`;
     const payload = {
         id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: itemCode,
         action: isExcluded ? 'exclude' : 'override_amount',
     };
     if (!isExcluded) { payload.override_amount = amount; }
     $.ajax({
-        url: `${BASE_URL}/api/payroll-run.line-override.save`,
+        url: url,
         method: 'POST', contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
         success: function (res) {
             if (res.status) {
@@ -2761,8 +3227,12 @@ $(document).on('click', '.btn-sync-line-save', function () {
 });
 $(document).on('click', '.btn-sync-line-reset', function () {
     const itemCode = $(this).data('item-code');
+    const lineType = $(this).data('line-type') || 'earning_deduction';
+    const url = lineType === 'statutory'
+        ? `${BASE_URL}/api/payroll-run.statutory-line-override.remove`
+        : `${BASE_URL}/api/payroll-run.line-override.remove`;
     $.ajax({
-        url: `${BASE_URL}/api/payroll-run.line-override.remove`,
+        url: url,
         method: 'POST', contentType: 'application/json', dataType: 'json',
         data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: itemCode }),
         success: function (res) {
@@ -2781,14 +3251,27 @@ $(document).on('click', '.btn-sync-line-reset', function () {
 // land in the Earnings or Deductions panel before they commit, since the dropdown mixes both types
 // together (unlike section 2's per-type panels/modal). item_type rides along on the select2 option
 // data already (see EmployeeEarningDeductionModel::activeOptions()'s SELECT).
+// 2026-08-31, same-day follow-up: same 4-way payee_type toggle Employee Detail's own
+// setEedPayeeType() manages, ported here since this modal never had the concept before. Single
+// source of truth for this toggle's own dependent field visibility.
+function setManualLinePayeeTypeRd(type) {
+    $('#manualLinePayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
+    $('#manualLinePayeeWrapper').toggleClass('d-none', type !== 'employee');
+    if (type !== 'employee') {
+        $('#manualLinePayeeEmployee').val(null).trigger('change');
+    }
+    // Same "never offered for not_disbursed, forced at the model layer" rule as Employee Detail's
+    // own #eedIncludeCashSummaryWrapper.
+    $('#manualLineIncludeCashSummaryWrapper').toggleClass('d-none', type === 'none' || type === 'not_disbursed');
+}
 function updateManualLineTypePreviewRd(itemType) {
     const $preview = $('#manualLineTypePreview');
     // Transfer-to-payee (2026-08-21) only makes sense on a deduction -- toggled alongside this same
     // type preview rather than a parallel visibility mechanism.
     const isDeduction = itemType === 'deduction';
-    $('#manualLinePayeeWrapper').toggleClass('d-none', !isDeduction);
+    $('#manualLinePayeeTypeWrapper').toggleClass('d-none', !isDeduction);
     if (!isDeduction) {
-        $('#manualLinePayeeEmployee').val(null).trigger('change');
+        setManualLinePayeeTypeRd('none');
     }
     if (!itemType) {
         $preview.addClass('d-none').removeClass('text-success text-danger').text('');
@@ -2800,6 +3283,9 @@ function updateManualLineTypePreviewRd(itemType) {
     $preview.removeClass('d-none text-success text-danger').addClass(isEarning ? 'text-success' : 'text-danger')
         .html(`<i class="fa-solid ${icon} me-1"></i>${langData['manual_line_type_preview'] || 'Will be added as'}: <strong>${label}</strong>`);
 }
+$(document).on('click', '#manualLinePayeeTypeToggle button', function () {
+    setManualLinePayeeTypeRd($(this).data('payee-type'));
+});
 $(document).on('select2:select', '#manualLineItemSelect', function (e) {
     updateManualLineTypePreviewRd(e.params.data.item_type);
 });
@@ -2829,6 +3315,8 @@ function resetManualLineFormRd() {
     // An employee can't be their own transfer payee -- excluded the same way #eed_payee_employee_id
     // excludes self on the Employee Detail page (data-exclude-id, read fresh on every ajax search).
     $('#manualLinePayeeEmployee').attr('data-exclude-id', manageLinesEmployeeId || '').val(null).trigger('change');
+    setManualLinePayeeTypeRd('none');
+    $('#manualLineIncludeCashSummary').prop('checked', true);
     updateManualLineTypePreviewRd(null);
 }
 $(document).on('click', '#manualLineModeToggle button', function () {
@@ -2859,17 +3347,17 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
     $('#manageLinesHint').text(hint);
     resetManualLineFormRd();
     // Always reopen on Tab 1 -- a stale "Attendance Data" tab left active from a previous employee
-    // would otherwise show up front-and-center for someone this run isn't even sync-based for.
+    // would otherwise show up front-and-center unexpectedly.
     bootstrap.Tab.getOrCreateInstance(document.getElementById('manageLinesItemsTab')).show();
-    // Attendance Data (from Sync) is still sync-only -- SyncPayResolver only has raw attendance
-    // numbers to correct on a sync-based run. Adjust Amounts (2026-08-21, generalized 2026-08-29 --
-    // see syncDeductionLinesForEmployee()'s own docblock) is no longer sync-only: any draft run has
-    // earning/deduction lines (and a base salary) worth being able to correct.
-    const isSyncRun = currentRun && currentRun.sync_process_id;
-    $('#manageLinesAttendanceTabWrap').toggleClass('d-none', !isSyncRun);
-    if (isSyncRun) {
-        loadAttendanceDataRd();
-    }
+    // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9b): "Attendance Data" used to be
+    // sync-only here (PayrollRunModel::attendanceOverrideSave() itself refused any non-sync run) --
+    // that backend restriction is gone now (see that method's own updated docblock: the underlying
+    // engine already treats sync/manual/import attendance data uniformly via
+    // TransactionDataPayAdapter, Phase 5), so this tab is always shown. A run with genuinely no
+    // underlying attendance data of any source just shows an empty/zeroed state once opened --
+    // same as a sync-based employee absent from the pulled payload already could before this.
+    $('#manageLinesAttendanceTabWrap').removeClass('d-none');
+    loadAttendanceDataRd();
     // Reset the "Tax & SSO" tab to a neutral state before the fresh fetch below lands, so a stale
     // previous employee's radios never flash for even a moment.
     $('#empCalcTaxInherit, #empCalcSsoInherit').prop('checked', true);
@@ -2890,9 +3378,6 @@ $(document).on('click', '#btnAddManualLine', function () {
         }
         payload.custom_item_name = customName;
         payload.custom_item_type = customType;
-        if (customType === 'deduction') {
-            payload.payee_employee_id = $('#manualLinePayeeEmployee').val() || undefined;
-        }
     } else {
         const pedTypeId = $('#manualLineItemSelect').val();
         if (!pedTypeId || !amount || amount <= 0) {
@@ -2900,7 +3385,17 @@ $(document).on('click', '#btnAddManualLine', function () {
             return;
         }
         payload.ped_type_id = pedTypeId;
-        if (!$('#manualLinePayeeWrapper').hasClass('d-none')) {
+    }
+    // 2026-08-31, same-day follow-up: same 4-way payee_type toggle as Employee Detail's own EED
+    // modal -- only read when the wrapper is actually visible (a deduction), same shape either
+    // catalog or custom mode uses now (unified, was split per-branch above before this follow-up).
+    if (!$('#manualLinePayeeTypeWrapper').hasClass('d-none')) {
+        const payeeType = $('#manualLinePayeeTypeToggle button.active').data('payee-type') || 'none';
+        if (payeeType !== 'none') {
+            payload.payee_type = payeeType;
+            payload.include_in_cash_summary = $('#manualLineIncludeCashSummary').is(':checked');
+        }
+        if (payeeType === 'employee') {
             payload.payee_employee_id = $('#manualLinePayeeEmployee').val() || undefined;
         }
     }
@@ -3167,6 +3662,124 @@ $(document).on('click', '#btnJoinSelected', function () {
         }
     });
 });
+// 2026-09-01, same-day follow-up (explicit push-back: "เหตุผลอะไรบ้างในหน้า Edit ที่ไม่สามารถแก้ไขได้
+// ควรเปิดให้แก้ไขได้") -- the field itself is now ALWAYS editable (never disabled); re-examining
+// recalculate()'s own 3 eligibility branches found the real risk is narrower than a blanket
+// employee_count===0 lock: switching between two DIFFERENT real cycles, or changing cycle_id on a
+// sync-linked run, is exactly as safe as editing period_start/period_end already is (zero gating
+// there despite the identical "changes who's eligible next Recalculate" effect) -- ONLY flipping a
+// non-sync run between off-cycle (no cycle) and cycle-linked (a real cycle) while it already has
+// employees in it risks silently dropping manually-joined ones, since recalculate()'s off-cycle vs.
+// cycle-based branches read completely different employee sources. See
+// PayrollRunModel::update()'s own matching comment for the full reasoning -- this is a pure client-
+// side MIRROR of that same rule, purely to warn before a save that would otherwise be rejected, not
+// a gate of its own.
+function editRunCycleToggleRiskyRd() {
+    if (currentRun.sync_process_id) return false;
+    const selectedCycleId = $('#edit_run_cycle_id').val();
+    const wasOffCycle = !currentRun.cycle_id;
+    const willBeOffCycle = !selectedCycleId;
+    return wasOffCycle !== willBeOffCycle && Number(currentRun.employee_count || 0) > 0;
+}
+// Live-updates the run-type section (Run Purpose/Compute Statutory/.../Use Flat Tax Rate) AND the
+// risky-toggle warning as the admin changes the cycle dropdown DURING this same open modal -- not
+// just once on open -- since switching cycle<->off-schedule right here is now the whole point of
+// this field (see PayrollRunModel::update()'s own forcing logic for a run that just became/stopped
+// being cycle-linked, which this mirrors client-side purely for immediate visual feedback).
+function updateEditRunTypeSectionRd() {
+    const cycleId = $('#edit_run_cycle_id').val();
+    // A supplemental sync-linked run stays eligible for Run Purpose regardless of the cycle field
+    // (sync_run_kind, not cycle_id, is what makes it supplemental) -- same "off-cycle OR
+    // supplemental sync" OR this whole feature already used before cycle became editable here.
+    const isSupplementalSync = !!currentRun.sync_process_id && (currentRun.sync_run_kind || 'regular') === 'supplemental';
+    const offCycle = !cycleId && !currentRun.sync_process_id;
+    $('#edit_run_type_section').toggleClass('d-none', !offCycle && !isSupplementalSync);
+    updateEditRunTypeVisibility();
+    $('#editRunCycleLockedHint').toggleClass('d-none', !editRunCycleToggleRiskyRd());
+    // 2026-09-01/02, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" then "ขาด...เปิดรอบใหม่ อ้างอิงถึงรอบที่
+    // มีอยู่" then "พอเป็น Design แบบเดียวกันแล้วดูแปลกๆครับ ช่วย Design Form ให้ใหม่" -- #edit_run_offcycle_panel
+    // (mirrors #run_offcycle_panel on the Create form) only applies to a genuinely off-cycle run
+    // (matches PayrollRunModel::update()'s own check exactly: cycle_id===null AND
+    // sync_process_id===null -- unlike Run Purpose above, a supplemental sync run does NOT qualify
+    // for this one). Forced back to "new"/no-target the moment
+    // the cycle field stops being off-cycle -- keeps whatever the admin had picked untouched while
+    // it's still genuinely off-cycle (e.g. switching which OTHER field changed on the same open
+    // modal shouldn't silently wipe a "reference" choice already made).
+    $('#edit_run_offcycle_panel').toggleClass('d-none', !offCycle);
+    if (!offCycle) {
+        $('#edit_run_merge_choice_new').prop('checked', true);
+        setEditMergeChoiceMode('new');
+    }
+}
+// 2026-09-02, explicit request: "ยังไม่เหมือนหน้าเพิ่มรอบในหน้า List ครับ ขาด รอบพิเศษนอกรอบเงินเดือน" then
+// "พอมีแค่...ให้ติ๊กออกแล้วค่อยให้เลือกรอบ...ดูงงๆ ช่วยเพิ่มเป็น radio ให้เลือก" -- mirrors setOffCycleMode() in
+// index.js, adapted to this modal's own edit_run_* field ids/radio name (editRunScheduleChoice,
+// distinct from the Create form's runScheduleChoice). Only ever shown for a non-sync run (see
+// #btnEditRun's own handling of #edit_run_offcycle_row's visibility below) -- a sync-linked run's
+// "off-cycle-ness" is governed by sync_run_kind instead, a completely different mechanism this radio
+// doesn't touch.
+function setEditOffCycleMode(isOffCycle) {
+    $('#edit_run_cycle_row').toggleClass('d-none', isOffCycle);
+    $('#edit_run_cycle_id').toggleClass('required', !isOffCycle);
+    if (isOffCycle) {
+        $('#edit_run_cycle_id').val('').trigger('change');
+        $('#edit_run_cycle_id').removeClass('is-invalid');
+    }
+    $('#edit_run_offcycle_row .run-choice-card').removeClass('active');
+    $(isOffCycle ? '#edit_run_schedule_choice_offcycle' : '#edit_run_schedule_choice_cycle').closest('.run-choice-card').addClass('active');
+}
+$(document).on('change', 'input[name="editRunScheduleChoice"]', function () {
+    setEditOffCycleMode($(this).val() === 'offcycle');
+});
+// 2026-09-01/02: mirrors setMergeChoiceMode() in index.js, adapted to this modal's own edit_run_*
+// field ids/name (editRunMergeChoice, distinct from the Create form's runMergeChoice).
+function setEditMergeChoiceMode(choice) {
+    const isReference = choice === 'reference';
+    $('#edit_run_merge_target_row').toggleClass('d-none', !isReference);
+    $('#edit_run_merge_target_id').toggleClass('required', isReference);
+    if (!isReference) {
+        $('#edit_run_merge_target_id').val('').trigger('change.select2').removeClass('is-invalid');
+    }
+    // 2026-09-02, 2nd same-day follow-up: .active on the pill <label> -- .run-subchoice-btn (was
+    // .run-choice-card until this round's #edit_run_offcycle_panel redesign).
+    $('#edit_run_merge_choice_row .run-subchoice-btn').removeClass('active');
+    $(isReference ? '#edit_run_merge_choice_reference' : '#edit_run_merge_choice_new').closest('.run-subchoice-btn').addClass('active');
+}
+$(document).on('change', 'input[name="editRunMergeChoice"]', function () {
+    setEditMergeChoiceMode($(this).val());
+});
+// 2026-09-02, explicit request: "การเลือกรอบการจ่าย แล้ว Default...ช่วยปรับทั้ง Form ตอนดึง Origami และ Form
+// สร้างรอบใหม่ และ Form แก้ไขรอบ" -- same PayrollCycleModel::suggestNextPeriod() endpoint the Create
+// form's own applySuggestedPeriod() (index.js) already calls, just missing here until now. Only ever
+// fires on a genuine user-driven pick (plain 'change', not the 'change.select2' this modal's own
+// initial-population code uses to show the run's REAL existing dates without recomputing anything --
+// see #btnEditRun's own handler above) -- so opening Edit on an already-cycle-linked run never
+// silently overwrites its real period with a freshly "suggested" one; only actually switching to a
+// different cycle during this same edit does.
+function applySuggestedPeriodRd(cycleId) {
+    if (!cycleId) {
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-cycle.suggest-period`,
+        method: 'GET',
+        data: { id: cycleId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                return;
+            }
+            $('#edit_period_start').val(toDisplayDateRd(res.period_start_date)).datepicker('update');
+            $('#edit_period_end').val(toDisplayDateRd(res.period_end_date)).datepicker('update');
+            $('#edit_payment_date').val(toDisplayDateRd(res.payment_date)).datepicker('update');
+            $('#edit_period_start, #edit_period_end, #edit_payment_date').removeClass('is-invalid');
+        }
+    });
+}
+$(document).on('change', '#edit_run_cycle_id', updateEditRunTypeSectionRd);
+$(document).on('change', '#edit_run_cycle_id', function () {
+    applySuggestedPeriodRd($(this).val());
+});
 $(document).on('click', '#btnEditRun', function () {
     $('#edit_run_name').val(currentRun.run_name);
     $('#edit_period_start').val(toDisplayDateRd(currentRun.period_start_date));
@@ -3177,9 +3790,45 @@ $(document).on('click', '#btnEditRun', function () {
     // (widget state goes stale otherwise, blanking the field on next click-away).
     $('#edit_period_start, #edit_period_end, #edit_payment_date').datepicker('update');
 
-    const offCycle = isOffCycleRunRd(currentRun);
-    $('#edit_run_type_section').toggleClass('d-none', !offCycle);
-    if (offCycle) {
+    // 2026-09-01, explicit request: cycle reference now editable here too (always enabled -- see
+    // editRunCycleToggleRiskyRd()'s own docblock for why a blanket disable was loosened).
+    const $cycleSel = $('#edit_run_cycle_id');
+    if (currentRun.cycle_id) {
+        $cycleSel.empty().append(new Option(currentRun.cycle_name || String(currentRun.cycle_id), currentRun.cycle_id, true, true)).trigger('change.select2');
+    } else {
+        $cycleSel.val(null).trigger('change.select2');
+    }
+
+    // 2026-09-02, explicit request: "ยังไม่เหมือนหน้าเพิ่มรอบในหน้า List ครับ ขาด รอบพิเศษนอกรอบเงินเดือน" --
+    // the checkbox is purely a visual affordance mirroring what the cycle field's own emptiness
+    // already meant before this existed -- hidden entirely for a sync-linked run (that data is
+    // inherently cycle-based/governed by sync_run_kind instead, same reasoning
+    // #run_offcycle_row is hidden for a Pull-sync create).
+    const currentlyOffCycle = !currentRun.cycle_id && !currentRun.sync_process_id;
+    $('#edit_run_offcycle_row').toggleClass('d-none', !!currentRun.sync_process_id);
+    $(currentlyOffCycle ? '#edit_run_schedule_choice_offcycle' : '#edit_run_schedule_choice_cycle').prop('checked', true);
+    setEditOffCycleMode(currentlyOffCycle);
+
+    // 2026-09-01/02, same-day follow-up, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" then "ขาด...
+    // เปิดรอบใหม่ อ้างอิงถึงรอบที่มีอยู่ และไม่ติ๊ก Auto" -- populate the merge-target field with the run's
+    // current value (or clear it), and never offer this run as its own merge target. Must run BEFORE
+    // updateEditRunTypeSectionRd() below, since that function only ever CLEARS this field (when the
+    // run turns out not to be off-cycle) -- it never populates it. Radio defaults to "new"/unticked
+    // unless the run genuinely already has a merge target set -- never pre-ticked as "reference"
+    // otherwise, per the explicit "ไม่ติ๊ก Auto" instruction.
+    $('#edit_run_merge_target_id').attr('data-exclude-id', PAYROLL_RUN_ID);
+    const $mergeTargetSel = $('#edit_run_merge_target_id');
+    const hasMergeTarget = !!currentRun.merge_target_run_id;
+    if (hasMergeTarget) {
+        $mergeTargetSel.empty().append(new Option(currentRun.merge_target_run_name || String(currentRun.merge_target_run_id), currentRun.merge_target_run_id, true, true)).trigger('change.select2');
+    } else {
+        $mergeTargetSel.val(null).trigger('change.select2');
+    }
+    $(hasMergeTarget ? '#edit_run_merge_choice_reference' : '#edit_run_merge_choice_new').prop('checked', true);
+    setEditMergeChoiceMode(hasMergeTarget ? 'reference' : 'new');
+    updateEditRunTypeSectionRd();
+
+    if (isOffCycleRunRd(currentRun) || (currentRun.sync_process_id && currentRun.sync_run_kind === 'supplemental')) {
         $('#edit_run_purpose').val(currentRun.run_purpose || 'payroll').trigger('change');
         $('#edit_run_compute_statutory').prop('checked', Number(currentRun.compute_statutory) === 1);
         $('#edit_run_include_base_salary').prop('checked', Number(currentRun.include_base_salary) === 1);
@@ -3213,11 +3862,26 @@ $(document).on('submit', '#editRunForm', function (e) {
         period_end_date: toIsoDateRd($('#edit_period_end').val()),
         payment_date: toIsoDateRd($('#edit_payment_date').val()),
         notes: $('#edit_notes').val().trim(),
+        // 2026-09-01: always sent (even when the field is disabled/locked -- jQuery .val() still
+        // reads a disabled select's current value fine) -- PayrollRunModel::update() itself is the
+        // one true gate on whether this can actually change anything (employee_count===0), so
+        // sending the unchanged current value when locked is a safe no-op there.
+        cycle_id: $('#edit_run_cycle_id').val() || null,
     };
-    // Only sent for a genuine off-cycle run -- PayrollRunModel::update() ignores these fields
-    // entirely for a cycle-based/Pending-Pull run anyway, but omitting them here keeps the
-    // payload honest about what this specific save is actually allowed to change.
-    if (isOffCycleRunRd(currentRun)) {
+    // 2026-09-01, same-day follow-up, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" -- only sent when
+    // the field is actually showing (a genuine off-cycle run), same conditional-inclusion pattern as
+    // the run-type fields below -- PayrollRunModel::update() itself also refuses this for any run
+    // that's cycle-linked or sync-linked, so this omission just keeps the payload honest.
+    if (!$('#edit_run_merge_target_row').hasClass('d-none')) {
+        payload.merge_target_run_id = $('#edit_run_merge_target_id').val() || null;
+    }
+    // Sent whenever the run-type section is actually showing right now (genuine off-cycle OR
+    // supplemental sync) -- reads the LIVE dropdown state (updateEditRunTypeSectionRd()), not just
+    // currentRun's state before this edit, since converting cycle<->off-schedule during this same
+    // save is now possible (see the cycle_id field above). PayrollRunModel::update() ignores these
+    // fields entirely for a run that (after this save) ends up cycle-linked anyway, but omitting
+    // them here keeps the payload honest about what's actually visible/being changed.
+    if (!$('#edit_run_type_section').hasClass('d-none')) {
         payload.run_purpose = $('#edit_run_purpose').val();
         payload.compute_statutory = $('#edit_run_compute_statutory').is(':checked');
         payload.include_base_salary = $('#edit_run_include_base_salary').is(':checked');
@@ -3232,7 +3896,11 @@ $(document).on('submit', '#editRunForm', function (e) {
         data: JSON.stringify(payload),
         success: function (res) {
             if (res.status) {
-                showSuccess(langData['save_success'] || 'Saved successfully.');
+                // 2026-09-01: surfaces the backend's own message when it has something more specific
+                // to say (e.g. "Updated and recalculated successfully." after the off-cycle<->cycle
+                // toggle forces a real Recalculate -- see PayrollRunModel::update()'s own comment)
+                // instead of always showing the generic save_success text.
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('editRunModal')).hide();
                 loadRunDetail();
             } else {
@@ -3294,5 +3962,12 @@ $(document).ready(function () {
         // can leave stale state/duplicate options behind).
         initSelect2('#manualLinePayeeEmployee', { mode: 'ajax', allowClear: true });
         initSelect2('#edit_run_purpose', { mode: 'static' });
+        // 2026-09-01: allowClear so an empty selection is a real, reachable "off-schedule/no cycle"
+        // choice, same either/or #run_cycle_id represents on the Create form.
+        initSelect2('#edit_run_cycle_id', { mode: 'ajax', allowClear: true });
+        // 2026-09-01, same-day follow-up, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" -- allowClear
+        // so an empty selection genuinely means "no merge planned", same as the Create form's own
+        // #run_merge_target_id.
+        initSelect2('#edit_run_merge_target_id', { mode: 'ajax', allowClear: true });
     }
 });

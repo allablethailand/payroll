@@ -144,6 +144,46 @@ class SetupRulesController extends Controller {
         $this->json($this->model->shiftAssignEmployees($id, $employeeIds, (int)$compId, $this->userId()));
     }
 
+    /* ==================== SCOPE ASSIGN, generic (2026-08-31, explicit request) ====================
+     * Shift/Work Location's own equivalent of CompanyProfileController's own structureEmployees*
+     * methods -- see SetupRulesModel::SCOPE_ASSIGN_CONFIG's own docblock. Ungated (no
+     * requirePermission()) same as every other Shift endpoint on this controller -- Shift/Work
+     * Location are explicitly OUT of this app's RBAC scope (see CLAUDE.md's own note: "Scope...
+     * Holiday, Leave Type, Approval Workflow เท่านั้น -- ไม่รวม Shift/Work Location"). */
+    public function scopeEmployeesInRow() {
+        $compId = getCompId();
+        $type = (string)($_GET['type'] ?? '');
+        $rowId = (int)($_GET['id'] ?? 0);
+        $search = trim((string)($_GET['search'] ?? ''));
+        $this->json($this->model->scopeEmployeesInRow($type, $rowId, (int)$compId, $search));
+    }
+
+    public function scopeEmployeesOutsideRow() {
+        $compId = getCompId();
+        $type = (string)($_GET['type'] ?? '');
+        $rowId = (int)($_GET['id'] ?? 0);
+        $search = trim((string)($_GET['search'] ?? ''));
+        $this->json($this->model->scopeEmployeesOutsideRow($type, $rowId, (int)$compId, $search));
+    }
+
+    public function scopeAssignEmployees() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $type = (string)($data['type'] ?? '');
+        $rowId = (int)($data['id'] ?? 0);
+        $employeeIds = is_array($data['employee_ids'] ?? null) ? $data['employee_ids'] : [];
+        $this->json($this->model->scopeAssignEmployees($type, $rowId, $employeeIds, (int)$compId, $this->userId()));
+    }
+
+    public function scopeMoveEmployeesOut() {
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $type = (string)($data['type'] ?? '');
+        $employeeIds = is_array($data['employee_ids'] ?? null) ? $data['employee_ids'] : [];
+        $destinationRowId = !empty($data['destination_id']) ? (int)$data['destination_id'] : null;
+        $this->json($this->model->scopeMoveEmployeesOut($type, $employeeIds, (int)$compId, $destinationRowId, $this->userId()));
+    }
+
     /* ==================== WORK LOCATION ==================== */
 
     public function workLocationList() {

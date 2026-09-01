@@ -466,4 +466,161 @@ class CompanyProfileModel {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
     }
+
+    /* ==================== Assign Employees (2026-08-31, explicit request) ====================
+     * "เพิ่มปุ่มให้สามารถ Assign ได้ โดยเปิดเป็น Modal ขึ้นมา มีรายละเอียด Master Data แล้วแบ่งเป็น 2 Card คือ
+     * พนักงานที่อยู่ Master อื่น และพนักงานที่อยู่ Master นี้...และมีอีกปุ่มสำหรับกด View เพื่อดูเฉพาะพนักงานที่อยู่
+     * ใน Master นั้น" -- generic, config-driven, same "one shared mechanism, no per-type
+     * special-casing" philosophy as structureConfig() itself. Every structure type in
+     * structureConfig() (branch/role/department/position/rank/team) has a real 1:1 FK column on
+     * `employees` -- SetupRulesModel has the Shift/Work Location equivalent (own class, same
+     * table-per-type shape, can't share this method across files but mirrors it exactly).
+     *
+     * Direct generalization of SetupRulesModel::shiftAssignEmployees()'s own full-replace pattern
+     * (clear the FK for everyone currently on that row, then set it for the selected set) -- see
+     * that method's own docblock for why full-replace (not diff) is the right semantics here.
+     */
+    private const EMPLOYEE_FK_COLUMN = [
+        'branch' => 'branch_id',
+        'role' => 'role_id',
+        'department' => 'department_id',
+        'position' => 'position_id',
+        'rank' => 'rank_id',
+        'team' => 'team_id',
+    ];
+
+    private function assignFkColumn(string $type): ?string {
+        return self::EMPLOYEE_FK_COLUMN[$type] ?? null;
+    }
+
+    /** Validates the structure row itself exists (active, this company) -- shared by every method below. */
+    private function assertStructureRowExists(string $type, int $rowId, int $compId): ?array {
+        $config = $this->getStructureConfig($type);
+        $fkColumn = $this->assignFkColumn($type);
+        if (!$config || !$fkColumn) {
+            return null;
+        }
+        $stmt = $this->db->prepare("SELECT id FROM `{$config['table']}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $rowId, ':comp_id' => $compId]);
+        if (!$stmt->fetch()) {
+            return null;
+        }
+        return ['config' => $config, 'fk_column' => $fkColumn];
+    }
+
+    /** @return array{status:bool,message?:string,data?:array} employees CURRENTLY on this row (for the "in this Master" card / the View screen). */
+    public function structureEmployeesInRow(string $type, int $rowId, int $compId, string $search = ''): array {
+        $ctx = $this->assertStructureRowExists($type, $rowId, $compId);
+        if (!$ctx) {
+            return ['status' => false, 'message' => 'Invalid entity type or record not found.'];
+        }
+        $fk = $ctx['fk_column'];
+        $sql = "SELECT id, employee_no, name_th, surname_th, name_en, surname_en FROM `employees`
+                WHERE comp_id = :comp_id AND deleted_at IS NULL AND `{$fk}` = :row_id";
+        $params = [':comp_id' => $compId, ':row_id' => $rowId];
+        if ($search !== '') {
+            $sql .= " AND (employee_no LIKE :search OR name_th LIKE :search OR surname_th LIKE :search OR name_en LIKE :search OR surname_en LIKE :search)";
+            $params[':search'] = "%{$search}%";
+        }
+        $sql .= " ORDER BY employee_no ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return ['status' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
+    }
+
+    /** @return array{status:bool,message?:string,data?:array} employees in ANY OTHER row of this same type (or completely unassigned), for the "pull in" card -- each carries its own CURRENT row's name so the admin can see what they'd be moving the employee out of. */
+    public function structureEmployeesOutsideRow(string $type, int $rowId, int $compId, string $search = ''): array {
+        $ctx = $this->assertStructureRowExists($type, $rowId, $compId);
+        if (!$ctx) {
+            return ['status' => false, 'message' => 'Invalid entity type or record not found.'];
+        }
+        $fk = $ctx['fk_column'];
+        $table = $ctx['config']['table'];
+        $nameCol = $type . '_name_th';
+        $sql = "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                    e.`{$fk}` AS current_row_id, s.`{$nameCol}` AS current_row_name
+                FROM `employees` e
+                LEFT JOIN `{$table}` s ON s.id = e.`{$fk}` AND s.deleted_at IS NULL
+                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+                  AND (e.`{$fk}` IS NULL OR e.`{$fk}` != :row_id)";
+        $params = [':comp_id' => $compId, ':row_id' => $rowId];
+        if ($search !== '') {
+            $sql .= " AND (e.employee_no LIKE :search OR e.name_th LIKE :search OR e.surname_th LIKE :search OR e.name_en LIKE :search OR e.surname_en LIKE :search)";
+            $params[':search'] = "%{$search}%";
+        }
+        $sql .= " ORDER BY e.employee_no ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return ['status' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
+    }
+
+    /** Pulls the given employees INTO this row (full assign, not additive to a prior selection -- each employee's own FK is simply set to $rowId, no clearing of anyone else needed since this is a "bring these specific people in" action, not "replace the whole roster" the way Shift's own assign-modal is). */
+    public function structureAssignEmployees(string $type, int $rowId, array $employeeIds, int $compId, int $userId): array {
+        $ctx = $this->assertStructureRowExists($type, $rowId, $compId);
+        if (!$ctx) {
+            return ['status' => false, 'message' => 'Invalid entity type or record not found.'];
+        }
+        $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
+        if (empty($employeeIds)) {
+            return ['status' => false, 'message' => 'No employees selected.'];
+        }
+        $fk = $ctx['fk_column'];
+        $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+        $own = !$this->db->inTransaction();
+        try {
+            if ($own) {
+                $this->db->beginTransaction();
+            }
+            $stmt = $this->db->prepare("UPDATE `employees` SET `{$fk}` = ?, updated_by = ? WHERE id IN ({$placeholders}) AND comp_id = ?");
+            $stmt->execute(array_merge([$rowId, $userId], $employeeIds, [$compId]));
+            if ($own) {
+                $this->db->commit();
+            }
+            return ['status' => true, 'message' => 'Assigned successfully.'];
+        } catch (PDOException $e) {
+            if ($own) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    /** Moves the given employees OUT of whatever row they're currently on for this type -- to a
+     *  specific destination row (2026-08-31, explicit request: "ถ้าย้ายออกใน sweetalert มี select2 ของ
+     *  master นั้นให้เลือกว่าจะเลือกย้ายไปที่ Master ไหน") or, when $destinationRowId is null, to
+     *  unassigned ("ถ้าไม่เลือกพนักงานจะไม่มีสังกัด"). $destinationRowId is validated the same way
+     *  assertStructureRowExists() validates the source row -- can't move someone into a
+     *  deleted/other-company row. */
+    public function structureMoveEmployeesOut(string $type, array $employeeIds, int $compId, ?int $destinationRowId, int $userId): array {
+        $config = $this->getStructureConfig($type);
+        $fk = $this->assignFkColumn($type);
+        if (!$config || !$fk) {
+            return ['status' => false, 'message' => 'Invalid entity type.'];
+        }
+        if ($destinationRowId !== null && !$this->assertStructureRowExists($type, $destinationRowId, $compId)) {
+            return ['status' => false, 'message' => 'Invalid destination.'];
+        }
+        $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
+        if (empty($employeeIds)) {
+            return ['status' => false, 'message' => 'No employees selected.'];
+        }
+        $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+        $own = !$this->db->inTransaction();
+        try {
+            if ($own) {
+                $this->db->beginTransaction();
+            }
+            $stmt = $this->db->prepare("UPDATE `employees` SET `{$fk}` = ?, updated_by = ? WHERE id IN ({$placeholders}) AND comp_id = ?");
+            $stmt->execute(array_merge([$destinationRowId, $userId], $employeeIds, [$compId]));
+            if ($own) {
+                $this->db->commit();
+            }
+            return ['status' => true, 'message' => 'Moved successfully.'];
+        } catch (PDOException $e) {
+            if ($own) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
 }

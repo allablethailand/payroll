@@ -127,6 +127,8 @@ class MasterModel {
             case 'shift':
             case 'leave_type':
             case 'team':
+            case 'rank':
+            case 'work_location':
                 if ($compId === null) {
                     break;
                 }
@@ -138,6 +140,12 @@ class MasterModel {
                     'shift' => ['table' => 'shifts', 'code' => 'shift_code', 'nameTh' => 'shift_name_th', 'nameEn' => 'shift_name_en'],
                     'leave_type' => ['table' => 'leave_types', 'code' => 'code', 'nameTh' => 'name_th', 'nameEn' => 'name_en'],
                     'team' => ['table' => 'structure_teams', 'code' => 'team_code', 'nameTh' => 'team_name_th', 'nameEn' => 'team_name_en'],
+                    // 2026-08-31, explicit request: Assign Employees modal's own destination-master
+                    // Select2 needs a dropdown-options endpoint for every assignable type -- rank and
+                    // work_location were the only 2 of the 8 that never had one (every other type
+                    // already powers a real Employee Detail dropdown this same way).
+                    'rank' => ['table' => 'structure_ranks', 'code' => 'rank_code', 'nameTh' => 'rank_name_th', 'nameEn' => 'rank_name_en'],
+                    'work_location' => ['table' => 'master_work_locations', 'code' => 'location_code', 'nameTh' => 'location_name_th', 'nameEn' => 'location_name_en'],
                 ];
                 $cfg = $tableMap[$type];
                 $where = " WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' ";

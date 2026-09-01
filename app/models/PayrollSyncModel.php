@@ -203,6 +203,10 @@ declare(strict_types=1);
  */
 require_once __DIR__ . '/NotificationModel.php';
 require_once __DIR__ . '/../services/SyncPayResolver.php';
+// 2026-09-02: pendingList()'s own matched-cycle heuristic needs this -- explicit require (not just
+// relying on index.php's spl_autoload_register) since PayrollSyncModel.php is also loaded directly
+// by CLI test scripts that never go through that autoloader.
+require_once __DIR__ . '/PayrollCycleModel.php';
 class PayrollSyncModel {
     private PDO $db;
 
@@ -236,6 +240,31 @@ class PayrollSyncModel {
             return ['status' => false, 'message' => "No company mapped to comp_code '{$payload['comp_code']}'. Set companies.origami_payroll_comp_code for this company first."];
         }
 
+        // 2026-08-31, same-day follow-up (explicit report from the Origami dev team about their new
+        // "pull back and re-edit" admin action) -- BEFORE this ingest ever reaches upsertProcess(),
+        // check whether this origami_process_id is already linked to a real payroll_runs row
+        // (regardless of that run's state -- same `r.id`/no-deleted_at-filter convention every other
+        // "already pulled" check in this app already uses, see PayrollRunModel::create()'s own
+        // validation query). If so, this is a re-push for something already in progress on our
+        // side -- overwriting payroll_sync_items/payroll_sync_employee_status silently here would be
+        // genuinely dangerous: PayrollRunModel::recalculate() reads payroll_sync_items LIVE every
+        // time it runs, so the linked run's own numbers could change on its NEXT recalculate with
+        // zero warning, and we never emit any status push back to Origami until the run reaches
+        // pending_approval (submit()) -- meaning Origami's own "we haven't heard anything back yet"
+        // safety assumption does not actually cover a process sitting in an active draft run. Block
+        // the overwrite, preserve the attempted payload for an admin to review
+        // (payroll_sync_blocked_updates), and notify -- never silently apply, never silently drop.
+        $stmtLinked = $this->db->prepare("SELECT p.id AS process_row_id, r.id AS run_id
+            FROM `payroll_sync_processes` p
+            JOIN `payroll_runs` r ON r.sync_process_id = p.id
+            WHERE p.origami_process_id = :pid
+            LIMIT 1");
+        $stmtLinked->execute([':pid' => (int)$payload['process_id']]);
+        $linked = $stmtLinked->fetch(PDO::FETCH_ASSOC);
+        if ($linked) {
+            return $this->recordBlockedUpdate($compId, (int)$linked['process_row_id'], (int)$linked['run_id'], $payload);
+        }
+
         $ownTransaction = !$this->db->inTransaction();
         try {
             if ($ownTransaction) { $this->db->beginTransaction(); }
@@ -243,6 +272,7 @@ class PayrollSyncModel {
             $processRowId = $this->upsertProcess($compId, $payload);
             $unmappedCount = $this->replaceItems($processRowId, $compId, $payload['items']);
             $this->replaceEmployeeStatus($processRowId, $compId, $payload['employee_status'] ?? []);
+            $this->replaceScheduledItemOccurrences($processRowId, $compId, $payload['items'], $payload['scheduled_item_occurrences'] ?? []);
 
             $stmt = $this->db->prepare("UPDATE payroll_sync_processes SET item_count = :item_count, unmapped_item_count = :unmapped_count WHERE id = :id");
             $stmt->execute([
@@ -275,6 +305,142 @@ class PayrollSyncModel {
         }
     }
 
+    /**
+     * 2026-08-31, same-day follow-up -- see ingest()'s own guard comment above for the full "why".
+     * Records the BLOCKED push (never applied, never discarded) so an admin can review it via
+     * blockedUpdatesList() and explicitly decide to applyBlockedUpdate() or dismissBlockedUpdate()
+     * it. Deliberately returns `status: true` (not an error) -- this is a well-understood, expected
+     * outcome from Origami's own side (their push genuinely arrived and was received), not a
+     * transient failure; per ingest()'s own docblock Origami's cron only retries on a non-2xx
+     * response, and this must never trigger an automatic retry loop over something that requires a
+     * human decision on our side.
+     *
+     * Known, deliberate simplification: if the SAME already-linked process is pushed again while an
+     * earlier blocked update for it is still `pending`, a SECOND row is inserted rather than
+     * superseding/collapsing the first -- multiple genuine edits queuing up before an admin reviews
+     * any of them is expected to be rare in practice (a real human editing on Origami's side, not an
+     * automated retry loop), so the admin-facing list simply shows every pending one for that
+     * process; not worth the complexity of a "supersede the older pending row" mechanism for that.
+     */
+    private function recordBlockedUpdate(int $compId, int $processRowId, int $runId, array $payload): array {
+        $ownTransaction = !$this->db->inTransaction();
+        try {
+            if ($ownTransaction) { $this->db->beginTransaction(); }
+            $stmt = $this->db->prepare("INSERT INTO `payroll_sync_blocked_updates`
+                    (comp_id, process_row_id, linked_run_id, attempted_payload)
+                VALUES (:comp_id, :process_row_id, :linked_run_id, :attempted_payload)");
+            $stmt->execute([
+                ':comp_id' => $compId, ':process_row_id' => $processRowId, ':linked_run_id' => $runId,
+                ':attempted_payload' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            ]);
+            $blockedUpdateId = (int)$this->db->lastInsertId();
+            if ($ownTransaction) { $this->db->commit(); }
+        } catch (Throwable $e) {
+            if ($ownTransaction && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Failed to record blocked update: ' . $e->getMessage()];
+        }
+
+        // Best-effort, own try/catch -- same reasoning as ingest()'s own "sync_new_data" notification.
+        try {
+            $processNo = (string)($payload['process_no'] ?? '');
+            (new NotificationModel())->createForPermissionHolders(
+                $compId, 'can_process_payroll', 'sync_update_blocked',
+                "Origami พยายามอัปเดตข้อมูลที่ถูกดึงเข้ารอบเงินเดือนไปแล้ว", "Origami tried to update data already pulled into a payroll run",
+                "รอบข้อมูล {$processNo} มีการแก้ไขจาก Origami หลังถูกดึงเข้ารอบเงินเดือนแล้ว ระบบไม่ได้นำไปใช้อัตโนมัติ กรุณาตรวจสอบก่อนนำไปใช้",
+                "Sync batch {$processNo} was edited by Origami after being pulled into a payroll run. It was NOT applied automatically -- please review before applying it.",
+                "/payroll-process", 'payroll_sync_blocked_update', $blockedUpdateId, "sync_update_blocked:{$blockedUpdateId}", 'fa-triangle-exclamation'
+            );
+        } catch (Throwable $e) {
+            // Best-effort -- see comment above.
+        }
+
+        return [
+            'status' => true, 'blocked' => true,
+            'process_row_id' => $processRowId, 'linked_run_id' => $runId, 'blocked_update_id' => $blockedUpdateId,
+            'message' => 'This process is already linked to an existing payroll run. The update was recorded for admin review instead of being applied automatically.',
+        ];
+    }
+
+    /** Admin-facing list for the Payroll Process page's "Pending Pull" station -- every BLOCKED
+     *  update still awaiting a decision (applied/dismissed ones drop out). */
+    public function blockedUpdatesList(int $compId): array {
+        $stmt = $this->db->prepare("SELECT bu.id, bu.process_row_id, bu.linked_run_id, bu.received_at,
+                p.process_no, p.process_subject,
+                r.run_name, r.state AS run_state
+            FROM `payroll_sync_blocked_updates` bu
+            JOIN `payroll_sync_processes` p ON p.id = bu.process_row_id
+            JOIN `payroll_runs` r ON r.id = bu.linked_run_id
+            WHERE bu.comp_id = :comp_id AND bu.status = 'pending'
+            ORDER BY bu.received_at DESC");
+        $stmt->execute([':comp_id' => $compId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Explicit admin action: apply a previously-blocked update now. Re-runs the EXACT SAME
+     * upsertProcess()/replaceItems()/replaceEmployeeStatus() steps ingest() itself uses (against the
+     * payload preserved at block-time), then marks the blocked-update row resolved. Does NOT
+     * recalculate the linked run itself -- that stays a separate, explicit admin action on the
+     * Detail page (this method only refreshes the SOURCE sync data; recalculating is a distinct,
+     * already-audited action with its own confirmation, not something to bundle in silently here).
+     */
+    public function applyBlockedUpdate(int $blockedUpdateId, int $compId, int $userId): array {
+        $stmt = $this->db->prepare("SELECT * FROM `payroll_sync_blocked_updates` WHERE id = :id AND comp_id = :comp_id AND status = 'pending'");
+        $stmt->execute([':id' => $blockedUpdateId, ':comp_id' => $compId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return ['status' => false, 'message' => 'Blocked update not found or already resolved.'];
+        }
+        $payload = json_decode((string)$row['attempted_payload'], true);
+        if (!is_array($payload)) {
+            return ['status' => false, 'message' => 'The stored payload could not be read.'];
+        }
+
+        $ownTransaction = !$this->db->inTransaction();
+        try {
+            if ($ownTransaction) { $this->db->beginTransaction(); }
+            $processRowId = $this->upsertProcess($compId, $payload);
+            $unmappedCount = $this->replaceItems($processRowId, $compId, $payload['items'] ?? []);
+            $this->replaceEmployeeStatus($processRowId, $compId, $payload['employee_status'] ?? []);
+            $this->replaceScheduledItemOccurrences($processRowId, $compId, $payload['items'] ?? [], $payload['scheduled_item_occurrences'] ?? []);
+            $this->db->prepare("UPDATE payroll_sync_processes SET item_count = :item_count, unmapped_item_count = :unmapped_count WHERE id = :id")
+                ->execute([':item_count' => count($payload['items'] ?? []), ':unmapped_count' => $unmappedCount, ':id' => $processRowId]);
+            $this->db->prepare("UPDATE `payroll_sync_blocked_updates` SET status = 'applied', resolved_by = :resolved_by, resolved_at = CURRENT_TIMESTAMP WHERE id = :id")
+                ->execute([':resolved_by' => $userId, ':id' => $blockedUpdateId]);
+            if ($ownTransaction) { $this->db->commit(); }
+        } catch (Throwable $e) {
+            if ($ownTransaction && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Failed to apply update: ' . $e->getMessage()];
+        }
+
+        // Best-effort -- the linked run's own numbers are now stale against the refreshed sync data
+        // until someone recalculates it; nudge the same audience that got the original block notice.
+        try {
+            (new NotificationModel())->createForPermissionHolders(
+                $compId, 'can_process_payroll', 'sync_update_applied',
+                "อัปเดตข้อมูล Sync แล้ว กรุณาคำนวณรอบเงินเดือนใหม่", "Sync data updated -- please recalculate the linked payroll run",
+                null, null, "/payroll-process", 'payroll_run', (int)$row['linked_run_id'], "sync_update_applied:{$blockedUpdateId}", 'fa-rotate'
+            );
+        } catch (Throwable $e) {
+            // Best-effort -- see comment above.
+        }
+
+        return ['status' => true, 'process_row_id' => $processRowId, 'linked_run_id' => (int)$row['linked_run_id'], 'unmapped_items' => $unmappedCount];
+    }
+
+    /** Explicit admin action: discard a blocked update without applying it -- the row is KEPT
+     *  (status='dismissed'), not hard-deleted, same "no hard delete" convention as everywhere else
+     *  in this app; it just drops out of blockedUpdatesList()'s own WHERE. */
+    public function dismissBlockedUpdate(int $blockedUpdateId, int $compId, int $userId): array {
+        $stmt = $this->db->prepare("UPDATE `payroll_sync_blocked_updates` SET status = 'dismissed', resolved_by = :resolved_by, resolved_at = CURRENT_TIMESTAMP
+            WHERE id = :id AND comp_id = :comp_id AND status = 'pending'");
+        $stmt->execute([':resolved_by' => $userId, ':id' => $blockedUpdateId, ':comp_id' => $compId]);
+        if ($stmt->rowCount() === 0) {
+            return ['status' => false, 'message' => 'Blocked update not found or already resolved.'];
+        }
+        return ['status' => true];
+    }
+
     private function resolveCompanyId(string $compCode): ?int {
         $stmt = $this->db->prepare("SELECT id FROM companies WHERE origami_payroll_comp_code = :code LIMIT 1");
         $stmt->execute([':code' => $compCode]);
@@ -303,6 +469,35 @@ class PayrollSyncModel {
         return $value === 'supplemental' ? 'supplemental' : 'regular';
     }
 
+    /**
+     * 2026-08-31, PAYROLL_SYNC_API.md revision, confirmed field: `attribution` -- only meaningful
+     * when `run_kind='supplemental'` (Origami's own rule: "null for every regular process -- a
+     * regular cycle is always attributed to itself"). Same defensive posture as
+     * normalizeRunKind() -- never trust the external payload's shape blindly; a malformed/partial
+     * `attribution` object degrades to "no attribution" (null tax_treatment) rather than throwing
+     * or half-populating the 3 columns inconsistently.
+     * @return array{target_origami_process_id: ?int, target_process_no: ?string, tax_treatment: ?string}
+     */
+    private function normalizeAttribution(?string $runKind, mixed $value): array {
+        $empty = ['target_origami_process_id' => null, 'target_process_no' => null, 'tax_treatment' => null];
+        if ($runKind !== 'supplemental' || !is_array($value)) {
+            return $empty;
+        }
+        $treatment = ($value['tax_treatment'] ?? null) === 'merge' ? 'merge' : 'separate';
+        $targetId = isset($value['target_process_id']) && is_numeric($value['target_process_id']) ? (int)$value['target_process_id'] : null;
+        if ($targetId === null) {
+            // No real target named -- per Origami's own doc, this is the "explicitly chose NOT to
+            // merge with any regular cycle" case, functionally identical to `attribution: null`
+            // even if a (malformed or intent-only) object was technically present.
+            return $empty;
+        }
+        return [
+            'target_origami_process_id' => $targetId,
+            'target_process_no' => !empty($value['target_process_no']) ? trim((string)$value['target_process_no']) : null,
+            'tax_treatment' => $treatment,
+        ];
+    }
+
     private function upsertProcess(int $compId, array $p): int {
         $stmt = $this->db->prepare("SELECT id FROM payroll_sync_processes WHERE origami_process_id = :pid LIMIT 1");
         $stmt->execute([':pid' => (int)$p['process_id']]);
@@ -318,6 +513,7 @@ class PayrollSyncModel {
         $processEnd = $this->nullableDate($p['process_end'] ?? null);
         $processPaid = $this->nullableDate($p['process_paid'] ?? null);
         $runKind = $this->normalizeRunKind($p['run_kind'] ?? null);
+        $attribution = $this->normalizeAttribution($runKind, $p['attribution'] ?? null);
 
         if ($existingId !== false) {
             $id = (int)$existingId;
@@ -325,6 +521,8 @@ class PayrollSyncModel {
                     comp_id = :comp_id, process_no = :process_no, process_subject = :process_subject,
                     process_description = :process_description, process_start = :process_start,
                     process_end = :process_end, process_paid = :process_paid, run_kind = :run_kind,
+                    attribution_target_origami_process_id = :attr_target_id, attribution_target_process_no = :attr_target_no,
+                    attribution_tax_treatment = :attr_tax_treatment,
                     origami_report_id = :report_id,
                     origami_comp_code = :comp_code, origami_comp_name = :comp_name,
                     origami_period_id = :period_id, period_name = :period_name, frequency_type = :frequency_type,
@@ -334,7 +532,11 @@ class PayrollSyncModel {
                 ':comp_id' => $compId, ':process_no' => (string)$p['process_no'],
                 ':process_subject' => $processSubject, ':process_description' => $processDescription,
                 ':process_start' => $processStart, ':process_end' => $processEnd, ':process_paid' => $processPaid,
-                ':run_kind' => $runKind, ':report_id' => $p['report_id'] ?? null,
+                ':run_kind' => $runKind,
+                ':attr_target_id' => $attribution['target_origami_process_id'],
+                ':attr_target_no' => $attribution['target_process_no'],
+                ':attr_tax_treatment' => $attribution['tax_treatment'],
+                ':report_id' => $p['report_id'] ?? null,
                 ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
                 ':period_id' => $p['period_id'] ?? null, ':period_name' => $p['period_name'] ?? null,
                 ':frequency_type' => (string)$p['frequency_type'], ':schema_version' => (int)$p['schema_version'],
@@ -347,16 +549,24 @@ class PayrollSyncModel {
 
         $stmt = $this->db->prepare("INSERT INTO payroll_sync_processes
                 (comp_id, origami_process_id, process_no, process_subject, process_description,
-                 process_start, process_end, process_paid, run_kind, origami_report_id, origami_comp_code, origami_comp_name,
+                 process_start, process_end, process_paid, run_kind,
+                 attribution_target_origami_process_id, attribution_target_process_no, attribution_tax_treatment,
+                 origami_report_id, origami_comp_code, origami_comp_name,
                  origami_period_id, period_name, frequency_type, schema_version, raw_payload)
             VALUES (:comp_id, :pid, :process_no, :process_subject, :process_description,
-                 :process_start, :process_end, :process_paid, :run_kind, :report_id, :comp_code, :comp_name,
+                 :process_start, :process_end, :process_paid, :run_kind,
+                 :attr_target_id, :attr_target_no, :attr_tax_treatment,
+                 :report_id, :comp_code, :comp_name,
                  :period_id, :period_name, :frequency_type, :schema_version, :raw_payload)");
         $stmt->execute([
             ':comp_id' => $compId, ':pid' => (int)$p['process_id'], ':process_no' => (string)$p['process_no'],
             ':process_subject' => $processSubject, ':process_description' => $processDescription,
             ':process_start' => $processStart, ':process_end' => $processEnd, ':process_paid' => $processPaid,
-            ':run_kind' => $runKind, ':report_id' => $p['report_id'] ?? null, ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
+            ':run_kind' => $runKind,
+            ':attr_target_id' => $attribution['target_origami_process_id'],
+            ':attr_target_no' => $attribution['target_process_no'],
+            ':attr_tax_treatment' => $attribution['tax_treatment'],
+            ':report_id' => $p['report_id'] ?? null, ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
             ':period_id' => $p['period_id'] ?? null, ':period_name' => $p['period_name'] ?? null,
             ':frequency_type' => (string)$p['frequency_type'], ':schema_version' => (int)$p['schema_version'],
             ':raw_payload' => $rawPayload,
@@ -471,6 +681,108 @@ class PayrollSyncModel {
             ]);
         }
         return $unmappedCount;
+    }
+
+    /**
+     * 2026-08-31, same-day follow-up -- Origami's `scheduled_item_occurrences[]` proposal (a
+     * per-installment breakdown of an Employee Item's summed items[].item_values[] amount, e.g.
+     * "LOAN installment 2 of 12"). Confirmed additive, no PAYLOAD_SCHEMA_VERSION bump.
+     *
+     * `employee_id` resolution is a TWO-STEP lookup, not a direct one: Origami's own `emp_id` (the
+     * field each occurrence row is keyed by) is never persisted anywhere on this app's side as its
+     * own column -- replaceItems() above only ever resolves/stores `employee_id` via
+     * `payroll_code` -- so this method builds its own `emp_id -> employee_id` map by scanning
+     * `$items` (the SAME array replaceItems() just processed, still in scope here) for each item's
+     * own `emp_id`/`payroll_code` pair, then resolves through the identical resolveEmployeeId()
+     * every other mapping in this class uses. An occurrence whose `emp_id` doesn't match ANY
+     * `items[].emp_id` in this same payload (should not happen per Origami's own description --
+     * every occurrence belongs to an employee who also has an items[] entry in the same batch --
+     * but defensively handled, not assumed) is stored with `employee_id = NULL`, same "can't
+     * resolve, don't drop the row" convention replaceItems() itself uses for an unmapped
+     * `payroll_code`.
+     *
+     * Same idempotent delete+reinsert pattern as replaceItems()/replaceEmployeeStatus() -- a
+     * resubmit of the same process_id replaces this table's rows for it wholesale, not a
+     * diff-and-patch.
+     *
+     * `applied_at` accepts EITHER a plain ISO-ish `YYYY-MM-DD HH:MM:SS` (matching every other
+     * timestamp convention this API otherwise uses, e.g. run_kind/attribution's own dates) OR
+     * Origami's first-proposed `YYYY/MM/DD HH:MM:SS` (slash-separated) -- flagged back to Origami
+     * as an inconsistency worth fixing on their side, but parsed defensively here regardless so a
+     * genuine, valid timestamp in either format is never silently dropped over pure formatting.
+     * Same "never trust an external payload's shape blindly, degrade rather than throw" posture as
+     * nullableDate()/normalizeRunKind() elsewhere in this class -- an unparseable value stores NULL
+     * rather than rejecting the whole occurrence row (the amount/item_code/occurrence_code are the
+     * load-bearing fields; a missing timestamp is a lesser, tolerable data-quality gap).
+     */
+    private function parseOccurrenceAppliedAt(mixed $value): ?string {
+        if (empty($value) || !is_string($value)) {
+            return null;
+        }
+        foreach (['Y-m-d H:i:s', 'Y/m/d H:i:s', 'Y-m-d', 'Y/m/d'] as $format) {
+            $dt = DateTime::createFromFormat($format, $value);
+            if ($dt !== false) {
+                return $dt->format('Y-m-d H:i:s');
+            }
+        }
+        return null;
+    }
+
+    private function replaceScheduledItemOccurrences(int $processRowId, int $compId, array $items, array $occurrences): void {
+        $this->db->prepare("DELETE FROM `payroll_sync_item_occurrences` WHERE process_id = :process_id")
+            ->execute([':process_id' => $processRowId]);
+        if (empty($occurrences)) {
+            return;
+        }
+
+        $employeeIdByOrigamiEmpId = [];
+        foreach ($items as $item) {
+            $origamiEmpId = $item['emp_id'] ?? null;
+            $payrollCode = (string)($item['payroll_code'] ?? '');
+            if ($origamiEmpId === null || $payrollCode === '') {
+                continue;
+            }
+            $employeeIdByOrigamiEmpId[(string)$origamiEmpId] = $this->resolveEmployeeId($compId, $payrollCode);
+        }
+
+        $stmt = $this->db->prepare("INSERT INTO `payroll_sync_item_occurrences`
+                (process_id, employee_id, origami_emp_id, item_code, item_ref_code, occurrence_code, installment_no, amount, applied_at)
+            VALUES (:process_id, :employee_id, :origami_emp_id, :item_code, :item_ref_code, :occurrence_code, :installment_no, :amount, :applied_at)");
+        foreach ($occurrences as $occ) {
+            $itemCode = (string)($occ['item_code'] ?? '');
+            if ($itemCode === '' || !isset($occ['amount']) || !is_numeric($occ['amount'])) {
+                continue; // no meaningful row without at least an item_code + amount
+            }
+            $origamiEmpId = $occ['emp_id'] ?? null;
+            $employeeId = $origamiEmpId !== null ? ($employeeIdByOrigamiEmpId[(string)$origamiEmpId] ?? null) : null;
+            $stmt->execute([
+                ':process_id' => $processRowId,
+                ':employee_id' => $employeeId,
+                ':origami_emp_id' => $origamiEmpId !== null && is_numeric($origamiEmpId) ? (int)$origamiEmpId : null,
+                ':item_code' => $itemCode,
+                ':item_ref_code' => !empty($occ['item_ref_code']) ? trim((string)$occ['item_ref_code']) : null,
+                ':occurrence_code' => !empty($occ['occurrence_code']) ? trim((string)$occ['occurrence_code']) : null,
+                ':installment_no' => isset($occ['installment_no']) && is_numeric($occ['installment_no']) ? (int)$occ['installment_no'] : null,
+                ':amount' => round((float)$occ['amount'], 2),
+                ':applied_at' => $this->parseOccurrenceAppliedAt($occ['applied_at'] ?? null),
+            ]);
+        }
+    }
+
+    /**
+     * Read-only, for consumers wanting the occurrence breakdown of a specific item for a specific
+     * employee within one Origami process (e.g. PayrollRunModel::syncDeductionLinesForEmployee()'s
+     * own Adjust Amounts listing, or a payslip renderer) -- deliberately a plain per-(process,
+     * employee, item_code) lookup, not tied to any payroll_runs row, since occurrences belong to
+     * the Origami PROCESS, not to whichever run it eventually got pulled into.
+     */
+    public function occurrencesForItem(int $processRowId, int $employeeId, string $itemCode): array {
+        $stmt = $this->db->prepare("SELECT item_ref_code, occurrence_code, installment_no, amount, applied_at
+            FROM `payroll_sync_item_occurrences`
+            WHERE process_id = :process_id AND employee_id = :employee_id AND item_code = :item_code
+            ORDER BY installment_no ASC, id ASC");
+        $stmt->execute([':process_id' => $processRowId, ':employee_id' => $employeeId, ':item_code' => $itemCode]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     private function replaceEmployeeStatus(int $processRowId, int $compId, array $statusRows): void {
@@ -1480,7 +1792,15 @@ class PayrollSyncModel {
      * filter and always returning the full unfiltered list.
      */
     public function pendingList(int $compId, array $filters = []): array {
-        $where = "WHERE p.comp_id = :comp_id AND r.id IS NULL";
+        // 2026-08-31: `status='pending'` added alongside the existing `r.id IS NULL` check -- a
+        // process that's been explicitly rejected (rejectProcess() below) must also drop out of
+        // this station, same as one that's been pulled into a run, even though neither r.id nor
+        // this row's own comp_id/date filters changed at all.
+        // `merged_into_run_id IS NULL` (2026-08-31, PAYROLL_SYNC_API.md attribution revision) --
+        // same reasoning: a supplemental process whose items were MERGED into an existing regular
+        // run (PayrollRunModel::mergeSupplementalIntoRun()) is consumed too, even though it was
+        // never itself the primary sync_process_id of any run (r.id stays NULL for it).
+        $where = "WHERE p.comp_id = :comp_id AND r.id IS NULL AND p.status = 'pending' AND p.merged_into_run_id IS NULL";
         $params = [':comp_id' => $compId];
         if (!empty($filters['date_from'])) {
             $where .= " AND p.received_at >= :date_from";
@@ -1494,8 +1814,13 @@ class PayrollSyncModel {
         // PAYROLL_SYNC_API.md's own 2026-08-28 revision) -- surfaced here so the Payroll Process
         // page's "Pull to Run" action can pre-fill the run's own name/period/pay date directly from
         // what Origami sent, per explicit request, instead of the admin re-entering it by hand.
+        // attribution_* (2026-08-31, PAYROLL_SYNC_API.md revision) -- surfaced so the Pending Pull
+        // station can show a supplemental row's routing intent (merge into a named regular cycle,
+        // vs. separate) before an admin pulls it, see PayrollSyncModel::normalizeAttribution()'s
+        // own docblock.
         $stmt = $this->db->prepare("SELECT p.id, p.origami_process_id, p.process_no, p.process_subject,
                 p.process_start, p.process_end, p.process_paid, p.run_kind,
+                p.attribution_target_origami_process_id, p.attribution_target_process_no, p.attribution_tax_treatment,
                 p.origami_comp_name, p.period_name, p.frequency_type,
                 p.item_count, p.unmapped_item_count, p.received_at
             FROM payroll_sync_processes p
@@ -1503,7 +1828,72 @@ class PayrollSyncModel {
             {$where}
             ORDER BY p.received_at DESC");
         $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // 2026-09-01, explicit request: "อยากให้กดแล้ว Default ค่าที่ส่งมา Origami เลยโดยที่ไม่ต้องเลือกใหม่" --
+        // matched_cycle_id/matched_cycle_name (null when nothing confidently matches) let "Pull to
+        // Run" pre-select the Payroll Schedule dropdown too, not just the period dates. See
+        // PayrollCycleModel::matchForSyncProcess()'s own docblock for the full heuristic and its
+        // limits -- this is a best-effort guess, not a real Origami-side mapping.
+        if (!empty($rows)) {
+            $cycleModel = new PayrollCycleModel($this->db);
+            $activeCycles = $cycleModel->list($compId);
+            foreach ($rows as &$row) {
+                $matched = $cycleModel->matchForSyncProcess($activeCycles, $row);
+                $row['matched_cycle_id'] = $matched['id'] ?? null;
+                $row['matched_cycle_name'] = $matched['cycle_name'] ?? null;
+            }
+            unset($row);
+        }
+        return $rows;
+    }
+
+    /**
+     * 2026-08-31, explicit request: "เพิ่มให้สามารถตีกลับเอกสารที่ยังไม่ดึงมาทำรอบได้ โดยที่ต้องใส่ Comment
+     * เข้าไปด้วยครับ...และต้องมีเอกสารส่งไปที่ Origami เพื่อให้ฝั่งนั้นเขียนรับค่า Status และการตีกลับครับ...และ
+     * เน้นย้ำต้องเก็บ Log การดำเนินการ" -- reject-back for a payroll_sync_processes row still in the
+     * Pending Pull station (never yet consumed by a run). A comment is mandatory (this IS the
+     * "ต้องใส่ Comment" requirement) and becomes `rejected_reason`. Refuses if the process has
+     * ALREADY been pulled into a run (same `r.id IS NULL` check pendingList() itself uses -- a
+     * process that already became a real run cannot retroactively be un-pulled by this action) or
+     * is already rejected (idempotent-refuse, not a silent no-op success). Pushes the rejection to
+     * Origami best-effort (OrigamiPayrollStatusClient, never throws back into this method) --
+     * origami_status_push_logs is the audit trail for THAT half; this row's own rejected_reason/
+     * rejected_by/rejected_at is the audit trail for the reject action itself.
+     */
+    public function rejectProcess(int $processId, int $compId, string $comment, int $userId): array {
+        $comment = trim($comment);
+        if ($comment === '') {
+            return ['status' => false, 'message' => 'A comment is required to reject this document.'];
+        }
+        $stmt = $this->db->prepare("SELECT p.*, r.id AS linked_run_id FROM payroll_sync_processes p
+            LEFT JOIN payroll_runs r ON r.sync_process_id = p.id
+            WHERE p.id = :id AND p.comp_id = :comp_id");
+        $stmt->execute([':id' => $processId, ':comp_id' => $compId]);
+        $process = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$process) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if ($process['linked_run_id'] !== null) {
+            return ['status' => false, 'message' => 'This document has already been pulled into a payroll run and can no longer be rejected.'];
+        }
+        if ($process['status'] === 'rejected') {
+            return ['status' => false, 'message' => 'This document has already been rejected.'];
+        }
+        $upd = $this->db->prepare("UPDATE payroll_sync_processes
+            SET status = 'rejected', rejected_reason = :reason, rejected_by = :user_id, rejected_at = CURRENT_TIMESTAMP
+            WHERE id = :id");
+        $upd->execute([':reason' => $comment, ':user_id' => $userId, ':id' => $processId]);
+
+        try {
+            require_once __DIR__ . '/../services/OrigamiPayrollStatusClient.php';
+            (new OrigamiPayrollStatusClient($this->db))->pushSyncProcessRejected($process, $comment);
+        } catch (Throwable $e) {
+            // Best-effort -- the local reject already committed; a push failure is logged by the
+            // client itself and must never surface as a failure of THIS action.
+        }
+
+        return ['status' => true, 'message' => 'Rejected.'];
     }
 
     /**

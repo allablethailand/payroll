@@ -207,6 +207,48 @@ try {
     $precedenceRow = current(array_filter($precedenceDetails, fn($d) => (int)$d['employee_id'] === $internProbationEmpId));
     check('employee that is BOTH intern and on probation: base salary uses the INTERN ratio (30000 * 0.8 = 24000), not probation\'s 20% and not both stacked', (float)$precedenceRow['base_salary_amount'], 24000.0);
 
+    // ---------- 2026-08-31, explicit follow-up: "เงื่อนไขการจ่ายเงินเด็กฝึกงาน...จ่ายเต็มเดือน หรือจ่ายแค่
+    // วันที่มาทำจริง หักลา หักวันหยุดไหม เหมือน Probation" -- intern_pay_basis, direct mirror of
+    // company_payroll_policies.pay_basis. Uses the sync_actual_days branch (same "no data on a
+    // non-sync run -> full base salary + advisory flag" shape probation's own already-shipped
+    // sync_actual_days path uses) since it needs no Shift/Holiday fixture to exercise meaningfully. ----------
+    echo "=== intern_pay_basis='full_month' (default): byte-identical to no pay_basis set at all ===\n";
+    $policyModel->save($compId, [
+        'intern_defer_pvd' => false, 'intern_defer_recurring_earning' => false, 'intern_base_salary_ratio' => null,
+        'intern_pay_basis' => 'full_month',
+    ], $adminUserId);
+    $fullMonthDetails = $createRun();
+    $fullMonthInternRow = current(array_filter($fullMonthDetails, fn($d) => (int)$d['employee_id'] === $internEmpId));
+    check('intern_pay_basis=full_month: intern still gets full base salary (no proration)', (float)$fullMonthInternRow['base_salary_amount'], 30000.0);
+    checkTrue('no sync_actual_days_no_data flag when pay_basis is full_month', !str_contains((string)($fullMonthInternRow['calc_errors'] ?? ''), 'sync_actual_days_no_data'));
+
+    echo "=== intern_pay_basis='sync_actual_days' on a NON-sync run: falls back to full base salary + advisory flag ===\n";
+    $policyModel->save($compId, [
+        'intern_defer_pvd' => false, 'intern_defer_recurring_earning' => false, 'intern_base_salary_ratio' => null,
+        'intern_pay_basis' => 'sync_actual_days',
+    ], $adminUserId);
+    $syncDetails = $createRun();
+    $syncInternRow = current(array_filter($syncDetails, fn($d) => (int)$d['employee_id'] === $internEmpId));
+    $syncFullTimeRow = current(array_filter($syncDetails, fn($d) => (int)$d['employee_id'] === $fullTimeEmpId));
+    check('intern employee still paid the full base salary (no data to prorate against)', (float)$syncInternRow['base_salary_amount'], 30000.0);
+    checkTrue('intern employee IS flagged sync_actual_days_no_data (this is a manual/non-sync test run)', str_contains((string)($syncInternRow['calc_errors'] ?? ''), 'sync_actual_days_no_data'));
+    checkTrue('full-time employee (not an intern) is NEVER flagged, regardless of intern_pay_basis', !str_contains((string)($syncFullTimeRow['calc_errors'] ?? ''), 'sync_actual_days_no_data'));
+
+    echo "=== Precedence: intern's OWN pay_basis governs over probation's pay_basis when both apply ===\n";
+    // intern_pay_basis=sync_actual_days (flags sync_actual_days_no_data on this manual run) vs.
+    // probation's pay_basis=schedule_based (a DIFFERENT branch, would NOT produce that same flag) --
+    // the intern-on-probation employee must show the INTERN branch's own flag, proving intern's
+    // pay_basis setting was consulted, not probation's.
+    $policyModel->save($compId, [
+        'intern_defer_pvd' => false, 'intern_defer_recurring_earning' => false, 'intern_base_salary_ratio' => null,
+        'intern_pay_basis' => 'sync_actual_days',
+        'probation_defer_pvd' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null,
+        'pay_basis' => 'schedule_based',
+    ], $adminUserId);
+    $payBasisPrecedenceDetails = $createRun();
+    $payBasisPrecedenceRow = current(array_filter($payBasisPrecedenceDetails, fn($d) => (int)$d['employee_id'] === $internProbationEmpId));
+    checkTrue('intern-on-probation employee gets the INTERN pay_basis branch\'s own flag (sync_actual_days_no_data), not probation\'s schedule_based', str_contains((string)($payBasisPrecedenceRow['calc_errors'] ?? ''), 'sync_actual_days_no_data'));
+
 } finally {
     $pdo->rollBack();
 }

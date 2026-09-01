@@ -12,12 +12,25 @@ function statusSwitch(checked, onchange) {
         <input class="form-check-input" type="checkbox" ${checked ? 'checked' : ''} onchange="${onchange}">
     </div>`;
 }
-function actionBtns(editFn, delFn) {
+// 2026-08-31, explicit request: Assign Employees modal -- `extraBtns` is an optional 3rd param
+// (empty string default) so every OTHER call site of this shared helper (Holiday/Leave/OT, not in
+// this batch's scope) stays byte-identical; only Shift/Work Location's own call sites pass it.
+function actionBtns(editFn, delFn, extraBtns) {
     return `
     <div class="btn-group border rounded-3 bg-white">
         <button class="btn btn-link text-warning" onclick="${editFn}"><i class="fa-solid fa-pen-to-square"></i></button>
+        ${extraBtns || ''}
         <button class="btn btn-link py-1 text-danger border-start" onclick="${delFn}"><i class="fa-solid fa-trash-can"></i></button>
     </div>`;
+}
+function structureAssignExtraBtns(type, id, label) {
+    return `
+        <button type="button" class="btn btn-link py-1 text-primary border-start btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttrSr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
+        <button type="button" class="btn btn-link py-1 text-secondary border-start btn-structure-view-assigned" data-type="${type}" data-id="${id}" data-label="${escapeAttrSr(label)}" data-i18n-title="view_assigned_employees"><i class="fa-solid fa-users"></i></button>
+    `;
+}
+function escapeAttrSr(str) {
+    return escapeHtmlSr(str).replace(/"/g, '&quot;');
 }
 function escapeHtmlSr(str) {
     return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
@@ -129,7 +142,7 @@ function renderShift() {
             // table in this file already uses -- SetupRulesModel::shiftAssignEmployees()/the
             // api/shift.assign-employees route are left in place, unused by any UI now, in case an
             // API consumer wants bulk-assign later.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openShiftModal(${row.id})`, `askDelete('shift', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openShiftModal(${row.id})`, `askDelete('shift', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`, structureAssignExtraBtns('shift', row.id, currentLang === 'th' ? row.shift_name_th : row.shift_name_en)) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
@@ -407,7 +420,7 @@ function renderWorkLocation() {
             { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleWorkLocationStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`, structureAssignExtraBtns('work_location', row.id, currentLang === 'th' ? row.location_name_th : row.location_name_en)) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },

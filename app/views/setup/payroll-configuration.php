@@ -314,6 +314,42 @@
                                 <div class="form-text mt-2" data-i18n="policy_intern_base_salary_ratio_hint">Applied as a further multiplier on top of whatever base pay calculation already produced (same convention as Probation's own ratio) -- for a daily-allowance intern (salary_type=Daily), leave this blank/100% unless you deliberately also want to further reduce their real daily proration by this percentage.</div>
                             </div>
                         </div>
+                        <!-- 2026-08-31, explicit follow-up: "เงื่อนไขการจ่ายเงินเด็กฝึกงาน...จ่ายเต็มเดือน หรือจ่าย
+                             แค่วันที่มาทำจริง หักลา หักวันหยุดไหม เหมือน Probation" -- direct mirror of
+                             #policyPayBasisRadio above, own separate field set
+                             (PayrollPolicyModel::internPayBasisSettings()). -->
+                        <div class="row g-4 mb-3">
+                            <div class="col-12">
+                                <label class="form-label mb-2" data-i18n="policy_intern_pay_basis_label">Base Salary Basis</label>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="policyInternPayBasisRadio" id="policyInternPayBasisFullMonth" value="full_month">
+                                    <label class="form-check-label" for="policyInternPayBasisFullMonth" data-i18n="policy_pay_basis_full_month">Full Month</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="policyInternPayBasisRadio" id="policyInternPayBasisScheduleBased" value="schedule_based">
+                                    <label class="form-check-label" for="policyInternPayBasisScheduleBased" data-i18n="policy_pay_basis_schedule_based">Schedule-based (Shift + Holiday config)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="policyInternPayBasisRadio" id="policyInternPayBasisSyncActualDays" value="sync_actual_days">
+                                    <label class="form-check-label" for="policyInternPayBasisSyncActualDays" data-i18n="policy_pay_basis_sync_actual_days">Actual Days (Origami Sync)</label>
+                                </div>
+                                <div class="form-text mt-2" data-i18n="policy_intern_pay_basis_description">Only takes effect while Employment Type = Internship -- daily/hourly-rate interns are unaffected either way.</div>
+                                <div class="form-text mt-1" data-i18n="policy_pay_basis_sync_actual_days_hint">"Actual Days (Origami Sync)" only has data on a run pulled from Origami Payroll Sync -- any other run (or a cycle where Origami itself didn't send this figure) pays the full base salary instead, flagged visibly on that employee's calculation row.</div>
+                            </div>
+                        </div>
+                        <div class="row g-4 mb-5">
+                            <div class="col-12 d-none" id="policyInternPayBasisSubOptions">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="policyInternPayBasisDeductHolidays">
+                                    <label class="form-check-label" for="policyInternPayBasisDeductHolidays" data-i18n="policy_pay_basis_deduct_holidays_label">Exclude holidays from payable days</label>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="policyInternPayBasisDeductLeave">
+                                    <label class="form-check-label" for="policyInternPayBasisDeductLeave" data-i18n="policy_pay_basis_deduct_leave_label">Exclude approved unpaid leave from payable days</label>
+                                </div>
+                                <div class="form-text" data-i18n="policy_pay_basis_hint">Both left off still pays 100% of base salary for a normal period -- these only reduce pay when a holiday/unpaid leave actually falls inside the pay period.</div>
+                            </div>
+                        </div>
                         <div class="settings-subgroup">
                             <div class="settings-subgroup-label" data-i18n="policy_probation_additional_conditions_label">Additional Conditions</div>
                             <div class="form-check mb-3">
@@ -323,6 +359,34 @@
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="policyInternDeferRecurringEarning">
                                 <label class="form-check-label" for="policyInternDeferRecurringEarning" data-i18n="policy_intern_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) for interns</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 3 of the Origami
+                     `attribution` field's own deferred list): a company-configured flat withholding
+                     % used ONLY by a supplemental run that explicitly opts in on its own Pull-to-Run
+                     screen (payroll_runs.use_flat_tax_rate) -- see PayrollPolicyModel::flatTaxRatePercent()'s
+                     own docblock and PayrollRunModel::recalculate()'s own TH_PIT block for what this
+                     actually changes. Left blank = the opt-in checkbox is a no-op, normal average/
+                     actual PIT calculation still applies. -->
+                <div class="settings-info-card mb-4" id="policySupplementalTaxCard">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-percent"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="policy_flat_tax_title">Supplemental Run Flat Withholding Rate</p>
+                            <p class="settings-info-card-desc" data-i18n="policy_flat_tax_description">Used only when a supplemental (off-cycle) run explicitly opts in on its own Pull-to-Run screen, for an Origami-attributed batch marked "Withhold Separately." Left blank, the normal average/actual PIT calculation is used instead.</p>
+                        </div>
+                    </div>
+                    <div class="settings-info-card-body">
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <label class="form-label mb-2" data-i18n="policy_flat_tax_rate_label">Flat Withholding Rate</label>
+                                <div class="input-group">
+                                    <input type="number" min="0" max="100" step="0.01" class="form-control" id="policySupplementalFlatTaxRate" placeholder="0.00">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <div class="form-text mt-2" data-i18n="policy_flat_tax_rate_hint">Applied against the supplemental run's own taxable gross for that period only -- a standalone lump-sum withholding, not folded into the employee's annual/cumulative tax curve.</div>
                             </div>
                         </div>
                     </div>

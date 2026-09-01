@@ -68,6 +68,16 @@ $(document).on('shown.bs.tab', '#employeeTopTabs button[data-bs-toggle="tab"]', 
     }
 });
 $(document).ready(function () {
+    // 2026-08-31, explicit request: "Filter ในหน้า Employee List การจ่ายเงินเดือน ให้เลือกเป็นทำจ่าย
+    // เงินเดือนเป็น Default" -- app.js's own generic '.select2-static' sweep (runs earlier, before
+    // this page's own ready handler) already initialized this field with no explicit value, which
+    // select2 defaults to the FIRST option ("all"/no filter) -- re-init here with selectedValue
+    // BEFORE initEmployeeTable() below so the table's own first ajax load already reads '1', not a
+    // later reload. "Clear Filter" (below) still resets to the genuinely-unfiltered 'all' state,
+    // this only changes what the page shows before any user interaction.
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#employee_filter_payroll_participant', { mode: 'static', selectedValue: '1' });
+    }
     initEmployeeTable();
     if (typeof initDatepicker === 'function') {
         initDatepicker('#employee_filter_date_from');
@@ -310,6 +320,24 @@ function initEmployeeTable() {
                     return `<span class="badge ${badge}">${data}</span>`;
                 }
             },
+            // 2026-08-31, explicit request: "ในตารางให้มีสัญลักษณ์บอกด้วยว่าจ่ายหรือไม่จ่ายเงินเดือน" --
+            // object-form render (Table convention: display differs from the raw sort/filter value)
+            // reading `payroll_participant_flag` (EmployeeModel::list()'s own deliberately-different
+            // alias for `is_payroll_participant`, see that method's own comment on why the bare key
+            // would have been stripped before reaching here).
+            {
+                data: "payroll_participant_flag",
+                responsivePriority: 6,
+                render: {
+                    display: function (d) {
+                        return Number(d) === 1
+                            ? `<span class="badge bg-success-subtle text-success"><i class="fa-solid fa-money-check-dollar me-1"></i>${escapeHtmlList(langData['payroll_participant_yes'] || 'Pays Salary')}</span>`
+                            : `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-ban me-1"></i>${escapeHtmlList(langData['payroll_participant_no'] || 'No Salary')}</span>`;
+                    },
+                    sort: d => Number(d) || 0,
+                    filter: d => Number(d) || 0,
+                }
+            },
             {
                 data: "completeness",
                 orderable: false,
@@ -479,6 +507,9 @@ function initEmployeeTable() {
                     { index: 13, key: 'branch' },
                     { index: 14, key: 'start_work_date' },
                     { index: 15, key: 'status' },
+                    // 2026-08-31: new "จ่ายเงินเดือน" badge column, index 16 -- see
+                    // EmployeeModel::listColumnExprMap()'s own 'payroll_participant' entry.
+                    { index: 16, key: 'payroll_participant' },
                 ],
                 fetchValues: function (key, done) {
                     const filters = currentStatusFilters();
@@ -791,6 +822,10 @@ $(document).on('click', '#btnClearLoginHistoryOverviewFilter', function () {
    station filter (role/department/team/shift/branch, same fields as the main Employee tab) + search.
    ==================== */
 let tb_employee_recheck;
+// 2026-08-31, explicit request: view toggle for the Recheck tab (see EmployeeModel::recheckList()'s
+// own $participantMode comment) -- 'participant' (default, is_payroll_participant=1) or 'excluded'
+// (is_payroll_participant=0, the "Not in Payroll" list an admin can Add Back from).
+let currentEmployeeRecheckView = 'participant';
 function recheckFieldIcon(ready) {
     return ready
         ? '<i class="fa-solid fa-circle-check text-success" title="' + (langData['ready'] || 'Ready') + '"></i>'
@@ -867,7 +902,8 @@ function currentEmployeeRecheckFilters() {
         department_id: $('#employee_recheck_filter_department').val() || '',
         team_id: $('#employee_recheck_filter_team').val() || '',
         shift_id: $('#employee_recheck_filter_shift').val() || '',
-        branch_id: $('#employee_recheck_filter_branch').val() || ''
+        branch_id: $('#employee_recheck_filter_branch').val() || '',
+        view: currentEmployeeRecheckView
     };
 }
 function updateClearEmployeeRecheckFilterVisibility() {
@@ -928,9 +964,18 @@ function initEmployeeRecheckTable() {
             { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.tax_calculation_method) },
             { data: 'is_ready', className: 'text-center', responsivePriority: 10, render: d => d ? `<span class="badge bg-success-subtle text-success">${langData['ready'] || 'Ready'}</span>` : `<span class="badge bg-danger-subtle text-danger">${langData['not_ready'] || 'Not Ready'}</span>` },
             {
-                data: null, className: 'text-center', orderable: false, responsivePriority: 1, render: (d, t, row) => `<div class="btn-group border rounded-3 bg-white">
-                    <button type="button" class="btn btn-link btn-sm text-secondary btn-recheck-edit" data-employee-no="${escapeHtmlList(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>
-                </div>`
+                // 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่
+                // ไม่ทำจ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- every row in a given ajax response shares the
+                // SAME is_payroll_participant value (recheckList() forces it via $participantMode, see that
+                // method's own comment), so branching on the current view toggle (not a per-row field) is
+                // correct and avoids needing to select+strip yet another raw column server-side.
+                data: null, className: 'text-center', orderable: false, responsivePriority: 1, render: (d, t, row) => {
+                    const editBtn = `<button type="button" class="btn btn-link btn-sm text-secondary btn-recheck-edit" data-employee-no="${escapeHtmlList(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
+                    const toggleBtn = currentEmployeeRecheckView === 'excluded'
+                        ? `<button type="button" class="btn btn-link btn-sm text-success btn-recheck-add-back" data-id="${row.id}" data-employee-no="${escapeHtmlList(row.employee_no)}" title="${langData['add_back_to_payroll'] || 'Add Back to Payroll'}"><i class="fa-solid fa-user-plus"></i></button>`
+                        : `<button type="button" class="btn btn-link btn-sm text-danger btn-recheck-remove" data-id="${row.id}" data-employee-no="${escapeHtmlList(row.employee_no)}" title="${langData['remove_from_payroll'] || 'Remove from Payroll'}"><i class="fa-solid fa-user-slash"></i></button>`;
+                    return `<div class="btn-group border rounded-3 bg-white">${editBtn}${toggleBtn}</div>`;
+                }
             },
         ],
         // 2026-08-30, real gap found and fixed (same audit as tb_login_history_overview above) --
@@ -1233,6 +1278,65 @@ function syncRcMobileCountryCode() {
     const c = window.rcMobileIti.getSelectedCountry();
     $('#rc_mobile_country_code').val(c && c.dialCode ? ('+' + c.dialCode) : '+66');
 }
+// 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่ไม่ทำ
+// จ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- toggles which of the two views (In Payroll / Not in Payroll) the
+// Recheck table shows; just re-renders the SAME table against currentEmployeeRecheckFilters()'s new
+// `view` key, no separate table instance needed (see EmployeeModel::recheckList()'s own comment).
+$(document).on('click', '#employeeRecheckViewToggle button', function () {
+    const view = $(this).data('view');
+    if (view === currentEmployeeRecheckView) return;
+    currentEmployeeRecheckView = view;
+    $('#employeeRecheckViewToggle button').removeClass('active');
+    $(this).addClass('active');
+    if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);
+});
+function toggleEmployeePayrollParticipant($btn, employeeId, participant, confirmTitle, confirmMessage, successMessage) {
+    showConfirm(confirmTitle, confirmMessage, function () {
+        $btn.prop('disabled', true);
+        $.ajax({
+            url: `${BASE_URL}/api/employee.payroll-participant.set`, method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ id: employeeId, is_payroll_participant: participant ? 1 : 0 }),
+            dataType: 'json',
+            success: function (res) {
+                $btn.prop('disabled', false);
+                if (!res.status) {
+                    showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                    return;
+                }
+                showSuccess(successMessage);
+                if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, false);
+                if (tb_employee) tb_employee.ajax.reload(null, false);
+            },
+            error: function () {
+                $btn.prop('disabled', false);
+                showWarning(langData['save_failed'] || 'An error occurred while saving.');
+            }
+        });
+    });
+}
+$(document).on('click', '.btn-recheck-remove', function () {
+    const $btn = $(this);
+    const employeeId = $btn.data('id');
+    if (!employeeId) return;
+    toggleEmployeePayrollParticipant(
+        $btn, employeeId, false,
+        langData['confirm_remove_from_payroll_title'] || 'Remove from Payroll',
+        langData['confirm_remove_from_payroll_message'] || 'This employee will be excluded from every future payroll run until added back. Continue?',
+        langData['removed_from_payroll_success'] || 'Employee removed from payroll.'
+    );
+});
+$(document).on('click', '.btn-recheck-add-back', function () {
+    const $btn = $(this);
+    const employeeId = $btn.data('id');
+    if (!employeeId) return;
+    toggleEmployeePayrollParticipant(
+        $btn, employeeId, true,
+        langData['confirm_add_back_to_payroll_title'] || 'Add Back to Payroll',
+        langData['confirm_add_back_to_payroll_message'] || 'This employee will be included in payroll runs again. Continue?',
+        langData['added_back_to_payroll_success'] || 'Employee added back to payroll.'
+    );
+});
 $(document).on('click', '.btn-recheck-edit', function () {
     const employeeNo = $(this).data('employee-no');
     const $btn = $(this);
