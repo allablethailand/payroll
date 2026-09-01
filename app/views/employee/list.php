@@ -235,6 +235,11 @@
                             <th scope="col" data-i18n="branch">Branch</th>
                             <th scope="col" data-i18n="start_work_date">Start Work Date</th>
                             <th scope="col" data-i18n="status">Status</th>
+                            <!-- 2026-08-31, explicit request: "ในตารางให้มีสัญลักษณ์บอกด้วยว่าจ่ายหรือไม่จ่าย
+                                 เงินเดือน" -- inserted right after Status (index 16), before the existing
+                                 orderable:false Completeness column; see EmployeeModel::list()'s own
+                                 sortColumns map comment for why no other index needed to shift. -->
+                            <th scope="col" data-i18n="payroll_participant_label">Payroll Participation</th>
                             <th scope="col" data-i18n="profile_completeness">Completeness</th>
                             <th></th>
                         </tr>
@@ -351,7 +356,15 @@
                 </div>
             </div>
         </div>
-        <div class="d-flex justify-content-end mb-3">
+        <!-- 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่ไม่ทำ
+             จ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- a view toggle rather than a brand-new tab, so it reuses
+             this same table/columns/filters instead of duplicating markup (see EmployeeModel::
+             recheckList()'s own $participantMode comment). -->
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div class="btn-group" role="group" id="employeeRecheckViewToggle">
+                <button type="button" class="btn btn-sm btn-outline-secondary active" data-view="participant" data-i18n="recheck_view_in_payroll">In Payroll</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-view="excluded" data-i18n="recheck_view_not_in_payroll">Not in Payroll</button>
+            </div>
             <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearEmployeeRecheckFilter">
                 <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
             </button>

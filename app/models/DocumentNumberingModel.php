@@ -11,10 +11,11 @@ declare(strict_types=1);
  * reasoning ot_rates.calculation_method already documents for staying a plain enum instead of a
  * master table.
  *
- * Nothing in this codebase actually CONSUMES prefix_format/digit_count/current_number yet to
- * stamp a real running number onto a generated payslip/run/certificate/bank file -- that wiring
- * is a separate, much larger task per report/export type. This model only makes the SETTINGS
- * themselves real (persisted, validated, editable), which is what was actually broken.
+ * 2026-09-02: generateNext() is the first real CONSUMER of prefix_format/digit_count/
+ * current_number/reset_cycle, wired to PAYROLL_RUN via PayrollRunModel::create() (see that
+ * method's own use of it, and generateNext()'s own docblock for the row-locking/reset-cycle
+ * mechanics). PAYSLIP/WHT_CERT/BANK_TRANSFER still have no consumer yet -- each is its own,
+ * separate wiring task per report/export type, same as before.
  */
 class DocumentNumberingModel {
     private PDO $db;
@@ -98,5 +99,90 @@ class DocumentNumberingModel {
             ':reset' => $resetCycle, ':updated_by' => $userId, ':comp_id' => $compId, ':code' => $documentTypeCode,
         ]);
         return ['status' => true, 'message' => 'Saved successfully.'];
+    }
+
+    /**
+     * 2026-09-02, explicit request: "ในตารางให้แสดง Code ของรอบด้วยครับ" -- the first real consumer of
+     * prefix_format/digit_count/current_number/reset_cycle, which this model's own docblock has
+     * flagged as unwired since 2026-08-23 ("a separate, much larger task"). First caller:
+     * PayrollRunModel::create() for document_type_code='PAYROLL_RUN'.
+     *
+     * Row-locked (SELECT ... FOR UPDATE inside its own transaction) so two documents of the same
+     * type created back-to-back never race onto the same number -- silently duplicate-issuing the
+     * same code (e.g. 2 payroll runs both "PR-2026-001") would be a real, confusing bug even though
+     * this app's actual concurrency profile is low (small admin team, not a public-facing queue).
+     * Follows this project's own inTransaction()-check convention (see CLAUDE.md) so a caller that
+     * already owns a transaction (PayrollRunModel::create() itself doesn't wrap one, but tests that
+     * call it from inside their own file-level transaction do) never gets a nested
+     * beginTransaction() error.
+     *
+     * reset_cycle honored via the new last_reset_key column: 'yearly' stores/compares 'YYYY',
+     * 'monthly' stores/compares 'YYYY-MM', 'never' never resets (current_number just climbs
+     * forever). Returns null (never throws) on any failure -- generating a code must NEVER block
+     * the document itself from being created; the caller treats a null return as "no code this
+     * time" and moves on.
+     */
+    public function generateNext(int $compId, string $documentTypeCode): ?string {
+        if (!array_key_exists($documentTypeCode, self::DEFAULTS)) {
+            return null;
+        }
+        $this->ensureSeeded($compId);
+        $own = !$this->db->inTransaction();
+        if ($own) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $stmt = $this->db->prepare("SELECT * FROM `document_numbering_settings`
+                WHERE comp_id = :comp_id AND document_type_code = :code FOR UPDATE");
+            $stmt->execute([':comp_id' => $compId, ':code' => $documentTypeCode]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                if ($own) { $this->db->rollBack(); }
+                return null;
+            }
+
+            $resetCycle = (string)$row['reset_cycle'];
+            $currentKey = $resetCycle === 'monthly' ? date('Y-m') : ($resetCycle === 'yearly' ? date('Y') : null);
+            $isNewPeriod = $currentKey !== null && $currentKey !== ($row['last_reset_key'] ?? null);
+            $nextNumber = $isNewPeriod ? 1 : ((int)$row['current_number'] + 1);
+
+            $digitCount = (int)$row['digit_count'];
+            $code = $this->formatPrefix((string)$row['prefix_format']) . str_pad((string)$nextNumber, $digitCount, '0', STR_PAD_LEFT);
+
+            $params = [':current' => $nextNumber, ':comp_id' => $compId, ':code' => $documentTypeCode];
+            if ($currentKey !== null) {
+                $params[':key'] = $currentKey;
+                $this->db->prepare("UPDATE `document_numbering_settings`
+                    SET current_number = :current, last_reset_key = :key, updated_at = CURRENT_TIMESTAMP
+                    WHERE comp_id = :comp_id AND document_type_code = :code")->execute($params);
+            } else {
+                $this->db->prepare("UPDATE `document_numbering_settings`
+                    SET current_number = :current, updated_at = CURRENT_TIMESTAMP
+                    WHERE comp_id = :comp_id AND document_type_code = :code")->execute($params);
+            }
+
+            if ($own) {
+                $this->db->commit();
+            }
+            return $code;
+        } catch (Throwable $e) {
+            if ($own) {
+                $this->db->rollBack();
+            }
+            return null;
+        }
+    }
+
+    /** {YYYY}/{MM}/{DD}/{YYYYMMDD} are the only placeholders any DEFAULTS prefix_format actually
+     *  uses today -- bracketed tokens don't overlap/collide with each other so a plain str_replace
+     *  per token is safe (no ordering trick needed the way e.g. {YYYYMMDD} vs {YYYY} substring
+     *  containment might otherwise require). */
+    private function formatPrefix(string $prefix): string {
+        $now = new DateTime('today');
+        return str_replace(
+            ['{YYYYMMDD}', '{YYYY}', '{MM}', '{DD}'],
+            [$now->format('Ymd'), $now->format('Y'), $now->format('m'), $now->format('d')],
+            $prefix
+        );
     }
 }

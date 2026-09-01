@@ -25,21 +25,43 @@
             <button type="button" class="station-filter-toggle" id="stationFilterToggle" title="Toggle filter">
                 <i class="fas fa-chevron-up"></i>
             </button>
+            <!-- 2026-09-02, explicit request: "Filter ปรับให้เป็นแถวละ 6 Column" -- col-6 col-md-4 col-lg-2
+                 is this app's own established 6-per-row .station-filter grid (2/3/6 fields per row at
+                 sm/md/lg, same class combo Employee List's own 4-6-field filters already use, e.g.
+                 #employeeRecheckStationFilter/#employeeSummaryStationFilter) -- was col-sm-4 col-md-3
+                 (4 per row) before this. -->
             <div class="station-filter-body">
                 <div class="row g-2">
-                    <div class="col-sm-4 col-md-3">
+                    <div class="col-6 col-md-4 col-lg-2">
                         <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker" id="filter_date_from" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
-                    <div class="col-sm-4 col-md-3">
+                    <div class="col-6 col-md-4 col-lg-2">
                         <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker" id="filter_date_to" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
+                    </div>
+                    <!-- 2026-09-01, explicit request: "ในส่วนของ Filter สามารถเพิ่มอะไรได้อีกไหม ตามความ
+                         เหมาะสมสามารถเพิ่มได้เลยครับ" -- 3 new filters, same run-level data every row
+                         already carries (PayrollRunModel::list()'s own `r.*`), pure client-side
+                         (no ajax.reload needed, same mechanism the Station cards themselves already
+                         use -- see registerStationSearchFilter() in index.js). -->
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1" data-i18n="run_origin_label">Origin</label>
+                        <select class="form-select select2-static" id="filter_run_origin" data-option-keys="filter_all,run_origin_sync,run_origin_cycle,run_origin_manual" data-option-values="all,sync,cycle,manual"></select>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1" data-i18n="modal_cycle">Payroll Schedule</label>
+                        <select class="form-select select2-remote" id="filter_run_cycle" data-api="/api/payroll-cycle.options"></select>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1" data-i18n="modal_run_purpose">Run Purpose</label>
+                        <select class="form-select select2-static" id="filter_run_purpose" data-option-keys="filter_all,run_purpose_payroll,run_purpose_incentive" data-option-values="all,payroll,incentive"></select>
                     </div>
                 </div>
             </div>
@@ -110,24 +132,34 @@
         <table class="table table-hover table-border align-middle w-100" id="tb_payroll_run">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th scope="col" style="width: 15%;" data-i18n="table_run_name">Run Name</th>
-                    <th scope="col" style="width: 10%;" data-i18n="table_period">Pay Period</th>
+                    <!-- 2026-09-02, explicit request: "ในตารางให้แสดง Code ของรอบด้วยครับ และถ้ามีการอ้างอิงถึง
+                         รอบก็ให้แสดงด้วยครับ" -- payroll_runs.run_code (first real consumer of the Document
+                         Numbering settings' PAYROLL_RUN row, see DocumentNumberingModel::generateNext())
+                         plus, when this run references another (merge_target_run_id), that target's own
+                         code/name right underneath -- see runCodeCellHtmlPr() in index.js (replaced the
+                         old hover-only icon on Run Name with this always-visible text instead). -->
+                    <th scope="col" style="width: 8%;" data-i18n="table_run_code">Code</th>
+                    <th scope="col" style="width: 12%;" data-i18n="table_run_name">Run Name</th>
+                    <th scope="col" style="width: 9%;" data-i18n="table_period">Pay Period</th>
+                    <th scope="col" style="width: 7%;" data-i18n="table_employee_count">Employees</th>
+                    <th scope="col" style="width: 9%;" data-i18n="table_net_amount">Net Total</th>
+                    <th scope="col" style="width: 8%;" data-i18n="table_created_by">Created By</th>
+                    <!-- 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใคร
+                         เป็นคน Update" -- updated_at/updated_by are already wired on every mutating
+                         path (PayrollRunModel::list()'s own comment), just never had their own column. -->
+                    <th scope="col" style="width: 9%;" data-i18n="table_updated_at">Last Updated</th>
                     <!-- 2026-08-23, explicit request ("ถ้ามี Comment จากการอนุมัติ ให้นำมาแสดงด้วยใน
                          Column Status แยกอาจยุบรวม Column Status กับ Column Timeline...และในColumn นี้
                          เพิ่มปุ่มดำเนินการที่สามารถกดได้ รวมถึงวันที่ Status เข้าไปด้วย"; widened + given
                          real spacing 2026-08-23 per explicit follow-up: "ช่วยปรับ Design ให้สวยขึ้นหน่อย
                          ครับ ตอนนี้แน่นไปหมด") -- Status, Timeline, and Last Updated collapsed into one
                          column: badge + status date on one row, mini-timeline dots on their own row,
-                         a reject/need-info comment chip when present, then the quick-action button. -->
+                         a reject/need-info comment chip when present, then the quick-action button.
+                         2026-09-02, explicit request: "Column Status ควรมาอยู่รองสุดท้าย" -- moved from
+                         right after Pay Period to right before Updated By (the last real data column
+                         before the unlabeled Actions column). -->
                     <th scope="col" style="width: 24%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 7%;" data-i18n="table_employee_count">Employees</th>
-                    <th scope="col" style="width: 9%;" data-i18n="table_net_amount">Net Total</th>
-                    <th scope="col" style="width: 9%;" data-i18n="table_created_by">Created By</th>
-                    <!-- 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใคร
-                         เป็นคน Update" -- updated_at/updated_by are already wired on every mutating
-                         path (PayrollRunModel::list()'s own comment), just never had their own column. -->
-                    <th scope="col" style="width: 10%;" data-i18n="table_updated_at">Last Updated</th>
-                    <th scope="col" style="width: 9%;" data-i18n="table_updated_by">Updated By</th>
+                    <th scope="col" style="width: 7%;" data-i18n="table_updated_by">Updated By</th>
                     <!-- 2026-08-27, explicit request: "th ของทุกตาราง ถ้ามีคำว่า Action ให้ตัดออกให้เป็น
                          th เปล่าๆ" -- matches the empty-header convention every other Actions column in
                          this app already uses (e.g. Company Setup's structure tables). -->
@@ -142,6 +174,20 @@
             <button type="button" class="btn btn-sm btn-warning" id="btnBulkPull">
                 <i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">Pull to Run</span>
             </button>
+        </div>
+
+        <!-- 2026-08-31, same-day follow-up -- PayrollSyncModel::ingest() now blocks (rather than
+             silently applying) a re-push from Origami for a process already linked to a payroll run
+             on our side, since that could otherwise silently change an in-progress run's own numbers
+             on its next recalculate. This card surfaces anything blocked so an admin can review and
+             explicitly Apply or Dismiss it -- hidden entirely when there's nothing pending. -->
+        <div class="card-surface p-3 mb-3 d-none" id="blockedSyncUpdatesCard">
+            <div class="d-flex align-items-center mb-2">
+                <i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>
+                <span class="fw-semibold" data-i18n="blocked_sync_updates_title">Blocked Sync Updates</span>
+            </div>
+            <p class="small text-muted mb-3" data-i18n="blocked_sync_updates_description">Origami tried to update a process that's already linked to a payroll run on our side. Review before applying, so the run's numbers don't change unexpectedly.</p>
+            <div id="blockedSyncUpdatesList"></div>
         </div>
 
         <table class="table table-hover table-border align-middle w-100 d-none" id="tb_pending_sync">

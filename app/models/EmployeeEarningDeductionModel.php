@@ -335,8 +335,37 @@ class EmployeeEarningDeductionModel {
         // จะหักของคนนี้ไปให้คนนี้") -- only meaningful on a deduction; forced null (not an error) for
         // an earning, same as interest_type being forced to 'none' above. Wired into
         // PayrollRunModel::recalculate()'s transfer-credit pass -- see that method's own docblock.
+        //
+        // 2026-08-31, explicit request: "และถ้าหักไปจ่ายใคร หรือจ่ายเข้าบัญชีบริษัท ให้ติ๊กเพิ่มได้ว่า รวมไปใน
+        // cashlink หรือแยก cash link" -- payee_type widens this from "always another employee" to
+        // also cover "retained by the company" (payee_type='company', payee_employee_id stays NULL
+        // -- PayrollRunModel's transfer-credit pass already skips a NULL payee_employee_id, so no
+        // change needed there). include_in_cash_summary only has real meaning while payee_type is
+        // set -- forced back to the column's own default (1) when there's no payee at all, same
+        // "force the dependent field to a harmless default rather than trusting a client that sent
+        // it anyway" convention interest_rate/fee_percent use just above.
         $payeeEmployeeId = null;
-        if (!empty($data['payee_employee_id']) && $resolvedItemType === 'deduction') {
+        $payeeType = null;
+        if ($resolvedItemType === 'deduction' && !empty($data['payee_type'])) {
+            $payeeType = (string)$data['payee_type'];
+            if (!in_array($payeeType, ['employee', 'company', 'not_disbursed'], true)) {
+                return ['status' => false, 'message' => 'Invalid payee_type.'];
+            }
+            if ($payeeType === 'employee') {
+                if (empty($data['payee_employee_id'])) {
+                    return ['status' => false, 'message' => 'payee_employee_id is required when payee_type is employee.'];
+                }
+                $payeeEmployeeId = (int)$data['payee_employee_id'];
+                if ($payeeEmployeeId === $employeeId) {
+                    return ['status' => false, 'message' => 'An employee cannot be their own transfer payee.'];
+                }
+                if (!$this->employeeBelongsToComp($payeeEmployeeId, $compId)) {
+                    return ['status' => false, 'message' => 'Invalid payee employee.'];
+                }
+            }
+        } elseif (!empty($data['payee_employee_id']) && $resolvedItemType === 'deduction') {
+            // Backward-compat: an older caller that only ever sends payee_employee_id (no
+            // payee_type) is treated as the 'employee' case it always implicitly meant.
             $payeeEmployeeId = (int)$data['payee_employee_id'];
             if ($payeeEmployeeId === $employeeId) {
                 return ['status' => false, 'message' => 'An employee cannot be their own transfer payee.'];
@@ -344,7 +373,20 @@ class EmployeeEarningDeductionModel {
             if (!$this->employeeBelongsToComp($payeeEmployeeId, $compId)) {
                 return ['status' => false, 'message' => 'Invalid payee employee.'];
             }
+            $payeeType = 'employee';
         }
+        // Absent key defaults to included (1), same as the column's own DEFAULT -- only an EXPLICIT
+        // falsy value opts a line out, mirroring is_payroll_participant's own "absent key keeps the
+        // harmless default, don't silently exclude" convention in EmployeeModel::save().
+        //
+        // 2026-08-31, same-day follow-up: payee_type='not_disbursed' (see this migration's own
+        // docblock, database/migrations/2026-08-31_15_eed_payee_type_not_disbursed.sql) is FORCED
+        // to 0 regardless of what the client sent -- definitionally never a real cash/bank
+        // remittance, so unlike 'employee'/'company' (where whether to fold into the aggregate is a
+        // genuine choice), this one is never offered as a toggle.
+        $includeInCashSummary = $payeeType === 'not_disbursed'
+            ? 0
+            : ($payeeType === null || !array_key_exists('include_in_cash_summary', $data) || !empty($data['include_in_cash_summary']) ? 1 : 0);
         $externalReferenceNo = !empty($data['external_reference_no']) ? trim((string)$data['external_reference_no']) : null;
 
         $installmentAmounts = $this->buildInstallmentAmounts($amountMode, $totalAmount, $totalInstallments, $customAmounts);
@@ -381,7 +423,7 @@ class EmployeeEarningDeductionModel {
                             fee_percent = :fee_percent, fee_base = :fee_base,
                             total_amount = :total_amount, principal_amount = :principal_amount,
                             effective_date = :effective_date, notes = :notes, external_reference_no = :external_reference_no,
-                            payee_employee_id = :payee_employee_id,
+                            payee_employee_id = :payee_employee_id, payee_type = :payee_type, include_in_cash_summary = :include_in_cash_summary,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $stmt = $this->db->prepare($sql);
@@ -401,6 +443,8 @@ class EmployeeEarningDeductionModel {
                     ':notes' => $notes,
                     ':external_reference_no' => $externalReferenceNo,
                     ':payee_employee_id' => $payeeEmployeeId,
+                    ':payee_type' => $payeeType,
+                    ':include_in_cash_summary' => $includeInCashSummary,
                     ':updated_by' => $userId,
                     ':id' => $id,
                 ]);
@@ -410,9 +454,9 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = $id;
             } else {
                 $sql = "INSERT INTO `employee_earning_deductions`
-                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, interest_type, interest_rate, fee_percent, fee_base, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, created_by)
+                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, interest_type, interest_rate, fee_percent, fee_base, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, payee_type, include_in_cash_summary, created_by)
                         VALUES
-                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :fee_percent, :fee_base, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :created_by)";
+                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :fee_percent, :fee_base, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :payee_type, :include_in_cash_summary, :created_by)";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':employee_id' => $employeeId,
@@ -431,6 +475,8 @@ class EmployeeEarningDeductionModel {
                     ':notes' => $notes,
                     ':external_reference_no' => $externalReferenceNo,
                     ':payee_employee_id' => $payeeEmployeeId,
+                    ':payee_type' => $payeeType,
+                    ':include_in_cash_summary' => $includeInCashSummary,
                     ':created_by' => $userId,
                 ]);
                 $assignmentId = (int)$this->db->lastInsertId();

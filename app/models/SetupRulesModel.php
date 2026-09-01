@@ -97,6 +97,132 @@ class SetupRulesModel {
         }
     }
 
+    /* ==================== Assign Employees, generic (2026-08-31, explicit request) ====================
+     * Direct sibling of CompanyProfileModel's own EMPLOYEE_FK_COLUMN/structureAssignEmployees()
+     * generalization (see that class's own docblock) -- separate class/table so can't literally
+     * share the methods, but same shape and same "pull in" (additive, not full-replace) semantics,
+     * used by the new unified Assign/View modal for Shift and Work Location. shiftAssignEmployees()
+     * above is the OLDER, full-replace method this app already had (its own UI button was
+     * deliberately removed 2026-08-30 -- "ตัดการ Assign ออกไปเลย เพราะสามารถเพิ่มได้ในฝั่งพนักงานอยู่แล้ว")
+     * -- left untouched/unused rather than repurposed, since its full-replace semantics differ from
+     * this new pull-in/move-out pair and some other API consumer might still reach it directly.
+     */
+    private const SCOPE_ASSIGN_CONFIG = [
+        'shift' => ['table' => 'shifts', 'fk' => 'shift_id', 'name_col' => 'shift_name_th'],
+        'work_location' => ['table' => 'master_work_locations', 'fk' => 'work_location_id', 'name_col' => 'location_name_th'],
+    ];
+
+    private function assertScopeRowExists(string $type, int $rowId, int $compId): ?array {
+        $cfg = self::SCOPE_ASSIGN_CONFIG[$type] ?? null;
+        if (!$cfg) {
+            return null;
+        }
+        $stmt = $this->db->prepare("SELECT id FROM `{$cfg['table']}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $rowId, ':comp_id' => $compId]);
+        return $stmt->fetch() ? $cfg : null;
+    }
+
+    public function scopeEmployeesInRow(string $type, int $rowId, int $compId, string $search = ''): array {
+        $cfg = $this->assertScopeRowExists($type, $rowId, $compId);
+        if (!$cfg) {
+            return ['status' => false, 'message' => 'Invalid entity type or record not found.'];
+        }
+        $sql = "SELECT id, employee_no, name_th, surname_th, name_en, surname_en FROM `employees`
+                WHERE comp_id = :comp_id AND deleted_at IS NULL AND `{$cfg['fk']}` = :row_id";
+        $params = [':comp_id' => $compId, ':row_id' => $rowId];
+        if ($search !== '') {
+            $sql .= " AND (employee_no LIKE :search OR name_th LIKE :search OR surname_th LIKE :search OR name_en LIKE :search OR surname_en LIKE :search)";
+            $params[':search'] = "%{$search}%";
+        }
+        $sql .= " ORDER BY employee_no ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return ['status' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
+    }
+
+    public function scopeEmployeesOutsideRow(string $type, int $rowId, int $compId, string $search = ''): array {
+        $cfg = $this->assertScopeRowExists($type, $rowId, $compId);
+        if (!$cfg) {
+            return ['status' => false, 'message' => 'Invalid entity type or record not found.'];
+        }
+        $sql = "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                    e.`{$cfg['fk']}` AS current_row_id, s.`{$cfg['name_col']}` AS current_row_name
+                FROM `employees` e
+                LEFT JOIN `{$cfg['table']}` s ON s.id = e.`{$cfg['fk']}` AND s.deleted_at IS NULL
+                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+                  AND (e.`{$cfg['fk']}` IS NULL OR e.`{$cfg['fk']}` != :row_id)";
+        $params = [':comp_id' => $compId, ':row_id' => $rowId];
+        if ($search !== '') {
+            $sql .= " AND (e.employee_no LIKE :search OR e.name_th LIKE :search OR e.surname_th LIKE :search OR e.name_en LIKE :search OR e.surname_en LIKE :search)";
+            $params[':search'] = "%{$search}%";
+        }
+        $sql .= " ORDER BY e.employee_no ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return ['status' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
+    }
+
+    public function scopeAssignEmployees(string $type, int $rowId, array $employeeIds, int $compId, int $userId): array {
+        $cfg = $this->assertScopeRowExists($type, $rowId, $compId);
+        if (!$cfg) {
+            return ['status' => false, 'message' => 'Invalid entity type or record not found.'];
+        }
+        $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
+        if (empty($employeeIds)) {
+            return ['status' => false, 'message' => 'No employees selected.'];
+        }
+        $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+        $own = !$this->db->inTransaction();
+        try {
+            if ($own) {
+                $this->db->beginTransaction();
+            }
+            $this->db->prepare("UPDATE employees SET `{$cfg['fk']}` = ?, updated_by = ? WHERE id IN ({$placeholders}) AND comp_id = ?")
+                ->execute(array_merge([$rowId, $userId], $employeeIds, [$compId]));
+            if ($own) {
+                $this->db->commit();
+            }
+            return ['status' => true, 'message' => 'Assigned successfully.'];
+        } catch (PDOException $e) {
+            if ($own) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    public function scopeMoveEmployeesOut(string $type, array $employeeIds, int $compId, ?int $destinationRowId, int $userId): array {
+        $cfg = self::SCOPE_ASSIGN_CONFIG[$type] ?? null;
+        if (!$cfg) {
+            return ['status' => false, 'message' => 'Invalid entity type.'];
+        }
+        if ($destinationRowId !== null && !$this->assertScopeRowExists($type, $destinationRowId, $compId)) {
+            return ['status' => false, 'message' => 'Invalid destination.'];
+        }
+        $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
+        if (empty($employeeIds)) {
+            return ['status' => false, 'message' => 'No employees selected.'];
+        }
+        $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+        $own = !$this->db->inTransaction();
+        try {
+            if ($own) {
+                $this->db->beginTransaction();
+            }
+            $this->db->prepare("UPDATE employees SET `{$cfg['fk']}` = ?, updated_by = ? WHERE id IN ({$placeholders}) AND comp_id = ?")
+                ->execute(array_merge([$destinationRowId, $userId], $employeeIds, [$compId]));
+            if ($own) {
+                $this->db->commit();
+            }
+            return ['status' => true, 'message' => 'Moved successfully.'];
+        } catch (PDOException $e) {
+            if ($own) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
     private function isShiftCodeDuplicate(string $code, int $compId, ?int $excludeId): bool {
         $sql = "SELECT COUNT(*) FROM shifts WHERE comp_id = :comp_id AND shift_code = :code AND deleted_at IS NULL";
         $params = [':comp_id' => $compId, ':code' => $code];

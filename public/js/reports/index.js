@@ -31,6 +31,10 @@ const REPORT_META = {
     PAY_SLIP: { frequency: 'cycle', extra: ['employee'] },
     BANK_TRANSFER_FILE: { frequency: 'cycle', extra: [] },
     PAYROLL_REGISTER: { frequency: 'cycle', extra: [] },
+    // 2026-08-31, same-day follow-up, explicit request: CashPaymentSummaryReport existed already
+    // (built alongside the Cash Payments tab) but was never surfaced on this page -- same
+    // "per-run, cycle-frequency, no extra picker" shape as PAYROLL_REGISTER/BANK_TRANSFER_FILE.
+    CASH_PAYMENT_SUMMARY: { frequency: 'cycle', extra: [] },
     TH_PND1K_SUMMARY: { frequency: 'annual', extra: [] },
     TH_KOR20KOR: { frequency: 'annual', extra: [] },
     TH_SSO609: { frequency: 'annual', extra: ['month'] },

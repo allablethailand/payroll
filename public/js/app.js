@@ -28,6 +28,25 @@ const langInfo = {
 function syncLangCookie(lang) {
     document.cookie = `lang=${lang}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
 }
+// 2026-08-31, real bug found and fixed (explicit report: "ตอน session หลุดมี alert แจ้ง error ของ
+// datatable ครับ ดูเป็น Bug") -- root cause confirmed by grep: `$.fn.dataTable.ext.errorMode` was
+// never set anywhere in this app, which leaves DataTables on its own default, `'alert'` -- ANY ajax
+// fetch failure on ANY DataTable (a 401 session-timeout response included) pops a native, unstyled
+// `alert("DataTables warning: table id=... - Ajax error...")` box. This fires independently of, and
+// alongside, session-guard.js's own SweetAlert2 popup (`$(document).ajaxError()` there is jQuery's
+// GLOBAL hook, which still runs regardless of what DataTables' own per-call error handling does) --
+// the ugly native alert was what actually got reported as "looks like a bug", not the real SweetAlert2
+// popup. Set to 'none' here, in a plain `$(document).ready()` (app.js itself loads BEFORE
+// dataTables.js, in header.php -- by the time `ready()` fires every synchronous script tag on the
+// page, footer.php's dataTables.js included, has already run) so DataTables' own internal ajax-error
+// handling goes silent everywhere, leaving session-guard.js's popup as the one and only thing the
+// user ever sees for this. A DataTable's own explicit `error:` callback (if a page defines one) is
+// unaffected either way -- errorMode only governs the DEFAULT path when no such callback exists.
+$(document).ready(function () {
+    if (window.jQuery && $.fn.dataTable) {
+        $.fn.dataTable.ext.errorMode = 'none';
+    }
+});
 // The "Auto เปลี่ยนโดยไม่ต้อง Reload หน้า" (auto-change without reloading the page) half of the same
 // request -- setting the cookie only affects FUTURE requests, so an already-rendered DataTable
 // wouldn't pick up the new language until its next unrelated reload (pagination, a filter change,

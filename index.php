@@ -54,6 +54,11 @@
     $router->get('api/payroll-run.get', 'PayrollController@get');
     $router->get('api/payroll-run.approval-timeline', 'PayrollController@approvalTimeline');
     $router->post('api/payroll-run.save', 'PayrollController@save');
+    // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- merge a supplemental sync process
+    // into an existing target run instead of pulling it as its own standalone run.
+    $router->post('api/payroll-run.merge-supplemental', 'PayrollController@mergeSupplemental');
+    // 2026-09-01, explicit request: manual "reference an existing round" radio option on the Add flow.
+    $router->post('api/payroll-run.merge-into-existing', 'PayrollController@mergeIntoExistingRun');
     $router->post('api/payroll-run.delete', 'PayrollController@delete');
     $router->post('api/payroll-run.recalculate', 'PayrollController@recalculate');
     $router->post('api/payroll-run.manual-employee-options', 'PayrollController@manualEmployeeOptions');
@@ -67,6 +72,9 @@
     $router->get('api/payroll-run.sync-lines-for-employee', 'PayrollController@syncLinesForEmployee');
     $router->post('api/payroll-run.line-override.save', 'PayrollController@lineOverrideSave');
     $router->post('api/payroll-run.line-override.remove', 'PayrollController@lineOverrideRemove');
+    // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9a).
+    $router->post('api/payroll-run.statutory-line-override.save', 'PayrollController@statutoryLineOverrideSave');
+    $router->post('api/payroll-run.statutory-line-override.remove', 'PayrollController@statutoryLineOverrideRemove');
     $router->get('api/payroll-run.attendance-data-for-employee', 'PayrollController@attendanceDataForEmployee');
     $router->post('api/payroll-run.attendance-override.save', 'PayrollController@attendanceOverrideSave');
     $router->post('api/payroll-run.attendance-override.remove', 'PayrollController@attendanceOverrideRemove');
@@ -74,10 +82,13 @@
     $router->post('api/payroll-run.save-employee-exemption', 'PayrollController@saveEmployeeExemption');
     $router->get('api/payroll-run.run-settings-get', 'PayrollController@runSettingsGet');
     $router->post('api/payroll-run.run-settings-save', 'PayrollController@runSettingsSave');
+    // 2026-08-31, explicit request: per-run "auto-recalculate immediately after edits" checkbox.
+    $router->post('api/payroll-run.auto-recalculate.save', 'PayrollController@autoRecalculateSave');
     $router->post('api/payroll-run.employee-verify.save', 'PayrollController@employeeVerifySave');
-    $router->post('api/payroll-run.employee-lock.save', 'PayrollController@employeeLockSave');
     $router->post('api/payroll-run.employee-verify.bulk', 'PayrollController@employeeVerifyBulk');
-    $router->post('api/payroll-run.employee-lock.bulk', 'PayrollController@employeeLockBulk');
+    // 2026-08-31, explicit request: Lock retired (Verify itself now freezes recalculation); "Verify
+    // All" is new -- verifies every employee in the run at once, reachable from List or Detail.
+    $router->post('api/payroll-run.employee-verify.all', 'PayrollController@employeeVerifyAll');
     $router->post('api/payroll-run.employee-comment.add', 'PayrollController@employeeCommentAdd');
     $router->get('api/payroll-run.employee-comment.list', 'PayrollController@employeeCommentList');
     $router->post('api/payroll-run.employee-comment.update', 'PayrollController@employeeCommentUpdate');
@@ -175,6 +186,12 @@
     $router->post('api/shift.toggle-status', 'SetupRulesController@shiftToggleStatus');
     $router->get('api/shift.assigned-employees', 'SetupRulesController@shiftAssignedEmployees');
     $router->post('api/shift.assign-employees', 'SetupRulesController@shiftAssignEmployees');
+    // 2026-08-31, explicit request: Shift/Work Location's own equivalent of the structure.assign.*
+    // routes above -- see SetupRulesModel::SCOPE_ASSIGN_CONFIG's own docblock.
+    $router->get('api/scope.assign.employees-in', 'SetupRulesController@scopeEmployeesInRow');
+    $router->get('api/scope.assign.employees-outside', 'SetupRulesController@scopeEmployeesOutsideRow');
+    $router->post('api/scope.assign.assign', 'SetupRulesController@scopeAssignEmployees');
+    $router->post('api/scope.assign.move-out', 'SetupRulesController@scopeMoveEmployeesOut');
     $router->get('api/work-location.list', 'SetupRulesController@workLocationList');
     $router->get('api/work-location.get', 'SetupRulesController@workLocationGet');
     $router->post('api/work-location.save', 'SetupRulesController@workLocationSave');
@@ -190,6 +207,9 @@
     $router->post('api/leave-type.apply-defaults', 'SetupRulesController@leaveTypeApplyDefaults');
     $router->get('api/permission-matrix.get', 'PermissionController@matrix');
     $router->post('api/permission-matrix.save', 'PermissionController@save');
+    // 2026-08-31, explicit request: Permissions moved out of Company Profile's Organizational
+    // Structure tab into its own standalone top-level page.
+    $router->get('setup/permissions', 'PermissionController@index');
     $router->get('payslip-template/edit/{key}', 'PayslipTemplateController@editPage');
     $router->post('api/payslip-template.field-options', 'PayslipTemplateController@fieldTypeOptions');
     $router->post('api/payslip-template.assignable-options', 'PayslipTemplateController@assignableOptions');
@@ -260,6 +280,13 @@
     // Delivery Log tab's own data source; the payslip-only endpoint above stays for its own resend
     // action's sake and isn't removed.
     $router->get('api/document-delivery-log.list', 'DocumentDeliveryLogController@list');
+    // 2026-08-31, explicit request: admin log/summary page for the email_queue system (Phase 7,
+    // T040) -- see EmailQueueModel::list()/summary()'s own docblocks.
+    $router->get('api/email-queue.list', 'EmailQueueController@list');
+    $router->get('api/email-queue.summary', 'EmailQueueController@summary');
+    // 2026-08-31, explicit request: per-run cash-vs-bank breakdown + per-employee paid status.
+    $router->get('api/payroll-run-cash-payment.list', 'PayrollRunCashPaymentController@list');
+    $router->post('api/payroll-run-cash-payment.set-status', 'PayrollRunCashPaymentController@setStatus');
     $router->get('manual-entry', 'ManualEntryController@index');
     $router->get('api/manual-attendance.list', 'ManualEntryController@attendanceList');
     $router->get('api/manual-attendance.get', 'ManualEntryController@attendanceGet');
@@ -328,11 +355,17 @@
     $router->get('api/report.run-summary', 'ReportsController@runReportsSummary');
     $router->get('api/report.run-cycle-summary', 'ReportsController@runCycleReportsSummary');
     $router->get('api/report.payslip-roster', 'ReportsController@payslipRoster');
+    // 2026-08-31, same-day follow-up (item 10) -- Payroll Run Audit diff-history page.
+    $router->get('reports/run-audit', 'ReportsController@runAudit');
+    $router->get('api/report.run-audit-list', 'ReportsController@runAuditList');
+    $router->get('api/report.run-audit-diff', 'ReportsController@runAuditDiff');
+    $router->get('api/report.run-audit-export', 'ReportsController@runAuditExport');
     $router->get('submission', 'SubmissionController@index');
     $router->post('api/employee.list', 'EmployeeController@list');
     $router->post('api/employee.recheck-list', 'EmployeeController@recheckList');
     $router->post('api/employee.standing-summary-list', 'EmployeeController@standingSummaryList');
     $router->post('api/employee.station-counts', 'EmployeeController@stationCounts');
+    $router->post('api/employee.payroll-participant.set', 'EmployeeController@setPayrollParticipant');
     $router->post('api/employee.list-column-values', 'EmployeeController@listColumnValues');
     $router->post('api/employee-sync.filter-options', 'EmployeeSyncController@filterOptions');
     $router->post('api/employee-sync.candidates', 'EmployeeSyncController@candidates');
@@ -387,12 +420,25 @@
     $router->post('api/structure.rank.delete', 'CompanyProfileController@rankDelete');
     $router->post('api/structure.team.save', 'CompanyProfileController@teamSave');
     $router->post('api/structure.team.delete', 'CompanyProfileController@teamDelete');
+    // 2026-08-31, explicit request: generic Assign Employees modal, shared across every structure
+    // type (see CompanyProfileModel's own EMPLOYEE_FK_COLUMN docblock) -- `type` travels as a
+    // request param, one shared endpoint per action instead of 6 per-type routes.
+    $router->get('api/structure.assign.employees-in', 'CompanyProfileController@structureEmployeesInRow');
+    $router->get('api/structure.assign.employees-outside', 'CompanyProfileController@structureEmployeesOutsideRow');
+    $router->post('api/structure.assign.assign', 'CompanyProfileController@structureAssignEmployees');
+    $router->post('api/structure.assign.move-out', 'CompanyProfileController@structureMoveEmployeesOut');
     $router->post('api/bank.get', 'MasterController@getMaster');
     $router->post('api/department.get', 'MasterController@getMaster');
     $router->post('api/role.get', 'MasterController@getMaster');
     $router->post('api/position.get', 'MasterController@getMaster');
     $router->post('api/team.get', 'MasterController@getMaster');
     $router->post('api/branch.get', 'MasterController@getMaster');
+    // 2026-08-31, explicit request: Assign Employees modal's destination-master Select2 -- the 2
+    // assignable types that never had a select2-ajax dropdown-options endpoint before (see
+    // MasterModel::master()'s own comment). api/rank.get is free (no single-row GET ever claimed
+    // it); work-location.options avoids colliding with the existing single-row api/work-location.get.
+    $router->post('api/rank.get', 'MasterController@getMaster');
+    $router->post('api/work-location.options', 'MasterController@getMaster');
     $router->post('api/employee.report_to.get', 'EmployeeController@reportToOptions');
     $router->post('api/bank_account.list', 'BankAccountController@list');
     $router->post('api/bank_account.column-values', 'BankAccountController@columnValues');
@@ -445,4 +491,12 @@
     $router->post('api/payroll-sync.ingest', 'PayrollSyncController@ingest');
     $router->get('api/payroll-sync.pending-list', 'PayrollSyncController@pendingList');
     $router->get('api/payroll-sync.pending-get', 'PayrollSyncController@pendingGet');
+    // 2026-08-31, explicit request: reject-back for a Pending Pull document, with a required comment.
+    $router->post('api/payroll-sync.reject', 'PayrollSyncController@reject');
+    // 2026-08-31, same-day follow-up -- PayrollSyncModel::ingest() now blocks (rather than silently
+    // applying) a re-push for a process already linked to a payroll run; these 3 let an admin review/
+    // resolve what got blocked (see PayrollSyncController's own docblock for the 3 actions).
+    $router->get('api/payroll-sync.blocked-updates-list', 'PayrollSyncController@blockedUpdatesList');
+    $router->post('api/payroll-sync.blocked-update-apply', 'PayrollSyncController@blockedUpdateApply');
+    $router->post('api/payroll-sync.blocked-update-dismiss', 'PayrollSyncController@blockedUpdateDismiss');
     $router->dispatch();

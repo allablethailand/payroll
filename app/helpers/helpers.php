@@ -9,15 +9,19 @@
         }
         return $base . '/' . ltrim($path, '/') . '?v=' . $version;
     }
-    // 2026-08-30, Phase 7 (T038): server-side-authoritative idle timeout. 30 minutes chosen per
-    // explicit request -- deliberately NOT the same knob as session.gc_maxlifetime/cookie_lifetime
-    // (28800s/8h, extended 2026-08-29 to fix real premature session loss -- see index.php's own
-    // comment on that ini_set pair) -- that pair controls how long the underlying PHP session FILE
-    // is allowed to live at all (a hard ceiling, generous on purpose so the file/cookie never
-    // vanishes for reasons unrelated to genuine inactivity), while this is a separate, explicit
-    // "how long since the last real request" check enforced every request via $_SESSION['last_activity']
-    // below -- the two settings solve different problems and neither should be conflated with the other.
-    define('SESSION_IDLE_TIMEOUT_SECONDS', 1800);
+    // 2026-08-30, Phase 7 (T038): server-side-authoritative idle timeout. Originally 30 minutes,
+    // widened to 1 hour on 2026-08-31 per explicit request -- deliberately NOT the same knob as
+    // session.gc_maxlifetime/cookie_lifetime (28800s/8h, extended 2026-08-29 to fix real premature
+    // session loss -- see index.php's own comment on that ini_set pair) -- that pair controls how
+    // long the underlying PHP session FILE is allowed to live at all (a hard ceiling, generous on
+    // purpose so the file/cookie never vanishes for reasons unrelated to genuine inactivity), while
+    // this is a separate, explicit "how long since the last real request" check enforced every
+    // request via $_SESSION['last_activity'] below -- the two settings solve different problems and
+    // neither should be conflated with the other. The client-side mirror (header.php's own
+    // `const SESSION_IDLE_TIMEOUT_SECONDS`, read by public/js/session-guard.js's idle timer) is
+    // derived directly from this constant via a short-echo PHP tag inline in that file -- changing
+    // the number here alone is enough, no separate JS-side edit needed.
+    define('SESSION_IDLE_TIMEOUT_SECONDS', 3600);
 
     /**
      * Full session teardown (same 3-step pattern auth/switch.php already established: clear

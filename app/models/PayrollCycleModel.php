@@ -192,6 +192,99 @@ class PayrollCycleModel {
         ];
     }
 
+    /**
+     * 2026-09-01, explicit request: "ปุ่มคำว่าดึงมาทำงวด ข้อมูลรอบ และวันที่ ต่างๆ ถูกส่งมาอยู่แล้ว อยากให้กดแล้ว
+     * Default ค่าที่ส่งมา Origami เลยโดยที่ไม่ต้องเลือกใหม่ ... ถ้า Map ได้ ถ้า Map ไม่ได้ก็ไม่ต้อง Default เลือก" --
+     * best-effort structural match between an incoming Origami sync process and one of this company's
+     * own configured payroll_cycles rows, so "Pull to Run" can pre-select the Payroll Schedule
+     * dropdown too (not just the period dates, which were already pre-filled from Origami's own
+     * process_start/end/paid).
+     *
+     * There is NO reliable id-based mapping available today -- payroll_cycles carries no
+     * origami_period_id/origami reference column at all (confirmed via a live `SHOW COLUMNS` check),
+     * and payroll_sync_processes' own origami_period_id has nothing on this side to join against.
+     * This is a heuristic, not a real mapping -- PAYROLL_SYNC_API.md itself (referenced throughout
+     * this codebase's own sync-related comments) is NOT a file that lives in this repo, so nothing
+     * here edits it; flag the actual gap to Origami's own team directly instead (see the reply this
+     * method shipped alongside for the exact ask). What would turn this from a heuristic into a real
+     * mapping: Origami sending back a stable identifier for the payroll cycle/schedule it resolved
+     * the process against on ITS side (a code or id this app could store once against the matching
+     * payroll_cycles row and join on forever after, the same way payroll_sync_processes.
+     * origami_process_id already anchors a whole process unambiguously) -- until that exists, this
+     * method can only ever guess from structural coincidence:
+     *   1. frequency_type must translate to the SAME payroll_frequency (monthly/
+     *      semimonthly->semi_monthly/weekly/biweekly->bi_weekly).
+     *   2. process_end's own day-of-month (or weekday, for weekly/bi_weekly) must match the cycle's
+     *      configured cutoff_day_of_month/cutoff_use_last_day (or cutoff_day_of_week).
+     *   3. process_paid's own day-of-month/weekday must match the cycle's payment_day_of_month/
+     *      payment_use_last_day (or payment_day_of_week), when process_paid is present.
+     *   4. If exactly ONE active cycle survives all 3 checks, that's confident enough to auto-select.
+     *      If MORE than one survives (e.g. a company with several same-frequency/same-cutoff cycles,
+     *      one per branch), only auto-select when exactly one of them also has cycle_name === Origami's
+     *      own period_name (case-insensitive/trimmed) -- this is the "recommend keeping cycle names in
+     *      sync with Origami" workaround, not a real id-based tiebreak.
+     *   5. Anything else (zero matches, or an ambiguous tie with no name match) returns null -- the
+     *      admin picks manually, same as today, per the explicit "ถ้า Map ไม่ได้ก็ไม่ต้อง Default เลือก"
+     *      instruction.
+     *
+     * @param array $activeCycles this method's own list()'s return shape (already comp-scoped)
+     * @param array $syncRow one row of PayrollSyncModel::pendingList()'s own return shape
+     */
+    public function matchForSyncProcess(array $activeCycles, array $syncRow): ?array {
+        if (empty($syncRow['process_end']) || empty($syncRow['frequency_type'])) {
+            return null;
+        }
+        $freqMap = ['monthly' => 'monthly', 'semimonthly' => 'semi_monthly', 'weekly' => 'weekly', 'biweekly' => 'bi_weekly'];
+        $mappedFreq = $freqMap[$syncRow['frequency_type']] ?? null;
+        if ($mappedFreq === null) {
+            return null;
+        }
+        try {
+            $end = new DateTime((string)$syncRow['process_end']);
+            $paid = !empty($syncRow['process_paid']) ? new DateTime((string)$syncRow['process_paid']) : null;
+        } catch (Throwable $e) {
+            return null;
+        }
+
+        $candidates = [];
+        foreach ($activeCycles as $cycle) {
+            if (($cycle['status'] ?? '') !== 'active') continue;
+            if ((string)$cycle['payroll_frequency'] !== $mappedFreq) continue;
+            if ($mappedFreq === 'weekly' || $mappedFreq === 'bi_weekly') {
+                if (strtolower($end->format('l')) !== (string)($cycle['cutoff_day_of_week'] ?? '')) continue;
+                if ($paid !== null && !empty($cycle['payment_day_of_week']) && strtolower($paid->format('l')) !== (string)$cycle['payment_day_of_week']) continue;
+            } else {
+                $cutoffOk = !empty($cycle['cutoff_use_last_day'])
+                    ? ((int)$end->format('j') === (int)$end->format('t'))
+                    : ((int)($cycle['cutoff_day_of_month'] ?? -1) === (int)$end->format('j'));
+                if (!$cutoffOk) continue;
+                if ($paid !== null) {
+                    $paymentOk = !empty($cycle['payment_use_last_day'])
+                        ? ((int)$paid->format('j') === (int)$paid->format('t'))
+                        : ((int)($cycle['payment_day_of_month'] ?? -1) === (int)$paid->format('j'));
+                    if (!$paymentOk) continue;
+                }
+            }
+            $candidates[] = $cycle;
+        }
+
+        if (count($candidates) === 1) {
+            return $candidates[0];
+        }
+        if (count($candidates) > 1) {
+            $periodName = trim((string)($syncRow['period_name'] ?? ''));
+            if ($periodName !== '') {
+                $nameMatches = array_values(array_filter($candidates, function ($c) use ($periodName) {
+                    return strcasecmp(trim((string)$c['cycle_name']), $periodName) === 0;
+                }));
+                if (count($nameMatches) === 1) {
+                    return $nameMatches[0];
+                }
+            }
+        }
+        return null;
+    }
+
     /** @return DateTime the requested day-of-month (or last day) within $monthRef's month */
     private function resolveDayInMonth(DateTime $monthRef, int $day, bool $useLastDay): DateTime {
         if ($useLastDay) {

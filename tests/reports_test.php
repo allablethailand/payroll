@@ -20,6 +20,9 @@ require_once __DIR__ . '/../app/models/EmployeeEarningDeductionModel.php';
 require_once __DIR__ . '/../app/services/EncryptionService.php';
 require_once __DIR__ . '/../app/services/reports/ReportRegistry.php';
 require_once __DIR__ . '/../app/models/PayslipTemplateModel.php';
+require_once __DIR__ . '/../app/models/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../app/core/Controller.php';
+require_once __DIR__ . '/../app/controllers/ReportsController.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -225,8 +228,13 @@ try {
     $all = ReportRegistry::all();
     checkTrue('registry has at least 3 reports', count($all) >= 3);
     check('statutory type has 6 reports', count(ReportRegistry::byType('statutory')), 6);
-    check('payment type has 3 reports', count(ReportRegistry::byType('payment')), 3);
-    check('internal type has 1 report', count(ReportRegistry::byType('internal')), 1);
+    // 2026-08-31: +1 for CASH_PAYMENT_SUMMARY (see tests/cash_payment_test.php for its own dedicated coverage).
+    check('payment type has 4 reports', count(ReportRegistry::byType('payment')), 4);
+    // 2026-08-31: 3 now -- PayrollRunListSummaryReport (PAYROLL_RUN_LIST_SUMMARY) and
+    // ScheduledItemOccurrenceReconciliationReport (SCHEDULED_ITEM_OCCURRENCE_RECONCILIATION, own
+    // dedicated coverage in tests/payroll_sync_item_occurrences_test.php) both added alongside the
+    // original PayrollRegisterReport.
+    check('internal type has 3 reports', count(ReportRegistry::byType('internal')), 3);
     check('unknown code returns null', ReportRegistry::get('NOPE'), null);
 
     // ---------- Payroll Register (internal, Excel, any state) ----------
@@ -236,12 +244,47 @@ try {
     checkTrue('excel content is non-empty', strlen($registerResult['content']) > 0);
     check('mime type is xlsx', $registerResult['mime_type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
+    // 2026-08-31, same-day follow-up (explicit request: head/footer/2nd Summary sheet) --
+    // PayrollRegisterReport rebuilt into a real 2-sheet workbook (custom PhpSpreadsheet code, not
+    // the shared ExcelRendererTrait's flat single-sheet shape); these assertions moved from
+    // A1/A2 (the old flat layout) to the new header-block/column-header-row/footer-row positions.
     $tmpXlsx = sys_get_temp_dir() . '/reports_test_' . uniqid() . '.xlsx';
     file_put_contents($tmpXlsx, $registerResult['content']);
     $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
-    $sheet = $reader->load($tmpXlsx)->getActiveSheet();
-    check('header row A1 is employee code column', $sheet->getCell('A1')->getValue(), 'รหัสพนักงาน');
-    check('data row A2 has the test employee number', strpos((string)$sheet->getCell('A2')->getValue(), 'RPT_TEST_') === 0, true);
+    $workbook = $reader->load($tmpXlsx);
+    check('2 sheets: Detail + Summary', $workbook->getSheetCount(), 2);
+    check('sheet 1 is named รายละเอียด', $workbook->getSheet(0)->getTitle(), 'รายละเอียด');
+    check('sheet 2 is named สรุป', $workbook->getSheet(1)->getTitle(), 'สรุป');
+
+    $sheet = $workbook->getActiveSheet();
+    checkTrue('A1 is the header block (company name), not a column header', $sheet->getCell('A1')->getValue() !== 'รหัสพนักงาน');
+    check('column header row (row 5) A5 is the employee code column', $sheet->getCell('A5')->getValue(), 'รหัสพนักงาน');
+    check('data row 6 has the test employee number', strpos((string)$sheet->getCell('A6')->getValue(), 'RPT_TEST_') === 0, true);
+
+    // Footer totals row: exactly 1 employee row in this fixture, so the footer's own "รวม" total
+    // for เงินเดือนฐาน (column D, the first numeric column) must equal that single row's own value --
+    // proves the footer is a REAL sum, not a placeholder/copy.
+    $footerRowIdx = 7; // header at row 5, 1 data row at row 6, footer at row 7
+    check('footer row label is รวม', $sheet->getCell("A{$footerRowIdx}")->getValue(), 'รวม');
+    $baseSalaryDataCell = (float)$sheet->getCell('D6')->getValue();
+    $baseSalaryFooterCell = (float)$sheet->getCell("D{$footerRowIdx}")->getValue();
+    checkTrue('footer base-salary total equals the single fixture row\'s own value (real sum, not a placeholder)', abs($baseSalaryDataCell - $baseSalaryFooterCell) < 0.01 && $baseSalaryDataCell > 0);
+
+    // Summary sheet: run-level recap, sourced from the SAME totals as the footer above.
+    $summarySheet = $workbook->getSheet(1);
+    checkTrue('summary sheet has a real info block (run name in B4)', (string)$summarySheet->getCell('B4')->getValue() !== '');
+    checkTrue('summary sheet employee count row matches the fixture (1)', (string)$summarySheet->getCell('B9')->getValue() === '1');
+    // Grand total on the summary sheet must match the SAME base-salary total the Detail sheet's own
+    // footer computed -- proves both sheets read from one shared totals array, not two independent
+    // (and possibly drifting) calculations.
+    $summaryValues = [];
+    for ($row = 12; $row <= 30; $row++) {
+        $label = (string)$summarySheet->getCell("A{$row}")->getValue();
+        if ($label !== '') { $summaryValues[$label] = (float)$summarySheet->getCell("B{$row}")->getValue(); }
+    }
+    checkTrue('summary sheet lists "เงินเดือนฐานรวม"', array_key_exists('เงินเดือนฐานรวม', $summaryValues));
+    checkTrue('its value matches the Detail sheet\'s own footer total for the same figure', abs(($summaryValues['เงินเดือนฐานรวม'] ?? -1) - $baseSalaryFooterCell) < 0.01);
+    checkTrue('summary sheet lists "ยอดจ่ายสุทธิรวม" (grand total net)', array_key_exists('ยอดจ่ายสุทธิรวม', $summaryValues));
     unlink($tmpXlsx);
 
     // Draft run is allowed for the internal report (no state gate).
@@ -644,6 +687,114 @@ try {
     echo "=== PayrollRunModel::calcApplicabilitySummary() (2026-08-29, backs the Reports tab's own tax/SSO hiding) ===\n";
     $applicability = $runModel->calcApplicabilitySummary($runId, $compId);
     checkTrue('calcApplicabilitySummary() returns an any_tax/any_sso shape', array_key_exists('any_tax', $applicability) && array_key_exists('any_sso', $applicability));
+
+    // ---------- 2026-08-31, explicit request: "ในหน้า List และ Detail ของการทำรอบ อยากให้มีการ Export
+    // Excel ได้ไม่ว่าจะสถานะไหน" -- new PAYROLL_RUN_LIST_SUMMARY (internal, list-page export). ----------
+    echo "=== PayrollRunListSummaryReport (new, List-page Export Excel) ===\n";
+    $listSummaryReport = ReportRegistry::get('PAYROLL_RUN_LIST_SUMMARY');
+    checkTrue('PAYROLL_RUN_LIST_SUMMARY is registered', $listSummaryReport !== null);
+    if ($listSummaryReport) {
+        check('reportType() is internal (no state gate, matches "ไม่ว่าจะสถานะไหน")', $listSummaryReport->reportType(), 'internal');
+        $listSummaryResult = $listSummaryReport->generate(['comp_id' => $compId], 'excel');
+        checkTrue('generate() with no filter produces real xlsx bytes (ZIP magic)', substr($listSummaryResult['content'], 0, 2) === 'PK');
+        check('mime_type is xlsx', $listSummaryResult['mime_type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+        $listSummaryFiltered = $listSummaryReport->generate(['comp_id' => $compId, 'date_from' => $periodStart, 'date_to' => $periodEnd], 'excel');
+        checkTrue('generate() scoped to this fixture run\'s own period also succeeds', substr($listSummaryFiltered['content'], 0, 2) === 'PK');
+
+        $listSummaryEmptyThrew = false;
+        try {
+            $listSummaryReport->generate(['comp_id' => $compId, 'state' => 'a_state_that_will_never_match_any_real_run'], 'excel');
+        } catch (LocalizedException $e) {
+            $listSummaryEmptyThrew = true;
+            check('empty-result error_key is run_list_empty', $e->getErrorKey(), 'run_list_empty');
+        }
+        checkTrue('generate() throws (not a silent empty file) when the filter matches zero runs', $listSummaryEmptyThrew);
+
+        $listSummaryNoCompThrew = false;
+        try {
+            $listSummaryReport->generate(['comp_id' => 0], 'excel');
+        } catch (LocalizedException $e) {
+            $listSummaryNoCompThrew = true;
+        }
+        checkTrue('generate() rejects comp_id=0', $listSummaryNoCompThrew);
+    }
+
+    echo "=== ReportsController::companySsoActive() (2026-08-31, company-wide SSO report gate) ===\n";
+    $reportsController = new ReportsController();
+    $ssoActiveRef = new ReflectionMethod($reportsController, 'companySsoActive');
+    $ssoActiveRef->setAccessible(true);
+    checkTrue('companySsoActive() is true for comp_id=1 (real TH company, SSO on by default)', $ssoActiveRef->invoke($reportsController, $compId));
+
+    $ssoItemId = (int)$pdo->query("SELECT id FROM statutory_items WHERE code='TH_SSO'")->fetchColumn();
+    $existingSsoSetting = $pdo->prepare("SELECT id FROM company_statutory_settings WHERE comp_id=:comp_id AND statutory_item_id=:item_id AND deleted_at IS NULL");
+    $existingSsoSetting->execute([':comp_id' => $compId, ':item_id' => $ssoItemId]);
+    $existingSsoRow = $existingSsoSetting->fetch(PDO::FETCH_ASSOC);
+    if ($existingSsoRow) {
+        $pdo->prepare("UPDATE company_statutory_settings SET status='inactive' WHERE id=:id")->execute([':id' => $existingSsoRow['id']]);
+    } else {
+        $pdo->prepare("INSERT INTO company_statutory_settings (comp_id, statutory_item_id, status, created_by) VALUES (:comp_id, :item_id, 'inactive', :uid)")
+            ->execute([':comp_id' => $compId, ':item_id' => $ssoItemId, ':uid' => $adminUserId]);
+    }
+    $reportsControllerAfterDeactivate = new ReportsController();
+    $ssoActiveRefAfter = new ReflectionMethod($reportsControllerAfterDeactivate, 'companySsoActive');
+    $ssoActiveRefAfter->setAccessible(true);
+    checkTrue('companySsoActive() flips to false once the company deactivates TH_SSO', !$ssoActiveRefAfter->invoke($reportsControllerAfterDeactivate, $compId));
+
+    // NOTE: ReportsController::list() itself is deliberately NOT called directly here -- like
+    // every controller action in this app, it ends in $this->json()/exit(), which would kill this
+    // whole test script (and skip the finally{} rollback below) rather than just returning. Same
+    // filtering logic replicated inline instead, keyed off the SAME companySsoActive() this
+    // reflection already confirmed just flipped to false.
+    $listCodesAfterDeactivate = [];
+    foreach (ReportRegistry::all() as $r) {
+        if (!$ssoActiveRefAfter->invoke($reportsControllerAfterDeactivate, $compId) && in_array($r->code(), ['TH_SSO110', 'TH_SSO609'], true)) continue;
+        $listCodesAfterDeactivate[] = $r->code();
+    }
+    checkTrue('list()\'s own filtering logic (the Annual Reports tab\'s source) drops TH_SSO609 once SSO is company-wide inactive', !in_array('TH_SSO609', $listCodesAfterDeactivate, true));
+    checkTrue('drops TH_SSO110 too', !in_array('TH_SSO110', $listCodesAfterDeactivate, true));
+    checkTrue('still includes an unrelated report (TH_PND1)', in_array('TH_PND1', $listCodesAfterDeactivate, true));
+
+    // Restore (still inside this test's own rolled-back transaction, but keeps the rest of this
+    // file's own later assertions -- if any get added after this point in the future -- from
+    // silently running against a company that now looks SSO-inactive).
+    $pdo->prepare("UPDATE company_statutory_settings SET status='active' WHERE statutory_item_id=:item_id AND comp_id=:comp_id")->execute([':item_id' => $ssoItemId, ':comp_id' => $compId]);
+    $reportsControllerRestored = new ReportsController();
+    $ssoActiveRefRestored = new ReflectionMethod($reportsControllerRestored, 'companySsoActive');
+    $ssoActiveRefRestored->setAccessible(true);
+    checkTrue('companySsoActive() flips back to true after reactivating', $ssoActiveRefRestored->invoke($reportsControllerRestored, $compId));
+
+    // ---------- 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถ
+    // คำนวณเงินเดือน...ได้ตามสิทธิ์" -- salary_amount.view_reports gates the WHOLE download (a
+    // generated file can't be selectively redacted after the fact, unlike a live JSON response --
+    // see ReportsController::generate()'s own docblock). Full permission-matrix coverage of
+    // resolveSalaryVisibility() itself (own_only/summary/admin-bypass/no-grant) already lives in
+    // tests/permission_matrix_test.php and tests/salary_amount_visibility_test.php -- this just
+    // confirms the 'reports' module key resolves through the SAME generic mechanism. ----------
+    echo "=== resolveSalaryVisibility('reports') -- the gate generate() now enforces ===\n";
+    checkTrue('salary_amount.view_reports permission row exists', $pdo->query("SELECT COUNT(*) FROM permissions WHERE permission_key='salary_amount.view_reports'")->fetchColumn() > 0);
+    $permModel = new PermissionModel($pdo);
+    $adminReportsVisibility = $permModel->resolveSalaryVisibility($adminUserId, 'reports', true, $compId);
+    checkTrue('admin always has full reports visibility', $adminReportsVisibility['full']);
+    $noGrantEmpNo = 'RPT_NOGRANT_' . uniqid();
+    $pdo->prepare("INSERT INTO structure_roles (comp_id, role_name_th, role_name_en, status, created_by) VALUES (:comp_id, 'ไม่มีสิทธิ์รายงาน', 'NoReportGrant', 'active', :uid)")
+        ->execute([':comp_id' => $compId, ':uid' => $adminUserId]);
+    $noReportGrantRoleId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, role_id, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+         emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         sso_enrolled, pvd_enrolled, tax_exempt)
+        VALUES (:comp_id, :employee_no, :role_id, 'mr', 'male', 'ทดสอบ', 'RPT', 'Test', 'RPT', '1990-01-01', 'Thai',
+         :email, '0812345678', 'A', 'A', 'E', 'E', 'friend', '0898888888',
+         '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+         'cash', 'monthly', 25000, '2020-01-01', 'average', 'active', 0, 0, 0)")
+        ->execute([':comp_id' => $compId, ':employee_no' => $noGrantEmpNo, ':role_id' => $noReportGrantRoleId, ':email' => uniqid() . '@test.local']);
+    $noReportGrantEmpId = (int)$pdo->lastInsertId();
+    $noGrantReportsVisibility = $permModel->resolveSalaryVisibility($noReportGrantEmpId, 'reports', false, $compId);
+    checkTrue('a role with no salary_amount.view_reports grant is masked (generate() would refuse the whole download)', $noGrantReportsVisibility['masked']);
 
 } finally {
     $pdo->rollBack();

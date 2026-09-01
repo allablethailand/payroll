@@ -127,6 +127,43 @@ try {
         checkTrue('send() throws RuntimeException while unconfigured, same as before this change', true);
     }
 
+    // ---------- 2026-08-31, explicit request: admin log/summary page (Phase 1 of that day's batch)
+    // -- EmailQueueModel::list()/summary(). comp_id=1 is the real, live dev DB (see
+    // feedback_dev_db_shared_state_test_fragility) so a unique to_address per fixture row lets these
+    // assertions filter down to just this test's own rows instead of trusting raw counts. ----------
+    echo "=== EmailQueueModel::list() / summary() ===\n";
+    $uniqueTag = 'eqlog-' . uniqid();
+    $pendingId = $model->enqueue(1, "{$uniqueTag}-pending@test.local", 'Log Test Pending', 'B', null, null);
+    $sentId = $model->enqueue(1, "{$uniqueTag}-sent@test.local", 'Log Test Sent', 'B', null, null);
+    $model->markSent($sentId);
+    $failedId = $model->enqueue(1, "{$uniqueTag}-failed@test.local", 'Log Test Failed', 'B', null, null);
+    $model->markFailed($failedId, 'boom');
+    $model->markFailed($failedId, 'boom 2');
+    $model->markFailed($failedId, 'boom 3 -- final');
+    // A different company's row must never leak into comp_id=1's own log.
+    $otherCompId = $model->enqueue(2, "{$uniqueTag}-othercomp@test.local", 'Other Company', 'B', null, null);
+
+    $listAll = $model->list(1, ['to_address' => $uniqueTag]);
+    $listAllAddrs = array_column($listAll, 'to_address');
+    checkTrue('list() with to_address filter returns exactly this fixture\'s 3 comp_id=1 rows', count($listAll) === 3);
+    checkTrue('list() includes the pending/sent/failed fixtures', in_array("{$uniqueTag}-pending@test.local", $listAllAddrs, true) && in_array("{$uniqueTag}-sent@test.local", $listAllAddrs, true) && in_array("{$uniqueTag}-failed@test.local", $listAllAddrs, true));
+    checkTrue('list() does NOT include the other company\'s row', !in_array("{$uniqueTag}-othercomp@test.local", $listAllAddrs, true));
+
+    $listStatusFailed = $model->list(1, ['to_address' => $uniqueTag, 'status' => 'failed']);
+    checkTrue('list() status=failed filter returns only the failed fixture', count($listStatusFailed) === 1 && $listStatusFailed[0]['to_address'] === "{$uniqueTag}-failed@test.local");
+
+    $listNoMatch = $model->list(1, ['to_address' => $uniqueTag, 'date_from' => '2099-01-01']);
+    checkTrue('list() date_from filter in the far future excludes every fixture row', count($listNoMatch) === 0);
+
+    $summaryFiltered = $model->summary(1, ['to_address' => $uniqueTag]);
+    check('summary() pending count matches this fixture', $summaryFiltered['pending'], 1);
+    check('summary() sent count matches this fixture', $summaryFiltered['sent'], 1);
+    check('summary() failed count matches this fixture', $summaryFiltered['failed'], 1);
+    check('summary() total is the sum of the 3 statuses', $summaryFiltered['total'], 3);
+
+    $summaryStatusScoped = $model->summary(1, ['to_address' => $uniqueTag, 'status' => 'sent']);
+    check('summary() itself honors the same filters as list() (status=sent narrows every bucket)', $summaryStatusScoped, ['pending' => 0, 'sent' => 1, 'failed' => 0, 'total' => 1]);
+
 } finally {
     $pdo->rollBack();
 }

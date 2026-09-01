@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/reports/EmployeePiiTrait.php';
+require_once __DIR__ . '/../models/PayrollSyncModel.php';
 
 /**
  * Renders a Payslip Template's canvas elements (see PayslipTemplateModel) into a PDF -- the exact
@@ -195,6 +196,37 @@ class PayslipTemplateRenderer {
         return $escaped;
     }
 
+    /**
+     * 2026-08-31, same-day follow-up (Origami's `scheduled_item_occurrences[]` proposal) -- attaches
+     * an `occurrences` sub-array to earning_breakdown/deduction_breakdown lines, the SAME
+     * enrichment PayrollRunModel::syncDeductionLinesForEmployee() does for the Adjust Amounts modal
+     * (see that method's own docblock for the full "why", including the `sync_item_code` matching
+     * fix -- SyncPayResolver::resolve() persists that field into the breakdown JSON itself, so it's
+     * already sitting in $detail here with zero extra plumbing beyond this lookup). Only meaningful
+     * for a run pulled from an Origami sync process; a no-op copy-through otherwise. Deliberately a
+     * fresh copy, not run through PayrollRunModel itself -- this renderer already owns its own PDO
+     * connection and has no other dependency on that model.
+     */
+    private function attachOccurrenceBreakdown(array $run, array $detail): array {
+        if (empty($run['sync_process_id']) || empty($detail['employee_id'])) {
+            return $detail;
+        }
+        $syncModel = new PayrollSyncModel($this->db);
+        foreach (['earning_breakdown', 'deduction_breakdown'] as $col) {
+            foreach (($detail[$col] ?? []) as $i => $line) {
+                if (empty($line['code'])) {
+                    continue;
+                }
+                $syncItemCode = $line['sync_item_code'] ?? $line['code'];
+                $occurrences = $syncModel->occurrencesForItem((int)$run['sync_process_id'], (int)$detail['employee_id'], $syncItemCode);
+                if ($occurrences) {
+                    $detail[$col][$i]['occurrences'] = $occurrences;
+                }
+            }
+        }
+        return $detail;
+    }
+
     /** Renders one of the 3 BLOCK_FIELD_KEYS as a real itemized `<table>` at the bound element's own
      *  position/size/font -- this is the one piece of rendering logic Employment Certificate Template
      *  has no equivalent of at all (see this class's own docblock). */
@@ -204,11 +236,13 @@ class PayslipTemplateRenderer {
             foreach (($detail['earning_breakdown'] ?? []) as $line) {
                 $label = htmlspecialchars((string)($line['name_th'] ?? $line['code'] ?? ''), ENT_QUOTES, 'UTF-8');
                 $rows .= '<tr><td>' . $label . '</td><td class="amount">' . number_format((float)($line['amount'] ?? 0), 2) . '</td></tr>';
+                $rows .= $this->renderOccurrenceSubRows($line['occurrences'] ?? null);
             }
         } elseif ($fieldKey === 'deduction_lines_all') {
             foreach (($detail['deduction_breakdown'] ?? []) as $line) {
                 $label = htmlspecialchars((string)($line['name_th'] ?? $line['code'] ?? ''), ENT_QUOTES, 'UTF-8');
                 $rows .= '<tr><td>' . $label . '</td><td class="amount">' . number_format((float)($line['amount'] ?? 0), 2) . '</td></tr>';
+                $rows .= $this->renderOccurrenceSubRows($line['occurrences'] ?? null);
             }
         } elseif ($fieldKey === 'statutory_lines_all') {
             foreach (($detail['statutory_breakdown'] ?? []) as $item) {
@@ -222,6 +256,24 @@ class PayslipTemplateRenderer {
             return '';
         }
         return '<div style="' . $style . 'overflow:visible;"><table style="width:100%;border-collapse:collapse;font-size:inherit;">' . $rows . '</table></div>';
+    }
+
+    /** Small indented/muted sub-rows under a line that has an occurrence breakdown (e.g. "Loan
+     *  installment 2 of 12") -- see attachOccurrenceBreakdown()'s own docblock for where the data
+     *  comes from. Deliberately plain, matching this table's own minimal styling (no extra columns,
+     *  no borders) since it's a supplementary detail, not a second table. */
+    private function renderOccurrenceSubRows(?array $occurrences): string {
+        if (empty($occurrences)) {
+            return '';
+        }
+        $rows = '';
+        foreach ($occurrences as $occ) {
+            $label = $occ['installment_no'] !== null
+                ? 'งวดที่ ' . htmlspecialchars((string)$occ['installment_no'], ENT_QUOTES, 'UTF-8')
+                : htmlspecialchars((string)($occ['occurrence_code'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $rows .= '<tr style="font-size:0.85em;color:#666;"><td style="padding-left:1.5em;">- ' . $label . '</td><td class="amount">' . number_format((float)($occ['amount'] ?? 0), 2) . '</td></tr>';
+        }
+        return $rows;
     }
 
     /** @param array<int,string> $imageAssetPaths image_asset_id => absolute file path */
@@ -455,6 +507,7 @@ class PayslipTemplateRenderer {
     /** Full render for a real payroll run + employee -- called by PaySlipReport::generate() once it
      *  has resolved the company's default template + real run/detail data. */
     public function renderForRun(int $compId, array $template, array $elements, array $company, array $run, array $detail, ?array $ytd): string {
+        $detail = $this->attachOccurrenceBreakdown($run, $detail);
         $statutoryLabels = $this->statutoryLabelMap((string)($template['country_code'] ?? $company['registered_country'] ?? ''));
         $imageAssetIds = array_map(fn($el) => (int)($el['image_asset_id'] ?? 0), $elements);
         $imageAssetPaths = $this->resolveImageAssetPaths($compId, $imageAssetIds);

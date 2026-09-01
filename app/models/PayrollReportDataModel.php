@@ -99,6 +99,16 @@ class PayrollReportDataModel {
         // uses) -- see PndOneReport's own docblock for the address-completeness gap this only
         // partially closes (house no./moo/building/soi/road have no structured columns at all,
         // just free-text address_line_1_register/address_line_2_register).
+        // 2026-08-31, explicit request: real double-payment risk found and confirmed by the user --
+        // reopen() has always allowed re-opening an already-paid/locked run (e.g. to merge a
+        // supplemental process into it), but nothing tracked how much of the run's own current
+        // total was ALREADY actually disbursed on a prior payment cycle. *_amount_due are the
+        // DELTA still owed this cycle (current amount minus every payroll_run_payment_events row
+        // already recorded for this run+employee) -- 0 for every employee on a run's first-ever
+        // payment cycle (no prior events exist yet), so this is a no-op for the overwhelmingly
+        // common single-payment-cycle case. Payment-report consumers (BankTransferFileReport/
+        // PaymentVoucherReport) use these instead of the raw gross_amount/total_deduction_amount/
+        // net_amount columns when computing what to actually transfer.
         $sql = "SELECT d.*, e.employee_no, e.title, e.name_th, e.surname_th, e.name_en, e.surname_en,
                     e.tax_id_no, e.sso_no, e.id_card_no, e.key_version, e.department_id, e.branch_id, e.position_id,
                     e.bank_id, e.bank_account_no, e.bank_account_name, e.payment_type,
@@ -109,7 +119,10 @@ class PayrollReportDataModel {
                     mb.bank_code, mb.bank_name_th, mb.bank_name_en,
                     ma.level_1 AS address_postcode, ma.level_2_th AS address_province_th, ma.level_2_en AS address_province_en,
                     ma.level_3_th AS address_district_th, ma.level_3_en AS address_district_en,
-                    ma.level_4_th AS address_subdistrict_th, ma.level_4_en AS address_subdistrict_en
+                    ma.level_4_th AS address_subdistrict_th, ma.level_4_en AS address_subdistrict_en,
+                    (d.gross_amount - COALESCE(pp.gross_paid, 0)) AS gross_amount_due,
+                    (d.total_deduction_amount - COALESCE(pp.deduction_paid, 0)) AS deduction_amount_due,
+                    (d.net_amount - COALESCE(pp.net_paid, 0)) AS net_amount_due
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `structure_departments` dep ON dep.id = e.department_id
@@ -117,10 +130,15 @@ class PayrollReportDataModel {
                 LEFT JOIN `structure_positions` pos ON pos.id = e.position_id
                 LEFT JOIN `master_banks` mb ON mb.id = e.bank_id
                 LEFT JOIN `master_addresses` ma ON ma.id = e.master_address_id_register
+                LEFT JOIN (
+                    SELECT run_id, employee_id, SUM(gross_amount_paid) AS gross_paid,
+                        SUM(deduction_amount_paid) AS deduction_paid, SUM(net_amount_paid) AS net_paid
+                    FROM `payroll_run_payment_events` WHERE run_id = :run_id_pp GROUP BY run_id, employee_id
+                ) pp ON pp.run_id = d.run_id AND pp.employee_id = d.employee_id
                 WHERE d.run_id = :run_id
                 ORDER BY e.employee_no ASC";
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([':run_id' => $runId]);
+        $stmt->execute([':run_id' => $runId, ':run_id_pp' => $runId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as &$row) {
             $row['earning_breakdown'] = json_decode((string)$row['earning_breakdown'], true) ?? [];
@@ -235,5 +253,43 @@ class PayrollReportDataModel {
                 ['states' => $allowedStates, 'current_state' => $run['state']]
             );
         }
+    }
+
+    /**
+     * 2026-08-31, same-day follow-up -- ScheduledItemOccurrenceReconciliationReport's own data
+     * source. Deliberately queries `payroll_sync_item_occurrences` directly (NOT through any
+     * payroll_runs row) -- occurrences belong to the Origami PROCESS, independent of whether/when
+     * it was ever pulled into a run, so this reconciliation view stays complete even for a process
+     * still sitting in Pending Pull (or one that never gets pulled at all, e.g. a rejected one).
+     * `applied_at` is the filter date (when the installment was actually applied on Origami's own
+     * side), not `received_at`/period dates, since that's the figure someone reconciling actual
+     * loan repayments against a period would care about. An occurrence whose employee_id never
+     * resolved (see PayrollSyncModel::replaceScheduledItemOccurrences()'s own docblock) still shows
+     * up here (employee columns NULL) rather than being silently excluded -- reconciliation is
+     * exactly the place an unresolved row needs to be visible, not hidden.
+     */
+    public function scheduledItemOccurrences(int $compId, ?string $dateFrom, ?string $dateTo): array {
+        $where = "WHERE p.comp_id = :comp_id";
+        $params = [':comp_id' => $compId];
+        if ($dateFrom !== null && $dateFrom !== '') {
+            $where .= " AND o.applied_at >= :date_from";
+            $params[':date_from'] = $dateFrom . ' 00:00:00';
+        }
+        if ($dateTo !== null && $dateTo !== '') {
+            $where .= " AND o.applied_at <= :date_to";
+            $params[':date_to'] = $dateTo . ' 23:59:59';
+        }
+        $sql = "SELECT o.item_code, o.item_ref_code, o.occurrence_code, o.installment_no, o.amount, o.applied_at,
+                    o.origami_emp_id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                    p.process_no, r.id AS run_id, r.run_name, r.state AS run_state
+                FROM `payroll_sync_item_occurrences` o
+                JOIN `payroll_sync_processes` p ON p.id = o.process_id
+                LEFT JOIN `employees` e ON e.id = o.employee_id
+                LEFT JOIN `payroll_runs` r ON r.sync_process_id = p.id
+                {$where}
+                ORDER BY o.applied_at ASC, o.id ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 }

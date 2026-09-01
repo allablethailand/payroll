@@ -17,6 +17,7 @@ require_once __DIR__ . '/OtRateSetModel.php';
 require_once __DIR__ . '/PayrollPolicyModel.php';
 require_once __DIR__ . '/NotificationModel.php';
 require_once __DIR__ . '/AttendanceRecordModel.php';
+require_once __DIR__ . '/DocumentNumberingModel.php';
 
 /**
  * Payroll Run state machine + calculation.
@@ -122,20 +123,31 @@ class PayrollRunModel {
                     -- resolved to a display name/exposed as their own List columns until now.
                     updater.name_th AS updated_by_name_th, updater.name_en AS updated_by_name_en,
                     (SELECT from_state FROM `payroll_run_audit_logs` WHERE run_id = r.id AND action = 'cancel' ORDER BY id DESC LIMIT 1) AS cancelled_from_state,
-                    -- 2026-08-29 ('ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน Lock ข้อมูลแล้วกี่คน')
+                    -- 2026-08-29 ('ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน') -- Lock retired
+                    -- 2026-08-31 (see EMPLOYEE VERIFY / LOCK / COMMENTS section below), Verify itself
+                    -- now carries what Lock used to; locked_employee_count dropped, nothing reads it.
                     (SELECT COUNT(*) FROM `payroll_run_employee_verifications` WHERE run_id = r.id AND is_verified = 1) AS verified_employee_count,
-                    (SELECT COUNT(*) FROM `payroll_run_employee_verifications` WHERE run_id = r.id AND is_locked = 1) AS locked_employee_count,
                     -- 2026-08-29, explicit request: 'ถ้าข้อมูลไม่สมบูรณ์ให้มีบอกด้วย ว่าไม่สมบูรณ์กี่คน'
                     -- (indicate how many employees have incomplete data) -- calc_status='error' on
                     -- payroll_run_details is the existing per-line marker recalculate() already sets
                     -- when a line couldn't be fully computed (e.g. no rate configured); this just
                     -- surfaces the count on the List page instead of only inside Run Detail.
-                    (SELECT COUNT(*) FROM `payroll_run_details` WHERE run_id = r.id AND calc_status = 'error') AS error_employee_count
+                    (SELECT COUNT(*) FROM `payroll_run_details` WHERE run_id = r.id AND calc_status = 'error') AS error_employee_count,
+                    -- 2026-09-01, explicit request: 'หน้า List page ควรมี indicator บอกด้วยว่ารอบนี้ตั้งค่าไว้ให้
+                    -- ไปรวมกับรอบไหน' -- r.* above already carries the raw merge_target_run_id, but never a
+                    -- human-readable name; same LEFT JOIN get() already has, just also surfaced here so the
+                    -- List page's own badge (mergeTargetIconPr() in index.js) doesn't need a 2nd round trip
+                    -- per row. run_code (2026-09-02, 'และถ้ามีการอ้างอิงถึงรอบก็ให้แสดงด้วยครับ') added the same
+                    -- way, once payroll_runs itself gained a run_code column -- shown alongside the name so
+                    -- the List page's own Code column can display which round's CODE a reference points at,
+                    -- not just its free-text name.
+                    mt.run_name AS merge_target_run_name, mt.run_code AS merge_target_run_code
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `employees` creator ON creator.id = r.created_by
                 LEFT JOIN `employees` submitter ON submitter.id = r.submitted_by
                 LEFT JOIN `employees` updater ON updater.id = r.updated_by
+                LEFT JOIN `payroll_runs` mt ON mt.id = r.merge_target_run_id AND mt.deleted_at IS NULL
                 {$where}
                 ORDER BY r.period_start_date DESC, r.id DESC";
         $stmt = $this->db->prepare($sql);
@@ -165,8 +177,12 @@ class PayrollRunModel {
         return $rows;
     }
 
-    /** Select2-ajax-shaped list of runs, for report generation pickers etc. */
-    public function options(int $compId, string $search, int $page, int $limit, ?array $allowedStates = null): array {
+    /** Select2-ajax-shaped list of runs, for report generation pickers etc. -- $excludeId (2026-09-01,
+     * added for the Detail page's own "Target Round" merge-target picker) leaves out one specific
+     * run id, same generic `data-exclude-id` convention this app's other select2-remote fields
+     * already use (e.g. #manualLinePayeeEmployee), so a run never gets offered as its own merge
+     * target in the first place. */
+    public function options(int $compId, string $search, int $page, int $limit, ?array $allowedStates = null, ?int $excludeId = null): array {
         $offset = ($page - 1) * $limit;
         $where = "WHERE comp_id = :comp_id AND deleted_at IS NULL";
         $params = [':comp_id' => $compId];
@@ -182,6 +198,10 @@ class PayrollRunModel {
                 $params[$key] = $state;
             }
             $where .= ' AND state IN (' . implode(',', $stateKeys) . ')';
+        }
+        if ($excludeId !== null) {
+            $where .= ' AND id != :exclude_id';
+            $params[':exclude_id'] = $excludeId;
         }
 
         $totalStmt = $this->db->prepare("SELECT COUNT(*) FROM `payroll_runs` {$where}");
@@ -215,12 +235,14 @@ class PayrollRunModel {
                     sp.process_start AS sync_process_start, sp.process_end AS sync_process_end,
                     sp.process_paid AS sync_process_paid,
                     creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
-                    submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en
+                    submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
+                    mt.run_name AS merge_target_run_name, mt.state AS merge_target_run_state, mt.run_code AS merge_target_run_code
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
                 LEFT JOIN `employees` creator ON creator.id = r.created_by
                 LEFT JOIN `employees` submitter ON submitter.id = r.submitted_by
+                LEFT JOIN `payroll_runs` mt ON mt.id = r.merge_target_run_id AND mt.deleted_at IS NULL
                 WHERE r.id = :id AND r.comp_id = :comp_id AND r.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
@@ -232,14 +254,19 @@ class PayrollRunModel {
         if (!$this->get($runId, $compId)) {
             return [];
         }
-        // 2026-08-29: is_verified/is_locked + who/when, LEFT JOINed since most employees have no row
-        // in payroll_run_employee_verifications at all (see that table's own docblock -- a row only
-        // exists while at least one flag is true) -- COALESCE to 0/false for everyone else.
+        // 2026-08-29: is_verified + who/when, LEFT JOINed since most employees have no row in
+        // payroll_run_employee_verifications at all (see that table's own docblock -- a row only
+        // exists while the flag is true) -- COALESCE to 0/false for everyone else. is_locked/
+        // locked_at/locked_by dropped 2026-08-31 -- see this method's own EMPLOYEE VERIFY / LOCK /
+        // COMMENTS section header comment for why Lock was retired entirely.
         $sql = "SELECT d.*, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.department_id,
+                    -- 2026-08-31, explicit request: checkbox filter (before the employee table) +
+                    -- 2 summary cards + a dedicated tab all keyed on payment method -- previously
+                    -- only PayrollReportDataModel::getRunDetails() (reports/cash-payment tab) read
+                    -- this column; the Process Detail page's own #tb_run_detail never had it.
+                    COALESCE(e.payment_type, 'bank') AS payment_type,
                     COALESCE(v.is_verified, 0) AS is_verified, v.verified_at,
                     vu.name_th AS verified_by_name_th, vu.name_en AS verified_by_name_en,
-                    COALESCE(v.is_locked, 0) AS is_locked, v.locked_at,
-                    lu.name_th AS locked_by_name_th, lu.name_en AS locked_by_name_en,
                     -- 2026-08-29: comment count shown as a notification badge on the Comment button
                     (SELECT COUNT(*) FROM `payroll_run_employee_comments` c WHERE c.run_id = d.run_id AND c.employee_id = d.employee_id) AS comment_count,
                     -- 2026-08-29, explicit follow-up request (own earlier suggestion, accepted): a
@@ -261,7 +288,6 @@ class PayrollRunModel {
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `payroll_run_employee_verifications` v ON v.run_id = d.run_id AND v.employee_id = d.employee_id
                 LEFT JOIN `employees` vu ON vu.id = v.verified_by
-                LEFT JOIN `employees` lu ON lu.id = v.locked_by
                 WHERE d.run_id = :run_id
                 ORDER BY e.employee_no ASC";
         $stmt = $this->db->prepare($sql);
@@ -272,7 +298,6 @@ class PayrollRunModel {
             $row['deduction_breakdown'] = json_decode((string)$row['deduction_breakdown'], true) ?? [];
             $row['statutory_breakdown'] = json_decode((string)$row['statutory_breakdown'], true) ?? [];
             $row['is_verified'] = (bool)$row['is_verified'];
-            $row['is_locked'] = (bool)$row['is_locked'];
             $row['line_override_count'] = (int)$row['line_override_count'];
             $row['has_calc_override'] = !empty($row['has_calc_override']);
             $row['base_salary_excluded'] = $row['base_salary_override_action'] === 'exclude'
@@ -417,6 +442,15 @@ class PayrollRunModel {
         return ['any_tax' => (bool)$row['any_tax'], 'any_sso' => (bool)$row['any_sso']];
     }
 
+    /**
+     * 2026-08-31, same-day follow-up (item 9c): excludes action='view_detail' rows on purpose.
+     * Those rows exist (see logViewDetail()) so item 10's audit/analysis report and any future
+     * forensic need has a real record of every page open -- but this method is what feeds the
+     * Detail page's own human-facing "Audit Log" timeline tab, and a new row every single time
+     * ANYONE opens/refreshes the page would flood that timeline with noise nobody asked to see
+     * there, drowning out the real state-transition/edit history it exists to show. Use
+     * getViewLog() (below) to read the raw view rows for reporting purposes instead.
+     */
     public function getAuditLog(int $runId, int $compId): array {
         if (!$this->get($runId, $compId)) {
             return [];
@@ -424,62 +458,245 @@ class PayrollRunModel {
         $sql = "SELECT a.*, e.name_th AS performed_by_name_th, e.name_en AS performed_by_name_en
                 FROM `payroll_run_audit_logs` a
                 LEFT JOIN `employees` e ON e.id = a.performed_by
-                WHERE a.run_id = :run_id ORDER BY a.id ASC";
+                WHERE a.run_id = :run_id AND a.action != 'view_detail' ORDER BY a.id ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':run_id' => $runId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /* ==================== EMPLOYEE VERIFY / LOCK / COMMENTS (2026-08-29) ====================
-       Explicit request: "อยากให้มีปุ่ม Verify ของแต่ละคน และสามารถ Lock Unlock ได้ โดยถ้า Lock แล้วข้อมูล
-       จะไม่คำนวณใหม่...สามารถมี checkbox เลือกได้ทีละหลายคน...รวมถึงเพิ่มให้สามารถใส่ Comment ได้ของแต่ละคน...
-       เป็น Timeline...ใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด". Verify and Lock are
-       INDEPENDENT flags (confirmed via AskUserQuestion) living in `payroll_run_employee_verifications`
-       (one row per run_id+employee_id, deleted outright once both flags are false -- same "no
-       all-zero row" convention as payroll_run_employee_exemptions). Locking additionally means:
-       recalculate() preserves that employee's payroll_run_details row byte-for-byte instead of
-       recomputing it (see recalculate()'s own new prefetch/branch), AND every other per-employee
-       mutation entry point on this page refuses to edit a locked employee at all (confirmed via
-       AskUserQuestion) -- see isEmployeeLockedForRun()'s callers below. Comments
-       (`payroll_run_employee_comments`) are a separate, append-only per-employee timeline, NOT
-       gated by run state (a reminder note is useful regardless of where the run currently is). ==================== */
+    /** Raw view_detail rows for a run -- see getAuditLog()'s own docblock for why those are kept
+     *  out of that method. Used by the item-10 audit/analysis report, not the Detail page itself. */
+    public function getViewLog(int $runId, int $compId): array {
+        if (!$this->get($runId, $compId)) {
+            return [];
+        }
+        $sql = "SELECT a.*, e.name_th AS performed_by_name_th, e.name_en AS performed_by_name_en
+                FROM `payroll_run_audit_logs` a
+                LEFT JOIN `employees` e ON e.id = a.performed_by
+                WHERE a.run_id = :run_id AND a.action = 'view_detail' ORDER BY a.id ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':run_id' => $runId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * 2026-08-31, same-day follow-up (item 10, "Design ให้หน่อยครับ No Idea"): the date the
+     * override-history table went live -- payroll_run_line_override_history only ever records edits
+     * made from this date forward (see that table's own migration comment for why: the tables it
+     * replaced only ever stored the CURRENT value per line, never a structured before/after chain).
+     * A run created before this date can genuinely have zero history rows even if it WAS manually
+     * edited -- the audit report must say "no edit history available (feature started {this date})"
+     * for such a run, never a misleading "never edited" claim it can't actually back up.
+     */
+    public const LINE_OVERRIDE_HISTORY_FEATURE_START_DATE = '2026-08-31';
+
+    /**
+     * List view for the new "Payroll Run Audit" report (Reports menu) -- every run for this
+     * company with its origin, state, key actors/dates, and how many manual edits (of any kind --
+     * earning/deduction/statutory line overrides or attendance overrides) it has on record, so an
+     * admin can spot which runs to actually drill into via lineOverrideAuditDiff() below.
+     */
+    /**
+     * 2026-08-31, same-day follow-up, explicit request: "อยากให้เพิ่ม Filter ด้วยครับ" --
+     * date_from/date_to filter on period_start_date/period_end_date, same convention every other
+     * List page's own Date From/To filter box already uses (e.g. PayrollRunModel::list() itself).
+     * `state` is deliberately NOT filtered here server-side -- the page's own pipeline station bar
+     * filters by state entirely client-side (same "load once, filter via DataTables ext.search"
+     * pattern the Payroll Process List page's own station cards already use), since this list is
+     * small (one company's own runs) and the station bar needs live per-state counts anyway, which
+     * a server-side-only filter would require a second query for.
+     */
+    public function runAuditList(int $compId, ?string $dateFrom = null, ?string $dateTo = null): array {
+        $where = "WHERE r.comp_id = :comp_id AND r.deleted_at IS NULL";
+        $params = [':comp_id' => $compId];
+        if ($dateFrom !== null && $dateFrom !== '') {
+            $where .= " AND r.period_end_date >= :date_from";
+            $params[':date_from'] = $dateFrom;
+        }
+        if ($dateTo !== null && $dateTo !== '') {
+            $where .= " AND r.period_start_date <= :date_to";
+            $params[':date_to'] = $dateTo;
+        }
+        $sql = "SELECT r.id, r.run_name, r.state, r.period_start_date, r.period_end_date, r.payment_date,
+                    r.run_purpose, r.total_gross_amount, r.total_deduction_amount, r.total_net_amount,
+                    c.cycle_name,
+                    sp.run_kind AS sync_run_kind, sp.process_subject AS sync_process_subject,
+                    submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
+                    r.submitted_at, r.approved_at, r.paid_at,
+                    (SELECT COUNT(*) FROM `payroll_run_line_override_history` WHERE run_id = r.id) AS edit_count
+                FROM `payroll_runs` r
+                LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
+                LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
+                LEFT JOIN `employees` submitter ON submitter.id = r.submitted_by
+                {$where}
+                ORDER BY r.period_start_date DESC, r.id DESC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_map(function (array $row): array {
+            // origin: 'sync' (pulled from Origami) / 'cycle' (regular cycle-based run, never
+            // sync-pulled) / 'manual' (off-cycle/incentive run, no cycle at all) -- same 3-way split
+            // already established by this app's other origin-facing surfaces (e.g. Employee/
+            // attendance data_source).
+            $row['origin'] = $row['sync_run_kind'] !== null ? 'sync' : ($row['cycle_name'] !== null ? 'cycle' : 'manual');
+            $row['edit_count'] = (int)$row['edit_count'];
+            $row['history_available'] = $row['period_start_date'] >= self::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE
+                || $row['edit_count'] > 0; // a run with real recorded edits obviously has history, regardless of its own period date
+            return $row;
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * Drill-down diff view for one run: per (employee, line), an ORIGINAL -> Edit 1 -> Edit 2 ->
+     * ... -> CURRENT chain, sourced from payroll_run_line_override_history. "Original" is the
+     * oldest recorded old_value for that line (or, if a line was never overridden, simply equals
+     * "Current" -- both null-safe, both read the same live figure, see below). "Current" is always
+     * read LIVE from the run's own current calculated state (via currentLineAmount()/
+     * attendanceDataForEmployee()), never assumed from the last history row's own new_value --
+     * a later recalculate() can still shift a downstream figure (e.g. a statutory line recomputing
+     * after an attendance override changes taxable income) independent of any further manual edit,
+     * and Current must always reflect truth, not staleness.
+     *
+     * Returns ['history_available' => bool, 'lines' => [...]] -- lines is empty (not an error) for
+     * a run with zero recorded edits; the caller is responsible for showing the
+     * LINE_OVERRIDE_HISTORY_FEATURE_START_DATE caveat when history_available is false.
+     */
+    public function lineOverrideAuditDiff(int $runId, int $compId): array {
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['history_available' => false, 'lines' => []];
+        }
+        $historyAvailable = (string)$run['period_start_date'] >= self::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE;
+
+        $stmt = $this->db->prepare("SELECT h.*, e.employee_no, e.name_th AS employee_name_th, e.name_en AS employee_name_en,
+                u.name_th AS changed_by_name_th, u.name_en AS changed_by_name_en
+            FROM `payroll_run_line_override_history` h
+            JOIN `employees` e ON e.id = h.employee_id
+            LEFT JOIN `employees` u ON u.id = h.changed_by
+            WHERE h.run_id = :run_id
+            ORDER BY h.employee_id ASC, h.line_type ASC, h.item_code ASC, h.id ASC");
+        $stmt->execute([':run_id' => $runId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if ($rows) {
+            $historyAvailable = true; // real recorded edits exist regardless of the run's own period date
+        }
+
+        $groups = [];
+        foreach ($rows as $r) {
+            $key = $r['employee_id'] . '|' . $r['line_type'] . '|' . $r['item_code'];
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'employee_id' => (int)$r['employee_id'],
+                    'employee_no' => $r['employee_no'],
+                    'employee_name_th' => $r['employee_name_th'], 'employee_name_en' => $r['employee_name_en'],
+                    'line_type' => $r['line_type'], 'item_code' => $r['item_code'],
+                    'original_value' => $r['old_value'] !== null ? (float)$r['old_value'] : null,
+                    'edits' => [],
+                ];
+            }
+            $groups[$key]['edits'][] = [
+                'action' => $r['action'],
+                'old_value' => $r['old_value'] !== null ? (float)$r['old_value'] : null,
+                'new_value' => $r['new_value'] !== null ? (float)$r['new_value'] : null,
+                'note' => $r['note'],
+                'changed_by' => (int)$r['changed_by'],
+                'changed_by_name_th' => $r['changed_by_name_th'], 'changed_by_name_en' => $r['changed_by_name_en'],
+                'changed_at' => $r['changed_at'],
+            ];
+        }
+
+        foreach ($groups as &$g) {
+            if ($g['line_type'] === 'attendance') {
+                $live = $this->attendanceDataForEmployee($compId, $runId, $g['employee_id']);
+                $g['current_value'] = $live['override'][$g['item_code']] ?? $live['synced'][$g['item_code']] ?? null;
+            } elseif ($g['line_type'] === 'statutory') {
+                $g['current_value'] = $this->currentLineAmount($runId, $g['employee_id'], $this->statutoryOverrideCode($g['item_code']));
+            } else {
+                $g['current_value'] = $this->currentLineAmount($runId, $g['employee_id'], $g['item_code']);
+            }
+        }
+        unset($g);
+
+        return ['history_available' => $historyAvailable, 'lines' => array_values($groups)];
+    }
+
+    /* ==================== EMPLOYEE VERIFY / COMMENTS (2026-08-29, Lock retired 2026-08-31) ====================
+       Explicit request (2026-08-29): "อยากให้มีปุ่ม Verify ของแต่ละคน และสามารถ Lock Unlock ได้ โดยถ้า Lock
+       แล้วข้อมูลจะไม่คำนวณใหม่...สามารถมี checkbox เลือกได้ทีละหลายคน...รวมถึงเพิ่มให้สามารถใส่ Comment ได้ของแต่ละ
+       คน...เป็น Timeline...ใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด". Verify and Lock
+       originally lived as 2 INDEPENDENT flags -- 2026-08-31, explicit follow-up: "ให้ตัดปุ่ม Lock ออกไป
+       เลยครับ ให้เหลือแค่ Verify ถ้า Verify แล้ว จะไม่คำนวณอีกต่อไป" -- Lock is retired entirely (both the
+       column and the concept); Verify itself now carries what Lock used to: recalculate() preserves
+       a verified employee's payroll_run_details row byte-for-byte instead of recomputing it (see
+       recalculate()'s own prefetch/branch), AND every other per-employee mutation entry point on
+       this page refuses to edit a verified employee at all -- see isEmployeeVerifiedForRun()'s
+       callers below (renamed from isEmployeeLockedForRun()). `payroll_run_employee_verifications`
+       had its own is_locked/locked_by/locked_at columns dropped in the same migration that shipped
+       this change (2026-08-31_20_drop_employee_lock.sql) -- a row now only exists while is_verified
+       is true (deleted outright when unverified, same "no all-zero row" convention
+       payroll_run_employee_exemptions already uses). Comments (`payroll_run_employee_comments`) are
+       unaffected -- a separate, append-only per-employee timeline, NOT gated by run state. ==================== */
 
     /** Shared guard used by every per-employee mutation entry point on a draft run (manual lines,
-     *  line overrides, attendance overrides, per-run exemptions) -- a locked employee's numbers must
-     *  stay frozen exactly as they are, so nothing that would trigger a recompute is allowed to touch
-     *  them at all. */
-    private function isEmployeeLockedForRun(int $runId, int $employeeId): bool {
-        $stmt = $this->db->prepare("SELECT is_locked FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND employee_id = :employee_id");
+     *  line overrides, attendance overrides, per-run exemptions) -- a verified employee's numbers
+     *  must stay frozen exactly as they are, so nothing that would trigger a recompute is allowed to
+     *  touch them at all. Renamed from isEmployeeLockedForRun() 2026-08-31 -- Verify now carries
+     *  this behavior, Lock no longer exists. */
+    private function isEmployeeVerifiedForRun(int $runId, int $employeeId): bool {
+        $stmt = $this->db->prepare("SELECT is_verified FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND employee_id = :employee_id");
         $stmt->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         return (bool)$stmt->fetchColumn();
     }
 
-    private function employeeVerifyLockRow(int $runId, int $employeeId): array {
-        $stmt = $this->db->prepare("SELECT is_verified, is_locked FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND employee_id = :employee_id");
-        $stmt->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ? ['is_verified' => (bool)$row['is_verified'], 'is_locked' => (bool)$row['is_locked']] : ['is_verified' => false, 'is_locked' => false];
-    }
-
     public function setEmployeeVerified(int $runId, int $compId, int $employeeId, bool $verified, int $userId, bool $isAdmin): array {
-        return $this->setEmployeeVerifyLockFlag($runId, $compId, $employeeId, 'verified', $verified, $userId, $isAdmin);
-    }
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if ($run['state'] !== 'draft') {
+            return ['status' => false, 'message' => 'Only a draft payroll run\'s employees can be verified.'];
+        }
+        $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $employeeNo = $stmtEmp->fetchColumn();
+        if ($employeeNo === false) {
+            return ['status' => false, 'message' => 'Employee not found.'];
+        }
 
-    public function setEmployeeLocked(int $runId, int $compId, int $employeeId, bool $locked, int $userId, bool $isAdmin): array {
-        return $this->setEmployeeVerifyLockFlag($runId, $compId, $employeeId, 'locked', $locked, $userId, $isAdmin);
+        $own = !$this->db->inTransaction();
+        try {
+            if ($own) { $this->db->beginTransaction(); }
+            if (!$verified) {
+                $this->db->prepare("DELETE FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND employee_id = :employee_id")
+                    ->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+            } else {
+                // Re-verifying an already-verified employee still refreshes verified_at/verified_by
+                // to the current user/time -- treated as "re-confirming", not a no-op, matching how
+                // the user would read clicking the button again anyway.
+                $stmt = $this->db->prepare("INSERT INTO `payroll_run_employee_verifications`
+                        (run_id, employee_id, is_verified, verified_by, verified_at)
+                    VALUES (:run_id, :employee_id, 1, :verified_by, :verified_at)
+                    ON DUPLICATE KEY UPDATE is_verified = 1, verified_by = VALUES(verified_by), verified_at = VALUES(verified_at)");
+                $stmt->execute([
+                    ':run_id' => $runId, ':employee_id' => $employeeId,
+                    ':verified_by' => $userId, ':verified_at' => date('Y-m-d H:i:s'),
+                ]);
+            }
+
+            $actionWord = $verified ? 'verified' : 'unverified';
+            $this->logAudit($runId, 'draft', 'draft', "employee_{$actionWord}", $userId, "Employee {$employeeNo}: {$actionWord}.");
+            if ($own) { $this->db->commit(); }
+            return ['status' => true, 'message' => 'Saved successfully.'];
+        } catch (PDOException $e) {
+            if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
     }
 
     /** @param array<int> $employeeIds */
     public function bulkSetEmployeeVerified(int $runId, int $compId, array $employeeIds, bool $verified, int $userId, bool $isAdmin): array {
-        return $this->bulkSetEmployeeVerifyLockFlag($runId, $compId, $employeeIds, 'verified', $verified, $userId, $isAdmin);
-    }
-
-    /** @param array<int> $employeeIds */
-    public function bulkSetEmployeeLocked(int $runId, int $compId, array $employeeIds, bool $locked, int $userId, bool $isAdmin): array {
-        return $this->bulkSetEmployeeVerifyLockFlag($runId, $compId, $employeeIds, 'locked', $locked, $userId, $isAdmin);
-    }
-
-    private function bulkSetEmployeeVerifyLockFlag(int $runId, int $compId, array $employeeIds, string $flag, bool $value, int $userId, bool $isAdmin): array {
         $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
         if (empty($employeeIds)) {
             return ['status' => false, 'message' => 'No employees selected.'];
@@ -490,7 +707,7 @@ class PayrollRunModel {
         try {
             if ($own) { $this->db->beginTransaction(); }
             foreach ($employeeIds as $employeeId) {
-                $res = $this->setEmployeeVerifyLockFlag($runId, $compId, $employeeId, $flag, $value, $userId, $isAdmin);
+                $res = $this->setEmployeeVerified($runId, $compId, $employeeId, $verified, $userId, $isAdmin);
                 if (!empty($res['status'])) {
                     $succeeded++;
                 } else {
@@ -510,65 +727,21 @@ class PayrollRunModel {
     }
 
     /**
-     * $flag identifies which of the 2 independent columns this call targets ('verified' or
-     * 'locked') -- the OTHER flag is read from whatever the row already has and carried through
-     * unchanged via ON DUPLICATE KEY UPDATE only ever touching this flag's own 3 columns, so setting
-     * one never clobbers the other. Re-setting a flag to the value it already has still refreshes
-     * verified_at/locked_at + the *_by column to the current user/time -- treated as "re-confirming",
-     * not a no-op, which is simpler than tracking "did this actually change" and matches how the
-     * user would read clicking the button again anyway.
+     * 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย เพราะตอนนี้มีแค่รายพนักงาน กับรายการที่
+     * เลือก ให้ Verify ได้ทั้ง Process ทั้ง Detail และหน้า List" -- verifies every employee currently in
+     * this run's own payroll_run_details in one call, reusing bulkSetEmployeeVerified() (same
+     * per-employee validation/audit-log/skip-on-failure behavior, just with the full roster instead
+     * of a hand-picked subset) -- callable from the List page (a run_id alone, no Detail page
+     * required) as well as the Detail page's own bulk bar.
      */
-    private function setEmployeeVerifyLockFlag(int $runId, int $compId, int $employeeId, string $flag, bool $value, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
-            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+    public function verifyAllEmployeesForRun(int $runId, int $compId, int $userId, bool $isAdmin): array {
+        $stmt = $this->db->prepare("SELECT employee_id FROM `payroll_run_details` WHERE run_id = :run_id");
+        $stmt->execute([':run_id' => $runId]);
+        $employeeIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        if (empty($employeeIds)) {
+            return ['status' => false, 'message' => 'This payroll run has no calculated employees yet.'];
         }
-        $run = $this->get($runId, $compId);
-        if (!$run) {
-            return ['status' => false, 'message' => 'Record not found.'];
-        }
-        if ($run['state'] !== 'draft') {
-            return ['status' => false, 'message' => 'Only a draft payroll run\'s employees can be verified or locked.'];
-        }
-        $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
-        $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
-        $employeeNo = $stmtEmp->fetchColumn();
-        if ($employeeNo === false) {
-            return ['status' => false, 'message' => 'Employee not found.'];
-        }
-
-        $own = !$this->db->inTransaction();
-        try {
-            if ($own) { $this->db->beginTransaction(); }
-            $current = $this->employeeVerifyLockRow($runId, $employeeId);
-            $newVerified = $flag === 'verified' ? $value : $current['is_verified'];
-            $newLocked = $flag === 'locked' ? $value : $current['is_locked'];
-
-            if (!$newVerified && !$newLocked) {
-                $this->db->prepare("DELETE FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND employee_id = :employee_id")
-                    ->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
-            } else {
-                $col = $flag === 'verified' ? 'is_verified' : 'is_locked';
-                $byCol = $flag === 'verified' ? 'verified_by' : 'locked_by';
-                $atCol = $flag === 'verified' ? 'verified_at' : 'locked_at';
-                $stmt = $this->db->prepare("INSERT INTO `payroll_run_employee_verifications`
-                        (run_id, employee_id, is_verified, verified_by, verified_at, is_locked, locked_by, locked_at)
-                    VALUES (:run_id, :employee_id, :is_verified, :verified_by, :verified_at, :is_locked, :locked_by, :locked_at)
-                    ON DUPLICATE KEY UPDATE {$col} = VALUES({$col}), {$byCol} = VALUES({$byCol}), {$atCol} = VALUES({$atCol})");
-                $stmt->execute([
-                    ':run_id' => $runId, ':employee_id' => $employeeId,
-                    ':is_verified' => $newVerified ? 1 : 0, ':verified_by' => $newVerified ? $userId : null, ':verified_at' => $newVerified ? date('Y-m-d H:i:s') : null,
-                    ':is_locked' => $newLocked ? 1 : 0, ':locked_by' => $newLocked ? $userId : null, ':locked_at' => $newLocked ? date('Y-m-d H:i:s') : null,
-                ]);
-            }
-
-            $actionWord = $flag === 'verified' ? ($value ? 'verified' : 'unverified') : ($value ? 'locked' : 'unlocked');
-            $this->logAudit($runId, 'draft', 'draft', "employee_{$actionWord}", $userId, "Employee {$employeeNo}: {$actionWord}.");
-            if ($own) { $this->db->commit(); }
-            return ['status' => true, 'message' => 'Saved successfully.'];
-        } catch (PDOException $e) {
-            if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
-            return ['status' => false, 'message' => 'Database operation failed.'];
-        }
+        return $this->bulkSetEmployeeVerified($runId, $compId, $employeeIds, true, $userId, $isAdmin);
     }
 
     /**
@@ -584,6 +757,18 @@ class PayrollRunModel {
     private const COMMENT_LOCKED_STATES = ['paid', 'locked', 'cancelled'];
     /** Reserved item_code for lineOverrideSave()'s own base-salary special case -- see that method's own docblock. */
     public const BASE_SALARY_OVERRIDE_CODE = '__base_salary__';
+    /**
+     * 2026-08-31: same "reserved sentinel, never collides with a company's own free-text catalog
+     * item_code" precedent as BASE_SALARY_OVERRIDE_CODE above -- wraps a statutory item code
+     * (TH_SSO/TH_PVD/TH_PIT/etc.) before it's used as the item_code key in
+     * `payroll_run_line_overrides` (a table shared with earning/deduction/base-salary overrides).
+     * Used by both statutoryLineOverrideSave()/statutoryLineOverrideRemove() (writing) and
+     * recalculate()'s own statutory block (reading) -- always call this, never hand-build the
+     * wrapped string, so the two sides can never drift out of sync.
+     */
+    public function statutoryOverrideCode(string $statutoryItemCode): string {
+        return '__statutory_' . strtoupper(trim($statutoryItemCode)) . '__';
+    }
 
     /** Verified/locked counts for the run list page ("ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้ว
      *  กี่คน Lock ข้อมูลแล้วกี่คน") -- see list()'s own new subqueries below for the actual per-run count. */
@@ -982,6 +1167,27 @@ class PayrollRunModel {
         return $ua !== null && $ua !== '' ? substr((string)$ua, 0, 255) : null;
     }
 
+    /**
+     * 2026-08-31, same-day follow-up (item 9c, explicit request: "Log ทุกครั้งที่เปิดหน้า Process Detail")
+     * -- reuses payroll_run_audit_logs/logAudit() rather than a new table, with a new 'view_detail'
+     * action value (varchar(50) column, no schema change needed). from_state == to_state on purpose
+     * (a view never transitions anything) -- this is what distinguishes a view-log row from every
+     * other row in this table, which always represents a real transition/edit. Called once per
+     * PAGE NAVIGATION (PayrollController::detail(), the route that renders the Detail page itself),
+     * deliberately NOT from get() (the AJAX data-fetch endpoint that same page also calls after
+     * every single edit/save via loadRunDetail()) -- logging there would flood this table with one
+     * row per edit on top of that edit's own real audit-log row, which is not what "log every time
+     * the page opens" asked for. Silently no-ops if the run/company don't match (bad/stale id) --
+     * a failed view attempt is not something worth recording here.
+     */
+    public function logViewDetail(int $runId, int $compId, int $userId): void {
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return;
+        }
+        $this->logAudit($runId, (string)$run['state'], (string)$run['state'], 'view_detail', $userId);
+    }
+
     private function logAudit(int $runId, ?string $fromState, string $toState, string $action, int $userId, ?string $note = null): void {
         $stmt = $this->db->prepare("INSERT INTO `payroll_run_audit_logs` (run_id, from_state, to_state, action, note, performed_by, ip_address, user_agent)
             VALUES (:run_id, :from_state, :to_state, :action, :note, :performed_by, :ip_address, :user_agent)");
@@ -1126,6 +1332,28 @@ class PayrollRunModel {
             }
         }
 
+        // 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรือ
+        // อ้างอิงถึงรอบ" -- confirmed via AskUserQuestion: reachable ONLY from the plain "Add" flow
+        // (Pending-Pull/Origami stays exactly as-is). Just a tag at creation time -- the actual fold-
+        // in happens later, once the admin has built this run up normally (Join Employees/Manage
+        // Items) and explicitly triggers it via PayrollRunModel::mergeIntoExistingRun() from the
+        // Detail page's own "Merge into Target" action (same 2-step "build it up, then merge"
+        // rhythm the Pending-Pull table's own Merge-into-Target button already establishes). Only
+        // meaningful for a genuinely off-cycle/manual run -- cycle_id/sync_process_id being set
+        // already implies automatic-by-date/by-payload membership, not a hand-built extra payment.
+        $mergeTargetRunId = null;
+        if (!empty($data['merge_target_run_id'])) {
+            if ($cycleId !== null || $syncProcessId !== null) {
+                return ['status' => false, 'message' => 'A merge target only applies to a genuine off-schedule run.'];
+            }
+            $mergeTargetRunId = (int)$data['merge_target_run_id'];
+            $stmtMergeTarget = $this->db->prepare("SELECT id FROM `payroll_runs` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND state != 'cancelled'");
+            $stmtMergeTarget->execute([':id' => $mergeTargetRunId, ':comp_id' => $compId]);
+            if (!$stmtMergeTarget->fetch()) {
+                return ['status' => false, 'message' => 'Invalid merge target run.'];
+            }
+        }
+
         // "Incentive/Other Payment" run purpose (per explicit request, 2026-08-19): a special
         // payment (e.g. a one-off incentive) that BY DEFAULT does not involve base salary or the
         // employee's standing earning/deduction setup -- only whatever specific earning/deduction
@@ -1159,6 +1387,11 @@ class PayrollRunModel {
         // meaning for this (it already pulls sync-derived lines unconditionally), so it stays 0 there
         // same as include_base_salary/include_standing_items are forced to their normal-run value.
         $includeAttendancePay = $runPurpose === 'incentive' ? (!empty($data['include_attendance_pay']) ? 1 : 0) : 0;
+        // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย") -- same admin-opt-in shape as the 3
+        // toggles just above; only meaningful for the same incentive/supplemental pull, never a
+        // normal 'payroll' run. See PayrollPolicyModel::flatTaxRatePercent()'s own docblock and
+        // recalculate()'s own use of this flag for what it actually changes.
+        $useFlatTaxRate = $runPurpose === 'incentive' ? (!empty($data['use_flat_tax_rate']) ? 1 : 0) : 0;
 
         // Auto-sync Origami HR master data (department/position/shift/employee) right before
         // pulling this process into a run, so the user doesn't have to run "Sync Now" as a
@@ -1196,18 +1429,33 @@ class PayrollRunModel {
 
         $runName = trim((string)$data['run_name']);
         $notes = !empty($data['notes']) ? trim((string)$data['notes']) : null;
+        // 2026-09-01, explicit request: settable right at creation, not just from the Detail page --
+        // an admin who already knows this run needs frequent hands-on edits (a typical incentive/
+        // off-cycle run) can turn it on here instead of a separate trip after. See
+        // PayrollRunModel::setAutoRecalculate()'s own docblock for what this flag actually does.
+        $autoRecalculate = !empty($data['auto_recalculate']) ? 1 : 0;
+        // 2026-09-02, explicit request: "ในตารางให้แสดง Code ของรอบด้วยครับ" -- first real consumer of
+        // the Document Numbering settings' PAYROLL_RUN row (see DocumentNumberingModel::
+        // generateNext()'s own docblock -- that model's settings existed since 2026-08-23 but were
+        // never actually wired to stamp a code onto anything). Best-effort/non-blocking by design --
+        // generateNext() itself never throws (catches internally, returns null on any failure), and
+        // a null run_code here is a completely normal, harmless outcome (e.g. right after a fresh
+        // company provision before this company's own settings row has ever been touched -- though
+        // ensureSeeded() inside generateNext() makes that self-healing on the very next call too).
+        $runCode = (new DocumentNumberingModel($this->db))->generateNext($compId, 'PAYROLL_RUN');
 
         $stmt = $this->db->prepare("INSERT INTO `payroll_runs`
-            (comp_id, cycle_id, sync_process_id, run_purpose, compute_statutory, include_base_salary, include_standing_items, include_attendance_pay, run_name, period_start_date, period_end_date, payment_date, state, notes, created_by)
-            VALUES (:comp_id, :cycle_id, :sync_process_id, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :include_attendance_pay, :run_name, :start, :end, :pay_date, 'draft', :notes, :created_by)");
+            (comp_id, run_code, cycle_id, sync_process_id, merge_target_run_id, run_purpose, compute_statutory, include_base_salary, include_standing_items, include_attendance_pay, use_flat_tax_rate, run_name, period_start_date, period_end_date, payment_date, state, notes, auto_recalculate, created_by)
+            VALUES (:comp_id, :run_code, :cycle_id, :sync_process_id, :merge_target_run_id, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :include_attendance_pay, :use_flat_tax_rate, :run_name, :start, :end, :pay_date, 'draft', :notes, :auto_recalculate, :created_by)");
         $stmt->execute([
-            ':comp_id' => $compId, ':cycle_id' => $cycleId, ':sync_process_id' => $syncProcessId,
+            ':comp_id' => $compId, ':run_code' => $runCode, ':cycle_id' => $cycleId, ':sync_process_id' => $syncProcessId,
+            ':merge_target_run_id' => $mergeTargetRunId,
             ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
             ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
-            ':include_attendance_pay' => $includeAttendancePay,
+            ':include_attendance_pay' => $includeAttendancePay, ':use_flat_tax_rate' => $useFlatTaxRate,
             ':run_name' => $runName,
             ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
-            ':notes' => $notes, ':created_by' => $userId,
+            ':notes' => $notes, ':auto_recalculate' => $autoRecalculate, ':created_by' => $userId,
         ]);
         $runId = (int)$this->db->lastInsertId();
         $this->logAudit($runId, null, 'draft', 'create', $userId);
@@ -1251,10 +1499,103 @@ class PayrollRunModel {
         if ($end < $start) {
             return ['status' => false, 'message' => 'period_end_date must not be before period_start_date.'];
         }
-        if ($this->isDuplicatePeriod($compId, (int)$run['cycle_id'], $start, $end, $id)) {
+        $notes = array_key_exists('notes', $data) ? (trim((string)$data['notes']) ?: null) : $run['notes'];
+
+        // 2026-09-01, explicit request: "ในการดึงข้อมูลมาทำรอบที่ส่งมาจาก Origami รวมถึงการสร้างเอง ให้
+        // สามารถเลือกอ้างอิงรอบได้เหมือนตอน Origami และในหน้า Detail ก็สามารถแก้ไขเพิ่มได้ Form เหมือนหน้า
+        // สร้างเลยครับ" -- create() has always let cycle_id be picked, but update() never allowed
+        // changing it afterward at all. Confirmed via AskUserQuestion: cycle_id is NOT a soft
+        // reference label -- recalculate()'s own cycle-based eligibility query keys off it (which
+        // employees are automatically pulled into this run), so changing it is a REAL, calculation-
+        // affecting edit, not cosmetic.
+        //
+        // 2026-09-01, same-day follow-up (explicit push-back: "ก็น่าจะเพิ่มให้สามารถตั้งค่าได้เหมือนกัน
+        // ...เหตุผลอะไรบ้างในหน้า Edit ที่ไม่สามารถแก้ไขได้ ควรเปิดให้แก้ไขได้") -- re-examined
+        // recalculate()'s own 3 eligibility branches (see its own big comment starting "Pulled from
+        // Pending Pull") and found the FIRST version's blanket employee_count===0 gate was broader
+        // than the real risk actually requires:
+        //   - A sync-linked run's eligibility branch (checked FIRST, before cycle_id is even
+        //     considered) never reads cycle_id at all -- changing it there can't affect who gets
+        //     pulled in, full stop. Free to change regardless of employee_count.
+        //   - Switching between two DIFFERENT real cycles on an already cycle-linked run stays
+        //     within the exact same eligibility branch (same query shape, just a different
+        //     :cycle_id parameter) -- no different in kind from editing period_start/period_end,
+        //     which this same method has ALWAYS allowed with zero gating despite having the exact
+        //     same "changes who's eligible on the next Recalculate" effect. Free to change
+        //     regardless of employee_count, for consistency with that existing precedent.
+        //   - The ONE genuinely risky case: a non-sync run flipping cycle_id between null
+        //     (off-cycle) and a real id (cycle-linked). recalculate()'s off-cycle branch reads
+        //     ONLY payroll_run_manual_employees; its cycle-based branch reads ONLY the date-range/
+        //     employees.cycle_id match and never joins payroll_run_manual_employees at all -- so
+        //     flipping that toggle on a run that already has anyone in it (auto-included OR
+        //     manually joined) can leave STALE data behind if nobody remembers to click
+        //     Recalculate afterward: submit()'s own safety net (assertCalculationClean() + an
+        //     employee_count>0 check) never actually detects "the employee list no longer matches
+        //     this run's current cycle_id" -- every existing row would still read calc_status=
+        //     'calculated' from before the toggle. Rather than hard-blocking this transition (the
+        //     first version here did, before this same-day follow-up), this save now forces one
+        //     real recalculate() itself immediately after, in the SAME transaction, whenever this
+        //     specific toggle happens on a run that already has employees -- same "auto-recalculate"
+        //     precedent PayrollRunModel::setAutoRecalculate() already established elsewhere on this
+        //     page, applied unconditionally here (not gated on that per-run opt-in flag) because
+        //     THIS transition can never be allowed to save without also becoming internally
+        //     consistent -- there is no safe "edit now, remember to recalculate later" path for it
+        //     the way there is for every other field this method touches.
+        $forceRecalculateAfterSave = false;
+        $cycleId = $run['cycle_id'] !== null ? (int)$run['cycle_id'] : null;
+        if (array_key_exists('cycle_id', $data)) {
+            $newCycleId = !empty($data['cycle_id']) ? (int)$data['cycle_id'] : null;
+            if ($newCycleId !== $cycleId) {
+                $isNonSyncOffCycleToggle = $run['sync_process_id'] === null && ($newCycleId === null) !== ($cycleId === null);
+                if ($isNonSyncOffCycleToggle && (int)($run['employee_count'] ?? 0) > 0) {
+                    $forceRecalculateAfterSave = true;
+                }
+                if ($newCycleId !== null) {
+                    $stmtCycle = $this->db->prepare("SELECT id FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL");
+                    $stmtCycle->execute([':id' => $newCycleId, ':comp_id' => $compId]);
+                    if (!$stmtCycle->fetch()) {
+                        return ['status' => false, 'message' => 'Invalid or inactive payroll cycle.'];
+                    }
+                } elseif ($run['sync_process_id'] !== null && ($run['sync_run_kind'] ?? 'regular') !== 'supplemental') {
+                    // Same rule create() already enforces for a fresh pull: a regular (non-
+                    // supplemental) sync-linked run is inherently cycle-based data, so it can never
+                    // be cleared down to no cycle at all -- only a genuinely off-cycle or
+                    // supplemental-sync run can go cycle-less.
+                    return ['status' => false, 'message' => 'A payroll cycle is required for a run pulled from a regular sync process.'];
+                }
+                $cycleId = $newCycleId;
+            }
+        }
+        if ($this->isDuplicatePeriod($compId, $cycleId, $start, $end, $id)) {
             return ['status' => false, 'message' => 'A payroll run already exists for this cycle and period.'];
         }
-        $notes = array_key_exists('notes', $data) ? (trim((string)$data['notes']) ?: null) : $run['notes'];
+
+        // 2026-09-01, same-day follow-up, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" -- the
+        // merge_target_run_id create() itself has always accepted was set-once, no way to change or
+        // clear it afterward from the UI at all. Editable here now the same way cycle_id just
+        // became: uses the (possibly just-changed) $cycleId above, same "only a genuine off-schedule
+        // run" rule create() enforces. Clearing it (empty/null value) is always allowed regardless of
+        // $cycleId -- "cancel the merge plan, keep this run standalone" needs no gate at all, same
+        // as switching cycle_id back to null itself needs no special permission beyond what the
+        // cycle_id block above already grants.
+        $mergeTargetRunId = $run['merge_target_run_id'] !== null ? (int)$run['merge_target_run_id'] : null;
+        if (array_key_exists('merge_target_run_id', $data)) {
+            $newMergeTargetRunId = !empty($data['merge_target_run_id']) ? (int)$data['merge_target_run_id'] : null;
+            if ($newMergeTargetRunId !== null) {
+                if ($cycleId !== null || $run['sync_process_id'] !== null) {
+                    return ['status' => false, 'message' => 'A merge target only applies to a genuine off-schedule run.'];
+                }
+                if ($newMergeTargetRunId === $id) {
+                    return ['status' => false, 'message' => 'A run cannot be merged into itself.'];
+                }
+                $stmtMergeTarget = $this->db->prepare("SELECT id FROM `payroll_runs` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND state != 'cancelled'");
+                $stmtMergeTarget->execute([':id' => $newMergeTargetRunId, ':comp_id' => $compId]);
+                if (!$stmtMergeTarget->fetch()) {
+                    return ['status' => false, 'message' => 'Invalid merge target run.'];
+                }
+            }
+            $mergeTargetRunId = $newMergeTargetRunId;
+        }
 
         // Run type (compute full payroll vs. an off-cycle/supplemental Incentive/Other Payment
         // pull) is editable on a draft run, same forcing rules as create() -- meaningful for a
@@ -1265,13 +1606,17 @@ class PayrollRunModel {
         // with all three flags on) regardless of what the request sends, since real payroll can't
         // opt out of base salary/statutory/standing items. 2026-08-28, explicit request: "ในหน้า
         // Process Detail สามารถแก้ไขได้ด้วยว่าคำนวณเงินเดือนหรือรายรับรายหักอื่นไหม หรือเป็นการดึงมาทำจ่าย
-        // แยก".
+        // แยก". Uses the (possibly just-changed) $cycleId above, not $run['cycle_id'], so switching
+        // INTO a cycle via this same save forces the normal-payroll invariant immediately (same as a
+        // fresh create() would), rather than leaving a stale run_purpose='incentive' on a now-
+        // cycle-linked run.
         $runPurpose = $run['run_purpose'];
         $computeStatutory = (int)$run['compute_statutory'];
         $includeBaseSalary = (int)$run['include_base_salary'];
         $includeStandingItems = (int)$run['include_standing_items'];
         $includeAttendancePay = (int)$run['include_attendance_pay'];
-        $isOffCycle = $run['cycle_id'] === null && $run['sync_process_id'] === null;
+        $useFlatTaxRate = (int)($run['use_flat_tax_rate'] ?? 0);
+        $isOffCycle = $cycleId === null && $run['sync_process_id'] === null;
         $isSupplementalSync = $run['sync_process_id'] !== null && ($run['sync_run_kind'] ?? 'regular') === 'supplemental';
         if (($isOffCycle || $isSupplementalSync) && array_key_exists('run_purpose', $data)) {
             $runPurpose = (string)($data['run_purpose'] ?? 'payroll') === 'incentive' ? 'incentive' : 'payroll';
@@ -1279,23 +1624,51 @@ class PayrollRunModel {
             $includeBaseSalary = $runPurpose === 'incentive' ? (!empty($data['include_base_salary']) ? 1 : 0) : 1;
             $includeStandingItems = $runPurpose === 'incentive' ? (!empty($data['include_standing_items']) ? 1 : 0) : 1;
             $includeAttendancePay = $runPurpose === 'incentive' ? (!empty($data['include_attendance_pay']) ? 1 : 0) : 0;
+            $useFlatTaxRate = $runPurpose === 'incentive' ? (!empty($data['use_flat_tax_rate']) ? 1 : 0) : 0;
+        } elseif (!$isOffCycle && !$isSupplementalSync) {
+            // Just became (or already was) a regular cycle-linked/Pending-Pull run -- same
+            // always-on invariant create() enforces for that case, regardless of whatever
+            // run_purpose/flags this row happened to carry from before the cycle was assigned.
+            $runPurpose = 'payroll';
+            $computeStatutory = 1;
+            $includeBaseSalary = 1;
+            $includeStandingItems = 1;
+            $includeAttendancePay = 0;
+            $useFlatTaxRate = 0;
         }
 
-        $stmt = $this->db->prepare("UPDATE `payroll_runs` SET run_name = :run_name, period_start_date = :start,
-            period_end_date = :end, payment_date = :pay_date, notes = :notes,
+        $stmt = $this->db->prepare("UPDATE `payroll_runs` SET run_name = :run_name, cycle_id = :cycle_id,
+            merge_target_run_id = :merge_target_run_id,
+            period_start_date = :start, period_end_date = :end, payment_date = :pay_date, notes = :notes,
             run_purpose = :run_purpose, compute_statutory = :compute_statutory,
             include_base_salary = :include_base_salary, include_standing_items = :include_standing_items,
-            include_attendance_pay = :include_attendance_pay,
+            include_attendance_pay = :include_attendance_pay, use_flat_tax_rate = :use_flat_tax_rate,
             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
             WHERE id = :id");
         $stmt->execute([
-            ':run_name' => $runName, ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
+            ':run_name' => $runName, ':cycle_id' => $cycleId, ':merge_target_run_id' => $mergeTargetRunId,
+            ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
             ':notes' => $notes, ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
             ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
-            ':include_attendance_pay' => $includeAttendancePay,
+            ':include_attendance_pay' => $includeAttendancePay, ':use_flat_tax_rate' => $useFlatTaxRate,
             ':updated_by' => $userId, ':id' => $id,
         ]);
         $this->logAudit($id, 'draft', 'draft', 'update', $userId);
+        if ($forceRecalculateAfterSave) {
+            // Same "own transaction if not already inside one" pattern this whole file uses
+            // everywhere (runSettingsSave() already returns recalculate()'s own result the same
+            // way) -- runs inside the SAME transaction as the cycle_id UPDATE above, so
+            // recalculate()'s own fresh $this->get($id, $compId) sees the just-saved new cycle_id,
+            // not a stale pre-update read.
+            $recalcResult = $this->recalculate($id, $compId, $userId, $isAdmin);
+            if (empty($recalcResult['status'])) {
+                // Extremely unlikely (recalculate() only fails on permission/state, both already
+                // checked above in this same method) -- surfaced as-is rather than silently
+                // swallowed, since a failure here means the save itself is NOT actually consistent.
+                return $recalcResult;
+            }
+            return ['status' => true, 'message' => 'Updated and recalculated successfully.', 'employee_count' => $recalcResult['employee_count'] ?? null];
+        }
         return ['status' => true, 'message' => 'Updated successfully.'];
     }
 
@@ -1451,6 +1824,23 @@ class PayrollRunModel {
         // Same-day follow-up: gated by employees.employment_status === 'probation' too (same real
         // gate $probationSettings' own fields use) -- see the base-salary block's own comment.
         $payBasisSettings = $this->policyModel->payBasisSettings($compId);
+        // 2026-08-31, explicit request: "เงื่อนไขการจ่ายเงินเด็กฝึกงาน...จ่ายเต็มเดือน หรือจ่ายแค่วันที่มาทำจริง
+        // หักลา หักวันหยุดไหม เหมือน Probation" -- direct mirror of $payBasisSettings above, own
+        // separate field set. Gated by employees.employment_type === 'internship' at the base-salary
+        // block below, taking PRECEDENCE over $payBasisSettings' own probation gate when an employee
+        // is somehow both (same precedence already established for the ratio/defer flags above).
+        $internPayBasisSettings = $this->policyModel->internPayBasisSettings($compId);
+
+        // 2026-08-31, explicit request ("ทำทั้ง 3 ข้อเลย", item 3 of the Origami `attribution`
+        // plan's own deferred list): a company-configured flat withholding % used ONLY when this
+        // run explicitly opted in via payroll_runs.use_flat_tax_rate (forced 0 for every normal
+        // 'payroll' run, see create()/update()'s own comments on that column) -- substitutes for
+        // the normal average/actual ThPitCalculator call in the TH_PIT block below. Fetched once
+        // per run, same "company-wide singleton, not per employee" precedent as every other policy
+        // setting above. A null company rate (never configured) means the flag is a no-op and the
+        // normal calculation is used instead -- never silently invents a rate or withholds 0%.
+        $useFlatTaxRate = !empty($run['use_flat_tax_rate']);
+        $flatTaxRatePercent = $useFlatTaxRate ? $this->policyModel->flatTaxRatePercent($compId) : null;
 
         // 2026-08-21, real bug fix: needed to correctly annualize/de-annualize TH_PIT withholding
         // (see ThPitCalculator) -- $run['payroll_frequency'] already comes from get()'s own LEFT
@@ -1858,22 +2248,23 @@ class PayrollRunModel {
             . $buildTypeCondition('earning', $earningRestrictIds) . ' OR '
             . $buildTypeCondition('deduction', $deductionRestrictIds) . ')';
 
-        // 2026-08-29, explicit request ("ถ้า Lock แล้วข้อมูลจะไม่คำนวณใหม่") -- fetched BEFORE the DELETE
-        // below wipes the table, so a locked employee's existing row can be re-inserted verbatim
-        // instead of recomputed. Keyed by employee_id and consumed inside the main per-employee loop
-        // further down (checked FIRST, before any of that employee's business logic runs, so locking
-        // genuinely means "don't touch this employee's numbers at all" -- not just "compute the same
-        // thing again and happen to land on the same answer").
-        $lockedPreservedRows = [];
-        $stmtLockedIds = $this->db->prepare("SELECT employee_id FROM `payroll_run_employee_verifications` WHERE run_id = :id AND is_locked = 1");
-        $stmtLockedIds->execute([':id' => $id]);
-        $lockedEmployeeIds = array_map('intval', $stmtLockedIds->fetchAll(PDO::FETCH_COLUMN));
-        if (!empty($lockedEmployeeIds)) {
+        // 2026-08-29, explicit request ("ถ้า Lock แล้วข้อมูลจะไม่คำนวณใหม่"), retargeted to is_verified
+        // 2026-08-31 when Lock was retired -- fetched BEFORE the DELETE below wipes the table, so a
+        // verified employee's existing row can be re-inserted verbatim instead of recomputed. Keyed
+        // by employee_id and consumed inside the main per-employee loop further down (checked FIRST,
+        // before any of that employee's business logic runs, so verifying genuinely means "don't
+        // touch this employee's numbers at all" -- not just "compute the same thing again and happen
+        // to land on the same answer").
+        $verifiedPreservedRows = [];
+        $stmtVerifiedIds = $this->db->prepare("SELECT employee_id FROM `payroll_run_employee_verifications` WHERE run_id = :id AND is_verified = 1");
+        $stmtVerifiedIds->execute([':id' => $id]);
+        $verifiedEmployeeIds = array_map('intval', $stmtVerifiedIds->fetchAll(PDO::FETCH_COLUMN));
+        if (!empty($verifiedEmployeeIds)) {
             $stmtPreserved = $this->db->prepare("SELECT * FROM `payroll_run_details` WHERE run_id = :id");
             $stmtPreserved->execute([':id' => $id]);
             foreach ($stmtPreserved->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                if (in_array((int)$row['employee_id'], $lockedEmployeeIds, true)) {
-                    $lockedPreservedRows[(int)$row['employee_id']] = $row;
+                if (in_array((int)$row['employee_id'], $verifiedEmployeeIds, true)) {
+                    $verifiedPreservedRows[(int)$row['employee_id']] = $row;
                 }
             }
         }
@@ -1905,15 +2296,16 @@ class PayrollRunModel {
             foreach ($employees as $emp) {
                 $employeeId = (int)$emp['id'];
 
-                // 2026-08-29: a locked employee's earning/deduction lines are stashed AS-IS from the
-                // preserved row instead of being reassembled from scratch -- still stashed into
-                // $perEmployeeData (not skipped outright) so that if this employee has a transfer-
-                // deduction line paying ANOTHER (unlocked) employee, that other employee's own
-                // transfer-credit earning line further down still resolves correctly against this
-                // employee's frozen amount. Pass 2 below has its own, separate bypass that skips
-                // recomputing THIS employee's own totals/statutory/insert entirely.
-                if (isset($lockedPreservedRows[$employeeId])) {
-                    $preserved = $lockedPreservedRows[$employeeId];
+                // 2026-08-29 (retargeted to is_verified 2026-08-31): a verified employee's earning/
+                // deduction lines are stashed AS-IS from the preserved row instead of being
+                // reassembled from scratch -- still stashed into $perEmployeeData (not skipped
+                // outright) so that if this employee has a transfer-deduction line paying ANOTHER
+                // (unverified) employee, that other employee's own transfer-credit earning line
+                // further down still resolves correctly against this employee's frozen amount. Pass
+                // 2 below has its own, separate bypass that skips recomputing THIS employee's own
+                // totals/statutory/insert entirely.
+                if (isset($verifiedPreservedRows[$employeeId])) {
+                    $preserved = $verifiedPreservedRows[$employeeId];
                     $perEmployeeData[$employeeId] = [
                         'emp' => $emp,
                         'effectiveBase' => (float)$preserved['base_salary_amount'],
@@ -2085,23 +2477,49 @@ class PayrollRunModel {
                         // be a non-sync run -- none of those are a "day count" this app has any basis
                         // to invent, same "don't guess" posture as missing_ot_rate_*/no_rate_configured
                         // elsewhere in this codebase; surfaced as a visible calc_errors flag instead.
-                        if ($payBasisSettings['pay_basis'] === 'sync_actual_days' && $salaryType !== 'hourly' && ($emp['employment_status'] ?? null) === 'probation') {
+                        // 2026-08-31: intern's own pay_basis takes PRECEDENCE over probation's when an
+                        // employee is somehow both employment_type='internship' AND
+                        // employment_status='probation' -- $effectivePayBasis/$payBasisGateMatches
+                        // pick which settings (if any) actually apply to THIS employee, then the same
+                        // sync_actual_days/schedule_based branches below read from whichever won,
+                        // instead of duplicating both branches per employment classification.
+                        if (($emp['employment_type'] ?? null) === 'internship') {
+                            $effectivePayBasis = $internPayBasisSettings;
+                            $payBasisGateMatches = true;
+                            $syncWorkingDaysInfoKey = 'INTERN_WORKING_DAYS';
+                        } elseif (($emp['employment_status'] ?? null) === 'probation') {
+                            $effectivePayBasis = $payBasisSettings;
+                            $payBasisGateMatches = true;
+                            $syncWorkingDaysInfoKey = 'PROBATION_WORKING_DAYS';
+                        } else {
+                            $effectivePayBasis = null;
+                            $payBasisGateMatches = false;
+                            $syncWorkingDaysInfoKey = null;
+                        }
+                        if ($payBasisGateMatches && $effectivePayBasis['pay_basis'] === 'sync_actual_days' && $salaryType !== 'hourly') {
+                            // 2026-08-31: INTERN_WORKING_DAYS is NOT a field Origami's sync payload
+                            // sends today (PROBATION_WORKING_DAYS is, see PAYROLL_SYNC_API.md's
+                            // 2026-08-29 addition) -- this branch is built and ready, same "don't guess
+                            // a field that doesn't exist" posture as every other DRAFT/unverified piece
+                            // in this app, but will always fall through to the else (full base salary +
+                            // sync_actual_days_no_data flag) for an intern until Origami's own side
+                            // adds this field. Documented, not hidden.
                             $syncRow = $syncItemsByEmployee[$employeeId] ?? null;
                             $totalWorkingDays = $syncRow !== null && isset($syncRow['working_days']) ? (float)$syncRow['working_days'] : null;
-                            $probationWorkingDays = $syncRow !== null ? SyncPayResolver::extractInfoItemValue($syncRow, 'PROBATION_WORKING_DAYS') : null;
-                            if ($probationWorkingDays !== null && $totalWorkingDays !== null && $totalWorkingDays > 0) {
-                                $probationWorkingDays = min($probationWorkingDays, $totalWorkingDays);
-                                $prorateDays = $probationWorkingDays;
+                            $actualWorkingDays = $syncRow !== null ? SyncPayResolver::extractInfoItemValue($syncRow, $syncWorkingDaysInfoKey) : null;
+                            if ($actualWorkingDays !== null && $totalWorkingDays !== null && $totalWorkingDays > 0) {
+                                $actualWorkingDays = min($actualWorkingDays, $totalWorkingDays);
+                                $prorateDays = $actualWorkingDays;
                                 $prorateTotalDays = $totalWorkingDays;
-                                $effectiveBase = round($baseSalary * $probationWorkingDays / $totalWorkingDays, 2);
+                                $effectiveBase = round($baseSalary * $actualWorkingDays / $totalWorkingDays, 2);
                             } else {
                                 $effectiveBase = $baseSalary;
                                 $errors[] = 'sync_actual_days_no_data';
                             }
-                        } elseif ($payBasisSettings['pay_basis'] === 'schedule_based' && $salaryType !== 'hourly' && ($emp['employment_status'] ?? null) === 'probation') {
+                        } elseif ($payBasisGateMatches && $effectivePayBasis['pay_basis'] === 'schedule_based' && $salaryType !== 'hourly') {
                             $scheduled = $this->setupRulesModel->scheduledPayableDaysForEmployee(
                                 $employeeId, $compId, $effectiveStart, $effectiveEnd,
-                                $payBasisSettings['deduct_holidays'], $payBasisSettings['deduct_leave']
+                                $effectivePayBasis['deduct_holidays'], $effectivePayBasis['deduct_leave']
                             );
                             $prorateDays = $scheduled['payable_days'];
                             $prorateTotalDays = $scheduled['total_scheduled_days'];
@@ -2178,7 +2596,7 @@ class PayrollRunModel {
                     // further down, same SQL as this branch's own manual-lines query below).
                     if ($includeStandingItems) {
                         $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
-                                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.payee_employee_id,
+                                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.payee_employee_id, eed.payee_type,
                                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                             FROM `employee_earning_deductions` eed
                             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
@@ -2205,6 +2623,10 @@ class PayrollRunModel {
                                 'amount' => (float)$ped['amount'],
                                 'is_custom' => $resolved['is_custom'],
                                 'payee_employee_id' => $ped['payee_employee_id'] !== null ? (int)$ped['payee_employee_id'] : null,
+                                // 2026-08-31, same-day follow-up: same reasoning as the manual_line
+                                // entry below -- carried through so the outer breakdown table can show
+                                // the company/not_disbursed tag, not just 'employee' transfer.
+                                'payee_type' => $ped['payee_type'],
                             ];
                             if ($resolved['item_type'] === 'earning') {
                                 $earningLines[] = $line;
@@ -2248,6 +2670,7 @@ class PayrollRunModel {
                     // or the ONLY source when it's off (today's original/default incentive-run
                     // behavior, unchanged).
                     $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.payee_employee_id,
+                            pml.payee_type,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
@@ -2265,6 +2688,11 @@ class PayrollRunModel {
                             'note' => $line['note'],
                             'is_custom' => $resolved['is_custom'],
                             'payee_employee_id' => $line['payee_employee_id'] !== null ? (int)$line['payee_employee_id'] : null,
+                            // 2026-08-31, same-day follow-up: carried through so the outer breakdown
+                            // table (public/js/payroll/detail.js's breakdownLineRowsRd()) can show
+                            // the SAME company/not_disbursed tag the manage-items modal shows, not
+                            // just the 'employee' transfer case.
+                            'payee_type' => $line['payee_type'],
                         ];
                         if ($resolved['item_type'] === 'earning') {
                             $earningLines[] = $entry;
@@ -2315,7 +2743,7 @@ class PayrollRunModel {
                     // saved fine and showed up on the Employee Detail Salary tab). Resolved the same
                     // way as payroll_run_manual_lines' own custom items, via resolveManualLineRow().
                     $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
-                            eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.payee_employee_id,
+                            eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.payee_employee_id, eed.payee_type,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `employee_earning_deductions` eed
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
@@ -2342,6 +2770,7 @@ class PayrollRunModel {
                             'amount' => (float)$ped['amount'],
                             'is_custom' => $resolved['is_custom'],
                             'payee_employee_id' => $ped['payee_employee_id'] !== null ? (int)$ped['payee_employee_id'] : null,
+                            'payee_type' => $ped['payee_type'],
                         ];
                         if ($resolved['item_type'] === 'earning') {
                             $earningLines[] = $line;
@@ -2404,6 +2833,7 @@ class PayrollRunModel {
                     // else or needing a whole separate off-cycle run). Contrast with the $isIncentive
                     // branch above, where manual lines are the ONLY source instead of an addition.
                     $stmtAdj = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.payee_employee_id,
+                            pml.payee_type,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
@@ -2420,6 +2850,7 @@ class PayrollRunModel {
                             'note' => $adj['note'],
                             'is_custom' => $resolvedAdj['is_custom'],
                             'payee_employee_id' => $adj['payee_employee_id'] !== null ? (int)$adj['payee_employee_id'] : null,
+                            'payee_type' => $adj['payee_type'],
                         ];
                         if ($resolvedAdj['item_type'] === 'earning') {
                             $earningLines[] = $line;
@@ -2589,14 +3020,14 @@ class PayrollRunModel {
             foreach ($employees as $emp) {
                 $employeeId = (int)$emp['id'];
 
-                // 2026-08-29: a locked employee's row is re-inserted byte-for-byte from what was
-                // preserved before the DELETE above -- no statutory recompute, no transfer-credit
-                // merge, nothing. This is the actual "don't touch this employee's numbers at all"
-                // guarantee ("ถ้า Lock แล้วข้อมูลจะไม่คำนวณใหม่"); Pass 1's own bypass above only
-                // exists so an OTHER (unlocked) employee receiving a transfer credit FROM this one
-                // still resolves correctly.
-                if (isset($lockedPreservedRows[$employeeId])) {
-                    $preserved = $lockedPreservedRows[$employeeId];
+                // 2026-08-29 (retargeted to is_verified 2026-08-31): a verified employee's row is
+                // re-inserted byte-for-byte from what was preserved before the DELETE above -- no
+                // statutory recompute, no transfer-credit merge, nothing. This is the actual "don't
+                // touch this employee's numbers at all" guarantee ("ถ้า Verify แล้ว จะไม่คำนวณอีกต่อไป");
+                // Pass 1's own bypass above only exists so an OTHER (unverified) employee receiving a
+                // transfer credit FROM this one still resolves correctly.
+                if (isset($verifiedPreservedRows[$employeeId])) {
+                    $preserved = $verifiedPreservedRows[$employeeId];
                     $insStmt->execute([
                         ':run_id' => $id, ':employee_id' => $employeeId,
                         ':base_salary_amount' => $preserved['base_salary_amount'],
@@ -2789,6 +3220,22 @@ class PayrollRunModel {
                             if ($siblingItem['code'] === 'TH_SSO') $ssoAmount = (float)$siblingItem['employee_amount'];
                             if ($siblingItem['code'] === 'TH_PVD') $pvdAmount = (float)$siblingItem['employee_amount'];
                         }
+                        // 2026-08-31, explicit request (Origami `attribution` plan's item 3): a
+                        // supplemental run that opted into use_flat_tax_rate AND has a company rate
+                        // configured withholds a flat % of this period's own taxable gross instead
+                        // of the normal average/actual ThPitCalculator computation below -- this is
+                        // deliberately a SEPARATE, standalone lump-sum withholding, not folded into
+                        // the employee's annual/cumulative tax curve at all (same "separate" spirit
+                        // Origami's own attribution_tax_treatment='separate' asks for). Falls through
+                        // to the normal calculation when the flag is off OR no rate is configured
+                        // (see $flatTaxRatePercent's own comment above) -- never invents a rate.
+                        if ($useFlatTaxRate && $flatTaxRatePercent !== null) {
+                            $flatAmount = round($taxableGrossAmount * $flatTaxRatePercent / 100, 2);
+                            $statutoryResult['items'][$pitIdx]['employee_amount'] = $flatAmount;
+                            $statutoryResult['items'][$pitIdx]['base_amount'] = $taxableGrossAmount;
+                            $statutoryResult['items'][$pitIdx]['note'] = "th_pit_flat_rate_{$flatTaxRatePercent}";
+                            break;
+                        }
                         // 2026-08-30: $taxableGrossAmount/$beforeTaxDeductionAmount (tax_treatment/
                         // tax_deduction_impact fix), not the raw $grossAmount -- see this method's
                         // own comment at their computation above, and ThPitCalculator's own docblock.
@@ -2807,6 +3254,39 @@ class PayrollRunModel {
                             ? "th_pit_cumulative_annual_tax_{$pit['annual_tax']}"
                             : "th_pit_average_annual_tax_{$pit['annual_tax']}";
                         break;
+                    }
+
+                    // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9a of the 9-part
+                    // batch's own Phase 3, "ในหน้า Process Detail ตัวเลขทุกตัวต้องสามารถแก้ไขได้...ไม่ว่าจะ
+                    // อยู่ที่ modal ไหน...และมี checkbox ให้ติ๊กออกไม่นำมาคำนวณได้ทุกตัวเลขเหมือนกัน"): the
+                    // SAME payroll_run_line_overrides table/lineOverrideSave() mechanism that already
+                    // covers every earning/deduction line + base salary now ALSO covers every
+                    // statutory line (TH_SSO/TH_PVD/TH_PIT/any future country's own item) -- reuses
+                    // statutoryOverrideCode()'s reserved-sentinel wrapping (same "__base_salary__"
+                    // precedent BASE_SALARY_OVERRIDE_CODE already established, see that const's own
+                    // comment) so a statutory item_code can never collide with a company's own
+                    // free-text earning/deduction catalog item_code in this shared table. Only ever
+                    // touches employee_amount (the figure an admin would actually be correcting) --
+                    // employer_amount (a company-cost figure, not something this feature was asked to
+                    // let anyone override) is left exactly as the engine computed it. Distinct from
+                    // the existing yes/no saveEmployeeExemption() toggle (see this method's own
+                    // adjacent comment above) -- that answers "does this item apply at all", this
+                    // answers "what amount, or excluded, for THIS run specifically" -- both can be
+                    // active on the same item at once (exemption zeroes it first via the engine's own
+                    // TAX_EXEMPT_ITEMS/enrollment-flag check; if NOT exempt, a line override applied
+                    // here still wins over whatever the engine computed).
+                    foreach ($statutoryResult['items'] as $sIdx => $sItemForOverride) {
+                        $statutoryOverride = $overridesByEmployeeAndCode[$employeeId][$this->statutoryOverrideCode($sItemForOverride['code'])] ?? null;
+                        if ($statutoryOverride === null) {
+                            continue;
+                        }
+                        if ($statutoryOverride['action'] === 'exclude') {
+                            $statutoryResult['items'][$sIdx]['employee_amount'] = 0.0;
+                            $statutoryResult['items'][$sIdx]['note'] = 'manually_excluded';
+                        } else {
+                            $statutoryResult['items'][$sIdx]['employee_amount'] = (float)$statutoryOverride['override_amount'];
+                            $statutoryResult['items'][$sIdx]['note'] = 'manually_overridden';
+                        }
                     }
 
                     foreach ($statutoryResult['items'] as $sItem) {
@@ -3256,11 +3736,11 @@ class PayrollRunModel {
         if ($run['state'] !== 'draft') {
             return [null, 'Only a draft payroll run can have its earning/deduction items adjusted.'];
         }
-        // 2026-08-29: a locked employee's numbers must stay frozen -- see isEmployeeLockedForRun()'s
+        // 2026-08-31: a verified employee's numbers must stay frozen -- see isEmployeeVerifiedForRun()'s
         // own docblock for why this must block every per-employee mutation entry point, not just
         // recalculate() itself.
-        if ($this->isEmployeeLockedForRun($id, $employeeId)) {
-            return [null, 'This employee is locked for this run and cannot be edited. Unlock first.'];
+        if ($this->isEmployeeVerifiedForRun($id, $employeeId)) {
+            return [null, 'This employee is verified for this run and cannot be edited. Unverify first.'];
         }
         if (($run['run_purpose'] ?? 'payroll') !== 'incentive') {
             $stmtMember = $this->db->prepare("SELECT 1 FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
@@ -3321,7 +3801,7 @@ class PayrollRunModel {
      *     set (not an error -- the catalog item wins, matching how a frontend toggle between the
      *     two modes would only ever send one side populated anyway).
      */
-    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null): array {
+    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null): array {
         if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
@@ -3373,7 +3853,23 @@ class PayrollRunModel {
         // Transfer-to-payee (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร") -- only meaningful
         // on a deduction; silently ignored (not an error) for an earning, same as interest_type
         // being forced to 'none' for earnings elsewhere in this codebase.
+        //
+        // 2026-08-31, same-day follow-up: widened to the SAME payee_type concept
+        // EmployeeEarningDeductionModel::save() already has ('employee'/'company'/'not_disbursed')
+        // -- this table never had it at all before this migration (database/migrations/
+        // 2026-08-31_15_eed_payee_type_not_disbursed.sql). Backward-compat: a caller sending only
+        // $payeeEmployeeId with no $payeeType (every pre-existing call site) is treated as
+        // 'employee', same "implicit employee" convention that model already established.
         if ($resolvedItemType !== 'deduction') {
+            $payeeEmployeeId = null;
+            $payeeType = null;
+        } elseif ($payeeType === null && $payeeEmployeeId !== null) {
+            $payeeType = 'employee';
+        }
+        if ($payeeType !== null && !in_array($payeeType, ['employee', 'company', 'not_disbursed'], true)) {
+            return ['status' => false, 'message' => 'Invalid payee_type.'];
+        }
+        if ($payeeType !== 'employee') {
             $payeeEmployeeId = null;
         }
         if ($payeeEmployeeId !== null) {
@@ -3386,14 +3882,18 @@ class PayrollRunModel {
                 return ['status' => false, 'message' => 'Invalid payee employee.'];
             }
         }
+        // Same "forced 0 for not_disbursed, otherwise honor the caller (default included)" rule as
+        // EmployeeEarningDeductionModel::save()'s own include_in_cash_summary comment.
+        $includeInCashSummaryVal = $payeeType === 'not_disbursed' ? 0 : ($includeInCashSummary === false ? 0 : 1);
 
         $this->db->prepare("INSERT INTO `payroll_run_manual_lines`
-                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, amount, note, payee_employee_id, created_by)
-            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :amount, :note, :payee_employee_id, :created_by)")
+                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, amount, note, payee_employee_id, payee_type, include_in_cash_summary, created_by)
+            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :amount, :note, :payee_employee_id, :payee_type, :include_in_cash_summary, :created_by)")
             ->execute([
                 ':run_id' => $id, ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId,
                 ':custom_item_name' => $customItemName, ':custom_item_type' => $customItemType,
-                ':amount' => $amount, ':note' => $note, ':payee_employee_id' => $payeeEmployeeId, ':created_by' => $userId,
+                ':amount' => $amount, ':note' => $note, ':payee_employee_id' => $payeeEmployeeId,
+                ':payee_type' => $payeeType, ':include_in_cash_summary' => $includeInCashSummaryVal, ':created_by' => $userId,
             ]);
 
         // 2026-08-21, explicit request ("ต้องเก็บ Log ว่าใครแก้ไขข้อมูลอะไรไปเมื่อไหร่") -- addManualLine()/
@@ -3405,6 +3905,409 @@ class PayrollRunModel {
             "Employee {$employeeNo}: added \"{$itemLabel}\" amount " . number_format($amount, 2) . ($note ? " (note: {$note})" : ''));
 
         return $this->recalculate($id, $compId, $userId, $isAdmin);
+    }
+
+    /**
+     * 2026-09-01: shared by mergeSupplementalIntoRun() (Origami-attribution-driven target) and
+     * mergeIntoExistingRun() (manually-picked target, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่
+     * ให้มี radio เลือกว่า เปิดรอบใหม่ หรืออ้างอิงถึงรอบ") -- extracted verbatim from
+     * mergeSupplementalIntoRun()'s own pre-existing logic so this state machine (is the target
+     * usable right now, does it need reverting/reopening first) can never drift between the two
+     * entry points. Given a target run id, returns either a usable draft $targetRun (reverting/
+     * reopening it first if needed and confirmed) or a structured refusal
+     * (needs_reopen_confirmation / needs_revert_confirmation, same contract callers already handle).
+     * $mergeContextLabel is purely for the audit-note text on an auto-revert/reopen (e.g. "Reopened
+     * to merge {$mergeContextLabel}").
+     * @return array{status:bool, message?:string, needs_reopen_confirmation?:bool, needs_revert_confirmation?:bool, target_state?:string, target_run?:array}
+     */
+    private function resolveMergeTargetRun(int $targetRunId, int $compId, int $userId, bool $isAdmin, bool $allowRevertNonDraftTarget, bool $allowReopenPaidTarget, string $mergeContextLabel): array {
+        $targetRun = $this->get($targetRunId, $compId);
+        if (!$targetRun) {
+            return ['status' => false, 'message' => 'Target run not found.'];
+        }
+        if ($targetRun['state'] !== 'draft') {
+            if ($targetRun['state'] === 'cancelled') {
+                return ['status' => false, 'message' => "The target run is already 'cancelled' and cannot be reopened for a merge."];
+            }
+            // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 2 of this feature's own
+            // deferred list, "เปิดรอบเดิมกลับมาคำนวณใหม่" -- reopen the ORIGINAL run back to
+            // recalculation, the higher-risk of the two options offered, confirmed via
+            // AskUserQuestion): a `paid`/`locked` target is reopened via the SAME reopen() a real
+            // admin action on the Detail page already uses (2026-08-29 feature) -- correctly
+            // reverses the installment-consumption side effect markPaid() made, respects the
+            // company's own reopen_window_days cap, and requires can_finalize_payroll (checked by
+            // reopen() itself). NEVER covered by allowRevertNonDraftTarget -- that flag only ever
+            // reaches revert()'s own state machine, which has no paid/locked source state at all.
+            if (in_array($targetRun['state'], ['paid', 'locked'], true)) {
+                if (!$allowReopenPaidTarget) {
+                    return ['status' => false, 'needs_reopen_confirmation' => true, 'target_state' => $targetRun['state'],
+                        'message' => "The target run is already '{$targetRun['state']}' -- money may have already moved. Merging will REOPEN it (same as the Detail page's own \"Reopen\" action: clears paid/locked/approval status, un-consumes any deduction installments it consumed) back to draft, requiring a fresh recalculate+submit+approve+pay cycle -- retry with allowReopenPaidTarget=true to confirm this."];
+                }
+                $reopenNote = "Reopened to merge {$mergeContextLabel}";
+                $reopenRes = $this->reopen($targetRunId, $compId, $userId, $isAdmin, $reopenNote);
+                if (empty($reopenRes['status'])) {
+                    return ['status' => false, 'message' => "Could not reopen the target run: " . ($reopenRes['message'] ?? 'unknown error')];
+                }
+                $targetRun = $this->get($targetRunId, $compId);
+                if (!$targetRun || $targetRun['state'] !== 'draft') {
+                    return ['status' => false, 'message' => 'Target run did not end up at draft after reopening.'];
+                }
+            } elseif (!$allowRevertNonDraftTarget) {
+                // needs_revert_confirmation=true (not a string-match on the message) lets the
+                // caller/UI reliably detect "would need the opt-in flag" without depending on
+                // this exact message text ever staying stable or untranslated.
+                return ['status' => false, 'needs_revert_confirmation' => true, 'target_state' => $targetRun['state'],
+                    'message' => "The target run is already '{$targetRun['state']}'. Merging will REVERT its existing approval decision back to draft -- retry with allowRevertNonDraftTarget=true to confirm this."];
+            }
+            $revertNote = "Auto-reverted to draft to merge {$mergeContextLabel}";
+            $currentState = $targetRun['state'];
+            $hops = 0;
+            while ($currentState !== 'draft' && $hops < 3) {
+                $hops++;
+                $revertToState = $currentState === 'pending_approval' ? null : 'pending_approval';
+                $revertRes = $this->revert($targetRunId, $compId, $userId, $isAdmin, $revertNote, $revertToState);
+                if (empty($revertRes['status'])) {
+                    return ['status' => false, 'message' => "Could not auto-revert the target run to draft: " . ($revertRes['message'] ?? 'unknown error')];
+                }
+                $reloaded = $this->get($targetRunId, $compId);
+                if (!$reloaded) {
+                    return ['status' => false, 'message' => 'Target run vanished mid-revert.'];
+                }
+                $currentState = $reloaded['state'];
+            }
+            if ($currentState !== 'draft') {
+                return ['status' => false, 'message' => 'Could not fully revert the target run to draft.'];
+            }
+            $targetRun = $this->get($targetRunId, $compId);
+            // Deliberately NOT wrapped in the same transaction as the merge itself -- each
+            // revert()/reopen() call already commits its own -- so if the merge steps further down
+            // somehow fail after this point, the target run is left sitting at 'draft' (a
+            // perfectly valid, recoverable state -- an admin can just retry the merge, or resubmit
+            // as-is if they decide not to), never left half-reverted or corrupted.
+        }
+        return ['status' => true, 'target_run' => $targetRun];
+    }
+
+    /**
+     * 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- folds a supplemental sync
+     * process's own resolved earning/deduction amounts into an EXISTING regular run's own gross
+     * pay, for `attribution_tax_treatment='merge'`. See docs/origami-payroll-status-api-guide.md's
+     * sibling document (the inbound contract, not the outbound one that file covers) and this
+     * feature's own plan for the full design reasoning; summarized:
+     *
+     * 1. The supplemental process is pulled through the EXACT SAME code path a plain standalone
+     *    OT-only/Trip-only supplemental pull already uses (create()+recalculate(), same
+     *    run_purpose='incentive'/compute_statutory=0/include_base_salary=0/
+     *    include_standing_items=0/include_attendance_pay=1 shape that pull already tests) --
+     *    reuses the FULL, already-correct SyncPayResolver/OT-rate-engine resolution with zero
+     *    duplicated logic, rather than re-implementing item resolution here.
+     * 2. That throwaway run's own resolved earning_breakdown/deduction_breakdown per employee is
+     *    copied onto the TARGET run as `payroll_run_manual_lines` rows (insertMergedManualLine()
+     *    below -- an is_sync_only-tolerant sibling of the public addManualLine(), since these are
+     *    Origami catalog items, not something an admin hand-picked).
+     * 3. The throwaway run is then SOFT-deleted the same way the public delete() action deletes
+     *    any draft run (status='deleted', never a hard DELETE -- this project's own convention:
+     *    "ไม่ hard delete ข้อมูล payroll/master data") -- its payroll_run_details rows are
+     *    deliberately LEFT IN PLACE (not cleared) as a queryable record of exactly what amounts
+     *    were computed and merged, in case anyone needs to verify the numbers later.
+     * 4. `payroll_sync_processes.merged_into_run_id` is set to the TARGET run's id (not the
+     *    now-deleted throwaway run) -- this, together with pendingList()'s own WHERE, is what
+     *    makes the process disappear from Pending Pull, independent of the throwaway run's own
+     *    sync_process_id having been freed back to NULL by the soft-delete step.
+     * 5. The target run is recalculated once so its own totals/tax reflect the new manual lines.
+     *
+     * By default only ever attempts the merge when the target run is still `draft` -- a target
+     * that's pending_approval/approved/rejected/need_info/paid/locked is refused with a clear
+     * reason instead of silently reverting someone else's already-decided or already-paid run.
+     * Refusing here does not touch anything -- the caller can still pull this supplemental process
+     * as its own standalone run instead, same as `separate` always could.
+     *
+     * 2026-08-31, same-day follow-up, explicit request ("ทำทั้ง 3 ข้อเลย" -- covering all 3
+     * deliberately-deferred cases from this feature's own plan): `$allowRevertNonDraftTarget`
+     * (default false, so every EXISTING caller/test keeps today's safe refusal unchanged) opts
+     * into auto-reverting a target that's `pending_approval`/`approved`/`rejected`/`need_info`
+     * (decided or in-flight, but NOT YET PAID) back to `draft` first, via the SAME public revert()
+     * this run's own Approve page uses -- `approved`/`rejected`/`need_info` need TWO hops
+     * (revert()'s own REVERT_TARGET_STATES never allows a direct decided->draft jump; only
+     * pending_approval->draft is a single hop), so this loops revert() until state='draft'. This
+     * is a REAL, visible undo of whatever decision was already made on the target run -- gated by
+     * the exact same approver permission a manual revert would require (revert() enforces this
+     * itself, not re-checked here), and the target ends up back at `draft`, requiring a fresh
+     * submit()+approve() cycle same as any other draft run. A `paid`/`locked` target is NEVER
+     * covered by this flag -- see `$allowReopenPaidTarget` immediately below instead.
+     *
+     * `$allowReopenPaidTarget` (default false, same "existing caller/test unaffected" shape as
+     * `$allowRevertNonDraftTarget` above) covers the higher-risk `paid`/`locked` case specifically
+     * -- confirmed via AskUserQuestion: "เปิดรอบเดิมกลับมาคำนวณใหม่" (reopen the ORIGINAL run back to
+     * recalculation), not a separate correction-run mechanism. Reuses the SAME public reopen()
+     * method the Detail page's own "Reopen" admin action already calls (2026-08-29 feature) --
+     * gated by can_finalize_payroll (a stricter permission than this method's own
+     * can_process_payroll gate, enforced by reopen() itself), respects the company's own
+     * reopen_window_days cap, and correctly reverses markPaid()'s installment-consumption side
+     * effect. `cancelled` is NEVER reachable by either flag -- reopen() itself only ever accepts
+     * `paid`/`locked` as a source state, and there is no real-world "undo a cancellation to merge
+     * into it" scenario this was asked to support.
+     *
+     * Known, deliberate simplification: an employee present in the supplemental process's own
+     * roster but NOT already part of the target run's own `payroll_run_details` (e.g. excluded, or
+     * not eligible for that cycle) is skipped and reported in the result's `skipped_employee_ids`,
+     * NOT auto-joined into the target run's membership -- joinEmployees() itself refuses to add an
+     * arbitrary employee into a pure cycle-based run's automatic-by-employment-date roster (only a
+     * previously-EXCLUDED employee can be re-included there), so silently forcing membership here
+     * would bypass that run's own eligibility rules. Surfaced as data for the admin to handle
+     * manually, never silently dropped.
+     */
+    public function mergeSupplementalIntoRun(int $supplementalProcessRowId, int $compId, int $userId, bool $isAdmin, bool $allowRevertNonDraftTarget = false, bool $allowReopenPaidTarget = false): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to process payroll.'];
+        }
+        $stmt = $this->db->prepare("SELECT * FROM `payroll_sync_processes` WHERE id = :id AND comp_id = :comp_id");
+        $stmt->execute([':id' => $supplementalProcessRowId, ':comp_id' => $compId]);
+        $process = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$process) {
+            return ['status' => false, 'message' => 'Sync process not found.'];
+        }
+        if ($process['run_kind'] !== 'supplemental') {
+            return ['status' => false, 'message' => 'Only a supplemental sync process can be merged into another run.'];
+        }
+        if ($process['attribution_tax_treatment'] !== 'merge') {
+            return ['status' => false, 'message' => 'This process is not attributed for merge -- pull it as its own standalone run instead.'];
+        }
+        if ($process['status'] !== 'pending') {
+            return ['status' => false, 'message' => 'This process has already been rejected.'];
+        }
+        if ($process['merged_into_run_id'] !== null) {
+            return ['status' => false, 'message' => 'This process has already been merged into a run.'];
+        }
+        $stmtLinked = $this->db->prepare("SELECT id FROM `payroll_runs` WHERE sync_process_id = :id");
+        $stmtLinked->execute([':id' => $supplementalProcessRowId]);
+        if ($stmtLinked->fetch()) {
+            return ['status' => false, 'message' => 'This process has already been pulled into its own run.'];
+        }
+        if ($process['attribution_target_origami_process_id'] === null) {
+            return ['status' => false, 'message' => 'No merge target is set on this process.'];
+        }
+
+        $stmtTarget = $this->db->prepare("SELECT r.* FROM `payroll_sync_processes` tp
+            JOIN `payroll_runs` r ON r.sync_process_id = tp.id
+            WHERE tp.origami_process_id = :target_origami_id AND tp.comp_id = :comp_id AND r.deleted_at IS NULL");
+        $stmtTarget->execute([':target_origami_id' => $process['attribution_target_origami_process_id'], ':comp_id' => $compId]);
+        $targetRun = $stmtTarget->fetch(PDO::FETCH_ASSOC);
+        if (!$targetRun) {
+            return ['status' => false, 'message' => 'The target regular cycle has not been pulled into a run on our side yet. Pull it first, or pull this supplemental batch as its own standalone run instead.'];
+        }
+        $targetRunId = (int)$targetRun['id'];
+        // 2026-09-01, explicit request: "อ้างอิงถึงรอบ...แต่ต้องรองรับค่าการอ้างอิงที่ส่งมาจาก Origami ไม่ให้
+        // ซ้ำซ้อน" -- extracted into resolveMergeTargetRun() (shared with the new, purely manual
+        // mergeIntoExistingRun() below) so the exact same "is this target usable, does it need
+        // revert/reopen first" state machine is never duplicated/able to drift between the two
+        // entry points -- this call site's own behavior is byte-identical to before the extraction.
+        $resolvedTarget = $this->resolveMergeTargetRun($targetRunId, $compId, $userId, $isAdmin, $allowRevertNonDraftTarget, $allowReopenPaidTarget, "supplemental process {$process['process_no']}");
+        if (empty($resolvedTarget['status'])) {
+            return $resolvedTarget;
+        }
+        $targetRun = $resolvedTarget['target_run'];
+
+        $own = !$this->db->inTransaction();
+        if ($own) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $createRes = $this->create($compId, [
+                'sync_process_id' => $supplementalProcessRowId,
+                'run_purpose' => 'incentive', 'compute_statutory' => 0, 'include_base_salary' => 0,
+                'include_standing_items' => 0, 'include_attendance_pay' => 1,
+                'run_name' => 'Merge extraction: ' . $process['process_no'],
+                'payment_date' => $targetRun['payment_date'],
+            ], $userId, $isAdmin);
+        } catch (Throwable $e) {
+            if ($own) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Merge failed: ' . $e->getMessage()];
+        }
+        if (empty($createRes['status'])) {
+            if ($own) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Could not resolve supplemental amounts: ' . ($createRes['message'] ?? 'unknown error')];
+        }
+        $throwawayRunId = (int)$createRes['id'];
+
+        // 2026-09-01: the actual "copy resolved lines onto the target, soft-delete the source,
+        // recalculate the target" mechanics (steps 2-5 of this method's own docblock) are now
+        // shared with mergeIntoExistingRun() below via performRunMerge() -- byte-identical
+        // behavior to before this extraction, verified by tests/payroll_sync_attribution_test.php
+        // (unchanged) still passing.
+        $mergeRes = $this->performRunMerge($throwawayRunId, $targetRunId, $compId, $userId, $isAdmin, "supplemental process {$process['process_no']}", $supplementalProcessRowId, 'merge_supplemental');
+        if (empty($mergeRes['status'])) {
+            if ($own) { $this->db->rollBack(); }
+            return $mergeRes;
+        }
+        if ($own) {
+            $this->db->commit();
+        }
+        return $mergeRes;
+    }
+
+    /**
+     * 2026-09-01, explicit request: "ในการดึงข้อมูลมาทำรอบที่ส่งมาจาก Origami รวมถึงการสร้างเอง ให้สามารถ
+     * เลือกอ้างอิงรอบได้เหมือนตอน Origami" -- confirmed via AskUserQuestion: reachable ONLY from the
+     * plain "Add" flow (Process List's own standalone create button), never the Pending-Pull/
+     * Origami flow (that stays exactly as-is, unchanged, still driven solely by Origami's own
+     * attribution -- see mergeSupplementalIntoRun() above, genuinely independent of this method).
+     * $sourceRunId is an ordinary off-cycle run the admin already built up normally (Join
+     * Employees + Manage Items, same as any other "Add" flow run) -- this folds its resolved
+     * earning/deduction breakdown into an EXISTING target run and soft-deletes the source, the
+     * exact same mechanics mergeSupplementalIntoRun() already uses (performRunMerge(), shared, not
+     * duplicated), just without any Origami/sync-process involvement at either end. Confirmed via
+     * AskUserQuestion: $targetRunId may be ANY of this company's own runs regardless of state
+     * (draft used directly; pending_approval/approved/rejected/need_info auto-reverted; paid/
+     * locked auto-reopened -- both needing the same explicit confirmation flags
+     * mergeSupplementalIntoRun() already requires, resolveMergeTargetRun() shared between both).
+     */
+    public function mergeIntoExistingRun(int $sourceRunId, int $targetRunId, int $compId, int $userId, bool $isAdmin, bool $allowRevertNonDraftTarget = false, bool $allowReopenPaidTarget = false): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to process payroll.'];
+        }
+        if ($sourceRunId === $targetRunId) {
+            return ['status' => false, 'message' => 'A run cannot be merged into itself.'];
+        }
+        $sourceRun = $this->get($sourceRunId, $compId);
+        if (!$sourceRun) {
+            return ['status' => false, 'message' => 'Source run not found.'];
+        }
+        if ($sourceRun['state'] !== 'draft') {
+            return ['status' => false, 'message' => 'Only a draft run can be merged into another run.'];
+        }
+        // Genuinely off-cycle/manual only (no cycle_id, no sync_process_id) -- a cycle-linked or
+        // sync-pulled run's own membership is automatic-by-date/by-payload, not something this
+        // "fold a hand-built extra payment into an existing run" mechanism is meant to consume.
+        // Matches the exact same $isOffCycle test used elsewhere in this class (update()/create()).
+        if ($sourceRun['cycle_id'] !== null || $sourceRun['sync_process_id'] !== null) {
+            return ['status' => false, 'message' => 'Only a genuine off-schedule run (not tied to a Payroll Schedule or an Origami sync process) can be merged into another run this way.'];
+        }
+
+        $resolvedTarget = $this->resolveMergeTargetRun($targetRunId, $compId, $userId, $isAdmin, $allowRevertNonDraftTarget, $allowReopenPaidTarget, "run \"{$sourceRun['run_name']}\"");
+        if (empty($resolvedTarget['status'])) {
+            return $resolvedTarget;
+        }
+
+        return $this->performRunMerge($sourceRunId, $targetRunId, $compId, $userId, $isAdmin, "run \"{$sourceRun['run_name']}\"", null, 'merge_run');
+    }
+
+    /**
+     * 2026-09-01: shared merge mechanics extracted out of mergeSupplementalIntoRun() (steps 2-5 of
+     * that method's own docblock) so mergeIntoExistingRun() above reuses the EXACT same "copy
+     * resolved lines onto the target, soft-delete the source, recalculate the target" logic rather
+     * than a parallel/duplicated copy that could drift. Recalculates $sourceRunId itself first
+     * (idempotent/cheap either way) so this works whether the caller already has fresh numbers
+     * (mergeSupplementalIntoRun()'s own freshly-created throwaway run) or not (an existing,
+     * possibly-stale draft run mergeIntoExistingRun() was handed). $auditNote/$auditAction
+     * customize the log entry per caller; $sourceSyncProcessIdToMark is non-null ONLY for the
+     * Origami-driven caller (marks that sync process as consumed) -- null here is what makes this
+     * safe to call from a purely manual merge with nothing sync-related to update.
+     * @return array{status:bool, message?:string, target_run_id?:int, merged_line_count?:int, skipped_employee_ids?:array, recalculate_status?:bool}
+     */
+    private function performRunMerge(int $sourceRunId, int $targetRunId, int $compId, int $userId, bool $isAdmin, string $auditNote, ?int $sourceSyncProcessIdToMark, string $auditAction): array {
+        $own = !$this->db->inTransaction();
+        if ($own) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $calcRes = $this->recalculate($sourceRunId, $compId, $userId, $isAdmin);
+            if (empty($calcRes['status'])) {
+                if ($own) { $this->db->rollBack(); }
+                return ['status' => false, 'message' => 'Could not resolve source amounts: ' . ($calcRes['message'] ?? 'unknown error')];
+            }
+
+            $details = $this->getDetails($sourceRunId, $compId);
+            $mergedLineCount = 0;
+            $skippedEmployeeIds = [];
+            $stmtMember = $this->db->prepare("SELECT 1 FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
+            foreach ($details as $d) {
+                $employeeId = (int)$d['employee_id'];
+                $stmtMember->execute([':run_id' => $targetRunId, ':employee_id' => $employeeId]);
+                if (!$stmtMember->fetch()) {
+                    $skippedEmployeeIds[] = $employeeId;
+                    continue;
+                }
+                foreach (($d['earning_breakdown'] ?? []) as $line) {
+                    if ((float)($line['amount'] ?? 0) != 0.0) {
+                        $this->insertMergedManualLine($targetRunId, $employeeId, $line, 'earning', $compId, $userId);
+                        $mergedLineCount++;
+                    }
+                }
+                foreach (($d['deduction_breakdown'] ?? []) as $line) {
+                    if ((float)($line['amount'] ?? 0) != 0.0) {
+                        $this->insertMergedManualLine($targetRunId, $employeeId, $line, 'deduction', $compId, $userId);
+                        $mergedLineCount++;
+                    }
+                }
+            }
+
+            // Soft-delete the source run -- same UPDATE shape the public delete() action uses,
+            // never a hard DELETE (this project's own payroll-data convention). payroll_run_details
+            // rows are deliberately left as-is (not cleared), a queryable trace of the exact
+            // amounts that were merged.
+            $this->db->prepare("UPDATE `payroll_runs` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by, sync_process_id = NULL,
+                    notes = CONCAT(COALESCE(notes, ''), ' [Merge-extraction run, superseded -- amounts merged into run #', :target_run_id_note, ']')
+                WHERE id = :id")
+                ->execute([':deleted_by' => $userId, ':target_run_id_note' => $targetRunId, ':id' => $sourceRunId]);
+
+            if ($sourceSyncProcessIdToMark !== null) {
+                $this->db->prepare("UPDATE `payroll_sync_processes` SET merged_into_run_id = :run_id WHERE id = :id")
+                    ->execute([':run_id' => $targetRunId, ':id' => $sourceSyncProcessIdToMark]);
+            }
+
+            $this->logAudit($targetRunId, 'draft', 'draft', $auditAction, $userId,
+                "Merged {$auditNote} ({$mergedLineCount} line(s), " . count($skippedEmployeeIds) . ' employee(s) skipped -- not part of this run)');
+
+            if ($own) {
+                $this->db->commit();
+            }
+        } catch (Throwable $e) {
+            if ($own) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Merge failed: ' . $e->getMessage()];
+        }
+
+        $finalRecalc = $this->recalculate($targetRunId, $compId, $userId, $isAdmin);
+        return [
+            'status' => true, 'message' => 'Merged.', 'target_run_id' => $targetRunId,
+            'merged_line_count' => $mergedLineCount, 'skipped_employee_ids' => $skippedEmployeeIds,
+            'recalculate_status' => $finalRecalc['status'] ?? false,
+        ];
+    }
+
+    /** Internal sibling of addManualLine() for performRunMerge() above -- same INSERT
+     *  shape, but (a) tolerates an `is_sync_only=1` catalog item (this is a system-driven merge of
+     *  Origami-sourced items, never an admin hand-picking one), (b) skips the public method's own
+     *  permission/state/membership checks (already verified once by the caller for the whole
+     *  batch, not per line), and (c) does NOT call recalculate() itself -- mergeSupplementalIntoRun()
+     *  recalculates the target run exactly once after every line for this merge has been inserted. */
+    private function insertMergedManualLine(int $runId, int $employeeId, array $line, string $itemType, int $compId, int $userId): void {
+        $pedTypeId = null;
+        $customItemName = null;
+        $customItemType = null;
+        if (empty($line['is_custom']) && !empty($line['code'])) {
+            $stmtPed = $this->db->prepare("SELECT id FROM `payroll_earning_deduction_types` WHERE item_code = :code AND comp_id = :comp_id AND deleted_at IS NULL LIMIT 1");
+            $stmtPed->execute([':code' => $line['code'], ':comp_id' => $compId]);
+            $foundId = $stmtPed->fetchColumn();
+            if ($foundId !== false) {
+                $pedTypeId = (int)$foundId;
+            }
+        }
+        if ($pedTypeId === null) {
+            $customItemName = (string)($line['name_th'] ?? $line['code'] ?? 'Merged item');
+            $customItemType = $itemType;
+        }
+        $this->db->prepare("INSERT INTO `payroll_run_manual_lines`
+                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, amount, note, created_by)
+            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :amount, :note, :created_by)")
+            ->execute([
+                ':run_id' => $runId, ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId,
+                ':custom_item_name' => $customItemName, ':custom_item_type' => $customItemType,
+                ':amount' => abs((float)($line['amount'] ?? 0)), ':note' => 'Merged from supplemental sync process',
+                ':created_by' => $userId,
+            ]);
     }
 
     /** Removes one manually-added line, then recalculates. No employee-membership check needed here
@@ -3437,8 +4340,8 @@ class PayrollRunModel {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         // 2026-08-29: same lock guard as assertManualLinesEditable() -- see that method's own comment.
-        if ($this->isEmployeeLockedForRun($id, (int)$lineInfo['employee_id'])) {
-            return ['status' => false, 'message' => 'This employee is locked for this run and cannot be edited. Unlock first.'];
+        if ($this->isEmployeeVerifiedForRun($id, (int)$lineInfo['employee_id'])) {
+            return ['status' => false, 'message' => 'This employee is verified for this run and cannot be edited. Unverify first.'];
         }
 
         $this->db->prepare("DELETE FROM `payroll_run_manual_lines` WHERE id = :line_id AND run_id = :run_id")
@@ -3454,6 +4357,7 @@ class PayrollRunModel {
     /** Every manual line for one employee on this run (item code/name + amount + note + line id), for the "Manage Items" UI. */
     public function manualLinesForEmployee(int $compId, int $runId, int $employeeId): array {
         $stmt = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.payee_employee_id,
+                pml.payee_type, pml.include_in_cash_summary,
                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, payee.employee_no AS payee_employee_no
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
@@ -3475,6 +4379,8 @@ class PayrollRunModel {
                 'is_custom' => $resolved['is_custom'],
                 'payee_employee_id' => $row['payee_employee_id'] !== null ? (int)$row['payee_employee_id'] : null,
                 'payee_employee_no' => $row['payee_employee_no'],
+                'payee_type' => $row['payee_type'],
+                'include_in_cash_summary' => (int)$row['include_in_cash_summary'],
             ];
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
@@ -3493,7 +4399,7 @@ class PayrollRunModel {
      * rather than showing a misleading 0.00.
      */
     private function currentLineAmount(int $runId, int $employeeId, string $itemCode): ?float {
-        $stmt = $this->db->prepare("SELECT base_salary_amount, earning_breakdown, deduction_breakdown
+        $stmt = $this->db->prepare("SELECT base_salary_amount, earning_breakdown, deduction_breakdown, statutory_breakdown
             FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
         $stmt->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -3502,6 +4408,18 @@ class PayrollRunModel {
         }
         if ($itemCode === self::BASE_SALARY_OVERRIDE_CODE) {
             return $row['base_salary_amount'] !== null ? (float)$row['base_salary_amount'] : null;
+        }
+        // 2026-08-31: statutoryOverrideCode()-wrapped codes (TH_SSO/TH_PVD/TH_PIT/etc.) read from
+        // statutory_breakdown's own employee_amount instead -- see that method's own docblock.
+        if (str_starts_with($itemCode, '__statutory_') && str_ends_with($itemCode, '__')) {
+            $rawCode = substr($itemCode, strlen('__statutory_'), -2);
+            $lines = $row['statutory_breakdown'] !== null ? json_decode((string)$row['statutory_breakdown'], true) : [];
+            foreach ((is_array($lines) ? $lines : []) as $line) {
+                if (($line['code'] ?? null) === $rawCode) {
+                    return isset($line['employee_amount']) ? (float)$line['employee_amount'] : null;
+                }
+            }
+            return null;
         }
         foreach (['earning_breakdown', 'deduction_breakdown'] as $col) {
             $lines = $row[$col] !== null ? json_decode((string)$row[$col], true) : [];
@@ -3529,7 +4447,29 @@ class PayrollRunModel {
      * standing per-employee setting) -- applying the same rule to every future run would need a
      * different, employee-level mechanism, not this one.
      */
-    public function lineOverrideSave(int $runId, int $compId, int $employeeId, string $itemCode, string $action, ?float $overrideAmount, ?string $note, int $userId, bool $isAdmin): array {
+    /**
+     * 2026-08-31, same-day follow-up (item 10): one append-only row per actual edit into
+     * payroll_run_line_override_history, feeding the new "Payroll Run Audit" report's Original ->
+     * Edit 1 -> Edit 2 -> ... -> Current diff chain (see that table's own migration comment for why
+     * this can only capture edits made from today forward). $itemCode here is always the
+     * human-readable code (bare TH_SSO/TH_PVD/etc. for statutory, the real earning/deduction
+     * item_code, or one of ATTENDANCE_OVERRIDE_FIELDS for attendance) -- NEVER the
+     * statutoryOverrideCode()-wrapped sentinel, which exists only to keep the OVERRIDE table's own
+     * key space collision-free and has no reason to leak into a human-facing report.
+     */
+    private function recordLineOverrideHistory(int $runId, int $employeeId, string $lineType, string $itemCode, string $action, ?float $oldValue, ?float $newValue, int $userId, ?string $note = null): void {
+        $this->db->prepare("INSERT INTO `payroll_run_line_override_history`
+                (run_id, employee_id, line_type, item_code, action, old_value, new_value, note, changed_by)
+            VALUES (:run_id, :employee_id, :line_type, :item_code, :action, :old_value, :new_value, :note, :changed_by)")
+            ->execute([
+                ':run_id' => $runId, ':employee_id' => $employeeId, ':line_type' => $lineType,
+                ':item_code' => $itemCode, ':action' => $action,
+                ':old_value' => $oldValue, ':new_value' => $newValue,
+                ':note' => $note, ':changed_by' => $userId,
+            ]);
+    }
+
+    public function lineOverrideSave(int $runId, int $compId, int $employeeId, string $itemCode, string $action, ?float $overrideAmount, ?string $note, int $userId, bool $isAdmin, string $historyLineType = 'earning_deduction', ?string $historyItemCode = null): array {
         if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
@@ -3540,8 +4480,8 @@ class PayrollRunModel {
         if ($run['state'] !== 'draft') {
             return ['status' => false, 'message' => 'Only a draft payroll run can have its earning/deduction items adjusted.'];
         }
-        if ($this->isEmployeeLockedForRun($runId, $employeeId)) {
-            return ['status' => false, 'message' => 'This employee is locked for this run and cannot be edited. Unlock first.'];
+        if ($this->isEmployeeVerifiedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is verified for this run and cannot be edited. Unverify first.'];
         }
         if (!in_array($action, ['override_amount', 'exclude'], true)) {
             return ['status' => false, 'message' => 'Invalid action.'];
@@ -3601,6 +4541,8 @@ class PayrollRunModel {
             $actionDesc = $action === 'exclude' ? 'excluded' : ('override amount ' . number_format($overrideAmount, 2));
             $this->logAudit($runId, 'draft', 'draft', 'line_override_save', $userId,
                 "Employee {$employeeNo}: {$itemCode} changed from {$beforeDesc} -> {$actionDesc}" . ($note ? " (note: {$note})" : ''));
+            $this->recordLineOverrideHistory($runId, $employeeId, $historyLineType, $historyItemCode ?? $itemCode,
+                $action === 'exclude' ? 'exclude' : 'override', $beforeAmount, $action === 'exclude' ? 0.0 : $overrideAmount, $userId, $note);
 
             if ($own) { $this->db->commit(); }
         } catch (PDOException $e) {
@@ -3612,7 +4554,7 @@ class PayrollRunModel {
     }
 
     /** Removes a line override (reverts that item back to its computed default), then recalculates. */
-    public function lineOverrideRemove(int $runId, int $compId, int $employeeId, string $itemCode, int $userId, bool $isAdmin): array {
+    public function lineOverrideRemove(int $runId, int $compId, int $employeeId, string $itemCode, int $userId, bool $isAdmin, string $historyLineType = 'earning_deduction', ?string $historyItemCode = null): array {
         if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
@@ -3628,13 +4570,44 @@ class PayrollRunModel {
         $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
         $employeeNo = $stmtEmp->fetchColumn();
 
+        // 2026-08-31, same-day follow-up (item 10): captured BEFORE the delete so the history row's
+        // old_value reflects what the override actually was, not "gone" -- exclude has no persisted
+        // amount of its own (see lineOverrideSave()'s own "exclude -> null override_amount" rule),
+        // so its old_value is represented as 0.00, same convention lineOverrideSave() itself uses.
+        $stmtOv = $this->db->prepare("SELECT action, override_amount FROM `payroll_run_line_overrides` WHERE run_id = :run_id AND employee_id = :employee_id AND item_code = :item_code");
+        $stmtOv->execute([':run_id' => $runId, ':employee_id' => $employeeId, ':item_code' => $itemCode]);
+        $existingOv = $stmtOv->fetch(PDO::FETCH_ASSOC);
+        $oldValue = $existingOv ? ($existingOv['action'] === 'exclude' ? 0.0 : ((float)$existingOv['override_amount'])) : null;
+
         $this->db->prepare("DELETE FROM `payroll_run_line_overrides` WHERE run_id = :run_id AND employee_id = :employee_id AND item_code = :item_code")
             ->execute([':run_id' => $runId, ':employee_id' => $employeeId, ':item_code' => $itemCode]);
 
         $this->logAudit($runId, 'draft', 'draft', 'line_override_remove', $userId,
             "Employee " . ($employeeNo !== false ? $employeeNo : $employeeId) . ": {$itemCode} reverted to computed default");
 
-        return $this->recalculate($runId, $compId, $userId, $isAdmin);
+        $result = $this->recalculate($runId, $compId, $userId, $isAdmin);
+        // Read back AFTER recalculate() so new_value reflects the actually-reverted computed figure,
+        // not a guess -- same "read after write" reasoning lineOverrideSave()'s own docblock uses.
+        $newValue = $this->currentLineAmount($runId, $employeeId, $itemCode);
+        $this->recordLineOverrideHistory($runId, $employeeId, $historyLineType, $historyItemCode ?? $itemCode, 'restore', $oldValue, $newValue, $userId);
+
+        return $result;
+    }
+
+    /**
+     * 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9a): thin wrappers around
+     * lineOverrideSave()/lineOverrideRemove() that wrap/unwrap a statutory item code (TH_SSO/
+     * TH_PVD/TH_PIT/etc.) through statutoryOverrideCode() -- reuses 100% of the existing
+     * validation/DB/audit logic those methods already have (same table, same recalculate()
+     * trigger), only the item_code differs. See recalculate()'s own statutory block for where
+     * this is actually applied during calculation.
+     */
+    public function statutoryLineOverrideSave(int $runId, int $compId, int $employeeId, string $statutoryItemCode, string $action, ?float $overrideAmount, ?string $note, int $userId, bool $isAdmin): array {
+        return $this->lineOverrideSave($runId, $compId, $employeeId, $this->statutoryOverrideCode($statutoryItemCode), $action, $overrideAmount, $note, $userId, $isAdmin, 'statutory', $statutoryItemCode);
+    }
+
+    public function statutoryLineOverrideRemove(int $runId, int $compId, int $employeeId, string $statutoryItemCode, int $userId, bool $isAdmin): array {
+        return $this->lineOverrideRemove($runId, $compId, $employeeId, $this->statutoryOverrideCode($statutoryItemCode), $userId, $isAdmin, 'statutory', $statutoryItemCode);
     }
 
     /**
@@ -3660,7 +4633,7 @@ class PayrollRunModel {
         if (!$run) {
             return [];
         }
-        $stmtDetail = $this->db->prepare("SELECT base_salary_amount, earning_breakdown, deduction_breakdown
+        $stmtDetail = $this->db->prepare("SELECT base_salary_amount, earning_breakdown, deduction_breakdown, statutory_breakdown
             FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
         $stmtDetail->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         $detail = $stmtDetail->fetch(PDO::FETCH_ASSOC);
@@ -3681,12 +4654,26 @@ class PayrollRunModel {
             $row['override_note'] = $ov['note'] ?? null;
             return $row;
         };
+        // 2026-08-31, same-day follow-up (item 9a): same attachOverride() shape, but keyed by the
+        // WRAPPED statutoryOverrideCode() (this row's own bare 'code' stays the real TH_SSO/TH_PVD/
+        // TH_PIT/etc. for display -- only the override lookup key differs).
+        $attachStatutoryOverride = function (array $row) use ($overrides): array {
+            $ov = $overrides[$this->statutoryOverrideCode($row['code'])] ?? null;
+            $row['override_action'] = $ov['action'] ?? null;
+            $row['override_amount'] = $ov['override_amount'] !== null ? (float)$ov['override_amount'] : null;
+            $row['override_note'] = $ov['note'] ?? null;
+            return $row;
+        };
 
         $seenCodes = [self::BASE_SALARY_OVERRIDE_CODE => true];
         $rows = [$attachOverride([
             'code' => self::BASE_SALARY_OVERRIDE_CODE,
             'name_th' => 'เงินเดือนพื้นฐาน', 'name_en' => 'Base Salary',
             'current_amount' => $detail['base_salary_amount'] !== null ? (float)$detail['base_salary_amount'] : 0.0,
+            // 2026-08-31, same-day follow-up (item 9a): lets the frontend route Save/Reset to the
+            // right endpoint (api/payroll-run.line-override.* vs .statutory-line-override.*)
+            // without having to pattern-match item codes client-side.
+            'line_type' => 'earning_deduction',
         ])];
         foreach (['earning_breakdown', 'deduction_breakdown'] as $col) {
             $lines = $detail[$col] !== null ? json_decode((string)$detail[$col], true) : [];
@@ -3700,21 +4687,86 @@ class PayrollRunModel {
                     'name_th' => $line['name_th'] ?? $line['code'],
                     'name_en' => $line['name_en'] ?? $line['code'],
                     'current_amount' => isset($line['amount']) ? (float)$line['amount'] : 0.0,
+                    'line_type' => 'earning_deduction',
+                    // 2026-08-31: SyncPayResolver's own raw Origami item_code, when this line came
+                    // through the generic item_values loop -- see that method's own comment on why
+                    // this can genuinely differ from 'code' above (the CUSTOM: fallback especially).
+                    // Absent for base salary/manual/attendance-derived (OT/trip/etc) lines, which
+                    // never set it -- the occurrence-enrichment step below falls back to 'code' then.
+                    'sync_item_code' => $line['sync_item_code'] ?? null,
                 ]);
             }
+        }
+        // 2026-08-31, same-day follow-up (item 9a): statutory rows, same shape as earning/deduction
+        // above but sourced from statutory_breakdown/employee_amount. Unlike an earning/deduction
+        // 'exclude' (which drops the line from the breakdown entirely, see the fallback loop below),
+        // an excluded STATUTORY line stays IN statutory_breakdown at employee_amount=0 (see
+        // recalculate()'s own statutory-override block) -- so this loop alone always finds it, no
+        // separate "dropped line" fallback needed for statutory codes.
+        $lines = $detail['statutory_breakdown'] !== null ? json_decode((string)$detail['statutory_breakdown'], true) : [];
+        foreach ((is_array($lines) ? $lines : []) as $line) {
+            if (empty($line['code'])) {
+                continue;
+            }
+            $seenCodes[$this->statutoryOverrideCode($line['code'])] = true;
+            $rows[] = $attachStatutoryOverride([
+                'code' => $line['code'],
+                'name_th' => $line['name_th'] ?? $line['code'],
+                'name_en' => $line['name_en'] ?? $line['code'],
+                'current_amount' => isset($line['employee_amount']) ? (float)$line['employee_amount'] : 0.0,
+                'line_type' => 'statutory',
+            ]);
         }
         // An 'exclude' override drops its line out of the persisted breakdown entirely (that's the
         // whole point of excluding it), so the loops above never see it -- but the UI still needs to
         // list it (with its override_action/note intact) so a "Reset" action remains reachable to
         // un-exclude it. current_amount is 0 for these (there's no persisted "what it would be"
         // figure to show once excluded, same simplification this method's own docblock already
-        // documents for the override_amount case).
+        // documents for the override_amount case). Statutory codes are deliberately EXCLUDED from
+        // this fallback (seenCodes above is keyed by the WRAPPED code for them, always populated by
+        // the statutory loop just above regardless of exclude state) -- letting a wrapped
+        // '__statutory_..__' code fall through here would create a garbled duplicate row.
         foreach ($overrides as $code => $ov) {
-            if (isset($seenCodes[$code]) || $ov['action'] !== 'exclude') {
+            if (isset($seenCodes[$code]) || $ov['action'] !== 'exclude' || (str_starts_with($code, '__statutory_') && str_ends_with($code, '__'))) {
                 continue;
             }
-            $rows[] = $attachOverride(['code' => $code, 'name_th' => $code, 'name_en' => $code, 'current_amount' => 0.0]);
+            $rows[] = $attachOverride(['code' => $code, 'name_th' => $code, 'name_en' => $code, 'current_amount' => 0.0, 'line_type' => 'earning_deduction']);
         }
+
+        // 2026-08-31, same-day follow-up (Origami's `scheduled_item_occurrences[]` proposal, per-
+        // installment breakdown of an Employee Item, e.g. "LOAN installment 2 of 12") -- attaches an
+        // `occurrences` sub-array to a line so the Adjust Amounts modal can show the breakdown
+        // alongside the summed total it already displays. Only meaningful for a run pulled from an
+        // Origami sync process (occurrences belong to that PROCESS, not to this run itself, see
+        // PayrollSyncModel::occurrencesForItem()'s own docblock) and only for real earning/deduction
+        // catalog lines -- base salary and statutory items have no "Employee Item schedule" concept
+        // for Origami to have sent a breakdown of in the first place. Matches on `sync_item_code`
+        // (SyncPayResolver's own preserved RAW Origami item_code) when present, falling back to
+        // `code` otherwise -- real bug found and fixed while building this: matching on `code` alone
+        // silently missed every line that went through SyncPayResolver's CUSTOM: fallback (no
+        // company catalog row for that item_code), since 'code' there is 'CUSTOM:{item_name}', not
+        // the raw item_code Origami's own occurrence rows are actually keyed by.
+        if ($run['sync_process_id'] !== null) {
+            $syncModel = new PayrollSyncModel($this->db);
+            foreach ($rows as &$row) {
+                $syncItemCode = $row['sync_item_code'] ?? null;
+                unset($row['sync_item_code']); // internal matching key only, not part of the public row shape
+                if ($row['line_type'] !== 'earning_deduction' || $row['code'] === self::BASE_SALARY_OVERRIDE_CODE) {
+                    continue;
+                }
+                $occurrences = $syncModel->occurrencesForItem((int)$run['sync_process_id'], $employeeId, $syncItemCode ?? $row['code']);
+                if ($occurrences) {
+                    $row['occurrences'] = $occurrences;
+                }
+            }
+            unset($row);
+        } else {
+            foreach ($rows as &$row) {
+                unset($row['sync_item_code']);
+            }
+            unset($row);
+        }
+
         return $rows;
     }
 
@@ -3750,11 +4802,20 @@ class PayrollRunModel {
         if ($run['state'] !== 'draft') {
             return ['status' => false, 'message' => 'Only a draft payroll run can have its earning/deduction items adjusted.'];
         }
-        if ($run['sync_process_id'] === null) {
-            return ['status' => false, 'message' => 'This adjustment only applies to a run pulled from synced attendance data.'];
-        }
-        if ($this->isEmployeeLockedForRun($runId, $employeeId)) {
-            return ['status' => false, 'message' => 'This employee is locked for this run and cannot be edited. Unlock first.'];
+        // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9b): the old "only a run pulled
+        // from synced attendance data" refusal here was already stricter than what recalculate()
+        // itself actually needs -- $syncItemsByEmployee (the thing that determines whether
+        // SyncPayResolver::resolve() -- and therefore this override table -- ever applies at all,
+        // see that method's own `isset($syncItemsByEmployee[$employeeId])` gate) is populated
+        // EITHER by a real Origami sync payload OR by TransactionDataPayAdapter's own Manual/Import
+        // fallback (Phase 5, 2026-08-30) -- meaning the calculation engine ALREADY treats
+        // sync/manual/import attendance data uniformly, only this save-time check was still
+        // sync-only. Removed entirely: every run type can now correct its own attendance figures
+        // the same way. (An employee with genuinely zero underlying attendance data of ANY source
+        // still has nothing for this override to apply to -- same "no line to override" reality a
+        // sync-based employee absent from the pulled payload already has today, not a new gap.)
+        if ($this->isEmployeeVerifiedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is verified for this run and cannot be edited. Unverify first.'];
         }
 
         $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
@@ -3783,9 +4844,13 @@ class PayrollRunModel {
         try {
             if ($own) { $this->db->beginTransaction(); }
 
-            $stmtExisting = $this->db->prepare("SELECT id FROM `payroll_run_sync_item_overrides` WHERE run_id = :run_id AND employee_id = :employee_id");
+            // 2026-08-31, same-day follow-up (item 10): selected in full (not just id) so the
+            // per-field old_value used below reflects whatever this run's override actually was
+            // BEFORE this save, not just whether a row existed.
+            $stmtExisting = $this->db->prepare("SELECT * FROM `payroll_run_sync_item_overrides` WHERE run_id = :run_id AND employee_id = :employee_id");
             $stmtExisting->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
-            $existingId = $stmtExisting->fetchColumn();
+            $existingRow = $stmtExisting->fetch(PDO::FETCH_ASSOC);
+            $existingId = $existingRow['id'] ?? false;
 
             // $values above is keyed by plain field name (kept the validation loop readable) --
             // rebuild with the leading colon every prepared-statement placeholder needs.
@@ -3817,6 +4882,22 @@ class PayrollRunModel {
             $this->logAudit($runId, 'draft', 'draft', 'attendance_override_save', $userId,
                 "Employee {$employeeNo}: " . ($summary !== '' ? $summary : 'all fields reset to synced values') . ($note ? " (note: {$note})" : ''));
 
+            // 2026-08-31, same-day follow-up (item 10): one history row per field that ACTUALLY
+            // changed (this method upserts all 7 fields on every call, so most calls leave most
+            // fields untouched -- an unconditional history row per field would flood the audit
+            // report with no-op noise). $values[$field]===null means "this call leaves the field
+            // following synced/import data" -- same reading as recorded 'restore', consistent with
+            // attendanceOverrideRemove()'s own action value below.
+            foreach (self::ATTENDANCE_OVERRIDE_FIELDS as $field) {
+                $oldFieldValue = $existingRow && $existingRow[$field] !== null ? (float)$existingRow[$field] : null;
+                $newFieldValue = $values[$field];
+                if ($oldFieldValue === $newFieldValue || ($oldFieldValue !== null && $newFieldValue !== null && abs($oldFieldValue - $newFieldValue) < 0.005)) {
+                    continue; // unchanged, nothing to record
+                }
+                $this->recordLineOverrideHistory($runId, $employeeId, 'attendance', $field,
+                    $newFieldValue !== null ? 'override' : 'restore', $oldFieldValue, $newFieldValue, $userId, $note);
+            }
+
             if ($own) { $this->db->commit(); }
         } catch (PDOException $e) {
             if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
@@ -3843,11 +4924,28 @@ class PayrollRunModel {
         $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
         $employeeNo = $stmtEmp->fetchColumn();
 
+        // 2026-08-31, same-day follow-up (item 10): captured BEFORE the delete, same "old_value
+        // must reflect what the override actually was" reasoning as lineOverrideRemove()'s own.
+        $stmtExisting = $this->db->prepare("SELECT * FROM `payroll_run_sync_item_overrides` WHERE run_id = :run_id AND employee_id = :employee_id");
+        $stmtExisting->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+        $existingRow = $stmtExisting->fetch(PDO::FETCH_ASSOC);
+
         $this->db->prepare("DELETE FROM `payroll_run_sync_item_overrides` WHERE run_id = :run_id AND employee_id = :employee_id")
             ->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
 
         $this->logAudit($runId, 'draft', 'draft', 'attendance_override_remove', $userId,
             "Employee " . ($employeeNo !== false ? $employeeNo : $employeeId) . ": all fields reset to synced values");
+
+        // One 'restore' row per field that genuinely HAD an override (skip fields that were never
+        // touched) -- new_value is the real synced/import figure it reverted to, not a guess.
+        $syncedAfter = $this->attendanceDataForEmployee($compId, $runId, $employeeId)['synced'] ?? [];
+        foreach (self::ATTENDANCE_OVERRIDE_FIELDS as $field) {
+            if (!$existingRow || $existingRow[$field] === null) {
+                continue;
+            }
+            $this->recordLineOverrideHistory($runId, $employeeId, 'attendance', $field, 'restore',
+                (float)$existingRow[$field], isset($syncedAfter[$field]) ? (float)$syncedAfter[$field] : null, $userId);
+        }
 
         return $this->recalculate($runId, $compId, $userId, $isAdmin);
     }
@@ -3858,21 +4956,33 @@ class PayrollRunModel {
      */
     public function attendanceDataForEmployee(int $compId, int $runId, int $employeeId): array {
         $run = $this->get($runId, $compId);
-        if (!$run || $run['sync_process_id'] === null) {
+        if (!$run) {
             return ['synced' => [], 'override' => []];
         }
-        $stmtSync = $this->db->prepare("SELECT " . implode(', ', self::ATTENDANCE_OVERRIDE_FIELDS) . " FROM `payroll_sync_items`
-            WHERE process_id = :process_id AND employee_id = :employee_id AND mapping_status = 'mapped'
-            ORDER BY id DESC LIMIT 1");
-        $stmtSync->execute([':process_id' => $run['sync_process_id'], ':employee_id' => $employeeId]);
-        $synced = $stmtSync->fetch(PDO::FETCH_ASSOC) ?: array_fill_keys(self::ATTENDANCE_OVERRIDE_FIELDS, null);
+        $castNumeric = fn(array $row) => array_map(fn($v) => $v !== null ? (float)$v : null, $row);
+        // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9b): the OLD blanket "non-sync run
+        // -> return nothing at all" refusal here was a SEPARATE gate from
+        // attendanceOverrideSave()'s own (already removed) -- a real bug found while testing this
+        // change: the save succeeded but this read-back method still silently hid it for a non-sync
+        // run. `synced` (Origami's own raw payroll_sync_items row) genuinely has nothing to show for
+        // a non-sync run -- that part of the gate is correct and stays. `override` has no such
+        // dependency (payroll_run_sync_item_overrides is keyed by run_id/employee_id only, not tied
+        // to sync_process_id at all) -- reads unconditionally now, matching what
+        // attendanceOverrideSave() can now actually write for any run.
+        $synced = array_fill_keys(self::ATTENDANCE_OVERRIDE_FIELDS, null);
+        if ($run['sync_process_id'] !== null) {
+            $stmtSync = $this->db->prepare("SELECT " . implode(', ', self::ATTENDANCE_OVERRIDE_FIELDS) . " FROM `payroll_sync_items`
+                WHERE process_id = :process_id AND employee_id = :employee_id AND mapping_status = 'mapped'
+                ORDER BY id DESC LIMIT 1");
+            $stmtSync->execute([':process_id' => $run['sync_process_id'], ':employee_id' => $employeeId]);
+            $synced = $stmtSync->fetch(PDO::FETCH_ASSOC) ?: $synced;
+        }
 
         $stmtOv = $this->db->prepare("SELECT " . implode(', ', self::ATTENDANCE_OVERRIDE_FIELDS) . " FROM `payroll_run_sync_item_overrides`
             WHERE run_id = :run_id AND employee_id = :employee_id");
         $stmtOv->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         $override = $stmtOv->fetch(PDO::FETCH_ASSOC) ?: array_fill_keys(self::ATTENDANCE_OVERRIDE_FIELDS, null);
 
-        $castNumeric = fn(array $row) => array_map(fn($v) => $v !== null ? (float)$v : null, $row);
         return ['synced' => $castNumeric($synced), 'override' => $castNumeric($override)];
     }
 
@@ -4006,8 +5116,8 @@ class PayrollRunModel {
         if ($run['state'] !== 'draft') {
             return ['status' => false, 'message' => 'Only a draft payroll run can have its employee exemptions adjusted.'];
         }
-        if ($this->isEmployeeLockedForRun($runId, $employeeId)) {
-            return ['status' => false, 'message' => 'This employee is locked for this run and cannot be edited. Unlock first.'];
+        if ($this->isEmployeeVerifiedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is verified for this run and cannot be edited. Unverify first.'];
         }
         $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
@@ -4155,6 +5265,38 @@ class PayrollRunModel {
         }
 
         return $this->recalculate($runId, $compId, $userId, $isAdmin);
+    }
+
+    /**
+     * 2026-08-31, explicit request: "เพิ่ม Function ให้มี checkbox ติ๊กว่าคำนวณอัตโนมัติหลังจากที่แก้ไขข้อมูล
+     * ทันที...บันทึกลง DB ผูกกับ Run นั้นๆ" -- persisted per-run (confirmed via AskUserQuestion: shared
+     * across whoever opens this run, not a personal browser preference). Every mutation entry point
+     * this page itself owns (addManualLine/removeManualLine/lineOverrideSave/lineOverrideRemove/
+     * attendanceOverrideSave/attendanceOverrideRemove/saveEmployeeExemption/joinEmployees/
+     * removeManualEmployee/runSettingsSave) ALREADY calls recalculate() internally as its own last
+     * step -- so this flag adds nothing there, numbers from THIS page's own actions are always fresh
+     * regardless of the setting. What this flag actually controls is the one gap those methods can
+     * never close: an edit made somewhere ELSE (Employee Detail's salary/PED tab, Setup & Rules,
+     * Payroll Configuration, HR sync, ...) that this specific draft run has no way to detect on its
+     * own. detail.js's own page-load path checks this flag and, when true, fires ONE recalculate()
+     * automatically before rendering so a returning admin always sees fresh numbers without an extra
+     * click; when false, the page renders as-is and shows a reminder banner instead (see
+     * renderRecalcReminder() in detail.js).
+     */
+    public function setAutoRecalculate(int $runId, int $compId, bool $value, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if ($run['state'] !== 'draft') {
+            return ['status' => false, 'message' => 'Only a draft payroll run can have this setting changed.'];
+        }
+        $stmt = $this->db->prepare("UPDATE `payroll_runs` SET auto_recalculate = :value WHERE id = :id AND comp_id = :comp_id");
+        $stmt->execute([':value' => $value ? 1 : 0, ':id' => $runId, ':comp_id' => $compId]);
+        return ['status' => true, 'message' => 'Saved successfully.'];
     }
 
     /* ==================== STATE TRANSITIONS ==================== */
@@ -4699,6 +5841,43 @@ class PayrollRunModel {
                     }
                 }
             }
+            // 2026-08-31, explicit request: real double-payment risk found and confirmed by the
+            // user -- reopen() has always allowed re-opening an already-paid/locked run (e.g. to
+            // merge a supplemental process into it), but nothing recorded how much of this run's
+            // total was ALREADY disbursed on a prior payment cycle. This is what closes that gap:
+            // one payroll_run_payment_events row per employee, per markPaid() call, recording the
+            // DELTA (current amount minus every prior event already recorded for this run+
+            // employee) -- NOT the run's own current total. A run's first-ever markPaid() has no
+            // prior events, so every delta here equals the plain current amount -- byte-identical
+            // to this method's own pre-existing behavior for the overwhelmingly common single-
+            // payment-cycle case, this is purely additive. See
+            // PayrollReportDataModel::getRunDetails()'s own matching *_amount_due columns, which
+            // BankTransferFileReport/PaymentVoucherReport now read instead of the raw amounts.
+            $stmtPriorPaid = $this->db->prepare("SELECT employee_id, SUM(gross_amount_paid) AS gross_paid,
+                    SUM(deduction_amount_paid) AS deduction_paid, SUM(net_amount_paid) AS net_paid
+                FROM `payroll_run_payment_events` WHERE run_id = :run_id GROUP BY employee_id");
+            $stmtPriorPaid->execute([':run_id' => $id]);
+            $priorPaidByEmployee = [];
+            foreach ($stmtPriorPaid->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $priorPaidByEmployee[(int)$row['employee_id']] = $row;
+            }
+            $stmtCurrentDetails = $this->db->prepare("SELECT employee_id, gross_amount, total_deduction_amount, net_amount FROM `payroll_run_details` WHERE run_id = :run_id");
+            $stmtCurrentDetails->execute([':run_id' => $id]);
+            $insEvent = $this->db->prepare("INSERT INTO `payroll_run_payment_events`
+                (run_id, employee_id, gross_amount_paid, deduction_amount_paid, net_amount_paid, payment_method, payment_reference, paid_by)
+                VALUES (:run_id, :employee_id, :gross, :deduction, :net, :payment_method, :payment_reference, :paid_by)");
+            foreach ($stmtCurrentDetails->fetchAll(PDO::FETCH_ASSOC) as $detail) {
+                $employeeId = (int)$detail['employee_id'];
+                $prior = $priorPaidByEmployee[$employeeId] ?? ['gross_paid' => 0, 'deduction_paid' => 0, 'net_paid' => 0];
+                $insEvent->execute([
+                    ':run_id' => $id, ':employee_id' => $employeeId,
+                    ':gross' => round((float)$detail['gross_amount'] - (float)$prior['gross_paid'], 2),
+                    ':deduction' => round((float)$detail['total_deduction_amount'] - (float)$prior['deduction_paid'], 2),
+                    ':net' => round((float)$detail['net_amount'] - (float)$prior['net_paid'], 2),
+                    ':payment_method' => $paymentMethod, ':payment_reference' => $paymentReference, ':paid_by' => $userId,
+                ]);
+            }
+
             $stmt = $this->db->prepare("UPDATE `payroll_runs` SET state = 'paid', paid_at = CURRENT_TIMESTAMP, paid_by = :paid_by,
                 payment_method = :payment_method, payment_reference = :payment_reference, payment_date = :payment_date,
                 updated_by = :paid_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");

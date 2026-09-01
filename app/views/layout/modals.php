@@ -376,6 +376,65 @@
 </div>
 
 <!-- ===== Document & Approval (app/views/setup/document-approval.php) ===== -->
+<!-- 2026-08-31, explicit request: "เพิ่มปุ่มให้สามารถ Assign ได้ โดยเปิดเป็น Modal ขึ้นมา มีรายละเอียด Master
+     Data แล้วแบ่งเป็น 2 Card คือพนักงานที่อยู่ Master อื่น และพนักงานที่อยู่ Master นี้...และมีอีกปุ่มสำหรับกด View
+     เพื่อดูเฉพาะพนักงานที่อยู่ใน Master นั้น" -- ONE shared modal (public/js/setup/structure-assign.js)
+     driven entirely by data-type/data-id passed from whichever row's Assign/View button opened it
+     (company-profile.js's getActionButtons()/setup-rules.js's structureAssignExtraBtns(), both cover
+     all 8 assignable master types with zero per-type markup here). #saOutsideCard is hidden in View
+     mode (only the "employees in this Master" card + Move Out shown) -- see openStructureAssignModal()'s
+     own docblock. -->
+<div class="modal fade" id="structureAssignModal" tabindex="-1" aria-labelledby="structureAssignModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-secondary" id="structureAssignModalLabel">
+                    <i class="fa-solid fa-users me-2"></i><span id="structureAssignModalTitle"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6" id="saOutsideCard">
+                        <div class="card h-100">
+                            <div class="card-header bg-light">
+                                <span class="fw-bold small" data-i18n="sa_employees_outside">Employees in Other Masters</span>
+                            </div>
+                            <div class="card-body p-2">
+                                <input type="text" class="form-control form-control-sm mb-2" id="saOutsideSearch" placeholder="Search...">
+                                <div class="sa-list" id="saOutsideList" style="max-height:340px;overflow-y:auto;"></div>
+                            </div>
+                            <div class="card-footer text-end bg-white">
+                                <button type="button" class="btn btn-primary btn-sm" id="btnSaPullIn" disabled>
+                                    <i class="fa-solid fa-arrow-left me-1"></i><span data-i18n="sa_pull_in">Pull In</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6" id="saInCard">
+                        <div class="card h-100">
+                            <div class="card-header bg-light">
+                                <span class="fw-bold small" data-i18n="sa_employees_in">Employees in This Master</span>
+                            </div>
+                            <div class="card-body p-2">
+                                <input type="text" class="form-control form-control-sm mb-2" id="saInSearch" placeholder="Search...">
+                                <div class="sa-list" id="saInList" style="max-height:340px;overflow-y:auto;"></div>
+                            </div>
+                            <div class="card-footer text-end bg-white">
+                                <button type="button" class="btn btn-outline-danger btn-sm" id="btnSaMoveOut" disabled>
+                                    <i class="fa-solid fa-arrow-right me-1"></i><span data-i18n="sa_move_out">Move Out</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="modal fade" id="documentNumberingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="documentNumberingModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -1841,12 +1900,47 @@
                             <input type="text" class="form-control" id="eed_external_reference_no" name="external_reference_no" maxlength="100">
                         </div>
                     </div>
+                    <!-- 2026-08-31, explicit request: "หักไปจ่ายใคร หรือจ่ายเข้าบัญชีบริษัท" -- widened
+                         from "always another employee" to a real 3-way choice (None/Employee/Company
+                         Account), same .btn-group toggle convention as #eedModeToggle above. See
+                         EmployeeEarningDeductionModel::save()'s own docblock for the payee_type
+                         schema.
+                         2026-08-31, same-day follow-up: 4th option "not_disbursed" -- "หักเพื่อไม่ทำ
+                         จ่ายเฉยๆ โดยเงินไม่ออกจากกองทุน" (withheld but no money moves anywhere at all,
+                         distinct from "none" above which still reduces the employee's own net pay --
+                         a real outflow from the fund, just untracked-by-payee). Never shows the
+                         Include-in-Cash-Summary checkbox below -- forced excluded at the model layer
+                         (EmployeeEarningDeductionModel::save()'s own comment), so offering it as a
+                         toggle here would be misleading. -->
                     <div class="row mb-3 d-none" id="eedPayeeWrapper">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="payee_type_label">Deducted Money Goes To</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <div class="btn-group btn-group-sm flex-wrap" role="group" id="eedPayeeTypeToggle">
+                                <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="eedPayeeEmployeeWrapper">
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote" id="eed_payee_employee_id" name="payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="eedIncludeCashSummaryWrapper">
+                        <div class="col-sm-3"></div>
+                        <div class="col-sm-9">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="eed_include_in_cash_summary" name="include_in_cash_summary" checked>
+                                <label class="form-check-label" for="eed_include_in_cash_summary" data-i18n="include_in_cash_summary_label">Include in Cash Payment Summary Report</label>
+                            </div>
+                            <div class="form-text" data-i18n="include_in_cash_summary_hint">*Uncheck to track this amount as its own separate line instead of folding it into the report's aggregate total.</div>
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2388,11 +2482,97 @@
             <form id="payrollRunForm" novalidate>
                 <input type="hidden" id="run_sync_process_id" name="sync_process_id" value="">
                 <div class="modal-body">
-                    <div class="row mb-3" id="run_offcycle_row">
-                        <div class="col-sm-9 offset-sm-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="run_is_offcycle">
-                                <label class="form-check-label" for="run_is_offcycle" data-i18n="offcycle_run_label">Off-schedule run (no payroll schedule needed -- e.g. an out-of-schedule payment)</label>
+                    <!-- 2026-09-02, same-day follow-up, explicit request: "พอมีแค่...ให้ติ๊กออกแล้วค่อยให้เลือก
+                         รอบ...ดูงงๆ ช่วยเพิ่มเป็น radio ให้เลือก...ถ้าเลือก option 1 ให้ขึ้นรอบให้เลือก ถ้าเลือก
+                         option 2 ไม่ขึ้นให้เลือก" -- the single checkbox (unchecked = "no schedule needed"
+                         being an implicit double-negative, and unchecking to REVEAL a field reads as
+                         backwards) replaced with an explicit 2-option .run-choice-card radio -- option 1
+                         (cycle, default) shows the Payroll Schedule picker, option 2 (offcycle) reveals
+                         #run_offcycle_panel below (a genuinely different, smaller-scale sub-decision, see
+                         that panel's own comment for why it no longer uses this same card design).
+                         2026-09-02, 4th same-day follow-up, explicit request: "อยากให้แสดงเต็มแถวเลยครับ...
+                         ถ้าเลือกตามรอบดูสวย แต่พอเลือกนอกรอบดูแหว่งๆ" -- dropped the col-sm-9/offset-sm-3 split
+                         (this is a top-level type selector, not a "label: control" field like everything
+                         below it, so the blank offset-sm-3 gutter never had real content to balance
+                         against -- looked fine only by coincidence when "Follow a schedule" was active,
+                         since the Payroll Schedule field right below it happens to share that same
+                         label-left/control-right shape; picking off-schedule instead revealed the
+                         bordered #run_offcycle_panel starting flush left, right under a card row that
+                         wasn't). Cards now span the modal's full width. -->
+                    <div class="mb-3" id="run_offcycle_row">
+                        <div class="run-choice-toggle">
+                            <label class="run-choice-card" for="run_schedule_choice_cycle">
+                                <input class="form-check-input" type="radio" name="runScheduleChoice" id="run_schedule_choice_cycle" value="cycle" checked>
+                                <span class="run-choice-card-icon"><i class="fa-solid fa-calendar-check"></i></span>
+                                <span class="run-choice-card-body">
+                                    <span class="run-choice-card-label" data-i18n="run_schedule_choice_cycle">Follow a payroll schedule</span>
+                                    <span class="run-choice-card-sub" data-i18n="run_schedule_choice_cycle_sub">Pick from your configured payroll schedules</span>
+                                </span>
+                            </label>
+                            <label class="run-choice-card" for="run_schedule_choice_offcycle">
+                                <input class="form-check-input" type="radio" name="runScheduleChoice" id="run_schedule_choice_offcycle" value="offcycle">
+                                <span class="run-choice-card-icon"><i class="fa-solid fa-money-bill-transfer"></i></span>
+                                <span class="run-choice-card-body">
+                                    <span class="run-choice-card-label" data-i18n="offcycle_run_label">Off-schedule run</span>
+                                    <span class="run-choice-card-sub" data-i18n="offcycle_run_label_sub">No payroll schedule needed -- e.g. an out-of-schedule payment</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    <!-- 2026-09-02, 2nd same-day follow-up, explicit request: "พอเป็น Design แบบเดียวกันแล้วดู
+                         แปลกๆครับ ช่วย Design Form ให้ใหม่" -- was 2 big .run-choice-card blocks stacked back
+                         to back, reading as two equally-weighted top-level decisions when the merge
+                         choice only ever means anything AFTER "off-schedule" is picked above. Now a
+                         genuinely NESTED sub-panel (.run-offcycle-panel, dashed brand-orange border) that
+                         only appears together with the off-schedule option -- see setOffCycleMode() in
+                         index.js, which also fixes a real validation gap this redesign surfaced: before
+                         this, the merge choice stayed reachable even while "Follow a payroll schedule"
+                         was selected, letting an admin pick BOTH a cycle and a merge target and hit a
+                         guaranteed backend rejection on save (PayrollRunModel::create() refuses a merge
+                         target whenever cycle_id is set) -- now impossible, the panel (and everything in
+                         it) is only in the DOM's visible tree at all when off-schedule is chosen.
+                         2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบ
+                         ใหม่ หรืออ้างอิงถึงรอบ" -- confirmed via AskUserQuestion: this whole block (radio +
+                         target picker) is scoped ONLY to the standalone "Add" flow (hidden entirely for a
+                         Pull-sync/Origami create -- that flow stays exactly as-is, still driven solely by
+                         Origami's own attribution, see PayrollRunModel::mergeSupplementalIntoRun()).
+                         Choosing "reference" doesn't change what create() does right now -- the run is
+                         still created and built up normally (Join Employees/Manage Items); this just
+                         tags where it should eventually fold into, surfaced as a "Merge into Target"
+                         action on the new run's own Detail page once it's ready (PayrollRunModel::
+                         mergeIntoExistingRun()). Target picker covers every state except cancelled
+                         (confirmed via AskUserQuestion) -- approved/paid/locked targets are reachable
+                         too, requiring the same revert/reopen confirmation mergeSupplementalIntoRun()'s
+                         own equivalent button already asks for. -->
+                    <div class="run-offcycle-panel d-none" id="run_offcycle_panel">
+                        <div class="run-offcycle-panel-title"><i class="fa-solid fa-sliders"></i> <span data-i18n="run_offcycle_panel_title">Off-schedule round options</span></div>
+                        <div class="row mb-3" id="run_merge_choice_row">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0" data-i18n="run_merge_choice_label">Create this round as</label>
+                            </div>
+                            <div class="col-sm-9">
+                                <div class="run-subchoice-toggle">
+                                    <label class="run-subchoice-btn active" for="run_merge_choice_new">
+                                        <input type="radio" name="runMergeChoice" id="run_merge_choice_new" value="new" checked>
+                                        <i class="fa-solid fa-file-circle-plus"></i>
+                                        <span data-i18n="run_merge_choice_new">Open a new round</span>
+                                    </label>
+                                    <label class="run-subchoice-btn" for="run_merge_choice_reference">
+                                        <input type="radio" name="runMergeChoice" id="run_merge_choice_reference" value="reference">
+                                        <i class="fa-solid fa-link"></i>
+                                        <span data-i18n="run_merge_choice_reference">Reference an existing round</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="run_merge_target_row">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0"><span data-i18n="run_merge_target_label">Target Round</span> <span class="text-danger">*</span></label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-remote" id="run_merge_target_id" name="merge_target_run_id"
+                                        data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked"></select>
+                                <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" on its own Detail page to fold it into the round selected here.</div>
                             </div>
                         </div>
                     </div>
@@ -2438,6 +2618,22 @@
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="run_include_attendance_pay">
                                 <label class="form-check-label" for="run_include_attendance_pay" data-i18n="include_attendance_pay_label">Include attendance-driven earnings (OT/trip allowance), calculated automatically</label>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 2026-08-31, same-day follow-up (Origami `attribution` plan's item 3) -- only
+                         ever shown for a supplemental sync process Origami attributed
+                         tax_treatment='separate' (see public/js/payroll/index.js's own
+                         setSupplementalPullMode() docblock), pre-checked when shown. Uses the
+                         Payroll Policy tab's own company-configured
+                         supplemental_flat_tax_rate_percent -- if that's never been set, this flag is
+                         a silent no-op and the normal average/actual PIT calculation runs instead
+                         (PayrollRunModel::recalculate()'s own TH_PIT block never invents a rate). -->
+                    <div class="row mb-3 d-none" id="run_use_flat_tax_rate_row">
+                        <div class="col-sm-9 offset-sm-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="run_use_flat_tax_rate">
+                                <label class="form-check-label" for="run_use_flat_tax_rate" data-i18n="use_flat_tax_rate_label">Withhold tax at the company's configured flat rate (Payroll Policy tab), instead of average/actual</label>
                             </div>
                         </div>
                     </div>

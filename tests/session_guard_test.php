@@ -27,6 +27,11 @@ $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
+// 2026-08-31: only for reading the SESSION_IDLE_TIMEOUT_SECONDS constant below (to keep the
+// stale-duration fixtures always safely past whatever the current threshold is) -- ensure_login()
+// itself is never called in THIS (outer) process, only in the subprocesses runEnsureLogin() shells
+// out to, so requiring this here has no session/exit side effects.
+require_once __DIR__ . '/../app/helpers/helpers.php';
 
 $pdo = Database::getInstance()->pdo;
 
@@ -130,7 +135,10 @@ try {
     $res3 = runEnsureLogin($root, $php, 'sgtesttimeout' . str_replace('.', '', uniqid()), [
         'user' => ['employee_id' => $employeeId, 'company_id' => $compId, 'role' => 'user'],
         'login_log_id' => $loginLogId2,
-        'last_activity' => time() - 3600, // 1 hour ago -- well past the 30-minute threshold
+        // 2026-08-31: timeout widened 30min -> 1h -- stale-duration fixtures below bumped to stay
+        // well past the CURRENT threshold (SESSION_IDLE_TIMEOUT_SECONDS itself, not a hardcoded
+        // number, so this file never has to be re-tuned again if the constant changes once more).
+        'last_activity' => time() - SESSION_IDLE_TIMEOUT_SECONDS - 600,
     ]);
     check('rejected with reason=timeout', $res3['reason'] ?? null, 'timeout');
     checkTrue('endSession() was actually called server-side -- the login log row is now inactive', !$loginLogModel->isActive($loginLogId2, $employeeId));
@@ -139,20 +147,20 @@ try {
 
     echo "=== a heartbeat-route request does NOT bump last_activity (would defeat the idle timeout) ===\n";
     $loginLogId3 = $loginLogModel->create($compId, $employeeId, '127.0.0.1', 'Mozilla/5.0 Test');
-    // A request 40 minutes stale on the heartbeat route: since bumping is skipped there, a
+    // A request stale past the threshold on the heartbeat route: since bumping is skipped there, a
     // heartbeat itself must NOT be able to indefinitely refresh an idle session -- it should be
     // rejected with reason=timeout exactly like any other route would be at that same staleness.
     $res4 = runEnsureLogin($root, $php, 'sgtestheartbeat' . str_replace('.', '', uniqid()), [
         'user' => ['employee_id' => $employeeId, 'company_id' => $compId, 'role' => 'user'],
         'login_log_id' => $loginLogId3,
-        'last_activity' => time() - 2400,
+        'last_activity' => time() - SESSION_IDLE_TIMEOUT_SECONDS - 600,
     ], '/api/session.heartbeat');
     check('a heartbeat call on an already-stale session is ALSO rejected as timeout (heartbeats check, they do not refresh)', $res4['reason'] ?? null, 'timeout');
 
     echo "=== a session with no login_log_id at all (pre-existing/older session) still enforces the idle timeout, just skips the is_active check ===\n";
     $res5 = runEnsureLogin($root, $php, 'sgtestnologinlog' . str_replace('.', '', uniqid()), [
         'user' => ['employee_id' => $employeeId, 'company_id' => $compId, 'role' => 'user'],
-        'last_activity' => time() - 3600,
+        'last_activity' => time() - SESSION_IDLE_TIMEOUT_SECONDS - 600,
     ]);
     check('still rejected with reason=timeout even with no login_log_id to check', $res5['reason'] ?? null, 'timeout');
 

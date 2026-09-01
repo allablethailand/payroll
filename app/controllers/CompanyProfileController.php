@@ -532,4 +532,66 @@ class CompanyProfileController extends Controller {
         $result = $this->model->deleteStructure($type, (int)$compId, $id, $userId);
         $this->json($result);
     }
+
+    /* ==================== Assign Employees (2026-08-31, explicit request) ====================
+     * Generic across every structure type (see CompanyProfileModel's own EMPLOYEE_FK_COLUMN
+     * docblock) -- `type` travels as a plain request param rather than 6 separate dispatcher
+     * methods, since the frontend's own modal is ALSO one shared component driven by the same
+     * `type` value (no per-type markup/JS to keep in sync with a per-type route).
+     */
+    public function structureEmployeesInRow() {
+        if (!$this->requirePermission('company_structure.view')) return;
+        $compId = getCompId();
+        $type = (string)($_GET['type'] ?? '');
+        $rowId = (int)($_GET['id'] ?? 0);
+        $search = trim((string)($_GET['search'] ?? ''));
+        if (!$compId || $rowId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->model->structureEmployeesInRow($type, $rowId, (int)$compId, $search));
+    }
+
+    public function structureEmployeesOutsideRow() {
+        if (!$this->requirePermission('company_structure.view')) return;
+        $compId = getCompId();
+        $type = (string)($_GET['type'] ?? '');
+        $rowId = (int)($_GET['id'] ?? 0);
+        $search = trim((string)($_GET['search'] ?? ''));
+        if (!$compId || $rowId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $this->json($this->model->structureEmployeesOutsideRow($type, $rowId, (int)$compId, $search));
+    }
+
+    public function structureAssignEmployees() {
+        if (!$this->requirePermission('company_structure.manage')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $type = (string)($data['type'] ?? '');
+        $rowId = (int)($data['id'] ?? 0);
+        $employeeIds = is_array($data['employee_ids'] ?? null) ? $data['employee_ids'] : [];
+        if (!$compId || $rowId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->model->structureAssignEmployees($type, $rowId, $employeeIds, (int)$compId, $userId));
+    }
+
+    public function structureMoveEmployeesOut() {
+        if (!$this->requirePermission('company_structure.manage')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $type = (string)($data['type'] ?? '');
+        $employeeIds = is_array($data['employee_ids'] ?? null) ? $data['employee_ids'] : [];
+        $destinationRowId = !empty($data['destination_id']) ? (int)$data['destination_id'] : null;
+        if (!$compId || empty($employeeIds)) {
+            $this->json(['status' => false, 'message' => 'No employees selected.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $this->json($this->model->structureMoveEmployeesOut($type, $employeeIds, (int)$compId, $destinationRowId, $userId));
+    }
 }
