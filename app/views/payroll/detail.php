@@ -1269,16 +1269,33 @@
                     <div class="tab-content border border-top-0 rounded-bottom p-3">
                         <div class="tab-pane fade show active" id="manageLinesItemsPane" role="tabpanel">
                             <div class="add-manual-line-card border rounded-3 p-3 bg-light bg-opacity-50 mb-4">
-                                <div class="d-flex justify-content-end mb-2">
-                                    <div class="btn-group btn-group-sm" role="group" id="manualLineModeToggle">
-                                        <button type="button" class="btn btn-outline-secondary active" data-mode="catalog"><i class="fa-solid fa-list me-1"></i><span data-i18n="manual_line_mode_catalog">From List</span></button>
-                                        <button type="button" class="btn btn-outline-secondary" data-mode="custom"><i class="fa-solid fa-pen me-1"></i><span data-i18n="manual_line_mode_custom">Custom Item</span></button>
+                                <div class="mb-2">
+                                    <!-- 2026-09-03, Manual Entry / Platform UX review Phase 6: same
+                                         redesign as #eedModal's own mode toggle (see that markup's own
+                                         comment + style.css's .mode-select-group docblock) -- these are
+                                         the only 2 places this exact "choose from list / specify
+                                         manually / other" pattern exists in the app. -->
+                                    <div class="mode-select-group" role="group" id="manualLineModeToggle">
+                                        <button type="button" class="mode-select-btn active" data-mode="catalog">
+                                            <i class="fa-solid fa-list"></i>
+                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_catalog">From List</span>
+                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_catalog">Pick from your saved item types</span>
+                                        </button>
+                                        <button type="button" class="mode-select-btn" data-mode="custom">
+                                            <i class="fa-solid fa-pen"></i>
+                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_custom">Custom Item</span>
+                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_custom">One-time item with its own name</span>
+                                        </button>
                                         <!-- 2026-09-02, Deduction Destination & Third-Party Remittance,
                                              Phase 7 -- reuses #manualLineCustomFields' own free-text
                                              input verbatim, same as #eedModal's own "Other" mode (see
                                              that modal's markup comment); is_other=true is the only
                                              difference sent on submit. -->
-                                        <button type="button" class="btn btn-outline-secondary" data-mode="other"><i class="fa-solid fa-circle-question me-1"></i><span data-i18n="manual_line_mode_other">Other</span></button>
+                                        <button type="button" class="mode-select-btn" data-mode="other">
+                                            <i class="fa-solid fa-circle-question"></i>
+                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_other">Other</span>
+                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_other">Grouped into "Other Income/Deduction" on reports</span>
+                                        </button>
                                     </div>
                                 </div>
                                 <div class="row g-2 align-items-end" id="manualLineCatalogFields">
@@ -1328,7 +1345,7 @@
                                             <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
                                             <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -->
                                             <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
+                                            <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
                                         </div>
                                     </div>
                                 </div>
@@ -1485,7 +1502,7 @@
                                     <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
                                     <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
                                     <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
                                 </div>
                                 <div class="row g-2 align-items-end d-none" id="recurringDestEmployeeWrapper">
                                     <div class="col-12">

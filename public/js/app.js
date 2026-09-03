@@ -87,13 +87,46 @@ $(document).on('change', '.status-toggle-switch', function () {
         doToggle();
     }
 });
+// 2026-09-03, Platform UX review Phase 2, revised same day (see style.css's own ".om-loader"/
+// ".om-page-loader" comment for the full 2-tier design rationale). Tier 1 (this function) is the
+// small in-place ring -- buttons (setButtonLoading() below) and DataTables' own "processing"
+// override (getTableLang() further down) both use it, deliberately the SAME small style for both
+// (table reloads were explicitly asked to stay visually distinct from the Tier-2 full-page loader,
+// not get a 3rd design of their own).
+function originamiLoaderHtml(size) {
+    const sizeClass = size === 'md' ? 'om-loader--md' : 'om-loader--sm';
+    return `<span class="om-loader ${sizeClass}"></span>`;
+}
+// Tier 2 -- full-screen centered overlay, reserved for a page's genuine MAIN content load (NOT
+// wired into setButtonLoading()/DataTables at all -- explicit request: "ไม่ต้องโหลดทุกการโหลด...เฉพาะ
+// ตอนโหลดข้อมูลหน้าหลัก"). The mark itself is static (only the 2 rings around it spin, in opposite
+// directions -- see the CSS), so this uses the real brand PNG directly rather than a CSS
+// approximation. Idempotent -- calling showPageLoader() while one is already showing just reuses it
+// (covers a caller that fires 2 fetches in parallel and calls this from both).
+function showPageLoader(text) {
+    if ($('#omPageLoader').length) { return; }
+    const label = text || (typeof langData !== 'undefined' && langData['processing']) || 'Loading...';
+    $('body').append(
+        `<div id="omPageLoader" class="om-page-loader">
+            <div class="om-page-loader__stage">
+                <div class="om-page-loader__ring om-page-loader__ring--outer"></div>
+                <div class="om-page-loader__ring om-page-loader__ring--inner"></div>
+                <img class="om-page-loader__logo" src="${BASE_URL}/public/images/origami_logo.png" alt="">
+            </div>
+            <div class="om-page-loader__text">${label}</div>
+        </div>`
+    );
+}
+function hidePageLoader() {
+    $('#omPageLoader').remove();
+}
 function setButtonLoading($btn, isLoading, loadingLabel) {
     if (!$btn || !$btn.length) return;
     if (isLoading) {
         if ($btn.data('originalHtml') === undefined) {
             $btn.data('originalHtml', $btn.html());
         }
-        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i><span>${loadingLabel || (langData && langData['saving']) || 'Saving...'}</span>`);
+        $btn.prop('disabled', true).html(`${originamiLoaderHtml('sm')}<span class="ms-2">${loadingLabel || (langData && langData['saving']) || 'Saving...'}</span>`);
     } else {
         $btn.prop('disabled', false);
         const original = $btn.data('originalHtml');
@@ -703,6 +736,12 @@ function getTableLang() {
         info: langData.info || "Showing _START_ to _END_ of _TOTAL_ entries",
         infoEmpty: langData.infoEmpty || "Showing 0 to 0 of 0 entries",
         infoFiltered: langData.infoFiltered || "(filtered from _MAX_ total entries)",
+        // 2026-09-03, Platform UX review Phase 2 -- DataTables renders whatever HTML is given here
+        // straight into its own `.dataTables_processing` overlay (the standard customization point
+        // for this exact indicator, not a workaround) -- replaces the library's bare "Processing..."
+        // text/default look with the shared brand mark for every table that already spreads
+        // ...getTableLang() into its own `language` config (every DataTable in this app does).
+        processing: `${originamiLoaderHtml('md')}<div class="mt-2">${langData.processing || 'Loading...'}</div>`,
         paginate: {
             first: langData.first || "First",
             last: langData.last || "Last",
@@ -954,8 +993,86 @@ async function loadLang(lang) {
         console.error("Error loading language file:", e);
     }
 }
+// 2026-09-03, Platform UX review Phase 3 (explicit request: every page currently shares ONE
+// hardcoded <title> -- "Payroll • ORIGAMI PLATFORM" -- browser tabs are indistinguishable). Confirmed
+// via AskUserQuestion: suffix is "Origami Payroll". Derives the title from the SAME breadcrumb
+// markup every page already renders (`.bc-parent` -- 0 or 1 per page, confirmed by scanning every
+// view -- then `.bc-current`) instead of hand-writing 26+ separate title strings that could drift
+// out of sync with the breadcrumb itself -- one source of truth, and it's already localized via the
+// same data-i18n mechanism updateText() below applies. `.bc-current` starts as a literal "-"
+// placeholder on detail pages (payroll run/employee/etc. -- see payroll/detail.php's own markup)
+// until an async fetch fills in the real name; skipped here as "not a real value yet" rather than
+// shipping a title like "Payroll Process — - | Origami Payroll" during that flash.
+function updateDocumentTitleFromBreadcrumb() {
+    const parts = [];
+    $('.payroll-breadcrumb .bc-parent').each(function () {
+        const t = $(this).text().trim();
+        if (t) parts.push(t);
+    });
+    const currentText = $('.payroll-breadcrumb .bc-current').first().text().trim();
+    if (currentText && currentText !== '-') parts.push(currentText);
+    document.title = parts.length ? `${parts.join(' — ')} | Origami Payroll` : 'Origami Payroll';
+}
+// Covers pages where `.bc-current`'s real value only appears after an async fetch (e.g.
+// payroll/detail.js's renderRunHeader() setting #bcRunName once the run loads) -- fires the same
+// derivation above automatically whenever that text actually changes, instead of requiring every
+// such page to remember to call it manually. One observer, delegated at the document level, set up
+// once on first load (harmless no-op if `.payroll-breadcrumb` doesn't exist on a page, e.g.
+// error404.php/permission.php).
+$(function () {
+    const breadcrumbEl = document.querySelector('.payroll-breadcrumb');
+    if (breadcrumbEl && typeof MutationObserver !== 'undefined') {
+        new MutationObserver(updateDocumentTitleFromBreadcrumb).observe(breadcrumbEl, { characterData: true, childList: true, subtree: true });
+    }
+});
+// 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency), Option A -- fills every
+// `.currency-code-label` span (input-group badge next to a monetary amount field) with the
+// company's own COMPANY_CURRENCY_CODE (see header.php's own docblock on that global). Deliberately
+// NOT driven by updateText()/data-i18n -- a currency CODE isn't translated text, it's live company
+// data, so these spans carry no data-i18n attribute (a static "THB" fallback only, for the brief
+// window before this runs). Called from applyLanguage() (already re-run on every page load, language
+// switch, and dynamically-swapped `root` content -- e.g. Employee Detail's tab panes, Payroll
+// Configuration's modals -- so a badge inside markup injected after initial page load still gets
+// filled without any extra per-page wiring), not a route/page-specific init, so a currency-labeled
+// field added anywhere in the future needs zero JS changes beyond adding the span itself:
+// `<span class="input-group-text currency-code-label">THB</span>`.
+// 2026-09-03, Manual Entry / Platform UX review Phase 7 -- confirmed via AskUserQuestion: "default
+// to first account" means the "Select a Saved Destination" dropdown shown for payee_type=
+// 'other_person' (#eed_destination_select and its 3 siblings -- #erd_destination_select,
+// #manualLineDestinationSelect, #recurringDestDestinationSelect -- see each caller's own
+// setXxxPayeeType() toggle function). When that dropdown becomes visible with nothing chosen yet,
+// pre-select the first saved destination (alphabetical by account_name, the same order
+// PaymentDestinationModel::listSaved() already returns) instead of leaving it empty -- same
+// "suggest a sensible starting choice instead of an empty required field" convenience already
+// applied to Payroll Cycle's own default bank account. Guarded against a real async race with the
+// caller's own populate-from-existing-record code (which runs synchronously right after the toggle
+// function this is called from, and always wins if it sets a real value first) by re-checking the
+// select is STILL empty at ajax-response time before applying -- an edit-mode record that already
+// has a real destination is never overwritten. A brand new company with zero saved destinations
+// yet is a normal no-op (nothing to default to).
+function applyFirstSavedDestinationDefault(selectId, newFieldsWrapperId) {
+    const $select = $(selectId);
+    if (!$select.length || $select.val()) return;
+    $.post(`${BASE_URL}/api/payment-destination.options`, { searchTerm: '', limit: 1 }, function (res) {
+        if ($select.val()) return;
+        const item = res && res.status && res.data && res.data.items && res.data.items[0];
+        if (!item) return;
+        const text = (typeof currentLang !== 'undefined' && currentLang === 'th') ? item.text_th : item.text_en;
+        const opt = new Option(text, item.id, true, true);
+        $select.empty().append(opt).trigger('change');
+        if (newFieldsWrapperId) {
+            $(newFieldsWrapperId).addClass('d-none');
+        }
+    }, 'json');
+}
+function applyCurrencyLabel(root = document) {
+    const code = (typeof COMPANY_CURRENCY_CODE !== 'undefined' && COMPANY_CURRENCY_CODE) ? COMPANY_CURRENCY_CODE : 'THB';
+    $(root).find('.currency-code-label').text(code);
+}
 function applyLanguage(lang, root = document) {
     updateText(root);
+    updateDocumentTitleFromBreadcrumb();
+    applyCurrencyLabel(root);
 
     // --- [เพิ่มส่วนนี้] สำหรับประมวลผล select ที่ใช้ data-option-keys ---
     $(root).find('select[data-option-keys]').each(function() {

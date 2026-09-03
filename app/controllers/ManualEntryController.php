@@ -4,6 +4,7 @@ require_once __DIR__ . '/../models/AttendanceRecordModel.php';
 require_once __DIR__ . '/../models/LeaveRequestModel.php';
 require_once __DIR__ . '/../models/OvertimeRecordModel.php';
 require_once __DIR__ . '/../models/SyncBatchModel.php';
+require_once __DIR__ . '/../models/EmployeeModel.php';
 require_once __DIR__ . '/../models/ImportTemplateDownloadLogModel.php';
 require_once __DIR__ . '/../models/ImportActivityLogModel.php';
 require_once __DIR__ . '/../services/import/ImportFileParser.php';
@@ -42,6 +43,7 @@ class ManualEntryController extends Controller {
     private ImportService $importService;
     private ImportTemplateDownloadLogModel $downloadLogModel;
     private ImportActivityLogModel $activityLogModel;
+    private EmployeeModel $employeeModel;
 
     private const IMPORTABLE_TRANSACTION_TYPES = ['attendance', 'leave', 'overtime'];
 
@@ -54,6 +56,7 @@ class ManualEntryController extends Controller {
         $this->importService = new ImportService();
         $this->downloadLogModel = new ImportTemplateDownloadLogModel();
         $this->activityLogModel = new ImportActivityLogModel();
+        $this->employeeModel = new EmployeeModel();
     }
 
     /** @return array{0:?string,1:?string} [ip_address, user_agent] -- the real request's own, never user-suppliable free text. Same capture pattern ReportsController already uses for report_export_logs. */
@@ -92,6 +95,22 @@ class ManualEntryController extends Controller {
 
     public function index() {
         $this->view('manual-entry/index');
+    }
+
+    /** 2026-09-03, Manual Entry Phase 1A ("reduce manual typing" audit, explicit request): the only
+     *  field on this whole page with a real, direct master-data counterpart is Attendance's own
+     *  Shift -- see the audit's own findings on why bank-account/allowance/tax fields don't apply
+     *  here at all. Called by index.js/bulk-entry.js right after an employee is picked; returns null
+     *  data when the employee has no shift assigned (a normal state, the caller just leaves the
+     *  Shift field empty, same as before this feature existed). */
+    public function employeeContext() {
+        $compId = getCompId();
+        $employeeId = (int)($_GET['employee_id'] ?? 0);
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => true, 'data' => null]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->employeeModel->shiftInfo((int)$compId, $employeeId)]);
     }
 
     /* ---------- Attendance ---------- */

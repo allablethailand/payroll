@@ -10,6 +10,9 @@ class MasterController extends Controller {
         $searchTerm = (string)($_POST['searchTerm'] ?? '');
         $type = (string)($_POST['type'] ?? '');
         $compId = getCompId();
-        $this->json(['status'=>true , 'data' => $this->model->master($page, $limit, $type, $searchTerm, $compId ? (int)$compId : null)]);
+        // 2026-09-03, Manual Entry Phase 1A: optional, only meaningful for type='ot_rate' -- see
+        // MasterModel::master()'s own docblock on that case.
+        $employeeId = isset($_POST['employee_id']) && $_POST['employee_id'] !== '' ? (int)$_POST['employee_id'] : null;
+        $this->json(['status'=>true , 'data' => $this->model->master($page, $limit, $type, $searchTerm, $compId ? (int)$compId : null, $employeeId)]);
     }
 }

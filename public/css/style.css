@@ -6542,3 +6542,132 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     vertical-align: middle;
     border: 1px solid #e0e0e0;
 }
+
+/* 2026-09-03, Manual Entry / Platform UX review Phase 2, REVISED same day per explicit follow-up
+   feedback: "ตัว loading ยังไม่สวยครับ ให้เป็น icon payroll อยู่ตรงกลาง แล้วมีเส้นวิ่งรอบสวนกันแทน...ตอนโหลด
+   อยากให้อยู่กลางจอตลอด และไม่ต้องโหลดทุกการโหลด...เฉพาะตอนโหลดข้อมูลหน้าหลัก...ส่วนการ Reload ตารางควรขึ้น
+   load อีกแบบ" -- replaces the original single spin+hue-cycle faceted-ring design (a CSS
+   approximation of the logo, since it was animating and had to stay lightweight) with TWO deliberately
+   different tiers now that the brief has 2 genuinely different use cases:
+
+   TIER 1 -- .om-loader: a small, plain rotating ring (brand orange). Used for buttons
+   (setButtonLoading() in app.js) and DataTables' own processing indicator (getTableLang(), also
+   app.js) -- i.e. every ROUTINE, in-place, non-blocking wait, INCLUDING table reloads, which is
+   deliberately the SAME small ring, not the Tier 2 mark below (the explicit "table reload should
+   look different [from the main page loader]" ask -- satisfied by table reloads staying on this
+   simpler tier rather than getting a 3rd distinct design).
+
+   TIER 2 -- .om-page-loader: a full-screen centered overlay, reserved for a page's genuine MAIN
+   content load only (not fired from setButtonLoading() at all anymore) -- see showPageLoader()/
+   hidePageLoader() in app.js and their call sites (currently: Dashboard's initial summary fetch,
+   Payroll Run Detail's initial run fetch -- the 2 clearest "this whole page IS one big fetch" cases;
+   available for any other page to adopt the same way). The origami mark here is STATIC (not
+   itself animating -- only the 2 rings around it spin, in opposite directions), so it uses the REAL
+   brand PNG (origami_logo.png) directly instead of a CSS approximation -- no animation to keep
+   lightweight for, so no reason not to use the actual artwork. */
+.om-loader {
+    display: inline-block; vertical-align: middle; border-radius: 50%;
+    border: 2px solid rgba(255, 153, 0, .22); border-top-color: #FF9900;
+    animation: om-spin .75s linear infinite;
+}
+.om-loader--sm { width: 16px; height: 16px; }
+.om-loader--md { width: 30px; height: 30px; border-width: 3px; }
+@keyframes om-spin { to { transform: rotate(360deg); } }
+@keyframes om-spin-reverse { to { transform: rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .om-loader { animation: none; }
+}
+
+.om-page-loader {
+    position: fixed; inset: 0; z-index: 2000;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+    background: rgba(255, 252, 247, .78);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.om-page-loader__stage { position: relative; width: 88px; height: 88px; }
+.om-page-loader__ring {
+    position: absolute; inset: 0; border-radius: 50%; border: 3px solid transparent;
+    animation: om-spin 1.5s linear infinite;
+}
+.om-page-loader__ring--outer { border-top-color: #FF9900; border-right-color: #FF9900; }
+.om-page-loader__ring--inner {
+    inset: 15px; border-bottom-color: #E8412C; border-left-color: #E8412C;
+    animation: om-spin-reverse 1.15s linear infinite;
+}
+.om-page-loader__logo {
+    position: absolute; inset: 0; margin: auto; width: 36px; height: 36px; object-fit: contain;
+}
+.om-page-loader__text { font-size: .95rem; font-weight: 500; color: #5A4A3A; }
+@media (prefers-reduced-motion: reduce) {
+    .om-page-loader__ring { animation: none; }
+}
+
+/* 2026-09-03, Manual Entry / Platform UX review Phase 6 -- redesign of the "choose from list /
+   specify manually / other" 3-way selector pattern. Was a plain Bootstrap btn-group (bare icon +
+   1-word label per button, joined-pill look) with no explanation of what each mode actually does --
+   the real usability gap: "Custom Item" and "Other" both show the exact same free-text fields and
+   look functionally identical to a first-time user, but the ONLY difference is a hidden is_other
+   flag that changes which report bucket the item lands in (its own report column vs the shared
+   "Other Income/Deduction" aggregate) -- nothing in the old UI surfaced that distinction at all.
+   Card-style segmented control instead: icon + title + one-line description per option, so the
+   difference is visible without having to pick one, save, and go compare a report. Shared by exactly
+   the 2 places this pattern exists in the app -- #eedModeToggle (Employee Detail's Earning/Deduction
+   modal) and #manualLineModeToggle (Payroll Run Detail's Add Manual Line) -- both built together in
+   the same 2026-09-02 Deduction Destination & Third-Party Remittance work, so both get the same fix.
+   Pure markup/CSS -- the existing `.active` class + `data-mode` attribute + click handlers in
+   detail.js/payroll/detail.js are untouched, neither reads any Bootstrap btn-group/btn-outline-*
+   class specifically. */
+.mode-select-group {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+}
+.mode-select-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: .15rem;
+    flex: 1 1 0;
+    min-width: 110px;
+    padding: .5rem .55rem;
+    border: 1px solid #dee2e6;
+    border-radius: .6rem;
+    background: #fff;
+    color: #495057;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, color .15s ease;
+}
+.mode-select-btn i {
+    font-size: 1.05rem;
+    color: #FF9900;
+    transition: color .15s ease;
+}
+.mode-select-btn-title {
+    font-weight: 600;
+    font-size: .82rem;
+}
+.mode-select-btn-desc {
+    font-size: .68rem;
+    color: #8a8f98;
+    line-height: 1.25;
+    transition: color .15s ease;
+}
+.mode-select-btn:hover:not(:disabled):not(.active) {
+    border-color: #FF9900;
+    background: #fff8ef;
+}
+.mode-select-btn.active {
+    background: linear-gradient(135deg, #FF9900, #ffb84d);
+    border-color: #FF9900;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(255, 153, 0, .3);
+}
+.mode-select-btn.active i,
+.mode-select-btn.active .mode-select-btn-desc {
+    color: #fff;
+}
+.mode-select-btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}

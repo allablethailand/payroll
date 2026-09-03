@@ -237,6 +237,7 @@ function notifPageTableInit() {
     }
     tb_notification = $('#tb_notification').DataTable({
         serverSide: true,
+        processing: true,
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/notification.datatable`,

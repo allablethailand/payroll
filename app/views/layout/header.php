@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Payroll • ORIGAMI PLATFORM</title>
+<!-- 2026-09-03, Platform UX review Phase 3: this static tag is now only the brief pre-JS fallback
+     (every page immediately overwrites it via updateDocumentTitleFromBreadcrumb() in app.js, derived
+     from that same page's own breadcrumb -- see that function's own docblock) -- was a single
+     hardcoded string shared by literally every page before this. -->
+<title>Origami Payroll</title>
 <link rel="icon" type="image/png" href="<?=BASE_URL?>/public/images/logo_vertical.png">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&display=swap" rel="stylesheet">
 <link href="<?=BASE_URL?>/node_modules/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -57,16 +61,24 @@
     $compIdForOrigamiFlags = (int)(getCompId() ?? 0);
     $isOrigamiHrLinked = false;
     $isOrigamiPayrollLinked = false;
+    // 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency), Option A -- exposed here
+    // (not fetched per-page via AJAX) for the exact same reason IS_ORIGAMI_HR_LINKED/
+    // IS_ORIGAMI_PAYROLL_LINKED already are: every page's JS can read a plain global instead of each
+    // re-querying `companies` itself. Used by app.js's applyCurrencyLabel() to fill in every
+    // `.currency-code-label` span (see that function's own docblock for which fields these are).
+    $companyCurrencyCode = 'THB';
     if ($compIdForOrigamiFlags > 0) {
-        $stmtOrigamiFlags = Database::getInstance()->pdo->prepare("SELECT ref_id, origami_payroll_comp_code FROM companies WHERE id = :id");
+        $stmtOrigamiFlags = Database::getInstance()->pdo->prepare("SELECT ref_id, origami_payroll_comp_code, currency_code FROM companies WHERE id = :id");
         $stmtOrigamiFlags->execute([':id' => $compIdForOrigamiFlags]);
         $companyOrigamiFlags = $stmtOrigamiFlags->fetch(PDO::FETCH_ASSOC);
         $isOrigamiHrLinked = !empty($companyOrigamiFlags['ref_id']);
         $isOrigamiPayrollLinked = !empty($companyOrigamiFlags['origami_payroll_comp_code']);
+        $companyCurrencyCode = !empty($companyOrigamiFlags['currency_code']) ? $companyOrigamiFlags['currency_code'] : 'THB';
     }
     ?>
     const IS_ORIGAMI_HR_LINKED = <?=$isOrigamiHrLinked ? 'true' : 'false'?>;
     const IS_ORIGAMI_PAYROLL_LINKED = <?=$isOrigamiPayrollLinked ? 'true' : 'false'?>;
+    const COMPANY_CURRENCY_CODE = "<?=htmlspecialchars($companyCurrencyCode, ENT_QUOTES)?>";
 </script>
 <?php
 // 2026-08-28, explicit request: "ถ้าสมมุติ Set สิทธิ์ว่าไม่สามารถทำรายการนี้ได้ ถ้าเป็นทั้ง Menu Login เข้ามา
