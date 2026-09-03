@@ -47,6 +47,7 @@ function renderAuditLogTable() {
     if ($.fn.DataTable.isDataTable('#tb_audit_log')) { dtAuditLog.ajax.reload(null, false); return; }
     dtAuditLog = $('#tb_audit_log').DataTable({
         serverSide: true,
+        processing: true,
         ordering: false,
         responsive: true,
         ajax: {

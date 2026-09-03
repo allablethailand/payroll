@@ -182,15 +182,24 @@ function renderAttendance() {
         }
     });
 }
+// 2026-09-03, Manual Entry Phase 1A: true for the entire synchronous+async duration of an EDIT-mode
+// modal load -- same "isLoadingEmployeeForm" guard precedent employee/detail.js already established
+// for the identical race: without this, the Shift auto-fill handler on #attendanceEmployee's own
+// `change` event (fired by this function's own `.trigger('change.select2')` when programmatically
+// setting the employee for an EXISTING record) would fire an async lookup that could resolve AFTER
+// this function has already set the record's own historically-saved shift_id, silently clobbering it
+// with the employee's CURRENT master shift instead.
+let isLoadingManualEntryModal = false;
 function openAttendanceModal(id) {
     initSelect2('#attendanceEmployee', { mode: 'ajax' });
     initSelect2('#attendanceShift', { mode: 'ajax', allowClear: true });
     initSelect2('#attendanceStatus', { mode: 'static' });
     if (id) {
+        isLoadingManualEntryModal = true;
         $.ajax({
             url: `${BASE_URL}/api/manual-attendance.get`, method: 'GET', data: { id }, dataType: 'json',
             success: function (res) {
-                if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                if (!res.status) { isLoadingManualEntryModal = false; showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
                 const a = res.data;
                 $('#attendanceId').val(a.id);
                 $('#attendanceEmployee').empty().append(new Option(`${a.employee_no} - ${employeeNameMe(a)}`, a.employee_id, true, true)).trigger('change.select2');
@@ -202,9 +211,10 @@ function openAttendanceModal(id) {
                 $('#attendanceClockOut').val(a.clock_out ? String(a.clock_out).substring(11, 16) : '');
                 $('#attendanceLateMinutes').val(a.late_minutes || 0);
                 $('#attendanceEarlyMinutes').val(a.early_leave_minutes || 0);
+                isLoadingManualEntryModal = false;
                 new bootstrap.Modal(document.getElementById('attendanceModal')).show();
             },
-            error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+            error: function () { isLoadingManualEntryModal = false; showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
         });
         return;
     }
@@ -255,6 +265,29 @@ function saveAttendance(btnEl) {
         error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
+// 2026-09-03, Manual Entry Phase 1A: auto-fill Shift from the selected employee's own master
+// record -- the only field on this whole page with a real, direct master-data counterpart (see the
+// audit that preceded this feature). Only fires on a genuine user pick (guarded by
+// isLoadingManualEntryModal, see openAttendanceModal()'s own comment) and always REPLACES whatever
+// was in the Shift field, since picking a different employee genuinely means "start over" for a
+// field this tightly tied to who's selected -- still fully editable/clearable afterward, this is a
+// convenience default, not a lock.
+$(document).on('change', '#attendanceEmployee', function () {
+    if (isLoadingManualEntryModal) return;
+    const employeeId = $(this).val();
+    if (!employeeId) { $('#attendanceShift').empty().trigger('change.select2'); return; }
+    $.ajax({
+        url: `${BASE_URL}/api/manual-entry.employee-context`, method: 'GET', data: { employee_id: employeeId }, dataType: 'json',
+        success: function (res) {
+            if (res.status && res.data && res.data.shift_id) {
+                const label = (currentLang === 'th' ? res.data.shift_name_th : res.data.shift_name_en) || '';
+                $('#attendanceShift').empty().append(new Option(label, res.data.shift_id, true, true)).trigger('change.select2');
+            } else {
+                $('#attendanceShift').empty().trigger('change.select2');
+            }
+        }
+    });
+});
 
 /* ==================== LEAVE ==================== */
 let dtLeave;
@@ -430,27 +463,29 @@ function openOvertimeModal(id) {
     initSelect2('#overtimeRate', { mode: 'ajax' });
     initSelect2('#overtimeStatus', { mode: 'static' });
     if (id) {
+        isLoadingManualEntryModal = true;
         $.ajax({
             url: `${BASE_URL}/api/manual-overtime.get`, method: 'GET', data: { id }, dataType: 'json',
             success: function (res) {
-                if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                if (!res.status) { isLoadingManualEntryModal = false; showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
                 const o = res.data;
                 $('#overtimeId').val(o.id);
                 $('#overtimeEmployee').empty().append(new Option(`${o.employee_no} - ${employeeNameMe(o)}`, o.employee_id, true, true)).trigger('change.select2');
-                $('#overtimeRate').empty().append(new Option(currentLang === 'th' ? o.ot_name_th : o.ot_name_en, o.ot_rate_id, true, true)).trigger('change.select2');
+                $('#overtimeRate').attr('data-employee-id', o.employee_id).empty().append(new Option(currentLang === 'th' ? o.ot_name_th : o.ot_name_en, o.ot_rate_id, true, true)).trigger('change.select2');
                 $('#overtimeDate').val(toDisplayDateMe(o.ot_date)).datepicker('update');
                 $('#overtimeHours').val(o.hours);
                 $('#overtimeAmount').val(o.amount !== null ? o.amount : '');
                 $('#overtimeStatus').val(o.status).trigger('change.select2');
+                isLoadingManualEntryModal = false;
                 new bootstrap.Modal(document.getElementById('overtimeModal')).show();
             },
-            error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+            error: function () { isLoadingManualEntryModal = false; showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
         });
         return;
     }
     $('#overtimeId').val('');
     $('#overtimeEmployee').empty().trigger('change.select2');
-    $('#overtimeRate').empty().trigger('change.select2');
+    $('#overtimeRate').removeAttr('data-employee-id').empty().trigger('change.select2');
     $('#overtimeDate').val('').datepicker('update');
     $('#overtimeHours').val('');
     $('#overtimeAmount').val('');
@@ -492,6 +527,25 @@ function saveOvertime(btnEl) {
         error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
+// 2026-09-03, Manual Entry Phase 1A: scopes the OT Rate dropdown to the selected employee's own
+// resolved OT Rate Set (MasterModel::master()'s 'ot_rate' case reads data-employee-id fresh on every
+// search, see input.js) instead of listing every active Set's items company-wide -- there's no
+// single correct OT Rate to auto-SELECT (a Set has multiple items, one per scope type: weekday/
+// weekend/holiday/etc., and which applies depends on the specific overtime event being entered), so
+// filtering the choices is the honest "reduce manual work" equivalent here, not a forced pick.
+// Clears the current selection on a genuine employee change (guarded by isLoadingManualEntryModal,
+// same as Attendance's own Shift handler) since a rate from a DIFFERENT employee's Set may no longer
+// be a valid/sensible choice.
+$(document).on('change', '#overtimeEmployee', function () {
+    if (isLoadingManualEntryModal) return;
+    const employeeId = $(this).val();
+    if (employeeId) {
+        $('#overtimeRate').attr('data-employee-id', employeeId);
+    } else {
+        $('#overtimeRate').removeAttr('data-employee-id');
+    }
+    $('#overtimeRate').empty().trigger('change.select2');
+});
 
 // 2026-08-29, same-day follow-up: system-wide page-level filter audit -- these 3 tabs' filter
 // fields moved from a bare row into the standard .station-filter component (see

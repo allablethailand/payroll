@@ -1,11 +1,12 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/OtRateSetModel.php';
 class MasterModel {
     private $db;
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
     }
-    public function master(int $page = 1, int $limit = 10, string $type = '', string $searchTerm = '', ?int $compId = null): array {
+    public function master(int $page = 1, int $limit = 10, string $type = '', string $searchTerm = '', ?int $compId = null, ?int $employeeId = null): array {
         $offset = ($page - 1) * $limit;
         $items = [];
         $totalCount = 0;
@@ -102,6 +103,34 @@ class MasterModel {
                 }
                 $where = " WHERE s.comp_id = :comp_id AND s.deleted_at IS NULL AND s.status = 'active' ";
                 $params = [':comp_id' => $compId];
+                // 2026-09-03, Manual Entry Phase 1A: when called with a real employee_id (Manual
+                // Entry's Overtime "OT Rate" picker sets this via data-employee-id, see input.js's own
+                // ajax data() builder), narrow results to that employee's OWN resolved OT Rate Set
+                // (same precedence OtRateSetModel::resolveSetForEmployee()/resolveRatesForEmployees()
+                // already use for PayrollRunModel -- explicit assignment > employee > team > position
+                // > department > mandatory Default) instead of listing every active Set's items
+                // company-wide. Silently falls through to the unfiltered (existing) behavior if the
+                // employee can't be resolved to any Set at all (shouldn't happen once any Set exists --
+                // save() always forces one to be Default -- but a company with literally zero OT Rate
+                // Sets configured has nothing to narrow to).
+                if ($employeeId !== null) {
+                    $stmtEmp = $this->db->prepare("SELECT department_id, team_id, position_id, assigned_ot_rate_set_id FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                    $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
+                    $empRow = $stmtEmp->fetch(PDO::FETCH_ASSOC);
+                    if ($empRow) {
+                        $resolved = (new OtRateSetModel($this->db))->resolveRatesForEmployees([[
+                            'id' => $employeeId, 'department_id' => $empRow['department_id'] !== null ? (int)$empRow['department_id'] : null,
+                            'team_id' => $empRow['team_id'] !== null ? (int)$empRow['team_id'] : null,
+                            'position_id' => $empRow['position_id'] !== null ? (int)$empRow['position_id'] : null,
+                            'assigned_ot_rate_set_id' => $empRow['assigned_ot_rate_set_id'] !== null ? (int)$empRow['assigned_ot_rate_set_id'] : null,
+                        ]], $compId);
+                        $employeeSetId = $resolved[$employeeId]['set_id'] ?? null;
+                        if ($employeeSetId !== null) {
+                            $where .= " AND s.id = :employee_set_id ";
+                            $params[':employee_set_id'] = $employeeSetId;
+                        }
+                    }
+                }
                 if (!empty($searchTerm)) {
                     $where .= " AND (s.name_th LIKE :search OR s.name_en LIKE :search OR st.name_th LIKE :search OR st.name_en LIKE :search) ";
                     $params[':search'] = '%' . $searchTerm . '%';

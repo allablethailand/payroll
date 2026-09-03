@@ -213,6 +213,7 @@ function initProfilePane() {
     initSelect2Remote('.select2-remote');
     if (typeof initSelect2 === 'function') {
         initSelect2('#fiscal_year_start_month', { mode: 'static' });
+        initSelect2('#base_currency', { mode: 'static' });
     }
     initCompanyData();
 }
@@ -289,6 +290,10 @@ function initCompanyData() {
                     $countrySelect.val(countryCode);
                 }
                 renderCountrySpecificForm(countryCode);
+                // renderCountrySpecificForm() just re-suggested a currency FROM the country (dead
+                // code from before #base_currency existed, see that field's own view comment) -- the
+                // company's own saved value always wins over that suggestion on a real data load.
+                $('#base_currency').val(data.currency_code || 'THB').trigger('change');
                 $('input[name="global_tax_id"]').val(data.global_tax_id || '');
                 $('input[name="company_legal_name"]').val(data.company_legal_name || '');
                 $('input[name="local_name"]').val(data.local_name || '');
@@ -348,6 +353,7 @@ $(document).on('click', '.save-company-profile', function () {
     $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
     let formData = {
         registered_country: $('#registered_country').val(),
+        currency_code: $('#base_currency').val() || 'THB',
         global_tax_id: $('input[name="global_tax_id"]').val()?.trim() || '',
         company_legal_name: $('input[name="company_legal_name"]').val()?.trim() || '',
         local_name: $('input[name="local_name"]').val()?.trim() || '',

@@ -122,6 +122,29 @@
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control required" name="global_tax_id" data-i18n="tax_id_placeholder" placeholder="e.g., 1234567890123">
                 </div>
+                <!-- 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency), Option A --
+                     a real company-level default currency setting (companies.currency_code), replacing
+                     3 spots across the app that hardcoded a literal "THB" input-group badge regardless
+                     of the company's actual registered country (base_salary_amount here, plus
+                     Recurring Earning/Deduction's own Amount field -- see modals.php). id="base_currency"
+                     is the pre-existing hook renderCountrySpecificForm() already reads (see that
+                     function's own `$baseCurrency` line in company-profile.js, dead code until now --
+                     auto-derives from country-config.json's own `currency` per country) -- initCompanyData()
+                     overrides it with the company's own SAVED value right after, so a company that has
+                     already picked a currency never gets silently reset back to the country default on
+                     load; only actively switching the Country dropdown re-suggests one. -->
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label">
+                        <span data-i18n="base_currency">Currency</span>
+                        <span class="text-danger">*</span>
+                    </label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <select id="base_currency" name="currency_code" class="form-select select2-static required"
+                            data-option-keys="currency_thb,currency_sgd,currency_myr,currency_usd"
+                            data-option-values="THB,SGD,MYR,USD"></select>
+                    <div class="form-text" data-i18n="base_currency_hint">Defaults to your registered country's currency -- change it if your company pays employees in a different currency.</div>
+                </div>
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">

@@ -9,6 +9,16 @@ class CompanyProfileModel {
         $this->auditLog = new AuditLogModel($this->db);
     }
 
+    /** 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency), Option A -- this app
+     *  only ever supports these 4 countries (public/json/country-config.json is itself a static file
+     *  requiring a code deploy to add one), so `currency_code` is validated against this small const
+     *  array server-side rather than a DB-driven master table -- see the migration's own docblock
+     *  (database/migrations/2026-09-03_11_company_currency_setting.sql) for why. Kept in sync with
+     *  company-profile.php's `#base_currency` static Select2 options by hand -- both lists change
+     *  only when a 5th country is added to this app, which already requires touching several other
+     *  static files (country-config.json, StatutoryCalculationEngine, ...). */
+    private const VALID_CURRENCY_CODES = ['THB', 'SGD', 'MYR', 'USD'];
+
     /** logo_path must exactly match what uploadLogo() produces for THIS company -- same
      *  traversal-proofing pattern as PayslipTemplateModel::isValidLogoPath()/
      *  EmploymentCertificateTemplateModel::isValidLogoPath(). */
@@ -137,6 +147,7 @@ class CompanyProfileModel {
                         fiscal_year_start_month = :fiscal_year_start_month,
                         prorate_divisor_days = :prorate_divisor_days,
                         registered_country = :registered_country,
+                        currency_code = :currency_code,
                         global_tax_id = :global_tax_id,
                         address_line_1 = :address_line_1,
                         address_line_2 = :address_line_2,
@@ -166,6 +177,12 @@ class CompanyProfileModel {
                 // convention this request names outright, not an arbitrary placeholder.
                 ':prorate_divisor_days' => (isset($data['prorate_divisor_days']) && (int)$data['prorate_divisor_days'] >= 1 && (int)$data['prorate_divisor_days'] <= 31) ? (int)$data['prorate_divisor_days'] : 30,
                 ':registered_country' => $data['registered_country'] ?? null,
+                // Not master-table-validated (no FK) -- see VALID_CURRENCY_CODES' own docblock above.
+                // Falls back to 'THB' (this app's original single-currency assumption) for anything
+                // not in the whitelist, same "never trust the client alone" stance as every other
+                // enum-shaped column in this method (e.g. setup_status just below).
+                ':currency_code' => in_array(strtoupper((string)($data['currency_code'] ?? '')), self::VALID_CURRENCY_CODES, true)
+                    ? strtoupper((string)$data['currency_code']) : 'THB',
                 ':global_tax_id' => $data['global_tax_id'] ?? null,
                 ':address_line_1' => $data['address_line_1'] ?? null,
                 ':address_line_2' => !empty($data['address_line_2']) ? $data['address_line_2'] : null,

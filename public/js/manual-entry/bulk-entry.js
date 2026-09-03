@@ -262,6 +262,42 @@ function bulkEntryAddManualRow() {
     bulkEntryUpdateSummary();
 }
 
+// 2026-09-03, Manual Entry Phase 1A: same auto-fill/scoping logic as the single-entry modals
+// (index.js's own #attendanceEmployee/#overtimeEmployee change handlers), applied generically per
+// bulk-grid row since every row's employee picker shares the same `[data-field="employee_id"]`
+// selector -- scoped to THIS row only via .closest('tr') so picking an employee in one row never
+// touches another. No isLoadingManualEntryModal-style guard needed here (unlike the single-entry
+// modals): a bulk row is always a brand-new manual entry, there's no "load an existing record for
+// edit" path in this grid to race against.
+$(document).on('change', '[data-field="employee_id"]', function () {
+    const $row = $(this).closest('tr');
+    if ($row.data('source') !== 'manual') return;
+    const employeeId = $(this).val();
+    const $shift = $row.find('[data-field="shift_id"]');
+    if ($shift.length) {
+        if (!employeeId) {
+            $shift.empty().trigger('change.select2');
+        } else {
+            $.ajax({
+                url: `${BASE_URL}/api/manual-entry.employee-context`, method: 'GET', data: { employee_id: employeeId }, dataType: 'json',
+                success: function (res) {
+                    if (res.status && res.data && res.data.shift_id) {
+                        const label = (currentLang === 'th' ? res.data.shift_name_th : res.data.shift_name_en) || '';
+                        $shift.empty().append(new Option(label, res.data.shift_id, true, true)).trigger('change.select2');
+                    } else {
+                        $shift.empty().trigger('change.select2');
+                    }
+                }
+            });
+        }
+    }
+    const $otRate = $row.find('[data-field="ot_rate_id"]');
+    if ($otRate.length) {
+        if (employeeId) { $otRate.attr('data-employee-id', employeeId); } else { $otRate.removeAttr('data-employee-id'); }
+        $otRate.empty().trigger('change.select2');
+    }
+});
+
 /* ---------- Imported rows ---------- */
 function bulkEntryImportCellHtml(col, rowId, value) {
     return `<input type="text" class="form-control form-control-sm" data-field="${col.importField}" data-row-id="${rowId}" value="${escapeHtmlMe(value ?? '')}">`;

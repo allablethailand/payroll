@@ -108,6 +108,10 @@ function dashGreetingKey() {
 }
 
 function loadDashboardSummary() {
+    // 2026-09-03, Platform UX review Phase 2 (revised): the Dashboard's own main content IS this one
+    // fetch -- the clearest "page-level" case for the full-page loader (see app.js's own
+    // showPageLoader()/hidePageLoader() docblock).
+    if (typeof showPageLoader === 'function') showPageLoader();
     $.ajax({
         url: `${BASE_URL}/api/dashboard.summary`,
         method: 'GET',
@@ -115,6 +119,9 @@ function loadDashboardSummary() {
         success: function (res) {
             if (!res || !res.status) return;
             renderDashboard(res.data || {});
+        },
+        complete: function () {
+            if (typeof hidePageLoader === 'function') hidePageLoader();
         }
     });
 }

@@ -277,6 +277,16 @@ function initSelect2(selector, options = {}) {
                         if (excludeCode !== undefined && excludeCode !== '') {
                             extraData.exclude_code = excludeCode;
                         }
+                        // 2026-09-03, same "read fresh from the live DOM attribute on every search"
+                        // pattern as data-exclude-id/data-states/data-cycle-id/data-exclude-code above
+                        // -- first consumer is Manual Entry's Overtime "OT Rate" picker
+                        // (api/ot-rate.options reads an `employee_id` POST param to scope results to
+                        // that employee's own resolved OT Rate Set, see MasterModel::master()'s own
+                        // 'ot_rate' case).
+                        const employeeId = $this.attr('data-employee-id');
+                        if (employeeId !== undefined && employeeId !== '') {
+                            extraData.employee_id = employeeId;
+                        }
                         return $.extend({
                             searchTerm: params.term,
                             page: params.page || 1,

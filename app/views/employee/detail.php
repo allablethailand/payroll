@@ -1139,12 +1139,20 @@
                 </div>
                 <!-- 2026-09-02, Origami candidates.php field batch: company-defined employment
                      classification (e.g. รายเดือน/รายวัน/สัญญาจ้าง), synced from Origami's
-                     employment_type_ref_id/_code/_name -- NOT the same concept as the
-                     employment_type radio above (full_time/part_time/daily/internship, a fixed
-                     enum) or salary_type (pay frequency). Optional, same as Team -- auto-created
-                     by sync (structure_employment_types), not required/completeness-gated. -->
+                     employment_type_ref_id/_code/_name -- NOT the same concept as `employment_type`
+                     below (full_time/part_time/daily/internship, a fixed enum) or salary_type (pay
+                     frequency). Optional, same as Team -- auto-created by sync
+                     (structure_employment_types), not required/completeness-gated.
+                     2026-09-03, Manual Entry / Platform UX review Phase 9, real bug found and fixed
+                     (confirmed via AskUserQuestion): the Thai label for this field was literally
+                     "ประเภทการจ้างงาน" -- byte-for-byte IDENTICAL to `employment_type`'s own Thai label,
+                     a few rows below in the same tab. A Thai-reading admin genuinely saw "ประเภทการ
+                     จ้างงาน" twice with nothing distinguishing them (the English labels at least
+                     differed by one word, "...Classification"). Renamed to "หมวดหมู่การจ้าง (จาก
+                     Origami)" / EN "Job Classification (from Origami)" -- i18n text only, no
+                     schema/JS change, this is still the exact same `employment_type_id` field. -->
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employment_type_classification">Employment Type Classification</span></label>
+                    <label class="form-label"><span data-i18n="employment_type_classification">Job Classification (from Origami)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="employment_type_id" id="employment_type_id" data-api="/api/employment-type.get" data-type="employment_type">
@@ -1155,7 +1163,28 @@
                 <label class="label label-head bg-head-first rounded-2 text-white">2</label>
                 <span data-i18n="employment_details">Employment Details</span>
             </h6>
+            <!-- 2026-09-03, Manual Entry / Platform UX review Phase 9, explicit request: Employment
+                 Type reordered BEFORE Employment Status (was the reverse) -- Type is what actually
+                 DRIVES Status here (applyEmploymentTypeInternLock() below locks Status to Probation
+                 the moment Type=Internship is picked), so picking Type first and watching Status
+                 react/lock reads naturally; picking Status first, then Type, made the lock look like
+                 it was silently overriding a choice the admin had just made. Pure DOM reorder --
+                 neither field's own `id`/`name` changed, and applyEmploymentTypeInternLock()/every
+                 other handler below is wired by id, not DOM position, so nothing else needed to
+                 change. -->
             <div class="row">
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label"><span data-i18n="employment_type">Employment Type</span> <span class="text-danger">*</span></label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <select class="form-select select2-native required" name="employment_type" id="employment_type">
+                        <option value="" data-i18n="please_choose">Select an option</option>
+                        <option value="full_time" data-i18n="full_time">Full-time</option>
+                        <option value="part_time" data-i18n="part_time">Part-time</option>
+                        <option value="daily" data-i18n="daily">Daily wage</option>
+                        <option value="internship" data-i18n="internship">Internship</option>
+                    </select>
+                </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="employment_status">Employment Status</span> <span class="text-danger">*</span></label>
                 </div>
@@ -1182,22 +1211,18 @@
                          genuine user selection (e.originalEvent present), never on the
                          programmatic populateEmployeeForm() load, so an existing intern record saved
                          with some OTHER status (e.g. resigned, from before this lock existed) is
-                         never silently flipped back to probation just by opening the page. -->
+                         never silently flipped back to probation just by opening the page.
+                         2026-09-03, Manual Entry / Platform UX review Phase 9: re-investigated
+                         whether Status options should ALSO be filtered per Type beyond this existing
+                         lock (e.g. restricting which of probation/permanent/contract apply to
+                         full_time/part_time/daily) -- confirmed via AskUserQuestion this Internship
+                         lock is the ONLY status-per-type rule with any real definition anywhere in
+                         this codebase; the other 3 types have no established business rule to encode,
+                         so nothing further was added (avoids guessing a restriction that could block
+                         legitimate data entry for a real company's own policy). -->
                     <div class="form-text text-warning d-none" id="employmentStatusInternLockNote">
                         <i class="fa-solid fa-lock me-1"></i><span data-i18n="employment_status_intern_locked">Locked to Probation because Employment Type is Internship.</span>
                     </div>
-                </div>
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employment_type">Employment Type</span> <span class="text-danger">*</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <select class="form-select select2-native required" name="employment_type" id="employment_type">
-                        <option value="" data-i18n="please_choose">Select an option</option>
-                        <option value="full_time" data-i18n="full_time">Full-time</option>
-                        <option value="part_time" data-i18n="part_time">Part-time</option>
-                        <option value="daily" data-i18n="daily">Daily wage</option>
-                        <option value="internship" data-i18n="internship">Internship</option>
-                    </select>
                 </div>
             </div>
             <!-- Resignation/Termination fields (2026-08-21, explicit request: "ใน Tab การจ้างงาน
@@ -1416,7 +1441,12 @@
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
                         <input type="number" step="0.01" class="form-control text-end required" name="base_salary_amount" id="base_salary_amount" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
-                        <span class="input-group-text" data-i18n="thb">THB</span>
+                        <!-- 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency): was
+                             hardcoded "THB" regardless of the company's actual registered
+                             country/currency -- now filled by app.js's applyCurrencyLabel() from the
+                             company's own currency_code (Company Profile > Currency). No data-i18n:
+                             a currency code isn't translated text. -->
+                        <span class="input-group-text currency-code-label">THB</span>
                     </div>
                 </div>
             </div>
@@ -1443,39 +1473,12 @@
                     </select>
                 </div>
             </div>
-            <!-- 2026-09-02, explicit request: "เมื่อเลือกรอบแล้ว ให้เลือกต่อได้ว่าจะใช้บัญชีไหนของรอบนั้น...ถ้าไม่
-                 เลือก ใช้บัญชีที่ตั้งเป็น Default ของรอบนั้นอัตโนมัติ" -- moved here from the Employment tab
-                 (where it briefly lived as part of the earlier same-day multi-bank-account payroll
-                 feature) to sit next to cycle_id, since "which account of THIS cycle" only makes
-                 sense once a cycle is actually picked. Options are now CYCLE-SCOPED
-                 (api/employee.payment-account-options, cycle_id sent as a query param -- falls back
-                 to the company's own is_default account when the cycle has none configured, see
-                 EmployeePaymentMethodModel::scopedBankAccountOptions()'s own docblock), replacing the
-                 old company-wide api/payroll-cycle.bank-account.options this field used briefly.
-                 Only relevant while Payment Type (payment_method_id, section 2 below on this same
-                 tab as of the 2026-09-02 Payment/OT tab swap -- previously on the Employment tab,
-                 hence "cross-tab" here originally) resolves to something bank-related (transfer, or
-                 a mixed line using transfer) -- see applyAccountPickerVisibility() in detail.js. -->
-            <div class="row" id="sectionCycleBankAccount">
-                <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="default_bank_account_label">Paid From Company Account</span></label>
-                </div>
-                <div class="col-sm-4 mt-3">
-                    <select class="form-select select2-remote" name="default_bank_account_id" id="default_bank_account_id" data-api="/api/employee.payment-account-options" allow-clear="true"></select>
-                    <div class="form-text" data-i18n="default_bank_account_hint">*Optional. Leave blank to use this cycle's own default account.</div>
-                </div>
-            </div>
             <!-- 2026-09-02, explicit request: "ย้ายข้อมูลการจ่ายเงิน ไปไว้ Tab เงินเดือนจะดีกว่าไหมครับ พอคนละ
                  Tab ดูแปลก" -- moved here from the Employment tab (swapped places with OT Rate
-                 Settings, which moved there -- see that tab's own comment on this same move). Every
-                 payment-related field is now on this ONE tab, next to `default_bank_account_id`/
-                 `cycle_id` right above (which had already moved here on its own back on 2026-09-02,
-                 for the same "belongs with the rest of payment info" reason -- see that field's own
-                 comment, left as-is since it's genuinely tied to cycle_id specifically, not moved
-                 again into this section). Section id/number unchanged (still slot "2" of this tab,
-                 same slot OT Rate Settings used to occupy) -- Recurring Allowances/Recurring
-                 Deductions/Tax Information/Internship/Probation below keep their own existing
-                 numbers, nothing else needed renumbering.
+                 Settings, which moved there -- see that tab's own comment on this same move). Section
+                 id/number unchanged (still slot "2" of this tab, same slot OT Rate Settings used to
+                 occupy) -- Recurring Allowances/Recurring Deductions/Tax Information/Internship/
+                 Probation below keep their own existing numbers, nothing else needed renumbering.
                  `#employmentPaymentSection` was renamed `#paymentInformationSection` (the old name
                  referenced a tab it's no longer in) -- its one remaining JS reference
                  (applyPayrollParticipantVisibility()'s own T020 visibility toggle) was removed
@@ -1487,7 +1490,19 @@
                  removed for the same reason -- saveEmployee()'s OWN copy of that same check (used by
                  EVERY other Save button on this page, #btnNextSocial included, which is this tab's
                  real closing Save button) already covers it correctly now that this section lives
-                 here. -->
+                 here.
+                 2026-09-03, Manual Entry / Platform UX review Phase 9, explicit request: "move
+                 payment-account field under Payment Info" -- `default_bank_account_id`
+                 (#sectionCycleBankAccount, "Paid From Company Account") moved INTO this section
+                 (right after Payment Type below, see that field's own comment) -- it used to sit
+                 just above this header, tied physically to `cycle_id`/Effective Date instead, which
+                 read as organizationally disconnected from "Payment Information" despite being a
+                 payment-account field in substance. Its own VISIBILITY was already driven by
+                 `payment_method_id` (this section's own first field, via
+                 applyAccountPickerVisibility() in detail.js) not by cycle_id, so this move actually
+                 aligns the field's physical position with what already controlled it -- pure DOM
+                 relocation, applyAccountPickerVisibility()/the #cycle_id change handler that sets its
+                 `data-cycle-id` attribute are both wired by id, so neither needed any change. -->
             <h6 class="text-secondary fw-bold mb-3 mt-5">
                 <label class="label label-head bg-head-first rounded-2 text-white">2</label>
                 <span data-i18n="payment_information">Payment Information</span>
@@ -1514,6 +1529,29 @@
                              applyPaymentMethodVisibility()/applyAccountPickerVisibility() in
                              detail.js don't need their own extra lookup. -->
                         <input type="hidden" id="payment_method_code">
+                    </div>
+                </div>
+                <!-- 2026-09-03, Manual Entry / Platform UX review Phase 9 -- relocated here from just
+                     above the "Payment Information" header (see that header's own comment). Content
+                     UNCHANGED from before this move: "which of THIS cycle's own accounts pays this
+                     employee" (cycle_id lives on the row above, in section 1 of this same tab --
+                     `data-cycle-id` on this select is kept in sync by the #cycle_id change handler,
+                     unaffected by DOM position) -- confirmed via AskUserQuestion: "เมื่อเลือกรอบแล้ว ให้
+                     เลือกต่อได้ว่าจะใช้บัญชีไหนของรอบนั้น...ถ้าไม่เลือก ใช้บัญชีที่ตั้งเป็น Default ของรอบนั้น
+                     อัตโนมัติ" (2026-09-02). Options are CYCLE-SCOPED (api/employee.payment-account-
+                     options, cycle_id sent as a query param -- falls back to the company's own
+                     is_default account when the cycle has none configured, see
+                     EmployeePaymentMethodModel::scopedBankAccountOptions()'s own docblock). Shown only
+                     while Payment Type (payment_method_id, right above) resolves to something
+                     bank-related (transfer, or a mixed line using transfer) -- see
+                     applyAccountPickerVisibility() in detail.js. -->
+                <div class="row" id="sectionCycleBankAccount">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="default_bank_account_label">Paid From Company Account</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-remote" name="default_bank_account_id" id="default_bank_account_id" data-api="/api/employee.payment-account-options" allow-clear="true"></select>
+                        <div class="form-text" data-i18n="default_bank_account_hint">*Optional. Leave blank to use this cycle's own default account.</div>
                     </div>
                 </div>
                 <div class="row" id="sectionBankPayment">
