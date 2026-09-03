@@ -344,6 +344,8 @@
     $router->get('api/manual-import.batch-detail', 'ManualEntryController@importBatchDetail');
     $router->get('api/manual-import.activity-log', 'ManualEntryController@importActivityLog');
     $router->get('api/manual-import.download-original', 'ManualEntryController@downloadImportOriginal');
+    // Manual Entry Phase 1A -- Attendance Shift auto-fill lookup.
+    $router->get('api/manual-entry.employee-context', 'ManualEntryController@employeeContext');
 
     // Platform Hardening Phase 6 pilot -- field-level audit log viewer.
     $router->get('audit-log', 'AuditLogController@index');

@@ -1145,7 +1145,10 @@ $(document).on('change', '#edit_run_purpose', updateEditRunTypeVisibility);
 
 function renderRunHeader(run) {
     currentRun = run;
-    document.title = run.run_name;
+    // 2026-09-03, Platform UX review Phase 3: document.title used to be set directly here to JUST
+    // run.run_name (losing the "Payroll Process —" breadcrumb prefix and the app suffix entirely) --
+    // app.js's own MutationObserver on .payroll-breadcrumb now derives the full title automatically
+    // the moment #bcRunName's text changes below, so this no longer needs (or should) set it itself.
     $('#bcRunName').text(run.run_name);
     $('#runNameHeading').text(run.run_name);
     $('#runStateBadge').html(stateBadgeRd(run.state));
@@ -3020,7 +3023,22 @@ function renderAuditHistoryTimelineRd(auditLog) {
 // draft run with auto-recalculate on would silently re-trigger recalculate() -> loadRunDetail() ->
 // recalculate() forever.
 let autoRecalcOnLoadChecked = false;
+// 2026-09-03, Platform UX review Phase 2 (revised): loadRunDetail() is reused for BOTH the page's
+// true initial load AND every subsequent refresh after a mutating action (submit/approve/reject/
+// recalculate/markPaid/...  -- see callRunAction()'s own docblock) -- the full-page loader must only
+// ever show on the FIRST of those (explicit request: "ไม่ต้องโหลดทุกการโหลด"), never on a routine
+// post-action refresh, so this flag gates it instead of wiring showPageLoader() into every one of
+// the ~20 call sites individually.
+let runDetailInitialLoadPending = true;
+// Cleared at the true "real content is now on screen" point below (or on a failed initial load) --
+// NOT in a naive ajax `complete` callback, which would fire (and hide the loader) even when the
+// success handler is about to recurse into the auto-recalculate-on-load branch below and call
+// loadRunDetail() a 2nd time before anything has actually rendered yet -- would have hidden the
+// loader early, then left a real gap of network activity with nothing showing before the real
+// render finally happened. Caught by tracing that recursive call before shipping, not by observing
+// a flash live.
 function loadRunDetail() {
+    if (runDetailInitialLoadPending && typeof showPageLoader === 'function') showPageLoader();
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.get`,
         method: 'GET',
@@ -3046,6 +3064,10 @@ function loadRunDetail() {
                         return;
                     }
                 }
+                if (runDetailInitialLoadPending) {
+                    runDetailInitialLoadPending = false;
+                    if (typeof hidePageLoader === 'function') hidePageLoader();
+                }
                 renderRunHeader(res.data);
                 initRunDetailTable(res.data.details || []);
                 renderAuditHistoryTimelineRd(res.data.audit_log || []);
@@ -3058,10 +3080,12 @@ function loadRunDetail() {
                 // success handler. See markTabDirty()/watchTabDirty() in app.js.
                 if (typeof markTabDirty === 'function') markTabDirty('payroll_run_list_dirty');
             } else {
+                if (runDetailInitialLoadPending) { runDetailInitialLoadPending = false; if (typeof hidePageLoader === 'function') hidePageLoader(); }
                 showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
             }
         },
         error: function () {
+            if (runDetailInitialLoadPending) { runDetailInitialLoadPending = false; if (typeof hidePageLoader === 'function') hidePageLoader(); }
             showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
         }
     });
@@ -3671,6 +3695,10 @@ function setRecurringDestPayeeType(type) {
         $('#recurringDestBank').val(null).trigger('change');
         $('#recurringDestSaveForReuse').prop('checked', false);
         $('#recurringDestDestinationNewFields').removeClass('d-none');
+    } else {
+        // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
+        // own docblock in app.js.
+        applyFirstSavedDestinationDefault('#recurringDestDestinationSelect', '#recurringDestDestinationNewFields');
     }
 }
 $(document).on('click', '#recurringDestPayeeTypeToggle button', function () {
@@ -3794,6 +3822,10 @@ function setManualLinePayeeTypeRd(type) {
         $('#manualLineDestBank').val(null).trigger('change');
         $('#manualLineDestSaveForReuse').prop('checked', false);
         $('#manualLineDestinationNewFields').removeClass('d-none');
+    } else {
+        // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
+        // own docblock in app.js.
+        applyFirstSavedDestinationDefault('#manualLineDestinationSelect', '#manualLineDestinationNewFields');
     }
     // Same "never offered for not_disbursed, forced at the model layer" rule as Employee Detail's
     // own #eedIncludeCashSummaryWrapper.

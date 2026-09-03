@@ -1914,7 +1914,10 @@ function dependentCardHasData($card) {
 // stays an immediate, confirmed action (same convention as the Father/Mother trash-icon buttons),
 // never deferred to the batched Family-tab Save. Cards with no data at all (never touched) are
 // removed without asking; anything else prompts a SweetAlert2 confirm first (explicit request).
-function removeDependentCards($toRemove, onCancelled) {
+// 2026-09-03, Manual Entry / Platform UX review Phase 10 -- gained `alreadyConfirmed` so
+// syncDependentCardCount()'s own count=0 confirm (see that function's own comment) can skip
+// straight to doRemove() instead of stacking a 2nd confirm on top of the one it already showed.
+function removeDependentCards($toRemove, onCancelled, alreadyConfirmed) {
     if ($toRemove.length === 0) return;
     const anyHasData = $toRemove.toArray().some(el => dependentCardHasData($(el)));
     const doRemove = function () {
@@ -1938,7 +1941,9 @@ function removeDependentCards($toRemove, onCancelled) {
         $('#dependentCount').val($('#dependentCardsContainer .dependent-card').length);
         $('#dependentEmptyHint').toggleClass('d-none', $('#dependentCardsContainer .dependent-card').length > 0);
     };
-    if (anyHasData) {
+    if (alreadyConfirmed) {
+        doRemove();
+    } else if (anyHasData) {
         showConfirm(
             langData['confirm_delete_title'] || 'Confirm Delete',
             langData['confirm_delete_message'] || 'Are you sure you want to delete this item?',
@@ -1956,9 +1961,26 @@ function syncDependentCardCount() {
     if (target > current) {
         appendBlankDependentCards(target - current);
     } else if (target < current) {
-        removeDependentCards($cards.slice(-(current - target)), function () {
-            $('#dependentCount').val(current);
-        });
+        if (target === 0) {
+            // 2026-09-03, Manual Entry / Platform UX review Phase 10, explicit request: always
+            // confirm when the count is set down to exactly 0 -- distinct from
+            // removeDependentCards()'s own generic "only confirm if there's real data to lose" rule
+            // (still used below for a partial reduction, e.g. 3->2). Landing on 0 specifically means
+            // "this employee now has NO dependents at all," a business fact worth a deliberate
+            // confirm even when every existing card happens to be empty -- a stray Enter/backspace
+            // shouldn't silently wipe the whole section. `alreadyConfirmed=true` skips
+            // removeDependentCards()'s own confirm so there's exactly one dialog total either way.
+            showConfirm(
+                langData['confirm_zero_dependents_title'] || 'Set Dependents to 0?',
+                langData['confirm_zero_dependents_message'] || 'This will remove all dependent records for this employee.',
+                function () { removeDependentCards($cards, null, true); },
+                function () { $('#dependentCount').val(current); }
+            );
+        } else {
+            removeDependentCards($cards.slice(-(current - target)), function () {
+                $('#dependentCount').val(current);
+            });
+        }
     }
 }
 function collectDependentCardData($card) {
@@ -2023,6 +2045,20 @@ function initChildTables() {
             return;
         }
         syncDependentCardCount();
+    });
+    // 2026-09-03, Manual Entry / Platform UX review Phase 10, explicit request: "reveal rows on
+    // Enter" -- a plain number input's native 'change' event only fires on blur or a spinner-arrow
+    // click, NOT on typing a value and pressing Enter while still focused (this field sits outside
+    // any <form>, so Enter doesn't even trigger an implicit submit that might have blurred it) --
+    // typing "3" then hitting Enter did nothing at all until the admin clicked elsewhere, which read
+    // as broken/unresponsive. Explicitly blurs the field first so this always fires the SAME `change`
+    // handler above (not a parallel code path), keeping exactly one place that owns "what happens
+    // when the count is committed."
+    $(document).on('keydown', '#dependentCount', function (e) {
+        if (e.key === 'Enter' || e.keyCode === 13) {
+            e.preventDefault();
+            $(this).trigger('blur');
+        }
     });
     $(document).on('click', '.btn-delete-dependent-card', function () {
         removeDependentCards($(this).closest('.dependent-card'));
@@ -2307,6 +2343,36 @@ function renderInstallmentTable(amounts, installmentsData, readOnly) {
             </tr>
         `);
     });
+    updateEedAmountBreakdown(amounts);
+}
+// 2026-09-03, Platform UX review Phase 4 -- see modals.php's own comment on #eedAmountBreakdownRow
+// for the full rationale. Sums the SAME amounts renderInstallmentTable() just rendered (the real
+// preview/saved total, never a second copy of the interest/fee formula) and shows it against the
+// entered principal so "what does this number actually mean" is answered in plain numbers instead
+// of a swapping label alone. Hidden for chargeType='none' (principal IS the total then).
+function updateEedAmountBreakdown(amounts) {
+    const { chargeType } = eedInterestState();
+    const $row = $('#eedAmountBreakdownRow');
+    if (chargeType === 'none') { $row.addClass('d-none'); return; }
+    const principal = parseFloat($('#eed_principal_amount').val() || '0');
+    const validAmounts = (amounts || []).map(a => parseFloat(a)).filter(n => !isNaN(n));
+    if (!(principal > 0) || validAmounts.length === 0 || validAmounts.length !== (amounts || []).length) {
+        $row.addClass('d-none');
+        return;
+    }
+    const total = validAmounts.reduce((sum, n) => sum + n, 0);
+    const added = total - principal;
+    const fmt = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const template = langData['amount_breakdown_hint'] || 'Principal {principal} + {addedLabel} {added} = total deducted {total}, across {n} installment(s).';
+    const addedLabelKey = chargeType === 'fee' ? 'fee_percent_label' : 'amount_breakdown_interest_noun';
+    const text = template
+        .replace('{principal}', fmt(principal))
+        .replace('{addedLabel}', (langData[addedLabelKey] || (chargeType === 'fee' ? 'fee' : 'interest')).toLowerCase())
+        .replace('{added}', fmt(added))
+        .replace('{total}', fmt(total))
+        .replace('{n}', String(validAmounts.length));
+    $('#eedAmountBreakdownText').text(text);
+    $row.removeClass('d-none');
 }
 let eedReadOnly = false;
 let eedPreviewTimer = null;
@@ -2376,6 +2442,9 @@ function setEedChargeType(type) {
     $('#eed_interest_rate').toggleClass('required', type === 'interest');
     $('#eedFeeDetailWrapper').toggleClass('d-none', type !== 'fee');
     $('#eed_fee_percent, #eed_fee_base').toggleClass('required', type === 'fee');
+    // Instant hide on 'none' (principal IS the total then, nothing to clarify) -- the debounced
+    // preview fetch below still handles showing/refreshing it correctly once interest/fee is active.
+    if (type === 'none') { $('#eedAmountBreakdownRow').addClass('d-none'); }
     const chargeOn = type !== 'none';
     $('#eed_principal_amount_label [data-i18n="total_amount"]').toggleClass('d-none', chargeOn);
     $('#eed_principal_amount_label [data-i18n="principal_amount_label"]').toggleClass('d-none', !chargeOn);
@@ -2424,6 +2493,11 @@ function setEedPayeeType(type) {
         $('#eed_dest_bank').val(null).trigger('change');
         $('#eed_dest_save_for_reuse').prop('checked', false);
         $('#eedDestinationNewFields').removeClass('d-none');
+    } else {
+        // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
+        // own docblock in app.js. No-op if populateEedForm() is about to (or just did) set a real
+        // saved destination for an existing record -- that guard lives inside the helper itself.
+        applyFirstSavedDestinationDefault('#eed_destination_select', '#eedDestinationNewFields');
     }
     // 2026-08-31, same-day follow-up: 'not_disbursed' never shows this checkbox -- forced excluded
     // at the model layer (EmployeeEarningDeductionModel::save()'s own comment), a toggle here would
@@ -2455,6 +2529,10 @@ function setErdPayeeType(type) {
         $('#erd_dest_bank').val(null).trigger('change');
         $('#erd_dest_save_for_reuse').prop('checked', false);
         $('#erdDestinationNewFields').removeClass('d-none');
+    } else {
+        // Manual Entry / Platform UX review Phase 7 -- see setEedPayeeType()'s own comment above /
+        // applyFirstSavedDestinationDefault()'s own docblock in app.js.
+        applyFirstSavedDestinationDefault('#erd_destination_select', '#erdDestinationNewFields');
     }
 }
 // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- a 3rd mode, "Other"
@@ -2536,6 +2614,11 @@ function resetEedForm(context) {
     $('#eed_interest_rate').val('');
     $('#eed_fee_percent').val('');
     $('#eed_fee_base').val(null).trigger('change');
+    // 2026-09-03, Platform UX review Phase 4 -- fresh Add shouldn't carry over a previous session's
+    // annual-rate helper inputs.
+    $('#eedRateHelperAnnual').val('');
+    $('#eedRateHelperResult').text('');
+    $('#eedRateHelperBody').addClass('d-none');
     // An employee can't be their own transfer payee -- excluded from the picker's own results the
     // same way #report_to_id already excludes self elsewhere (data-exclude-id, read fresh on every
     // ajax search by initSelect2's shared 'ajax' mode).
@@ -2712,6 +2795,8 @@ function initEedUI() {
         initSelect2('#eed_payee_employee_id', { mode: 'ajax', allowClear: true });
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
         initSelect2('#eed_destination_select', { mode: 'ajax', allowClear: true });
+        // 2026-09-03, Platform UX review Phase 4.
+        initSelect2('#eedRateHelperFrequency', { mode: 'static' });
     }
     // 2026-08-30, explicit request: "ทำให้ fixed_amount/percent_rate เป็นค่าเริ่มต้นอัตโนมัติตอน
     // assign ให้พนักงาน" -- catalog fixed_amount/percent_rate are unused for automatic calculation
@@ -2738,6 +2823,34 @@ function initEedUI() {
         }
         if (suggested !== null && suggested > 0) {
             $amount.val(suggested);
+        }
+        // 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B (explicit request: "เมื่อ
+        // เลือก PED Type ในฟอร์มเงินกู้/ผ่อนชำระ ให้ auto-fill ดอกเบี้ย/เงื่อนไข default จาก catalog") --
+        // same "only ever fills an untouched field, never overwrites an admin's own choice" rule as
+        // the Amount suggestion immediately above, adapted for this toggle-button UI: the guard is
+        // "charge type is still at its own default ('none')" rather than "field is blank," since
+        // that IS this form's own untouched/neutral state (see setEedChargeType()'s own default-
+        // active-button markup). Only fires for a deduction item (default_interest_type is always
+        // NULL on an earning row anyway, per PayrollEarningDeductionTypeModel::save()'s own
+        // deduction-only gate, so this is a defensive check, not load-bearing).
+        if (item.item_type === 'deduction' && item.default_interest_type && $('#eedInterestToggle button.active').data('value') === 'none') {
+            if (item.default_interest_type === 'fee') {
+                setEedChargeType('fee');
+                if (item.default_fee_percent !== null && item.default_fee_percent !== undefined && item.default_fee_percent !== '') {
+                    $('#eed_fee_percent').val(item.default_fee_percent);
+                }
+                if (item.default_fee_base) {
+                    $('#eed_fee_base').val(item.default_fee_base).trigger('change');
+                }
+            } else if (item.default_interest_type === 'fixed' || item.default_interest_type === 'reducing_balance') {
+                setEedChargeType('interest');
+                setEedInterestType(item.default_interest_type);
+                if (item.default_interest_rate !== null && item.default_interest_rate !== undefined && item.default_interest_rate !== '') {
+                    $('#eed_interest_rate').val(item.default_interest_rate);
+                }
+            }
+            // default_interest_type === 'none' needs no action -- setEedChargeType('none') is
+            // already this form's own starting state.
         }
     });
     $(document).on('click', '#eedModeToggle button', function () {
@@ -2801,6 +2914,30 @@ function initEedUI() {
     });
     $(document).on('click', '#eedInterestTypeToggle button', function () {
         setEedInterestType($(this).data('value'));
+    });
+    // 2026-09-03, Platform UX review Phase 4 -- see modals.php's own comment on #eedRateHelperToggle
+    // for the full rationale. Purely a fill-in-for-me calculator: computes annual% / periods-per-year
+    // and writes the result into #eed_interest_rate on demand -- never auto-applies, and doesn't
+    // change what that field itself means or how save()/computeInstallmentSchedule() read it.
+    $(document).on('click', '#eedRateHelperToggle', function () {
+        $('#eedRateHelperBody').toggleClass('d-none');
+    });
+    $(document).on('input change', '#eedRateHelperAnnual, #eedRateHelperFrequency', function () {
+        const annual = parseFloat($('#eedRateHelperAnnual').val() || '0');
+        const periodsPerYear = parseFloat($('#eedRateHelperFrequency').val() || '12');
+        if (annual > 0 && periodsPerYear > 0) {
+            const perPeriod = annual / periodsPerYear;
+            const template = langData['rate_helper_result'] || '≈ {rate}% per installment';
+            $('#eedRateHelperResult').text(template.replace('{rate}', perPeriod.toFixed(3)));
+        } else {
+            $('#eedRateHelperResult').text('');
+        }
+    });
+    $(document).on('click', '#eedRateHelperApply', function () {
+        const annual = parseFloat($('#eedRateHelperAnnual').val() || '0');
+        const periodsPerYear = parseFloat($('#eedRateHelperFrequency').val() || '12');
+        if (!(annual > 0) || !(periodsPerYear > 0)) return;
+        $('#eed_interest_rate').val((annual / periodsPerYear).toFixed(3)).trigger('change');
     });
     $(document).on('input change', '#eed_total_installments, #eed_principal_amount, #eed_interest_rate, #eed_fee_percent, #eed_fee_base', function () {
         scheduleEedPreviewFetch();

@@ -101,10 +101,19 @@ class EmployeeEarningDeductionModel {
         // detail.js's own select2:select handler can pre-fill the assignment amount field as a
         // SUGGESTED starting value -- still fully editable per employee/assignment afterward, this
         // never writes anything back to the catalog itself.
+        // 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B: default_interest_type/
+        // default_interest_rate/default_fee_percent/default_fee_base added to this SAME additive-
+        // payload precedent immediately above (fixed_amount/percent_rate) -- detail.js's own
+        // select2:select handler on #eed_ped_type_id reads these to suggest starting interest/fee
+        // values, same "SUGGESTED, only fills an empty field, never overwrites" rule that handler
+        // already enforces for the Amount field. No default_amount_mode -- that column was added and
+        // dropped again in this same session before ever being used (amount_mode is hardcoded
+        // 'custom_per_installment' from this modal, no UI control left to auto-fill).
         $sql = "SELECT id,
                     CONCAT('[', item_code, '] ', item_name_th) AS text_th,
                     CONCAT('[', item_code, '] ', item_name_en) AS text_en,
-                    item_type, calculation_method, fixed_amount, percent_rate
+                    item_type, calculation_method, fixed_amount, percent_rate,
+                    default_interest_type, default_interest_rate, default_fee_percent, default_fee_base
                 FROM `payroll_earning_deduction_types` {$where}
                 ORDER BY item_type ASC, item_code ASC LIMIT :offset, :limit";
         $stmt = $this->db->prepare($sql);

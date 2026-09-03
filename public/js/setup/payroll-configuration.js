@@ -233,6 +233,12 @@ function initDeductionTypeTable() {
         drawCallback: function () { getTableLang(); }
     });
 }
+// 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B -- same conditional-field-visibility
+// pattern as applyAmountSourceFields() below, just for the 2 default_interest_type-dependent groups.
+function applyDefaultInterestTypeFields(type) {
+    $('#default_interest_rate_wrapper').toggleClass('d-none', type !== 'fixed' && type !== 'reducing_balance');
+    $('#default_fee_wrapper').toggleClass('d-none', type !== 'fee');
+}
 function applyItemTypeFields(type, preserveSourceEvent) {
     $('#earnings_fields_wrapper').toggleClass('d-none', type !== 'earning');
     $('#deductions_fields_wrapper').toggleClass('d-none', type !== 'deduction');
@@ -317,6 +323,11 @@ function resetPedTypeForm(itemType) {
     $('#tax_treatment').val('').trigger('change');
     $('#tax_deduction_impact').val('').trigger('change');
     $('#statutory_report_code').val('').trigger('change');
+    $('#default_interest_type').val('').trigger('change');
+    $('#default_interest_rate').val('');
+    $('#default_fee_percent').val('');
+    $('#default_fee_base').val('').trigger('change');
+    applyDefaultInterestTypeFields('');
     applyItemTypeFields(itemType);
     applyAmountSourceFields('');
     applyPedTypeModalBadge(itemType);
@@ -331,6 +342,11 @@ function populatePedTypeForm(row) {
     $('#tax_treatment').val(row.tax_treatment || '').trigger('change');
     $('#tax_deduction_impact').val(row.tax_deduction_impact || '').trigger('change');
     $('#statutory_report_code').val(row.statutory_report_code || '').trigger('change');
+    $('#default_interest_type').val(row.default_interest_type || '').trigger('change');
+    $('#default_interest_rate').val(row.default_interest_rate || '');
+    $('#default_fee_percent').val(row.default_fee_percent || '');
+    $('#default_fee_base').val(row.default_fee_base || '').trigger('change');
+    applyDefaultInterestTypeFields(row.default_interest_type || '');
     $('#calc_sso').prop('checked', Number(row.calc_sso) === 1);
     $('#calc_pf').prop('checked', Number(row.calc_pf) === 1);
     applyItemTypeFields(row.item_type, true);
@@ -388,6 +404,10 @@ function collectPedTypeFormData() {
         tax_treatment: $('#tax_treatment').val(),
         tax_deduction_impact: $('#tax_deduction_impact').val(),
         statutory_report_code: $('#statutory_report_code').val(),
+        default_interest_type: $('#default_interest_type').val(),
+        default_interest_rate: $('#default_interest_rate').val(),
+        default_fee_percent: $('#default_fee_percent').val(),
+        default_fee_base: $('#default_fee_base').val(),
         calc_sso: $('#calc_sso').is(':checked'),
         calc_pf: $('#calc_pf').is(':checked'),
         source_event_code: isEventLinked ? $('#source_event_code').val() : '',
@@ -405,6 +425,9 @@ $(document).ready(function () {
         initSelect2('#tax_treatment', { mode: 'static' });
         initSelect2('#tax_deduction_impact', { mode: 'static' });
         initSelect2('#statutory_report_code', { mode: 'static', allowClear: true });
+        // 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B.
+        initSelect2('#default_interest_type', { mode: 'static', allowClear: true });
+        initSelect2('#default_fee_base', { mode: 'static' });
         initSelect2('#source_event_code', { mode: 'ajax', allowClear: true });
         initSelect2('#payroll_frequency', { mode: 'static' });
         initSelect2('#cutoff_day_of_week', { mode: 'static' });
@@ -593,6 +616,10 @@ $(document).on('change', '#amount_source', function () {
     const val = $(this).val();
     applyAmountSourceFields(val);
     $('#calculation_method').val(val === 'event_linked' ? 'manual_entry' : (val || 'manual_entry'));
+});
+// 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B.
+$(document).on('change', '#default_interest_type', function () {
+    applyDefaultInterestTypeFields($(this).val());
 });
 $(document).on('click', '.btn-add-ped-type', function () {
     const itemType = $(this).data('item-type');
@@ -1036,6 +1063,17 @@ function initPayrollCycleUI() {
         const $radio = $row.find('.cycle-bank-account-default');
         if ($(this).is(':checked')) {
             $radio.prop('disabled', false);
+            // 2026-09-03, Manual Entry / Platform UX review Phase 8: auto-select this account as the
+            // default the moment it becomes the FIRST included account with no default chosen yet --
+            // previously nothing did this, so including the company's first bank account (the
+            // overwhelmingly common case) required a separate manual "Default" click or else hit
+            // saveBankAccounts()'s own "exactly one default required" validation block on submit.
+            // Only fires when no OTHER account is already marked default -- never silently steals the
+            // default away from an account already chosen (a loaded existing cycle, or one the admin
+            // already picked earlier in this same session).
+            if ($('#cycleBankAccountsList .cycle-bank-account-default:checked').length === 0) {
+                $radio.prop('checked', true);
+            }
         } else {
             $radio.prop('disabled', true).prop('checked', false);
         }

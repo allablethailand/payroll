@@ -2382,6 +2382,23 @@ class EmployeeModel {
         return $this->childConfig()[$type] ?? null;
     }
 
+    /** 2026-09-03, Manual Entry Phase 1A: single-purpose lookup backing ManualEntryController::
+     *  employeeContext()'s Attendance auto-fill -- returns null when the employee has no shift_id
+     *  set at all (a normal, common state, not an error) so the caller can just clear the field. */
+    public function shiftInfo(int $compId, int $employeeId): ?array {
+        $stmt = $this->db->prepare(
+            "SELECT e.shift_id, s.shift_name_th, s.shift_name_en
+             FROM `employees` e LEFT JOIN `shifts` s ON s.id = e.shift_id
+             WHERE e.id = :id AND e.comp_id = :comp_id AND e.deleted_at IS NULL"
+        );
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row || $row['shift_id'] === null) {
+            return null;
+        }
+        return $row;
+    }
+
     public function employeeBelongsToComp(int $employeeId, int $compId): bool {
         $stmt = $this->db->prepare("SELECT id FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);

@@ -803,6 +803,45 @@
                                 <select class="form-select select2-static" id="statutory_report_code" name="statutory_report_code" data-option-keys="statutory_report_th_slf" data-option-values="TH_SLF"></select>
                             </div>
                         </div>
+                        <!-- 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B (explicit
+                             request: "เมื่อเลือก PED Type ในฟอร์มเงินกู้/ผ่อนชำระ ให้ auto-fill ดอกเบี้ย/
+                             เงื่อนไข default จาก catalog") -- a SUGGESTED starting interest/fee/
+                             interest/fee configuration for a new employee_earning_deductions
+                             assignment of this item, same non-binding "suggestion only" role Fixed
+                             Amount/Percent of Base Salary already play above for the plain Amount
+                             field. Optional -- leaving "No default set" means the assignment form's
+                             own existing defaults (interest_type='none', amount_mode='even_split')
+                             apply exactly as they already do today. -->
+                        <div class="row mb-3">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0" data-i18n="default_interest_type">Default Interest/Fee</label>
+                            </div>
+                            <div class="col-sm-9">
+                                <select class="form-select select2-static" id="default_interest_type" name="default_interest_type" allowClear="true" data-option-keys="interest_none,interest_fixed,interest_reducing_balance,fee_has" data-option-values="none,fixed,reducing_balance,fee"></select>
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="default_interest_rate_wrapper">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0" data-i18n="default_interest_rate">Default Interest Rate (% per installment)</label>
+                            </div>
+                            <div class="col-sm-3">
+                                <input type="number" step="0.01" min="0" max="100" class="form-control" id="default_interest_rate" name="default_interest_rate" data-i18n="percent_rate_placeholder" placeholder="e.g., 1.5">
+                            </div>
+                        </div>
+                        <div class="row mb-3 d-none" id="default_fee_wrapper">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-0" data-i18n="default_fee_percent">Default Fee</label>
+                            </div>
+                            <div class="col-sm-3">
+                                <div class="input-group">
+                                    <input type="number" step="0.01" min="0" max="100" class="form-control" id="default_fee_percent" name="default_fee_percent" data-i18n="percent_rate_placeholder" placeholder="e.g., 2.0">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </div>
+                            <div class="col-sm-3">
+                                <select class="form-select select2-static" id="default_fee_base" name="default_fee_base" data-option-keys="fee_base_option_principal,fee_base_option_base_salary" data-option-values="principal_amount,base_salary"></select>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1952,17 +1991,34 @@
                         <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
                         <span data-i18n="sec_general_info">General Information</span>
                     </h6>
-                    <div class="d-flex justify-content-end mb-3">
-                        <div class="btn-group btn-group-sm" role="group" id="eedModeToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-mode="catalog"><i class="fa-solid fa-list me-1"></i><span data-i18n="manual_line_mode_catalog">From List</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-mode="custom"><i class="fa-solid fa-pen me-1"></i><span data-i18n="manual_line_mode_custom">Custom Item</span></button>
+                    <div class="mb-3">
+                        <!-- 2026-09-03, Manual Entry / Platform UX review Phase 6: redesigned from a
+                             plain btn-group -- see style.css's own docblock on .mode-select-group for
+                             why (short version: "Custom Item" vs "Other" used to look identical with
+                             no explanation, the per-button description below is the actual fix). -->
+                        <div class="mode-select-group" role="group" id="eedModeToggle">
+                            <button type="button" class="mode-select-btn active" data-mode="catalog">
+                                <i class="fa-solid fa-list"></i>
+                                <span class="mode-select-btn-title" data-i18n="manual_line_mode_catalog">From List</span>
+                                <span class="mode-select-btn-desc" data-i18n="mode_desc_catalog">Pick from your saved item types</span>
+                            </button>
+                            <button type="button" class="mode-select-btn" data-mode="custom">
+                                <i class="fa-solid fa-pen"></i>
+                                <span class="mode-select-btn-title" data-i18n="manual_line_mode_custom">Custom Item</span>
+                                <span class="mode-select-btn-desc" data-i18n="mode_desc_custom">One-time item with its own name</span>
+                            </button>
                             <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 --
                                  reuses #eedCustomFields' own free-text input verbatim (see
                                  setEedMode()'s own docblock in detail.js); the only difference from
                                  "Custom Item" is is_other=true sent on submit, which maps this specific
                                  entry into the shared "Other Income"/"Other Deduction" aggregation
-                                 bucket instead of its own one-off report column. -->
-                            <button type="button" class="btn btn-outline-brand" data-mode="other"><i class="fa-solid fa-circle-question me-1"></i><span data-i18n="manual_line_mode_other">Other</span></button>
+                                 bucket instead of its own one-off report column -- see this button's
+                                 own description below, which is the whole point of this redesign. -->
+                            <button type="button" class="mode-select-btn" data-mode="other">
+                                <i class="fa-solid fa-circle-question"></i>
+                                <span class="mode-select-btn-title" data-i18n="manual_line_mode_other">Other</span>
+                                <span class="mode-select-btn-desc" data-i18n="mode_desc_other">Grouped into "Other Income/Deduction" on reports</span>
+                            </button>
                         </div>
                     </div>
                     <div class="row mb-3" id="eedCatalogFields">
@@ -2013,7 +2069,15 @@
                             </label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_principal_amount" name="principal_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                            <!-- 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency):
+                                 this field had NO currency indicator at all before -- unlike
+                                 base_salary_amount/ere_amount/erd_amount (which hardcoded "THB"), this
+                                 one is genuinely new, not a hardcoded-wrong-value fix. Same
+                                 currency-code-label mechanism, see those fields' own comments. -->
+                            <div class="input-group">
+                                <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_principal_amount" name="principal_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                <span class="input-group-text currency-code-label">THB</span>
+                            </div>
                         </div>
                     </div>
                     <!-- 2026-08-31, explicit request: "Form ที่เป็นรายการหัก ทุก Form ให้เพิ่มว่า คิดดอกเบี้ย
@@ -2039,14 +2103,40 @@
                             <div class="col-sm-3 align-self-center">
                                 <label class="form-label mb-0"><span data-i18n="interest_type">Interest Type</span> <span class="text-danger">*</span></label>
                             </div>
-                            <div class="col-sm-9 d-flex align-items-center flex-wrap gap-2">
-                                <div class="btn-group btn-group-sm" role="group" id="eedInterestTypeToggle">
-                                    <button type="button" class="btn btn-outline-brand active" data-value="fixed"><span data-i18n="interest_fixed">Flat</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="reducing_balance"><span data-i18n="interest_reducing_balance">Reducing Balance</span></button>
+                            <div class="col-sm-9">
+                                <div class="d-flex align-items-center flex-wrap gap-2">
+                                    <div class="btn-group btn-group-sm" role="group" id="eedInterestTypeToggle">
+                                        <button type="button" class="btn btn-outline-brand active" data-value="fixed"><span data-i18n="interest_fixed">Flat</span></button>
+                                        <button type="button" class="btn btn-outline-brand" data-value="reducing_balance"><span data-i18n="interest_reducing_balance">Reducing Balance</span></button>
+                                    </div>
+                                    <div class="input-group input-group-sm" style="max-width:180px;">
+                                        <input type="number" step="0.01" min="0.01" class="form-control" id="eed_interest_rate" name="interest_rate" placeholder="0.00">
+                                        <span class="input-group-text" data-i18n="interest_rate_suffix">% / installment</span>
+                                    </div>
                                 </div>
-                                <div class="input-group input-group-sm" style="max-width:180px;">
-                                    <input type="number" step="0.01" min="0.01" class="form-control" id="eed_interest_rate" name="interest_rate" placeholder="0.00">
-                                    <span class="input-group-text" data-i18n="interest_rate_suffix">% / installment</span>
+                                <!-- 2026-09-03, Platform UX review Phase 4 (explicit finding: "% ต่องวด" gives no
+                                     sense of what one installment period actually spans, since an assignment
+                                     genuinely isn't tied to a specific payroll_cycles.payroll_frequency at entry
+                                     time -- confirmed via investigation, not guessed. Fix chosen (Option 2, user-
+                                     confirmed): a plain calculator that converts a familiar "X% per year" figure
+                                     into the per-installment rate this field actually needs, WITHOUT changing the
+                                     field/data model at all -- purely a fill-in-for-me helper, the admin still
+                                     picks the payroll frequency themselves since nothing here can know it for
+                                     certain. -->
+                                <div class="mt-2">
+                                    <button type="button" class="btn btn-link btn-sm p-0" id="eedRateHelperToggle" data-i18n="rate_helper_toggle">Convert from an annual rate</button>
+                                    <div class="d-none mt-2 p-2 bg-light rounded-2 d-flex align-items-center gap-2 flex-wrap" id="eedRateHelperBody">
+                                        <div class="input-group input-group-sm" style="max-width:130px;">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="eedRateHelperAnnual" data-i18n="rate_helper_annual_placeholder" placeholder="5.00">
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                        <span class="small text-secondary" data-i18n="rate_helper_per_year">per year, paid</span>
+                                        <select class="form-select form-select-sm select2-static" style="max-width:170px;" id="eedRateHelperFrequency"
+                                                data-option-keys="rate_helper_freq_monthly,rate_helper_freq_semi_monthly,rate_helper_freq_bi_weekly,rate_helper_freq_weekly"
+                                                data-option-values="12,24,26,52"></select>
+                                        <button type="button" class="btn btn-outline-brand btn-sm" id="eedRateHelperApply" data-i18n="rate_helper_apply">Use this rate</button>
+                                        <span class="small text-muted" id="eedRateHelperResult"></span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2063,6 +2153,23 @@
                                 <select class="form-select form-select-sm select2-static" style="max-width:220px;" id="eed_fee_base" name="fee_base"
                                         data-option-keys="fee_base_option_principal,fee_base_option_base_salary" data-option-values="principal_amount,base_salary"></select>
                             </div>
+                        </div>
+                    </div>
+                    <!-- 2026-09-03, Platform UX review Phase 4 (explicit finding: the Amount field's own
+                         label silently swaps between "Total Amount" and "Principal Amount" depending on
+                         charge type, with the SAME number meaning something different underneath --
+                         confirmed as the clearest real match for "wrong calc base" confusion. Fix chosen
+                         (Option 2, user-confirmed): don't restructure the field (would need a reverse-solve
+                         calculation with real risk of its own) -- instead always show, in plain numbers,
+                         what the entered principal actually resolves to once interest/fee is added, sourced
+                         from the SAME real preview total the installment table below already computes (never
+                         a second, hand-rolled copy of the formula) so it can never drift out of sync with
+                         what actually gets saved. Hidden entirely when charge type is 'none' -- the amount
+                         already IS the total then, nothing to clarify. -->
+                    <div class="row mb-3 d-none" id="eedAmountBreakdownRow">
+                        <div class="col-sm-3"></div>
+                        <div class="col-sm-9">
+                            <div class="alert alert-light border py-2 px-3 mb-0 small" id="eedAmountBreakdownText"></div>
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2120,7 +2227,7 @@
                                      genuinely needs it, and it applies to any deduction here (catalog or
                                      custom), same as the rest of this toggle. -->
                                 <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
                             </div>
                         </div>
                     </div>
@@ -2203,7 +2310,10 @@
                         <div class="col-sm-8">
                             <div class="input-group">
                                 <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="ere_amount" name="amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                                <span class="input-group-text" data-i18n="thb">THB</span>
+                                <!-- 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency):
+                                     was hardcoded "THB" -- see base_salary_amount's own comment in
+                                     employee/detail.php for the full explanation. -->
+                                <span class="input-group-text currency-code-label">THB</span>
                             </div>
                         </div>
                     </div>
@@ -2290,7 +2400,10 @@
                         <div class="col-sm-8">
                             <div class="input-group">
                                 <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="erd_amount" name="amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                                <span class="input-group-text" data-i18n="thb">THB</span>
+                                <!-- 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency):
+                                     was hardcoded "THB" -- see base_salary_amount's own comment in
+                                     employee/detail.php for the full explanation. -->
+                                <span class="input-group-text currency-code-label">THB</span>
                             </div>
                         </div>
                     </div>
@@ -2357,7 +2470,7 @@
                                 <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
                                 <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
                                 <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
                             </div>
                         </div>
                     </div>

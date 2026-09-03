@@ -273,6 +273,39 @@ class PayrollEarningDeductionTypeModel {
             }
         }
 
+        // 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B (explicit request: "เมื่อเลือก
+        // PED Type ในฟอร์มเงินกู้/ผ่อนชำระ ให้ auto-fill ดอกเบี้ย/เงื่อนไข default จาก catalog") -- suggested
+        // starting values for a NEW employee_earning_deductions assignment of this item, same
+        // "suggestion only, never forces anything" role fixed_amount/percent_rate already play for
+        // the plain Amount field (see this table's own 2026-08-30 comment on that). Deduction-only,
+        // mirrors tax_deduction_impact's own item_type branch above -- always NULL for an earning item.
+        $defaultInterestType = null;
+        $defaultInterestRate = null;
+        $defaultFeePercent = null;
+        $defaultFeeBase = null;
+        if ($itemType === 'deduction') {
+            if (!empty($data['default_interest_type'])) {
+                $defaultInterestType = (string)$data['default_interest_type'];
+                if (!in_array($defaultInterestType, ['none', 'fixed', 'reducing_balance', 'fee'], true)) {
+                    return ['status' => false, 'message' => 'Invalid default_interest_type.'];
+                }
+                if (in_array($defaultInterestType, ['fixed', 'reducing_balance'], true) && isset($data['default_interest_rate']) && $data['default_interest_rate'] !== '') {
+                    $defaultInterestRate = (float)$data['default_interest_rate'];
+                }
+                if ($defaultInterestType === 'fee') {
+                    if (isset($data['default_fee_percent']) && $data['default_fee_percent'] !== '') {
+                        $defaultFeePercent = (float)$data['default_fee_percent'];
+                    }
+                    if (!empty($data['default_fee_base'])) {
+                        $defaultFeeBase = (string)$data['default_fee_base'];
+                        if (!in_array($defaultFeeBase, ['base_salary', 'principal_amount'], true)) {
+                            return ['status' => false, 'message' => 'Invalid default_fee_base.'];
+                        }
+                    }
+                }
+            }
+        }
+
         $calcSso = !empty($data['calc_sso']) ? 1 : 0;
         $calcPf = !empty($data['calc_pf']) ? 1 : 0;
         $itemNameTh = trim((string)$data['item_name_th']);
@@ -293,6 +326,10 @@ class PayrollEarningDeductionTypeModel {
             ':country_code' => $countryCode,
             ':source_event_code' => $sourceEventCode,
             ':statutory_report_code' => $statutoryReportCode,
+            ':default_interest_type' => $defaultInterestType,
+            ':default_interest_rate' => $defaultInterestRate,
+            ':default_fee_percent' => $defaultFeePercent,
+            ':default_fee_base' => $defaultFeeBase,
         ];
 
         try {
@@ -323,6 +360,8 @@ class PayrollEarningDeductionTypeModel {
                             tax_treatment = :tax_treatment, tax_deduction_impact = :tax_deduction_impact,
                             calc_sso = :calc_sso, calc_pf = :calc_pf, country_code = :country_code,
                             source_event_code = :source_event_code, statutory_report_code = :statutory_report_code,
+                            default_interest_type = :default_interest_type, default_interest_rate = :default_interest_rate,
+                            default_fee_percent = :default_fee_percent, default_fee_base = :default_fee_base,
                             status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $params[':updated_by'] = $userId;
@@ -339,11 +378,15 @@ class PayrollEarningDeductionTypeModel {
             $sql = "INSERT INTO `payroll_earning_deduction_types`
                         (comp_id, item_code, item_name_th, item_name_en, item_type, calculation_method,
                          fixed_amount, percent_rate, tax_treatment, tax_deduction_impact, calc_sso, calc_pf,
-                         country_code, source_event_code, statutory_report_code, is_sync_only, status, created_by)
+                         country_code, source_event_code, statutory_report_code,
+                         default_interest_type, default_interest_rate, default_fee_percent, default_fee_base,
+                         is_sync_only, status, created_by)
                     VALUES
                         (:comp_id, :item_code, :item_name_th, :item_name_en, :item_type, :calculation_method,
                          :fixed_amount, :percent_rate, :tax_treatment, :tax_deduction_impact, :calc_sso, :calc_pf,
-                         :country_code, :source_event_code, :statutory_report_code, 0, :status, :created_by)";
+                         :country_code, :source_event_code, :statutory_report_code,
+                         :default_interest_type, :default_interest_rate, :default_fee_percent, :default_fee_base,
+                         0, :status, :created_by)";
             $statusInput = $data['status'] ?? 'active';
             $params[':status'] = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : 'active';
             $params[':comp_id'] = $compId;
