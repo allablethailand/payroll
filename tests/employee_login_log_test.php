@@ -51,10 +51,10 @@ try {
     $insEmp = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'ล็อกอิน', 'Test', 'Login', '1990-01-01', 'Thai',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $employeeNo = 'ELL_TEST_' . uniqid();
     $insEmp->execute([':comp_id' => $compId, ':employee_no' => $employeeNo]);
     $employeeId = (int)$pdo->lastInsertId();
@@ -114,10 +114,10 @@ try {
     $insEmp2 = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ2', 'ล็อกอิน2', 'Test2', 'Login2', '1990-01-01', 'Thai',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insEmp2->execute([':comp_id' => $compId, ':employee_no' => 'ELL_TEST2_' . uniqid()]);
     $otherEmployeeId = (int)$pdo->lastInsertId();
     $model->recordTimezone($privateId, $compId, $otherEmployeeId, 'America/New_York');

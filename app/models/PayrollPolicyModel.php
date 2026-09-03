@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/AuditLogModel.php';
 
 /**
  * Company-wide "Payroll Policies" settings (Payroll Configuration's own new tab, 2026-08-30,
@@ -18,9 +19,11 @@ require_once __DIR__ . '/../core/Database.php';
  */
 class PayrollPolicyModel {
     private PDO $db;
+    private AuditLogModel $auditLog;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /** Always returns a row (defaults, never persisted, when the company hasn't saved anything yet). */
@@ -56,6 +59,32 @@ class PayrollPolicyModel {
             // concept of its own, so this is entirely this app's own configurable policy, never a
             // hardcoded "correct" rate -- see flatTaxRateSettings() below.
             $row['supplemental_flat_tax_rate_percent'] = $row['supplemental_flat_tax_rate_percent'] !== null ? (float)$row['supplemental_flat_tax_rate_percent'] : null;
+            // 2026-09-02, explicit request: extend Probation/Internship pay policy with leave/OT
+            // rights during the period + an internship duration reference. Same "reference/display
+            // only" contract as probation_period_days for the two *_period_days fields (see that
+            // column's own migration comment) -- neither auto-transitions employment_status/type,
+            // this app has no cron/scheduled-job infrastructure. allow_leave_during_* default true
+            // (1) so a company that never visits this section sees zero behavior change.
+            $row['intern_period_days'] = $row['intern_period_days'] !== null ? (int)$row['intern_period_days'] : null;
+            $row['probation_leave_days_limit'] = $row['probation_leave_days_limit'] !== null ? (int)$row['probation_leave_days_limit'] : null;
+            $row['allow_leave_during_probation'] = (bool)($row['allow_leave_during_probation'] ?? true);
+            $row['probation_ot_eligible_default'] = $row['probation_ot_eligible_default'] !== null ? (bool)$row['probation_ot_eligible_default'] : null;
+            $row['intern_leave_days_limit'] = $row['intern_leave_days_limit'] !== null ? (int)$row['intern_leave_days_limit'] : null;
+            $row['allow_leave_during_intern'] = (bool)($row['allow_leave_during_intern'] ?? true);
+            $row['intern_ot_eligible_default'] = $row['intern_ot_eligible_default'] !== null ? (bool)$row['intern_ot_eligible_default'] : null;
+            // 2026-09-02, follow-up to close a review-flagged gap: "เงื่อนไขการหักภาษี/ประกันสังคมที่
+            // แตกต่างจากพนักงานปกติ (ถ้ามี)" was never actually built -- probation_defer_pvd/
+            // intern_defer_pvd (pre-existing) only covered PVD. defer_sso is the exact same
+            // mechanism, just for SSO (see PayrollRunModel::recalculate()'s own defer_pvd comment
+            // for the shared StatutoryCalculationEngine::$employeeFlags gate this feeds).
+            // tax_exempt_default is a soft, CREATE-TIME-ONLY default for the ALREADY-existing
+            // employees.tax_exempt checkbox (same contract as *_ot_eligible_default) -- not a new
+            // tax formula, this app has no basis to invent a probation-specific PIT rule Thai law
+            // itself doesn't define.
+            $row['probation_defer_sso'] = (bool)($row['probation_defer_sso'] ?? false);
+            $row['probation_tax_exempt_default'] = $row['probation_tax_exempt_default'] !== null ? (bool)$row['probation_tax_exempt_default'] : null;
+            $row['intern_defer_sso'] = (bool)($row['intern_defer_sso'] ?? false);
+            $row['intern_tax_exempt_default'] = $row['intern_tax_exempt_default'] !== null ? (bool)$row['intern_tax_exempt_default'] : null;
             return $row;
         }
         return [
@@ -66,6 +95,11 @@ class PayrollPolicyModel {
             'intern_defer_pvd' => false, 'intern_defer_recurring_earning' => false, 'intern_base_salary_ratio' => null,
             'intern_pay_basis' => 'full_month', 'intern_pay_basis_deduct_holidays' => false, 'intern_pay_basis_deduct_leave' => false,
             'supplemental_flat_tax_rate_percent' => null,
+            'intern_period_days' => null, 'probation_leave_days_limit' => null, 'allow_leave_during_probation' => true,
+            'probation_ot_eligible_default' => null, 'intern_leave_days_limit' => null, 'allow_leave_during_intern' => true,
+            'intern_ot_eligible_default' => null,
+            'probation_defer_sso' => false, 'probation_tax_exempt_default' => null,
+            'intern_defer_sso' => false, 'intern_tax_exempt_default' => null,
         ];
     }
 
@@ -90,6 +124,12 @@ class PayrollPolicyModel {
             'defer_pvd' => $row['probation_defer_pvd'],
             'defer_recurring_earning' => $row['probation_defer_recurring_earning'],
             'base_salary_ratio' => $row['probation_base_salary_ratio'], // null = 100%, no reduction
+            'period_days' => $row['probation_period_days'], // reference/display only, never a gate
+            'leave_days_limit' => $row['probation_leave_days_limit'],
+            'allow_leave' => $row['allow_leave_during_probation'],
+            'ot_eligible_default' => $row['probation_ot_eligible_default'], // null = no default configured
+            'defer_sso' => $row['probation_defer_sso'],
+            'tax_exempt_default' => $row['probation_tax_exempt_default'], // null = no default configured
         ];
     }
 
@@ -103,6 +143,12 @@ class PayrollPolicyModel {
             'defer_pvd' => $row['intern_defer_pvd'],
             'defer_recurring_earning' => $row['intern_defer_recurring_earning'],
             'base_salary_ratio' => $row['intern_base_salary_ratio'], // null = 100%, no reduction
+            'period_days' => $row['intern_period_days'], // reference/display only, never a gate
+            'leave_days_limit' => $row['intern_leave_days_limit'],
+            'allow_leave' => $row['allow_leave_during_intern'],
+            'ot_eligible_default' => $row['intern_ot_eligible_default'], // null = no default configured
+            'defer_sso' => $row['intern_defer_sso'],
+            'tax_exempt_default' => $row['intern_tax_exempt_default'], // null = no default configured
         ];
     }
 
@@ -139,7 +185,13 @@ class PayrollPolicyModel {
         ];
     }
 
-    public function save(int $compId, array $data, int $userId): array {
+    public function save(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        // Platform Hardening Phase 6 pilot: singleton-per-company upsert -- fetched up front so
+        // AuditLogModel::record() can diff it against the row's own state after the upsert below
+        // (action='create' the very first time a company saves this tab, 'update' every time after).
+        $stmtOld = $this->db->prepare("SELECT * FROM `company_payroll_policies` WHERE comp_id = :comp_id");
+        $stmtOld->execute([':comp_id' => $compId]);
+        $oldRowForAudit = $stmtOld->fetch(PDO::FETCH_ASSOC) ?: null;
         $reopenWindowDays = null;
         if (isset($data['reopen_window_days']) && $data['reopen_window_days'] !== '' && $data['reopen_window_days'] !== null) {
             if (!is_numeric($data['reopen_window_days']) || (int)$data['reopen_window_days'] < 0) {
@@ -199,9 +251,65 @@ class PayrollPolicyModel {
             $supplementalFlatTaxRatePercent = (float)$data['supplemental_flat_tax_rate_percent'];
         }
 
+        // 2026-09-02, explicit request: extend Probation/Internship pay policy with leave/OT rights
+        // during the period + an internship duration reference -- same validation shape as the
+        // existing *_period_days/*_base_salary_ratio fields above.
+        $internPeriodDays = null;
+        if (isset($data['intern_period_days']) && $data['intern_period_days'] !== '' && $data['intern_period_days'] !== null) {
+            if (!is_numeric($data['intern_period_days']) || (int)$data['intern_period_days'] < 0) {
+                return ['status' => false, 'message' => 'Intern period days must be a non-negative number, or left blank.'];
+            }
+            $internPeriodDays = (int)$data['intern_period_days'];
+        }
+        $probationLeaveDaysLimit = null;
+        if (isset($data['probation_leave_days_limit']) && $data['probation_leave_days_limit'] !== '' && $data['probation_leave_days_limit'] !== null) {
+            if (!is_numeric($data['probation_leave_days_limit']) || (int)$data['probation_leave_days_limit'] < 0) {
+                return ['status' => false, 'message' => 'Probation leave days limit must be a non-negative number, or left blank.'];
+            }
+            $probationLeaveDaysLimit = (int)$data['probation_leave_days_limit'];
+        }
+        $internLeaveDaysLimit = null;
+        if (isset($data['intern_leave_days_limit']) && $data['intern_leave_days_limit'] !== '' && $data['intern_leave_days_limit'] !== null) {
+            if (!is_numeric($data['intern_leave_days_limit']) || (int)$data['intern_leave_days_limit'] < 0) {
+                return ['status' => false, 'message' => 'Intern leave days limit must be a non-negative number, or left blank.'];
+            }
+            $internLeaveDaysLimit = (int)$data['intern_leave_days_limit'];
+        }
+        // allow_leave_during_* defaults TRUE (unlike the other checkboxes above, which default
+        // false/off) -- these arrive from a real <input type=checkbox> checked-by-default in the UI,
+        // so "key absent" (unchecked, browsers omit unchecked checkboxes from form submission) must
+        // still resolve to true here or the very first save from that form would silently flip it
+        // off for every company. array_key_exists distinguishes "field present, value 0" (explicit
+        // uncheck) from "field genuinely never sent" (a non-browser caller) the same way this
+        // project's own ot_rate_source precedent (EmployeeModel::save()) already established.
+        $allowLeaveDuringProbation = array_key_exists('allow_leave_during_probation', $data) ? (!empty($data['allow_leave_during_probation']) ? 1 : 0) : 1;
+        $allowLeaveDuringIntern = array_key_exists('allow_leave_during_intern', $data) ? (!empty($data['allow_leave_during_intern']) ? 1 : 0) : 1;
+        $probationOtEligibleDefault = null;
+        if (isset($data['probation_ot_eligible_default']) && $data['probation_ot_eligible_default'] !== '' && $data['probation_ot_eligible_default'] !== null) {
+            $probationOtEligibleDefault = !empty($data['probation_ot_eligible_default']) ? 1 : 0;
+        }
+        $internOtEligibleDefault = null;
+        if (isset($data['intern_ot_eligible_default']) && $data['intern_ot_eligible_default'] !== '' && $data['intern_ot_eligible_default'] !== null) {
+            $internOtEligibleDefault = !empty($data['intern_ot_eligible_default']) ? 1 : 0;
+        }
+
+        // 2026-09-02, follow-up to close a review-flagged gap: SSO deferral (same mechanism as
+        // defer_pvd above) + a soft tax-exempt default (same tri-state contract as
+        // *_ot_eligible_default above).
+        $probationDeferSso = !empty($data['probation_defer_sso']) ? 1 : 0;
+        $internDeferSso = !empty($data['intern_defer_sso']) ? 1 : 0;
+        $probationTaxExemptDefault = null;
+        if (isset($data['probation_tax_exempt_default']) && $data['probation_tax_exempt_default'] !== '' && $data['probation_tax_exempt_default'] !== null) {
+            $probationTaxExemptDefault = !empty($data['probation_tax_exempt_default']) ? 1 : 0;
+        }
+        $internTaxExemptDefault = null;
+        if (isset($data['intern_tax_exempt_default']) && $data['intern_tax_exempt_default'] !== '' && $data['intern_tax_exempt_default'] !== null) {
+            $internTaxExemptDefault = !empty($data['intern_tax_exempt_default']) ? 1 : 0;
+        }
+
         $stmt = $this->db->prepare(
-            "INSERT INTO `company_payroll_policies` (comp_id, reopen_window_days, probation_period_days, probation_defer_pvd, probation_defer_recurring_earning, probation_base_salary_ratio, intern_defer_pvd, intern_defer_recurring_earning, intern_base_salary_ratio, pay_basis, pay_basis_deduct_holidays, pay_basis_deduct_leave, intern_pay_basis, intern_pay_basis_deduct_holidays, intern_pay_basis_deduct_leave, supplemental_flat_tax_rate_percent, updated_by)
-             VALUES (:comp_id, :reopen_window_days, :probation_period_days, :probation_defer_pvd, :probation_defer_recurring_earning, :probation_base_salary_ratio, :intern_defer_pvd, :intern_defer_recurring_earning, :intern_base_salary_ratio, :pay_basis, :pay_basis_deduct_holidays, :pay_basis_deduct_leave, :intern_pay_basis, :intern_pay_basis_deduct_holidays, :intern_pay_basis_deduct_leave, :supplemental_flat_tax_rate_percent, :updated_by)
+            "INSERT INTO `company_payroll_policies` (comp_id, reopen_window_days, probation_period_days, probation_defer_pvd, probation_defer_recurring_earning, probation_base_salary_ratio, intern_defer_pvd, intern_defer_recurring_earning, intern_base_salary_ratio, pay_basis, pay_basis_deduct_holidays, pay_basis_deduct_leave, intern_pay_basis, intern_pay_basis_deduct_holidays, intern_pay_basis_deduct_leave, supplemental_flat_tax_rate_percent, intern_period_days, probation_leave_days_limit, allow_leave_during_probation, probation_ot_eligible_default, intern_leave_days_limit, allow_leave_during_intern, intern_ot_eligible_default, probation_defer_sso, probation_tax_exempt_default, intern_defer_sso, intern_tax_exempt_default, updated_by)
+             VALUES (:comp_id, :reopen_window_days, :probation_period_days, :probation_defer_pvd, :probation_defer_recurring_earning, :probation_base_salary_ratio, :intern_defer_pvd, :intern_defer_recurring_earning, :intern_base_salary_ratio, :pay_basis, :pay_basis_deduct_holidays, :pay_basis_deduct_leave, :intern_pay_basis, :intern_pay_basis_deduct_holidays, :intern_pay_basis_deduct_leave, :supplemental_flat_tax_rate_percent, :intern_period_days, :probation_leave_days_limit, :allow_leave_during_probation, :probation_ot_eligible_default, :intern_leave_days_limit, :allow_leave_during_intern, :intern_ot_eligible_default, :probation_defer_sso, :probation_tax_exempt_default, :intern_defer_sso, :intern_tax_exempt_default, :updated_by)
              ON DUPLICATE KEY UPDATE reopen_window_days = VALUES(reopen_window_days), probation_period_days = VALUES(probation_period_days),
                 probation_defer_pvd = VALUES(probation_defer_pvd), probation_defer_recurring_earning = VALUES(probation_defer_recurring_earning),
                 probation_base_salary_ratio = VALUES(probation_base_salary_ratio),
@@ -210,6 +318,12 @@ class PayrollPolicyModel {
                 pay_basis = VALUES(pay_basis), pay_basis_deduct_holidays = VALUES(pay_basis_deduct_holidays), pay_basis_deduct_leave = VALUES(pay_basis_deduct_leave),
                 intern_pay_basis = VALUES(intern_pay_basis), intern_pay_basis_deduct_holidays = VALUES(intern_pay_basis_deduct_holidays), intern_pay_basis_deduct_leave = VALUES(intern_pay_basis_deduct_leave),
                 supplemental_flat_tax_rate_percent = VALUES(supplemental_flat_tax_rate_percent),
+                intern_period_days = VALUES(intern_period_days), probation_leave_days_limit = VALUES(probation_leave_days_limit),
+                allow_leave_during_probation = VALUES(allow_leave_during_probation), probation_ot_eligible_default = VALUES(probation_ot_eligible_default),
+                intern_leave_days_limit = VALUES(intern_leave_days_limit), allow_leave_during_intern = VALUES(allow_leave_during_intern),
+                intern_ot_eligible_default = VALUES(intern_ot_eligible_default),
+                probation_defer_sso = VALUES(probation_defer_sso), probation_tax_exempt_default = VALUES(probation_tax_exempt_default),
+                intern_defer_sso = VALUES(intern_defer_sso), intern_tax_exempt_default = VALUES(intern_tax_exempt_default),
                 updated_by = VALUES(updated_by)"
         );
         $stmt->execute([
@@ -229,8 +343,29 @@ class PayrollPolicyModel {
             ':intern_pay_basis_deduct_holidays' => $internPayBasisDeductHolidays,
             ':intern_pay_basis_deduct_leave' => $internPayBasisDeductLeave,
             ':supplemental_flat_tax_rate_percent' => $supplementalFlatTaxRatePercent,
+            ':intern_period_days' => $internPeriodDays,
+            ':probation_leave_days_limit' => $probationLeaveDaysLimit,
+            ':allow_leave_during_probation' => $allowLeaveDuringProbation,
+            ':probation_ot_eligible_default' => $probationOtEligibleDefault,
+            ':intern_leave_days_limit' => $internLeaveDaysLimit,
+            ':allow_leave_during_intern' => $allowLeaveDuringIntern,
+            ':intern_ot_eligible_default' => $internOtEligibleDefault,
+            ':probation_defer_sso' => $probationDeferSso,
+            ':probation_tax_exempt_default' => $probationTaxExemptDefault,
+            ':intern_defer_sso' => $internDeferSso,
+            ':intern_tax_exempt_default' => $internTaxExemptDefault,
             ':updated_by' => $userId,
         ]);
+
+        $stmtNew = $this->db->prepare("SELECT * FROM `company_payroll_policies` WHERE comp_id = :comp_id");
+        $stmtNew->execute([':comp_id' => $compId]);
+        $newRowForAudit = $stmtNew->fetch(PDO::FETCH_ASSOC) ?: [];
+        $recordId = isset($newRowForAudit['id']) ? (int)$newRowForAudit['id'] : $compId;
+        if ($oldRowForAudit === null) {
+            $this->auditLog->record($compId, 'company_payroll_policies', $recordId, 'create', null, $newRowForAudit, $userId, 'web', $ip, $userAgent);
+        } else {
+            $this->auditLog->record($compId, 'company_payroll_policies', $recordId, 'update', $oldRowForAudit, $newRowForAudit, $userId, 'web', $ip, $userAgent);
+        }
 
         return ['status' => true, 'message' => 'Saved.'];
     }

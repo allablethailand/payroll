@@ -57,11 +57,13 @@ function sourceBadgeMe(source) {
         import: { key: 'source_import', cls: 'bg-info-subtle text-info' },
     }, source);
 }
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group.
 function actionBtnsMe(editFn, delFn) {
     return `
-    <div class="btn-group border rounded-3 bg-white">
-        <button class="btn btn-link text-warning" onclick="${editFn}"><i class="fa-solid fa-pen-to-square"></i></button>
-        <button class="btn btn-link py-1 text-danger border-start" onclick="${delFn}"><i class="fa-solid fa-trash-can"></i></button>
+    <div class="d-flex gap-1 justify-content-center">
+        <button class="btn btn-link btn-circle-action text-warning" onclick="${editFn}"><i class="fa-solid fa-pen-to-square"></i></button>
+        <button class="btn btn-link btn-circle-action text-danger" onclick="${delFn}"><i class="fa-solid fa-trash-can"></i></button>
     </div>`;
 }
 function addButtonInitCompleteMe(btnClass, iconClass, labelKey, labelFallback, onClickFnName) {
@@ -70,6 +72,32 @@ function addButtonInitCompleteMe(btnClass, iconClass, labelKey, labelFallback, o
         const $searchDiv = $wrapper.find('.dt-search');
         if ($searchDiv.find('.' + btnClass).length === 0) {
             $searchDiv.append(`<button type="button" class="btn btn-primary ms-1 ${btnClass}" onclick="${onClickFnName}"><i class="${iconClass} me-1"></i><span>${langData[labelKey] || labelFallback}</span></button>`);
+        }
+    };
+}
+// 2026-09-02, explicit request: "อยากให้เพิ่ม ให้เพิ่มได้ทีละหลายรายการ" -- a SECOND button next to the
+// existing single-record Add, opening the new fullscreen grid (openBulkEntryModal(), see
+// public/js/manual-entry/bulk-entry.js) -- deliberately additive, not a replacement, so the existing
+// single-Add flow (quick, one record) stays exactly as-is for whoever just wants that.
+function addBulkButtonInitCompleteMe(btnClass, entityType) {
+    return function () {
+        const $wrapper = $(this.api().table().container());
+        const $searchDiv = $wrapper.find('.dt-search');
+        if ($searchDiv.find('.' + btnClass).length === 0) {
+            $searchDiv.append(`<button type="button" class="btn btn-outline-primary ms-1 ${btnClass}" onclick="openBulkEntryModal('${entityType}')"><i class="fa-solid fa-table-cells me-1"></i><span data-i18n="bulk_entry_add_multiple">${langData['bulk_entry_add_multiple'] || 'Add Multiple'}</span></button>`);
+        }
+    };
+}
+// 2026-09-02, explicit follow-up request -- a 3rd top-level button (alongside Add/Add Multiple) that
+// opens the import wizard DIRECTLY (openBulkImportModal(), bulk-entry.js), grid not required to
+// already be open -- this is what replaced the old standalone Import tab, see that tab's own removal
+// comment in manual-entry/index.php.
+function addImportButtonInitCompleteMe(btnClass, entityType) {
+    return function () {
+        const $wrapper = $(this.api().table().container());
+        const $searchDiv = $wrapper.find('.dt-search');
+        if ($searchDiv.find('.' + btnClass).length === 0) {
+            $searchDiv.append(`<button type="button" class="btn btn-outline-secondary ms-1 ${btnClass}" onclick="openBulkImportModal('${entityType}')"><i class="fa-solid fa-file-import me-1"></i><span data-i18n="bulk_entry_import_file">${langData['bulk_entry_import_file'] || 'Import File'}</span></button>`);
         }
     };
 }
@@ -134,6 +162,8 @@ function renderAttendance() {
         language: { ...getTableLang(), emptyTable: langData['no_attendance_yet'] || 'No attendance records have been added yet.' },
         initComplete: function () {
             addButtonInitCompleteMe('btn-add-attendance', 'fa-solid fa-plus', 'add_attendance', 'Attendance', 'openAttendanceModal()').call(this);
+            addBulkButtonInitCompleteMe('btn-bulk-attendance', 'attendance').call(this);
+            addImportButtonInitCompleteMe('btn-import-attendance', 'attendance').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, client mode. Excludes the actions column (8).
             initExcelColumnFilters(this.api(), {
@@ -164,7 +194,7 @@ function openAttendanceModal(id) {
                 const a = res.data;
                 $('#attendanceId').val(a.id);
                 $('#attendanceEmployee').empty().append(new Option(`${a.employee_no} - ${employeeNameMe(a)}`, a.employee_id, true, true)).trigger('change.select2');
-                $('#attendanceWorkDate').val(toDisplayDateMe(a.work_date));
+                $('#attendanceWorkDate').val(toDisplayDateMe(a.work_date)).datepicker('update');
                 if (a.shift_id) { $('#attendanceShift').empty().append(new Option((currentLang === 'th' ? a.shift_name_th : a.shift_name_en) || '', a.shift_id, true, true)).trigger('change.select2'); }
                 else { $('#attendanceShift').empty().trigger('change.select2'); }
                 $('#attendanceStatus').val(a.status).trigger('change.select2');
@@ -181,7 +211,7 @@ function openAttendanceModal(id) {
     $('#attendanceId').val('');
     $('#attendanceEmployee').empty().trigger('change.select2');
     $('#attendanceShift').empty().trigger('change.select2');
-    $('#attendanceWorkDate').val('');
+    $('#attendanceWorkDate').val('').datepicker('update');
     $('#attendanceStatus').val('present').trigger('change.select2');
     $('#attendanceClockIn').val('');
     $('#attendanceClockOut').val('');
@@ -189,7 +219,7 @@ function openAttendanceModal(id) {
     $('#attendanceEarlyMinutes').val(0);
     new bootstrap.Modal(document.getElementById('attendanceModal')).show();
 }
-function saveAttendance() {
+function saveAttendance(btnEl) {
     const employeeId = $('#attendanceEmployee').val();
     const workDate = toIsoDateMe($('#attendanceWorkDate').val());
     if (!employeeId || !workDate) {
@@ -209,9 +239,12 @@ function saveAttendance() {
         late_minutes: parseInt($('#attendanceLateMinutes').val() || 0),
         early_leave_minutes: parseInt($('#attendanceEarlyMinutes').val() || 0),
     };
+    const $btn = btnEl ? $(btnEl) : $();
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/manual-attendance.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('attendanceModal')).hide();
@@ -219,7 +252,7 @@ function saveAttendance() {
                 refreshImportBatchDetailIfOpen('attendance');
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
 
@@ -253,6 +286,8 @@ function renderLeave() {
         language: { ...getTableLang(), emptyTable: langData['no_leave_yet'] || 'No leave records have been added yet.' },
         initComplete: function () {
             addButtonInitCompleteMe('btn-add-leave', 'fa-solid fa-plus', 'add_leave', 'Leave', 'openLeaveModal()').call(this);
+            addBulkButtonInitCompleteMe('btn-bulk-leave', 'leave').call(this);
+            addImportButtonInitCompleteMe('btn-import-leave', 'leave').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, client mode. Excludes the actions column (7).
             initExcelColumnFilters(this.api(), {
@@ -283,8 +318,8 @@ function openLeaveModal(id) {
                 $('#leaveId').val(l.id);
                 $('#leaveEmployee').empty().append(new Option(`${l.employee_no} - ${employeeNameMe(l)}`, l.employee_id, true, true)).trigger('change.select2');
                 $('#leaveType').empty().append(new Option(currentLang === 'th' ? l.leave_type_name_th : l.leave_type_name_en, l.leave_type_id, true, true)).trigger('change.select2');
-                $('#leaveStartDate').val(toDisplayDateMe(l.start_date));
-                $('#leaveEndDate').val(toDisplayDateMe(l.end_date));
+                $('#leaveStartDate').val(toDisplayDateMe(l.start_date)).datepicker('update');
+                $('#leaveEndDate').val(toDisplayDateMe(l.end_date)).datepicker('update');
                 $('#leaveTotalDays').val(l.total_days);
                 $('#leaveStatus').val(l.status).trigger('change.select2');
                 $('#leaveReason').val(l.reason || '');
@@ -297,14 +332,14 @@ function openLeaveModal(id) {
     $('#leaveId').val('');
     $('#leaveEmployee').empty().trigger('change.select2');
     $('#leaveType').empty().trigger('change.select2');
-    $('#leaveStartDate').val('');
-    $('#leaveEndDate').val('');
+    $('#leaveStartDate').val('').datepicker('update');
+    $('#leaveEndDate').val('').datepicker('update');
     $('#leaveTotalDays').val('');
     $('#leaveStatus').val('approved').trigger('change.select2');
     $('#leaveReason').val('');
     new bootstrap.Modal(document.getElementById('leaveModal')).show();
 }
-function saveLeave() {
+function saveLeave(btnEl) {
     const employeeId = $('#leaveEmployee').val();
     const leaveTypeId = $('#leaveType').val();
     const startDate = toIsoDateMe($('#leaveStartDate').val());
@@ -324,9 +359,12 @@ function saveLeave() {
         reason: $('#leaveReason').val().trim(),
         status: $('#leaveStatus').val() || 'approved',
     };
+    const $btn = btnEl ? $(btnEl) : $();
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/manual-leave.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('leaveModal')).hide();
@@ -334,7 +372,7 @@ function saveLeave() {
                 refreshImportBatchDetailIfOpen('leave');
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
 
@@ -368,6 +406,8 @@ function renderOvertime() {
         language: { ...getTableLang(), emptyTable: langData['no_overtime_yet'] || 'No overtime records have been added yet.' },
         initComplete: function () {
             addButtonInitCompleteMe('btn-add-overtime', 'fa-solid fa-plus', 'add_overtime', 'Overtime', 'openOvertimeModal()').call(this);
+            addBulkButtonInitCompleteMe('btn-bulk-overtime', 'overtime').call(this);
+            addImportButtonInitCompleteMe('btn-import-overtime', 'overtime').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, client mode. Excludes the actions column (7).
             initExcelColumnFilters(this.api(), {
@@ -398,7 +438,7 @@ function openOvertimeModal(id) {
                 $('#overtimeId').val(o.id);
                 $('#overtimeEmployee').empty().append(new Option(`${o.employee_no} - ${employeeNameMe(o)}`, o.employee_id, true, true)).trigger('change.select2');
                 $('#overtimeRate').empty().append(new Option(currentLang === 'th' ? o.ot_name_th : o.ot_name_en, o.ot_rate_id, true, true)).trigger('change.select2');
-                $('#overtimeDate').val(toDisplayDateMe(o.ot_date));
+                $('#overtimeDate').val(toDisplayDateMe(o.ot_date)).datepicker('update');
                 $('#overtimeHours').val(o.hours);
                 $('#overtimeAmount').val(o.amount !== null ? o.amount : '');
                 $('#overtimeStatus').val(o.status).trigger('change.select2');
@@ -411,13 +451,13 @@ function openOvertimeModal(id) {
     $('#overtimeId').val('');
     $('#overtimeEmployee').empty().trigger('change.select2');
     $('#overtimeRate').empty().trigger('change.select2');
-    $('#overtimeDate').val('');
+    $('#overtimeDate').val('').datepicker('update');
     $('#overtimeHours').val('');
     $('#overtimeAmount').val('');
     $('#overtimeStatus').val('approved').trigger('change.select2');
     new bootstrap.Modal(document.getElementById('overtimeModal')).show();
 }
-function saveOvertime() {
+function saveOvertime(btnEl) {
     const employeeId = $('#overtimeEmployee').val();
     const otRateId = $('#overtimeRate').val();
     const otDate = toIsoDateMe($('#overtimeDate').val());
@@ -436,9 +476,12 @@ function saveOvertime() {
         amount: amountVal !== '' ? parseFloat(amountVal) : null,
         status: $('#overtimeStatus').val() || 'approved',
     };
+    const $btn = btnEl ? $(btnEl) : $();
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/manual-overtime.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('overtimeModal')).hide();
@@ -446,7 +489,7 @@ function saveOvertime() {
                 refreshImportBatchDetailIfOpen('overtime');
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
 
@@ -468,7 +511,10 @@ meFilterToggle('#overtimeStationFilter', '#overtimeStationFilterToggle');
 
 function updateMeClearFilterVisibility(btnId, employeeId, dateFromId, dateToId) {
     const active = !!($(employeeId).val() || $(dateFromId).val() || $(dateToId).val());
-    $(btnId).toggleClass('d-none', !active);
+    // 2026-09-02, Platform Hardening Phase 1.6 -- toggles the wrapping .station-filter-clear-row
+    // (not just the button itself) so the whole row collapses to nothing when no filter is active,
+    // instead of leaving an empty bordered strip attached to the filter card.
+    $(btnId).closest('.station-filter-clear-row').toggleClass('d-none', !active);
 }
 $(document).on('change', '#filter_att_employee, #filter_att_date_from, #filter_att_date_to', function () {
     updateMeClearFilterVisibility('#btnAttendanceClearFilter', '#filter_att_employee', '#filter_att_date_from', '#filter_att_date_to');
@@ -485,122 +531,40 @@ $(document).on('change', '#filter_ot_employee, #filter_ot_date_from, #filter_ot_
 $(document).on('click', '#btnAttendanceClearFilter', function () {
     $('#filter_att_employee').val(null).trigger('change');
     $('#filter_att_date_from, #filter_att_date_to').val('');
+    if (typeof $.fn.datepicker === 'function') $('#filter_att_date_from, #filter_att_date_to').datepicker('update');
     updateMeClearFilterVisibility('#btnAttendanceClearFilter', '#filter_att_employee', '#filter_att_date_from', '#filter_att_date_to');
     if (dtAttendance) dtAttendance.ajax.reload(null, true);
 });
 $(document).on('click', '#btnLeaveClearFilter', function () {
     $('#filter_leave_employee').val(null).trigger('change');
     $('#filter_leave_date_from, #filter_leave_date_to').val('');
+    if (typeof $.fn.datepicker === 'function') $('#filter_leave_date_from, #filter_leave_date_to').datepicker('update');
     updateMeClearFilterVisibility('#btnLeaveClearFilter', '#filter_leave_employee', '#filter_leave_date_from', '#filter_leave_date_to');
     if (dtLeave) dtLeave.ajax.reload(null, true);
 });
 $(document).on('click', '#btnOvertimeClearFilter', function () {
     $('#filter_ot_employee').val(null).trigger('change');
     $('#filter_ot_date_from, #filter_ot_date_to').val('');
+    if (typeof $.fn.datepicker === 'function') $('#filter_ot_date_from, #filter_ot_date_to').datepicker('update');
     updateMeClearFilterVisibility('#btnOvertimeClearFilter', '#filter_ot_employee', '#filter_ot_date_from', '#filter_ot_date_to');
     if (dtOvertime) dtOvertime.ajax.reload(null, true);
 });
 
-/* ==================== IMPORT (2026-08-30, Phase 5, T030-T035) ==================== */
-// Thin client for ManualEntryController's importTemplate()/importPreview()/importCommit()/
-// importBatchList()/importBatchDetail() -- see that controller's own docblock. T035 (editing an
-// imported record) deliberately reuses openAttendanceModal()/openLeaveModal()/openOvertimeModal()
-// above rather than a new edit surface.
-let lastImportMappedRows = null; // the SAME mapped-rows array preview() validated, echoed straight to commit() without re-uploading the file.
-
+/* ==================== IMPORT (2026-08-30, Phase 5, T030-T035) ====================
+ * 2026-09-02: the standalone Import TAB this section used to also serve was removed (superseded by
+ * openBulkImportModal() in bulk-entry.js, see that file's own docblock) -- importEntityLabel() and
+ * importRowStatusBadge() stay here since the History tab's own DataTable render (below) and the new
+ * import modal both still use them; everything else that was Import-tab-specific (preview/commit/
+ * download-template/renderImportPreviewResults wiring) moved into bulk-entry.js instead of being
+ * duplicated, or was deleted outright where the new modal fully replaced it. */
 function importEntityLabel(type) {
     return langData[type] || type;
-}
-
-function downloadImportTemplate() {
-    const type = $('#importEntityType').val();
-    if (!type) return;
-    window.location.href = `${BASE_URL}/api/manual-import.template?entity_type=${encodeURIComponent(type)}`;
 }
 
 function importRowStatusBadge(row) {
     if (row.status === 'error') { return `<span class="badge bg-danger-subtle text-danger">${langData['error'] || 'Error'}</span>`; }
     if (row.source_conflict) { return `<span class="badge bg-warning-subtle text-warning">${langData['conflict'] || 'Conflict'}</span>`; }
     return `<span class="badge bg-success-subtle text-success">${langData['success'] || 'OK'}</span>`;
-}
-
-function renderImportPreviewResults(res) {
-    $('#importPreviewWrap').removeClass('d-none');
-    const p = res.preview;
-    const badges = [
-        `<span class="badge bg-secondary">${langData['total'] || 'Total'}: ${p.total}</span>`,
-        `<span class="badge bg-success">${langData['success'] || 'Success'}: ${p.success}</span>`,
-        `<span class="badge bg-danger">${langData['error'] || 'Error'}: ${p.error}</span>`,
-        `<span class="badge bg-warning text-dark">${langData['conflict'] || 'Conflict'}: ${p.conflict || 0}</span>`,
-    ];
-    $('#importSummaryBadges').html(badges.join(' '));
-
-    if (res.unmapped_headers && res.unmapped_headers.length > 0) {
-        $('#importUnmappedAlert').removeClass('d-none').html(
-            `<i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['import_unmapped_headers_warning'] || 'These file columns could not be matched to the template and were ignored:'} ` +
-            res.unmapped_headers.map(h => `<code>${escapeHtmlMe(h)}</code>`).join(', ')
-        );
-    } else {
-        $('#importUnmappedAlert').addClass('d-none').empty();
-    }
-
-    const $tbody = $('#tb_import_preview tbody').empty();
-    (p.row_results || []).forEach(r => {
-        let message = r.message || '';
-        if (r.source_conflict) {
-            message = (langData['import_source_conflict_warning'] || 'Overwrites an existing record last touched by: {source}').replace('{source}', importEntityLabel('source_' + r.previous_source) || r.previous_source);
-        }
-        $tbody.append(`<tr>
-            <td>${r.row}</td>
-            <td>${importRowStatusBadge(r)}</td>
-            <td>${escapeHtmlMe(r.action || '-')}</td>
-            <td>${escapeHtmlMe(message)}</td>
-        </tr>`);
-    });
-
-    lastImportMappedRows = res.mapped_rows;
-    $('#btnConfirmImport').prop('disabled', !p.success || p.success === 0);
-}
-
-function previewImportFile() {
-    const entityType = $('#importEntityType').val();
-    const fileInput = document.getElementById('importFileInput');
-    if (!entityType || !fileInput.files.length) {
-        showWarning(langData['import_select_file_first'] || 'Choose a data type and a file first.');
-        return;
-    }
-    const formData = new FormData();
-    formData.append('entity_type', entityType);
-    formData.append('file', fileInput.files[0]);
-    $.ajax({
-        url: `${BASE_URL}/api/manual-import.preview`, method: 'POST', data: formData, processData: false, contentType: false, dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['import_failed'] || 'Import preview failed.'); return; }
-            renderImportPreviewResults(res);
-        },
-        error: function () { showWarning(langData['import_failed'] || 'Import preview failed.'); }
-    });
-}
-
-function confirmImportCommit() {
-    if (!lastImportMappedRows || !lastImportMappedRows.length) { return; }
-    const entityType = $('#importEntityType').val();
-    $.ajax({
-        url: `${BASE_URL}/api/manual-import.commit`, method: 'POST',
-        data: { entity_type: entityType, mapped_rows: JSON.stringify(lastImportMappedRows) }, dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['import_failed'] || 'Import failed.'); return; }
-            showSuccess((langData['import_commit_success'] || '{success} imported, {error} failed.').replace('{success}', res.success).replace('{error}', res.error));
-            $('#importPreviewWrap').addClass('d-none');
-            $('#importFileInput').val('');
-            lastImportMappedRows = null;
-            if (dtImportHistory) { dtImportHistory.ajax.reload(null, false); }
-            if (entityType === 'attendance' && dtAttendance) { dtAttendance.ajax.reload(null, false); }
-            if (entityType === 'leave' && dtLeave) { dtLeave.ajax.reload(null, false); }
-            if (entityType === 'overtime' && dtOvertime) { dtOvertime.ajax.reload(null, false); }
-        },
-        error: function () { showWarning(langData['import_failed'] || 'Import failed.'); }
-    });
 }
 
 // 2026-08-30, explicit follow-up request: "เก็บประวัติการ Download ข้อมูลออกจากระบบ และการ Import ข้อมูล
@@ -639,7 +603,7 @@ function importHistoryBrowserLabel(row) {
 }
 function updateImportHistoryClearFilterVisibility() {
     const active = !!($('#filter_ih_event_type').val() || $('#filter_ih_entity_type').val() || $('#filter_ih_date_from').val() || $('#filter_ih_date_to').val());
-    $('#btnImportHistoryClearFilter').toggleClass('d-none', !active);
+    $('#importHistoryFilterClearRow').toggleClass('d-none', !active);
 }
 function renderImportHistory() {
     if ($.fn.DataTable.isDataTable('#tb_import_history')) { dtImportHistory.ajax.reload(null, false); return; }
@@ -663,8 +627,16 @@ function renderImportHistory() {
             { data: null, render: (d, t, row) => escapeHtmlMe(importHistoryBrowserLabel(row)) },
             { data: 'ip_address', render: (v) => escapeHtmlMe(v || '-') },
             { data: null, className: 'text-center', render: (d, t, row) => importHistoryStatusBadge(row) },
+            // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+            // ".btn-circle-action" section) replace the old adjacent .btn-group.
+            // Platform Hardening Phase 5C: a Download button for the original uploaded file --
+            // row.original_file_name is only ever set on an 'import' row that has one (NULL for
+            // 'download' rows and for any import batch committed before this column existed).
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => row.event_type === 'import'
-                ? `<div class="btn-group border rounded-3 bg-white"><button class="btn btn-link text-primary" onclick="openImportBatchDetail(${row.id}, '${row.entity_type}')"><i class="fa-solid fa-eye"></i></button></div>`
+                ? `<div class="d-flex gap-1 justify-content-end">
+                    <button class="btn btn-link btn-circle-action text-primary" onclick="openImportBatchDetail(${row.id}, '${row.entity_type}')"><i class="fa-solid fa-eye"></i></button>
+                    ${row.original_file_name ? `<a href="${BASE_URL}/api/manual-import.download-original?batch_id=${row.id}" class="btn btn-link btn-circle-action text-secondary" title="${escapeHtmlMe(row.original_file_name)}"><i class="fa-solid fa-download"></i></a>` : ''}
+                   </div>`
                 : '' },
         ],
         order: [[0, 'desc']],
@@ -774,10 +746,6 @@ function refreshImportBatchDetailIfOpen(entityType) {
 }
 $(document).on('hidden.bs.modal', '#importBatchDetailModal', function () { currentImportBatchContext = null; });
 
-$(document).on('click', '#btnDownloadImportTemplate', downloadImportTemplate);
-$(document).on('click', '#btnPreviewImport', previewImportFile);
-$(document).on('click', '#btnConfirmImport', confirmImportCommit);
-
 // 2026-08-30, History tab wiring -- same .station-filter toggle/clear-filter/change-reloads
 // convention every other tab on this page already uses (see meFilterToggle()/
 // updateMeClearFilterVisibility() above), lazy-inited on shown.bs.tab (this tab is not the default
@@ -792,6 +760,7 @@ $(document).on('change', '#filter_ih_event_type, #filter_ih_entity_type, #filter
 $(document).on('click', '#btnImportHistoryClearFilter', function () {
     $('#filter_ih_event_type, #filter_ih_entity_type').val(null).trigger('change');
     $('#filter_ih_date_from, #filter_ih_date_to').val('');
+    if (typeof $.fn.datepicker === 'function') $('#filter_ih_date_from, #filter_ih_date_to').datepicker('update');
     updateImportHistoryClearFilterVisibility();
     if (dtImportHistory) dtImportHistory.ajax.reload(null, true);
 });
@@ -801,7 +770,6 @@ $(function () {
     initSelect2('#filter_att_employee', { mode: 'ajax', allowClear: true });
     initSelect2('#filter_leave_employee', { mode: 'ajax', allowClear: true });
     initSelect2('#filter_ot_employee', { mode: 'ajax', allowClear: true });
-    initSelect2('#importEntityType', { mode: 'static' });
     initSelect2('#filter_ih_event_type', { mode: 'static', allowClear: true });
     initSelect2('#filter_ih_entity_type', { mode: 'static', allowClear: true });
     renderAttendance();

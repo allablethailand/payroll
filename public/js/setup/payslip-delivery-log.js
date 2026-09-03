@@ -122,7 +122,7 @@ function initPayslipDeliveryLogTable() {
 
 function updateClearDlogFilterVisibility() {
     const hasFilter = !!($('#dlog_filter_document_type').val() || $('#dlog_filter_status').val() || $('#dlog_filter_channel').val() || $('#dlog_filter_source').val());
-    $('#btnClearDlogFilter').toggleClass('d-none', !hasFilter);
+    $('#dlogFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 
 $(document).on('click', '#dlogStationFilterToggle', function () {

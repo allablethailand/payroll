@@ -746,6 +746,35 @@ try {
     // file's own defensive convention elsewhere).
     $pdo->prepare("DELETE FROM payroll_earning_deduction_types WHERE comp_id = :c AND item_code IN ('STUDENT_LOAN_TEST','LOAN_REPAY_TEST')")->execute([':c' => $compId]);
 
+    echo "=== 2026-09-02, Origami's own bug-fix notice: working_days/working_mins now arrive as 0 when their Report Item isn't selected -- must surface a visible warning, not silently fall back to the 30-day divisor, ONLY when it actually changes the computed money ===\n";
+    $wdRow = $blankRow;
+    $wdRow['late_mins'] = 30; // percent_of_rate @ default 1.0x -- DOES depend on hourlyRate.
+    // working_days/working_mins deliberately absent (same as $blankRow) -- simulates the exact
+    // scenario Origami flagged: Late selected as a Report Item, Working Days/Minutes not selected.
+    $rWd = $resolver->resolve($compId, $wdRow, $baseSalary);
+    checkTrue('percent_of_rate (default) + late_mins>0 + working_days/mins both 0 => the new warning fires', in_array('working_days_fallback_with_attendance_deduction:late', $rWd['errors'], true));
+    check('the deduction amount itself is UNCHANGED by this warning (still the same fallback-divisor math as before)', findLine($rWd['deduction'], 'LATE_DEDUCT')['amount'] ?? null, 50.0);
+
+    echo "--- working_days actually present (real value from Origami) -- no warning, exact same scenario otherwise ---\n";
+    $wdPresentRow = $wdRow;
+    $wdPresentRow['working_days'] = 22;
+    $rWdPresent = $resolver->resolve($compId, $wdPresentRow, $baseSalary);
+    checkTrue('warning does NOT fire once working_days is present (real value, no fallback needed)', !in_array('working_days_fallback_with_attendance_deduction:late', $rWdPresent['errors'], true));
+
+    echo "--- working_mins alone (no working_days) is ALSO enough to suppress the warning -- either one avoiding the fallback counts ---\n";
+    $wmPresentRow = $wdRow;
+    $wmPresentRow['working_mins'] = 10560; // 22 days * 480 mins
+    $rWmPresent = $resolver->resolve($compId, $wmPresentRow, $baseSalary);
+    checkTrue('warning does NOT fire when working_mins alone is present', !in_array('working_days_fallback_with_attendance_deduction:late', $rWmPresent['errors'], true));
+
+    echo "--- flat_amount method does NOT depend on hourlyRate/dailyRate at all -- no false-positive warning even with the fallback active ---\n";
+    $pdo->prepare("INSERT INTO attendance_deduction_rules (comp_id, event_code, method_code, rate_per_unit, created_by) VALUES (?, 'late', 'flat_amount', 2.00, ?)")
+        ->execute([$compId, $userId]);
+    $rWdFlat = $resolver->resolve($compId, $wdRow, $baseSalary);
+    checkTrue('flat_amount: NO warning even though working_days/mins are both 0 (the amount never used the divisor)', !in_array('working_days_fallback_with_attendance_deduction:late', $rWdFlat['errors'], true));
+    check('flat_amount deduction still computes correctly (2.00 * 30 = 60.00)', findLine($rWdFlat['deduction'], 'LATE_DEDUCT')['amount'] ?? null, 60.0);
+    $pdo->prepare("DELETE FROM attendance_deduction_rules WHERE comp_id = :c AND event_code = 'late'")->execute([':c' => $compId]);
+
 } finally {
     $pdo->rollBack();
 }

@@ -57,7 +57,8 @@ class ImportActivityLogModel {
                         'download' AS event_type, l.id AS id, l.entity_type, 'completed' AS status,
                         l.downloaded_at AS performed_at, l.downloaded_by AS performed_by,
                         l.file_name, NULL AS total_count, NULL AS success_count, NULL AS error_count,
-                        l.ip_address, l.device_type, l.os_name, l.browser_name, l.browser_version, l.source
+                        l.ip_address, l.device_type, l.os_name, l.browser_name, l.browser_version, l.source,
+                        NULL AS original_file_name
                     FROM `import_template_download_logs` l
                     WHERE l.comp_id = :comp_id1
 
@@ -67,7 +68,8 @@ class ImportActivityLogModel {
                         'import' AS event_type, b.id AS id, b.entity_type, b.status,
                         b.started_at AS performed_at, b.triggered_by AS performed_by,
                         NULL AS file_name, b.total_count, b.success_count, b.error_count,
-                        b.ip_address, b.device_type, b.os_name, b.browser_name, b.browser_version, NULL AS source
+                        b.ip_address, b.device_type, b.os_name, b.browser_name, b.browser_version, NULL AS source,
+                        b.original_file_name
                     FROM `sync_batches` b
                     WHERE b.comp_id = :comp_id2 AND b.source = 'import'
                 ) x

@@ -999,19 +999,19 @@ class EmploymentCertificateTemplateModel {
        an 'image' element's `image_asset_id`. ==================== */
 
     public function listImages(int $compId): array {
-        $stmt = $this->db->prepare("SELECT id, file_path, original_filename, uploaded_at
+        $stmt = $this->db->prepare("SELECT id, file_path, file_size, thumbnail_path, original_filename, uploaded_at
             FROM `employment_certificate_images` WHERE comp_id = :comp_id ORDER BY uploaded_at DESC");
         $stmt->execute([':comp_id' => $compId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function addImage(int $compId, string $filePath, ?string $originalFilename, int $userId): array {
+    public function addImage(int $compId, string $filePath, ?string $originalFilename, int $userId, ?int $fileSize = null, ?string $thumbnailPath = null): array {
         if (!self::isValidImageAssetPath($filePath, $compId)) {
             return ['status' => false, 'message' => 'Invalid file path.'];
         }
-        $stmt = $this->db->prepare("INSERT INTO `employment_certificate_images` (comp_id, file_path, original_filename, uploaded_by)
-            VALUES (:comp_id, :file_path, :original_filename, :uploaded_by)");
-        $stmt->execute([':comp_id' => $compId, ':file_path' => $filePath, ':original_filename' => $originalFilename, ':uploaded_by' => $userId]);
+        $stmt = $this->db->prepare("INSERT INTO `employment_certificate_images` (comp_id, file_path, file_size, thumbnail_path, original_filename, uploaded_by)
+            VALUES (:comp_id, :file_path, :file_size, :thumbnail_path, :original_filename, :uploaded_by)");
+        $stmt->execute([':comp_id' => $compId, ':file_path' => $filePath, ':file_size' => $fileSize, ':thumbnail_path' => $thumbnailPath, ':original_filename' => $originalFilename, ':uploaded_by' => $userId]);
         return ['status' => true, 'message' => 'Uploaded successfully.', 'id' => (int)$this->db->lastInsertId()];
     }
 

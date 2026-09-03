@@ -134,6 +134,10 @@ $(document).on('submit', '#payslipRequestForm', function (e) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
+    // 2026-09-02, Platform Hardening Phase 1.2 (tier-2 loading state) -- this had NO disable/spinner
+    // at all before, not even a plain disable (same gap as structure-assign.js's Pull In/Move Out).
+    const $btn = $(this).find('[type="submit"]');
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/payslip-request.create`,
         method: 'POST',
@@ -141,6 +145,7 @@ $(document).on('submit', '#payslipRequestForm', function (e) {
         data: JSON.stringify({ run_id: runId, employee_id: employeeId }),
         dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('payslipRequestModal')).hide();
@@ -149,7 +154,7 @@ $(document).on('submit', '#payslipRequestForm', function (e) {
                 showWarning(res.message || langData['save_failed'] || 'An error occurred.');
             }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });
 

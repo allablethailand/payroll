@@ -355,6 +355,34 @@ class SyncPayResolver {
         // own docblock); every other calculation in this method (Late/Absent/Unpaid Leave/Trip
         // Allowance/generic items) is UNCHANGED, still correctly using the variable-divisor rate.
 
+        // 2026-09-02, originally added in response to an Origami bug-fix notice ("Report Item not
+        // selected -> field sent as 0", previously always sent with a real value regardless of
+        // selection) that raised a real concern: dailyRate()/hourlyRate() above treat a <=0
+        // working_days/working_mins as "not provided, fall back to the fixed 30-day standard
+        // divisor" -- correct for a genuinely absent field, but WRONG if a process ever selected
+        // Late/Absent/Unpaid-Leave/etc. (real deduction quantities) without ALSO selecting Working
+        // Days/Working Minutes, silently reintroducing the exact under-deduction bug dailyRate()'s
+        // own 2026-08-20 docblock describes. Origami's own follow-up clarified this specific
+        // combination can NEVER actually happen from their real payload: working_days/working_mins
+        // share the SAME umbrella selection flag as the whole Late/Absent/OT/leave group on their
+        // side, not an independent "Working Days" item -- so this warning will never fire against a
+        // genuine sync payload. KEPT ANYWAY (not removed) because it's independently useful for a
+        // DIFFERENT, real, reachable path in THIS codebase: `TransactionDataPayAdapter` (Manual
+        // Entry/Import for a cycle-based, non-sync run) feeds this exact same resolve() method but
+        // DELIBERATELY never sets working_days/working_mins at all (its own docblock: "inventing one
+        // here would be a guess") -- meaning this exact fallback is the NORMAL, EXPECTED case for
+        // that path, not a bug to alarm over. Downgraded to advisory-only (see
+        // PayrollRunModel::recalculate()'s own $blockingErrors filter, 2026-09-02) precisely because
+        // of that -- never blocks submit(), just tells an admin which amount used the standard
+        // divisor instead of a real period-specific one. Only actually affects money for events using
+        // the DEFAULT/'percent_of_rate' deduction method (the only method that reads $hourlyRate at
+        // all -- 'flat_amount'/'tiered_bracket' use admin-configured numbers independent of the
+        // salary-derived rate) -- flagged per-event inside computeAttendanceDeductionAmount() below
+        // via $usedFallbackDivisor, not here, so a tiered_bracket/flat_amount event (or one whose
+        // quantity falls in a bracket grace-zone with zero amount either way) never raises a noisy
+        // false-positive warning about a divisor its own computed amount never actually used.
+        $usedFallbackDivisor = ((float)($syncItemRow['working_days'] ?? 0) <= 0) && ((float)($syncItemRow['working_mins'] ?? 0) <= 0);
+
         // Group item_values by item_code up front so every code (known or generic) is handled as
         // one candidate pool, not once per row -- see the class docblock's "MULTI-UNIT
         // DEDUPLICATION" section.
@@ -484,7 +512,7 @@ class SyncPayResolver {
             if ($minutes <= 0) {
                 continue;
             }
-            $result = $this->computeAttendanceDeductionAmount($compId, $eventCode, $minutes, $hourlyRate, $departmentId, $teamId);
+            $result = $this->computeAttendanceDeductionAmount($compId, $eventCode, $minutes, $hourlyRate, $departmentId, $teamId, $usedFallbackDivisor);
             foreach ($result['errors'] as $e) {
                 $errors[] = $e;
             }
@@ -770,9 +798,17 @@ class SyncPayResolver {
      * converts to `days*480` minutes, so `(dailyRate/480) * (days*480) = dailyRate * days` --
      * identical to the old formula. It only diverges (correctly) when shift lengths vary within the
      * period, e.g. a half-day Saturday reports fewer actual `absent_mins` than a full weekday would.
+     * @param bool $usedFallbackDivisor 2026-09-02 -- true when dailyRate()/hourlyRate() fell back to
+     *        the fixed 30-day standard divisor because Origami sent working_days/working_mins as 0
+     *        this pull (see resolve()'s own docblock). Only raises a visible error when the
+     *        resolved rule's method is 'percent_of_rate' (default included) AND $minutes>0 actually
+     *        produced a nonzero amount -- the only combination where the fallback divisor genuinely
+     *        affected the computed money; 'flat_amount'/'tiered_bracket' amounts (and a
+     *        tiered_bracket grace-zone quantity that produces zero either way) never depend on the
+     *        rate at all, so flagging them would be a false alarm.
      * @return array{amount:float,errors:array}
      */
-    private function computeAttendanceDeductionAmount(int $compId, string $eventCode, float $minutes, float $hourlyRate, ?int $departmentId = null, ?int $teamId = null): array {
+    private function computeAttendanceDeductionAmount(int $compId, string $eventCode, float $minutes, float $hourlyRate, ?int $departmentId = null, ?int $teamId = null, bool $usedFallbackDivisor = false): array {
         $rule = $this->attendanceDeductionRuleFor($compId, $eventCode, $departmentId, $teamId);
         $brackets = ($rule['method_code'] ?? 'percent_of_rate') === 'tiered_bracket'
             ? $this->attendanceDeductionBrackets((int)($rule['id'] ?? 0))
@@ -780,6 +816,9 @@ class SyncPayResolver {
         $result = self::computeAttendanceDeductionFromConfig($rule, $brackets, $minutes, $hourlyRate);
         if (($rule['method_code'] ?? 'percent_of_rate') === 'tiered_bracket' && empty($brackets)) {
             $result['errors'][] = "attendance_deduction_no_brackets_configured_{$eventCode}";
+        }
+        if ($usedFallbackDivisor && ($rule['method_code'] ?? 'percent_of_rate') === 'percent_of_rate' && $result['amount'] > 0) {
+            $result['errors'][] = "working_days_fallback_with_attendance_deduction:{$eventCode}";
         }
         return $result;
     }

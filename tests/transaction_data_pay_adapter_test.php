@@ -89,12 +89,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, ot_eligible)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'อดัปเตอร์', 'Test', 'Adapter', '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address', 'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', :base_salary, '2020-01-01', 'average', 'active', 1, 1, 0, 1)")
+         'monthly', :base_salary, '2020-01-01', 'average', 'active', 1, 1, 0, 1)")
         ->execute([':comp_id' => $compId, ':employee_no' => 'TDPA_EMP_' . uniqid(), ':email' => uniqid() . '@test.local', ':base_salary' => $baseSalary]);
     $employeeId = (int)$pdo->lastInsertId();
 
@@ -156,7 +156,7 @@ try {
     $recalcRes = $runModel->recalculate($runId, $compId, $adminUserId, true);
     checkTrue('recalculate succeeds' . (empty($recalcRes['status']) ? " ({$recalcRes['message']})" : ''), $recalcRes['status']);
 
-    $detailRow = $pdo->prepare("SELECT earning_breakdown, deduction_breakdown FROM payroll_run_details WHERE run_id = :run_id AND employee_id = :employee_id");
+    $detailRow = $pdo->prepare("SELECT earning_breakdown, deduction_breakdown, calc_status, calc_errors FROM payroll_run_details WHERE run_id = :run_id AND employee_id = :employee_id");
     $detailRow->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
     $detail = $detailRow->fetch(PDO::FETCH_ASSOC);
     checkTrue('a calculation row exists for this employee', $detail !== false);
@@ -172,6 +172,16 @@ try {
         check('LATE_DEDUCT amount = hourlyRate/60 * 30min * 1.0 (no rule configured, default multiplier)', (float)$lateLine['amount'], round($hourlyRate / 60.0 * 30.0, 2));
         check('LATE_DEDUCT line is marked sync-sourced', $lateLine['source'], 'sync');
     }
+    // 2026-09-02, real reachable case for SyncPayResolver's own working_days_fallback_with_
+    // attendance_deduction warning (see that class's own 2026-09-02 docblock) -- this synthetic row
+    // NEVER carries working_days/working_mins (TransactionDataPayAdapter's own deliberate design,
+    // "inventing one here would be a guess"), so the LATE_DEDUCT amount above genuinely used the
+    // fixed 30-day fallback divisor -- the warning SHOULD appear here, every time, for every
+    // Manual/Import-driven cycle run with a percent_of_rate attendance deduction. Confirmed advisory
+    // ONLY -- must never block this run's calc_status, or Manual Entry/Import payroll would be
+    // permanently stuck in 'error' with no way to ever provide a real working_days value.
+    checkTrue('working_days_fallback_with_attendance_deduction:late warning appears in calc_errors', strpos((string)($detail['calc_errors'] ?? ''), 'working_days_fallback_with_attendance_deduction:late') !== false);
+    check('calc_status stays "calculated" despite the warning -- advisory only, never blocks a Manual/Import-driven run', $detail['calc_status'] ?? null, 'calculated');
 
     $otLine = findLine($earningLines, 'OT');
     checkTrue('OT earning line present (from overtime_records.hours)', $otLine !== null);

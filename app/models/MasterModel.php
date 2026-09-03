@@ -129,6 +129,7 @@ class MasterModel {
             case 'team':
             case 'rank':
             case 'work_location':
+            case 'employment_type':
                 if ($compId === null) {
                     break;
                 }
@@ -146,6 +147,11 @@ class MasterModel {
                     // already powers a real Employee Detail dropdown this same way).
                     'rank' => ['table' => 'structure_ranks', 'code' => 'rank_code', 'nameTh' => 'rank_name_th', 'nameEn' => 'rank_name_en'],
                     'work_location' => ['table' => 'master_work_locations', 'code' => 'location_code', 'nameTh' => 'location_name_th', 'nameEn' => 'location_name_en'],
+                    // 2026-09-02, Origami candidates.php field batch: employment_type_ref_id/_code/
+                    // _name (structure_employment_types, auto-created on sync, see EmployeeSyncer's
+                    // own docblock) -- dropdown-options endpoint for Employee Detail's new
+                    // employment_type_id field, same generic pattern as every other type here.
+                    'employment_type' => ['table' => 'structure_employment_types', 'code' => 'employment_type_code', 'nameTh' => 'employment_type_name_th', 'nameEn' => 'employment_type_name_en'],
                 ];
                 $cfg = $tableMap[$type];
                 $where = " WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' ";

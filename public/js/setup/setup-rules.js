@@ -7,26 +7,26 @@
  * with the "Add" button injected into `.dt-search` via `initComplete`, matching the convention
  * used by Approval Workflow / Payroll Cycle / Employee list -- NOT a hand-written search box.
  */
-function statusSwitch(checked, onchange) {
-    return `<div class="form-check form-switch d-flex justify-content-center m-0">
-        <input class="form-check-input" type="checkbox" ${checked ? 'checked' : ''} onchange="${onchange}">
-    </div>`;
-}
+// 2026-09-02, Platform Hardening Phase 1.1 -- this file's own local statusSwitch() (identical
+// markup to the app-wide shared renderStatusToggleHtml() in app.js, just without confirm/toast/
+// revert) is gone; every one of this page's 5 status columns now calls the shared version directly.
 // 2026-08-31, explicit request: Assign Employees modal -- `extraBtns` is an optional 3rd param
 // (empty string default) so every OTHER call site of this shared helper (Holiday/Leave/OT, not in
 // this batch's scope) stays byte-identical; only Shift/Work Location's own call sites pass it.
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group.
 function actionBtns(editFn, delFn, extraBtns) {
     return `
-    <div class="btn-group border rounded-3 bg-white">
-        <button class="btn btn-link text-warning" onclick="${editFn}"><i class="fa-solid fa-pen-to-square"></i></button>
+    <div class="d-flex gap-1 justify-content-center flex-wrap">
+        <button class="btn btn-link btn-circle-action text-warning" onclick="${editFn}"><i class="fa-solid fa-pen-to-square"></i></button>
         ${extraBtns || ''}
-        <button class="btn btn-link py-1 text-danger border-start" onclick="${delFn}"><i class="fa-solid fa-trash-can"></i></button>
+        <button class="btn btn-link btn-circle-action text-danger" onclick="${delFn}"><i class="fa-solid fa-trash-can"></i></button>
     </div>`;
 }
 function structureAssignExtraBtns(type, id, label) {
     return `
-        <button type="button" class="btn btn-link py-1 text-primary border-start btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttrSr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
-        <button type="button" class="btn btn-link py-1 text-secondary border-start btn-structure-view-assigned" data-type="${type}" data-id="${id}" data-label="${escapeAttrSr(label)}" data-i18n-title="view_assigned_employees"><i class="fa-solid fa-users"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttrSr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${id}" data-label="${escapeAttrSr(label)}" data-i18n-title="view_assigned_employees"><i class="fa-solid fa-users"></i></button>
     `;
 }
 function escapeAttrSr(str) {
@@ -126,13 +126,16 @@ function renderShift() {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/shift.list`, dataSrc: 'data' },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1, explicit request: status switch is the FIRST
+            // column of the row now (client-side table -- DataTables sorts by each column's own
+            // `data` key here, not by server-side index, so reordering is safe with zero backend risk).
+            { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/shift.toggle-status') },
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}</div>` },
             { data: 'shift_code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint"><i class="fa-regular fa-clock me-1"></i>${(row.start_time || '').slice(0, 5)} - ${(row.end_time || '').slice(0, 5)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${shiftWorkDaysSummary(row)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${row.location_name_th ? escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en) : '-'}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${row.updated_at ? fmtDate(localDateOnlyFromUtcSr(row.updated_at)) : fmtDate(localDateOnlyFromUtcSr(row.created_at))}</span>` },
-            { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleShiftStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             // 2026-08-30, explicit request: "ตัดการ Assign ออกไปเลย เพราะสามารถเพิ่มได้ในฝั่งพนักงานอยู่แล้ว" --
@@ -149,30 +152,30 @@ function renderShift() {
         initComplete: function () {
             addButtonInitComplete('btn-add-shift', 'fa-solid fa-plus', 'add_shift', 'Shift', 'openShiftModal()').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the multi-value work-days summary (3, composite), the
-            // interactive status SWITCH (6, not a display value), and actions (7).
+            // rollout, client mode. Excludes the interactive status SWITCH (0, not a display value),
+            // the multi-value work-days summary (4, composite), and actions (7).
+            // 2026-09-02, real bug found and fixed (explicit report: "พอเพิ่ม switch เข้าไปแล้ว column
+            // เลื่อนครับ th กับ body ไม่ตรงกัน") -- these indices were never shifted when the status
+            // switch was inserted at column 0 during Phase 1.1's status-switch rollout, so every
+            // filter here was reading/writing the WRONG column (e.g. "name" was pointed at column 0,
+            // which is actually the status switch). Shifted every index +1 to match the real column
+            // order below.
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'name' },
-                    { index: 1, key: 'code' },
-                    { index: 2, key: 'time_range' },
-                    { index: 4, key: 'location' },
-                    { index: 5, key: 'updated_at' },
+                    { index: 1, key: 'name' },
+                    { index: 2, key: 'code' },
+                    { index: 3, key: 'time_range' },
+                    { index: 5, key: 'location' },
+                    { index: 6, key: 'updated_at' },
                 ]
             });
         }
     });
 }
-function toggleShiftStatus(id) {
-    $.ajax({
-        url: `${BASE_URL}/api/shift.toggle-status`, method: 'POST', data: { id }, dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
-            dtShift.ajax.reload(null, false);
-        }
-    });
-}
+// 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
+// .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
+$(document).on('statusToggle:success', '#tb_shift', function () { dtShift.ajax.reload(null, false); });
 function openShiftModal(id) {
     $('#shiftModalTitle').html(`<i class="fa-regular fa-calendar-days"></i> <span data-i18n="shift">${langData['shift'] || 'Shift'}</span>`);
     initSelect2('#shiftWorkLocation', { mode: 'ajax', allowClear: true });
@@ -211,7 +214,7 @@ function openShiftModal(id) {
     setShiftWorkDays(null);
     new bootstrap.Modal(document.getElementById('shiftModal')).show();
 }
-function saveShift() {
+function saveShift(btnEl) {
     const name = $('#shiftName').val().trim(), code = $('#shiftCode').val().trim();
     if (!name || !code) { showWarning(langData['required_star_message'] || 'Please fill all fields marked with *'); return; }
     const payload = Object.assign({
@@ -223,16 +226,23 @@ function saveShift() {
         work_location_id: $('#shiftWorkLocation').val() || null,
         status: $('#shiftStatus').is(':checked') ? 'active' : 'inactive'
     }, getShiftWorkDaysPayload());
+    // 2026-09-02, Platform Hardening Phase 1.2 -- this handler previously had zero disable/spinner
+    // state (real double-submit risk, called via bare onclick="saveShift()"); $btn is optional
+    // (defensive -- keeps this callable programmatically without a real button element) so this
+    // stays safe even if some future caller doesn't pass one.
+    const $btn = btnEl ? $(btnEl) : $();
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/shift.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('shiftModal')).hide();
                 dtShift.ajax.reload(null, false);
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
 /* ==================== HOLIDAY ==================== */
@@ -264,11 +274,13 @@ function renderHoliday() {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/holiday.list`, dataSrc: 'data' },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1 -- status switch moved to the first column
+            // (client-side table, safe to reorder, see Shift's own identical comment above).
+            { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/holiday.toggle-status') },
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
             { data: null, render: (d, t, row) => `<span class="text-faint"><i class="fa-regular fa-calendar me-1"></i>${fmtDate(row.holiday_date)}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.is_recurring) === 1 ? `<span class="badge-soft badge-paid">${langData['recurring_every_year'] || 'Recurring'}</span>` : `<span class="badge-soft badge-unpaid">${langData['one_time_only'] || 'One-time'}</span>` },
             { data: null, render: (d, t, row) => holidayScopeSummary(row) },
-            { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleHolidayStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openHolidayModal(${row.id})`, `askDelete('holiday', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
@@ -298,28 +310,24 @@ function renderHoliday() {
             }
             if (typeof updateText === 'function') updateText($searchDiv[0]);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the multi-value scope summary (3, composite), the
-            // interactive status SWITCH (4), and actions (5).
+            // rollout, client mode. Excludes the interactive status SWITCH (0), the multi-value
+            // scope summary (4, composite), and actions (5).
+            // 2026-09-02, real bug found and fixed -- same "indices never shifted when the status
+            // switch was inserted at column 0" bug as Shift's own table, see that comment above.
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'name' },
-                    { index: 1, key: 'holiday_date' },
-                    { index: 2, key: 'recurring' },
+                    { index: 1, key: 'name' },
+                    { index: 2, key: 'holiday_date' },
+                    { index: 3, key: 'recurring' },
                 ]
             });
         }
     });
 }
-function toggleHolidayStatus(id) {
-    $.ajax({
-        url: `${BASE_URL}/api/holiday.toggle-status`, method: 'POST', data: { id }, dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
-            dtHoliday.ajax.reload(null, false);
-        }
-    });
-}
+// 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
+// .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
+$(document).on('statusToggle:success', '#tb_holiday', function () { dtHoliday.ajax.reload(null, false); });
 function resetHolidayScopeSelects() {
     HOLIDAY_SCOPE_TYPES.forEach(type => { $(holidayScopeSelector(type)).empty().trigger('change.select2'); });
 }
@@ -370,7 +378,7 @@ function openHolidayModal(id) {
     updateHolidayModeHint();
     new bootstrap.Modal(document.getElementById('holidayModal')).show();
 }
-function saveHoliday() {
+function saveHoliday(btnEl) {
     const nameTh = $('#holidayNameTh').val().trim();
     const nameEn = $('#holidayNameEn').val().trim();
     const date = $('#holidayDate').val();
@@ -393,16 +401,19 @@ function saveHoliday() {
         status: $('#holidayStatus').is(':checked') ? 'active' : 'inactive',
         assignments
     };
+    const $btn = btnEl ? $(btnEl) : $();
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/holiday.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('holidayModal')).hide();
                 dtHoliday.ajax.reload(null, false);
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
 
@@ -414,10 +425,12 @@ function renderWorkLocation() {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/work-location.list`, dataSrc: 'data' },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1 -- status switch moved to the first column
+            // (client-side table, safe to reorder, see Shift's own identical comment above).
+            { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/work-location.toggle-status') },
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}</div>` },
             { data: 'location_code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
             { data: 'address', render: d => `<span class="text-faint">${d ? escapeHtmlSr(d) : '-'}</span>` },
-            { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleWorkLocationStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`, structureAssignExtraBtns('work_location', row.id, currentLang === 'th' ? row.location_name_th : row.location_name_en)) }
@@ -427,27 +440,23 @@ function renderWorkLocation() {
         initComplete: function () {
             addButtonInitComplete('btn-add-location', 'fa-solid fa-plus', 'add_work_location', 'Location', 'openWorkLocationModal()').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the interactive status SWITCH (3) and actions (4).
+            // rollout, client mode. Excludes the interactive status SWITCH (0) and actions (4).
+            // 2026-09-02, real bug found and fixed -- same "indices never shifted when the status
+            // switch was inserted at column 0" bug as Shift's own table, see that comment above.
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'name' },
-                    { index: 1, key: 'code' },
-                    { index: 2, key: 'address' },
+                    { index: 1, key: 'name' },
+                    { index: 2, key: 'code' },
+                    { index: 3, key: 'address' },
                 ]
             });
         }
     });
 }
-function toggleWorkLocationStatus(id) {
-    $.ajax({
-        url: `${BASE_URL}/api/work-location.toggle-status`, method: 'POST', data: { id }, dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
-            dtWorkLocation.ajax.reload(null, false);
-        }
-    });
-}
+// 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
+// .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
+$(document).on('statusToggle:success', '#tb_work_location', function () { dtWorkLocation.ajax.reload(null, false); });
 function openWorkLocationModal(id) {
     $('#workLocationModalTitle').html(`<i class="fa-solid fa-location-dot"></i> <span data-i18n="work_location">${langData['work_location'] || 'Work Location'}</span>`);
     if (id) {
@@ -474,7 +483,7 @@ function openWorkLocationModal(id) {
     $('#workLocationStatus').prop('checked', true);
     new bootstrap.Modal(document.getElementById('workLocationModal')).show();
 }
-function saveWorkLocation() {
+function saveWorkLocation(btnEl) {
     const nameTh = $('#workLocationNameTh').val().trim();
     const code = $('#workLocationCode').val().trim();
     if (!nameTh || !code) { showWarning(langData['required_star_message'] || 'Please fill all fields marked with *'); return; }
@@ -484,16 +493,19 @@ function saveWorkLocation() {
         location_code: code, address: $('#workLocationAddress').val().trim(),
         status: $('#workLocationStatus').is(':checked') ? 'active' : 'inactive'
     };
+    const $btn = btnEl ? $(btnEl) : $();
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/work-location.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('workLocationModal')).hide();
                 dtWorkLocation.ajax.reload(null, false);
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
 
@@ -510,13 +522,15 @@ function renderLeave() {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/leave-type.list`, dataSrc: 'data' },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1 -- status switch moved to the first column
+            // (client-side table, safe to reorder, see Shift's own identical comment above).
+            { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/leave-type.toggle-status') },
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
             { data: 'code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${escapeHtmlSr(currentLang === 'th' ? row.category_name_th : row.category_name_en)}</span>` },
             { data: null, className: 'text-end', render: (d, t, row) => `<span class="text-faint">${parseFloat(row.quota_amount)} ${leaveQuotaUnitLabel(row.unit_type)}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="badge-soft badge-paid">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="badge-soft badge-unpaid">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-success me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
-            { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleLeaveStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openLeaveModal(${row.id})`, `askDelete('leave', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
@@ -541,30 +555,26 @@ function renderLeave() {
             }
             if (typeof updateText === 'function') updateText($searchDiv[0]);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the interactive status SWITCH (6) and actions (7).
+            // rollout, client mode. Excludes the interactive status SWITCH (0) and actions (7).
+            // 2026-09-02, real bug found and fixed -- same "indices never shifted when the status
+            // switch was inserted at column 0" bug as Shift's own table, see that comment above.
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'name' },
-                    { index: 1, key: 'code' },
-                    { index: 2, key: 'category' },
-                    { index: 3, key: 'quota' },
-                    { index: 4, key: 'paid' },
-                    { index: 5, key: 'carry_over' },
+                    { index: 1, key: 'name' },
+                    { index: 2, key: 'code' },
+                    { index: 3, key: 'category' },
+                    { index: 4, key: 'quota' },
+                    { index: 5, key: 'paid' },
+                    { index: 6, key: 'carry_over' },
                 ]
             });
         }
     });
 }
-function toggleLeaveStatus(id) {
-    $.ajax({
-        url: `${BASE_URL}/api/leave-type.toggle-status`, method: 'POST', data: { id }, dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
-            dtLeave.ajax.reload(null, false);
-        }
-    });
-}
+// 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
+// .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
+$(document).on('statusToggle:success', '#tb_leave', function () { dtLeave.ajax.reload(null, false); });
 function initLeaveModalSelects() {
     initSelect2('#leaveCategory', { mode: 'ajax' });
     initSelect2('#leaveQuotaType', { mode: 'static' });
@@ -623,7 +633,7 @@ function openLeaveModal(id) {
     $('#leaveStatus').prop('checked', true);
     new bootstrap.Modal(document.getElementById('leaveTypeModal')).show();
 }
-function saveLeave() {
+function saveLeave(btnEl) {
     const nameTh = $('#leaveNameTh').val().trim();
     const nameEn = $('#leaveNameEn').val().trim();
     const code = $('#leaveCode').val().trim();
@@ -645,16 +655,19 @@ function saveLeave() {
         allow_carry_over: $('#leaveCarryOver').is(':checked') ? 1 : 0,
         status: $('#leaveStatus').is(':checked') ? 'active' : 'inactive'
     };
+    const $btn = btnEl ? $(btnEl) : $();
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/leave-type.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('leaveTypeModal')).hide();
                 dtLeave.ajax.reload(null, false);
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
 $(document).on('click', '#btnApplyLeaveTypeDefaults', function () {
@@ -719,6 +732,9 @@ function renderOt() {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/ot-rate.list`, dataSrc: 'data' },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1 -- status switch moved to the first column
+            // (client-side table, safe to reorder, see Shift's own identical comment above).
+            { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/ot-rate.toggle-status') },
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
             { data: null, className: 'text-end', render: (d, t, row) => otItemBadge(otItemByScopeCode(row, 'weekday')) },
             { data: null, className: 'text-end', render: (d, t, row) => otItemBadge(otItemByScopeCode(row, 'weekend')) },
@@ -729,7 +745,6 @@ function renderOt() {
                     ? `<i class="fa-solid fa-star text-warning" title="${langData['ot_rate_set_default_badge'] || 'Default'}"></i>`
                     : `<button type="button" class="btn btn-link p-0 text-muted" title="${langData['ot_rate_set_make_default'] || 'Make Default'}" onclick="askOtSetDefault(${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')"><i class="fa-regular fa-star"></i></button>`
             },
-            { data: 'status', className: 'text-center', render: (d, t, row) => statusSwitch(d === 'active', `toggleOtStatus(${row.id})`) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
@@ -739,30 +754,28 @@ function renderOt() {
         initComplete: function () {
             addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'OT Rate Set', 'openOtModal()').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the interactive Default star (5), Status switch (6),
+            // rollout, client mode. Excludes the interactive Status switch (0), Default star (6),
             // and actions (7).
+            // 2026-09-02, real bug found and fixed -- same "indices never shifted when the status
+            // switch was inserted at column 0" bug as Shift's own table, see that comment above.
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'name' },
-                    { index: 1, key: 'weekday' },
-                    { index: 2, key: 'weekend' },
-                    { index: 3, key: 'holiday' },
-                    { index: 4, key: 'assign' },
+                    { index: 1, key: 'name' },
+                    { index: 2, key: 'weekday' },
+                    { index: 3, key: 'weekend' },
+                    { index: 4, key: 'holiday' },
+                    { index: 5, key: 'assign' },
                 ]
             });
         }
     });
 }
-function toggleOtStatus(id) {
-    $.ajax({
-        url: `${BASE_URL}/api/ot-rate.toggle-status`, method: 'POST', data: { id }, dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['ot_rate_set_default_blocked'] || langData['save_failed'] || 'An error occurred.'); }
-            dtOt.ajax.reload(null, false);
-        }
-    });
-}
+// 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
+// .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
+// The backend's own rejection message for "can't deactivate the mandatory default set" still shows
+// correctly -- the shared handler already displays `res.message` first, same as this used to.
+$(document).on('statusToggle:success', '#tb_ot', function () { dtOt.ajax.reload(null, false); });
 function askOtSetDefault(id, name) {
     showConfirm(langData['ot_rate_set_make_default'] || 'Make Default', langData['ot_rate_set_make_default_confirm'] || 'Make this Set the company Default?', function () {
         $.ajax({
@@ -927,7 +940,7 @@ function collectOtAssignments() {
     });
     return assignments;
 }
-function saveOt() {
+function saveOt(btnEl) {
     const nameTh = $('#otNameTh').val().trim();
     if (!nameTh) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
@@ -948,16 +961,19 @@ function saveOt() {
         items: items,
         assignments: collectOtAssignments(),
     };
+    const $btn = btnEl ? $(btnEl) : $();
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/ot-rate.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('otModal')).hide();
                 dtOt.ajax.reload(null, false);
             } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
 

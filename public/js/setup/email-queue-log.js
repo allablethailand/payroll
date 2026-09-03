@@ -98,7 +98,7 @@ function initEmailQueueLogTable() {
 function updateClearEmailQueueFilterVisibility() {
     const f = currentEmailQueueFilters();
     const hasFilter = !!(f.status || f.date_from || f.date_to || f.to_address);
-    $('#btnClearEmailQueueFilter').toggleClass('d-none', !hasFilter);
+    $('#emailQueueFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 
 $(document).on('click', '#emailQueueStationFilterToggle', function () {

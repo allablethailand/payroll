@@ -25,6 +25,16 @@ interface OrigamiSyncClientInterface {
     /** @return array<array{ref_id:int, code:string, name_th:string, name_en:string, start_time:string, end_time:string, break_minutes:int, work_location_code:?string, is_active:bool}> */
     public function fetchShifts(int $origamiCompanyId): array;
 
+    /** @return array<array{ref_id:int, code:?string, name_th:string, name_en:string, is_default:bool, is_active:bool}>
+     *  2026-09-02, real endpoint confirmed live (`master/branches.php`). */
+    public function fetchBranches(int $origamiCompanyId): array;
+
+    /** @return array<array{ref_id:int, name_th:string, name_en:string, is_active:bool}>
+     *  2026-09-02, real endpoint confirmed live (`master/teams.php`) -- Team was previously excluded
+     *  from this contract entirely (see OrigamiEmployeeCandidateClient's own docblock) because no
+     *  endpoint existed; that's no longer true. */
+    public function fetchTeams(int $origamiCompanyId): array;
+
     /** @return array<array{ref_id:int, name_th:string, name_en:string, holiday_date:string, is_recurring:bool, is_active:bool}> */
     public function fetchHolidays(int $origamiCompanyId): array;
 
@@ -45,4 +55,14 @@ interface OrigamiSyncClientInterface {
 
     /** @return array<array{ref_id:int, employee_ref_id:int, ot_date:string, ot_rate_ref_id:int, hours:float, amount:?float, status:string}> */
     public function fetchOvertimeRecords(int $origamiCompanyId, string $dateFrom, string $dateTo): array;
+
+    /**
+     * 2026-09-02, real endpoint confirmed live (`GET /api/hr/company`). Single-record fetch, NOT a
+     * list -- deliberately does not fit the array<...> shape every other method here returns.
+     * Returns null (not an exception) when Origami has no company for this ref_id (404).
+     * @return array{ref_id:int, code:?string, name_th:?string, name_en:?string, tax_id:?string,
+     *   branch_name:?string, address_th:?string, address_en:?string, telephone:?string, fax:?string,
+     *   logo_url:?string, is_active:?bool, updated_at:?string}|null
+     */
+    public function fetchCompany(int $origamiCompanyId): ?array;
 }

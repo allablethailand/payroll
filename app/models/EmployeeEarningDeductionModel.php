@@ -24,10 +24,12 @@ class EmployeeEarningDeductionModel {
                     COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
                     COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
                     pt.source_event_code,
-                    payee.employee_no AS payee_employee_no
+                    payee.employee_no AS payee_employee_no,
+                    pd.account_name AS destination_account_name
                 FROM `employee_earning_deductions` eed
                 LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
                 LEFT JOIN `employees` payee ON payee.id = eed.payee_employee_id
+                LEFT JOIN `payment_destinations` pd ON pd.id = eed.destination_id
                 WHERE eed.employee_id = :employee_id AND eed.deleted_at IS NULL";
         $params = [':employee_id' => $employeeId];
         if ($itemType !== null && $itemType !== '') {
@@ -46,10 +48,12 @@ class EmployeeEarningDeductionModel {
                     COALESCE(pt.item_name_en, eed.custom_item_name) AS item_name_en,
                     COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
                     pt.calculation_method AS ped_calculation_method,
-                    payee.employee_no AS payee_employee_no
+                    payee.employee_no AS payee_employee_no,
+                    pd.account_name AS destination_account_name
                 FROM `employee_earning_deductions` eed
                 LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
                 LEFT JOIN `employees` payee ON payee.id = eed.payee_employee_id
+                LEFT JOIN `payment_destinations` pd ON pd.id = eed.destination_id
                 JOIN `employees` e ON eed.employee_id = e.id
                 WHERE eed.id = :id AND e.comp_id = :comp_id AND eed.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
@@ -227,6 +231,15 @@ class EmployeeEarningDeductionModel {
         $customItemName = null;
         $customItemType = null;
         $resolvedItemType = null;
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- "Other Income"/
+        // "Other Deduction" is still a custom item structurally (ped_type_id stays NULL,
+        // custom_item_name/custom_item_type still required exactly as below) -- $isOther just tags
+        // it so PayrollRunModel::resolveManualLineRow() derives the shared OTHER_INCOME/
+        // OTHER_DEDUCTION aggregation code instead of a per-name CUSTOM: code. Only ever meaningful
+        // alongside a real custom item; forced false whenever a catalog item is picked instead
+        // (ped_type_id branch), same "force the dependent field to a harmless default" convention
+        // this file already uses for interest_rate/fee_percent.
+        $isOther = false;
         if (!empty($data['ped_type_id'])) {
             $pedTypeId = (int)$data['ped_type_id'];
             $stmtType = $this->db->prepare("SELECT id, item_type FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND is_sync_only = 0 AND deleted_at IS NULL");
@@ -243,6 +256,7 @@ class EmployeeEarningDeductionModel {
             $customItemName = trim((string)$data['custom_item_name']);
             $customItemType = (string)$data['custom_item_type'];
             $resolvedItemType = $customItemType;
+            $isOther = !empty($data['is_other']);
         } else {
             return ['status' => false, 'message' => 'Select an item from the list, or enter a custom item name and type.'];
         }
@@ -346,9 +360,10 @@ class EmployeeEarningDeductionModel {
         // it anyway" convention interest_rate/fee_percent use just above.
         $payeeEmployeeId = null;
         $payeeType = null;
+        $destinationId = null;
         if ($resolvedItemType === 'deduction' && !empty($data['payee_type'])) {
             $payeeType = (string)$data['payee_type'];
-            if (!in_array($payeeType, ['employee', 'company', 'not_disbursed'], true)) {
+            if (!in_array($payeeType, ['employee', 'company', 'not_disbursed', 'other_person'], true)) {
                 return ['status' => false, 'message' => 'Invalid payee_type.'];
             }
             if ($payeeType === 'employee') {
@@ -362,6 +377,18 @@ class EmployeeEarningDeductionModel {
                 if (!$this->employeeBelongsToComp($payeeEmployeeId, $compId)) {
                     return ['status' => false, 'message' => 'Invalid payee employee.'];
                 }
+            } elseif ($payeeType === 'other_person') {
+                // 2026-09-02, Deduction Destination & Third-Party Remittance -- destination_id
+                // points at payment_destinations (a saved/reusable OR one-off third-party bank
+                // account), resolved/created by PaymentDestinationModel BEFORE this method's own
+                // transaction opens (a destination row is its own independent entity, not part of
+                // this row's own insert/update). See that model's own docblock.
+                require_once __DIR__ . '/PaymentDestinationModel.php';
+                $destResult = (new PaymentDestinationModel($this->db))->resolveOrCreate($compId, $data, $userId);
+                if (!$destResult['status']) {
+                    return ['status' => false, 'message' => $destResult['message'] ?? 'Invalid destination.'];
+                }
+                $destinationId = $destResult['destination_id'];
             }
         } elseif (!empty($data['payee_employee_id']) && $resolvedItemType === 'deduction') {
             // Backward-compat: an older caller that only ever sends payee_employee_id (no
@@ -417,13 +444,13 @@ class EmployeeEarningDeductionModel {
                 }
 
                 $sql = "UPDATE `employee_earning_deductions` SET
-                            ped_type_id = :ped_type_id, custom_item_name = :custom_item_name, custom_item_type = :custom_item_type,
+                            ped_type_id = :ped_type_id, custom_item_name = :custom_item_name, custom_item_type = :custom_item_type, is_other = :is_other,
                             total_installments = :total_installments,
                             amount_mode = :amount_mode, interest_type = :interest_type, interest_rate = :interest_rate,
                             fee_percent = :fee_percent, fee_base = :fee_base,
                             total_amount = :total_amount, principal_amount = :principal_amount,
                             effective_date = :effective_date, notes = :notes, external_reference_no = :external_reference_no,
-                            payee_employee_id = :payee_employee_id, payee_type = :payee_type, include_in_cash_summary = :include_in_cash_summary,
+                            payee_employee_id = :payee_employee_id, payee_type = :payee_type, destination_id = :destination_id, include_in_cash_summary = :include_in_cash_summary,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $stmt = $this->db->prepare($sql);
@@ -431,6 +458,7 @@ class EmployeeEarningDeductionModel {
                     ':ped_type_id' => $pedTypeId,
                     ':custom_item_name' => $customItemName,
                     ':custom_item_type' => $customItemType,
+                    ':is_other' => $isOther ? 1 : 0,
                     ':total_installments' => $totalInstallments,
                     ':amount_mode' => $amountMode,
                     ':interest_type' => $interestType,
@@ -444,6 +472,7 @@ class EmployeeEarningDeductionModel {
                     ':external_reference_no' => $externalReferenceNo,
                     ':payee_employee_id' => $payeeEmployeeId,
                     ':payee_type' => $payeeType,
+                    ':destination_id' => $destinationId,
                     ':include_in_cash_summary' => $includeInCashSummary,
                     ':updated_by' => $userId,
                     ':id' => $id,
@@ -454,15 +483,16 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = $id;
             } else {
                 $sql = "INSERT INTO `employee_earning_deductions`
-                            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, interest_type, interest_rate, fee_percent, fee_base, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, payee_type, include_in_cash_summary, created_by)
+                            (employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, total_installments, current_installment, amount_mode, interest_type, interest_rate, fee_percent, fee_base, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, payee_type, destination_id, include_in_cash_summary, created_by)
                         VALUES
-                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :fee_percent, :fee_base, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :payee_type, :include_in_cash_summary, :created_by)";
+                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :fee_percent, :fee_base, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :payee_type, :destination_id, :include_in_cash_summary, :created_by)";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':employee_id' => $employeeId,
                     ':ped_type_id' => $pedTypeId,
                     ':custom_item_name' => $customItemName,
                     ':custom_item_type' => $customItemType,
+                    ':is_other' => $isOther ? 1 : 0,
                     ':total_installments' => $totalInstallments,
                     ':amount_mode' => $amountMode,
                     ':interest_type' => $interestType,
@@ -476,6 +506,7 @@ class EmployeeEarningDeductionModel {
                     ':external_reference_no' => $externalReferenceNo,
                     ':payee_employee_id' => $payeeEmployeeId,
                     ':payee_type' => $payeeType,
+                    ':destination_id' => $destinationId,
                     ':include_in_cash_summary' => $includeInCashSummary,
                     ':created_by' => $userId,
                 ]);

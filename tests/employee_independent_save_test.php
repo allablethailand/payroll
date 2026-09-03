@@ -34,6 +34,18 @@ function check(string $label, $actual, $expected): void {
 function checkTrue(string $label, bool $actual): void { check($label, $actual, true); }
 function checkFalse(string $label, bool $actual): void { check($label, $actual, false); }
 
+// 2026-09-02, follow-up: payment_type (legacy enum) dropped -- EmployeeModel::save() payloads now
+// use payment_method_id, resolved here via master_payment_methods.code.
+function resolvePaymentMethodId(PDO $pdo, string $code): int {
+    $stmt = $pdo->prepare("SELECT id FROM `master_payment_methods` WHERE code = :code");
+    $stmt->execute([':code' => $code]);
+    $id = $stmt->fetchColumn();
+    if ($id === false) {
+        throw new RuntimeException("master_payment_methods code '{$code}' not found -- seed missing?");
+    }
+    return (int)$id;
+}
+
 function makeCompany(PDO $pdo, string $countryCode): int {
     $stmt = $pdo->prepare("INSERT INTO companies (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name)
         VALUES (:name, :name, :cc, :tax, 'Test Address', 'Test Signatory')");
@@ -102,7 +114,7 @@ try {
         $employmentPayload = array_merge($infoOnly, $structure, [
             'id' => $r1['id'],
             'employment_date' => '2024-01-01', 'employment_status' => 'permanent', 'employment_type' => 'full_time',
-            'workforce_type' => 'office', 'record_time_method' => 'manual', 'payment_type' => 'cash',
+            'workforce_type' => 'office', 'record_time_method' => 'manual', 'payment_method_id' => resolvePaymentMethodId($pdo, 'cash'),
         ]);
         $r2 = $model->save($compId, $employmentPayload, $userId);
         checkTrue('Employment-tab save on existing record succeeds without Contact/Salary filled in' . (empty($r2['status']) ? " ({$r2['message']})" : ''), $r2['status']);
@@ -264,9 +276,11 @@ try {
     if ($recheckRow3) {
         check('is_ready is true for a genuinely fully-ready employee', $recheckRow3['is_ready'], true);
         // 2026-08-30, explicit request: "และในข้อมูลบัญชีธนาคาร ให้บอกประเภทการจ่ายเงิน เป็นเงินสุด หรือบัญชี"
-        // -- payment_type's RAW value must reach the frontend (not just its readiness boolean) so the
-        // Bank Details column can render "Cash" vs "Bank" -- this fixture used payment_type='cash'.
-        check('payment_type raw value reaches the row (needed for the Bank Details column\'s cash-vs-bank display)', $recheckRow3['payment_type'] ?? null, 'cash');
+        // -- the resolved payment method CODE must reach the frontend (not just its readiness
+        // boolean) so the Bank Details column can render "Cash" vs "Bank" -- this fixture used
+        // payment_method_id='cash'. 2026-09-02, follow-up: payment_type (legacy enum) dropped --
+        // recheckList() now exposes payment_method_code instead (see that method's own docblock).
+        check('payment_method_code reaches the row (needed for the Bank Details column\'s cash-vs-bank display)', $recheckRow3['payment_method_code'] ?? null, 'cash');
         // 2026-08-30, explicit request: "เพิ่ม Column OT เพิ่มว่าคิดหรือไม่คิด ถ้าคิดคิด Rate ของ OT แต่ละประเภท"
         // -- ot_summary is present on every row; this fixture never set ot_eligible, so it stays at
         // the column's own default (false) and ot_rate_source stays 'default'.
@@ -441,15 +455,15 @@ try {
     $rFk = $model->save($compId, $noFk, $userId);
     checkTrue('Save with department_id/role_id/position_id/branch_id all omitted still succeeds' . (empty($rFk['status']) ? " ({$rFk['message']})" : ''), $rFk['status']);
 
-    // ---------- bank_id/bank_account_no missing while payment_type=bank must not block the save
-    // itself, only is_payroll_ready ----------
+    // ---------- bank_id/bank_account_no missing while payment_method_id=transfer must not block the
+    // save itself, only is_payroll_ready ----------
     $bankIncomplete = [
         'employee_no' => 'IND-EMP-BANK-' . uniqid(), 'employee_type' => 'domestic', 'employee_status' => 'active',
         'title' => 'mr', 'gender' => 'male', 'name_th' => 'ก', 'surname_th' => 'ข', 'name_en' => 'A', 'surname_en' => 'B',
-        'date_of_birth' => '1990-01-01', 'nationality' => 'Thai', 'payment_type' => 'bank',
+        'date_of_birth' => '1990-01-01', 'nationality' => 'Thai', 'payment_method_id' => resolvePaymentMethodId($pdo, 'transfer'),
     ];
     $rBank = $model->save($compId, $bankIncomplete, $userId);
-    checkTrue('Save with payment_type=bank but no bank_id/bank_account_no still succeeds' . (empty($rBank['status']) ? " ({$rBank['message']})" : ''), $rBank['status']);
+    checkTrue('Save with payment_method_id=transfer but no bank_id/bank_account_no still succeeds' . (empty($rBank['status']) ? " ({$rBank['message']})" : ''), $rBank['status']);
     if ($rBank['status']) {
         $bankRow = $model->get($compId, $bankIncomplete['employee_no']);
         checkTrue('...but employment stays in missing_tabs because of the incomplete bank details', in_array('employment', $bankRow['verify_status']['missing_tabs'], true));

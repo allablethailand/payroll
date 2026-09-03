@@ -43,7 +43,7 @@ function toIsoDateRa(displayVal) {
 }
 function updateRunAuditClearFilterVisibility() {
     const hasFilter = !!($('#runAuditFilterDateFrom').val() || $('#runAuditFilterDateTo').val());
-    $('#runAuditClearDateFilter').toggleClass('d-none', !hasFilter);
+    $('#runAuditFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function updateRunAuditStationCounts(rows) {
     const counts = { all: rows.length, draft: 0, pending_approval: 0, approved: 0, paid: 0, locked: 0, rejected: 0, need_info: 0, cancelled: 0 };
@@ -52,11 +52,20 @@ function updateRunAuditStationCounts(rows) {
         $(`.station-card[data-state="${state}"] .station-count`).text(counts[state]);
     });
 }
-$.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
-    if (settings.nTable.id !== 'tb_run_audit_list') return true;
-    if (runAuditCurrentState === 'all') return true;
-    return rowData && rowData.state === runAuditCurrentState;
-});
+// 2026-09-02, real bug found and fixed (explicit report: "run-audit.js:55 Uncaught TypeError: Cannot
+// read properties of undefined (reading 'ext')") -- this call used to run at PARSE time (top-level,
+// not inside $(document).ready()), but this script tag runs BEFORE footer.php's own
+// <script src=".../dataTables.js"> tag, so $.fn.dataTable doesn't exist yet when this line executes
+// -- same "script tag runs before DataTables itself loads" gotcha payroll/index.js's own
+// registerStationSearchFilter() already documents and works around. Wrapped in a function, called
+// from the existing $(document).ready() block below (after DataTables has definitely loaded).
+function registerRunAuditStationSearchFilter() {
+    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
+        if (settings.nTable.id !== 'tb_run_audit_list') return true;
+        if (runAuditCurrentState === 'all') return true;
+        return rowData && rowData.state === runAuditCurrentState;
+    });
+}
 $(document).on('click', '.station-card', function () {
     runAuditCurrentState = $(this).data('state') || 'all';
     $('.station-card').removeClass('active');
@@ -210,5 +219,6 @@ $(document).ready(function () {
         initDatepicker('#runAuditFilterDateFrom');
         initDatepicker('#runAuditFilterDateTo');
     }
+    registerRunAuditStationSearchFilter();
     initRunAuditTable();
 });

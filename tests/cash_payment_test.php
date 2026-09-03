@@ -18,6 +18,7 @@ require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/models/PayrollCycleModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunCashPaymentModel.php';
+require_once __DIR__ . '/../app/models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../app/services/EncryptionService.php';
 require_once __DIR__ . '/../app/services/reports/ReportRegistry.php';
 require_once __DIR__ . '/../app/services/reports/LocalizedException.php';
@@ -72,32 +73,46 @@ try {
     checkTrue('fixture: cycle created', $cycleRes['status']);
     $cycleId = $cycleRes['id'];
 
-    function insertFixtureEmployee(PDO $pdo, int $compId, string $paymentType, float $baseSalary): int {
+    // 2026-09-02, follow-up: payment_type (legacy enum) dropped -- fixture now resolves a real
+    // payment_method_id via master_payment_methods.code ('cash'/'transfer') instead of writing the
+    // old 'cash'/'bank' string directly.
+    function resolvePaymentMethodIdByCode(PDO $pdo, string $code): int {
+        $stmt = $pdo->prepare("SELECT id FROM `master_payment_methods` WHERE code = :code");
+        $stmt->execute([':code' => $code]);
+        $id = $stmt->fetchColumn();
+        if ($id === false) {
+            throw new RuntimeException("master_payment_methods code '{$code}' not found -- seed missing?");
+        }
+        return (int)$id;
+    }
+
+    function insertFixtureEmployee(PDO $pdo, int $compId, string $paymentMethodCode, float $baseSalary): int {
         $encTax = EncryptionService::encrypt('1' . substr((string)rand(100000000000, 999999999999), 0, 12));
+        $paymentMethodId = resolvePaymentMethodIdByCode($pdo, $paymentMethodCode);
         $stmt = $pdo->prepare("INSERT INTO `employees`
             (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
              tax_id_no, key_version, personal_email, mobile_no, address_line_1_register, address_line_1_contact,
              emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
              employment_date, employment_status, employment_type, workforce_type, record_time_method,
-             payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+             payment_method_id, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
              sso_enrolled, pvd_enrolled, tax_exempt, department_id)
             VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
              :tax_id_no, :key_version, :email, '0800000000', 'Test Address', 'Test Address',
              'Emergency', 'Contact', 'friend', '0899999999',
              '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-             :payment_type, 'monthly', :base_salary, '2020-01-01', 'average', 'active',
+             :payment_method_id, 'monthly', :base_salary, '2020-01-01', 'average', 'active',
              0, 0, 0, NULL)");
         $stmt->execute([
             ':comp_id' => $compId, ':employee_no' => 'CASH_TEST_' . uniqid(),
             ':name_th' => 'ทดสอบ', ':surname_th' => 'เงินสด', ':name_en' => 'Test', ':surname_en' => 'Cash',
             ':tax_id_no' => $encTax['value'], ':key_version' => $encTax['key_version'],
-            ':email' => uniqid() . '@test.local', ':payment_type' => $paymentType, ':base_salary' => $baseSalary,
+            ':email' => uniqid() . '@test.local', ':payment_method_id' => $paymentMethodId, ':base_salary' => $baseSalary,
         ]);
         return (int)$pdo->lastInsertId();
     }
 
     $cashEmployeeId = insertFixtureEmployee($pdo, $compId, 'cash', 20000);
-    $bankEmployeeId = insertFixtureEmployee($pdo, $compId, 'bank', 30000);
+    $bankEmployeeId = insertFixtureEmployee($pdo, $compId, 'transfer', 30000);
     checkTrue('fixture: cash-paying employee created', $cashEmployeeId > 0);
     checkTrue('fixture: bank-paying employee created', $bankEmployeeId > 0);
 
@@ -200,13 +215,13 @@ try {
     $refMethod->setAccessible(true);
     // Before this fix, this call would have been a hard PHP fatal error ("Call to undefined
     // method") -- simply completing without throwing already proves the method now exists.
-    $allowed = $refMethod->invoke($cashController, 'payroll_run_cash_payment.manage');
+    $allowed = $refMethod->invoke($cashController, 'payroll_run_cash_payment.view');
     checkTrue('requirePermission() now exists and returns true for an admin session (previously a fatal error)', $allowed);
 
     // ---------- The user's own reported scenario: a run with ZERO cash-paying employees ----------
     // (everyone on 'bank') must show a clean empty result, never an error/blank-looking table.
     echo "=== listForRun() with zero cash-paying employees -- clean empty result, not an error ===\n";
-    $bankOnlyEmployeeId = insertFixtureEmployee($pdo, $compId, 'bank', 25000);
+    $bankOnlyEmployeeId = insertFixtureEmployee($pdo, $compId, 'transfer', 25000);
     checkTrue('fixture: 2nd bank-only employee created', $bankOnlyEmployeeId > 0);
     $bankOnlyRunRes = $runModel->create($compId, [
         'cycle_id' => $cycleId, 'run_name' => 'CASH_TEST_BANK_ONLY_RUN_' . uniqid(),
@@ -236,6 +251,64 @@ try {
     // json_encode() of a genuinely empty PHP array is `[]`, not `{}` -- confirms the frontend's own
     // `(data.rows || []).map(...)` sees a real (empty) array, not an object it could choke on.
     check('rows JSON-encodes as an array literal ([]), not an object ({})', json_encode($bankOnlyResult['rows']), '[]');
+
+    // ==================================================================================================
+    // 2026-09-02, real bug found and fixed (flagged during a post-feature review, not guessed): a cash
+    // employee's tracked amount used the plain net_amount column instead of net_amount_due (net_amount
+    // minus whatever a PRIOR payroll_run_payment_events row already recorded as disbursed this run --
+    // see tests/payroll_run_payment_events_test.php for the same *_amount_due delta mechanism already
+    // proven there for BankTransferFileReport). Reopening an already-partially-paid run and then
+    // viewing the Cash Payments tab for the FIRST time (ensureRowsForRun()'s own INSERT IGNORE means a
+    // row, once created, is never re-synced -- so the bug specifically mattered for a row not yet
+    // created) would have tracked the FULL amount a second time instead of just what's actually still
+    // owed. Simulates a prior payment_events row directly (same technique/shape
+    // tests/payroll_run_payment_events_test.php's own fixture uses) rather than a full reopen+merge
+    // dance, since this test targets PayrollRunCashPaymentModel's own read, not markPaid()/reopen()
+    // themselves (already covered by that other file).
+    // ==================================================================================================
+    echo "=== net_amount_due fix: a cash employee's tracked amount reflects a prior payment_events delta ===\n";
+    $deltaEmpId = insertFixtureEmployee($pdo, $compId, 'cash', 20000);
+    $deltaCycleRes = $cycleModel->save($compId, [
+        'cycle_name' => 'CASH_DELTA_TEST_CYCLE_' . uniqid(),
+        'payroll_frequency' => 'monthly', 'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5,
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1, 'status' => 'active',
+    ], $adminUserId);
+    $deltaRunRes = $runModel->create($compId, [
+        'cycle_id' => $deltaCycleRes['id'], 'run_name' => 'CASH_DELTA_TEST_RUN_' . uniqid(),
+        'period_start_date' => $periodStart, 'period_end_date' => $periodEnd, 'payment_date' => $periodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: delta-test run created' . (empty($deltaRunRes['status']) ? " ({$deltaRunRes['message']})" : ''), $deltaRunRes['status']);
+    $deltaRunId = $deltaRunRes['id'];
+    $deltaCalcRes = $runModel->recalculate($deltaRunId, $compId, $adminUserId, true);
+    checkTrue('fixture: delta-test run calculated' . (empty($deltaCalcRes['status']) ? " ({$deltaCalcRes['message']})" : ''), $deltaCalcRes['status']);
+    checkTrue('fixture: submitted', $runModel->submit($deltaRunId, $compId, $adminUserId, true)['status']);
+    checkTrue('fixture: approved', $runModel->approve($deltaRunId, $compId, $adminUserId, true)['status']);
+
+    $deltaDetailsBefore = (new PayrollReportDataModel())->getRunDetails($deltaRunId);
+    $deltaRowBefore = current(array_filter($deltaDetailsBefore, fn($d) => (int)$d['employee_id'] === $deltaEmpId));
+    $fullNetAmount = (float)$deltaRowBefore['net_amount'];
+    checkTrue('fixture: employee has real positive net pay to partially pay off', $fullNetAmount > 0);
+
+    // Simulate a PRIOR payment cycle having already disbursed part of this employee's net pay (same
+    // shape a real markPaid() call would have written).
+    $alreadyPaid = round($fullNetAmount * 0.4, 2);
+    $remainingDue = round($fullNetAmount - $alreadyPaid, 2);
+    $pdo->prepare("INSERT INTO `payroll_run_payment_events` (run_id, employee_id, gross_amount_paid, deduction_amount_paid, net_amount_paid, payment_method, payment_reference, paid_by)
+        VALUES (:run_id, :employee_id, 0, 0, :net_paid, 'cash', 'PRIOR_CYCLE_TEST', :paid_by)")
+        ->execute([':run_id' => $deltaRunId, ':employee_id' => $deltaEmpId, ':net_paid' => $alreadyPaid, ':paid_by' => $adminUserId]);
+
+    $deltaDetailsAfter = (new PayrollReportDataModel())->getRunDetails($deltaRunId);
+    $deltaRowAfter = current(array_filter($deltaDetailsAfter, fn($d) => (int)$d['employee_id'] === $deltaEmpId));
+    check('fixture: net_amount_due now reflects only the remaining delta, not the full amount', round((float)$deltaRowAfter['net_amount_due'], 2), $remainingDue);
+
+    // First-ever call to listForRun() for this run -- ensureRowsForRun()'s own INSERT IGNORE means
+    // this is the ONE moment the row's amount gets decided, from whatever net_amount_due is right now.
+    $deltaCashModel = new PayrollRunCashPaymentModel($pdo);
+    $deltaResult = $deltaCashModel->listForRun($deltaRunId, $compId);
+    $deltaRow = current(array_filter($deltaResult['rows'], fn($r) => (int)$r['employee_id'] === $deltaEmpId));
+    checkTrue('cash-payment row was created for this employee', $deltaRow !== false);
+    check('*** the core fix *** tracked cash amount is the REMAINING delta, not the full net_amount (would have double-counted the already-paid 40% before this fix)', round((float)$deltaRow['amount'], 2), $remainingDue);
+    check('*** the core fix *** total_cash on the summary also reflects the delta, not the full amount', round($deltaResult['total_cash'], 2), $remainingDue);
 
 } finally {
     $pdo->rollBack();

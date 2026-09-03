@@ -41,15 +41,25 @@ class StatutoryCalculationEngine {
      *        ['sso_enrolled'=>true, 'pvd_enrolled'=>false, 'tax_exempt'=>false]. A key that is
      *        absent (not explicitly false) is treated as enrolled/not-exempt, so callers that
      *        don't pass this at all keep the pre-fix "always applicable" behavior.
+     * @param array<string,array{employee_rate_override?:?float,employer_rate_override?:?float}> $employeeRateOverrides
+     *        per-employee rate override, keyed by item code (only meaningful for calc_method=
+     *        'flat_rate' items, e.g. 'TH_SSO'). 2026-09-02, real per-employee SSO rate override --
+     *        `employees.sso_contribution_rate`/`sso_employer_contribution_rate`, wired in by
+     *        PayrollRunModel::recalculate(). Deliberately a SEPARATE param from $employeeFlags
+     *        (that one's own documented contract is bool-only) rather than repurposing it. Wins
+     *        over company_statutory_settings' own employee_rate_override/employer_rate_override
+     *        (which itself already wins over the master rate) -- precedence is
+     *        employee override > company override > master rate. A null/absent value for either
+     *        key leaves that side's existing (company-or-master) rate untouched.
      * @return array{calc_date:string, items:array, total_employee_deduction:float, total_employer_contribution:float}
      */
-    public function calculate(int $compId, array $salaryContext, string $calcDate, array $employeeFlags = []): array {
+    public function calculate(int $compId, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = []): array {
         $items = $this->companySettingModel->list($compId);
         $lines = [];
         $totalEmployee = 0.0;
         $totalEmployer = 0.0;
         foreach ($items as $item) {
-            $line = $this->calculateLine($item, $salaryContext, $calcDate, $employeeFlags);
+            $line = $this->calculateLine($item, $salaryContext, $calcDate, $employeeFlags, $employeeRateOverrides);
             $lines[] = $line;
             $totalEmployee += $line['employee_amount'];
             $totalEmployer += $line['employer_amount'];
@@ -63,16 +73,16 @@ class StatutoryCalculationEngine {
     }
 
     /** Calculate a single item by its master code (e.g. 'TH_SSO'), useful for targeted lookups/tests. */
-    public function calculateItem(int $compId, string $itemCode, array $salaryContext, string $calcDate, array $employeeFlags = []): ?array {
+    public function calculateItem(int $compId, string $itemCode, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = []): ?array {
         foreach ($this->companySettingModel->list($compId) as $item) {
             if ($item['code'] === $itemCode) {
-                return $this->calculateLine($item, $salaryContext, $calcDate, $employeeFlags);
+                return $this->calculateLine($item, $salaryContext, $calcDate, $employeeFlags, $employeeRateOverrides);
             }
         }
         return null;
     }
 
-    private function calculateLine(array $item, array $salaryContext, string $calcDate, array $employeeFlags = []): array {
+    private function calculateLine(array $item, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = []): array {
         $baseKey = $item['calc_base'];
         $base = array_key_exists($baseKey, $salaryContext) ? (float)$salaryContext[$baseKey] : 0.0;
 
@@ -122,9 +132,23 @@ class StatutoryCalculationEngine {
                     $line['note'] = $noRateNote;
                     return $line;
                 }
-                $isOverride = $item['employee_rate_override'] !== null || $item['employer_rate_override'] !== null;
+                $isCompanyOverride = $item['employee_rate_override'] !== null || $item['employer_rate_override'] !== null;
+                // Per-employee rate wins over the company-wide override above -- see calculate()'s
+                // own docblock. Only applied when the caller actually passed a non-null value for
+                // that side; a present-but-null key (or an absent item code entirely) leaves the
+                // company/master rate resolved above untouched.
+                $employeeOverride = $employeeRateOverrides[$item['code']] ?? [];
+                $isEmployeeOverride = false;
+                if (array_key_exists('employee_rate_override', $employeeOverride) && $employeeOverride['employee_rate_override'] !== null) {
+                    $item['employee_rate_override'] = $employeeOverride['employee_rate_override'];
+                    $isEmployeeOverride = true;
+                }
+                if (array_key_exists('employer_rate_override', $employeeOverride) && $employeeOverride['employer_rate_override'] !== null) {
+                    $item['employer_rate_override'] = $employeeOverride['employer_rate_override'];
+                    $isEmployeeOverride = true;
+                }
                 [$line['employee_amount'], $line['employer_amount'], $line['base_amount'], $line['formula']] = self::computeFlatRate($item, $rateRow, $base);
-                $line['rate_source'] = $isOverride ? 'company_override' : 'master';
+                $line['rate_source'] = $isEmployeeOverride ? 'employee_override' : ($isCompanyOverride ? 'company_override' : 'master');
                 return $line;
 
             case 'fixed_amount':

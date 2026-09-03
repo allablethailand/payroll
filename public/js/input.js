@@ -106,6 +106,32 @@ $(document).on('click', function(e) {
         $('.address-suggestions-box').addClass('d-none');
     }
 });
+// 2026-09-03, Platform Hardening Phase 2 -- app-wide "clear this date" affordance (a datepicker
+// field, unlike a plain text input, has no obvious way to empty it once a date is picked -- you'd
+// have to click into the text and manually delete the characters). bootstrap-datepicker has this
+// built in (`clearBtn`, a "Clear" row at the bottom of the calendar popup) -- turned on below, in
+// the ONE shared init function every `.datepicker` field in the app already goes through, so every
+// field gets it with zero per-page work, same "one shared component" precedent as
+// setButtonLoading()/renderStatusToggleHtml() (app.js).
+//
+// Real bug found and fixed while wiring this up: bootstrap-datepicker's own clearDates() (the
+// function the Clear row calls) empties the input and fires ONLY its own custom 'changeDate' event
+// -- unlike a normal calendar-click pick, which fires BOTH 'changeDate' AND a native 'change' (see
+// _setDate() in the vendored source, node_modules/bootstrap-datepicker/js/bootstrap-datepicker.js).
+// This app has a large number of pre-existing date filter fields wired via plain
+// $(document).on('change', '#xxxDateFrom', ...) (Login History, Manual Entry's Attendance/Leave/
+// OT/Import History filters, Report History, Export History, Email Queue Log, and more) -- every
+// one of those would have silently stopped reacting to a Clear click: the field visibly empties,
+// but the filter/table listening for a plain 'change' never re-fires. Forwarding
+// 'changeDate' -> native 'change' ONLY when the field is now blank (the Clear case) closes this gap
+// -- doing it unconditionally would double-fire 'change' on every ordinary pick, since _setDate()
+// already fires it once on its own for that case. A delegated listener (not per-field) works
+// regardless of init timing/order, so it's placed here rather than inside initDatepicker() itself.
+$(document).on('changeDate', '.datepicker', function () {
+    if ($(this).val() === '') {
+        $(this).trigger('change');
+    }
+});
 function initDatepicker(selector = '.datepicker', options = {}) {
     // 1. ตรวจสอบว่ามี jQuery และ Datepicker Plugin พร้อมใช้งานหรือไม่
     if (typeof $ === 'undefined' || !$.fn || !$.fn.datepicker) return;
@@ -113,16 +139,41 @@ function initDatepicker(selector = '.datepicker', options = {}) {
     // 2. ดึงค่าภาษา ป้องกันกรณี variable currentLang ไม่ถูกกำหนดไว้
     const lang = (typeof currentLang !== 'undefined' && currentLang === 'th') ? 'th' : 'en';
 
+    // Thai locale patch: the bundled bootstrap-datepicker.th.js (loaded in footer.php) translates
+    // day/month names but never added a `clear` key, so a Thai-mode calendar would show the
+    // English word "Clear" among otherwise-Thai text. Patched here (idempotent, cheap to re-check
+    // every call) instead of editing the vendored node_modules file directly (would be silently
+    // wiped out by the next `npm install`).
+    if ($.fn.datepicker.dates && $.fn.datepicker.dates['th'] && !$.fn.datepicker.dates['th'].clear) {
+        $.fn.datepicker.dates['th'].clear = 'ล้างค่า';
+    }
+
     // 3. กำหนดค่าเริ่มต้น และรวมเข้ากับ options ที่ส่งเข้ามา
     const defaultOptions = {
         format: 'dd/mm/yyyy',
         autoclose: true,
         todayHighlight: true,
+        clearBtn: true,
         language: lang,
         orientation: 'auto bottom' // ระบุทิศทางให้ชัดเจนเพื่อป้องกัน UI แสดงผลล้นจอ
     };
+    const mergedOptions = $.extend(true, {}, defaultOptions, options);
 
-    $(selector).datepicker($.extend(true, {}, defaultOptions, options));
+    // 2026-09-03, Platform Hardening Phase 2 (placeholder standardization audit) -- real gap found:
+    // 73 of the app's 74 `.datepicker` fields had NO placeholder at all (an audit grep across
+    // app/views/), so an empty date field gave no hint at all about what format to type ("dd/mm/
+    // yyyy" is enforced by `format` above but never shown until you already have a date picked).
+    // Format strings like "dd/mm/yyyy" are a syntax pattern, not translatable vocabulary, so this
+    // is left as a literal string regardless of language -- same reasoning most international
+    // sites use for a date-format placeholder. Never overwrites a placeholder a field already has
+    // (the one pre-existing exception, `#run_period_end`'s own "Period End", stays untouched).
+    $(selector).each(function () {
+        if (!$(this).attr('placeholder')) {
+            $(this).attr('placeholder', mergedOptions.format);
+        }
+    });
+
+    $(selector).datepicker(mergedOptions);
 }
 function initSelect2(selector, options = {}) {
     $(selector).each(function () {
@@ -209,6 +260,22 @@ function initSelect2(selector, options = {}) {
                         const states = $this.attr('data-states');
                         if (states !== undefined && states !== '') {
                             extraData.states = states;
+                        }
+                        // 2026-09-02, same "read fresh from the live DOM attribute on every search"
+                        // pattern as data-exclude-id/data-states above -- generic cycle-id filter,
+                        // first consumer is the Employee Salary tab's own cycle-scoped
+                        // default_bank_account_id picker (api/employee.payment-account-options
+                        // reads a `cycle_id` POST param).
+                        const cycleId = $this.attr('data-cycle-id');
+                        if (cycleId !== undefined && cycleId !== '') {
+                            extraData.cycle_id = cycleId;
+                        }
+                        // 2026-09-02, same pattern -- first consumer is a mixed-payment line's own
+                        // method picker (api/payment-method.options reads an `exclude_code` POST
+                        // param), a line can never itself resolve to 'mixed'.
+                        const excludeCode = $this.attr('data-exclude-code');
+                        if (excludeCode !== undefined && excludeCode !== '') {
+                            extraData.exclude_code = excludeCode;
                         }
                         return $.extend({
                             searchTerm: params.term,

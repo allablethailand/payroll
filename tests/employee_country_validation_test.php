@@ -35,6 +35,18 @@ function check(string $label, $actual, $expected): void {
 function checkTrue(string $label, bool $actual): void { check($label, $actual, true); }
 function checkFalse(string $label, bool $actual): void { check($label, $actual, false); }
 
+// 2026-09-02, follow-up: payment_type (legacy enum) dropped -- EmployeeModel::save() payloads now
+// use payment_method_id, resolved here via master_payment_methods.code.
+function resolvePaymentMethodId(PDO $pdo, string $code): int {
+    $stmt = $pdo->prepare("SELECT id FROM `master_payment_methods` WHERE code = :code");
+    $stmt->execute([':code' => $code]);
+    $id = $stmt->fetchColumn();
+    if ($id === false) {
+        throw new RuntimeException("master_payment_methods code '{$code}' not found -- seed missing?");
+    }
+    return (int)$id;
+}
+
 function makeCompany(PDO $pdo, string $countryCode): int {
     $stmt = $pdo->prepare("INSERT INTO companies (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name)
         VALUES (:name, :name, :cc, :tax, 'Test Address', 'Test Signatory')");
@@ -63,7 +75,7 @@ function makeStructure(PDO $pdo, int $compId): array {
     return $ids;
 }
 
-function baseEmployeePayload(array $structureIds, string $employeeNo): array {
+function baseEmployeePayload(array $structureIds, string $employeeNo, PDO $pdo): array {
     return array_merge($structureIds, [
         'employee_no' => $employeeNo,
         'employee_type' => 'domestic',
@@ -75,7 +87,7 @@ function baseEmployeePayload(array $structureIds, string $employeeNo): array {
         'address_line_1_register' => '123 Test Rd', 'address_line_1_contact' => '123 Test Rd',
         'emergency_name' => 'Emergency', 'emergency_surname' => 'Contact', 'emergency_relationship' => 'parent',
         'employment_date' => '2024-01-01', 'employment_status' => 'permanent', 'employment_type' => 'full_time',
-        'workforce_type' => 'employee', 'record_time_method' => 'manual', 'payment_type' => 'cash',
+        'workforce_type' => 'employee', 'record_time_method' => 'manual', 'payment_method_id' => resolvePaymentMethodId($pdo, 'cash'),
         'salary_type' => 'monthly', 'base_salary_amount' => 30000, 'salary_effective_date' => '2024-01-01',
     ]);
 }
@@ -87,7 +99,7 @@ try {
     // ---------- SG company: non-TH-specific requirements must NOT block save ----------
     $sgCompId = makeCompany($pdo, 'SG');
     $sgStructure = makeStructure($pdo, $sgCompId);
-    $sgPayload = baseEmployeePayload($sgStructure, 'SG-EMP-' . uniqid());
+    $sgPayload = baseEmployeePayload($sgStructure, 'SG-EMP-' . uniqid(), $pdo);
     $sgPayload['id_card_no'] = 'S1234567A'; // real Singapore NRIC shape -- would fail a Thai mod-11 checksum
     $sgPayload['mobile_no'] = '91234567'; // 8 digits -- would fail the old TH-only 9-10 digit regex
     $sgPayload['emergency_mobile'] = '98765432';
@@ -109,7 +121,7 @@ try {
     check('tax_calculation_method defaulted to average for SG company', $sgRow['tax_calculation_method'] ?? null, 'average');
 
     // A non-Thai-shaped id_card_no must still be accepted (no checksum enforced outside TH).
-    $sgPayload2 = baseEmployeePayload($sgStructure, 'SG-EMP-' . uniqid());
+    $sgPayload2 = baseEmployeePayload($sgStructure, 'SG-EMP-' . uniqid(), $pdo);
     $sgPayload2['id_card_no'] = 'S7654321B';
     $sgPayload2['mobile_no'] = '91234567';
     $sgPayload2['emergency_mobile'] = '98765432';
@@ -119,7 +131,7 @@ try {
     // ---------- TH company: existing required-field behavior must be UNCHANGED ----------
     $thCompId = makeCompany($pdo, 'TH');
     $thStructure = makeStructure($pdo, $thCompId);
-    $thPayload = baseEmployeePayload($thStructure, 'TH-EMP-' . uniqid());
+    $thPayload = baseEmployeePayload($thStructure, 'TH-EMP-' . uniqid(), $pdo);
     $thPayload['id_card_no'] = '1234567890123'; // fails Thai mod-11 checksum on purpose
     $thPayload['mobile_no'] = '812345678';
     $thPayload['emergency_mobile'] = '812345679';
@@ -132,7 +144,7 @@ try {
     checkFalse('TH employee with invalid Thai ID checksum still rejected', $thResultBadChecksum['status']);
     check('TH rejection message is the checksum message, not a missing-field message', $thResultBadChecksum['message'], 'Invalid Thai ID card number.');
 
-    $thPayload2 = baseEmployeePayload($thStructure, 'TH-EMP-' . uniqid());
+    $thPayload2 = baseEmployeePayload($thStructure, 'TH-EMP-' . uniqid(), $pdo);
     $thPayload2['mobile_no'] = '1234567'; // 7 digits -- valid under the relaxed non-TH pattern but must still fail for TH
     $thPayload2['emergency_mobile'] = '812345679';
     $thPayload2['tax_calculation_method'] = 'average';
@@ -142,7 +154,7 @@ try {
     // ---------- Hidden-fields-don't-block-a-save (2026-08-19, explicit request: trim the Employee
     // form to Payroll-relevant fields only) -- register/contact address and emergency contact are no
     // longer collected by the form at all, so a real save must succeed with all six left blank. ----------
-    $thPayload3 = baseEmployeePayload($thStructure, 'TH-EMP-' . uniqid());
+    $thPayload3 = baseEmployeePayload($thStructure, 'TH-EMP-' . uniqid(), $pdo);
     $thPayload3['id_card_no'] = '1234567890121'; // valid mod-11 checksum
     $thPayload3['mobile_no'] = '812345678';
     $thPayload3['tax_calculation_method'] = 'average';

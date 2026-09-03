@@ -82,13 +82,13 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'จ่ายซ้ำเอ', 'Test', 'PayEventA', '1990-01-01', 'Thai',
          1, :bank_account_no, 'ทดสอบ จ่ายซ้ำเอ', :key_version,
          :email, '0800000001', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insEmpA->execute([
         ':comp_id' => $compId, ':employee_no' => 'PAYEVT_A_' . uniqid(),
         ':bank_account_no' => $encBank['value'], ':key_version' => $encBank['key_version'],
@@ -103,13 +103,13 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'จ่ายซ้ำบี', 'Test', 'PayEventB', '1990-01-01', 'Thai',
          1, :bank_account_no, 'ทดสอบ จ่ายซ้ำบี', :key_version,
          :email, '0800000002', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 25000, '2020-01-01', 'average', 'active')");
+         'monthly', 25000, '2020-01-01', 'average', 'active')");
     $insEmpB->execute([
         ':comp_id' => $compId, ':employee_no' => 'PAYEVT_B_' . uniqid(),
         ':bank_account_no' => $encBank['value'], ':key_version' => $encBank['key_version'],

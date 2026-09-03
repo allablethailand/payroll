@@ -49,7 +49,7 @@ class PayrollRunCashPaymentController extends Controller {
     }
 
     public function list() {
-        if (!$this->requirePermission('payroll_run_cash_payment.manage')) return;
+        if (!$this->requirePermission('payroll_run_cash_payment.view')) return;
         $compId = getCompId();
         $runId = (int)($_GET['run_id'] ?? 0);
         if (!$compId || $runId <= 0) {
@@ -64,7 +64,7 @@ class PayrollRunCashPaymentController extends Controller {
     }
 
     public function setStatus() {
-        if (!$this->requirePermission('payroll_run_cash_payment.manage')) return;
+        if (!$this->requirePermission('payroll_run_cash_payment.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (int)($data['id'] ?? 0);

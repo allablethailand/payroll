@@ -201,14 +201,14 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, department_id)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'ไฟล์ธนาคาร', 'Test', 'BankFile', '1990-01-01', 'Thai',
          8, :bank_account_no, 'Test Employee Account', :key_version,
          :email, '0812345678', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0898888888',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         'monthly', 30000, '2020-01-01', 'average', 'active',
          1, 0, 0, NULL)");
     $insEmp->execute([
         ':comp_id' => $compId, ':employee_no' => 'BFF_TEST_' . uniqid(),
@@ -462,34 +462,31 @@ try {
 
     $optionsCheck = $cycleModel->bankAccountOptions($compId, '', 1, 10);
     check('bankAccountOptions() returns both of this company\'s own accounts', count($optionsCheck['items']), 2);
-    $crossCompanyAccountRes = $cycleModel->save($compId, [
-        'id' => $cycleId, 'cycle_name' => 'BFF_TEST_CYCLE_' . uniqid(), 'payroll_frequency' => 'monthly',
-        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5, 'ot_cutoff_type' => 'same_as_attendance',
-        'bank_file_format_id' => $BAY_FORMAT_ID, 'bank_account_id' => 999999999, 'status' => 'active',
+    // 2026-09-02, multi-bank-account payroll -- bank_account_id is no longer settable through
+    // save() directly (it's now a denormalized shortcut owned by saveBankAccounts(), see that
+    // method's own docblock) -- these 3 assertions updated to call the new method instead of
+    // threading bank_account_id through save()'s own $data array.
+    $crossCompanyAccountRes = $cycleModel->saveBankAccounts($cycleId, $compId, [
+        ['bank_account_id' => 999999999, 'is_default' => 1],
     ], $userId);
-    check('save() rejects a bank_account_id that does not belong to this company', $crossCompanyAccountRes['status'], false);
+    check('saveBankAccounts() rejects a bank_account_id that does not belong to this company', $crossCompanyAccountRes['status'], false);
 
-    $pinAccountRes = $cycleModel->save($compId, [
-        'id' => $cycleId, 'cycle_name' => 'BFF_TEST_CYCLE_' . uniqid(), 'payroll_frequency' => 'monthly',
-        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5, 'ot_cutoff_type' => 'same_as_attendance',
-        'bank_file_format_id' => $BAY_FORMAT_ID, 'bank_account_id' => $secondBankAccountId, 'status' => 'active',
+    $pinAccountRes = $cycleModel->saveBankAccounts($cycleId, $compId, [
+        ['bank_account_id' => $secondBankAccountId, 'is_default' => 1],
     ], $userId);
-    checkTrue('save() accepts a real bank_account_id belonging to this company' . (empty($pinAccountRes['status']) ? " ({$pinAccountRes['message']})" : ''), $pinAccountRes['status']);
+    checkTrue('saveBankAccounts() accepts a real bank_account_id belonging to this company' . (empty($pinAccountRes['status']) ? " ({$pinAccountRes['message']})" : ''), $pinAccountRes['status']);
     $cycleAfterPin = $cycleModel->get($cycleId, $compId);
-    check('cycle now carries the pinned bank_account_id', (int)($cycleAfterPin['bank_account_id'] ?? 0), $secondBankAccountId);
+    check('cycle now carries the pinned bank_account_id (denormalized shortcut)', (int)($cycleAfterPin['bank_account_id'] ?? 0), $secondBankAccountId);
     check('list()/get() surface the pinned account\'s own name+company_code for the settings UI', [$cycleAfterPin['bank_account_name'] ?? null, $cycleAfterPin['bank_account_company_code'] ?? null], ['Regional Office Account', '999']);
+    check('getBankAccounts() also reflects the single pinned account as the default', count($cycleAfterPin['bank_accounts'] ?? []), 1);
 
     $resultPinned = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
     $headerLinePinned = explode("\r\n", rtrim($resultPinned['content'], "\r\n"))[0];
     check("header company_account_no resolves the PINNED account, digits only (dashes stripped from the stored '{$secondAccountNoDashed}')", substr($headerLinePinned, 12, 10), $secondAccountNo);
     check('header company_service_code now resolves the PINNED account\'s own code (999, not the default account\'s 712)', substr($headerLinePinned, 42, 3), '999');
 
-    $unpinRes = $cycleModel->save($compId, [
-        'id' => $cycleId, 'cycle_name' => 'BFF_TEST_CYCLE_' . uniqid(), 'payroll_frequency' => 'monthly',
-        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5, 'ot_cutoff_type' => 'same_as_attendance',
-        'bank_file_format_id' => $BAY_FORMAT_ID, 'status' => 'active',
-    ], $userId);
-    checkTrue('save() with no bank_account_id at all clears the pin back to null' . (empty($unpinRes['status']) ? " ({$unpinRes['message']})" : ''), $unpinRes['status']);
+    $unpinRes = $cycleModel->saveBankAccounts($cycleId, $compId, [], $userId);
+    checkTrue('saveBankAccounts() with an empty account list clears the pin back to null' . (empty($unpinRes['status']) ? " ({$unpinRes['message']})" : ''), $unpinRes['status']);
     $cycleAfterUnpin = $cycleModel->get($cycleId, $compId);
     check('bank_account_id is null again after unpinning', $cycleAfterUnpin['bank_account_id'], null);
     $resultUnpinned = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');

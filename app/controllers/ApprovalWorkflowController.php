@@ -81,7 +81,6 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowSave() {
-        if (!$this->requirePermission('approval_workflow.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -92,11 +91,15 @@ class ApprovalWorkflowController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: permission needs to know add-vs-edit
+        // BEFORE calling the model, same branch ApprovalWorkflowModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'approval_workflow.edit' : 'approval_workflow.add')) return;
         $this->json($this->model->save((int)$compId, $data, $this->actingUserId()));
     }
 
     public function workflowDelete() {
-        if (!$this->requirePermission('approval_workflow.manage')) return;
+        if (!$this->requirePermission('approval_workflow.delete')) return;
         $compId = getCompId();
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -107,7 +110,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowDuplicate() {
-        if (!$this->requirePermission('approval_workflow.manage')) return;
+        if (!$this->requirePermission('approval_workflow.add')) return;
         $compId = getCompId();
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -118,7 +121,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function workflowToggleStatus() {
-        if (!$this->requirePermission('approval_workflow.manage')) return;
+        if (!$this->requirePermission('approval_workflow.edit')) return;
         $compId = getCompId();
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         $status = (string)($_POST['status'] ?? '');
@@ -145,7 +148,6 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function stepSave() {
-        if (!$this->requirePermission('approval_workflow.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -156,11 +158,15 @@ class ApprovalWorkflowController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // ApprovalWorkflowModel::stepSave() uses (step_id present = update).
+        $isEdit = !empty($data['step_id']);
+        if (!$this->requirePermission($isEdit ? 'approval_workflow.edit' : 'approval_workflow.add')) return;
         $this->json($this->model->stepSave((int)$compId, $data, $this->actingUserId()));
     }
 
     public function stepDelete() {
-        if (!$this->requirePermission('approval_workflow.manage')) return;
+        if (!$this->requirePermission('approval_workflow.delete')) return;
         $compId = getCompId();
         $id = isset($_POST['step_id']) ? (int)$_POST['step_id'] : 0;
         if (!$compId || $id <= 0) {
@@ -171,7 +177,7 @@ class ApprovalWorkflowController extends Controller {
     }
 
     public function stepsSort() {
-        if (!$this->requirePermission('approval_workflow.manage')) return;
+        if (!$this->requirePermission('approval_workflow.edit')) return;
         $compId = getCompId();
         $data = $this->jsonBody();
         if ($data === null) {

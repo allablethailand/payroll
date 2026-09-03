@@ -55,10 +55,15 @@
             </div>
         </div>
     </div>
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearNotifFilter">
+    <!-- 2026-09-02, Platform Hardening Phase 1.6: Clear Filter split out of this shared row into
+         its own .station-filter-clear-row (attaches to the filter card right above it) so it reads
+         as part of the filter frame -- "Mark all as read" keeps its own row. -->
+    <div class="station-filter-clear-row d-none" id="notifFilterClearRow">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearNotifFilter">
             <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
         </button>
+    </div>
+    <div class="d-flex justify-content-end mb-3">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="notifPageMarkAllReadBtn">
             <i class="fa-solid fa-check-double me-1"></i><span data-i18n="notif_mark_all_read">Mark all as read</span>
         </button>

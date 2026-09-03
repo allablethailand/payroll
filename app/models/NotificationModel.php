@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/PayrollPolicyModel.php';
+require_once __DIR__ . '/PermissionModel.php';
 
 /**
  * 2026-08-29, explicit request: "ช่วยสร้างระบบแจ้งเตือนและวิเคราะห์ว่าควรมีการแจ้งเตือนอะไรบ้าง เช่นมีข้อมูล
@@ -56,7 +58,15 @@ class NotificationModel {
         'approved_continue' => ['label_th' => 'งวดเงินเดือนได้รับการอนุมัติแล้ว', 'label_en' => 'Payroll run approved'],
         'lock_reminder_print' => ['label_th' => 'ปิดรอบแล้ว อย่าลืมปริ้นเอกสาร', 'label_en' => 'Run locked -- print reminder'],
         'document_request_pending' => ['label_th' => 'มีคำขอเอกสารรออนุมัติ', 'label_en' => 'Document request pending approval'],
+        // 2026-09-02, explicit request (item 5 of a 5-item follow-up list): "ปิดไปได้เลยครับ ให้เข้าไป
+        // ปรับเอง แต่ให้มี notification ขึ้นเตือนเฉยๆครับ ทั้งในหน้า Dashboard...และใน notification" -- no
+        // auto-transition of employment_status/employment_type (stays a manual admin action), just a
+        // reminder. See probationInternExpiringEmployees()'s own docblock for the full mechanism.
+        'probation_intern_expiring' => ['label_th' => 'ทดลองงาน/ฝึกงานใกล้ครบกำหนด', 'label_en' => 'Probation/internship period ending'],
     ];
+
+    /** Days-before-expiry window that counts as "expiring soon" (see probationInternExpiringEmployees()). */
+    private const PROBATION_INTERN_EXPIRY_SOON_DAYS = 7;
 
     /**
      * Resolves whether $employeeId should receive a NEW notification of $type, checked once per
@@ -123,17 +133,19 @@ class NotificationModel {
     }
 
     /** Same event, fanned out to every employee whose role has $permissionColumn=1 (can_process_payroll/can_approve_payroll/can_finalize_payroll -- same 3 columns PayrollRunModel::userCan() itself reads off structure_roles). */
-    public function createForPermissionHolders(int $compId, string $permissionColumn, string $type, string $titleTh, string $titleEn, ?string $messageTh, ?string $messageEn, ?string $linkUrl, ?string $relatedType = null, ?int $relatedId = null, ?string $dedupKeyPrefix = null, ?string $icon = null): void {
-        if (!in_array($permissionColumn, ['can_process_payroll', 'can_approve_payroll', 'can_finalize_payroll'], true)) {
-            return;
-        }
-        $stmt = $this->db->prepare("SELECT e.id FROM `employees` e
-            JOIN `structure_roles` sr ON sr.id = e.role_id AND sr.deleted_at IS NULL
-            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND sr.`{$permissionColumn}` = 1");
-        $stmt->execute([':comp_id' => $compId]);
-        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $employeeId) {
+    /**
+     * 2026-09-03, Platform Hardening Phase 3: `$permissionKey` used to be a literal
+     * structure_roles.<column> name (can_process_payroll/can_approve_payroll/can_finalize_payroll),
+     * read via a raw SQL column scan -- those columns are retired. Now a real `permission_key`
+     * string (e.g. 'payroll_run.process'), resolved via PermissionModel::employeesWithPermission()
+     * -- role-granted employees, correctly accounting for per-user grant/deny overrides too (the
+     * raw column scan this replaces had no way to represent an override at all).
+     */
+    public function createForPermissionHolders(int $compId, string $permissionKey, string $type, string $titleTh, string $titleEn, ?string $messageTh, ?string $messageEn, ?string $linkUrl, ?string $relatedType = null, ?int $relatedId = null, ?string $dedupKeyPrefix = null, ?string $icon = null): void {
+        $permissionModel = new PermissionModel($this->db);
+        foreach ($permissionModel->employeesWithPermission($compId, $permissionKey) as $employeeId) {
             $dedupKey = $dedupKeyPrefix !== null ? "{$dedupKeyPrefix}:{$employeeId}" : null;
-            $this->create($compId, (int)$employeeId, $type, $titleTh, $titleEn, $messageTh, $messageEn, $linkUrl, $relatedType, $relatedId, $dedupKey, $icon);
+            $this->create($compId, $employeeId, $type, $titleTh, $titleEn, $messageTh, $messageEn, $linkUrl, $relatedType, $relatedId, $dedupKey, $icon);
         }
     }
 
@@ -177,6 +189,108 @@ class NotificationModel {
     }
 
     /**
+     * 2026-09-02, explicit request: probation/internship period-expiry reminder -- NO
+     * auto-transition of `employment_status`/`employment_type` (confirmed staying a manual admin
+     * action, "ให้เข้าไปปรับเอง"), this is purely informational. Deliberately the SINGLE source of
+     * truth both `checkProbationInternExpiring()`'s lazy notification trigger below AND the
+     * Dashboard's own card (`DashboardController::summary()` calls this directly) share, so the two
+     * never disagree about who currently qualifies -- a notification can be marked read/dismissed
+     * while the underlying condition still holds, so the Dashboard card can't be driven off the
+     * notifications table itself.
+     *
+     * Effective period_days precedence mirrors `PayrollRunModel::recalculate()`'s own probation/
+     * intern override resolution exactly: employee's own `*_period_days_override` (NULL = inherit)
+     * wins over `company_payroll_policies.*_period_days`; when an employee is somehow BOTH
+     * `employment_type='internship'` AND `employment_status='probation'` simultaneously, internship
+     * wins (same "intern wins when both true, never stacked" precedent documented elsewhere in this
+     * model). Same "reference/display only, no auto-transition" contract `*_period_days` has
+     * everywhere else in this app -- an employee/company with the field left unset (NULL) is simply
+     * never checked, not treated as "already expired."
+     *
+     * @return array<int,array{employee_id:int,employee_no:string,name_th:string,name_en:string,
+     *     kind:'probation'|'internship',expiry_date:string,days_remaining:int,
+     *     milestone:'expiring_soon'|'expired'}> sorted soonest/most-overdue first
+     */
+    public function probationInternExpiringEmployees(int $compId): array {
+        $policy = (new PayrollPolicyModel($this->db))->get($compId);
+        $stmt = $this->db->prepare("SELECT id, employee_no, name_th, name_en, employment_date, employment_status, employment_type,
+                probation_period_days_override, intern_period_days_override
+            FROM `employees`
+            WHERE comp_id = :comp_id AND deleted_at IS NULL
+                AND employment_status NOT IN ('resigned', 'terminated')
+                AND (employment_status = 'probation' OR employment_type = 'internship')
+                AND employment_date IS NOT NULL");
+        $stmt->execute([':comp_id' => $compId]);
+
+        $today = new DateTime('today');
+        $results = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $e) {
+            $isIntern = ($e['employment_type'] ?? null) === 'internship';
+            $isProbation = ($e['employment_status'] ?? null) === 'probation';
+            if ($isIntern) {
+                $kind = 'internship';
+                $periodDays = $e['intern_period_days_override'] !== null ? (int)$e['intern_period_days_override'] : $policy['intern_period_days'];
+            } elseif ($isProbation) {
+                $kind = 'probation';
+                $periodDays = $e['probation_period_days_override'] !== null ? (int)$e['probation_period_days_override'] : $policy['probation_period_days'];
+            } else {
+                continue;
+            }
+            if ($periodDays === null) {
+                continue; // nothing configured for this company/employee -- nothing to check
+            }
+            $expiryDate = (new DateTime((string)$e['employment_date']))->modify("+{$periodDays} days");
+            $daysRemaining = (int)$today->diff($expiryDate)->format('%r%a');
+            if ($daysRemaining < 0) {
+                $milestone = 'expired';
+            } elseif ($daysRemaining <= self::PROBATION_INTERN_EXPIRY_SOON_DAYS) {
+                $milestone = 'expiring_soon';
+            } else {
+                continue;
+            }
+            $results[] = [
+                'employee_id' => (int)$e['id'], 'employee_no' => (string)$e['employee_no'],
+                'name_th' => (string)$e['name_th'], 'name_en' => (string)$e['name_en'],
+                'kind' => $kind, 'expiry_date' => $expiryDate->format('Y-m-d'),
+                'days_remaining' => $daysRemaining, 'milestone' => $milestone,
+            ];
+        }
+        usort($results, fn($a, $b) => $a['days_remaining'] <=> $b['days_remaining']);
+        return $results;
+    }
+
+    /**
+     * Lazy check (see this class's own top-of-file docblock for why lazy, not a cron) -- fans out
+     * to every `can_process_payroll` holder (the people who'd actually go adjust the employee's
+     * status/type manually), one notification per qualifying employee per milestone
+     * (`expiring_soon`/`expired`, each its own dedup_key) so a given employee generates AT MOST 2
+     * notifications ever per recipient, not a repeat every time the bell is opened.
+     */
+    public function checkProbationInternExpiring(int $compId): void {
+        foreach ($this->probationInternExpiringEmployees($compId) as $e) {
+            $kindLabelTh = $e['kind'] === 'internship' ? 'ฝึกงาน' : 'ทดลองงาน';
+            $kindLabelEn = $e['kind'] === 'internship' ? 'Internship' : 'Probation';
+            if ($e['milestone'] === 'expired') {
+                $titleTh = "ครบกำหนด{$kindLabelTh}แล้ว: {$e['name_th']}";
+                $titleEn = "{$kindLabelEn} period ended: {$e['name_en']}";
+                $msgTh = "สิ้นสุดเมื่อ {$e['expiry_date']} -- โปรดปรับสถานะพนักงานด้วยตนเอง";
+                $msgEn = "Ended on {$e['expiry_date']} -- please update the employee's status manually.";
+            } else {
+                $titleTh = "ใกล้ครบกำหนด{$kindLabelTh}: {$e['name_th']} (อีก {$e['days_remaining']} วัน)";
+                $titleEn = "{$kindLabelEn} ending soon: {$e['name_en']} ({$e['days_remaining']} day(s) left)";
+                $msgTh = "ครบกำหนด {$e['expiry_date']}";
+                $msgEn = "Ends on {$e['expiry_date']}";
+            }
+            $this->createForPermissionHolders(
+                $compId, 'payroll_run.process', 'probation_intern_expiring',
+                $titleTh, $titleEn, $msgTh, $msgEn,
+                "/employees/{$e['employee_no']}", 'employee', $e['employee_id'],
+                "probation_intern_expiring:{$e['employee_id']}:{$e['milestone']}", 'fa-hourglass-end'
+            );
+        }
+    }
+
+    /**
      * Paginated list for one recipient -- backs both the header bell dropdown's lazy/infinite-
      * scroll load and the dedicated "view all" notifications page (same endpoint, dropdown just
      * requests a smaller page size). Runs checkStaleDrafts() once per call (only meaningful on the
@@ -185,6 +299,7 @@ class NotificationModel {
      */
     public function listForEmployee(int $compId, int $employeeId, int $offset, int $limit, bool $unreadOnly = false): array {
         $this->checkStaleDrafts($compId, $employeeId);
+        $this->checkProbationInternExpiring($compId);
         $where = "comp_id = :comp_id AND employee_id = :employee_id";
         $params = [':comp_id' => $compId, ':employee_id' => $employeeId];
         if ($unreadOnly) {
@@ -213,6 +328,7 @@ class NotificationModel {
      */
     public function listDataTable(int $compId, int $employeeId, int $start, int $length, string $search, string $dateFrom, string $dateTo, int $orderCol, string $orderDir, string $isRead = ''): array {
         $this->checkStaleDrafts($compId, $employeeId);
+        $this->checkProbationInternExpiring($compId);
 
         $totalStmt = $this->db->prepare("SELECT COUNT(*) FROM `notifications` WHERE comp_id = :comp_id AND employee_id = :employee_id");
         $totalStmt->execute([':comp_id' => $compId, ':employee_id' => $employeeId]);
@@ -264,6 +380,7 @@ class NotificationModel {
 
     public function unreadCount(int $compId, int $employeeId): int {
         $this->checkStaleDrafts($compId, $employeeId);
+        $this->checkProbationInternExpiring($compId);
         $stmt = $this->db->prepare("SELECT COUNT(*) FROM `notifications` WHERE comp_id = :comp_id AND employee_id = :employee_id AND is_read = 0");
         $stmt->execute([':comp_id' => $compId, ':employee_id' => $employeeId]);
         return (int)$stmt->fetchColumn();

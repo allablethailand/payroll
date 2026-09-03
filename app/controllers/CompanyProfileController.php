@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/CompanyProfileModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
+require_once __DIR__ . '/../models/CompanySyncModel.php';
 class CompanyProfileController extends Controller {
     private $model;
     private PermissionModel $permissionModel;
@@ -16,6 +17,14 @@ class CompanyProfileController extends Controller {
 
     private function isAdmin(): bool {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
+    }
+
+    /** @return array{0:?string,1:?string} [ip_address, user_agent] -- same capture pattern ManualEntryController::requestFingerprint() already established, for AuditLogModel::record(). */
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
     }
 
     private function requirePermission(string $permissionKey): bool {
@@ -41,7 +50,7 @@ class CompanyProfileController extends Controller {
         }
     }
     public function save() {
-        if (!$this->requirePermission('company_profile.manage')) return;
+        if (!$this->requirePermission('company_profile.edit')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         if (empty($data['registered_country']) || empty($data['company_legal_name']) || empty($data['global_tax_id'])) {
@@ -58,7 +67,8 @@ class CompanyProfileController extends Controller {
             return;
         }
         try {
-            $result = $this->model->save($data);
+            [$ip, $ua] = $this->requestFingerprint();
+            $result = $this->model->save($data, $ip, $ua);
             if ($result) {
                 $this->json(['status' => true, 'message' => 'Company profile updated successfully!']);
             } else {
@@ -69,13 +79,28 @@ class CompanyProfileController extends Controller {
         }
     }
 
+    /** 2026-09-02, real Origami `GET /api/hr/company` endpoint confirmed live -- see
+     *  CompanySyncModel::sync()'s own docblock for the full field-mapping/always-overwrite design.
+     *  Same permission as save() (company_profile.manage) since this writes the same fields a
+     *  manual save would. */
+    public function syncFromOrigami() {
+        if (!$this->requirePermission('company_profile.edit')) return;
+        $compId = (int)getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $result = (new CompanySyncModel())->sync($compId, $this->userId());
+        $this->json($result);
+    }
+
     /** 2026-08-24, explicit request: "ในหน้า Profile บริษัท ให้สามารถใส่ Logo ได้ และดึงไปใช้กับหน้า
      *  ตั้งค่า Slip เงินเดือน และใบรับรอง" -- same upload pattern as PayslipTemplateController::
      *  uploadLogo()/EmploymentCertificateTemplateController::uploadLogo(), separate storage root.
      *  Uploads immediately and returns the path for the client to include in save() -- same
      *  decoupled-upload convention as those two. */
     public function uploadLogo() {
-        if (!$this->requirePermission('company_profile.manage')) return;
+        if (!$this->requirePermission('company_profile.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -112,7 +137,7 @@ class CompanyProfileController extends Controller {
             return;
         }
         $relativePath = 'public/uploads/company_logos/' . (int)$compId . '/' . $safeName;
-        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'logo_path' => $relativePath]);
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'logo_path' => $relativePath, 'file_size' => (int)$file['size']]);
     }
 
     /** 2026-08-26, explicit request: "เพิ่มให้แนบลายเซ็นต์ Authorized Signatory Name หรือสามารถเซ็นต์สด
@@ -123,7 +148,7 @@ class CompanyProfileController extends Controller {
      *  multipart file under the same `file` field name, so this one endpoint serves both input
      *  methods without needing to know which one produced the image. */
     public function uploadSignature() {
-        if (!$this->requirePermission('company_profile.manage')) return;
+        if (!$this->requirePermission('company_profile.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -160,7 +185,7 @@ class CompanyProfileController extends Controller {
             return;
         }
         $relativePath = 'public/uploads/company_signatures/' . (int)$compId . '/' . $safeName;
-        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'signature_path' => $relativePath]);
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'signature_path' => $relativePath, 'file_size' => (int)$file['size']]);
     }
 
     /**
@@ -497,8 +522,35 @@ class CompanyProfileController extends Controller {
     public function rankDelete() { $this->handleStructureDelete('rank'); }
     public function teamSave() { $this->handleStructureSave('team'); }
     public function teamDelete() { $this->handleStructureDelete('team'); }
+    // 2026-09-02, Platform Hardening Phase 1.1 -- one instant-AJAX toggle-status endpoint per
+    // structure type, all dispatching to the same generic CompanyProfileModel::toggleStructureStatus()
+    // (see that method's own docblock for why this stays one small generic implementation instead
+    // of 6 near-identical ones).
+    public function branchToggleStatus() { $this->handleStructureToggleStatus('branch'); }
+    public function roleToggleStatus() { $this->handleStructureToggleStatus('role'); }
+    public function departmentToggleStatus() { $this->handleStructureToggleStatus('department'); }
+    public function positionToggleStatus() { $this->handleStructureToggleStatus('position'); }
+    public function rankToggleStatus() { $this->handleStructureToggleStatus('rank'); }
+    public function teamToggleStatus() { $this->handleStructureToggleStatus('team'); }
+    private function handleStructureToggleStatus(string $type): void {
+        if (!$this->requirePermission('company_structure.edit')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $result = $this->model->toggleStructureStatus($type, (int)$compId, $id, $userId);
+        $this->json($result);
+    }
     private function handleStructureSave(string $type): void {
-        if (!$this->requirePermission('company_structure.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -510,12 +562,16 @@ class CompanyProfileController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3: the permission check needs to know add-vs-edit
+        // BEFORE calling the model, same branch the model itself uses (id present = update).
+        $isEdit = !empty($data['id']);
+        if (!$this->requirePermission($isEdit ? 'company_structure.edit' : 'company_structure.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->model->saveStructure($type, (int)$compId, $data, $userId);
         $this->json($result);
     }
     private function handleStructureDelete(string $type): void {
-        if (!$this->requirePermission('company_structure.manage')) return;
+        if (!$this->requirePermission('company_structure.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -566,7 +622,7 @@ class CompanyProfileController extends Controller {
     }
 
     public function structureAssignEmployees() {
-        if (!$this->requirePermission('company_structure.manage')) return;
+        if (!$this->requirePermission('company_structure.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $type = (string)($data['type'] ?? '');
@@ -581,7 +637,7 @@ class CompanyProfileController extends Controller {
     }
 
     public function structureMoveEmployeesOut() {
-        if (!$this->requirePermission('company_structure.manage')) return;
+        if (!$this->requirePermission('company_structure.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $type = (string)($data['type'] ?? '');

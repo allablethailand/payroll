@@ -49,14 +49,20 @@ try {
         ->execute([':name' => 'Blocked Sync Update Test Co ' . uniqid(), ':comp_code' => $compCode]);
     $compId = (int)$pdo->lastInsertId();
 
-    // A can_process_payroll role, so createForPermissionHolders() ('sync_update_blocked' below) has
-    // a real recipient to fan out to -- otherwise that best-effort notification legitimately has
-    // nobody to notify and the assertion on it would be meaningless, not because the feature is
-    // broken.
-    $pdo->prepare("INSERT INTO structure_roles (comp_id, role_name_th, role_name_en, can_process_payroll, status)
-        VALUES (:comp_id, 'BSU Payroll Admin', 'BSU Payroll Admin', 1, 'active')")
+    // A role granted payroll_run.process, so createForPermissionHolders() ('sync_update_blocked'
+    // below) has a real recipient to fan out to -- otherwise that best-effort notification
+    // legitimately has nobody to notify and the assertion on it would be meaningless, not because
+    // the feature is broken.
+    $pdo->prepare("INSERT INTO structure_roles (comp_id, role_name_th, role_name_en, status)
+        VALUES (:comp_id, 'BSU Payroll Admin', 'BSU Payroll Admin', 'active')")
         ->execute([':comp_id' => $compId]);
     $roleId = (int)$pdo->lastInsertId();
+    // 2026-09-03, Platform Hardening Phase 3: can_process_payroll alone is now inert --
+    // createForPermissionHolders() resolves recipients via the real payroll_run.process permission
+    // key (PermissionModel::employeesWithPermission()), not the raw structure_roles column anymore.
+    $processPermId = (int)$pdo->query("SELECT id FROM permissions WHERE permission_key = 'payroll_run.process'")->fetchColumn();
+    $pdo->prepare("INSERT INTO role_permissions (role_id, permission_id, allow_scope, detail_level) VALUES (:r, :p, 'all', 'full')")
+        ->execute([':r' => $roleId, ':p' => $processPermId]);
 
     $empNo = 'BSU_EMP_' . uniqid();
     $pdo->prepare("INSERT INTO `employees`
@@ -64,11 +70,11 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status, role_id)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status, role_id)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'BSU', 'Test', 'BSU', '1990-01-01', 'Thai',
          :email, '0812345678', 'A', 'A', 'E', 'E', 'friend', '0898888888',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active', :role_id)")
+         'monthly', 30000, '2020-01-01', 'average', 'active', :role_id)")
         ->execute([':comp_id' => $compId, ':employee_no' => $empNo, ':email' => uniqid() . '@test.local', ':role_id' => $roleId]);
     $employeeId = (int)$pdo->lastInsertId();
 

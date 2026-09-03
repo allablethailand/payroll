@@ -10,14 +10,17 @@ require_once __DIR__ . '/../services/sync/MasterDataSyncOrchestrator.php';
 require_once __DIR__ . '/PayrollSyncModel.php';
 require_once __DIR__ . '/SetupRulesModel.php';
 require_once __DIR__ . '/ApprovalRequestModel.php';
+require_once __DIR__ . '/PermissionModel.php';
 require_once __DIR__ . '/EmployeeRecurringEarningModel.php';
 require_once __DIR__ . '/EmployeeRecurringDeductionModel.php';
 require_once __DIR__ . '/AttendanceDeductionRuleModel.php';
 require_once __DIR__ . '/OtRateSetModel.php';
 require_once __DIR__ . '/PayrollPolicyModel.php';
+require_once __DIR__ . '/NonResidentTaxSettingModel.php';
 require_once __DIR__ . '/NotificationModel.php';
 require_once __DIR__ . '/AttendanceRecordModel.php';
 require_once __DIR__ . '/DocumentNumberingModel.php';
+require_once __DIR__ . '/EmployeePaymentMethodModel.php';
 
 /**
  * Payroll Run state machine + calculation.
@@ -43,7 +46,9 @@ class PayrollRunModel {
     private AttendanceDeductionRuleModel $attendanceDeductionRuleModel;
     private OtRateSetModel $otRateSetModel;
     private PayrollPolicyModel $policyModel;
+    private NonResidentTaxSettingModel $nonResidentTaxSettingModel;
     private AttendanceRecordModel $attendanceRecordModel;
+    private EmployeePaymentMethodModel $paymentMethodModel;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
@@ -56,7 +61,9 @@ class PayrollRunModel {
         $this->attendanceDeductionRuleModel = new AttendanceDeductionRuleModel($this->db);
         $this->otRateSetModel = new OtRateSetModel($this->db);
         $this->policyModel = new PayrollPolicyModel($this->db);
+        $this->nonResidentTaxSettingModel = new NonResidentTaxSettingModel($this->db);
         $this->attendanceRecordModel = new AttendanceRecordModel($this->db);
+        $this->paymentMethodModel = new EmployeePaymentMethodModel($this->db);
     }
 
     /* ==================== READ ==================== */
@@ -264,7 +271,11 @@ class PayrollRunModel {
                     -- 2 summary cards + a dedicated tab all keyed on payment method -- previously
                     -- only PayrollReportDataModel::getRunDetails() (reports/cash-payment tab) read
                     -- this column; the Process Detail page's own #tb_run_detail never had it.
-                    COALESCE(e.payment_type, 'bank') AS payment_type,
+                    -- 2026-09-02, follow-up: the legacy payment_type enum (bank/cash only) is gone --
+                    -- resolved via payment_method_id/master_payment_methods instead, same join
+                    -- PayrollReportDataModel::getRunDetails() already uses, exposed here as
+                    -- payment_method_code (transfer/cash/check/mixed).
+                    COALESCE(pmt.code, 'transfer') AS payment_method_code,
                     COALESCE(v.is_verified, 0) AS is_verified, v.verified_at,
                     vu.name_th AS verified_by_name_th, vu.name_en AS verified_by_name_en,
                     -- 2026-08-29: comment count shown as a notification badge on the Comment button
@@ -286,6 +297,7 @@ class PayrollRunModel {
                     EXISTS(SELECT 1 FROM `payroll_run_item_exclusions` rie WHERE rie.run_id = d.run_id AND rie.item_code = :base_salary_code2) AS run_excludes_base_salary
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
+                LEFT JOIN `master_payment_methods` pmt ON pmt.id = e.payment_method_id
                 LEFT JOIN `payroll_run_employee_verifications` v ON v.run_id = d.run_id AND v.employee_id = d.employee_id
                 LEFT JOIN `employees` vu ON vu.id = v.verified_by
                 WHERE d.run_id = :run_id
@@ -648,7 +660,7 @@ class PayrollRunModel {
     }
 
     public function setEmployeeVerified(int $runId, int $compId, int $employeeId, bool $verified, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -773,7 +785,7 @@ class PayrollRunModel {
     /** Verified/locked counts for the run list page ("ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้ว
      *  กี่คน Lock ข้อมูลแล้วกี่คน") -- see list()'s own new subqueries below for the actual per-run count. */
     public function employeeCommentAdd(int $runId, int $compId, int $employeeId, ?string $tag, string $comment, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to comment on this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -807,7 +819,7 @@ class PayrollRunModel {
      *  either). updated_by/updated_at let the UI show a small "(edited)" marker only when genuinely
      *  applicable -- a never-edited comment keeps both null. */
     public function employeeCommentUpdate(int $runId, int $compId, int $commentId, ?string $tag, string $comment, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit comments on this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -837,7 +849,7 @@ class PayrollRunModel {
     /** Hard delete -- see this table's own migration docblock for why (a lightweight reminder note,
      *  not compliance/audit data). */
     public function employeeCommentDelete(int $runId, int $compId, int $commentId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to delete comments on this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -975,20 +987,31 @@ class PayrollRunModel {
             return ['run_state' => $run['state'], 'approvers' => $approvers, 'steps' => $approvalRequestModel->stepBreakdown($compId, (int)$run['approval_request_id'])];
         }
 
+        // 2026-09-03, Platform Hardening Phase 3: was a raw `sr.can_approve_payroll = 1` JOIN
+        // against structure_roles (that column is dropped) -- now resolves the eligible pool via
+        // PermissionModel::employeesWithPermission() (role grant, correctly minus any per-user deny
+        // override / plus any per-user grant override) first, then applies this method's own
+        // department scoping on top of that id set. Same output shape/ordering as before.
         $departmentId = $this->submitterDepartmentId($run);
-        $sql = "SELECT e.id, e.employee_no, e.name_th, e.name_en
-                FROM `employees` e
-                JOIN `structure_roles` sr ON sr.id = e.role_id AND sr.deleted_at IS NULL
-                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND sr.can_approve_payroll = 1";
-        $params = [':comp_id' => $compId];
-        if ($departmentId !== null) {
-            $sql .= " AND e.department_id = :department_id";
-            $params[':department_id'] = $departmentId;
+        $permissionModel = new PermissionModel($this->db);
+        $eligibleIds = $permissionModel->employeesWithPermission($compId, 'payroll_run.approve');
+        if (empty($eligibleIds)) {
+            $approvers = [];
+        } else {
+            $placeholders = implode(',', array_fill(0, count($eligibleIds), '?'));
+            $sql = "SELECT e.id, e.employee_no, e.name_th, e.name_en
+                    FROM `employees` e
+                    WHERE e.comp_id = ? AND e.deleted_at IS NULL AND e.id IN ({$placeholders})";
+            $params = array_merge([$compId], $eligibleIds);
+            if ($departmentId !== null) {
+                $sql .= " AND e.department_id = ?";
+                $params[] = $departmentId;
+            }
+            $sql .= " ORDER BY e.name_th ASC";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            $approvers = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
-        $sql .= " ORDER BY e.name_th ASC";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        $approvers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $actedId = null;
         $actedStatus = null;
@@ -1033,11 +1056,17 @@ class PayrollRunModel {
 
     /* ==================== PERMISSIONS ==================== */
 
-    /** True if the employee holds ANY of the 3 payroll role-flags (or is admin) -- gates read access to run detail/salary data. */
+    /** True if the employee holds ANY of the 3 payroll permission keys (or is admin) -- gates read
+     *  access to run detail/salary data.
+     *  2026-09-03, Platform Hardening Phase 3: was an OR of 3 raw structure_roles.can_* column
+     *  reads (can_process_payroll/can_approve_payroll/can_finalize_payroll) -- those columns are
+     *  retired, replaced 1:1 by the payroll_run.process/.approve/.finalize permission keys (see
+     *  userCan()'s own docblock for how the swap preserves admin-bypass and per-user-override
+     *  behavior identically to before). */
     public function canView(int $actingEmployeeId, bool $isAdmin): bool {
-        return $this->userCan($actingEmployeeId, 'can_process_payroll', $isAdmin)
-            || $this->userCan($actingEmployeeId, 'can_approve_payroll', $isAdmin)
-            || $this->userCan($actingEmployeeId, 'can_finalize_payroll', $isAdmin);
+        return $this->userCan($actingEmployeeId, 'payroll_run.process', $isAdmin)
+            || $this->userCan($actingEmployeeId, 'payroll_run.approve', $isAdmin)
+            || $this->userCan($actingEmployeeId, 'payroll_run.finalize', $isAdmin);
     }
 
     /**
@@ -1095,7 +1124,14 @@ class PayrollRunModel {
         if ($isAdmin) {
             return true;
         }
-        if (!$this->userCan($actingEmployeeId, 'can_approve_payroll', $isAdmin)) {
+        // 2026-09-03, Platform Hardening Phase 3: can_approve_payroll -> payroll_run.approve. This
+        // is the ONLY line in this whole method the permission-key swap touches -- the
+        // approval_request_id-first branch above (and everything about admin bypass ordering
+        // relative to it) is completely unchanged, since the engine already handles that case
+        // before this line is ever reached. A per-user override on payroll_run.approve therefore
+        // has the exact same "irrelevant once a workflow is linked" property the legacy boolean
+        // already had -- this line is only reachable when approval_request_id is null.
+        if (!$this->userCan($actingEmployeeId, 'payroll_run.approve', $isAdmin)) {
             return false;
         }
         $submitterDept = $this->submitterDepartmentId($run);
@@ -1123,30 +1159,47 @@ class PayrollRunModel {
      *  (reviseAfterReject()/reviseAfterNeedInfo()), which is the submitter's action, not the
      *  approver's. */
     public function canProcessPayroll(int $actingEmployeeId, bool $isAdmin): bool {
-        return $this->userCan($actingEmployeeId, 'can_process_payroll', $isAdmin);
+        return $this->userCan($actingEmployeeId, 'payroll_run.process', $isAdmin);
     }
 
-    /** Same, for can_finalize_payroll -- gates the Detail page's "Mark as Paid"/"Lock" buttons
-     *  (markPaid()/lock() below), same simple role-flag check (no department-scoping like
-     *  can_approve_payroll needs -- finalizing isn't tied to who submitted the run). */
+    /** Same, for payroll_run.finalize -- gates the Detail page's "Mark as Paid"/"Lock" buttons
+     *  (markPaid()/lock() below), same simple permission check (no department-scoping like
+     *  payroll_run.approve needs -- finalizing isn't tied to who submitted the run). */
     public function canFinalizePayroll(int $actingEmployeeId, bool $isAdmin): bool {
-        return $this->userCan($actingEmployeeId, 'can_finalize_payroll', $isAdmin);
+        return $this->userCan($actingEmployeeId, 'payroll_run.finalize', $isAdmin);
     }
 
-    private function userCan(int $actingEmployeeId, string $permissionColumn, bool $isAdmin): bool {
+    /**
+     * 2026-09-03, Platform Hardening Phase 3: was a raw `structure_roles.<can_process_payroll|
+     * can_approve_payroll|can_finalize_payroll>` column read, whitelisted against those 3 literal
+     * column names first. Now a straight PermissionModel::checkPermission() call against the 1:1
+     * replacement permission keys (payroll_run.process/.approve/.finalize) -- same admin-bypass
+     * behavior (checked first, unconditional), PLUS the new per-user override support for free
+     * (checkPermission() itself checks employee_permission_overrides before falling through to the
+     * role_permissions grant this method used to read directly).
+     *
+     * $permissionKey is no longer whitelisted against a literal array here -- every call site in
+     * this class passes a compile-time string literal, and checkPermission() itself safely returns
+     * "denied" for any key that doesn't exist in `permissions` (a JOIN that matches zero rows), so
+     * there's no injection surface and no behavior gap versus the old whitelist.
+     *
+     * comp_id is resolved from the acting employee's own row rather than widening this method's
+     * signature (and therefore canView()'s/canProcessPayroll()'s/canFinalizePayroll()'s public
+     * signatures, which every controller call site would then need updating too) -- one extra query,
+     * but zero ripple to any caller.
+     */
+    private function userCan(int $actingEmployeeId, string $permissionKey, bool $isAdmin): bool {
         if ($isAdmin) {
             return true;
         }
-        if (!in_array($permissionColumn, ['can_process_payroll', 'can_approve_payroll', 'can_finalize_payroll'], true)) {
+        $stmt = $this->db->prepare("SELECT comp_id FROM `employees` WHERE id = :employee_id AND deleted_at IS NULL");
+        $stmt->execute([':employee_id' => $actingEmployeeId]);
+        $compId = $stmt->fetchColumn();
+        if ($compId === false) {
             return false;
         }
-        $sql = "SELECT sr.`{$permissionColumn}` FROM `employees` e
-                JOIN `structure_roles` sr ON sr.id = e.role_id AND sr.deleted_at IS NULL
-                WHERE e.id = :employee_id AND e.deleted_at IS NULL";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([':employee_id' => $actingEmployeeId]);
-        $val = $stmt->fetchColumn();
-        return $val !== false && (int)$val === 1;
+        $permissionModel = new PermissionModel($this->db);
+        return $permissionModel->checkPermission($actingEmployeeId, $permissionKey, $isAdmin, (int)$compId)['allowed'];
     }
 
     /* ==================== AUDIT ==================== */
@@ -1236,7 +1289,7 @@ class PayrollRunModel {
     }
 
     public function create(int $compId, array $data, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to create a payroll run.'];
         }
         // A company auto-provisioned via Origami SSO (auth/index.php) starts as
@@ -1482,7 +1535,7 @@ class PayrollRunModel {
     }
 
     public function update(int $id, int $compId, array $data, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($id, $compId);
@@ -1682,7 +1735,7 @@ class PayrollRunModel {
     // states are even cancellable in the first place; a run must be cancelled (or never left draft)
     // before it can be deleted, there is no way to jump straight from e.g. approved to deleted.
     public function delete(int $id, int $compId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to delete this payroll run.'];
         }
         $run = $this->get($id, $compId);
@@ -1750,8 +1803,34 @@ class PayrollRunModel {
         return round($amount, 2);
     }
 
+    /**
+     * 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- $rec is one row from
+     * EmployeeRecurringDeductionModel::activeForPeriod() (carries the TEMPLATE's own
+     * payee_type/payee_employee_id/destination_id). $overridesByRecurringId is this run's own
+     * prefetched payroll_run_recurring_deduction_overrides, keyed by recurring_id (see recalculate()'s
+     * own prefetch a few hundred lines up). An override, when present, wins outright -- never merged
+     * field-by-field with the template (e.g. an override that only sets payee_type='company' still
+     * fully replaces payee_employee_id/destination_id with null, exactly as if the admin had picked
+     * "Company" fresh in the destination picker for this run).
+     */
+    private function resolveRecurringDeductionPayee(array $rec, array $overridesByRecurringId): array {
+        $override = $overridesByRecurringId[(int)$rec['recurring_id']] ?? null;
+        if ($override !== null) {
+            return [
+                'payee_type' => $override['payee_type'],
+                'payee_employee_id' => $override['payee_employee_id'] !== null ? (int)$override['payee_employee_id'] : null,
+                'destination_id' => $override['destination_id'] !== null ? (int)$override['destination_id'] : null,
+            ];
+        }
+        return [
+            'payee_type' => $rec['payee_type'] ?? null,
+            'payee_employee_id' => ($rec['payee_employee_id'] ?? null) !== null ? (int)$rec['payee_employee_id'] : null,
+            'destination_id' => ($rec['destination_id'] ?? null) !== null ? (int)$rec['destination_id'] : null,
+        ];
+    }
+
     public function recalculate(int $id, int $compId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to calculate this payroll run.'];
         }
         $run = $this->get($id, $compId);
@@ -1842,6 +1921,16 @@ class PayrollRunModel {
         $useFlatTaxRate = !empty($run['use_flat_tax_rate']);
         $flatTaxRatePercent = $useFlatTaxRate ? $this->policyModel->flatTaxRatePercent($compId) : null;
 
+        // 2026-09-02, explicit request following an AskUserQuestion exchange: a company-configured
+        // flat withholding % for employees individually flagged tax_non_resident (employees table)
+        // -- same "company-configurable, never a hardcoded rate this app asserts" precedent as
+        // $flatTaxRatePercent immediately above (see NonResidentTaxSettingModel's own docblock for
+        // why -- normal Thai PIT progressive withholding on Thailand-source salary is actually the
+        // SAME regardless of residency, this exists only because the user's own accountant may
+        // apply a different rate this app has no basis to assume). Null when the company never
+        // configured/enabled it -- the flag then behaves exactly as if it didn't exist.
+        $nonResidentFlatRatePercent = $this->nonResidentTaxSettingModel->activeFlatRatePercent($compId);
+
         // 2026-08-21, real bug fix: needed to correctly annualize/de-annualize TH_PIT withholding
         // (see ThPitCalculator) -- $run['payroll_frequency'] already comes from get()'s own LEFT
         // JOIN to payroll_cycles, so this is free; defaults to monthly (the existing implicit
@@ -1881,8 +1970,8 @@ class PayrollRunModel {
             // calculation regardless of also being manually rostered.
             $stmtEmp = $this->db->prepare("SELECT DISTINCT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
                     e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready, e.ot_eligible, e.ot_rate_source, e.assigned_ot_rate_set_id,
-                    e.has_spouse, e.tax_calculation_method, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
-                    e.employment_type, e.intern_base_salary_ratio_override,
+                    e.has_spouse, e.tax_calculation_method, e.tax_non_resident, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
+                    e.employment_type, e.intern_base_salary_ratio_override, e.probation_base_salary_ratio_override, e.probation_defer_pvd_override, e.probation_defer_sso_override, e.probation_defer_recurring_earning_override, e.intern_defer_pvd_override, e.intern_defer_sso_override, e.intern_defer_recurring_earning_override, e.sso_contribution_rate, e.sso_employer_contribution_rate, e.payment_method_id,
                     CASE WHEN psi.employee_id IS NOT NULL THEN 'sync' ELSE 'manual' END AS data_source
                 FROM `employees` e
                 LEFT JOIN `payroll_sync_items` psi ON psi.process_id = :process_id AND psi.employee_id = e.id AND psi.mapping_status = 'mapped'
@@ -1925,8 +2014,8 @@ class PayrollRunModel {
             // is eligible ONLY for that cycle's own runs, closing the leakage.
             $stmtEmp = $this->db->prepare("SELECT id, employee_no, base_salary_amount, key_version, employment_date, employment_end_date,
                     sso_enrolled, pvd_enrolled, tax_exempt, is_payroll_ready, ot_eligible, ot_rate_source, assigned_ot_rate_set_id,
-                    has_spouse, tax_calculation_method, salary_type, department_id, team_id, position_id, employment_status,
-                    employment_type, intern_base_salary_ratio_override, 'manual' AS data_source
+                    has_spouse, tax_calculation_method, tax_non_resident, salary_type, department_id, team_id, position_id, employment_status,
+                    employment_type, intern_base_salary_ratio_override, probation_base_salary_ratio_override, probation_defer_pvd_override, probation_defer_sso_override, probation_defer_recurring_earning_override, intern_defer_pvd_override, intern_defer_sso_override, intern_defer_recurring_earning_override, sso_contribution_rate, sso_employer_contribution_rate, payment_method_id, 'manual' AS data_source
                 FROM `employees` e
                 WHERE comp_id = :comp_id AND deleted_at IS NULL AND is_payroll_participant = 1
                 AND employment_date <= :period_end
@@ -1937,8 +2026,8 @@ class PayrollRunModel {
         } else {
             $stmtEmp = $this->db->prepare("SELECT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
                     e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready, e.ot_eligible, e.ot_rate_source, e.assigned_ot_rate_set_id,
-                    e.has_spouse, e.tax_calculation_method, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
-                    e.employment_type, e.intern_base_salary_ratio_override, 'manual' AS data_source
+                    e.has_spouse, e.tax_calculation_method, e.tax_non_resident, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
+                    e.employment_type, e.intern_base_salary_ratio_override, e.probation_base_salary_ratio_override, e.probation_defer_pvd_override, e.probation_defer_sso_override, e.probation_defer_recurring_earning_override, e.intern_defer_pvd_override, e.intern_defer_sso_override, e.intern_defer_recurring_earning_override, e.sso_contribution_rate, e.sso_employer_contribution_rate, e.payment_method_id, 'manual' AS data_source
                 FROM `payroll_run_manual_employees` pme
                 JOIN `employees` e ON e.id = pme.employee_id AND e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
                 WHERE pme.run_id = :run_id");
@@ -1954,6 +2043,17 @@ class PayrollRunModel {
             $emp['base_salary_amount'] = EmployeeModel::decryptSalaryValue($emp['base_salary_amount'] ?? null, isset($emp['key_version']) ? (int)$emp['key_version'] : null);
         }
         unset($emp);
+
+        // 2026-09-02, explicit request: "การตั้งค่าเงินรวมกันถ้าเกินจำนวนเงินเดือนมีการดักส่วนนี้ไว้ไหม" --
+        // small master table, fetched once for the whole batch (same "fetched once here rather than
+        // per-employee inside the loop below" convention as $syncItemsByEmployee right below) rather
+        // than a per-employee EmployeePaymentMethodModel::findMethod() query -- used by the mixed-
+        // payment reconciliation check further down, once each row's own net pay is known.
+        $paymentMethodCodesById = [];
+        $stmtPaymentMethods = $this->db->query("SELECT id, code FROM `master_payment_methods`");
+        foreach ($stmtPaymentMethods->fetchAll(PDO::FETCH_ASSOC) as $pm) {
+            $paymentMethodCodesById[(int)$pm['id']] = $pm['code'];
+        }
 
         // Sync-derived earning/deduction lines (OT/trip allowance/late/absent/item_values), keyed
         // by employee_id -- fetched once here rather than per-employee inside the loop below. Not
@@ -1998,6 +2098,21 @@ class PayrollRunModel {
         $stmtOverrides->execute([':run_id' => $id]);
         foreach ($stmtOverrides->fetchAll(PDO::FETCH_ASSOC) as $ov) {
             $overridesByEmployeeAndCode[(int)$ov['employee_id']][$ov['item_code']] = $ov;
+        }
+
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- per-run override of
+        // a recurring deduction's PAYEE (not its amount -- that's still the generic
+        // payroll_run_line_overrides mechanism just above), keyed by recurring_id so it can never be
+        // confused with the amount override even when both target the same item_code. Prefetched
+        // once per run, applied below wherever a recurring_deduction line is built: an override here
+        // wins over the template's own payee_type/payee_employee_id/destination_id
+        // (employee_recurring_deductions), which stays completely untouched by this.
+        $recurringDeductionDestOverridesByRecurringId = [];
+        $stmtRddOv = $this->db->prepare("SELECT recurring_id, payee_type, payee_employee_id, destination_id
+            FROM `payroll_run_recurring_deduction_overrides` WHERE run_id = :run_id");
+        $stmtRddOv->execute([':run_id' => $id]);
+        foreach ($stmtRddOv->fetchAll(PDO::FETCH_ASSOC) as $ov) {
+            $recurringDeductionDestOverridesByRecurringId[(int)$ov['recurring_id']] = $ov;
         }
 
         // Per-run, per-employee correction of the RAW attendance numbers Origami sent (2026-08-21,
@@ -2563,17 +2678,32 @@ class PayrollRunModel {
                     if ($internRatio !== null) {
                         $effectiveBase = round($effectiveBase * ((float)$internRatio / 100), 2);
                     }
-                } elseif ($probationSettings['base_salary_ratio'] !== null && $isProbation) {
-                    $effectiveBase = round($effectiveBase * ($probationSettings['base_salary_ratio'] / 100), 2);
+                } elseif ($isProbation) {
+                    // 2026-09-02, explicit request: Probation gained the same per-employee ratio
+                    // override Internship already had -- direct mirror of the intern branch above,
+                    // employee's own probation_base_salary_ratio_override wins over the company-wide
+                    // probation_base_salary_ratio default when set.
+                    $probationRatio = $emp['probation_base_salary_ratio_override'] ?? $probationSettings['base_salary_ratio'];
+                    if ($probationRatio !== null) {
+                        $effectiveBase = round($effectiveBase * ((float)$probationRatio / 100), 2);
+                    }
                 }
                 // 2026-08-30, explicit request: defer Recurring Allowances until probation passes --
                 // read below by BOTH the incentive-run branch's own conditional include and the
                 // normal-run branch's unconditional include (two separate `activeForPeriod()` call
                 // sites further down), same gate either way. 2026-08-31: intern equivalent, same
                 // precedence-over-probation rule as the ratio just above.
+                // 2026-09-02, follow-up to close a review-flagged gap: per-employee override (NULL =
+                // use the company default, same "one nullable column doubles as its own toggle"
+                // convention as the ratio override) -- (bool) cast handles the raw '0'/'1'/int-from-
+                // PDO value uniformly regardless of driver-specific type.
+                $probationDeferRecurringEffective = $emp['probation_defer_recurring_earning_override'] !== null
+                    ? (bool)$emp['probation_defer_recurring_earning_override'] : $probationSettings['defer_recurring_earning'];
+                $internDeferRecurringEffective = $emp['intern_defer_recurring_earning_override'] !== null
+                    ? (bool)$emp['intern_defer_recurring_earning_override'] : $internSettings['defer_recurring_earning'];
                 $deferRecurringEarningForThisEmployee = $isIntern
-                    ? $internSettings['defer_recurring_earning']
-                    : ($probationSettings['defer_recurring_earning'] && $isProbation);
+                    ? $internDeferRecurringEffective
+                    : ($probationDeferRecurringEffective && $isProbation);
 
                 $earningLines = [];
                 $deductionLines = [];
@@ -2596,7 +2726,7 @@ class PayrollRunModel {
                     // further down, same SQL as this branch's own manual-lines query below).
                     if ($includeStandingItems) {
                         $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
-                                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.payee_employee_id, eed.payee_type,
+                                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.payee_employee_id, eed.payee_type, eed.destination_id,
                                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                             FROM `employee_earning_deductions` eed
                             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
@@ -2622,11 +2752,13 @@ class PayrollRunModel {
                                 'name_en' => $resolved['name_en'],
                                 'amount' => (float)$ped['amount'],
                                 'is_custom' => $resolved['is_custom'],
+                                'is_other' => $resolved['is_other'],
                                 'payee_employee_id' => $ped['payee_employee_id'] !== null ? (int)$ped['payee_employee_id'] : null,
                                 // 2026-08-31, same-day follow-up: same reasoning as the manual_line
                                 // entry below -- carried through so the outer breakdown table can show
                                 // the company/not_disbursed tag, not just 'employee' transfer.
                                 'payee_type' => $ped['payee_type'],
+                                'destination_id' => $ped['destination_id'] !== null ? (int)$ped['destination_id'] : null,
                             ];
                             if ($resolved['item_type'] === 'earning') {
                                 $earningLines[] = $line;
@@ -2653,6 +2785,7 @@ class PayrollRunModel {
                         // during probation -- a recurring FEE deduction has no equivalent "defer during
                         // probation" precedent asked for here, so it's unconditionally included).
                         foreach ($this->recurringDeductionModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                            $recPayee = $this->resolveRecurringDeductionPayee($rec, $recurringDeductionDestOverridesByRecurringId);
                             $deductionLines[] = [
                                 'source' => 'recurring_deduction',
                                 'recurring_id' => (int)$rec['recurring_id'],
@@ -2661,6 +2794,9 @@ class PayrollRunModel {
                                 'name_en' => $rec['item_name_en'],
                                 'amount' => $this->recurringDeductionAmountWithFee($rec, $baseSalary),
                                 'is_custom' => false,
+                                'payee_type' => $recPayee['payee_type'],
+                                'payee_employee_id' => $recPayee['payee_employee_id'],
+                                'destination_id' => $recPayee['destination_id'],
                             ];
                         }
                     }
@@ -2669,8 +2805,8 @@ class PayrollRunModel {
                     // additive on top of the standing items above when include_standing_items is on,
                     // or the ONLY source when it's off (today's original/default incentive-run
                     // behavior, unchanged).
-                    $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.payee_employee_id,
-                            pml.payee_type,
+                    $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
+                            pml.payee_type, pml.destination_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
@@ -2687,12 +2823,14 @@ class PayrollRunModel {
                             'amount' => (float)$line['amount'],
                             'note' => $line['note'],
                             'is_custom' => $resolved['is_custom'],
+                            'is_other' => $resolved['is_other'],
                             'payee_employee_id' => $line['payee_employee_id'] !== null ? (int)$line['payee_employee_id'] : null,
                             // 2026-08-31, same-day follow-up: carried through so the outer breakdown
                             // table (public/js/payroll/detail.js's breakdownLineRowsRd()) can show
                             // the SAME company/not_disbursed tag the manage-items modal shows, not
                             // just the 'employee' transfer case.
                             'payee_type' => $line['payee_type'],
+                            'destination_id' => $line['destination_id'] !== null ? (int)$line['destination_id'] : null,
                         ];
                         if ($resolved['item_type'] === 'earning') {
                             $earningLines[] = $entry;
@@ -2743,7 +2881,7 @@ class PayrollRunModel {
                     // saved fine and showed up on the Employee Detail Salary tab). Resolved the same
                     // way as payroll_run_manual_lines' own custom items, via resolveManualLineRow().
                     $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
-                            eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.payee_employee_id, eed.payee_type,
+                            eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.payee_employee_id, eed.payee_type, eed.destination_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `employee_earning_deductions` eed
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
@@ -2769,8 +2907,10 @@ class PayrollRunModel {
                             'name_en' => $resolved['name_en'],
                             'amount' => (float)$ped['amount'],
                             'is_custom' => $resolved['is_custom'],
+                            'is_other' => $resolved['is_other'],
                             'payee_employee_id' => $ped['payee_employee_id'] !== null ? (int)$ped['payee_employee_id'] : null,
                             'payee_type' => $ped['payee_type'],
+                            'destination_id' => $ped['destination_id'] !== null ? (int)$ped['destination_id'] : null,
                         ];
                         if ($resolved['item_type'] === 'earning') {
                             $earningLines[] = $line;
@@ -2800,6 +2940,7 @@ class PayrollRunModel {
                     // this same block's own comment further up in this method for the full reasoning
                     // (mirrors Recurring Earnings, unconditionally included -- not probation-deferred).
                     foreach ($this->recurringDeductionModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                        $recPayee = $this->resolveRecurringDeductionPayee($rec, $recurringDeductionDestOverridesByRecurringId);
                         $deductionLines[] = [
                             'source' => 'recurring_deduction',
                             'recurring_id' => (int)$rec['recurring_id'],
@@ -2808,6 +2949,9 @@ class PayrollRunModel {
                             'name_en' => $rec['item_name_en'],
                             'amount' => $this->recurringDeductionAmountWithFee($rec, $baseSalary),
                             'is_custom' => false,
+                            'payee_type' => $recPayee['payee_type'],
+                            'payee_employee_id' => $recPayee['payee_employee_id'],
+                            'destination_id' => $recPayee['destination_id'],
                         ];
                     }
 
@@ -2832,8 +2976,8 @@ class PayrollRunModel {
                     // one-off earning/deduction for a single employee without it affecting anyone
                     // else or needing a whole separate off-cycle run). Contrast with the $isIncentive
                     // branch above, where manual lines are the ONLY source instead of an addition.
-                    $stmtAdj = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.payee_employee_id,
-                            pml.payee_type,
+                    $stmtAdj = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
+                            pml.payee_type, pml.destination_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
@@ -2849,8 +2993,10 @@ class PayrollRunModel {
                             'amount' => (float)$adj['amount'],
                             'note' => $adj['note'],
                             'is_custom' => $resolvedAdj['is_custom'],
+                            'is_other' => $resolvedAdj['is_other'],
                             'payee_employee_id' => $adj['payee_employee_id'] !== null ? (int)$adj['payee_employee_id'] : null,
                             'payee_type' => $adj['payee_type'],
+                            'destination_id' => $adj['destination_id'] !== null ? (int)$adj['destination_id'] : null,
                         ];
                         if ($resolvedAdj['item_type'] === 'earning') {
                             $earningLines[] = $line;
@@ -2993,9 +3139,23 @@ class PayrollRunModel {
                     $payeeId = (int)$payeeId;
                     if (!isset($perEmployeeData[$payeeId])) {
                         // Payee isn't part of this run -- the deduction still happens (employee A
-                        // still loses the money), but the transfer itself is surfaced as an error
+                        // still loses the money), but the transfer itself is surfaced as a Remark
                         // rather than silently dropped, same "visible, not silent" convention as
                         // missing_ot_rate_*/no_rate_configured above.
+                        //
+                        // 2026-09-02, Deduction Destination & Third-Party Remittance (confirmed via
+                        // AskUserQuestion): this used to BLOCK the run (calc_status='error'), no
+                        // recovery path beyond re-adding the payee to the run. Downgraded to
+                        // advisory (see this method's own $blockingErrors filter below) -- the
+                        // payee-not-in-run case is now a real, supported outcome: at Approved,
+                        // PaymentDestinationModel's own remittance-grouping step (see
+                        // PayrollRemittanceModel::generateForRun()) detects the exact same
+                        // condition independently (a payee_type='employee' line whose
+                        // payee_employee_id has no payroll_run_details row in this run) and routes
+                        // it as an `employee_fallback` remittance -- a real external transfer paid
+                        // to that employee's own bank details, surfaced for confirmation before the
+                        // approval finalizes. Nothing else about this pass changes: the credit is
+                        // still skipped here (there's no in-run payee to credit).
                         $fromData['errors'][] = "transfer_payee_not_in_run:{$dLine['code']}";
                         continue;
                     }
@@ -3112,8 +3272,46 @@ class PayrollRunModel {
                 // from the same $emp row instead of being threaded through.
                 $isInternPass2 = ($emp['employment_type'] ?? null) === 'internship';
                 $isProbationPass2 = ($emp['employment_status'] ?? null) === 'probation';
-                if ($isInternPass2 ? $internSettings['defer_pvd'] : ($probationSettings['defer_pvd'] && $isProbationPass2)) {
+                // 2026-09-02, follow-up to close a review-flagged gap: per-employee override, same
+                // "NULL = use company default" convention as the ratio/defer_recurring_earning
+                // overrides in Pass 1 above -- recomputed fresh here since this is a separate loop
+                // iteration (Pass 2), same reasoning as $isInternPass2/$isProbationPass2 themselves.
+                $probationDeferPvdEffective = $emp['probation_defer_pvd_override'] !== null
+                    ? (bool)$emp['probation_defer_pvd_override'] : $probationSettings['defer_pvd'];
+                $internDeferPvdEffective = $emp['intern_defer_pvd_override'] !== null
+                    ? (bool)$emp['intern_defer_pvd_override'] : $internSettings['defer_pvd'];
+                if ($isInternPass2 ? $internDeferPvdEffective : ($probationDeferPvdEffective && $isProbationPass2)) {
                     $employeeFlags['pvd_enrolled'] = false;
+                }
+                // 2026-09-02, follow-up to close a review-flagged gap: "เงื่อนไขการหักภาษี/ประกันสังคมที่
+                // แตกต่างจากพนักงานปกติ (ถ้ามี)" was never actually built -- SSO gets the EXACT SAME
+                // "defer contribution until probation/internship passes" mechanism PVD already has
+                // immediately above, just for sso_enrolled instead of pvd_enrolled.
+                $probationDeferSsoEffective = $emp['probation_defer_sso_override'] !== null
+                    ? (bool)$emp['probation_defer_sso_override'] : $probationSettings['defer_sso'];
+                $internDeferSsoEffective = $emp['intern_defer_sso_override'] !== null
+                    ? (bool)$emp['intern_defer_sso_override'] : $internSettings['defer_sso'];
+                if ($isInternPass2 ? $internDeferSsoEffective : ($probationDeferSsoEffective && $isProbationPass2)) {
+                    $employeeFlags['sso_enrolled'] = false;
+                }
+
+                // 2026-09-02: per-employee SSO rate override (Origami candidates.php's
+                // sso_employee_rate_percent/sso_company_rate_percent -- see EmployeeSyncer's own
+                // docblock) -- wired straight through to StatutoryCalculationEngine::calculate(),
+                // which gives it precedence over company_statutory_settings' own override. NULL on
+                // either column (the common case -- most employees pay the standard rate) means "no
+                // override" and is simply omitted here rather than passed as an explicit null, same
+                // "absent key = untouched" contract the engine's own docblock documents.
+                $employeeRateOverrides = [];
+                $ssoRateOverride = [];
+                if ($emp['sso_contribution_rate'] !== null) {
+                    $ssoRateOverride['employee_rate_override'] = (float)$emp['sso_contribution_rate'];
+                }
+                if ($emp['sso_employer_contribution_rate'] !== null) {
+                    $ssoRateOverride['employer_rate_override'] = (float)$emp['sso_employer_contribution_rate'];
+                }
+                if (!empty($ssoRateOverride)) {
+                    $employeeRateOverrides['TH_SSO'] = $ssoRateOverride;
                 }
 
                 $earningTotal = array_sum(array_column($earningLines, 'amount'));
@@ -3236,6 +3434,23 @@ class PayrollRunModel {
                             $statutoryResult['items'][$pitIdx]['note'] = "th_pit_flat_rate_{$flatTaxRatePercent}";
                             break;
                         }
+                        // 2026-09-02, explicit request: an employee individually flagged
+                        // tax_non_resident (employees table) withholds this company's configured
+                        // non-resident flat % instead of the normal calculation below -- same
+                        // "separate, standalone, never folded into the annual/cumulative curve"
+                        // spirit as the run-level flat-tax-rate branch immediately above, but
+                        // PER-EMPLOYEE rather than per-run (checked second, since a run-level opt-in
+                        // is an explicit admin decision for THIS run and takes precedence over a
+                        // standing per-employee flag). No-op when the company never configured/
+                        // enabled it (see NonResidentTaxSettingModel's own docblock) -- never invents
+                        // a rate.
+                        if (!empty($emp['tax_non_resident']) && $nonResidentFlatRatePercent !== null) {
+                            $flatAmount = round($taxableGrossAmount * $nonResidentFlatRatePercent / 100, 2);
+                            $statutoryResult['items'][$pitIdx]['employee_amount'] = $flatAmount;
+                            $statutoryResult['items'][$pitIdx]['base_amount'] = $taxableGrossAmount;
+                            $statutoryResult['items'][$pitIdx]['note'] = "th_pit_nonresident_flat_rate_{$nonResidentFlatRatePercent}";
+                            break;
+                        }
                         // 2026-08-30: $taxableGrossAmount/$beforeTaxDeductionAmount (tax_treatment/
                         // tax_deduction_impact fix), not the raw $grossAmount -- see this method's
                         // own comment at their computation above, and ThPitCalculator's own docblock.
@@ -3305,6 +3520,48 @@ class PayrollRunModel {
 
                 $totalDeductionAmount = round($pedDeductionTotal + $statutoryEmployeeTotal, 2);
                 $netAmount = round($grossAmount - $totalDeductionAmount, 2);
+
+                // 2026-09-02, explicit request: "การตั้งค่าเงินรวมกันถ้าเกินจำนวนเงินเดือนมีการดักส่วนนี้ไว้ไหม"
+                // -- found a real, partial gap while investigating: EmployeePaymentMethodModel::
+                // validateMixedLines() only checks a PERCENT-ONLY line set sums to 100 (fully
+                // checkable at Employee-save time); a set containing any FIXED-amount line skips that
+                // check entirely there (net pay isn't known yet). Previously the ONLY place that ever
+                // reconciled a fixed-line set against real net pay was BankTransferFileReport::
+                // generate() -- and even that only checked the TRANSFER-line subset, silently
+                // skipping that employee's transfer (never partially/wrongly disbursing) and flagging
+                // it inside the exported file's own comment row; CashPaymentSummaryReport's cash-line
+                // subset was never checked against anything at all. Confirmed via AskUserQuestion:
+                // check the FULL line set (cash+transfer+check together) HERE instead, the moment
+                // this row's own net pay is actually known, so a mismatch is a visible Remark on the
+                // run itself (calc_errors, see payroll/detail.js's own calcErrorsRemarkRd()) instead
+                // of only surfacing later as a silently-skipped file row nobody looked at yet.
+                // Advisory only (added to $blockingErrors' own exclusion list below), same "flag it,
+                // don't block the whole run over it" treatment as daily_salary_no_shift_pattern below
+                // -- a percent-only set is already guaranteed to reconcile (validateMixedLines() above
+                // blocks that at save time), so this only ever actually fires for a fixed-amount set
+                // whose sum turned out wrong, which the admin genuinely needs to go fix on Employee
+                // Detail's own Payment tab, not something this run itself can safely auto-correct.
+                // Checked against THIS row's own $netAmount, not the merge-into-round-adjusted
+                // net_amount_due PayrollReportDataModel/BankTransferFileReport compute at report time
+                // (that needs a further per-employee payment-events query this loop doesn't otherwise
+                // need) -- a deliberate simplification: correct for the common non-merged case, and
+                // still a useful early warning for the merged case even where the exact "still owed"
+                // figure can differ slightly (report-generation time remains the authoritative check
+                // for an actual export).
+                if (($paymentMethodCodesById[(int)($emp['payment_method_id'] ?? 0)] ?? null) === 'mixed') {
+                    $mixedLines = $this->paymentMethodModel->getLines($employeeId);
+                    if (!empty($mixedLines)) {
+                        $mixedLinesTotal = 0.0;
+                        foreach ($mixedLines as $mixedLine) {
+                            $mixedLinesTotal += $mixedLine['amount_type'] === 'percent'
+                                ? round($netAmount * (float)$mixedLine['amount_value'] / 100, 2)
+                                : (float)$mixedLine['amount_value'];
+                        }
+                        if (abs($mixedLinesTotal - $netAmount) > 0.01) {
+                            $errors[] = 'mixed_payment_lines_mismatch';
+                        }
+                    }
+                }
                 // daily_salary_no_shift_pattern/hourly_salary_no_attendance_data are advisory only
                 // (same spirit as no_rate_ever_configured above) -- surfaced as a visible Remark via
                 // calc_errors so the admin can act on them, but the run still pays out using its
@@ -3315,7 +3572,29 @@ class PayrollRunModel {
                 // itself is retired (2026-08-31, real hourly formula now exists) but harmless to leave
                 // in this list in case an already-approved/locked older run still carries it in its
                 // preserved calc_errors.
-                $blockingErrors = array_diff($errors, ['daily_salary_no_shift_pattern', 'salary_type_hourly_not_supported', 'hourly_salary_no_attendance_data', 'no_attendance_data_this_period', 'ot_not_calculated_ineligible']);
+                //
+                // 2026-09-02, real gap found while adding SyncPayResolver's own working_days_fallback_
+                // with_attendance_deduction warning: it's a PREFIXED code (":eventCode" suffix, same
+                // shape as no_rate_configured:/transfer_payee_not_in_run:), so it can never exact-match
+                // a plain string in this whitelist -- needed a prefix-aware filter, not just array_diff.
+                // Downgraded to advisory HERE (not blocking) after Origami confirmed their own sync
+                // payload can never actually trigger it (working_days/working_mins share the same
+                // umbrella selection flag as Late/Absent, so one can never be 0 while the other has a
+                // real deduction quantity) -- but TransactionDataPayAdapter's own Manual Entry/Import
+                // path DELIBERATELY never sets working_days/working_mins at all (see its own docblock:
+                // "inventing one here would be a guess"), so this warning would otherwise fire on
+                // EVERY Manual/Import-driven cycle run with any Late/Absent/Unpaid-Leave deduction --
+                // making it blocking would have broken that entire, already-accepted-as-a-known-
+                // limitation code path. Kept as a visible Remark (still useful: tells an admin exactly
+                // which event's amount used the fallback divisor) without ever blocking submit().
+                $blockingErrors = array_filter(
+                    array_diff($errors, ['daily_salary_no_shift_pattern', 'salary_type_hourly_not_supported', 'hourly_salary_no_attendance_data', 'no_attendance_data_this_period', 'ot_not_calculated_ineligible', 'mixed_payment_lines_mismatch']),
+                    static fn($e) => strpos((string)$e, 'working_days_fallback_with_attendance_deduction:') !== 0
+                        // 2026-09-02, Deduction Destination & Third-Party Remittance -- see this
+                        // error's own push site (the transfer-credit pass above) for why this is
+                        // now advisory, not blocking.
+                        && strpos((string)$e, 'transfer_payee_not_in_run:') !== 0
+                );
                 $calcStatus = empty($blockingErrors) ? 'calculated' : 'error';
                 if ($calcStatus === 'error') {
                     $anyError = true;
@@ -3413,7 +3692,7 @@ class PayrollRunModel {
      * @param int[] $employeeIds
      */
     public function joinEmployees(int $id, int $compId, array $employeeIds, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         [$run, $err] = $this->assertManualRosterEditable($id, $compId);
@@ -3482,7 +3761,7 @@ class PayrollRunModel {
      * NOT EXISTS). Undo: see joinEmployees()'s cycle-only-run branch / manualEmployeeOptions().
      */
     public function removeManualEmployee(int $id, int $compId, int $employeeId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         [$run, $err] = $this->assertManualRosterEditable($id, $compId);
@@ -3768,12 +4047,23 @@ class PayrollRunModel {
     private function resolveManualLineRow(array $row): array {
         $isCustom = $row['ped_type_id'] === null;
         if ($isCustom) {
+            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- an "Other"
+            // item (is_other=1) gets a FIXED sentinel code shared by every employee/record instead
+            // of the per-name 'CUSTOM:{name}' every other custom item gets, so PayrollRegisterReport
+            // (which groups columns by `code`, see that class's own docblock) and the taxable-income
+            // summation in recalculate() both treat every "Other Income"/"Other Deduction" entry as
+            // ONE aggregate bucket regardless of what free-text label each admin typed. name_th/
+            // name_en stay the admin's own custom_item_name UNCHANGED -- only `code` (the
+            // aggregation/report-grouping key) differs; the per-line breakdown UI still shows the
+            // specific label ("ค่าปรับผิดสัญญาจ้าง") exactly as before this feature.
+            $isOther = !empty($row['is_other']);
             return [
-                'code' => 'CUSTOM:' . $row['custom_item_name'],
+                'code' => $isOther ? ($row['custom_item_type'] === 'deduction' ? 'OTHER_DEDUCTION' : 'OTHER_INCOME') : 'CUSTOM:' . $row['custom_item_name'],
                 'name_th' => $row['custom_item_name'],
                 'name_en' => $row['custom_item_name'],
                 'item_type' => $row['custom_item_type'],
                 'is_custom' => true,
+                'is_other' => $isOther,
             ];
         }
         return [
@@ -3782,6 +4072,7 @@ class PayrollRunModel {
             'name_en' => $row['item_name_en'],
             'item_type' => $row['item_type'],
             'is_custom' => false,
+            'is_other' => false,
         ];
     }
 
@@ -3801,8 +4092,8 @@ class PayrollRunModel {
      *     set (not an error -- the catalog item wins, matching how a frontend toggle between the
      *     two modes would only ever send one side populated anyway).
      */
-    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null): array {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
@@ -3823,6 +4114,10 @@ class PayrollRunModel {
 
         $itemLabel = null;
         $resolvedItemType = null;
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- same "Other
+        // Income"/"Other Deduction" tag as EmployeeEarningDeductionModel::save()'s own $isOther
+        // (see that method's own docblock) -- only meaningful in the custom-item branch below.
+        $isOtherFlag = false;
         if ($pedTypeId !== null) {
             // is_sync_only items are meant to be written only by whatever automated flow owns
             // them -- not something an admin hand-picks into an ad-hoc line.
@@ -3848,6 +4143,7 @@ class PayrollRunModel {
             }
             $itemLabel = $customItemName;
             $resolvedItemType = $customItemType;
+            $isOtherFlag = (bool)$isOther;
         }
 
         // Transfer-to-payee (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร") -- only meaningful
@@ -3866,7 +4162,10 @@ class PayrollRunModel {
         } elseif ($payeeType === null && $payeeEmployeeId !== null) {
             $payeeType = 'employee';
         }
-        if ($payeeType !== null && !in_array($payeeType, ['employee', 'company', 'not_disbursed'], true)) {
+        // 2026-09-02, Deduction Destination & Third-Party Remittance -- 'other_person' added to the
+        // same payee_type set this table already shares with employee_earning_deductions. See that
+        // model's own save() for the identical destination_id resolution pattern.
+        if ($payeeType !== null && !in_array($payeeType, ['employee', 'company', 'not_disbursed', 'other_person'], true)) {
             return ['status' => false, 'message' => 'Invalid payee_type.'];
         }
         if ($payeeType !== 'employee') {
@@ -3882,18 +4181,27 @@ class PayrollRunModel {
                 return ['status' => false, 'message' => 'Invalid payee employee.'];
             }
         }
+        $destinationId = null;
+        if ($payeeType === 'other_person') {
+            require_once __DIR__ . '/PaymentDestinationModel.php';
+            $destResult = (new PaymentDestinationModel($this->db))->resolveOrCreate($compId, $destinationData ?? [], $userId);
+            if (!$destResult['status']) {
+                return ['status' => false, 'message' => $destResult['message'] ?? 'Invalid destination.'];
+            }
+            $destinationId = $destResult['destination_id'];
+        }
         // Same "forced 0 for not_disbursed, otherwise honor the caller (default included)" rule as
         // EmployeeEarningDeductionModel::save()'s own include_in_cash_summary comment.
         $includeInCashSummaryVal = $payeeType === 'not_disbursed' ? 0 : ($includeInCashSummary === false ? 0 : 1);
 
         $this->db->prepare("INSERT INTO `payroll_run_manual_lines`
-                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, amount, note, payee_employee_id, payee_type, include_in_cash_summary, created_by)
-            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :amount, :note, :payee_employee_id, :payee_type, :include_in_cash_summary, :created_by)")
+                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, amount, note, payee_employee_id, payee_type, destination_id, include_in_cash_summary, created_by)
+            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :amount, :note, :payee_employee_id, :payee_type, :destination_id, :include_in_cash_summary, :created_by)")
             ->execute([
                 ':run_id' => $id, ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId,
-                ':custom_item_name' => $customItemName, ':custom_item_type' => $customItemType,
+                ':custom_item_name' => $customItemName, ':custom_item_type' => $customItemType, ':is_other' => $isOtherFlag ? 1 : 0,
                 ':amount' => $amount, ':note' => $note, ':payee_employee_id' => $payeeEmployeeId,
-                ':payee_type' => $payeeType, ':include_in_cash_summary' => $includeInCashSummaryVal, ':created_by' => $userId,
+                ':payee_type' => $payeeType, ':destination_id' => $destinationId, ':include_in_cash_summary' => $includeInCashSummaryVal, ':created_by' => $userId,
             ]);
 
         // 2026-08-21, explicit request ("ต้องเก็บ Log ว่าใครแก้ไขข้อมูลอะไรไปเมื่อไหร่") -- addManualLine()/
@@ -4058,7 +4366,7 @@ class PayrollRunModel {
      * manually, never silently dropped.
      */
     public function mergeSupplementalIntoRun(int $supplementalProcessRowId, int $compId, int $userId, bool $isAdmin, bool $allowRevertNonDraftTarget = false, bool $allowReopenPaidTarget = false): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to process payroll.'];
         }
         $stmt = $this->db->prepare("SELECT * FROM `payroll_sync_processes` WHERE id = :id AND comp_id = :comp_id");
@@ -4163,7 +4471,7 @@ class PayrollRunModel {
      * mergeSupplementalIntoRun() already requires, resolveMergeTargetRun() shared between both).
      */
     public function mergeIntoExistingRun(int $sourceRunId, int $targetRunId, int $compId, int $userId, bool $isAdmin, bool $allowRevertNonDraftTarget = false, bool $allowReopenPaidTarget = false): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to process payroll.'];
         }
         if ($sourceRunId === $targetRunId) {
@@ -4314,7 +4622,7 @@ class PayrollRunModel {
      *  (unlike addManualLine()) -- the line already exists, so its employee was already validated
      *  when it was added; removing it is always safe once the run itself is still draft. */
     public function removeManualLine(int $id, int $compId, int $lineId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($id, $compId);
@@ -4356,12 +4664,14 @@ class PayrollRunModel {
 
     /** Every manual line for one employee on this run (item code/name + amount + note + line id), for the "Manage Items" UI. */
     public function manualLinesForEmployee(int $compId, int $runId, int $employeeId): array {
-        $stmt = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.payee_employee_id,
-                pml.payee_type, pml.include_in_cash_summary,
-                pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, payee.employee_no AS payee_employee_no
+        $stmt = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
+                pml.payee_type, pml.destination_id, pml.include_in_cash_summary,
+                pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, payee.employee_no AS payee_employee_no,
+                pd.account_name AS destination_account_name
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             LEFT JOIN `employees` payee ON payee.id = pml.payee_employee_id
+            LEFT JOIN `payment_destinations` pd ON pd.id = pml.destination_id
             JOIN `payroll_runs` r ON r.id = pml.run_id AND r.comp_id = :comp_id
             WHERE pml.run_id = :run_id AND pml.employee_id = :employee_id
             ORDER BY pml.id ASC");
@@ -4377,9 +4687,12 @@ class PayrollRunModel {
                 'item_name_en' => $resolved['name_en'],
                 'item_type' => $resolved['item_type'],
                 'is_custom' => $resolved['is_custom'],
+                'is_other' => $resolved['is_other'],
                 'payee_employee_id' => $row['payee_employee_id'] !== null ? (int)$row['payee_employee_id'] : null,
                 'payee_employee_no' => $row['payee_employee_no'],
                 'payee_type' => $row['payee_type'],
+                'destination_id' => $row['destination_id'] !== null ? (int)$row['destination_id'] : null,
+                'destination_account_name' => $row['destination_account_name'],
                 'include_in_cash_summary' => (int)$row['include_in_cash_summary'],
             ];
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -4470,7 +4783,7 @@ class PayrollRunModel {
     }
 
     public function lineOverrideSave(int $runId, int $compId, int $employeeId, string $itemCode, string $action, ?float $overrideAmount, ?string $note, int $userId, bool $isAdmin, string $historyLineType = 'earning_deduction', ?string $historyItemCode = null): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -4555,7 +4868,7 @@ class PayrollRunModel {
 
     /** Removes a line override (reverts that item back to its computed default), then recalculates. */
     public function lineOverrideRemove(int $runId, int $compId, int $employeeId, string $itemCode, int $userId, bool $isAdmin, string $historyLineType = 'earning_deduction', ?string $historyItemCode = null): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -4608,6 +4921,217 @@ class PayrollRunModel {
 
     public function statutoryLineOverrideRemove(int $runId, int $compId, int $employeeId, string $statutoryItemCode, int $userId, bool $isAdmin): array {
         return $this->lineOverrideRemove($runId, $compId, $employeeId, $this->statutoryOverrideCode($statutoryItemCode), $userId, $isAdmin, 'statutory', $statutoryItemCode);
+    }
+
+    /**
+     * 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- read-only, for the
+     * "Recurring Deduction Destination" section of the Manage Items modal: one row per recurring
+     * deduction active for this employee in this run's own pay period
+     * (EmployeeRecurringDeductionModel::activeForPeriod()), each carrying both the TEMPLATE's own
+     * default payee (from employee_recurring_deductions, unaffected by anything below) and this
+     * run's own override (if one exists) so the UI can show "currently routed to X (overridden from
+     * the template's own Y)" without a second round trip.
+     */
+    public function recurringDeductionDestinationsForEmployee(int $runId, int $compId, int $employeeId): array {
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return [];
+        }
+        $recRows = $this->recurringDeductionModel->activeForPeriod($employeeId, $run['period_start_date'], $run['period_end_date']);
+        if (empty($recRows)) {
+            return [];
+        }
+        $recurringIds = array_map(static fn($r) => (int)$r['recurring_id'], $recRows);
+        $placeholders = implode(',', array_fill(0, count($recurringIds), '?'));
+        $stmtOv = $this->db->prepare("SELECT * FROM `payroll_run_recurring_deduction_overrides` WHERE run_id = ? AND recurring_id IN ({$placeholders})");
+        $stmtOv->execute(array_merge([$runId], $recurringIds));
+        $overridesByRecurringId = [];
+        foreach ($stmtOv->fetchAll(PDO::FETCH_ASSOC) as $ov) {
+            $overridesByRecurringId[(int)$ov['recurring_id']] = $ov;
+        }
+
+        $destIds = [];
+        $payeeEmpIds = [];
+        foreach ($recRows as $r) {
+            if (!empty($r['destination_id'])) { $destIds[] = (int)$r['destination_id']; }
+            if (!empty($r['payee_employee_id'])) { $payeeEmpIds[] = (int)$r['payee_employee_id']; }
+        }
+        foreach ($overridesByRecurringId as $ov) {
+            if (!empty($ov['destination_id'])) { $destIds[] = (int)$ov['destination_id']; }
+            if (!empty($ov['payee_employee_id'])) { $payeeEmpIds[] = (int)$ov['payee_employee_id']; }
+        }
+        $destLabels = [];
+        if (!empty($destIds)) {
+            $destIds = array_values(array_unique($destIds));
+            $ph = implode(',', array_fill(0, count($destIds), '?'));
+            $stmtDest = $this->db->prepare("SELECT pd.id, pd.account_name, mb.bank_name_th, mb.bank_name_en
+                FROM `payment_destinations` pd LEFT JOIN `master_banks` mb ON mb.id = pd.bank_id WHERE pd.id IN ({$ph})");
+            $stmtDest->execute($destIds);
+            foreach ($stmtDest->fetchAll(PDO::FETCH_ASSOC) as $d) {
+                $destLabels[(int)$d['id']] = trim(($d['account_name'] ?? '') . ($d['bank_name_th'] ? ' - ' . $d['bank_name_th'] : ''));
+            }
+        }
+        $payeeLabels = [];
+        if (!empty($payeeEmpIds)) {
+            $payeeEmpIds = array_values(array_unique($payeeEmpIds));
+            $ph2 = implode(',', array_fill(0, count($payeeEmpIds), '?'));
+            $stmtEmp = $this->db->prepare("SELECT id, employee_no, name_th, surname_th FROM `employees` WHERE id IN ({$ph2})");
+            $stmtEmp->execute($payeeEmpIds);
+            foreach ($stmtEmp->fetchAll(PDO::FETCH_ASSOC) as $e) {
+                $payeeLabels[(int)$e['id']] = trim(($e['name_th'] ?? '') . ' ' . ($e['surname_th'] ?? '')) . ' (' . $e['employee_no'] . ')';
+            }
+        }
+
+        $result = [];
+        foreach ($recRows as $r) {
+            $recurringId = (int)$r['recurring_id'];
+            $override = $overridesByRecurringId[$recurringId] ?? null;
+            $templateDestId = $r['destination_id'] !== null ? (int)$r['destination_id'] : null;
+            $templatePayeeEmpId = $r['payee_employee_id'] !== null ? (int)$r['payee_employee_id'] : null;
+            $result[] = [
+                'recurring_id' => $recurringId,
+                'item_code' => $r['item_code'], 'item_name_th' => $r['item_name_th'], 'item_name_en' => $r['item_name_en'],
+                'template_payee_type' => $r['payee_type'],
+                'template_payee_employee_id' => $templatePayeeEmpId,
+                'template_payee_label' => $templatePayeeEmpId !== null ? ($payeeLabels[$templatePayeeEmpId] ?? null) : null,
+                'template_destination_id' => $templateDestId,
+                'template_destination_label' => $templateDestId !== null ? ($destLabels[$templateDestId] ?? null) : null,
+                'override' => $override ? [
+                    'payee_type' => $override['payee_type'],
+                    'payee_employee_id' => $override['payee_employee_id'] !== null ? (int)$override['payee_employee_id'] : null,
+                    'payee_label' => $override['payee_employee_id'] !== null ? ($payeeLabels[(int)$override['payee_employee_id']] ?? null) : null,
+                    'destination_id' => $override['destination_id'] !== null ? (int)$override['destination_id'] : null,
+                    'destination_label' => $override['destination_id'] !== null ? ($destLabels[(int)$override['destination_id']] ?? null) : null,
+                    'note' => $override['note'],
+                ] : null,
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * Saves (creates or updates) this run's own override of one recurring deduction's payee --
+     * mirrors lineOverrideSave()'s own gate/permission/state pattern, but the destination-resolve
+     * step reuses PaymentDestinationModel exactly like EmployeeEarningDeductionModel::save()/
+     * EmployeeRecurringDeductionModel::save() already do for 'other_person'. The TEMPLATE row
+     * (employee_recurring_deductions) is never written to by this method.
+     */
+    public function recurringDeductionDestinationOverrideSave(int $runId, int $compId, int $recurringId, array $data, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if ($run['state'] !== 'draft') {
+            return ['status' => false, 'message' => 'Only a draft payroll run can have its earning/deduction items adjusted.'];
+        }
+        $stmtRec = $this->db->prepare("SELECT erd.employee_id, e.employee_no FROM `employee_recurring_deductions` erd
+            JOIN `employees` e ON e.id = erd.employee_id
+            WHERE erd.id = :id AND e.comp_id = :comp_id AND erd.deleted_at IS NULL");
+        $stmtRec->execute([':id' => $recurringId, ':comp_id' => $compId]);
+        $rec = $stmtRec->fetch(PDO::FETCH_ASSOC);
+        if (!$rec) {
+            return ['status' => false, 'message' => 'Recurring deduction not found.'];
+        }
+        $employeeId = (int)$rec['employee_id'];
+        if ($this->isEmployeeVerifiedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is verified for this run and cannot be edited. Unverify first.'];
+        }
+
+        $payeeType = (string)($data['payee_type'] ?? '');
+        if (!in_array($payeeType, ['employee', 'company', 'not_disbursed', 'other_person'], true)) {
+            return ['status' => false, 'message' => 'Invalid payee_type.'];
+        }
+        $payeeEmployeeId = null;
+        $destinationId = null;
+        if ($payeeType === 'employee') {
+            if (empty($data['payee_employee_id'])) {
+                return ['status' => false, 'message' => 'payee_employee_id is required when payee_type is employee.'];
+            }
+            $payeeEmployeeId = (int)$data['payee_employee_id'];
+            if ($payeeEmployeeId === $employeeId) {
+                return ['status' => false, 'message' => 'An employee cannot be their own transfer payee.'];
+            }
+            $stmtPayee = $this->db->prepare("SELECT id FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtPayee->execute([':id' => $payeeEmployeeId, ':comp_id' => $compId]);
+            if (!$stmtPayee->fetch()) {
+                return ['status' => false, 'message' => 'Invalid payee employee.'];
+            }
+        } elseif ($payeeType === 'other_person') {
+            require_once __DIR__ . '/PaymentDestinationModel.php';
+            $destResult = (new PaymentDestinationModel($this->db))->resolveOrCreate($compId, $data, $userId);
+            if (!$destResult['status']) {
+                return ['status' => false, 'message' => $destResult['message'] ?? 'Invalid destination.'];
+            }
+            $destinationId = $destResult['destination_id'];
+        }
+        $note = !empty($data['note']) ? trim((string)$data['note']) : null;
+
+        $own = !$this->db->inTransaction();
+        try {
+            if ($own) { $this->db->beginTransaction(); }
+            $stmtExisting = $this->db->prepare("SELECT id FROM `payroll_run_recurring_deduction_overrides` WHERE run_id = :run_id AND recurring_id = :recurring_id");
+            $stmtExisting->execute([':run_id' => $runId, ':recurring_id' => $recurringId]);
+            $existingId = $stmtExisting->fetchColumn();
+            if ($existingId) {
+                $this->db->prepare("UPDATE `payroll_run_recurring_deduction_overrides` SET
+                        payee_type = :payee_type, payee_employee_id = :payee_employee_id, destination_id = :destination_id, note = :note,
+                        updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :id")
+                    ->execute([
+                        ':payee_type' => $payeeType, ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':note' => $note,
+                        ':updated_by' => $userId, ':id' => $existingId,
+                    ]);
+            } else {
+                $this->db->prepare("INSERT INTO `payroll_run_recurring_deduction_overrides`
+                        (run_id, recurring_id, payee_type, payee_employee_id, destination_id, note, created_by)
+                    VALUES (:run_id, :recurring_id, :payee_type, :payee_employee_id, :destination_id, :note, :created_by)")
+                    ->execute([
+                        ':run_id' => $runId, ':recurring_id' => $recurringId, ':payee_type' => $payeeType,
+                        ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':note' => $note, ':created_by' => $userId,
+                    ]);
+            }
+            $this->logAudit($runId, 'draft', 'draft', 'recurring_deduction_destination_override_save', $userId,
+                "Employee {$rec['employee_no']}: recurring deduction #{$recurringId} destination overridden to {$payeeType} for this run only");
+            if ($own) { $this->db->commit(); }
+        } catch (PDOException $e) {
+            if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+
+        return $this->recalculate($runId, $compId, $userId, $isAdmin);
+    }
+
+    /** Removes this run's own override, reverting that recurring deduction back to its template's
+     *  own default payee for this run only -- the template itself was never touched either way. */
+    public function recurringDeductionDestinationOverrideRemove(int $runId, int $compId, int $recurringId, int $userId, bool $isAdmin): array {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if ($run['state'] !== 'draft') {
+            return ['status' => false, 'message' => 'Only a draft payroll run can have its earning/deduction items adjusted.'];
+        }
+        $stmtRec = $this->db->prepare("SELECT erd.employee_id, e.employee_no FROM `employee_recurring_deductions` erd
+            JOIN `employees` e ON e.id = erd.employee_id
+            WHERE erd.id = :id AND e.comp_id = :comp_id AND erd.deleted_at IS NULL");
+        $stmtRec->execute([':id' => $recurringId, ':comp_id' => $compId]);
+        $rec = $stmtRec->fetch(PDO::FETCH_ASSOC);
+        if (!$rec) {
+            return ['status' => false, 'message' => 'Recurring deduction not found.'];
+        }
+
+        $this->db->prepare("DELETE FROM `payroll_run_recurring_deduction_overrides` WHERE run_id = :run_id AND recurring_id = :recurring_id")
+            ->execute([':run_id' => $runId, ':recurring_id' => $recurringId]);
+        $this->logAudit($runId, 'draft', 'draft', 'recurring_deduction_destination_override_remove', $userId,
+            "Employee {$rec['employee_no']}: recurring deduction #{$recurringId} destination reverted to the template's own default for this run");
+
+        return $this->recalculate($runId, $compId, $userId, $isAdmin);
     }
 
     /**
@@ -4792,7 +5316,7 @@ class PayrollRunModel {
      * recalculate(), same "mutate then recalculate immediately" pattern as addManualLine().
      */
     public function attendanceOverrideSave(int $runId, int $compId, int $employeeId, array $fields, ?string $note, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -4909,7 +5433,7 @@ class PayrollRunModel {
 
     /** Reverts every field back to whatever Origami actually sent, then recalculates. */
     public function attendanceOverrideRemove(int $runId, int $compId, int $employeeId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -5106,7 +5630,7 @@ class PayrollRunModel {
         if (!in_array($taxCalculateOverride, self::CALC_OVERRIDE_VALUES, true) || !in_array($ssoCalculateOverride, self::CALC_OVERRIDE_VALUES, true)) {
             return ['status' => false, 'message' => 'Invalid tax/SSO calculation setting.'];
         }
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -5220,7 +5744,7 @@ class PayrollRunModel {
         if (!in_array($taxCalculateDefault, self::CALC_DEFAULT_VALUES, true) || !in_array($ssoCalculateDefault, self::CALC_DEFAULT_VALUES, true)) {
             return ['status' => false, 'message' => 'Invalid tax/SSO calculation setting.'];
         }
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -5284,7 +5808,7 @@ class PayrollRunModel {
      * renderRecalcReminder() in detail.js).
      */
     public function setAutoRecalculate(int $runId, int $compId, bool $value, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
         $run = $this->get($runId, $compId);
@@ -5326,7 +5850,7 @@ class PayrollRunModel {
      * at all -- approval_request_id stays NULL, falling back to the flat role check unchanged.
      */
     public function submit(int $id, int $compId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to submit this payroll run for approval.'];
         }
         $run = $this->get($id, $compId);
@@ -5451,13 +5975,13 @@ class PayrollRunModel {
         if ($approvalRequestModel !== null) {
             $allowed = $approvalRequestModel->canActOnRequest($compId, (int)$run['approval_request_id'], $userId);
             if ($fromState === 'pending_approval') {
-                $allowed = $allowed || $this->userCan($userId, 'can_process_payroll', $isAdmin);
+                $allowed = $allowed || $this->userCan($userId, 'payroll_run.process', $isAdmin);
             }
         } elseif ($isAdmin) {
             $allowed = true;
         } else {
             $allowed = $fromState === 'pending_approval'
-                ? ($this->canApproveThisRun($userId, $isAdmin, $run) || $this->userCan($userId, 'can_process_payroll', $isAdmin))
+                ? ($this->canApproveThisRun($userId, $isAdmin, $run) || $this->userCan($userId, 'payroll_run.process', $isAdmin))
                 : $this->canApproveThisRun($userId, $isAdmin, $run);
         }
         if (!$allowed) {
@@ -5571,16 +6095,33 @@ class PayrollRunModel {
             approved_by = :approved_by, updated_by = :approved_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
         $stmt->execute([':approved_by' => $userId, ':id' => $id]);
         $this->logAudit($id, 'pending_approval', 'approved', 'approve', $userId, $note);
+        // 2026-09-02, Deduction Destination & Third-Party Remittance -- generates the run's
+        // remittance batches (company/other_person/employee_fallback groups) right after the state
+        // flip, confirmed trigger point via AskUserQuestion. Best-effort/non-blocking: a failure
+        // here must never undo an already-successful approval (same "wrapped in an outer try/catch"
+        // posture as PayslipDeliveryService::autoSendForRun() elsewhere in this app) -- surfaced as
+        // a warning appended to the success message instead, so an admin still sees it happened but
+        // the approval itself is never rolled back over a remittance-grouping issue.
+        require_once __DIR__ . '/PayrollRemittanceModel.php';
+        $remittanceWarning = '';
+        try {
+            $remittanceRes = (new PayrollRemittanceModel($this->db))->generateForRun($id, $compId, $userId);
+            if (!$remittanceRes['status']) {
+                $remittanceWarning = ' (Remittance grouping warning: ' . ($remittanceRes['message'] ?? 'unknown error') . ')';
+            }
+        } catch (Throwable $e) {
+            $remittanceWarning = ' (Remittance grouping warning: ' . $e->getMessage() . ')';
+        }
         // 2026-08-29, explicit request: "อนุมัติแล้วนะ ทำงานต่อเลยไหม" -- notifies whoever can actually
         // act on this next (Mark as Paid), not the approver themselves -- see NotificationModel's
         // own top-of-file docblock for the full recipient-resolution rationale per notification type.
         (new NotificationModel())->createForPermissionHolders(
-            $compId, 'can_finalize_payroll', 'approved_continue',
+            $compId, 'payroll_run.finalize', 'approved_continue',
             "งวด \"{$run['run_name']}\" ได้รับการอนุมัติแล้ว", "\"{$run['run_name']}\" has been approved",
             "ดำเนินการจ่ายต่อได้เลยครับ", "Ready to continue -- Mark as Paid when you're ready",
             "/payroll-process/{$id}", 'payroll_run', $id, null, 'fa-circle-check'
         );
-        return ['status' => true, 'message' => 'Approved.'];
+        return ['status' => true, 'message' => 'Approved.' . $remittanceWarning];
     }
 
     /**
@@ -5724,7 +6265,7 @@ class PayrollRunModel {
      *  can_process_payroll permission (the run owner, not the approver). No UI wired to this yet,
      *  same pre-existing gap reviseAfterReject() itself already has -- kept for API-surface parity. */
     public function reviseAfterNeedInfo(int $id, int $compId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to revise this payroll run.'];
         }
         $run = $this->get($id, $compId);
@@ -5741,7 +6282,7 @@ class PayrollRunModel {
     }
 
     public function cancel(int $id, int $compId, int $userId, bool $isAdmin, string $reason): array {
-        if (!$this->userCan($userId, 'can_approve_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.approve', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to cancel this payroll run.'];
         }
         if (trim($reason) === '') {
@@ -5772,7 +6313,7 @@ class PayrollRunModel {
     }
 
     public function reviseAfterReject(int $id, int $compId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_process_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to revise this payroll run.'];
         }
         $run = $this->get($id, $compId);
@@ -5789,7 +6330,7 @@ class PayrollRunModel {
     }
 
     public function markPaid(int $id, int $compId, int $userId, bool $isAdmin, array $data): array {
-        if (!$this->userCan($userId, 'can_finalize_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.finalize', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to mark this payroll run as paid.'];
         }
         $run = $this->get($id, $compId);
@@ -5908,7 +6449,7 @@ class PayrollRunModel {
     }
 
     public function lock(int $id, int $compId, int $userId, bool $isAdmin): array {
-        if (!$this->userCan($userId, 'can_finalize_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.finalize', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to lock this payroll run.'];
         }
         $run = $this->get($id, $compId);
@@ -5926,7 +6467,7 @@ class PayrollRunModel {
         // top-of-file docblock for why this goes to can_process_payroll holders (the people who'd
         // actually go pull the statutory/bank/payslip reports next).
         (new NotificationModel())->createForPermissionHolders(
-            $compId, 'can_process_payroll', 'lock_reminder_print',
+            $compId, 'payroll_run.process', 'lock_reminder_print',
             "งวด \"{$run['run_name']}\" ปิดรอบแล้ว", "\"{$run['run_name']}\" is now locked",
             "อย่าลืมปริ้นเอกสาร/รายงานที่จำเป็นสำหรับงวดนี้นะครับ", "Don't forget to print the reports/documents needed for this period",
             "/payroll-process/{$id}", 'payroll_run', $id, null, 'fa-print'
@@ -5970,7 +6511,7 @@ class PayrollRunModel {
      * change out from under them before they've looked.
      */
     public function reopen(int $id, int $compId, int $userId, bool $isAdmin, ?string $note = null): array {
-        if (!$this->userCan($userId, 'can_finalize_payroll', $isAdmin)) {
+        if (!$this->userCan($userId, 'payroll_run.finalize', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to reopen this payroll run.'];
         }
         $run = $this->get($id, $compId);

@@ -169,13 +169,13 @@
             </div>
             <div class="col-6 col-md-4 col-lg-3">
               <label class="form-label mb-1" data-i18n="recipient">Recipient</label>
-              <input type="text" class="form-control" id="emailQueueFilterToAddress" autocomplete="off">
+              <input type="text" class="form-control" id="emailQueueFilterToAddress" autocomplete="off" data-i18n="email_filter_placeholder" placeholder="e.g., name@company.com">
             </div>
           </div>
         </div>
       </div>
-      <div class="d-flex justify-content-end mb-3">
-        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearEmailQueueFilter">
+      <div class="station-filter-clear-row d-none" id="emailQueueFilterClearRow">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmailQueueFilter">
           <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
         </button>
       </div>

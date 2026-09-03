@@ -130,13 +130,16 @@ class NotificationController extends Controller {
         $this->json($this->model->saveEmployeePreferences($employeeId, $preferences, $employeeId));
     }
 
-    /** Admin role-default matrix -- same `rbac.manage` permission gate as PermissionController's
-     *  own matrix()/save() (this is a role-config concern for the same admin audience). */
-    private function requireRbacManage(int $compId): bool {
+    /** Admin role-default matrix -- same `rbac.*` permission gate as PermissionController's own
+     *  matrix()/save() (this is a role-config concern for the same admin audience). 2026-09-03,
+     *  Phase 3 Stage 3: swapped off the retired coarse `.manage`, parameterized so the read
+     *  (roleMatrixGet) and write (roleMatrixSave) sides can check `rbac.view`/`rbac.edit`
+     *  respectively. */
+    private function requireRbacPermission(int $compId, string $permissionKey): bool {
         if ($this->isAdmin()) {
             return true;
         }
-        $check = (new PermissionModel())->checkPermission($this->employeeId(), 'rbac.manage', $this->isAdmin(), $compId);
+        $check = (new PermissionModel())->checkPermission($this->employeeId(), $permissionKey, $this->isAdmin(), $compId);
         if (!$check['allowed']) {
             $this->json(['status' => false, 'message' => 'You do not have permission to manage roles & permissions.']);
             return false;
@@ -146,13 +149,13 @@ class NotificationController extends Controller {
 
     public function roleMatrixGet() {
         $compId = (int)getCompId();
-        if (!$compId || !$this->requireRbacManage($compId)) return;
+        if (!$compId || !$this->requireRbacPermission($compId, 'rbac.view')) return;
         $this->json(['status' => true, 'data' => $this->model->roleMatrix($compId)]);
     }
 
     public function roleMatrixSave() {
         $compId = (int)getCompId();
-        if (!$compId || !$this->requireRbacManage($compId)) return;
+        if (!$compId || !$this->requireRbacPermission($compId, 'rbac.edit')) return;
         $data = json_decode(file_get_contents('php://input') ?: '{}', true);
         if (!is_array($data) || !isset($data['grants']) || !is_array($data['grants'])) {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
