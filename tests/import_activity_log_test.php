@@ -61,10 +61,10 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'บันทึก', 'Test', 'Logger', '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address', 'Emergency', 'Contact', 'friend', '0899999999',
-         '2020-01-01', 'permanent', 'full_time', 'office', 'manual', 'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')")
+         '2020-01-01', 'permanent', 'full_time', 'office', 'manual', 'monthly', 30000, '2020-01-01', 'average', 'active')")
         ->execute([':comp_id' => $compId, ':employee_no' => 'IAL_LOGGER_' . uniqid(), ':email' => uniqid() . '@test.local']);
     $realEmployeeId = (int)$pdo->lastInsertId();
 

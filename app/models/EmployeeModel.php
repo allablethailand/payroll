@@ -1,10 +1,16 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/EmployeeOtRateModel.php';
+require_once __DIR__ . '/PayrollPolicyModel.php';
+require_once __DIR__ . '/EmployeePaymentMethodModel.php';
+require_once __DIR__ . '/EmployeeForeignWorkerDetailModel.php';
+require_once __DIR__ . '/AuditLogModel.php';
 class EmployeeModel {
     private $db;
+    private AuditLogModel $auditLog;
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /** Same traversal-proofing pattern as CompanyProfileModel::isValidLogoPath()/
@@ -54,11 +60,16 @@ class EmployeeModel {
     private function allColumns(): array {
         return [
             'employee_no', 'profile_photo_path',
+            // 2026-09-03, Platform Hardening Phase 5A/5B: file_size persisted for every upload site
+            // app-wide; thumbnail_path additionally set for profile photos (jpg/png only -- GD
+            // cannot rasterize SVG, so an SVG-uploaded photo leaves this NULL) -- see
+            // ThumbnailGenerator's own docblock.
+            'profile_photo_file_size', 'profile_photo_thumbnail_path',
             // 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้"
             // -- uploaded via a separate endpoint (EmployeeController::uploadSignature(), same
             // upload-then-hidden-field convention as Company Profile's own signature_path), plain
             // passthrough column here like profile_photo_path above.
-            'signature_path',
+            'signature_path', 'signature_file_size',
             // 2026-08-30 (Phase 3, T020, explicit request: field "จ่าย/ไม่จ่ายเงินเดือน", default = จ่าย)
             // -- boolean, see booleanColumns() below. 0 excludes this employee from payroll entirely
             // (missingPayrollFields()/calculateCompleteness() below, PayrollRunModel eligibility for
@@ -67,7 +78,19 @@ class EmployeeModel {
             'employee_type', 'employee_status', 'title', 'gender', 'name_th', 'surname_th', 'name_en', 'surname_en',
             'nickname_th', 'nickname_en', 'date_of_birth', 'nationality', 'religion', 'marital_status', 'military_status',
             'id_card_no', 'id_card_expire_date', 'tax_id_no', 'passport_no', 'passport_expire_date',
-            'work_permit_no', 'date_work_permit_issue', 'date_work_permit_expire', 'visa_type', 'date_visa_expire',
+            // 2026-09-02, extends the earlier Origami candidates.php field batch (passport_no/
+            // work_permit_no/visa_type already existed) -- field shapes confirmed directly from
+            // Origami's own candidates.php source (passport{}/visa{}/work_permit{} blocks), not
+            // guessed. Not encrypted -- same tier as work_permit_no (a plain ID-ish field, not
+            // id_card_no/tax_id_no/passport_no's own encrypted tier).
+            'passport_issued_place', 'passport_issue_date',
+            'work_permit_no', 'date_work_permit_issue', 'date_work_permit_expire', 'work_permit_issued_place',
+            'visa_type', 'visa_no', 'visa_issued_place', 'visa_issue_date', 'date_visa_expire',
+            // 2026-09-02, explicit request following an AskUserQuestion exchange: a plain
+            // per-employee flag, only affects PIT withholding when the company enables + configures
+            // a flat rate in Tax & Statutory settings (NonResidentTaxSettingModel) -- see that
+            // model's own docblock. Boolean, see booleanColumns() below.
+            'tax_non_resident',
             'company_email', 'office_tel', 'send_signin_email', 'personal_email', 'mobile_no', 'mobile_country_code', 'send_preboarding_email', 'line_id',
             'address_line_1_register', 'address_line_2_register', 'master_address_id_register',
             'use_register_address', 'address_line_1_contact', 'address_line_2_contact', 'master_address_id_contact',
@@ -82,11 +105,34 @@ class EmployeeModel {
             // 2026-08-31, explicit request: internship pay conditions -- per-employee override of
             // company_payroll_policies.intern_base_salary_ratio (Salary tab, only meaningful/shown
             // while employment_type=internship). NULL = no override, use the company default.
-            'employment_type', 'intern_base_salary_ratio_override', 'report_to_id', 'date_contract_expire',
+            // 2026-09-02, explicit request: Probation never had the per-employee ratio override
+            // Internship already has -- same "NULL = use company default" convention.
+            'employment_type', 'employment_type_id', 'intern_base_salary_ratio_override', 'probation_base_salary_ratio_override',
+            // 2026-09-02, follow-up to close a review-flagged gap: "ตั้งค่าแยกเฉพาะบุคคลนี้" must cover
+            // EVERY field the company policy has ("ครบทุกช่อง ไม่ตัดทอน"), not just the ratio -- see
+            // each column's own migration comment for the NULL="use company default" convention.
+            'probation_defer_pvd_override', 'probation_defer_sso_override', 'probation_defer_recurring_earning_override',
+            'probation_leave_days_limit_override', 'probation_allow_leave_override', 'probation_period_days_override',
+            'intern_defer_pvd_override', 'intern_defer_sso_override', 'intern_defer_recurring_earning_override',
+            'intern_leave_days_limit_override', 'intern_allow_leave_override', 'intern_period_days_override',
+            'report_to_id', 'date_contract_expire',
             'holiday_calendar_id', 'driver_license_no', 'workforce_type', 'record_time_method',
-            'payment_type', 'bank_id', 'bank_account_no', 'bank_account_name', 'bank_branch',
+            // 2026-09-02, explicit request: payment method type (transfer/cash/check/mixed) --
+            // payment_method_id (master_payment_methods lookup) is the source of truth. The old
+            // employees.payment_type enum('bank','cash') mirror this was kept-in-sync with (as a
+            // migration bridge) has since been DROPPED entirely (see
+            // database/migrations/2026-09-02_19_drop_legacy_payment_type.sql) -- every read site
+            // that used to fall back to it now reads payment_method_code (joined from
+            // master_payment_methods) instead.
+            'payment_method_id', 'bank_id', 'bank_account_no', 'bank_account_name', 'bank_branch',
+            // 2026-09-02, explicit request: "ในหน้าพนักงาน ก็ต้องมี Tab setup ส่วนนี้เพิ่มเติมว่ารับเงิน
+            // ผ่านบัญชีไหน" -- which of the COMPANY's own settlement accounts (bank_accounts) normally
+            // pays this employee, NOT bank_id above (the employee's own personal receiving account).
+            // Optional -- see PayrollRunEmployeeBankAccountModel::resolveForRun()'s own docblock for
+            // the full precedence chain this feeds into.
+            'default_bank_account_id',
             'salary_type', 'base_salary_amount', 'salary_effective_date', 'ot_eligible', 'ot_rate_source', 'tax_calculation_method', 'tax_exempt',
-            'sso_enrolled', 'sso_no', 'sso_hospital_id', 'sso_start_date', 'sso_contribution_rate',
+            'sso_enrolled', 'sso_no', 'sso_hospital_id', 'sso_start_date', 'sso_contribution_rate', 'sso_employer_contribution_rate',
             'pvd_enrolled', 'pvd_fund_name', 'pvd_start_date', 'pvd_employee_rate', 'pvd_employer_rate',
             'insurance_plan_id', 'insurance_start_date',
             'has_spouse', 'spouse_name', 'spouse_id_card_no',
@@ -95,13 +141,14 @@ class EmployeeModel {
 
     private function booleanColumns(): array {
         return ['send_signin_email', 'send_preboarding_email', 'use_register_address', 'ot_eligible', 'tax_exempt',
-                'sso_enrolled', 'pvd_enrolled', 'has_spouse', 'is_payroll_participant'];
+                'sso_enrolled', 'pvd_enrolled', 'has_spouse', 'is_payroll_participant', 'tax_non_resident'];
     }
 
     private function intColumns(): array {
         return ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id', 'cycle_id',
-                'report_to_id', 'holiday_calendar_id', 'bank_id', 'sso_hospital_id', 'insurance_plan_id',
-                'master_address_id_register', 'master_address_id_contact'];
+                'report_to_id', 'holiday_calendar_id', 'bank_id', 'default_bank_account_id', 'payment_method_id', 'sso_hospital_id', 'insurance_plan_id',
+                'master_address_id_register', 'master_address_id_contact', 'employment_type_id',
+                'profile_photo_file_size', 'signature_file_size'];
     }
 
     /**
@@ -155,7 +202,7 @@ class EmployeeModel {
             'employee_no', 'employee_type', 'employee_status', 'title', 'gender', 'name_th', 'name_en',
             'date_of_birth', 'nationality', 'personal_email', 'mobile_no',
             'department_id', 'position_id', 'branch_id',
-            'employment_date', 'employment_status', 'employment_type', 'payment_type',
+            'employment_date', 'employment_status', 'employment_type', 'payment_method_id',
             'salary_type', 'base_salary_amount', 'salary_effective_date', 'tax_calculation_method',
         ];
     }
@@ -192,7 +239,7 @@ class EmployeeModel {
             'date_of_birth', 'nationality', 'id_card_no', 'tax_id_no', 'passport_no', 'work_permit_no',
             'personal_email', 'mobile_no', 'line_id',
             'department_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id',
-            'employment_date', 'payment_type', 'bank_id', 'bank_account_no',
+            'employment_date', 'payment_method_id', 'bank_id', 'bank_account_no',
             'salary_type', 'base_salary_amount', 'salary_effective_date', 'tax_calculation_method',
             'sso_enrolled', 'sso_no', 'has_spouse', 'spouse_name',
         ];
@@ -238,10 +285,36 @@ class EmployeeModel {
      * describe. Required columns ARE included despite always being non-empty on a normally-saved
      * record -- what makes them discriminating here is isCompletenessValueFilled() rejecting the
      * placeholder sentinels a sync-created employee starts with, not the field being optional.
-     * Conditional checks (identification shape by employee_type, bank details only when
-     * payment_type='bank', SSO/spouse detail only when that enrollment/checkbox is on) adapt the
-     * checklist per employee rather than penalizing a field that plainly doesn't apply to them.
+     * Conditional checks (identification shape by employee_type, bank details only when the
+     * resolved payment method is transfer/mixed, SSO/spouse detail only when that enrollment/
+     * checkbox is on) adapt the checklist per employee rather than penalizing a field that plainly
+     * doesn't apply to them.
      */
+    /**
+     * 2026-09-02, follow-up cleanup: employees.payment_type (the legacy enum mirror) has been
+     * dropped entirely (see database/migrations/2026-09-02_19_drop_legacy_payment_type.sql) --
+     * calculateCompleteness()'s own bankOk check below (and a couple of other per-row readers
+     * elsewhere in this file) need to know which master_payment_methods CODE a raw
+     * payment_method_id resolves to, without either hardcoding the seeded ids (fragile) or joining
+     * master_payment_methods into every list()/recheckList() SELECT (real per-row query cost for a
+     * tiny, effectively-static lookup table). Fetched once per request and cached on the instance --
+     * this table only ever has a handful of rows (see its own migration's seed).
+     */
+    private ?array $paymentMethodCodesById = null;
+    private function paymentMethodCode(?int $methodId): ?string {
+        if ($methodId === null) {
+            return null;
+        }
+        if ($this->paymentMethodCodesById === null) {
+            $this->paymentMethodCodesById = [];
+            $stmt = $this->db->query("SELECT id, code FROM `master_payment_methods`");
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $this->paymentMethodCodesById[(int)$row['id']] = (string)$row['code'];
+            }
+        }
+        return $this->paymentMethodCodesById[$methodId] ?? null;
+    }
+
     public function calculateCompleteness(array $e): array {
         // 2026-08-30 (T020) -- payroll-specific checklist items (bank details within Employment,
         // and the whole Salary/Social Security/Family-Tax Allowance tabs) auto-pass for a staff-only
@@ -276,7 +349,12 @@ class EmployeeModel {
             $this->isCompletenessValueFilled($e['mobile_no'] ?? null),
             $this->isCompletenessValueFilled($e['line_id'] ?? null),
         ]);
-        $bankOk = !$isPayrollParticipant || ($e['payment_type'] ?? null) !== 'bank'
+        // 2026-09-02: bank details are required whenever the resolved method is 'transfer' or
+        // 'mixed' (a mixed set might route through transfer -- see detail.js's own
+        // applyPaymentMethodVisibility(), which shows the same #sectionBankPayment fields for
+        // both), not just an exact 'bank' string match against the now-dropped legacy column.
+        $resolvedPaymentMethodCode = $this->paymentMethodCode(isset($e['payment_method_id']) ? (int)$e['payment_method_id'] : null);
+        $bankOk = !$isPayrollParticipant || !in_array($resolvedPaymentMethodCode, ['transfer', 'mixed'], true)
             ? true
             : ($this->isCompletenessValueFilled($e['bank_id'] ?? null) && $this->isCompletenessValueFilled($e['bank_account_no'] ?? null));
         $tabs['employment'] = $this->scoreChecklist([
@@ -318,7 +396,7 @@ class EmployeeModel {
             'personal_email' => 'contact', 'mobile_no' => 'contact',
             'department_id' => 'employment', 'position_id' => 'employment', 'branch_id' => 'employment',
             'employment_date' => 'employment', 'employment_status' => 'employment', 'employment_type' => 'employment',
-            'payment_type' => 'employment', 'bank_id' => 'employment', 'bank_account_no' => 'employment',
+            'payment_method_id' => 'employment', 'bank_id' => 'employment', 'bank_account_no' => 'employment',
             'salary_type' => 'salary', 'base_salary_amount' => 'salary', 'salary_effective_date' => 'salary', 'tax_calculation_method' => 'salary',
         ];
     }
@@ -367,7 +445,10 @@ class EmployeeModel {
         } elseif (empty($values['id_card_no'])) {
             $missing[] = 'id_card_no';
         }
-        if (($values['payment_type'] ?? null) === 'bank') {
+        // 2026-09-02: resolved via payment_method_id (employees.payment_type, the old enum mirror,
+        // has been dropped -- see this file's own paymentMethodCode() docblock).
+        $missingFieldsPaymentMethodCode = $this->paymentMethodCode(isset($values['payment_method_id']) ? (int)$values['payment_method_id'] : null);
+        if (in_array($missingFieldsPaymentMethodCode, ['transfer', 'mixed'], true)) {
             if (empty($values['bank_id'])) $missing[] = 'bank_id';
             if (empty($values['bank_account_no'])) $missing[] = 'bank_account_no';
         }
@@ -719,12 +800,13 @@ class EmployeeModel {
         }
         // Conditional fields missingPayrollFields() also evaluates but that aren't in
         // requiredColumns() itself (identification shape varies by employee_type, bank details only
-        // apply when payment_type='bank') -- surfaced as their own columns too, same reasoning
-        // calculateCompleteness() already applies for these exact 2 conditions.
+        // apply when the resolved payment method is transfer/mixed) -- surfaced as their own
+        // columns too, same reasoning calculateCompleteness() already applies for these exact 2
+        // conditions.
         $extra = (($e['employee_type'] ?? 'domestic') === 'foreigner')
             ? ['tax_id_no', 'passport_no', 'work_permit_no']
             : ['id_card_no'];
-        if (($e['payment_type'] ?? null) === 'bank') {
+        if (in_array($this->paymentMethodCode(isset($e['payment_method_id']) ? (int)$e['payment_method_id'] : null), ['transfer', 'mixed'], true)) {
             $extra = array_merge($extra, ['bank_id', 'bank_account_no']);
         }
         $result = [];
@@ -736,8 +818,8 @@ class EmployeeModel {
 
     /** Every column fieldReadiness() might read across BOTH the domestic and foreigner paths, plus
      *  bank details -- the fixed SELECT list recheckList() below always pulls, regardless of any one
-     *  row's own employee_type/payment_type (which branch fieldReadiness() actually uses at render
-     *  time). Deliberately a superset, not conditional per-row -- one query, same shape every time. */
+     *  row's own employee_type/payment_method_id (which branch fieldReadiness() actually uses at
+     *  render time). Deliberately a superset, not conditional per-row -- one query, same shape every time. */
     private function recheckColumns(): array {
         return array_values(array_unique(array_merge($this->requiredColumns(), [
             'id_card_no', 'tax_id_no', 'passport_no', 'work_permit_no', 'bank_id', 'bank_account_no',
@@ -814,21 +896,23 @@ class EmployeeModel {
         $data = $dataStmt->fetchAll(PDO::FETCH_ASSOC);
 
         // 2026-08-30, explicit request: "ในข้อมูลบัญชีธนาคาร ให้บอกประเภทการจ่ายเงิน เป็นเงินสุด หรือบัญชี ถ้า
-        // บัญชี มีเลขบัญชีหรือยัง" -- the Bank Details column needs payment_type's RAW value (cash vs
-        // bank), not just its readiness boolean, to render that distinction -- excluded from the
-        // strip list below same as employee_no is, for the same reason (frontend display need).
+        // บัญชี มีเลขบัญชีหรือยัง" -- the Bank Details column needs the resolved payment method CODE
+        // (cash/transfer/check/mixed), not just its readiness boolean, to render that distinction --
+        // computed below via the same cached paymentMethodCode() lookup save()/get() already use.
         $otSummaryByEmployee = (new EmployeeOtRateModel($this->db))->summaryForEmployees($data, $compId);
 
-        // 'employee_no'/'payment_type' are deliberately excluded from the strip list below -- both
-        // are also recheckColumns()/requiredColumns() entries (needed by fieldReadiness()'s presence
-        // check), but the frontend needs their raw values too (employee_no for row identity/display,
-        // already aliased in via $exprMap above under the exact same key; payment_type for the Bank
-        // Details column's cash-vs-bank display, see above). key_version/ot_eligible/ot_rate_source
-        // are added to the strip list (never needed raw by the frontend -- ot_summary below already
-        // carries everything the UI needs from them).
-        $rawColsToStrip = array_merge(array_diff($recheckCols, ['employee_no', 'payment_type']), ['key_version', 'ot_eligible', 'ot_rate_source', 'team_id', 'assigned_ot_rate_set_id', 'sso_enrolled', 'sso_no']);
+        // 'employee_no'/'payment_method_id' are deliberately excluded from the strip list below --
+        // both are also recheckColumns()/requiredColumns() entries (needed by fieldReadiness()'s
+        // presence check), but the frontend needs their raw values too (employee_no for row identity/
+        // display, already aliased in via $exprMap above under the exact same key; payment_method_id
+        // so the Recheck edit modal can pre-select it, and so payment_method_code -- computed below --
+        // can drive the Bank Details column's cash-vs-transfer display). key_version/ot_eligible/
+        // ot_rate_source are added to the strip list (never needed raw by the frontend -- ot_summary
+        // below already carries everything the UI needs from them).
+        $rawColsToStrip = array_merge(array_diff($recheckCols, ['employee_no', 'payment_method_id']), ['key_version', 'ot_eligible', 'ot_rate_source', 'team_id', 'assigned_ot_rate_set_id', 'sso_enrolled', 'sso_no']);
         foreach ($data as &$row) {
             $row['base_salary_amount'] = self::decryptSalaryValue($row['base_salary_amount'] ?? null, isset($row['key_version']) ? (int)$row['key_version'] : null);
+            $row['payment_method_code'] = $this->paymentMethodCode(isset($row['payment_method_id']) ? (int)$row['payment_method_id'] : null);
             $row['field_readiness'] = $this->fieldReadiness($row, $isThCompany);
             $row['is_ready'] = !in_array(false, $row['field_readiness'], true);
             $row['ot_summary'] = $otSummaryByEmployee[(int)$row['id']] ?? null;
@@ -1043,6 +1127,577 @@ class EmployeeModel {
     }
 
     /**
+     * Headcount Movement report (2026-09-02, explicit request: "Report คนเข้าคนออกประจำเดือน ประจำปี"),
+     * Phase 1 of the Employee Reports plan. Scoped to ONE calendar year at a time (the year picker is
+     * the primary filter -- a monthly BREAKDOWN of that year is what the `by_month` series below is
+     * for, so there's no separate "month mode"). `hired` = `employment_date` falls in the year;
+     * `exited` = `employment_end_date` falls in the year AND `employment_status` is resigned/
+     * terminated (an employment_end_date can exist without a status change yet in edge cases -- only
+     * counting the 2 real "left the company" statuses avoids over-counting). Unlike
+     * standingSummaryList() above, this deliberately does NOT filter to `is_payroll_participant=1`
+     * -- headcount movement is an HR metric about every real employee, not a payroll-specific one.
+     *
+     * `turnover_rate` uses the standard (exits ÷ average headcount) formula -- average headcount
+     * approximated as (headcount at the START of the year + headcount at the END of the year) / 2,
+     * each a point-in-time snapshot (`employment_date <= X AND (employment_end_date IS NULL OR
+     * employment_end_date >= X)`), the simplest defensible average without needing a full daily
+     * headcount time series. 0 when the average headcount itself is 0 (a brand-new company with no
+     * headcount yet that year) -- never divides by zero.
+     *
+     * @param array $filters {department_id?: int, branch_id?: int}
+     * @return array{summary: array, by_month: array<int,array{month:int,hires:int,exits:int}>, events: array}
+     */
+    public function headcountMovementReport(int $compId, int $year, array $filters = []): array {
+        $yearStart = sprintf('%04d-01-01', $year);
+        $yearEnd = sprintf('%04d-12-31', $year);
+
+        $extraWhere = '';
+        $extraParams = [];
+        if (!empty($filters['department_id'])) {
+            $extraWhere .= ' AND department_id = :department_id';
+            $extraParams[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['branch_id'])) {
+            $extraWhere .= ' AND branch_id = :branch_id';
+            $extraParams[':branch_id'] = (int)$filters['branch_id'];
+        }
+
+        // ---------- Monthly hires/exits breakdown ----------
+        $hiresStmt = $this->db->prepare("SELECT MONTH(employment_date) AS m, COUNT(*) AS c
+            FROM `employees`
+            WHERE comp_id = :comp_id AND deleted_at IS NULL
+              AND employment_date BETWEEN :year_start AND :year_end
+              {$extraWhere}
+            GROUP BY MONTH(employment_date)");
+        $hiresStmt->execute(array_merge([':comp_id' => $compId, ':year_start' => $yearStart, ':year_end' => $yearEnd], $extraParams));
+        $hiresByMonth = array_fill(1, 12, 0);
+        foreach ($hiresStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $hiresByMonth[(int)$row['m']] = (int)$row['c'];
+        }
+
+        $exitsStmt = $this->db->prepare("SELECT MONTH(employment_end_date) AS m, COUNT(*) AS c
+            FROM `employees`
+            WHERE comp_id = :comp_id AND deleted_at IS NULL
+              AND employment_end_date BETWEEN :year_start AND :year_end
+              AND employment_status IN ('resigned', 'terminated')
+              {$extraWhere}
+            GROUP BY MONTH(employment_end_date)");
+        $exitsStmt->execute(array_merge([':comp_id' => $compId, ':year_start' => $yearStart, ':year_end' => $yearEnd], $extraParams));
+        $exitsByMonth = array_fill(1, 12, 0);
+        foreach ($exitsStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $exitsByMonth[(int)$row['m']] = (int)$row['c'];
+        }
+
+        $byMonth = [];
+        for ($m = 1; $m <= 12; $m++) {
+            $byMonth[] = ['month' => $m, 'hires' => $hiresByMonth[$m], 'exits' => $exitsByMonth[$m]];
+        }
+        $totalHires = array_sum($hiresByMonth);
+        $totalExits = array_sum($exitsByMonth);
+
+        // ---------- Average headcount + turnover rate ----------
+        // Real bug caught by this method's own test before shipping: "still active as of date X"
+        // must use the SAME authoritative signal the exits count above uses
+        // (`employment_status IN ('resigned','terminated')`), not a raw `employment_end_date`
+        // presence/date check -- an employee can have `employment_end_date` SET (e.g. a
+        // future-planned date entered ahead of time) while their `employment_status` hasn't
+        // actually changed yet, and that person is still genuinely employed. The first draft here
+        // only checked the date, disagreeing with the exits definition for exactly that case and
+        // producing a headcount snapshot inconsistent with its own hires/exits numbers.
+        $headcountAsOf = function (string $asOfDate) use ($compId, $extraWhere, $extraParams): int {
+            $stmt = $this->db->prepare("SELECT COUNT(*) FROM `employees`
+                WHERE comp_id = :comp_id AND deleted_at IS NULL
+                  AND employment_date <= :as_of
+                  AND (
+                    employment_status NOT IN ('resigned', 'terminated')
+                    OR employment_end_date >= :as_of2
+                  )
+                  {$extraWhere}");
+            $stmt->execute(array_merge([':comp_id' => $compId, ':as_of' => $asOfDate, ':as_of2' => $asOfDate], $extraParams));
+            return (int)$stmt->fetchColumn();
+        };
+        $headcountStart = $headcountAsOf($yearStart);
+        $headcountEnd = $headcountAsOf($yearEnd);
+        $avgHeadcount = ($headcountStart + $headcountEnd) / 2;
+        $turnoverRate = $avgHeadcount > 0 ? round(($totalExits / $avgHeadcount) * 100, 2) : 0.0;
+
+        // ---------- Individual movement events (hires + exits, for the detail table) ----------
+        // A UNION ALL of 2 near-identical SELECT halves -- real bug caught before shipping: this
+        // driver does NOT have emulated prepares on in this environment (confirmed empirically by
+        // this exact query throwing "Invalid parameter number: number of bound variables does not
+        // match number of tokens" the first time a filter was applied -- PDO::ATTR_EMULATE_PREPARES
+        // isn't overridden anywhere in app/core/Database.php, but the underlying driver still treats
+        // each occurrence of a named placeholder as its OWN token when natively preparing, unlike
+        // the commonly-assumed "PDO substitutes one bound value into every occurrence" behavior).
+        // Every placeholder that appears in BOTH halves of the UNION is therefore given a distinct
+        // '1'/'2' suffix per half, bound separately, rather than reused.
+        $nameExpr = "CONCAT(e.name_th, ' ', e.surname_th)";
+        // Built directly from $filters (not by transforming the $extraWhere string above) --
+        // chaining str_replace('department_id' -> 'e.department_id') after suffixing the
+        // placeholder to ':department_id1' would ALSO rewrite that placeholder's own text (it
+        // contains "department_id" as a substring), corrupting it into ':e.department_id1'. Simpler
+        // and safer to just rebuild both qualified/suffixed WHERE fragments from scratch here.
+        $extraWhereQualified1 = '';
+        $extraWhereQualified2 = '';
+        if (!empty($filters['department_id'])) {
+            $extraWhereQualified1 .= ' AND e.department_id = :department_id1';
+            $extraWhereQualified2 .= ' AND e.department_id = :department_id2';
+        }
+        if (!empty($filters['branch_id'])) {
+            $extraWhereQualified1 .= ' AND e.branch_id = :branch_id1';
+            $extraWhereQualified2 .= ' AND e.branch_id = :branch_id2';
+        }
+        $eventsStmt = $this->db->prepare("
+            SELECT e.employee_no, {$nameExpr} AS name, d.department_name_th, d.department_name_en,
+                   b.branch_name_th, b.branch_name_en, 'hire' AS movement_type, e.employment_date AS event_date
+            FROM `employees` e
+            LEFT JOIN `structure_departments` d ON e.department_id = d.id
+            LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+            WHERE e.comp_id = :comp_id1 AND e.deleted_at IS NULL
+              AND e.employment_date BETWEEN :year_start1 AND :year_end1
+              {$extraWhereQualified1}
+            UNION ALL
+            SELECT e.employee_no, {$nameExpr} AS name, d.department_name_th, d.department_name_en,
+                   b.branch_name_th, b.branch_name_en, 'exit' AS movement_type, e.employment_end_date AS event_date
+            FROM `employees` e
+            LEFT JOIN `structure_departments` d ON e.department_id = d.id
+            LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+            WHERE e.comp_id = :comp_id2 AND e.deleted_at IS NULL
+              AND e.employment_end_date BETWEEN :year_start2 AND :year_end2
+              AND e.employment_status IN ('resigned', 'terminated')
+              {$extraWhereQualified2}
+            ORDER BY event_date ASC");
+        $eventsParams = [
+            ':comp_id1' => $compId, ':year_start1' => $yearStart, ':year_end1' => $yearEnd,
+            ':comp_id2' => $compId, ':year_start2' => $yearStart, ':year_end2' => $yearEnd,
+        ];
+        foreach ($extraParams as $key => $val) {
+            $eventsParams[$key . '1'] = $val;
+            $eventsParams[$key . '2'] = $val;
+        }
+        $eventsStmt->execute($eventsParams);
+        $events = $eventsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        return [
+            'summary' => [
+                'total_hires' => $totalHires,
+                'total_exits' => $totalExits,
+                'net_change' => $totalHires - $totalExits,
+                'turnover_rate' => $turnoverRate,
+                'headcount_start' => $headcountStart,
+                'headcount_end' => $headcountEnd,
+            ],
+            'by_month' => $byMonth,
+            'events' => $events,
+        ];
+    }
+
+    /**
+     * Contract/Work Permit/Visa/Passport Expiry report (2026-09-02, Phase 2 of the Employee Reports
+     * plan) -- the single highest-value item in that phase: `date_contract_expire`/
+     * `date_work_permit_expire`/`date_visa_expire`/`passport_expire_date` have sat fully populated
+     * (2026-09-02 sync field batch) and completely unsurfaced as a report until now. Returns ONE ROW
+     * PER EXPIRING DATE (not per employee) -- an employee with both a contract and a work permit
+     * expiring shows as 2 rows -- so the list can be sorted purely by urgency (soonest/most-overdue
+     * first) across every category at once, matching how an HR admin actually triages this.
+     * Deliberately has NO lower bound on how far in the past an expiry can be -- an already-expired
+     * item stays listed (negative `days_remaining`) until the underlying date is actually updated,
+     * since that's a real, still-unresolved compliance gap, not something to silently drop off a list.
+     *
+     * @param array $filters {department_id?: int, branch_id?: int}
+     * @return array{items: array, counts: array{contract:int, work_permit:int, visa:int, passport:int}}
+     */
+    public function expiryReport(int $compId, int $withinDays, array $filters = []): array {
+        $cutoff = date('Y-m-d', strtotime("+{$withinDays} days"));
+        $today = date('Y-m-d');
+
+        $extraWhere = '';
+        $extraParams = [];
+        if (!empty($filters['department_id'])) {
+            $extraWhere .= ' AND e.department_id = :department_id';
+            $extraParams[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['branch_id'])) {
+            $extraWhere .= ' AND e.branch_id = :branch_id';
+            $extraParams[':branch_id'] = (int)$filters['branch_id'];
+        }
+
+        $nameExpr = "CONCAT(e.name_th, ' ', e.surname_th)";
+        $dateColumns = [
+            'contract' => 'date_contract_expire',
+            'work_permit' => 'date_work_permit_expire',
+            'visa' => 'date_visa_expire',
+            'passport' => 'passport_expire_date',
+        ];
+        // Each category is its OWN prepared statement (not one big UNION ALL) -- simpler and avoids
+        // the duplicate-named-placeholder pitfall headcountMovementReport() above already documents
+        // hitting (this driver does not dedupe repeated named placeholders across a single
+        // statement) without needing manually-suffixed placeholder names for 4 categories at once.
+        $items = [];
+        $counts = ['contract' => 0, 'work_permit' => 0, 'visa' => 0, 'passport' => 0];
+        foreach ($dateColumns as $type => $col) {
+            $stmt = $this->db->prepare("
+                SELECT e.employee_no, {$nameExpr} AS name, d.department_name_th, d.department_name_en,
+                       b.branch_name_th, b.branch_name_en, e.{$col} AS expiry_date
+                FROM `employees` e
+                LEFT JOIN `structure_departments` d ON e.department_id = d.id
+                LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+                  AND e.{$col} IS NOT NULL AND e.{$col} <= :cutoff
+                  {$extraWhere}
+                ORDER BY e.{$col} ASC");
+            $stmt->execute(array_merge([':comp_id' => $compId, ':cutoff' => $cutoff], $extraParams));
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $counts[$type] = count($rows);
+            foreach ($rows as $row) {
+                $row['expiry_type'] = $type;
+                $row['days_remaining'] = (int)((strtotime($row['expiry_date']) - strtotime($today)) / 86400);
+                $items[] = $row;
+            }
+        }
+        usort($items, fn($a, $b) => strcmp($a['expiry_date'], $b['expiry_date']));
+
+        return ['items' => $items, 'counts' => $counts];
+    }
+
+    /**
+     * Probation Status report (2026-09-02, Phase 2 of the Employee Reports plan). Ordered by
+     * `employment_date` ascending (longest-waiting first). **No "days until due" column** --
+     * confirmed via AskUserQuestion: no probation-period-LENGTH setting exists anywhere in this
+     * schema (per-company or per-employee), so a due date can't be computed without guessing a
+     * number; ships "days on probation so far" only. Revisit if a future request adds a real
+     * probation-length setting to build the due-date column against.
+     *
+     * @param array $filters {department_id?: int, branch_id?: int}
+     */
+    public function probationReport(int $compId, array $filters = []): array {
+        $extraWhere = '';
+        $extraParams = [];
+        if (!empty($filters['department_id'])) {
+            $extraWhere .= ' AND e.department_id = :department_id';
+            $extraParams[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['branch_id'])) {
+            $extraWhere .= ' AND e.branch_id = :branch_id';
+            $extraParams[':branch_id'] = (int)$filters['branch_id'];
+        }
+        $nameExpr = "CONCAT(e.name_th, ' ', e.surname_th)";
+        $stmt = $this->db->prepare("
+            SELECT e.employee_no, {$nameExpr} AS name, d.department_name_th, d.department_name_en,
+                   b.branch_name_th, b.branch_name_en, e.employment_date
+            FROM `employees` e
+            LEFT JOIN `structure_departments` d ON e.department_id = d.id
+            LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+              AND e.employment_status = 'probation'
+              {$extraWhere}
+            ORDER BY e.employment_date ASC");
+        $stmt->execute(array_merge([':comp_id' => $compId], $extraParams));
+        $today = date('Y-m-d');
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$row) {
+            $row['days_on_probation'] = (int)((strtotime($today) - strtotime($row['employment_date'])) / 86400);
+        }
+        unset($row);
+        return ['items' => $rows, 'count' => count($rows)];
+    }
+
+    /**
+     * SSO/PVD Enrollment report (2026-09-02, Phase 2 of the Employee Reports plan) -- "which people
+     * are/aren't enrolled," distinct from the existing statutory SSO 1-10 FORM exports
+     * (`app/services/reports/statutory/th/Sso110Report.php` etc, which are government filing
+     * documents, not a plain roster). Only counts employees whose `employment_status` isn't
+     * resigned/terminated -- enrollment status of someone who's already left is not an actionable
+     * "should this person be enrolled" question the way it is for a current employee.
+     *
+     * @param array $filters {department_id?: int, branch_id?: int}
+     * @return array{items: array, counts: array{sso_enrolled:int, sso_not_enrolled:int, pvd_enrolled:int, pvd_not_enrolled:int}}
+     */
+    public function statutoryEnrollmentReport(int $compId, array $filters = []): array {
+        $extraWhere = '';
+        $extraParams = [];
+        if (!empty($filters['department_id'])) {
+            $extraWhere .= ' AND e.department_id = :department_id';
+            $extraParams[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['branch_id'])) {
+            $extraWhere .= ' AND e.branch_id = :branch_id';
+            $extraParams[':branch_id'] = (int)$filters['branch_id'];
+        }
+        $nameExpr = "CONCAT(e.name_th, ' ', e.surname_th)";
+        $stmt = $this->db->prepare("
+            SELECT e.employee_no, {$nameExpr} AS name, d.department_name_th, d.department_name_en,
+                   b.branch_name_th, b.branch_name_en, e.sso_enrolled, e.pvd_enrolled
+            FROM `employees` e
+            LEFT JOIN `structure_departments` d ON e.department_id = d.id
+            LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+              AND e.employment_status NOT IN ('resigned', 'terminated')
+              {$extraWhere}
+            ORDER BY e.employee_no ASC");
+        $stmt->execute(array_merge([':comp_id' => $compId], $extraParams));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $counts = ['sso_enrolled' => 0, 'sso_not_enrolled' => 0, 'pvd_enrolled' => 0, 'pvd_not_enrolled' => 0];
+        foreach ($rows as $row) {
+            $counts[(int)$row['sso_enrolled'] === 1 ? 'sso_enrolled' : 'sso_not_enrolled']++;
+            $counts[(int)$row['pvd_enrolled'] === 1 ? 'pvd_enrolled' : 'pvd_not_enrolled']++;
+        }
+        return ['items' => $rows, 'counts' => $counts];
+    }
+
+    /**
+     * Headcount Structure report (2026-09-02, Phase 3 of the Employee Reports plan) -- a current
+     * snapshot (not scoped to any date range) grouped by ONE dimension at a time, picked by the
+     * caller. Scoped to currently-employed staff only (`employment_status NOT IN
+     * ('resigned','terminated')`) -- a resigned employee's old department doesn't belong in a
+     * "how is headcount currently structured" view. `employment_type` groups by the FIXED enum
+     * column (full_time/part_time/daily/internship), not the newer optional
+     * `structure_employment_types` company-defined classification (`employment_type_id`) -- the
+     * enum is always populated for every employee, the newer table is opt-in and may have zero rows
+     * for a company that's never synced one in.
+     *
+     * @param string $groupBy one of 'department'|'position'|'branch'|'employment_type'
+     * @return array{groups: array<int,array{label:string,count:int}>, total: int}
+     */
+    public function headcountStructureReport(int $compId, string $groupBy): array {
+        $groupConfig = [
+            'department' => ["LEFT JOIN `structure_departments` g ON e.department_id = g.id", 'g.department_name_th', 'g.department_name_en'],
+            'position' => ["LEFT JOIN `structure_positions` g ON e.position_id = g.id", 'g.position_name_th', 'g.position_name_en'],
+            'branch' => ["LEFT JOIN `structure_branches` g ON e.branch_id = g.id", 'g.branch_name_th', 'g.branch_name_en'],
+        ];
+        if (isset($groupConfig[$groupBy])) {
+            [$join, $labelThCol, $labelEnCol] = $groupConfig[$groupBy];
+            $stmt = $this->db->prepare("
+                SELECT COALESCE({$labelThCol}, '-') AS label_th, COALESCE({$labelEnCol}, '-') AS label_en, COUNT(*) AS c
+                FROM `employees` e
+                {$join}
+                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.employment_status NOT IN ('resigned', 'terminated')
+                GROUP BY label_th, label_en
+                ORDER BY c DESC");
+        } elseif ($groupBy === 'employment_type') {
+            $stmt = $this->db->prepare("
+                SELECT e.employment_type AS label_th, e.employment_type AS label_en, COUNT(*) AS c
+                FROM `employees` e
+                WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.employment_status NOT IN ('resigned', 'terminated')
+                GROUP BY e.employment_type
+                ORDER BY c DESC");
+        } else {
+            throw new InvalidArgumentException('Invalid groupBy.');
+        }
+        $stmt->execute([':comp_id' => $compId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $groups = array_map(fn($r) => ['label_th' => $r['label_th'], 'label_en' => $r['label_en'], 'count' => (int)$r['c']], $rows);
+        $total = array_sum(array_column($groups, 'count'));
+        return ['groups' => $groups, 'total' => $total];
+    }
+
+    /**
+     * Tenure (อายุงาน) report (2026-09-02, Phase 3) -- buckets currently-employed staff by
+     * years-of-service, computed from `employment_date`. Same "currently employed only" scope as
+     * headcountStructureReport() above. Bucket boundaries: <1yr, 1-3yr, 3-5yr, 5-10yr, 10yr+ --
+     * Thai labor-law severance-pay brackets land near these same boundaries (not an exact legal
+     * citation, just the natural grouping this app's own HR audience would recognize).
+     *
+     * @param array $filters {department_id?: int, branch_id?: int}
+     * @return array{buckets: array<int,array{label:string,count:int}>, items: array, average_years: float, longest_years: float}
+     */
+    public function tenureReport(int $compId, array $filters = []): array {
+        $extraWhere = '';
+        $extraParams = [];
+        if (!empty($filters['department_id'])) {
+            $extraWhere .= ' AND e.department_id = :department_id';
+            $extraParams[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['branch_id'])) {
+            $extraWhere .= ' AND e.branch_id = :branch_id';
+            $extraParams[':branch_id'] = (int)$filters['branch_id'];
+        }
+        $nameExpr = "CONCAT(e.name_th, ' ', e.surname_th)";
+        $stmt = $this->db->prepare("
+            SELECT e.employee_no, {$nameExpr} AS name, d.department_name_th, d.department_name_en,
+                   b.branch_name_th, b.branch_name_en, e.employment_date
+            FROM `employees` e
+            LEFT JOIN `structure_departments` d ON e.department_id = d.id
+            LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+              AND e.employment_status NOT IN ('resigned', 'terminated')
+              {$extraWhere}
+            ORDER BY e.employment_date ASC");
+        $stmt->execute(array_merge([':comp_id' => $compId], $extraParams));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $bucketDefs = [
+            '<1' => ['label' => 'tenure_bucket_under_1', 'min' => 0, 'max' => 1],
+            '1-3' => ['label' => 'tenure_bucket_1_3', 'min' => 1, 'max' => 3],
+            '3-5' => ['label' => 'tenure_bucket_3_5', 'min' => 3, 'max' => 5],
+            '5-10' => ['label' => 'tenure_bucket_5_10', 'min' => 5, 'max' => 10],
+            '10+' => ['label' => 'tenure_bucket_10_plus', 'min' => 10, 'max' => null],
+        ];
+        $bucketCounts = array_fill_keys(array_keys($bucketDefs), 0);
+        $today = new DateTime('today');
+        $totalYears = 0.0;
+        $longestYears = 0.0;
+        foreach ($rows as &$row) {
+            $start = new DateTime($row['employment_date']);
+            $years = $today->diff($start)->days / 365.25;
+            $row['tenure_years'] = round($years, 2);
+            $totalYears += $years;
+            $longestYears = max($longestYears, $years);
+            foreach ($bucketDefs as $key => $def) {
+                if ($years >= $def['min'] && ($def['max'] === null || $years < $def['max'])) {
+                    $bucketCounts[$key]++;
+                    break;
+                }
+            }
+        }
+        unset($row);
+
+        $buckets = [];
+        foreach ($bucketDefs as $key => $def) {
+            $buckets[] = ['key' => $key, 'label_key' => $def['label'], 'count' => $bucketCounts[$key]];
+        }
+
+        return [
+            'buckets' => $buckets,
+            'items' => $rows,
+            'average_years' => count($rows) > 0 ? round($totalYears / count($rows), 2) : 0.0,
+            'longest_years' => round($longestYears, 2),
+        ];
+    }
+
+    /**
+     * Birthday & Work Anniversary report (2026-09-02, Phase 3) -- lists currently-employed staff
+     * whose `date_of_birth` OR `employment_date` MONTH matches the selected month (any year --
+     * "born in March" / "hired in March", regardless of which year). An employee whose hire month
+     * happens to also be their birth month appears in BOTH lists independently (not deduplicated --
+     * they're 2 genuinely separate facts an HR admin would want to see both of).
+     *
+     * @param array $filters {department_id?: int, branch_id?: int}
+     * @return array{birthdays: array, anniversaries: array}
+     */
+    public function birthdayAnniversaryReport(int $compId, int $month, array $filters = []): array {
+        $extraWhere = '';
+        $extraParams = [];
+        if (!empty($filters['department_id'])) {
+            $extraWhere .= ' AND e.department_id = :department_id';
+            $extraParams[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['branch_id'])) {
+            $extraWhere .= ' AND e.branch_id = :branch_id';
+            $extraParams[':branch_id'] = (int)$filters['branch_id'];
+        }
+        $nameExpr = "CONCAT(e.name_th, ' ', e.surname_th)";
+        $baseSelect = "SELECT e.employee_no, {$nameExpr} AS name, d.department_name_th, d.department_name_en,
+                   b.branch_name_th, b.branch_name_en";
+        $baseFrom = "FROM `employees` e
+            LEFT JOIN `structure_departments` d ON e.department_id = d.id
+            LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+              AND e.employment_status NOT IN ('resigned', 'terminated')
+              {$extraWhere}";
+
+        $birthdayStmt = $this->db->prepare("{$baseSelect}, e.date_of_birth AS event_date {$baseFrom}
+              AND MONTH(e.date_of_birth) = :month
+            ORDER BY DAY(e.date_of_birth) ASC");
+        $birthdayStmt->execute(array_merge([':comp_id' => $compId, ':month' => $month], $extraParams));
+
+        $anniversaryStmt = $this->db->prepare("{$baseSelect}, e.employment_date AS event_date {$baseFrom}
+              AND MONTH(e.employment_date) = :month
+            ORDER BY DAY(e.employment_date) ASC");
+        $anniversaryStmt->execute(array_merge([':comp_id' => $compId, ':month' => $month], $extraParams));
+
+        $today = new DateTime('today');
+        $addYearsOn = function (array $rows) use ($today): array {
+            foreach ($rows as &$row) {
+                $row['years'] = $today->diff(new DateTime($row['event_date']))->y;
+            }
+            unset($row);
+            return $rows;
+        };
+
+        return [
+            'birthdays' => $addYearsOn($birthdayStmt->fetchAll(PDO::FETCH_ASSOC)),
+            'anniversaries' => $addYearsOn($anniversaryStmt->fetchAll(PDO::FETCH_ASSOC)),
+        ];
+    }
+
+    /**
+     * Company-wide Data Completeness overview (2026-09-02, Phase 4 -- the last phase -- of the
+     * Employee Reports plan) -- aggregates the SAME per-employee `calculateCompleteness()`/
+     * `completenessColumns()` machinery every other consumer of this already uses (`list()`,
+     * `get()`) into a company-wide distribution, zero new calculation logic. Scoped to
+     * currently-employed staff only, same "current snapshot" convention as
+     * headcountStructureReport()/tenureReport() above -- a resigned employee's own data gaps aren't
+     * something anyone is going to act on anymore. Buckets: <50% / 50-80% / 80%+.
+     *
+     * @param array $filters {department_id?: int, branch_id?: int}
+     * @return array{buckets: array<int,array{key:string,label_key:string,count:int}>, items: array, average_percent: float}
+     */
+    public function completenessOverviewReport(int $compId, array $filters = []): array {
+        $extraWhere = '';
+        $extraParams = [];
+        if (!empty($filters['department_id'])) {
+            $extraWhere .= ' AND e.department_id = :department_id';
+            $extraParams[':department_id'] = (int)$filters['department_id'];
+        }
+        if (!empty($filters['branch_id'])) {
+            $extraWhere .= ' AND e.branch_id = :branch_id';
+            $extraParams[':branch_id'] = (int)$filters['branch_id'];
+        }
+        $nameExpr = "CONCAT(e.name_th, ' ', e.surname_th)";
+        $completenessSelect = implode(', ', array_map(fn($c) => "e.`{$c}`", $this->completenessColumns()));
+        $stmt = $this->db->prepare("
+            SELECT e.employee_no, {$nameExpr} AS name, d.department_name_th, d.department_name_en,
+                   b.branch_name_th, b.branch_name_en, {$completenessSelect}
+            FROM `employees` e
+            LEFT JOIN `structure_departments` d ON e.department_id = d.id
+            LEFT JOIN `structure_branches` b ON e.branch_id = b.id
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL
+              AND e.employment_status NOT IN ('resigned', 'terminated')
+              {$extraWhere}");
+        $stmt->execute(array_merge([':comp_id' => $compId], $extraParams));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $bucketDefs = [
+            'under_50' => ['label' => 'completeness_bucket_under_50', 'min' => 0, 'max' => 50],
+            '50_80' => ['label' => 'completeness_bucket_50_80', 'min' => 50, 'max' => 80],
+            '80_plus' => ['label' => 'completeness_bucket_80_plus', 'min' => 80, 'max' => 101],
+        ];
+        $bucketCounts = array_fill_keys(array_keys($bucketDefs), 0);
+        $items = [];
+        $totalPercent = 0;
+        foreach ($rows as $row) {
+            $row['base_salary_amount'] = self::decryptSalaryValue($row['base_salary_amount'] ?? null, isset($row['key_version']) ? (int)$row['key_version'] : null);
+            $percent = $this->calculateCompleteness($row)['percent'];
+            $totalPercent += $percent;
+            foreach ($bucketDefs as $key => $def) {
+                if ($percent >= $def['min'] && $percent < $def['max']) {
+                    $bucketCounts[$key]++;
+                    break;
+                }
+            }
+            $items[] = [
+                'employee_no' => $row['employee_no'], 'name' => $row['name'],
+                'department_name_th' => $row['department_name_th'], 'department_name_en' => $row['department_name_en'],
+                'branch_name_th' => $row['branch_name_th'], 'branch_name_en' => $row['branch_name_en'],
+                'completeness' => $percent,
+            ];
+        }
+        usort($items, fn($a, $b) => $a['completeness'] <=> $b['completeness']);
+
+        $buckets = [];
+        foreach ($bucketDefs as $key => $def) {
+            $buckets[] = ['key' => $key, 'label_key' => $def['label'], 'count' => $bucketCounts[$key]];
+        }
+
+        return [
+            'buckets' => $buckets,
+            'items' => $items,
+            'average_percent' => count($rows) > 0 ? round($totalPercent / count($rows), 1) : 0.0,
+        ];
+    }
+
+    /**
      * Distinct values for ONE column of the Employee List, respecting every OTHER currently-active
      * filter (station filters + every OTHER column's own Excel-style checkbox selection) but NOT
      * this column's own selection -- see buildListWhere()'s own docblock for why. Powers the
@@ -1088,10 +1743,14 @@ class EmployeeModel {
         $sql = "SELECT e.*,
                     d.department_name_th, d.department_name_en,
                     tm.team_name_th, tm.team_name_en, tm.client_name AS team_client_name,
+                    et.employment_type_name_th, et.employment_type_name_en,
                     r.role_name_th, r.role_name_en,
                     p.position_name_th, p.position_name_en,
                     b.branch_name_th, b.branch_name_en,
                     mb.bank_code, mb.bank_name_th, mb.bank_name_en,
+                    dba.account_name AS default_bank_account_name, dba.company_code AS default_bank_account_company_code,
+                    dmb.bank_name_th AS default_bank_account_bank_name_th, dmb.bank_name_en AS default_bank_account_bank_name_en,
+                    mpm.code AS payment_method_code, mpm.name_th AS payment_method_name_th, mpm.name_en AS payment_method_name_en,
                     mn.nationality_name_th, mn.nationality_name_en,
                     mrl.religion_name_th, mrl.religion_name_en,
                     pc.cycle_name,
@@ -1106,10 +1765,14 @@ class EmployeeModel {
                 FROM `employees` e
                 LEFT JOIN `structure_departments` d ON e.department_id = d.id
                 LEFT JOIN `structure_teams` tm ON e.team_id = tm.id
+                LEFT JOIN `structure_employment_types` et ON e.employment_type_id = et.id
                 LEFT JOIN `structure_roles` r ON e.role_id = r.id
                 LEFT JOIN `structure_positions` p ON e.position_id = p.id
                 LEFT JOIN `structure_branches` b ON e.branch_id = b.id
                 LEFT JOIN `master_banks` mb ON e.bank_id = mb.id
+                LEFT JOIN `bank_accounts` dba ON e.default_bank_account_id = dba.id
+                LEFT JOIN `master_banks` dmb ON dba.bank_id = dmb.id
+                LEFT JOIN `master_payment_methods` mpm ON e.payment_method_id = mpm.id
                 LEFT JOIN `master_nationalities` mn ON e.nationality = mn.nationality_code
                 LEFT JOIN `master_religions` mrl ON e.religion = mrl.religion_code
                 LEFT JOIN `payroll_cycles` pc ON e.cycle_id = pc.id
@@ -1132,6 +1795,15 @@ class EmployeeModel {
                 : EncryptionService::decrypt($row[$col] ?? null, $keyVersion);
         }
         $row = array_merge($row, $this->buildAddressDisplay($row, 'register'), $this->buildAddressDisplay($row, 'contact'));
+        // 2026-09-02, extends the Origami candidates.php field batch -- foreign_worker_info lives in
+        // its own table (EmployeeForeignWorkerDetailModel), merged in here so the Employee Detail
+        // form's single get() call already has everything it needs (same "one call populates the
+        // whole form" convention this method already follows for every other related-table field).
+        $foreignWorkerDetail = (new EmployeeForeignWorkerDetailModel($this->db))->get((int)$row['id']);
+        if ($foreignWorkerDetail) {
+            unset($foreignWorkerDetail['employee_id'], $foreignWorkerDetail['updated_by'], $foreignWorkerDetail['updated_at']);
+            $row = array_merge($row, $foreignWorkerDetail);
+        }
         $row['completeness'] = $this->calculateCompleteness($row);
         $row['verify_status'] = $this->verifyStatus($row, $this->getCompanyCountry($compId) === 'TH');
         return $row;
@@ -1208,7 +1880,7 @@ class EmployeeModel {
         return $check === (int)$id[12];
     }
 
-    public function save(int $compId, array $data, int $userId): array {
+    public function save(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
         $isThCompany = $this->getCompanyCountry($compId) === 'TH';
 
@@ -1226,6 +1898,45 @@ class EmployeeModel {
             $existingVal = $stmtExistingParticipant->fetchColumn();
             if ($existingVal !== false) {
                 $existingIsPayrollParticipant = (int)$existingVal;
+            }
+        }
+
+        // 2026-09-02, explicit request: Probation/Internship pay policy's new OT-eligible-default
+        // setting -- confirmed via AskUserQuestion "default only, checkbox still wins": applied
+        // exactly ONCE, at CREATE time only, when a brand-new employee is created directly with
+        // employment_status=probation or employment_type=internship. Deliberately does NOT also
+        // fire when an EXISTING employee later transitions into that status/type (an earlier
+        // version of this logic tried to detect that case too, via "submitted value equals the
+        // row's existing value" -- caught as a REAL bug by this feature's own test before shipping:
+        // that heuristic can't actually distinguish "admin didn't touch this checkbox" from "admin's
+        // pre-existing, deliberate true value coincidentally wasn't changed in this save," so an
+        // existing employee with ot_eligible ALREADY explicitly set to true, reclassified into
+        // probation without the admin ever looking at the OT checkbox, would have had that
+        // deliberate setting silently overwritten to the policy default -- exactly the kind of
+        // surprise "checkbox still wins" was meant to prevent. This codebase has no existing "was
+        // this field manually touched" tracking to do better than that heuristic, so CREATE-TIME-ONLY
+        // is the safe, unsurprising rule -- an existing employee's OT eligibility is never touched
+        // by this feature, full stop, regardless of what status/type change accompanies the save).
+        if ($id === null) {
+            $newEmploymentStatus = (string)($data['employment_status'] ?? '');
+            $newEmploymentType = (string)($data['employment_type'] ?? '');
+            $isNewIntern = $newEmploymentType === 'internship';
+            $isNewProbation = $newEmploymentStatus === 'probation';
+            // Intern takes precedence over probation when both are somehow true, same precedence
+            // PayrollRunModel::recalculate() already established for the ratio/defer_pvd gates.
+            if ($isNewIntern || $isNewProbation) {
+                $policyModel = new PayrollPolicyModel($this->db);
+                $settings = $isNewIntern ? $policyModel->internSettings($compId) : $policyModel->probationSettings($compId);
+                if (empty($data['ot_eligible']) && $settings['ot_eligible_default'] !== null) {
+                    $data['ot_eligible'] = $settings['ot_eligible_default'] ? 1 : 0;
+                }
+                // 2026-09-02, follow-up to close a review-flagged gap: "เงื่อนไขการหักภาษี...ที่แตกต่างจาก
+                // พนักงานปกติ" -- same CREATE-TIME-ONLY soft default as ot_eligible_default immediately
+                // above, applied to the ALREADY-existing employees.tax_exempt checkbox (not a new tax
+                // formula -- see this feature's own migration comment for why).
+                if (empty($data['tax_exempt']) && $settings['tax_exempt_default'] !== null) {
+                    $data['tax_exempt'] = $settings['tax_exempt_default'] ? 1 : 0;
+                }
             }
         }
 
@@ -1319,6 +2030,27 @@ class EmployeeModel {
                 return ['status' => false, 'message' => 'Intern base salary ratio override must be a percentage between 0 (exclusive) and 100, or left blank for no override.'];
             }
         }
+        // 2026-09-02, real gap found and fixed while extending this section: probation_base_salary_
+        // ratio_override was added to allColumns() but never got this SAME range check intern's own
+        // override already has -- fixed here, same shape.
+        if (isset($data['probation_base_salary_ratio_override']) && $data['probation_base_salary_ratio_override'] !== '' && $data['probation_base_salary_ratio_override'] !== null) {
+            if (!is_numeric($data['probation_base_salary_ratio_override']) || (float)$data['probation_base_salary_ratio_override'] <= 0 || (float)$data['probation_base_salary_ratio_override'] > 100) {
+                return ['status' => false, 'message' => 'Probation base salary ratio override must be a percentage between 0 (exclusive) and 100, or left blank for no override.'];
+            }
+        }
+        // 2026-09-02, follow-up to close a review-flagged gap: "ตั้งค่าแยกเฉพาะบุคคลนี้" must cover
+        // EVERY company-policy field, not just the ratio -- the day-count overrides get the same
+        // non-negative check their own company-level counterparts (PayrollPolicyModel::save()) use;
+        // the boolean-ish overrides (defer_pvd/defer_sso/defer_recurring_earning/allow_leave) need
+        // no range check, any truthy/falsy value coerces safely through the generic column loop
+        // below, same as every other tinyint column in this model.
+        foreach (['probation_leave_days_limit_override', 'probation_period_days_override', 'intern_leave_days_limit_override', 'intern_period_days_override'] as $dayField) {
+            if (isset($data[$dayField]) && $data[$dayField] !== '' && $data[$dayField] !== null) {
+                if (!is_numeric($data[$dayField]) || (int)$data[$dayField] < 0) {
+                    return ['status' => false, 'message' => "{$dayField} must be a non-negative number, or left blank for no override."];
+                }
+            }
+        }
 
         $fkChecks = [
             'department_id' => 'structure_departments',
@@ -1326,6 +2058,7 @@ class EmployeeModel {
             'role_id' => 'structure_roles',
             'position_id' => 'structure_positions',
             'branch_id' => 'structure_branches',
+            'employment_type_id' => 'structure_employment_types',
         ];
         foreach ($fkChecks as $field => $table) {
             if (!empty($data[$field]) && !$this->referenceExists($table, (int)$data[$field], $compId)) {
@@ -1337,6 +2070,69 @@ class EmployeeModel {
             $stmt->execute([':id' => (int)$data['bank_id']]);
             if (!$stmt->fetch()) {
                 return ['status' => false, 'message' => 'Invalid bank selected.'];
+            }
+        }
+        // 2026-09-02, explicit request: payment method type (transfer/cash/check/mixed) --
+        // payment_method_id (master_payment_methods lookup) is the sole source of truth. The old
+        // payment_type enum mirror has been dropped entirely (see
+        // database/migrations/2026-09-02_19_drop_legacy_payment_type.sql) -- every read site downstream
+        // resolves via paymentMethodCode()/EmployeePaymentMethodModel instead.
+        $paymentMethodModel = new EmployeePaymentMethodModel($this->db);
+        // Only touched when the Employment tab (which owns payment_method_id) was actually part of
+        // THIS save -- same "independent tab save" precedent this whole method already follows
+        // elsewhere (is_payroll_participant/ot_rate_source above) -- a save from a different tab
+        // must never silently clear an already-configured mixed-payment line set.
+        $paymentMethodFieldProvided = array_key_exists('payment_method_id', $data);
+        $resolvedPaymentMethodCode = null;
+        if (!empty($data['payment_method_id'])) {
+            $method = $paymentMethodModel->findMethod((int)$data['payment_method_id']);
+            if (!$method) {
+                return ['status' => false, 'message' => 'Invalid payment method selected.'];
+            }
+            $resolvedPaymentMethodCode = $method['code'];
+        }
+        // 2026-09-02, extends the Origami candidates.php field batch -- foreign_worker_info lives in
+        // its own table (EmployeeForeignWorkerDetailModel, see that class's own docblock), persisted
+        // AFTER the employee row's own INSERT/UPDATE succeeds below (needs the employee's own id for
+        // a brand-new record). Only touched when at least one of its own fields was actually part of
+        // THIS save -- same "independent tab save never silently clears another tab's data"
+        // precedent as payment_method_id above.
+        $foreignWorkerDetailModel = new EmployeeForeignWorkerDetailModel($this->db);
+        $foreignWorkerDetailFields = ['recruitment_agency', 'arrival_date', 'due_date', 'arrival_card_no',
+            'arrival_by_vehicle', 'address', 'soi', 'province', 'district', 'sub_district', 'tel_code', 'tel'];
+        $foreignWorkerDetailProvided = !empty(array_intersect($foreignWorkerDetailFields, array_keys($data)));
+        // 2026-09-02, explicit request: mixed payment lines -- validated here (before the employee
+        // row itself is written) so a bad line set never partially saves; the normalized lines are
+        // persisted AFTER the employee row's own INSERT/UPDATE succeeds below (needs the employee's
+        // own id for a brand-new record). A non-mixed method clears any previously-saved lines.
+        $mixedPaymentLines = [];
+        if ($resolvedPaymentMethodCode === 'mixed') {
+            $mixedValidation = $paymentMethodModel->validateMixedLines($compId, $data['payment_method_lines'] ?? []);
+            if (!$mixedValidation['status']) {
+                return $mixedValidation;
+            }
+            $mixedPaymentLines = $mixedValidation['lines'];
+        }
+        // 2026-09-02, explicit request: "ตัวเลือกบัญชีในส่วนนี้ต้องสอดคล้องกับประเภทการจ่ายเงินที่เลือกใน Tab
+        // การจ้างงาน...เลือกต่อได้ว่าจะใช้บัญชีไหนของรอบนั้น" -- default_bank_account_id must belong to the
+        // employee's own cycle_id's account set (EmployeePaymentMethodModel::isBankAccountValidForCycle(),
+        // same fallback-to-company-default rule scopedBankAccountOptions() itself offers) whenever a
+        // cycle is actually set; falls back to the old plain "belongs to this company" check when the
+        // employee has no cycle_id yet (can't scope-validate against nothing).
+        if (!empty($data['default_bank_account_id'])) {
+            $cycleIdForScope = !empty($data['cycle_id']) ? (int)$data['cycle_id'] : null;
+            $validForCycle = $cycleIdForScope !== null
+                ? $paymentMethodModel->isBankAccountValidForCycle($compId, $cycleIdForScope, (int)$data['default_bank_account_id'])
+                : false;
+            if (!$validForCycle) {
+                $stmt = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active'");
+                $stmt->execute([':id' => (int)$data['default_bank_account_id'], ':comp_id' => $compId]);
+                if (!$stmt->fetch()) {
+                    return ['status' => false, 'message' => 'Invalid default bank account selected.'];
+                }
+                if ($cycleIdForScope !== null) {
+                    return ['status' => false, 'message' => 'The selected bank account is not available on this employee\'s payroll cycle.'];
+                }
             }
         }
         if (!empty($data['report_to_id'])) {
@@ -1359,14 +2155,14 @@ class EmployeeModel {
         $encrypted = $this->encryptedColumns();
         // These DB columns are NOT NULL but have a real DEFAULT (unlike the 16 columns relaxed to
         // nullable in database/payroll.sql for independent tab saving -- there's no meaningful "not
-        // yet decided" state for e.g. employee_type/gender/payment_type, they always have a sensible
+        // yet decided" state for e.g. employee_type/gender, they always have a sensible
         // default value). Found while adding independent-tab-save support (2026-08-19): once a save
         // could omit these, the generic branch below coerced empty -> null and the INSERT sent an
         // explicit NULL, which overrides the DB's own DEFAULT and throws a NOT NULL violation instead
         // of quietly falling back to it. Coerce to the same default here so that never happens.
         $columnDefaults = [
             'employee_type' => 'domestic', 'employee_status' => 'active', 'gender' => 'male',
-            'payment_type' => 'bank', 'salary_type' => 'monthly', 'base_salary_amount' => '0.00',
+            'salary_type' => 'monthly', 'base_salary_amount' => '0.00',
             'mobile_country_code' => '+66',
         ];
         $values = [];
@@ -1475,9 +2271,15 @@ class EmployeeModel {
 
         try {
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                // Platform Hardening Phase 6 pilot: full old row fetched up front (not just the id
+                // the original check needed) so AuditLogModel::record() can diff it against the row's
+                // own state after the UPDATE below -- see that class's own docblock for the diff
+                // contract, and AUDIT_EXCLUDE_FIELDS below for why the encrypted-at-rest columns are
+                // excluded from that diff.
+                $stmtCheck = $this->db->prepare("SELECT * FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-                if (!$stmtCheck->fetch()) {
+                $oldRowForAudit = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$oldRowForAudit) {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 $setSql = [];
@@ -1489,6 +2291,28 @@ class EmployeeModel {
                 $sql = "UPDATE `employees` SET " . implode(', ', $setSql) . ", updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute($params);
+                if ($paymentMethodFieldProvided) {
+                    $paymentMethodModel->saveLines($id, $mixedPaymentLines, $userId);
+                }
+                if ($foreignWorkerDetailProvided) {
+                    $foreignWorkerDetailModel->save($id, $data, $userId);
+                }
+                $stmtNewRow = $this->db->prepare("SELECT * FROM `employees` WHERE id = :id");
+                $stmtNewRow->execute([':id' => $id]);
+                $newRowForAudit = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                // Encrypted-at-rest columns (see encryptedColumns() above) produce different
+                // ciphertext on every save even when the plaintext is unchanged -- diffing raw
+                // ciphertext into the audit log would be both noisy (a false "changed" row on every
+                // single save) and pointless (the diff itself isn't human-readable). Excluded here,
+                // not from AuditLogModel's own shared denylist, since this is specific to this one
+                // model's own schema.
+                $auditExcludeFields = array_merge(
+                    array_keys($this->encryptedColumns()),
+                    array_filter(array_values($this->encryptedColumns())),
+                    ['key_version']
+                );
+                $this->auditLog->record($compId, 'employees', $id, 'update', $oldRowForAudit, $newRowForAudit,
+                    $userId, 'web', $ip, $userAgent, $auditExcludeFields);
                 return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id, 'employee_no' => $values['employee_no']];
             }
 
@@ -1502,7 +2326,14 @@ class EmployeeModel {
             }
             $stmt = $this->db->prepare($sql);
             $stmt->execute($params);
-            return ['status' => true, 'message' => 'Created successfully.', 'id' => (int)$this->db->lastInsertId(), 'employee_no' => $values['employee_no']];
+            $newId = (int)$this->db->lastInsertId();
+            if ($paymentMethodFieldProvided) {
+                $paymentMethodModel->saveLines($newId, $mixedPaymentLines, $userId);
+            }
+            if ($foreignWorkerDetailProvided) {
+                $foreignWorkerDetailModel->save($newId, $data, $userId);
+            }
+            return ['status' => true, 'message' => 'Created successfully.', 'id' => $newId, 'employee_no' => $values['employee_no']];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
@@ -1681,21 +2512,26 @@ class EmployeeModel {
         }
     }
 
+    /** 2026-09-03: `passport_copy`/`visa_copy` added alongside EmployeeSyncer's own new
+     *  document-scan sync (see that class's own `documentScansFromItem()`/`syncDocumentScans()`
+     *  docblocks) -- `work_permit_copy` already existed and is reused as-is for the synced work
+     *  permit scan rather than adding a redundant 4th "scan" variant of the same document. Keep
+     *  EmployeeSyncer's own `DOCUMENT_TYPE_*` mapping in sync if either list changes. */
     public function documentTypes(): array {
         return ['id_card_copy', 'house_registration_copy', 'work_permit_copy', 'employment_contract',
-                'bank_book_copy', 'resume', 'education_certificate', 'other'];
+                'bank_book_copy', 'resume', 'education_certificate', 'passport_copy', 'visa_copy', 'other'];
     }
 
     public function listDocuments(int $employeeId, int $compId): array {
         if (!$this->employeeBelongsToComp($employeeId, $compId)) {
             return [];
         }
-        $stmt = $this->db->prepare("SELECT id, document_type, file_name, uploaded_at FROM `employee_documents` WHERE employee_id = :employee_id AND deleted_at IS NULL ORDER BY uploaded_at DESC");
+        $stmt = $this->db->prepare("SELECT id, document_type, source, file_name, file_size, thumbnail_path, uploaded_at FROM `employee_documents` WHERE employee_id = :employee_id AND deleted_at IS NULL ORDER BY uploaded_at DESC");
         $stmt->execute([':employee_id' => $employeeId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function saveDocument(int $employeeId, int $compId, string $documentType, string $fileName, string $filePath, int $userId): array {
+    public function saveDocument(int $employeeId, int $compId, string $documentType, string $fileName, string $filePath, int $userId, ?int $fileSize = null, ?string $thumbnailPath = null): array {
         if (!$this->employeeBelongsToComp($employeeId, $compId)) {
             return ['status' => false, 'message' => 'Employee not found.'];
         }
@@ -1703,12 +2539,14 @@ class EmployeeModel {
             return ['status' => false, 'message' => 'Invalid document_type.'];
         }
         try {
-            $stmt = $this->db->prepare("INSERT INTO `employee_documents` (employee_id, document_type, file_name, file_path, uploaded_by) VALUES (:employee_id, :document_type, :file_name, :file_path, :uploaded_by)");
+            $stmt = $this->db->prepare("INSERT INTO `employee_documents` (employee_id, document_type, file_name, file_path, file_size, thumbnail_path, uploaded_by) VALUES (:employee_id, :document_type, :file_name, :file_path, :file_size, :thumbnail_path, :uploaded_by)");
             $stmt->execute([
                 ':employee_id' => $employeeId,
                 ':document_type' => $documentType,
                 ':file_name' => $fileName,
                 ':file_path' => $filePath,
+                ':file_size' => $fileSize,
+                ':thumbnail_path' => $thumbnailPath,
                 ':uploaded_by' => $userId,
             ]);
             return ['status' => true, 'message' => 'Uploaded successfully.', 'id' => (int)$this->db->lastInsertId()];

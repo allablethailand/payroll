@@ -149,20 +149,184 @@ function renderDashboard(data) {
     // this is false, so this flag here is purely about whether to render an amount element at all,
     // not a client-side "hide the real number" -- there is no real number in the payload to hide.
     renderPayrollWidgets(data.payroll || {}, !!data.can_view_payroll);
+
+    // 2026-09-02, explicit request (item 5 of a 5-item follow-up list): probation/internship
+    // period-expiry reminder card -- key is entirely ABSENT from `data` (not an empty array) when
+    // the acting employee lacks can_process_payroll or there's genuinely nothing to show, per
+    // DashboardController::summary()'s own comment -- `|| []` here treats both cases identically.
+    renderProbationInternExpiring(data.probation_intern_expiring || []);
+}
+
+// See dashboard.php's own #dashProbationInternExpiringSection comment for the "why a card, why
+// hidden when empty" context. Each row links straight to the employee's own profile (Employment or
+// Salary tab is where an admin would actually go change employment_status/employment_type) -- this
+// card itself never changes anything, purely informational per the user's own explicit instruction.
+function renderProbationInternExpiring(rows) {
+    const $section = $('#dashProbationInternExpiringSection');
+    const $list = $('#dashProbationInternExpiringList').empty();
+    if (!rows || !rows.length) {
+        $section.addClass('d-none');
+        return;
+    }
+    $section.removeClass('d-none');
+    rows.forEach(function (row) {
+        const url = `${BASE_URL}/employees/${encodeURIComponent(row.employee_no)}`;
+        const name = currentLang === 'th' ? (row.name_th || row.name_en) : (row.name_en || row.name_th);
+        const kindLabel = row.kind === 'internship' ? (langData['internship'] || 'Internship') : (langData['probation'] || 'Probation');
+        const isExpired = row.milestone === 'expired';
+        const statusHtml = isExpired
+            ? `<span class="badge bg-danger-subtle text-danger-emphasis">${langData['dash_probation_intern_expired'] || 'Ended'} ${dashToDisplayDate(row.expiry_date)}</span>`
+            : `<span class="badge bg-warning-subtle text-warning-emphasis">${(langData['dash_probation_intern_days_left'] || '{n} day(s) left').replace('{n}', row.days_remaining)}</span>`;
+        $list.append(`
+            <a href="${url}" target="_blank" rel="noopener" class="dash-run-row">
+                <div class="dash-run-row-top">
+                    <div class="dash-run-row-main">
+                        <div class="dash-run-row-name">${dashEscapeHtml(name)} <span class="text-muted small">(${dashEscapeHtml(kindLabel)})</span></div>
+                        <div class="dash-run-row-period">${langData['dash_probation_intern_expiry_date'] || 'Expiry date'}: ${dashToDisplayDate(row.expiry_date)}</div>
+                    </div>
+                    <div class="dash-run-row-meta">${statusHtml}</div>
+                </div>
+            </a>
+        `);
+    });
+}
+
+// 2026-09-02, explicit request: "อยากให้ดูเป็น Payroll มากขึ้น...ถ้าเพิ่มอะไรได้ก็อยากให้เพิ่ม" -- a plain
+// day-count under the Upcoming Pay Date stat card, computed purely client-side from the same
+// upcoming_run.payment_date the value above already renders (DashboardController::summary() already
+// only ever returns a run whose payment_date is >= today, see that method's own `$upcoming` filter,
+// so this is never negative -- no "overdue" case to handle).
+function dashUpcomingPayCountdownText(paymentDateIso) {
+    if (!paymentDateIso) return '';
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const payDate = new Date(paymentDateIso + 'T00:00:00');
+    const days = Math.round((payDate - today) / 86400000);
+    if (days <= 0) return langData['dash_pay_today'] || 'Pay day is today';
+    return (langData['dash_days_until_pay'] || '{n} day(s) left').replace('{n}', days);
 }
 
 function renderPayrollWidgets(payroll, canViewAmounts) {
     $('#dashPendingApproval').text((payroll.pending_my_approval || 0).toLocaleString());
-    $('#dashUpcomingPayDate').text(payroll.upcoming_run && payroll.upcoming_run.payment_date
-        ? dashToDisplayDate(payroll.upcoming_run.payment_date)
-        : '-');
+    const upcomingPaymentDate = payroll.upcoming_run && payroll.upcoming_run.payment_date;
+    $('#dashUpcomingPayDate').text(upcomingPaymentDate ? dashToDisplayDate(upcomingPaymentDate) : '-');
+    $('#dashUpcomingPayCountdown').text(dashUpcomingPayCountdownText(upcomingPaymentDate));
 
     const counts = payroll.counts || {};
     ['draft', 'pending_approval', 'approved', 'paid', 'locked'].forEach(function (state) {
         $(`#dashStationRow .station-card[data-state="${state}"] .station-count`).text(counts[state] || 0);
     });
 
+    renderPipelineDonut(counts);
+    renderCostTrendChart(canViewAmounts ? (payroll.cost_trend || []) : null);
     renderRecentRuns(payroll.recent_runs || [], canViewAmounts);
+}
+
+// 2026-09-02, explicit request: "หน้า Dashboard อยากให้เพิ่มกราฟ และอะไรให้ดูมีความเป็น Payroll" -- Chart.js
+// (node_modules, loaded by dashboard.php itself right before this file -- see that view's own
+// comment on why it's not in the global footer). Same solid state colors this app's own
+// `.station-card-sm.active[data-state="..."]` rules already use elsewhere (Process List's filter
+// chevrons), so the donut reads as "the same states, just a different shape" rather than
+// introducing a new color language.
+const DASH_STATE_COLORS = {
+    draft: '#64748b',
+    pending_approval: '#f59e0b',
+    approved: '#0ea5e9',
+    paid: '#16a34a',
+    locked: '#4f46e5',
+};
+const DASH_STATE_LABEL_KEYS = {
+    draft: 'state_draft',
+    pending_approval: 'state_pending_approval',
+    approved: 'state_approved',
+    paid: 'state_paid',
+    locked: 'state_locked',
+};
+let dashPipelineDonutChart = null;
+function renderPipelineDonut(counts) {
+    const $wrap = $('#dashPipelineDonutWrap');
+    const $canvas = $('#dashPipelineDonut');
+    if (!$canvas.length || typeof Chart === 'undefined') return;
+    const states = Object.keys(DASH_STATE_COLORS);
+    const total = states.reduce((sum, s) => sum + (Number(counts[s]) || 0), 0);
+    if (!total) {
+        $wrap.addClass('d-none');
+        if (dashPipelineDonutChart) { dashPipelineDonutChart.destroy(); dashPipelineDonutChart = null; }
+        return;
+    }
+    $wrap.removeClass('d-none');
+    const labels = states.map(s => langData[DASH_STATE_LABEL_KEYS[s]] || s);
+    const data = states.map(s => Number(counts[s]) || 0);
+    const colors = states.map(s => DASH_STATE_COLORS[s]);
+    if (dashPipelineDonutChart) {
+        dashPipelineDonutChart.data.labels = labels;
+        dashPipelineDonutChart.data.datasets[0].data = data;
+        dashPipelineDonutChart.data.datasets[0].backgroundColor = colors;
+        dashPipelineDonutChart.update();
+        return;
+    }
+    dashPipelineDonutChart = new Chart($canvas[0].getContext('2d'), {
+        type: 'doughnut',
+        data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 1,
+            cutout: '65%',
+            plugins: { legend: { display: false }, tooltip: { enabled: true } },
+        },
+    });
+}
+
+let dashCostTrendChartInstance = null;
+// `rows` is `null` when the acting employee can't view payroll amounts (see
+// DashboardController::summary()'s own comment -- the field is omitted entirely, not zeroed) --
+// the whole card stays hidden in that case, same posture as Recent Runs' own amount column.
+function renderCostTrendChart(rows) {
+    const $section = $('#dashCostTrendSection');
+    const $canvas = $('#dashCostTrendChart');
+    if (!$canvas.length || typeof Chart === 'undefined') return;
+    if (!rows || !rows.length) {
+        $section.addClass('d-none');
+        $('#dashCostTrendTotal').text('');
+        if (dashCostTrendChartInstance) { dashCostTrendChartInstance.destroy(); dashCostTrendChartInstance = null; }
+        return;
+    }
+    $section.removeClass('d-none');
+    const totalAmount = rows.reduce((sum, r) => sum + (Number(r.net_amount) || 0), 0);
+    const totalTpl = langData['dash_cost_trend_total'] || 'Total (last {n} months): {amount}';
+    $('#dashCostTrendTotal').text(totalTpl.replace('{n}', rows.length).replace('{amount}', dashFmtNum(totalAmount)));
+    const labels = rows.map(r => {
+        const parts = String(r.month).split('-');
+        return parts.length === 2 ? `${parts[1]}/${parts[0]}` : r.month;
+    });
+    const data = rows.map(r => Number(r.net_amount) || 0);
+    if (dashCostTrendChartInstance) {
+        dashCostTrendChartInstance.data.labels = labels;
+        dashCostTrendChartInstance.data.datasets[0].data = data;
+        dashCostTrendChartInstance.update();
+        return;
+    }
+    dashCostTrendChartInstance = new Chart($canvas[0].getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: langData['dash_cost_trend'] || 'Payroll Cost Trend',
+                data: data,
+                backgroundColor: '#FF9900',
+                borderRadius: 4,
+                maxBarThickness: 48,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString() } },
+            },
+        },
+    });
 }
 
 function renderRecentRuns(rows, canViewAmounts) {

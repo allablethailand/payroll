@@ -115,6 +115,7 @@ class PayrollController extends Controller {
     }
 
     public function options() {
+        if (!$this->requireViewAccess()) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => ['items' => [], 'total_count' => 0]]);
@@ -141,14 +142,55 @@ class PayrollController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
-    /** Any of the 3 payroll role-flags grants read access -- mutating actions already check the SPECIFIC flag they need inside PayrollRunModel. */
+    // 2026-09-02, explicit request (following up on a Permission Matrix design review that surfaced
+    // this module had ZERO checks against the `permissions`/`role_permissions` RBAC tables at all --
+    // only the older, separate structure_roles.can_process_payroll/can_approve_payroll/
+    // can_finalize_payroll flat-role-flag system, see PayrollRunModel::userCan()) -- adds
+    // payroll_run.view/payroll_run.manage as an ADDITIVE gate on top of that legacy system, not a
+    // replacement. Deliberately leaves submit/approve/reject/markPaid/lock/reopen/cancel/
+    // requestInfo/bulk* UNTOUCHED -- those already have their own well-tested, much more granular
+    // authorization (the Approval Workflow engine + can_approve_payroll/can_finalize_payroll +
+    // department-scoping, see CLAUDE.md's own "Approval Workflow" section for the real bugs already
+    // found/fixed there); layering a coarse RBAC gate on top risked conflicting with logic that's
+    // already correct. See database/migrations/2026-09-02_3_payroll_run_permission_gate.sql's own
+    // docblock -- that migration ALSO backfills role_permissions for every role that already has the
+    // corresponding legacy flag set, so no existing non-admin user loses access the moment this ships.
+    private function requirePermission(string $permissionKey): bool {
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
+        if (!$check['allowed']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to perform this action.']);
+            return false;
+        }
+        return true;
+    }
+
+    /** Any of the 3 payroll permission keys (payroll_run.process/.approve/.finalize) grants read
+     *  access -- mutating actions already check the SPECIFIC key they need inside PayrollRunModel.
+     *  2026-09-02: ALSO requires payroll_run.view (RBAC-layer, additive -- see this method's own
+     *  top-of-file comment above). */
     private function requireViewAccess(): bool {
         if (!$this->model->canView($this->userId(), $this->isAdmin())) {
             $this->json(['status' => false, 'message' => 'You do not have permission to view payroll data.']);
             return false;
         }
-        return true;
+        return $this->requirePermission('payroll_run.view');
     }
+
+    // 2026-09-03, Platform Hardening Phase 3: requireManageAccess() (the coarse payroll_run.manage
+    // gate that used to sit in front of every mutating method below) is retired -- every call site
+    // now checks the SPECIFIC action it actually performs (payroll_run.process/.add/.edit/.delete)
+    // directly via requirePermission(), matching the full CRUD/verb granularity payroll_run's
+    // permission rows now have (see database/migrations/2026-09-03_3_payroll_run_permission_split.sql).
+    // approve()/reject()/requestInfo()/revert()/bulkApprove()/bulkReject()/bulkRequestInfo()/cancel()/
+    // markPaid()/lock()/reopen() are DELIBERATELY left with no controller-level gate here, same as
+    // before this change -- their real authorization may come from the Approval Workflow engine's own
+    // per-run eligibility snapshot (see PayrollRunModel::canApproveThisRun()'s own docblock), which is
+    // completely independent of any company-wide permission grant; a blanket controller-level
+    // payroll_run.approve check here would wrongly refuse a legitimate engine-eligible approver who
+    // doesn't happen to also hold that coarse grant. Each of those methods' own model-level check
+    // (already correctly engine-aware) remains the sole authority, exactly as the original
+    // 2026-09-02 migration's own docblock reasoned for the same set of methods.
 
     public function list() {
         if (!$this->requireViewAccess()) return;
@@ -257,6 +299,9 @@ class PayrollController extends Controller {
             return;
         }
         $id = !empty($data['id']) ? (int)$data['id'] : null;
+        // 2026-09-03, Platform Hardening Phase 3: the permission check needs to know add-vs-edit
+        // BEFORE calling the model, same branch the model itself uses (id present = update).
+        if (!$this->requirePermission($id ? 'payroll_run.edit' : 'payroll_run.add')) return;
         $result = $id
             ? $this->model->update($id, (int)$compId, $data, $this->userId(), $this->isAdmin())
             : $this->model->create((int)$compId, $data, $this->userId(), $this->isAdmin());
@@ -267,6 +312,7 @@ class PayrollController extends Controller {
      *  action for a supplemental process attributed tax_treatment='merge'. See
      *  PayrollRunModel::mergeSupplementalIntoRun()'s own docblock for the full mechanism. */
     public function mergeSupplemental() {
+        if (!$this->requirePermission('payroll_run.process')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $syncProcessId = (is_array($data) && isset($data['sync_process_id'])) ? (int)$data['sync_process_id'] : 0;
@@ -288,6 +334,7 @@ class PayrollController extends Controller {
      *  "Add" flow's own equivalent of mergeSupplemental() above, for a run the admin built up
      *  manually (never Origami-sourced). See PayrollRunModel::mergeIntoExistingRun()'s own docblock. */
     public function mergeIntoExistingRun() {
+        if (!$this->requirePermission('payroll_run.process')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $sourceRunId = (is_array($data) && isset($data['source_run_id'])) ? (int)$data['source_run_id'] : 0;
@@ -302,6 +349,7 @@ class PayrollController extends Controller {
     }
 
     public function delete() {
+        if (!$this->requirePermission('payroll_run.delete')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -313,6 +361,7 @@ class PayrollController extends Controller {
     }
 
     public function recalculate() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -400,6 +449,7 @@ class PayrollController extends Controller {
     }
 
     public function joinEmployees() {
+        if (!$this->requirePermission('payroll_run.add')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -412,6 +462,7 @@ class PayrollController extends Controller {
     }
 
     public function removeEmployee() {
+        if (!$this->requirePermission('payroll_run.delete')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -436,6 +487,7 @@ class PayrollController extends Controller {
     }
 
     public function addManualLine() {
+        if (!$this->requirePermission('payroll_run.add')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -455,14 +507,21 @@ class PayrollController extends Controller {
         // see PayrollRunModel::addManualLine()'s own docblock for validation/defaulting.
         $payeeType = (is_array($data) && !empty($data['payee_type'])) ? (string)$data['payee_type'] : null;
         $includeInCashSummary = (is_array($data) && array_key_exists('include_in_cash_summary', $data)) ? (bool)$data['include_in_cash_summary'] : null;
+        // 2026-09-02, Deduction Destination & Third-Party Remittance -- only meaningful when
+        // payee_type='other_person'; PayrollRunModel::addManualLine()/PaymentDestinationModel
+        // itself validate the shape, this layer just passes it through untouched.
+        $destinationData = (is_array($data) && isset($data['destination']) && is_array($data['destination'])) ? $data['destination'] : null;
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+        $isOther = (is_array($data) && !empty($data['is_other'])) ? true : null;
         if (!$compId || $id <= 0 || $employeeId <= 0 || ($pedTypeId === null && ($customItemName === null || trim($customItemName) === ''))) {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary));
+        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther));
     }
 
     public function removeManualLine() {
+        if (!$this->requirePermission('payroll_run.delete')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -501,6 +560,7 @@ class PayrollController extends Controller {
     }
 
     public function lineOverrideSave() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -517,6 +577,7 @@ class PayrollController extends Controller {
     }
 
     public function lineOverrideRemove() {
+        if (!$this->requirePermission('payroll_run.delete')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -533,6 +594,7 @@ class PayrollController extends Controller {
     // lineOverrideSave()/lineOverrideRemove() above, one level up (statutory item code, not a
     // general item_code) -- see PayrollRunModel::statutoryLineOverrideSave()'s own docblock.
     public function statutoryLineOverrideSave() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -549,6 +611,7 @@ class PayrollController extends Controller {
     }
 
     public function statutoryLineOverrideRemove() {
+        if (!$this->requirePermission('payroll_run.delete')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -559,6 +622,48 @@ class PayrollController extends Controller {
             return;
         }
         $this->json($this->model->statutoryLineOverrideRemove($id, (int)$compId, $employeeId, $itemCode, $this->userId(), $this->isAdmin()));
+    }
+
+    /* ==================== RECURRING DEDUCTION DESTINATION OVERRIDES (2026-09-02, Deduction
+       Destination & Third-Party Remittance, Phase 6) -- process-level override of a recurring
+       deduction's payee, without touching the Employee Detail template row. ==================== */
+
+    public function recurringDeductionDestinationsForEmployee() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = isset($_GET['run_id']) ? (int)$_GET['run_id'] : 0;
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $runId <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'data' => []]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->recurringDeductionDestinationsForEmployee($runId, (int)$compId, $employeeId)]);
+    }
+
+    public function recurringDeductionDestinationOverrideSave() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $recurringId = (is_array($data) && isset($data['recurring_id'])) ? (int)$data['recurring_id'] : 0;
+        if (!$compId || $id <= 0 || $recurringId <= 0 || !is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->recurringDeductionDestinationOverrideSave($id, (int)$compId, $recurringId, $data, $this->userId(), $this->isAdmin()));
+    }
+
+    public function recurringDeductionDestinationOverrideRemove() {
+        if (!$this->requirePermission('payroll_run.delete')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $recurringId = (is_array($data) && isset($data['recurring_id'])) ? (int)$data['recurring_id'] : 0;
+        if (!$compId || $id <= 0 || $recurringId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->model->recurringDeductionDestinationOverrideRemove($id, (int)$compId, $recurringId, $this->userId(), $this->isAdmin()));
     }
 
     /* ==================== RAW ATTENDANCE DATA OVERRIDES (2026-08-21) ==================== */
@@ -576,6 +681,7 @@ class PayrollController extends Controller {
     }
 
     public function attendanceOverrideSave() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -590,6 +696,7 @@ class PayrollController extends Controller {
     }
 
     public function attendanceOverrideRemove() {
+        if (!$this->requirePermission('payroll_run.delete')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -624,6 +731,7 @@ class PayrollController extends Controller {
      *  ('inherit'/'yes'/'no') now, widened from the original force-off-only exempt_tax/exempt_sso
      *  booleans -- see PayrollRunModel::saveEmployeeExemption()'s own docblock. */
     public function saveEmployeeExemption() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -652,6 +760,7 @@ class PayrollController extends Controller {
     }
 
     public function runSettingsSave() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -670,6 +779,7 @@ class PayrollController extends Controller {
      * see PayrollRunModel::setAutoRecalculate()'s own docblock for the full design.
      */
     public function autoRecalculateSave() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -684,6 +794,7 @@ class PayrollController extends Controller {
     /* ==================== Employee Verify / Lock / Comments (2026-08-29) ==================== */
 
     public function employeeVerifySave() {
+        if (!$this->requirePermission('payroll_run.process')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -697,6 +808,7 @@ class PayrollController extends Controller {
     }
 
     public function employeeVerifyBulk() {
+        if (!$this->requirePermission('payroll_run.process')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -717,6 +829,7 @@ class PayrollController extends Controller {
      * requiring the caller to already know every employee_id).
      */
     public function employeeVerifyAll() {
+        if (!$this->requirePermission('payroll_run.process')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -728,6 +841,7 @@ class PayrollController extends Controller {
     }
 
     public function employeeCommentAdd() {
+        if (!$this->requirePermission('payroll_run.add')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -742,6 +856,7 @@ class PayrollController extends Controller {
     }
 
     public function errorEmployees() {
+        if (!$this->requireViewAccess()) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -755,6 +870,7 @@ class PayrollController extends Controller {
     // normally be expected in payroll but Origami didn't send this time and nobody manually joined
     // them either. See PayrollRunModel::syncMissingEmployees()'s own docblock.
     public function syncMissingEmployees() {
+        if (!$this->requireViewAccess()) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -765,6 +881,7 @@ class PayrollController extends Controller {
     }
 
     public function employeeCommentList() {
+        if (!$this->requireViewAccess()) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
@@ -776,6 +893,7 @@ class PayrollController extends Controller {
     }
 
     public function employeeCommentUpdate() {
+        if (!$this->requirePermission('payroll_run.edit')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -790,6 +908,7 @@ class PayrollController extends Controller {
     }
 
     public function employeeCommentDelete() {
+        if (!$this->requirePermission('payroll_run.delete')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -802,6 +921,7 @@ class PayrollController extends Controller {
     }
 
     public function submit() {
+        if (!$this->requirePermission('payroll_run.process')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -904,6 +1024,7 @@ class PayrollController extends Controller {
     }
 
     public function reviseAfterReject() {
+        if (!$this->requirePermission('payroll_run.process')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -945,6 +1066,7 @@ class PayrollController extends Controller {
     }
 
     public function reviseAfterNeedInfo() {
+        if (!$this->requirePermission('payroll_run.process')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;

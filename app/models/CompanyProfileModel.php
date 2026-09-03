@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/AuditLogModel.php';
 class CompanyProfileModel {
     private $db;
+    private AuditLogModel $auditLog;
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /** logo_path must exactly match what uploadLogo() produces for THIS company -- same
@@ -78,12 +81,15 @@ class CompanyProfileModel {
         }
         return null;
     }
-    public function save($data) {
+    public function save($data, ?string $ip = null, ?string $userAgent = null) {
         $companyId = $_SESSION['user']['company_id'] ?? null;
         if (!$companyId) {
             return false;
         }
-        $stmtCheck = $this->db->prepare("SELECT id, setup_status FROM companies WHERE id = :company_id");
+        // Platform Hardening Phase 6 pilot: full old row fetched up front (not just the 2 columns
+        // this method itself needs) so AuditLogModel::record() can diff it against the row's own
+        // state after the UPDATE below -- see that class's own docblock for the diff contract.
+        $stmtCheck = $this->db->prepare("SELECT * FROM companies WHERE id = :company_id");
         $stmtCheck->execute([':company_id' => $companyId]);
         $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
         $wasDraft = $existing && ($existing['setup_status'] ?? null) === 'draft';
@@ -138,7 +144,9 @@ class CompanyProfileModel {
                         statutory_data = :statutory_data,
                         authorized_signatory_name = :authorized_signatory_name,
                         logo_path = :logo_path,
+                        logo_file_size = :logo_file_size,
                         signature_path = :signature_path,
+                        signature_file_size = :signature_file_size,
                         ref_id = COALESCE(:ref_id, ref_id),
                         origami_payroll_comp_code = COALESCE(:origami_payroll_comp_code, origami_payroll_comp_code),
                         setup_status = :setup_status,
@@ -169,7 +177,9 @@ class CompanyProfileModel {
                 // whatever path it already had in a hidden field across saves, same as Payslip
                 // Template's modal does, so an unrelated profile save never accidentally clears it.
                 ':logo_path' => !empty($data['logo_path']) ? $data['logo_path'] : null,
+                ':logo_file_size' => !empty($data['logo_path']) && isset($data['logo_file_size']) ? (int)$data['logo_file_size'] : null,
                 ':signature_path' => !empty($data['signature_path']) ? $data['signature_path'] : null,
+                ':signature_file_size' => !empty($data['signature_path']) && isset($data['signature_file_size']) ? (int)$data['signature_file_size'] : null,
                 ':ref_id' => !empty($data['ref_id']) ? (int)$data['ref_id'] : null,
                 ':origami_payroll_comp_code' => !empty($data['origami_payroll_comp_code']) ? trim((string)$data['origami_payroll_comp_code']) : null,
                 ':setup_status' => $isComplete ? 'active' : 'draft',
@@ -192,9 +202,16 @@ class CompanyProfileModel {
             // item_code already present, active or soft-deleted) so it's safe even if this ever
             // fires more than once for the same company. The manual "Load Default Items" button in
             // Payroll Configuration still works independently of this -- unchanged.
+            $userId = $_SESSION['user']['employee_id'] ?? null;
             if ($ok && $isComplete && $wasDraft) {
-                $userId = $_SESSION['user']['employee_id'] ?? null;
                 (new PayrollEarningDeductionTypeModel())->seedDefaults((int)$companyId, $userId !== null ? (int)$userId : null);
+            }
+            if ($ok && $existing) {
+                $stmtAfter = $this->db->prepare("SELECT * FROM companies WHERE id = :company_id");
+                $stmtAfter->execute([':company_id' => $companyId]);
+                $newRow = $stmtAfter->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record((int)$companyId, 'companies', (int)$companyId, 'update', $existing, $newRow,
+                    $userId !== null ? (int)$userId : null, 'web', $ip, $userAgent);
             }
             return $ok;
         }
@@ -312,17 +329,17 @@ class CompanyProfileModel {
             ],
             'role' => [
                 'table' => 'structure_roles',
-                // can_process_payroll/can_approve_payroll/can_finalize_payroll added 2026-08-28
-                // (explicit request, following a real bug report: a role could be granted every
-                // Permission Matrix checkbox and still be unable to touch Payroll Run at all,
-                // since these 3 columns are a separate, older mechanism PayrollRunModel::userCan()
-                // checks directly against structure_roles -- unrelated to permissions/
-                // role_permissions. There was no UI anywhere to set them before this; they
-                // defaulted to 0 for every role and could only be flipped via raw SQL.
-                'columns' => ['role_name_th', 'role_name_en', 'salary_access', 'can_process_payroll', 'can_approve_payroll', 'can_finalize_payroll', 'status'],
+                // can_process_payroll/can_approve_payroll/can_finalize_payroll (added 2026-08-28)
+                // REMOVED 2026-09-03, Platform Hardening Phase 3 -- those 3 structure_roles columns
+                // are dropped entirely (database/migrations/2026-09-03_4_drop_legacy_payroll_role_flags.sql),
+                // folded into the real permissions/role_permissions system as payroll_run.process/
+                // .approve/.finalize instead (with per-user override support the old boolean columns
+                // never had). Granting them is now done via the Permission Matrix screen, same as
+                // every other permission -- no special-casing on this Role modal anymore.
+                'columns' => ['role_name_th', 'role_name_en', 'salary_access', 'status'],
                 'required' => ['role_name_th', 'role_name_en'],
                 'unique_columns' => ['role_name_th', 'role_name_en'],
-                'booleans' => ['salary_access', 'can_process_payroll', 'can_approve_payroll', 'can_finalize_payroll'],
+                'booleans' => ['salary_access'],
             ],
             'department' => [
                 'table' => 'structure_departments',
@@ -397,11 +414,29 @@ class CompanyProfileModel {
             }
         }
 
+        // 2026-09-02, Platform Hardening Phase 1.1 -- status moved OUT of the Add/Edit modal for
+        // these 6 entity types (row-level toggle switch is now the only way to change it, same
+        // "status moved to the table row" precedent PayrollEarningDeductionTypeModel::save() already
+        // established for PED Types -- see that method's own comment on this exact bug class). Fetch
+        // the EXISTING row's status first (when updating) so a save from the modal -- which no
+        // longer sends `status` at all -- preserves whatever the switch last set instead of quietly
+        // forcing every save back to 'active'. Only a genuinely NEW row (no existing status to
+        // preserve) defaults to 'active'.
+        $existingStatus = null;
+        if ($id !== null) {
+            $stmtExisting = $this->db->prepare("SELECT status FROM `{$table}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtExisting->execute([':id' => $id, ':comp_id' => $compId]);
+            $existingStatus = $stmtExisting->fetchColumn();
+            if ($existingStatus === false) {
+                return ['status' => false, 'message' => 'Record not found.'];
+            }
+        }
+
         $values = [];
         foreach ($config['columns'] as $col) {
             if ($col === 'status') {
-                $statusInput = $data['status'] ?? 'active';
-                $values[$col] = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : 'active';
+                $statusInput = $data['status'] ?? $existingStatus ?? 'active';
+                $values[$col] = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : ($existingStatus ?: 'active');
                 continue;
             }
             if (in_array($col, $config['booleans'], true)) {
@@ -414,11 +449,6 @@ class CompanyProfileModel {
 
         try {
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `{$table}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
-                $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-                if (!$stmtCheck->fetch()) {
-                    return ['status' => false, 'message' => 'Record not found.'];
-                }
                 $setSql = [];
                 $params = [':id' => $id, ':updated_by' => $userId];
                 foreach ($values as $col => $val) {
@@ -462,6 +492,38 @@ class CompanyProfileModel {
             $stmt = $this->db->prepare("UPDATE `{$table}` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
             $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
             return ['status' => true, 'message' => 'Deleted successfully.'];
+        } catch (PDOException $e) {
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    /**
+     * 2026-09-02, Platform Hardening Phase 1.1, explicit request: every Active/Inactive status
+     * column should be an instant-AJAX toggle switch, not a plain badge only changeable via the
+     * Edit modal's own `status` select field. All 6 structureConfig() entities (branch/role/
+     * department/position/rank/team) already have that field in their own `columns` array, so this
+     * is one small, generic method covering all 6 at once instead of 6 near-identical ones -- same
+     * "one shared mechanism, no per-type special-casing" philosophy structureConfig() itself already
+     * established. Toggles active<->inactive directly (does NOT touch soft-delete's own 'deleted'
+     * status -- that stays deleteStructure()'s job alone).
+     */
+    public function toggleStructureStatus(string $type, int $compId, int $id, int $userId): array {
+        $config = $this->getStructureConfig($type);
+        if (!$config) {
+            return ['status' => false, 'message' => 'Invalid entity type.'];
+        }
+        $table = $config['table'];
+        try {
+            $stmtCheck = $this->db->prepare("SELECT status FROM `{$table}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
+            $current = $stmtCheck->fetchColumn();
+            if ($current === false) {
+                return ['status' => false, 'message' => 'Record not found.'];
+            }
+            $newStatus = $current === 'active' ? 'inactive' : 'active';
+            $stmt = $this->db->prepare("UPDATE `{$table}` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+            $stmt->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+            return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }

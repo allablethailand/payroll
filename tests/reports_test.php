@@ -116,14 +116,14 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, department_id)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
          :tax_id_no, :sso_no, :id_card_no, 1, :bank_account_no, :bank_account_name, :key_version,
          :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', :base_salary, '2020-01-01', 'average', 'active',
+         'monthly', :base_salary, '2020-01-01', 'average', 'active',
          1, 1, 0, NULL)");
     $insEmp->execute([
         ':comp_id' => $compId, ':employee_no' => 'RPT_TEST_' . uniqid(),
@@ -146,14 +146,14 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_end_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, department_id)
         VALUES (:comp_id, :employee_no, 'ms', 'female', 'ทดสอบ', 'ลาออก', 'Test', 'Resigned', '1990-01-01', 'Thai',
          :sso_no, :key_version,
          :email, '0811111111', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2019-01-01', :employment_end_date, 'resigned', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 28000, '2019-01-01', 'average', 'active',
+         'monthly', 28000, '2019-01-01', 'average', 'active',
          1, 0, 0, NULL)");
     $insResigned->execute([
         ':comp_id' => $compId, ':employee_no' => 'RPT_RESIGNED_' . uniqid(),
@@ -229,7 +229,9 @@ try {
     checkTrue('registry has at least 3 reports', count($all) >= 3);
     check('statutory type has 6 reports', count(ReportRegistry::byType('statutory')), 6);
     // 2026-08-31: +1 for CASH_PAYMENT_SUMMARY (see tests/cash_payment_test.php for its own dedicated coverage).
-    check('payment type has 4 reports', count(ReportRegistry::byType('payment')), 4);
+    // 2026-09-02: +1 for THIRD_PARTY_REMITTANCE_SUMMARY (see tests/payroll_remittance_test.php for its own dedicated coverage).
+    // 2026-09-02: +1 for BANK_ACCOUNT_PAYMENT_SUMMARY (see tests/payroll_run_employee_bank_account_test.php for its own dedicated coverage).
+    check('payment type has 6 reports', count(ReportRegistry::byType('payment')), 6);
     // 2026-08-31: 3 now -- PayrollRunListSummaryReport (PAYROLL_RUN_LIST_SUMMARY) and
     // ScheduledItemOccurrenceReconciliationReport (SCHEDULED_ITEM_OCCURRENCE_RECONCILIATION, own
     // dedicated coverage in tests/payroll_sync_item_occurrences_test.php) both added alongside the
@@ -290,6 +292,47 @@ try {
     // Draft run is allowed for the internal report (no state gate).
     $draftRegisterResult = $registerReport->generate(['comp_id' => $compId, 'run_id' => $draftRunId], 'excel');
     checkTrue('internal report allowed on a draft run', strlen($draftRegisterResult['content']) > 0);
+
+    // ---------- Payroll Register: PDF format + bilingual (2026-09-02, explicit request: "เพิ่มให้
+    // Export เป็น PDF ได้ด้วย และรองรับ 2 ภาษาเหมือน Report ส่วนอื่น") ----------
+    echo "=== PayrollRegisterReport (internal, PDF, bilingual) ===\n";
+    checkTrue('pdf added to supportedFormats()', in_array('pdf', $registerReport->supportedFormats(), true));
+    $registerPdfTh = $registerReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'pdf');
+    checkTrue('th pdf content is non-empty', strlen($registerPdfTh['content']) > 0);
+    check('pdf mime type', $registerPdfTh['mime_type'], 'application/pdf');
+    check('pdf content starts with the real PDF signature (%PDF), not an error page', substr($registerPdfTh['content'], 0, 4), '%PDF');
+    check('pdf file_name uses .pdf extension', $registerPdfTh['file_name'], "PayrollRegister_Run{$runId}.pdf");
+
+    $registerPdfEn = $registerReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'en'], 'pdf');
+    checkTrue('en pdf content is also non-empty', strlen($registerPdfEn['content']) > 0);
+    checkTrue('th and en PDFs are genuinely different byte content (real bilingual output, not the same file twice)', $registerPdfTh['content'] !== $registerPdfEn['content']);
+
+    // Absent language defaults to 'th' -- every pre-existing caller (List/Detail page buttons before
+    // this round) never passes one, so this must keep behaving exactly like the th-explicit case.
+    $registerPdfDefault = $registerReport->generate(['comp_id' => $compId, 'run_id' => $runId], 'pdf');
+    checkTrue('absent language defaults to th (same length as explicit th -- deterministic dompdf output for identical input)', strlen($registerPdfDefault['content']) === strlen($registerPdfTh['content']));
+
+    // An invalid/unrecognized language value must fall back to th (never crash, never silently
+    // produce garbled/empty output) -- same defensive default() the ternary comment in generate()
+    // itself documents guarding against.
+    $registerPdfBadLang = $registerReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'fr'], 'pdf');
+    checkTrue('unrecognized language falls back to th, does not throw', strlen($registerPdfBadLang['content']) === strlen($registerPdfTh['content']));
+
+    // Excel output is ALSO bilingual now (same $context['language'] the PDF branch reads) -- en
+    // headers should differ from the th ones already asserted above (รหัสพนักงาน at A5).
+    $registerExcelEn = $registerReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'en'], 'excel');
+    $tmpXlsxEn = sys_get_temp_dir() . '/reports_test_en_' . uniqid() . '.xlsx';
+    file_put_contents($tmpXlsxEn, $registerExcelEn['content']);
+    $readerEn = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+    $workbookEn = $readerEn->load($tmpXlsxEn);
+    check('en excel sheet 1 is named Detail', $workbookEn->getSheet(0)->getTitle(), 'Detail');
+    check('en excel sheet 2 is named Summary', $workbookEn->getSheet(1)->getTitle(), 'Summary');
+    check('en excel column header row A5 is the English employee-no label', $workbookEn->getActiveSheet()->getCell('A5')->getValue(), 'Employee No.');
+    unlink($tmpXlsxEn);
+    // The default (no language passed) excel path must stay byte-identical in SHAPE to before this
+    // round -- re-assert the exact same th labels the pre-existing test above already locked in,
+    // proving the bilingual refactor didn't change the default output at all.
+    check('default (th) excel still has รหัสพนักงาน at A5 (unchanged from before this round)', $sheet->getCell('A5')->getValue(), 'รหัสพนักงาน');
 
     echo "=== PayrollRegisterReport validation ===\n";
     $invalidRunId = false;
@@ -785,12 +828,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt)
         VALUES (:comp_id, :employee_no, :role_id, 'mr', 'male', 'ทดสอบ', 'RPT', 'Test', 'RPT', '1990-01-01', 'Thai',
          :email, '0812345678', 'A', 'A', 'E', 'E', 'friend', '0898888888',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'cash', 'monthly', 25000, '2020-01-01', 'average', 'active', 0, 0, 0)")
+         'monthly', 25000, '2020-01-01', 'average', 'active', 0, 0, 0)")
         ->execute([':comp_id' => $compId, ':employee_no' => $noGrantEmpNo, ':role_id' => $noReportGrantRoleId, ':email' => uniqid() . '@test.local']);
     $noReportGrantEmpId = (int)$pdo->lastInsertId();
     $noGrantReportsVisibility = $permModel->resolveSalaryVisibility($noReportGrantEmpId, 'reports', false, $compId);

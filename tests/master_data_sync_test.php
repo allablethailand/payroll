@@ -21,15 +21,24 @@ require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/services/sync/OrigamiSyncClientInterface.php';
 require_once __DIR__ . '/../app/services/sync/MasterDataSyncOrchestrator.php';
 require_once __DIR__ . '/../app/models/SyncBatchModel.php';
+require_once __DIR__ . '/../app/models/EmployeeModel.php';
+// 2026-09-02, added for the "EmployeeSyncer: 2026-09-02 new field batch" section's own
+// StatutoryCalculationEngine per-employee SSO rate override assertions below.
+require_once __DIR__ . '/../app/models/TaxStatutoryModel.php';
+require_once __DIR__ . '/../app/models/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../app/services/StatutoryCalculationEngine.php';
 
 class FakeOrigamiSyncClient implements OrigamiSyncClientInterface {
     public array $departments = [];
     public array $positions = [];
     public array $shifts = [];
+    public array $branches = [];
+    public array $teams = [];
     public array $holidays = [];
     public array $leaveTypes = [];
     public array $otRates = [];
     public array $employees = [];
+    public ?array $company = null;
     /** @var string[] entity types (matching fetch method suffix) that should throw when called */
     public array $throwFor = [];
 
@@ -42,6 +51,9 @@ class FakeOrigamiSyncClient implements OrigamiSyncClientInterface {
     public function fetchDepartments(int $origamiCompanyId): array { $this->maybeThrow('departments'); return $this->departments; }
     public function fetchPositions(int $origamiCompanyId): array { $this->maybeThrow('positions'); return $this->positions; }
     public function fetchShifts(int $origamiCompanyId): array { $this->maybeThrow('shifts'); return $this->shifts; }
+    public function fetchBranches(int $origamiCompanyId): array { $this->maybeThrow('branches'); return $this->branches; }
+    public function fetchTeams(int $origamiCompanyId): array { $this->maybeThrow('teams'); return $this->teams; }
+    public function fetchCompany(int $origamiCompanyId): ?array { $this->maybeThrow('company'); return $this->company; }
     public function fetchHolidays(int $origamiCompanyId): array { $this->maybeThrow('holidays'); return $this->holidays; }
     public function fetchLeaveTypes(int $origamiCompanyId): array { $this->maybeThrow('leaveTypes'); return $this->leaveTypes; }
     public function fetchOtRates(int $origamiCompanyId): array { $this->maybeThrow('otRates'); return $this->otRates; }
@@ -162,6 +174,41 @@ try {
     $rs = $orch->syncEntity($compId, 'shift', $adminUserId);
     checkTrue('shift sync succeeds', $rs['status']);
     check('1 success', $rs['success'], 1);
+
+    // ---------- Branch (2026-09-02, real Origami endpoint confirmed live) ----------
+    echo "=== BranchSyncer ===\n";
+    $fake->branches = [
+        ['ref_id' => 7501, 'code' => 'MDS_HQ', 'name' => 'Head Office (Test)', 'is_default' => true, 'is_active' => true],
+    ];
+    $rbr = $orch->syncEntity($compId, 'branch', $adminUserId);
+    checkTrue('branch sync succeeds', $rbr['status']);
+    check('1 success', $rbr['success'], 1);
+    $branchRow = $pdo->query("SELECT branch_name_th, branch_name_en, is_default, data_source FROM structure_branches WHERE origami_ref_id = 7501 AND comp_id = {$compId}")->fetch(PDO::FETCH_ASSOC);
+    checkTrue('branch created', $branchRow !== false);
+    check('single name mirrored into both branch_name_th/en (no bilingual source)', [$branchRow['branch_name_th'] ?? null, $branchRow['branch_name_en'] ?? null], ['Head Office (Test)', 'Head Office (Test)']);
+    check('is_default carried through', (int)($branchRow['is_default'] ?? -1), 1);
+    check('data_source is sync', $branchRow['data_source'] ?? null, 'sync');
+
+    // ---------- Team (2026-09-02, real Origami endpoint confirmed live -- previously deliberately excluded, see TeamSyncer's own docblock) ----------
+    echo "=== TeamSyncer ===\n";
+    $fake->teams = [
+        ['ref_id' => 7601, 'name' => 'Client Alpha Team (Test)', 'is_active' => true],
+    ];
+    $rtm = $orch->syncEntity($compId, 'team', $adminUserId);
+    checkTrue('team sync succeeds', $rtm['status']);
+    check('1 success', $rtm['success'], 1);
+    $teamRow = $pdo->query("SELECT team_code, team_name_th, team_name_en, data_source FROM structure_teams WHERE origami_ref_id = 7601 AND comp_id = {$compId}")->fetch(PDO::FETCH_ASSOC);
+    checkTrue('team created', $teamRow !== false);
+    checkTrue('team_code auto-generated (Origami has no code field at all for teams)', !empty($teamRow['team_code']));
+    check('single name mirrored into both team_name_th/en', [$teamRow['team_name_th'] ?? null, $teamRow['team_name_en'] ?? null], ['Client Alpha Team (Test)', 'Client Alpha Team (Test)']);
+    check('data_source is sync', $teamRow['data_source'] ?? null, 'sync');
+    // Re-sync with a NEW name, same ref_id -- must update the SAME row, not duplicate.
+    $fake->teams[0]['name'] = 'Client Alpha Team RENAMED (Test)';
+    $orch->syncEntity($compId, 'team', $adminUserId);
+    $teamCountAfterRename = (int)$pdo->query("SELECT COUNT(*) FROM structure_teams WHERE origami_ref_id = 7601 AND comp_id = {$compId}")->fetchColumn();
+    check('re-sync updates the same row (still exactly 1), not a duplicate', $teamCountAfterRename, 1);
+    $teamNameAfterRename = $pdo->query("SELECT team_name_en FROM structure_teams WHERE origami_ref_id = 7601 AND comp_id = {$compId}")->fetchColumn();
+    check('name updated on re-sync', $teamNameAfterRename, 'Client Alpha Team RENAMED (Test)');
 
     // ---------- Holiday ----------
     echo "=== HolidaySyncer ===\n";
@@ -345,7 +392,13 @@ try {
     check('title normalized to ms', $emp4['title'] ?? null, 'ms');
     check('nickname written to both nickname_th and nickname_en', [$emp4['nickname_th'] ?? null, $emp4['nickname_en'] ?? null], ['Four', 'Four']);
     check('nationality resolved to the real master_nationalities CODE (TH), not the raw word "Thai" (real bug found+fixed this round)', $emp4['nationality'] ?? null, 'TH');
-    check('religion stored as-sent (direct passthrough, same documented-risk precedent as the other Origami integration)', $emp4['religion'] ?? null, 'Buddha');
+    // 2026-09-02, real bug found (via a follow-up reply from the Origami team) and fixed: religion
+    // used to be a raw passthrough here (unlike nationality right above, which was already
+    // correctly resolved) -- now resolved via resolveReligionCode(), same alias map as
+    // PayrollSyncModel's own fix on the OTHER Origami integration. 'Buddha' is Origami's REAL wire
+    // value (per PAYROLL_SYNC_API.md), resolved via the alias map (not a direct name match) to this
+    // app's own 'BUD' code.
+    check('religion resolved via the alias map from Origami\'s real wire value ("Buddha") to this app\'s own religion_code ("BUD"), not stored raw', $emp4['religion'] ?? null, 'BUD');
     check('marital_status normalized to single', $emp4['marital_status'] ?? null, 'single');
     check('id_card_issue_date stored', $emp4['id_card_issue_date'] ?? null, '2018-01-01');
     check('id_card_expire_date stored', $emp4['id_card_expire_date'] ?? null, '2028-01-01');
@@ -386,7 +439,7 @@ try {
     check('title survives a sparse re-sync unchanged', $emp4AfterSparse['title'] ?? null, 'ms');
     check('nickname survives a sparse re-sync unchanged', $emp4AfterSparse['nickname_th'] ?? null, 'Four');
     check('nationality survives a sparse re-sync unchanged', $emp4AfterSparse['nationality'] ?? null, 'TH');
-    check('religion survives a sparse re-sync unchanged', $emp4AfterSparse['religion'] ?? null, 'Buddha');
+    check('religion survives a sparse re-sync unchanged (still resolved code "BUD", not re-derived or blanked)', $emp4AfterSparse['religion'] ?? null, 'BUD');
     check('marital_status survives a sparse re-sync unchanged', $emp4AfterSparse['marital_status'] ?? null, 'single');
     check('office_tel survives a sparse re-sync unchanged (blank emp_tel this time)', $emp4AfterSparse['office_tel'] ?? null, '02-111-2222');
     $decIdCard4After = EncryptionService::decrypt($emp4AfterSparse['id_card_no'], (int)$emp4AfterSparse['key_version']);
@@ -445,6 +498,249 @@ try {
     checkTrue('downloadPhoto() rejects a blank URL', $photoReflection->invoke($employeeSyncer, '') === null);
     checkTrue('downloadPhoto() rejects null', $photoReflection->invoke($employeeSyncer, null) === null);
 
+    echo "=== EmployeeSyncer: 2026-09-02 new field batch (employment_type/SSO rate override/address/foreign worker/emergency contact) ===\n";
+    $candidate6 = [
+        'ref_id' => 11006, 'employee_no' => 'MDS_EMP_6', 'name_th' => 'ทดสอบ', 'surname_th' => 'พนักงานหก',
+        'name_en' => 'Test', 'surname_en' => 'EmployeeSix', 'date_of_birth' => '1995-06-15', 'gender' => 'male',
+        'department_ref_id' => null, 'position_ref_id' => null, 'shift_ref_id' => null, 'branch_ref_id' => null,
+        'employment_date' => '2024-05-01', 'employment_status' => 'permanent',
+        'personal_email' => 'mds6@test.local', 'mobile_no' => '0866666666', 'is_active' => true,
+        'employment_type_ref_id' => 22001, 'employment_type_code' => 'CONTRACT', 'employment_type_name' => 'Contract Employee (Test)',
+        'sso_employee_rate_percent' => '3.00', 'sso_company_rate_percent' => '2.50',
+        'current_address' => [
+            'no' => '99/9', 'moo' => '5', 'building' => null, 'soi' => 'Sukhumvit 21', 'road' => 'Sukhumvit',
+            'sub_district' => 'Khlong Toei Nuea', 'district' => 'Watthana', 'province' => 'Bangkok', 'postcode' => '10110',
+        ],
+        'house_registration_same_as_current' => false,
+        'house_registration_address' => [
+            'no' => '10', 'moo' => null, 'building' => null, 'soi' => null, 'road' => 'Ratchadamnoen',
+            'sub_district' => 'Phra Nakhon', 'district' => 'Phra Nakhon', 'province' => 'Bangkok', 'postcode' => '10200',
+        ],
+        'is_foreign_worker' => true,
+        'passport' => ['no' => 'X1234567', 'issued_place' => 'Yangon', 'issue_date' => '2020-01-01', 'expire_date' => '2030-01-01'],
+        'work_permit' => ['no' => 'WP-9988', 'issued_place' => 'Bangkok', 'issue_date' => '2024-05-01', 'expire_date' => '2025-05-01'],
+        // 2026-09-02, same-day follow-up: visa/foreign_worker_info now have a schema home too --
+        // field shapes confirmed directly from Origami's own candidates.php source.
+        'visa' => ['type_code' => '3', 'type_name' => 'Non-Immigrant Visa', 'no' => 'V-555', 'issued_place' => 'Bangkok', 'issue_date' => '2024-04-01', 'expire_date' => '2025-04-01'],
+        'foreign_worker_info' => [
+            'recruitment_agency' => 'ABC Recruitment', 'arrival_date' => '2024-04-15', 'due_date' => '2025-04-15',
+            'arrival_card_no' => 'AC-777', 'arrival_by_vehicle' => 'Flight TG123', 'address' => '123 Home St',
+            'soi' => 'Home Soi', 'province' => 'Yangon', 'district' => 'Home District', 'sub_district' => 'Home Sub',
+            'tel_code' => '+95', 'tel' => '912345678',
+        ],
+        'emergency_contact' => ['firstname' => 'Somying', 'lastname' => 'Testsix', 'relationship_name' => 'Sister', 'tel' => '0899999999'],
+    ];
+    $batch6 = (new SyncBatchModel($pdo))->start($compId, 'employee', 'sync', 'manual', $adminUserId);
+    $employeeSyncer->applyOne($compId, $candidate6, $batch6, $adminUserId);
+    $emp6Stmt = $pdo->prepare("SELECT * FROM employees WHERE origami_ref_id = 11006 AND comp_id = :c");
+    $emp6Stmt->execute([':c' => $compId]);
+    $emp6 = $emp6Stmt->fetch(PDO::FETCH_ASSOC);
+    checkTrue('employee 6 created (INSERT branch)', $emp6 !== false);
+
+    $empType6 = $pdo->prepare("SELECT * FROM structure_employment_types WHERE origami_ref_id = 22001 AND comp_id = :c");
+    $empType6->execute([':c' => $compId]);
+    $empTypeRow6 = $empType6->fetch(PDO::FETCH_ASSOC);
+    checkTrue('employment type auto-created (structure_employment_types)', $empTypeRow6 !== false);
+    check('employment_type_code stored', $empTypeRow6['employment_type_code'] ?? null, 'CONTRACT');
+    check('employment_type_name written to both _th and _en (no separate TH/EN source on the wire)', [$empTypeRow6['employment_type_name_th'] ?? null, $empTypeRow6['employment_type_name_en'] ?? null], ['Contract Employee (Test)', 'Contract Employee (Test)']);
+    check('employee 6 employment_type_id resolved to the auto-created row', (int)($emp6['employment_type_id'] ?? 0), (int)$empTypeRow6['id']);
+    check('employees.employment_type (fixed enum) unaffected by the new employment_type_id link -- still the pre-existing hardcoded INSERT default', $emp6['employment_type'] ?? null, 'full_time');
+
+    check('sso_contribution_rate (employee-side override) stored as sent', $emp6['sso_contribution_rate'] ?? null, '3.00');
+    check('sso_employer_contribution_rate (employer-side override, new column) stored as sent', $emp6['sso_employer_contribution_rate'] ?? null, '2.50');
+
+    check('address_line_1_contact concatenated from current_address block', $emp6['address_line_1_contact'] ?? null, '99/9 หมู่ 5 ซอยSukhumvit 21 ถนนSukhumvit');
+    check('address_line_2_contact concatenated (sub-district/district/province/postcode)', $emp6['address_line_2_contact'] ?? null, 'Khlong Toei Nuea Watthana Bangkok 10110');
+    check('address_line_1_register concatenated from house_registration_address block (same_as_current=false)', $emp6['address_line_1_register'] ?? null, '10 ถนนRatchadamnoen');
+    check('address_line_2_register concatenated', $emp6['address_line_2_register'] ?? null, 'Phra Nakhon Phra Nakhon Bangkok 10200');
+    check('use_register_address is 0 (house_registration_same_as_current was false)', (int)($emp6['use_register_address'] ?? -1), 0);
+    checkTrue('master_address_id_contact left null (no reliable text-match resolution attempted, by design)', ($emp6['master_address_id_contact'] ?? null) === null);
+    checkTrue('master_address_id_register left null (same reason)', ($emp6['master_address_id_register'] ?? null) === null);
+
+    check('employee_type set to foreigner from is_foreign_worker=true', $emp6['employee_type'] ?? null, 'foreigner');
+    check('passport_no stored', $emp6['passport_no'] ?? null, 'X1234567');
+    check('passport_expire_date stored', $emp6['passport_expire_date'] ?? null, '2030-01-01');
+    check('work_permit_no stored', $emp6['work_permit_no'] ?? null, 'WP-9988');
+    check('date_work_permit_issue stored', $emp6['date_work_permit_issue'] ?? null, '2024-05-01');
+    check('date_work_permit_expire stored', $emp6['date_work_permit_expire'] ?? null, '2025-05-01');
+
+    echo "--- 2026-09-02, same-day follow-up: visa details + foreign_worker_info ---\n";
+    check('passport_issued_place stored', $emp6['passport_issued_place'] ?? null, 'Yangon');
+    check('passport_issue_date stored', $emp6['passport_issue_date'] ?? null, '2020-01-01');
+    check('work_permit_issued_place stored', $emp6['work_permit_issued_place'] ?? null, 'Bangkok');
+    check('visa_type stores the RESOLVED type_name, not the raw type_code', $emp6['visa_type'] ?? null, 'Non-Immigrant Visa');
+    check('visa_no stored', $emp6['visa_no'] ?? null, 'V-555');
+    check('visa_issued_place stored', $emp6['visa_issued_place'] ?? null, 'Bangkok');
+    check('visa_issue_date stored', $emp6['visa_issue_date'] ?? null, '2024-04-01');
+    check('date_visa_expire stored', $emp6['date_visa_expire'] ?? null, '2025-04-01');
+
+    $fwd6Stmt = $pdo->prepare("SELECT * FROM employee_foreign_worker_details WHERE employee_id = :id");
+    $fwd6Stmt->execute([':id' => $emp6['id']]);
+    $fwd6 = $fwd6Stmt->fetch(PDO::FETCH_ASSOC);
+    checkTrue('employee_foreign_worker_details row created', $fwd6 !== false);
+    check('recruitment_agency stored', $fwd6['recruitment_agency'] ?? null, 'ABC Recruitment');
+    check('arrival_date stored', $fwd6['arrival_date'] ?? null, '2024-04-15');
+    check('due_date stored', $fwd6['due_date'] ?? null, '2025-04-15');
+    check('arrival_card_no stored', $fwd6['arrival_card_no'] ?? null, 'AC-777');
+    check('arrival_by_vehicle stored', $fwd6['arrival_by_vehicle'] ?? null, 'Flight TG123');
+    check('address stored', $fwd6['address'] ?? null, '123 Home St');
+    check('soi stored', $fwd6['soi'] ?? null, 'Home Soi');
+    check('province stored', $fwd6['province'] ?? null, 'Yangon');
+    check('district stored', $fwd6['district'] ?? null, 'Home District');
+    check('sub_district stored', $fwd6['sub_district'] ?? null, 'Home Sub');
+    check('tel_code stored', $fwd6['tel_code'] ?? null, '+95');
+    check('tel stored', $fwd6['tel'] ?? null, '912345678');
+
+    check('emergency_name stored', $emp6['emergency_name'] ?? null, 'Somying');
+    check('emergency_surname stored', $emp6['emergency_surname'] ?? null, 'Testsix');
+    check('emergency_relationship stored (English relationship_name preferred)', $emp6['emergency_relationship'] ?? null, 'Sister');
+    check('emergency_mobile stored', $emp6['emergency_mobile'] ?? null, '0899999999');
+
+    echo "--- house_registration_same_as_current=true: register address mirrors current address, not the (possibly stale) house_regis_* block ---\n";
+    $candidate6b = $candidate6;
+    $candidate6b['ref_id'] = 11007;
+    $candidate6b['employee_no'] = 'MDS_EMP_7';
+    $candidate6b['house_registration_same_as_current'] = true;
+    // Deliberately stale/different house_registration_address -- must be IGNORED when same_as_current=true.
+    $candidate6b['house_registration_address'] = ['no' => 'STALE', 'sub_district' => 'ShouldNotAppear'];
+    $employeeSyncer->applyOne($compId, $candidate6b, $batch6, $adminUserId);
+    $emp7Stmt = $pdo->prepare("SELECT * FROM employees WHERE origami_ref_id = 11007 AND comp_id = :c");
+    $emp7Stmt->execute([':c' => $compId]);
+    $emp7 = $emp7Stmt->fetch(PDO::FETCH_ASSOC);
+    check('address_line_1_register mirrors current address (same_as_current=true), not the stale house_regis_* block', $emp7['address_line_1_register'] ?? null, '99/9 หมู่ 5 ซอยSukhumvit 21 ถนนSukhumvit');
+    check('use_register_address is 1', (int)($emp7['use_register_address'] ?? -1), 1);
+
+    echo "--- UPDATE branch: sparse re-sync (emergency_contact/current_address/house_registration_address/passport/work_permit/visa/foreign_worker_info all absent this time) must NOT erase what's already on file ---\n";
+    $candidate6Sparse = $candidate6;
+    unset($candidate6Sparse['emergency_contact'], $candidate6Sparse['current_address'], $candidate6Sparse['house_registration_address'], $candidate6Sparse['passport'], $candidate6Sparse['work_permit'], $candidate6Sparse['visa'], $candidate6Sparse['foreign_worker_info']);
+    $candidate6Sparse['house_registration_same_as_current'] = false; // present, but current/house_reg blocks are absent -> both addressLinesFromBlock() calls return null.
+    $employeeSyncer->applyOne($compId, $candidate6Sparse, $batch6, $adminUserId);
+    $emp6Stmt->execute([':c' => $compId]);
+    $emp6AfterSparse = $emp6Stmt->fetch(PDO::FETCH_ASSOC);
+    check('emergency_name survives a sparse re-sync unchanged', $emp6AfterSparse['emergency_name'] ?? null, 'Somying');
+    check('address_line_1_contact survives a sparse re-sync unchanged', $emp6AfterSparse['address_line_1_contact'] ?? null, '99/9 หมู่ 5 ซอยSukhumvit 21 ถนนSukhumvit');
+    check('address_line_1_register survives a sparse re-sync unchanged', $emp6AfterSparse['address_line_1_register'] ?? null, '10 ถนนRatchadamnoen');
+    check('passport_no survives a sparse re-sync unchanged (foreignWorkerFieldsFromItem() null-guarded per sub-field)', $emp6AfterSparse['passport_no'] ?? null, 'X1234567');
+    check('work_permit_no survives a sparse re-sync unchanged', $emp6AfterSparse['work_permit_no'] ?? null, 'WP-9988');
+    check('visa_no survives a sparse re-sync unchanged', $emp6AfterSparse['visa_no'] ?? null, 'V-555');
+    $fwd6AfterSparseStmt = $pdo->prepare("SELECT * FROM employee_foreign_worker_details WHERE employee_id = :id");
+    $fwd6AfterSparseStmt->execute([':id' => $emp6AfterSparse['id']]);
+    $fwd6AfterSparse = $fwd6AfterSparseStmt->fetch(PDO::FETCH_ASSOC);
+    check('employee_foreign_worker_details row survives a sparse re-sync unchanged (foreignWorkerInfoFromItem() returns null when the whole block is absent, so save() is never even called)', $fwd6AfterSparse['recruitment_agency'] ?? null, 'ABC Recruitment');
+
+    echo "=== EmployeeSyncer: 2026-09-03, document scan URLs (documentScansFromItem/downloadDocumentScan/syncDocumentScans) ===\n";
+    // documentScansFromItem() is pure data-shaping (no network) -- exercised directly via reflection.
+    $scansReflection = new ReflectionMethod(EmployeeSyncer::class, 'documentScansFromItem');
+    $scansReflection->setAccessible(true);
+    $scansFull = $scansReflection->invoke($employeeSyncer, [
+        'passport' => ['document_url' => 'https://origami.test/files/passport_11006.pdf', 'document_name' => 'passport.pdf'],
+        'visa' => ['document_url' => 'https://origami.test/files/visa_11006.pdf', 'document_name' => 'visa.pdf'],
+        'work_permit' => ['document_url' => 'https://origami.test/files/wp_11006.pdf', 'document_name' => 'work_permit.pdf'],
+    ]);
+    check('documentScansFromItem() returns all 3 scans when all 3 blocks carry a document_url', count($scansFull), 3);
+    $scanByType = [];
+    foreach ($scansFull as $s) { $scanByType[$s['document_type']] = $s; }
+    check('passport block maps to document_type=passport_copy with the real URL/name', [$scanByType['passport_copy']['url'] ?? null, $scanByType['passport_copy']['name'] ?? null], ['https://origami.test/files/passport_11006.pdf', 'passport.pdf']);
+    check('visa block maps to document_type=visa_copy', $scanByType['visa_copy']['url'] ?? null, 'https://origami.test/files/visa_11006.pdf');
+    check('work_permit block REUSES the existing work_permit_copy type (no redundant 4th "scan" variant)', $scanByType['work_permit_copy']['url'] ?? null, 'https://origami.test/files/wp_11006.pdf');
+
+    $scansPartial = $scansReflection->invoke($employeeSyncer, [
+        'passport' => ['document_url' => '', 'document_name' => 'passport.pdf'], // blank url -- skipped
+        'visa' => ['document_url' => 'not-a-real-url'], // non-http(s) scheme -- skipped
+        // work_permit block entirely absent -- skipped
+    ]);
+    check('documentScansFromItem() skips blank/non-http(s)/absent blocks entirely, not guessed at', count($scansPartial), 0);
+
+    $scansNoName = $scansReflection->invoke($employeeSyncer, ['passport' => ['document_url' => 'https://origami.test/files/x.pdf']]);
+    check('documentScansFromItem() falls back to a synthetic filename when Origami sends no document_name', $scansNoName[0]['name'] ?? null, 'passport_copy.pdf');
+
+    echo "--- downloadDocumentScan() guard clauses (no real network call -- non-http(s)/blank input rejected, same convention as downloadPhoto()'s own test above) ---\n";
+    $docDlReflection = new ReflectionMethod(EmployeeSyncer::class, 'downloadDocumentScan');
+    $docDlReflection->setAccessible(true);
+    checkTrue('downloadDocumentScan() rejects a non-http(s) scheme', $docDlReflection->invoke($employeeSyncer, 'file:///etc/passwd') === null);
+    checkTrue('downloadDocumentScan() rejects a blank URL', $docDlReflection->invoke($employeeSyncer, '') === null);
+    checkTrue('downloadDocumentScan() rejects null', $docDlReflection->invoke($employeeSyncer, null) === null);
+
+    echo "--- syncDocumentScans(): idempotency + failure-safety, exercised without any real network call ---\n";
+    $syncScansReflection = new ReflectionMethod(EmployeeSyncer::class, 'syncDocumentScans');
+    $syncScansReflection->setAccessible(true);
+    $docCountStmt = $pdo->prepare("SELECT COUNT(*) FROM employee_documents WHERE employee_id = :id AND deleted_at IS NULL");
+
+    $syncScansReflection->invoke($employeeSyncer, $emp6['id'], [], $adminUserId);
+    $docCountStmt->execute([':id' => $emp6['id']]);
+    check('syncDocumentScans() with an empty scan list is a pure no-op', (int)$docCountStmt->fetchColumn(), 0);
+
+    // Seed a fake already-synced row directly (bypassing the real download path on purpose, same
+    // "insert the row this method would have produced, then test the method's own branching logic
+    // against it" approach used for CompanyStatutorySettingModel's own toggleStatus() test elsewhere
+    // in this project).
+    $pdo->prepare("INSERT INTO employee_documents (employee_id, document_type, source, file_name, file_path, source_url, uploaded_by) VALUES (:eid, 'passport_copy', 'sync', 'old_passport.pdf', 'storage/uploads/employees/999999/fake.pdf', 'https://origami.test/files/passport_11006.pdf', :uid)")
+        ->execute([':eid' => $emp6['id'], ':uid' => $adminUserId]);
+
+    $syncScansReflection->invoke($employeeSyncer, $emp6['id'], [['document_type' => 'passport_copy', 'url' => 'https://origami.test/files/passport_11006.pdf', 'name' => 'passport.pdf']], $adminUserId);
+    $docCountStmt->execute([':id' => $emp6['id']]);
+    check('syncDocumentScans() with an UNCHANGED source_url makes no new row (no network call attempted at all)', (int)$docCountStmt->fetchColumn(), 1);
+
+    // URL genuinely differs this time, but the new URL is deliberately unfetchable (non-http) so
+    // downloadDocumentScan() fails fast with zero network I/O -- the pre-existing row must survive
+    // untouched (a failed re-fetch must never destroy what's already on file).
+    $syncScansReflection->invoke($employeeSyncer, $emp6['id'], [['document_type' => 'passport_copy', 'url' => 'not-a-real-url', 'name' => 'passport.pdf']], $adminUserId);
+    $survivingDoc = $pdo->prepare("SELECT source_url FROM employee_documents WHERE employee_id = :id AND document_type = 'passport_copy' AND deleted_at IS NULL");
+    $survivingDoc->execute([':id' => $emp6['id']]);
+    check('syncDocumentScans() leaves the existing row untouched when the new URL fails to download (never destroys data on a failed re-fetch)', $survivingDoc->fetchColumn(), 'https://origami.test/files/passport_11006.pdf');
+
+    // A source='manual' row for the SAME document_type must never be touched by this method at all
+    // (the soft-delete WHERE clause is scoped to source='sync' specifically) -- verified by seeding
+    // one and confirming it survives every syncDocumentScans() call above untouched.
+    $pdo->prepare("INSERT INTO employee_documents (employee_id, document_type, source, file_name, file_path, uploaded_by) VALUES (:eid, 'passport_copy', 'manual', 'my_own_scan.pdf', 'storage/uploads/employees/999999/manual.pdf', :uid)")
+        ->execute([':eid' => $emp6['id'], ':uid' => $adminUserId]);
+    $syncScansReflection->invoke($employeeSyncer, $emp6['id'], [['document_type' => 'passport_copy', 'url' => 'still-not-a-real-url', 'name' => 'passport.pdf']], $adminUserId);
+    $manualDocStmt = $pdo->prepare("SELECT id FROM employee_documents WHERE employee_id = :id AND document_type = 'passport_copy' AND source = 'manual' AND deleted_at IS NULL");
+    $manualDocStmt->execute([':id' => $emp6['id']]);
+    checkTrue('a source=manual row for the same document_type is never touched by syncDocumentScans() (WHERE clause scoped to source=sync only)', $manualDocStmt->fetch() !== false);
+
+    echo "--- EmployeeModel: documentTypes()/listDocuments() reflect the 2026-09-03 schema change ---\n";
+    $employeeModelForDocs = new EmployeeModel();
+    checkTrue('EmployeeModel::documentTypes() includes the 2 new synced-scan types', in_array('passport_copy', $employeeModelForDocs->documentTypes(), true) && in_array('visa_copy', $employeeModelForDocs->documentTypes(), true));
+    check('EmployeeModel::documentTypes() still reuses work_permit_copy (no redundant 3rd variant added there)', count(array_keys($employeeModelForDocs->documentTypes(), 'work_permit_copy', true)), 1);
+    $listedDocs6 = $employeeModelForDocs->listDocuments((int)$emp6['id'], $compId);
+    $listedManual = current(array_filter($listedDocs6, fn($d) => $d['source'] === 'manual'));
+    checkTrue('listDocuments() now surfaces the source column, correctly manual for the manually-inserted row', $listedManual !== false);
+    // A brand-new manual upload through the EXISTING saveDocument() path (untouched by this round)
+    // must still default to source='manual'/source_url=NULL via the column's own DB default --
+    // confirms backward compatibility for the pre-existing upload flow, not just the new sync path.
+    $manualSaveResult = $employeeModelForDocs->saveDocument((int)$emp6['id'], $compId, 'resume', 'my_resume.pdf', 'storage/uploads/employees/999999/resume.pdf', $adminUserId);
+    checkTrue('saveDocument() (the pre-existing manual-upload path) still succeeds unchanged', $manualSaveResult['status'] ?? false);
+    $freshManualRow = $pdo->prepare("SELECT source, source_url FROM employee_documents WHERE id = :id");
+    $freshManualRow->execute([':id' => $manualSaveResult['id']]);
+    $freshManual = $freshManualRow->fetch(PDO::FETCH_ASSOC);
+    check('a fresh manual upload defaults source to manual via the column default (saveDocument() itself was not changed)', $freshManual['source'] ?? null, 'manual');
+    checkTrue('a fresh manual upload has source_url = NULL', array_key_exists('source_url', $freshManual) && $freshManual['source_url'] === null);
+
+    echo "--- StatutoryCalculationEngine: per-employee SSO rate override wins over company override, wins over master rate ---\n";
+    $engine6 = new StatutoryCalculationEngine($pdo);
+    $csModel6 = new CompanyStatutorySettingModel($pdo);
+    $taxModel6 = new TaxStatutoryModel();
+    $ssoItemId6 = null;
+    foreach ($taxModel6->list('TH') as $row) {
+        if ($row['code'] === 'TH_SSO') { $ssoItemId6 = (int)$row['id']; break; }
+    }
+    checkTrue('TH_SSO item found for company override lookup', $ssoItemId6 !== null);
+    $masterResult6 = $engine6->calculateItem($compId, 'TH_SSO', ['basic_salary' => 10000, 'sso_eligible_earnings' => 10000], '2026-07-01');
+    checkTrue('master/company rate_source when no per-employee override is passed', in_array($masterResult6['rate_source'] ?? null, ['master', 'company_override'], true));
+    $overrideResult6 = $engine6->calculateItem($compId, 'TH_SSO', ['basic_salary' => 10000, 'sso_eligible_earnings' => 10000], '2026-07-01', [], [
+        'TH_SSO' => ['employee_rate_override' => 3.0, 'employer_rate_override' => 2.5],
+    ]);
+    check('employee_amount uses the per-employee 3% override (300.00), not the master/company rate', $overrideResult6['employee_amount'], 300.0);
+    check('employer_amount uses the per-employee 2.5% override (250.00)', $overrideResult6['employer_amount'], 250.0);
+    check('rate_source reports employee_override', $overrideResult6['rate_source'] ?? null, 'employee_override');
+    // Only the employee side overridden -- employer side must still fall back to the master/company rate untouched.
+    $partialOverrideResult6 = $engine6->calculateItem($compId, 'TH_SSO', ['basic_salary' => 10000, 'sso_eligible_earnings' => 10000], '2026-07-01', [], [
+        'TH_SSO' => ['employee_rate_override' => 3.0],
+    ]);
+    check('employee_amount uses the 3% override', $partialOverrideResult6['employee_amount'], 300.0);
+    check('employer_amount falls back to the master/company rate (untouched), NOT zeroed just because the employee side was overridden', $partialOverrideResult6['employer_amount'], $masterResult6['employer_amount']);
+
     // Deactivation: employee 1 removed from a non-empty feed -> employee_status becomes resigned.
     $fake->employees = [$fake->employees[1]]; // keep only employee 2 (which still errors on department, so total=1, success=0)
     // Give employee 2 a resolvable department this time so the feed is non-empty AND has a success.
@@ -458,7 +754,7 @@ try {
     echo "=== syncAllMasterData() ===\n";
     $fake->throwFor = ['shifts'];
     $all = $orch->syncAllMasterData($compId, $adminUserId);
-    check('7 entity types attempted', count($all), 7);
+    check('9 entity types attempted (branch/team added 2026-09-02)', count($all), 9);
     $shiftResult = array_values(array_filter($all, fn($r) => $r['entity_type'] === 'shift'))[0];
     checkFalse('shift batch failed (client threw)', $shiftResult['status']);
     $employeeResult = array_values(array_filter($all, fn($r) => $r['entity_type'] === 'employee'))[0];

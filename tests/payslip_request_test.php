@@ -45,13 +45,13 @@ function makeEmployee(PDO $pdo, int $compId, string $employeeNo, string $employm
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, department_id)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          :employment_date, 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, :employment_date2, 'average', 'active',
+         'monthly', 30000, :employment_date2, 'average', 'active',
          1, 1, 0, NULL)");
     $stmt->execute([
         ':comp_id' => $compId, ':employee_no' => $employeeNo,

@@ -101,10 +101,10 @@ try {
     $insEmp = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'เซสชัน', 'Test', 'SessionGuard', '1990-01-01', 'Thai',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insEmp->execute([':comp_id' => $compId, ':employee_no' => 'SESSGUARD_TEST_' . uniqid()]);
     $employeeId = (int)$pdo->lastInsertId();
 

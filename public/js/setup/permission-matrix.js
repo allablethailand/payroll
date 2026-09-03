@@ -23,6 +23,11 @@ let pmState = {};
 let pmModules = {};
 let pmModuleOrder = [];
 let pmActiveModule = null;
+// 2026-09-02, Platform Hardening Phase 1.2 -- dirty-check baseline for the new Cancel button.
+// pmState IS the single source of truth for every edit (see docblock above), so comparing its own
+// serialized form is simpler and more reliable here than a DOM snapshot of whichever module tab
+// happens to be showing right now.
+let pmBaselineSnapshot = null;
 
 function initPermissionMatrix() {
     $('#permissionModuleTabs').empty();
@@ -34,10 +39,22 @@ function initPermissionMatrix() {
             setupPermissionMatrixData(res.data);
             renderPermissionModuleTabs();
             renderPermissionMatrixTable(pmActiveModule);
+            pmBaselineSnapshot = JSON.stringify(pmState);
         },
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
     });
 }
+$(document).on('click', '#btnCancelPermissionMatrix', function () {
+    if (pmBaselineSnapshot !== null && JSON.stringify(pmState) === pmBaselineSnapshot) {
+        initPermissionMatrix();
+        return;
+    }
+    showConfirm(
+        (langData && langData['confirm_discard_changes_title']) || 'Discard unsaved changes?',
+        (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
+        initPermissionMatrix
+    );
+});
 
 function escapeHtmlPm(str) {
     return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
@@ -46,13 +63,19 @@ function escapeHtmlPm(str) {
 // 2026-08-28, real bug found and fixed (explicit report: "ในหน้าจัดการสิทธิ์การใช้งาน บางคำยังเป็นคีย์
 // ยังไม่แปล" -- some words on the Permission Matrix page still show as raw keys, not translated).
 // Root cause: this map only ever covered the original 5 module_codes from when this feature first
-// shipped -- the `permissions` table has since grown to 13 distinct module_codes (employee/
-// company_structure/bank_account/payslip_template/payroll_configuration/tax_statutory/
-// company_profile/employment_certificate_template all added later, across several rounds this same
-// session), and the fallback `map[code] || code` silently rendered the raw snake_case module_code
-// string for any of the 8 that were never added here -- which reads exactly like an untranslated
-// i18n key even though it technically isn't one. All 8 reuse EXISTING generic i18n keys already
-// used elsewhere in this app (checked first, none needed inventing) rather than new ones.
+// shipped -- the `permissions` table has since grown, and the fallback `map[code] || code` silently
+// rendered the raw snake_case module_code string for any code that was never added here -- which
+// reads exactly like an untranslated i18n key even though it technically isn't one.
+//
+// 2026-09-02, SAME bug found again, same root cause -- the `permissions` table had grown to 19
+// distinct module_codes by then (email_queue/employee_login_log/payroll_run_cash_payment/
+// payroll_sync/reports/salary_amount added across several later rounds), 6 of which were still
+// missing from this map. Checked a live `SELECT DISTINCT module_code FROM permissions` against this
+// map directly this time (not just eyeballing the page) to make sure nothing else is missing.
+// 5 of the 6 reuse existing generic i18n keys already used elsewhere in this app (same "checked
+// first" rule as the 2026-08-28 fix); `salary_amount` genuinely has no existing generic label to
+// reuse (closest is the bare word "salary", too generic for a permission-module tab specifically
+// about visibility of salary figures) so it gets ONE new key, `permission_module_salary_amount`.
 function permissionModuleLabel(code) {
     const map = {
         holiday: langData['holiday'] || 'Holiday',
@@ -68,6 +91,25 @@ function permissionModuleLabel(code) {
         tax_statutory: langData['local_statutory_and_tax_settings'] || 'Local Statutory & Tax Settings',
         company_profile: langData['company_profile'] || 'Company Profile',
         employment_certificate_template: langData['employment_certificate_template'] || 'Employment Certificate Template',
+        email_queue: langData['email_queue_log'] || 'Email Queue Log',
+        employee_login_log: langData['login_history'] || 'Login History',
+        payroll_run_cash_payment: langData['tab_cash_payments'] || 'Cash Payments',
+        payroll_sync: langData['origami_sync_summary_title'] || 'Origami Sync',
+        reports: langData['reports'] || 'Reports',
+        salary_amount: langData['permission_module_salary_amount'] || 'Salary Amount Visibility',
+        // 2026-09-02, added alongside PayrollController/ReportsController's new payroll_run.view/
+        // .manage permissions -- reuses the SAME i18n key the Payroll Process page's own breadcrumb/
+        // header already use (payroll_process), not the also-existing but less specific "payroll_run"
+        // key (that one's used elsewhere for the raw table/row concept, not the module/menu name).
+        payroll_run: langData['payroll_process'] || 'Payroll Process',
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3 -- added alongside the new shift.*/
+        // work_location.*/ot_rate.* permissions (SetupRulesController's Shift/Work Location/OT Rate
+        // tabs newly gated this stage). Checked this time against a live `SELECT DISTINCT
+        // module_code FROM permissions` before shipping, same as the 2026-09-02 fix's own note --
+        // all 3 reuse existing generic i18n keys, no new key needed.
+        shift: langData['shift'] || 'Shift',
+        work_location: langData['work_location'] || 'Work Location',
+        ot_rate: langData['ot_rate'] || 'OT Rate',
     };
     return map[code] || code;
 }
@@ -119,10 +161,21 @@ function renderPermissionMatrixTable(moduleCode) {
     }
 
     const rows = pmModules[moduleCode] || [];
+    // 2026-09-02, explicit request ("ช่วยดูเรื่อง Design ให้อีกครั้ง...มีส่วนไหนที่ควรเพิ่มอีกบ้าง") -- a
+    // per-role "select all" checkbox in the column header, so granting a role every permission in
+    // the CURRENTLY OPEN module tab (a common real action -- e.g. a new "HR Manager" role that
+    // should get every Employee permission at once) doesn't mean clicking each row one at a time.
+    // Scoped to the active module tab only (mirrors how pmState itself is edited one module at a
+    // time) -- reuses the SAME .perm-cell change handler per checkbox (via .trigger('change')) so
+    // pmState/scope-select visibility stay correct through the one code path that already handles
+    // it, instead of a second, parallel state-mutation path that could drift out of sync.
     let html = `<table class="table table-bordered align-middle permission-matrix-table" id="tb_permission_matrix">
         <thead class="table-light"><tr><th style="min-width:220px;">${langData['permission'] || 'Permission'}</th>`;
     roles.forEach(r => {
-        html += `<th class="text-center">${escapeHtmlPm(currentLang === 'th' ? r.role_name_th : r.role_name_en)}</th>`;
+        html += `<th class="text-center">
+            <div>${escapeHtmlPm(currentLang === 'th' ? r.role_name_th : r.role_name_en)}</div>
+            <input type="checkbox" class="form-check-input perm-role-select-all" data-role-id="${r.id}" title="${langData['select_all'] || 'Select All'}">
+        </th>`;
     });
     html += `</tr></thead><tbody>`;
 
@@ -164,7 +217,31 @@ function renderPermissionMatrixTable(moduleCode) {
     });
     html += `</tbody></table>`;
     $container.html(html);
+    roles.forEach(r => updateRoleSelectAllState(r.id));
 }
+
+// Reflects each role column's own "select all" checkbox to match its permission cells IN THE
+// CURRENTLY RENDERED MODULE TAB ONLY -- checked when every row is checked, indeterminate when some
+// but not all are, unchecked when none are. Called after every render and after every individual
+// cell toggle so the header checkbox never drifts out of sync with the rows underneath it.
+function updateRoleSelectAllState(roleId) {
+    const $cells = $(`#permissionMatrixContainer .perm-cell[data-role-id="${roleId}"]`);
+    const $selectAll = $(`#permissionMatrixContainer .perm-role-select-all[data-role-id="${roleId}"]`);
+    if (!$cells.length || !$selectAll.length) return;
+    const checkedCount = $cells.filter(':checked').length;
+    $selectAll.prop('checked', checkedCount === $cells.length);
+    $selectAll.prop('indeterminate', checkedCount > 0 && checkedCount < $cells.length);
+}
+$(document).on('change', '.perm-role-select-all', function () {
+    const roleId = $(this).data('roleId');
+    const checked = this.checked;
+    $(`#permissionMatrixContainer .perm-cell[data-role-id="${roleId}"]`).each(function () {
+        if (this.checked !== checked) {
+            this.checked = checked;
+            $(this).trigger('change');
+        }
+    });
+});
 
 $(document).on('click', '#permissionModuleTabs .structure-menu', function () {
     const code = $(this).data('module');
@@ -194,6 +271,7 @@ $(document).on('change', '.perm-cell', function () {
         $scope.addClass('d-none');
         $detailLevel.addClass('d-none');
     }
+    updateRoleSelectAllState(roleId);
 });
 
 $(document).on('change', '.perm-scope-select', function () {
@@ -215,17 +293,22 @@ $(document).on('change', '.perm-detail-level-select', function () {
 });
 
 $(document).on('click', '#btnSavePermissionMatrix', function () {
+    const $btn = $(this);
     const grants = Object.keys(pmState).map(key => {
         const [roleId, permissionId] = key.split(':');
         return { role_id: roleId, permission_id: permissionId, allow_scope: pmState[key].scope, detail_level: pmState[key].detail_level };
     });
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/permission-matrix.save`, method: 'POST', contentType: 'application/json',
         data: JSON.stringify({ grants }), dataType: 'json',
         success: function (res) {
-            if (res.status) { showSuccess(res.message || langData['save_success'] || 'Saved successfully.'); }
-            else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
+            setButtonLoading($btn, false);
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                pmBaselineSnapshot = JSON.stringify(pmState);
+            } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });

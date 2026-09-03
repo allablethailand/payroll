@@ -60,7 +60,6 @@
             <button type="button" class="station-filter-toggle" id="aisStationFilterToggle" title="Toggle filter">
                 <i class="fa-solid fa-chevron-up"></i>
             </button>
-            <button type="button" class="btn btn-link btn-sm d-none" id="aisClearFilterBtn" data-i18n="clear_filter">Clear Filter</button>
             <div class="station-filter-body">
                 <div class="row g-3">
                     <div class="col-sm-2">
@@ -89,6 +88,12 @@
                     </div>
                 </div>
             </div>
+        </div>
+        <!-- 2026-09-02, Platform Hardening Phase 1.6: was INSIDE .station-filter's own DOM (a
+             layout outlier vs every other filter in the app) -- moved to the standard sibling
+             .station-filter-clear-row, same as everywhere else. -->
+        <div class="station-filter-clear-row d-none" id="aisFilterClearRow">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="aisClearFilterBtn" data-i18n="clear_filter">Clear Filter</button>
         </div>
 
         <div class="row g-3 mb-4" id="aisSummaryCards">
@@ -156,7 +161,6 @@
             <button type="button" class="station-filter-toggle" id="aisPitStationFilterToggle" title="Toggle filter">
                 <i class="fa-solid fa-chevron-up"></i>
             </button>
-            <button type="button" class="btn btn-link btn-sm d-none" id="aisPitClearFilterBtn" data-i18n="clear_filter">Clear Filter</button>
             <div class="station-filter-body">
                 <div class="row g-3">
                     <div class="col-sm-2">
@@ -185,6 +189,9 @@
                     </div>
                 </div>
             </div>
+        </div>
+        <div class="station-filter-clear-row d-none" id="aisPitFilterClearRow">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="aisPitClearFilterBtn" data-i18n="clear_filter">Clear Filter</button>
         </div>
 
         <div class="row g-3 mb-4" id="aisPitSummaryCards">
@@ -230,7 +237,6 @@
             <button type="button" class="station-filter-toggle" id="aisMonthlyStationFilterToggle" title="Toggle filter">
                 <i class="fa-solid fa-chevron-up"></i>
             </button>
-            <button type="button" class="btn btn-link btn-sm d-none" id="aisMonthlyClearFilterBtn" data-i18n="clear_filter">Clear Filter</button>
             <div class="station-filter-body">
                 <div class="row g-3">
                     <div class="col-sm-2">
@@ -259,6 +265,9 @@
                     </div>
                 </div>
             </div>
+        </div>
+        <div class="station-filter-clear-row d-none" id="aisMonthlyFilterClearRow">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="aisMonthlyClearFilterBtn" data-i18n="clear_filter">Clear Filter</button>
         </div>
 
         <div class="row g-3 mb-4" id="aisMonthlySummaryCards">

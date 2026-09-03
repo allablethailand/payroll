@@ -42,13 +42,13 @@ function makeEmployee(PDO $pdo, int $compId, string $employeeNo): int {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, department_id)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         'monthly', 30000, '2020-01-01', 'average', 'active',
          1, 1, 0, NULL)");
     $stmt->execute([
         ':comp_id' => $compId, ':employee_no' => $employeeNo,
@@ -103,6 +103,33 @@ try {
     checkTrue('delete succeeds', $delRes['status']);
     check('deleted record no longer retrievable', $attModel->get((int)$created['id'], $compId), null);
 
+    echo "--- 2026-09-02: bulkSave() (grid entry) -- partial success, not all-or-nothing ---\n";
+    $bulkEmpty = $attModel->bulkSave([], $compId, $adminUserId);
+    checkFalse('bulkSave() with no rows fails cleanly', $bulkEmpty['status']);
+
+    $bulkAtt = $attModel->bulkSave([
+        ['employee_id' => $employeeId, 'work_date' => '2026-05-01'],
+        ['employee_id' => $employeeId, 'work_date' => '2026-05-02'],
+        ['employee_id' => 999999, 'work_date' => '2026-05-03'], // unknown employee -- should fail without blocking the other 2
+    ], $compId, $adminUserId);
+    checkTrue('bulkSave() reports overall status=true when at least one row succeeded', $bulkAtt['status']);
+    check('bulkSave() total reflects every row submitted', $bulkAtt['total'], 3);
+    check('bulkSave() succeeded count', $bulkAtt['succeeded'], 2);
+    check('bulkSave() failed count', count($bulkAtt['failed']), 1);
+    check('the failed row is correctly indexed (3rd row, index 2)', $bulkAtt['failed'][0]['index'], 2);
+    check('bulkSave() results array carries one entry per input row, same order', count($bulkAtt['results']), 3);
+    checkTrue('results[0] succeeded and carries a real inserted id', $bulkAtt['results'][0]['status'] && $bulkAtt['results'][0]['id'] > 0);
+    check('the 2 succeeded rows are genuinely persisted with data_source=manual', $attModel->get((int)$bulkAtt['results'][0]['id'], $compId)['data_source'], 'manual');
+    check('list() now shows both bulk-saved rows for this employee (plus none from the earlier deleted one)', count($attModel->list($compId, ['employee_id' => $employeeId, 'date_from' => '2026-05-01', 'date_to' => '2026-05-02'])), 2);
+
+    echo "--- bulkSave() also catches a duplicate BETWEEN two rows in the SAME batch (not just against already-saved DB rows) ---\n";
+    $bulkAttSelfDup = $attModel->bulkSave([
+        ['employee_id' => $employeeId, 'work_date' => '2026-05-10'],
+        ['employee_id' => $employeeId, 'work_date' => '2026-05-10'], // same employee+date as the row right above, within this SAME call
+    ], $compId, $adminUserId);
+    check('first of the 2 identical rows succeeds', $bulkAttSelfDup['succeeded'], 1);
+    check('second (duplicate of the first, same batch) is rejected, not silently inserted twice', count($bulkAttSelfDup['failed']), 1);
+
     // ---------- LeaveRequestModel ----------
     echo "=== LeaveRequestModel ===\n";
     $leaveTypeRow = $pdo->query("SELECT id FROM leave_types WHERE comp_id = {$compId} AND deleted_at IS NULL LIMIT 1")->fetchColumn();
@@ -154,6 +181,17 @@ try {
     $delRes = $leaveModel->delete((int)$leaveCreated['id'], $compId, $adminUserId);
     checkTrue('leave delete succeeds', $delRes['status']);
 
+    echo "--- 2026-09-02: bulkSave() (grid entry) ---\n";
+    $bulkLeave = $leaveModel->bulkSave([
+        ['employee_id' => $employeeId, 'leave_type_id' => $leaveTypeId, 'start_date' => '2026-05-01', 'end_date' => '2026-05-01', 'total_days' => 1],
+        ['employee_id' => $employeeId, 'leave_type_id' => $leaveTypeId, 'start_date' => '2026-05-02', 'end_date' => '2026-05-02', 'total_days' => 0], // total_days=0 -- should fail
+        ['employee_id' => $employeeId, 'leave_type_id' => $leaveTypeId, 'start_date' => '2026-05-10', 'end_date' => '2026-05-11', 'total_days' => 2],
+    ], $compId, $adminUserId);
+    check('bulkSave() succeeded count', $bulkLeave['succeeded'], 2);
+    check('bulkSave() failed count', count($bulkLeave['failed']), 1);
+    check('the failed row is index 1 (the total_days=0 one)', $bulkLeave['failed'][0]['index'], 1);
+    check('data_source of a bulk-saved leave row is manual', $leaveModel->get((int)$bulkLeave['results'][0]['id'], $compId)['data_source'], 'manual');
+
     // ---------- OvertimeRecordModel ----------
     echo "=== OvertimeRecordModel ===\n";
     // 2026-08-30: ot_rate_id now targets ot_rate_set_items, not the retired flat `ot_rates` table --
@@ -199,6 +237,15 @@ try {
 
     $delRes = $otModel->delete((int)$otCreated['id'], $compId, $adminUserId);
     checkTrue('overtime delete succeeds', $delRes['status']);
+
+    echo "--- 2026-09-02: bulkSave() (grid entry) ---\n";
+    $bulkOt = $otModel->bulkSave([
+        ['employee_id' => $employeeId, 'ot_rate_id' => $otRateId, 'ot_date' => '2026-05-01', 'hours' => 1.5],
+        ['employee_id' => $employeeId, 'ot_rate_id' => 999999, 'ot_date' => '2026-05-02', 'hours' => 1], // unknown ot_rate -- should fail
+    ], $compId, $adminUserId);
+    check('bulkSave() succeeded count', $bulkOt['succeeded'], 1);
+    check('bulkSave() failed count', count($bulkOt['failed']), 1);
+    check('data_source of a bulk-saved overtime row is manual', $otModel->get((int)$bulkOt['results'][0]['id'], $compId)['data_source'], 'manual');
 
 } catch (Throwable $e) {
     $failures++;

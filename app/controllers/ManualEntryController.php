@@ -128,6 +128,18 @@ class ManualEntryController extends Controller {
         $this->json($this->attendanceModel->delete($id, (int)$compId, $this->userId()));
     }
 
+    /** 2026-09-02, explicit request: bulk grid entry -- see AttendanceRecordModel::bulkSave()'s own docblock. */
+    public function attendanceBulkSave() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = $this->jsonBody();
+        $rows = is_array($data['rows'] ?? null) ? $data['rows'] : [];
+        $this->json($this->attendanceModel->bulkSave($rows, (int)$compId, $this->userId()));
+    }
+
     /* ---------- Leave ---------- */
 
     public function leaveList() {
@@ -162,6 +174,18 @@ class ManualEntryController extends Controller {
         $this->json($this->leaveModel->delete($id, (int)$compId, $this->userId()));
     }
 
+    /** 2026-09-02, explicit request: bulk grid entry -- see AttendanceRecordModel::bulkSave()'s own docblock. */
+    public function leaveBulkSave() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = $this->jsonBody();
+        $rows = is_array($data['rows'] ?? null) ? $data['rows'] : [];
+        $this->json($this->leaveModel->bulkSave($rows, (int)$compId, $this->userId()));
+    }
+
     /* ---------- Overtime ---------- */
 
     public function overtimeList() {
@@ -194,6 +218,18 @@ class ManualEntryController extends Controller {
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->overtimeModel->delete($id, (int)$compId, $this->userId()));
+    }
+
+    /** 2026-09-02, explicit request: bulk grid entry -- see AttendanceRecordModel::bulkSave()'s own docblock. */
+    public function overtimeBulkSave() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $data = $this->jsonBody();
+        $rows = is_array($data['rows'] ?? null) ? $data['rows'] : [];
+        $this->json($this->overtimeModel->bulkSave($rows, (int)$compId, $this->userId()));
     }
 
     /* ---------- Import (T030/T031/T032/T033/T034) ---------- */
@@ -262,18 +298,66 @@ class ManualEntryController extends Controller {
             $mapResult = $this->importService->mapRows($parsedRows, $columns, $explicitMapping);
             [$ip, $ua] = $this->requestFingerprint();
             $previewResult = $this->importService->preview($compId, $entityType, $mapResult['rows'], $this->userId(), $ip, $ua);
+            // Platform Hardening Phase 5C: this is the ONLY point in the request lifecycle that still
+            // has $_FILES['file'] in scope -- importCommit() below never receives the raw file again
+            // (only the already-mapped JSON rows, per this controller's own top-of-file docblock), so
+            // the original upload is copied here and a token handed back for the client to echo into
+            // commit(), same "mapped_rows echoed straight back" convention that docblock already
+            // established. Stored regardless of whether the admin ever actually commits -- an
+            // abandoned preview simply leaves an orphaned file, same "no cleanup job" precedent this
+            // app already accepts for logo/signature re-uploads (see CLAUDE.md).
+            $storedFile = $this->storeImportOriginal($compId, $_FILES['file']);
             $this->json([
                 'status' => true,
                 'columns' => $columns,
                 'unmapped_headers' => $mapResult['unmapped_headers'],
                 'mapped_rows' => $mapResult['rows'],
                 'preview' => $previewResult,
+                'stored_file_token' => $storedFile['token'] ?? null,
+                'stored_file_name' => $storedFile['name'] ?? null,
             ]);
         } catch (InvalidArgumentException $e) {
             $this->json(['status' => false, 'message' => $e->getMessage()]);
         } catch (Throwable $e) {
             $this->json(['status' => false, 'message' => 'Import preview failed: ' . $e->getMessage()]);
         }
+    }
+
+    /** Copies the just-uploaded import file to a durable location (storage/uploads/import_originals/
+     *  {comp_id}/{hex}.{ext}, random-hex-name convention every other upload site in this app already
+     *  uses) so it survives past this one request -- PHP's own upload temp file is auto-cleaned the
+     *  moment the request ends. Returns null (never fatal) on any filesystem failure -- retaining the
+     *  original is a nice-to-have for audit, not a requirement for the import itself to work.
+     *  @return ?array{token:string,name:string} */
+    private function storeImportOriginal(int $compId, array $file): ?array {
+        $ext = strtolower((string)pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) {
+            $ext = 'dat';
+        }
+        $dir = __DIR__ . '/../../storage/uploads/import_originals/' . $compId . '/';
+        if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+            return null;
+        }
+        $token = bin2hex(random_bytes(16)) . '.' . $ext;
+        if (!copy($file['tmp_name'], $dir . $token)) {
+            return null;
+        }
+        return ['token' => $token, 'name' => basename((string)($file['name'] ?? $token))];
+    }
+
+    /** Resolves a stored_file_token (from storeImportOriginal() above) back to an absolute path,
+     *  validated via realpath containment against the import_originals root -- never trusts the
+     *  token as a literal filesystem path. */
+    private function resolveImportOriginalPath(int $compId, string $token): ?string {
+        $root = realpath(__DIR__ . '/../../storage/uploads/import_originals/' . $compId);
+        if ($root === false) {
+            return null;
+        }
+        $candidate = realpath($root . '/' . $token);
+        if ($candidate === false || strpos($candidate, $root) !== 0 || !is_file($candidate)) {
+            return null;
+        }
+        return $candidate;
     }
 
     /** T032 (commit half): re-runs the SAME mapped-rows array the preview step already validated -- through the real, persisting ImportService::commit(), creating a real sync_batches row (source='import') that T033/T034 list below. */
@@ -294,7 +378,22 @@ class ManualEntryController extends Controller {
             return;
         }
         [$ip, $ua] = $this->requestFingerprint();
-        $result = $this->importService->commit($compId, $entityType, $mappedRows, $this->userId(), $ip, $ua);
+        // Platform Hardening Phase 5C: the client echoes back the token importPreview() handed it --
+        // resolved here (realpath-containment validated, never trusted as a literal path) and, if it
+        // still exists on disk, threaded through to the sync_batches row this commit creates.
+        $originalFile = null;
+        $storedFileToken = (string)($_POST['stored_file_token'] ?? '');
+        if ($storedFileToken !== '') {
+            $resolvedPath = $this->resolveImportOriginalPath($compId, $storedFileToken);
+            if ($resolvedPath !== null) {
+                $originalFile = [
+                    'path' => 'storage/uploads/import_originals/' . $compId . '/' . $storedFileToken,
+                    'name' => (string)($_POST['stored_file_name'] ?? basename($resolvedPath)),
+                    'size' => (int)filesize($resolvedPath),
+                ];
+            }
+        }
+        $result = $this->importService->commit($compId, $entityType, $mappedRows, $this->userId(), $ip, $ua, $originalFile);
         $this->json($result);
     }
 
@@ -317,6 +416,41 @@ class ManualEntryController extends Controller {
             $filters['entity_type'] = $_GET['entity_type'];
         }
         $this->json(['status' => true, 'data' => $this->batchModel->list($compId, $filters)]);
+    }
+
+    /** Platform Hardening Phase 5C: streams the original uploaded file back for one import batch
+     *  (sync_batches.original_file_path, source='import' only) -- same realpath-containment pattern
+     *  every other file-serving endpoint in this app uses (see EmployeeController::documentView()). */
+    public function downloadImportOriginal() {
+        $compId = getCompId();
+        $batchId = (int)($_GET['batch_id'] ?? 0);
+        if (!$compId || $batchId <= 0) {
+            http_response_code(404);
+            echo '404 - Not Found';
+            return;
+        }
+        $batch = $this->batchModel->get($batchId, (int)$compId);
+        if (!$batch || $batch['source'] !== 'import' || empty($batch['original_file_path'])) {
+            http_response_code(404);
+            echo '404 - Not Found';
+            return;
+        }
+        $fullPath = __DIR__ . '/../../' . $batch['original_file_path'];
+        $realPath = realpath($fullPath);
+        $storageRoot = realpath(__DIR__ . '/../../storage/uploads/import_originals');
+        if ($realPath === false || $storageRoot === false || strpos($realPath, $storageRoot) !== 0 || !is_file($realPath)) {
+            http_response_code(404);
+            echo '404 - Not Found';
+            return;
+        }
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = $finfo->file($realPath) ?: 'application/octet-stream';
+        header('Content-Type: ' . $mime);
+        header('Content-Disposition: attachment; filename="' . basename((string)($batch['original_file_name'] ?? 'import.xlsx')) . '"');
+        header('Content-Length: ' . (string)filesize($realPath));
+        header('X-Content-Type-Options: nosniff');
+        readfile($realPath);
+        exit;
     }
 
     /** T034: drills into ONE import batch's actual records, via the same 3 models' own list(), now filterable by batch_id. */

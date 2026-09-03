@@ -1427,7 +1427,7 @@ function renderImageLibrary() {
         const selected = selectedLibraryImageIds.has(Number(img.id));
         $grid.append(`
             <div class="ect-image-grid-item ${selected ? 'selected' : ''}" data-id="${img.id}">
-                <img src="${BASE_URL}/${img.file_path}" alt="">
+                <img src="${BASE_URL}/${img.thumbnail_path || img.file_path}" alt="">
                 <div class="ect-image-selected-badge"><i class="fa-solid fa-check"></i></div>
                 <div class="ect-image-delete" data-id="${img.id}"><i class="fa-solid fa-xmark"></i></div>
             </div>
@@ -1610,15 +1610,13 @@ $(document).on('change', '.ect-publish-switch', function (e) {
 // WHOLE pair (both tabs, see openEditModalForPair()); Duplicate always duplicates the whole pair
 // (see EmploymentCertificateTemplateModel::duplicatePair()) -- neither needs a language choice.
 // 2026-08-25, explicit follow-up: "ตัวปุ่มไม่ใช่รูปแบบที่ตกลงกัน ปรับให้เป็นรูปแบบที่ตกลงกัน และปุ่ม view
-// ที่เป็น dropdown เพิ่มการแสดงรูปธงชาติ" -- this app's ONE established action-group convention,
-// used identically everywhere else (company-profile.js/payroll-configuration.js/payslip-template.js/
-// setup-rules.js/tax-statutory.js/...): `<div class="btn-group border rounded-3 bg-white">` wrapping
-// plain `btn-link` buttons separated by `border-start`. The first version of this group dropped
-// `border rounded-3 bg-white` and nested a real `.btn-group` inside the outer one for each dropdown,
-// which doesn't render flush with Bootstrap's own button-group borders -- fixed by using a plain
-// `.dropdown` wrapper for the two dropdown-toggle buttons instead, so the whole row sits inside ONE
-// bordered/rounded container exactly like every other table's action buttons in this app. Preview's
-// dropdown items now also carry the same flag icons used everywhere else language is shown.
+// ที่เป็น dropdown เพิ่มการแสดงรูปธงชาติ" -- fixed by using a plain `.dropdown` wrapper for the two
+// dropdown-toggle buttons (Bootstrap dropdown positioning doesn't require a `.btn-group` ancestor).
+// Preview's dropdown items carry the same flag icons used everywhere else language is shown.
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention this
+// comment used to describe as "this app's ONE established action-group convention" -- that's now
+// the OLD convention, superseded by .btn-circle-action rolled out across the app's tables.
 function ectActionsGroupHtml(pairRow) {
     const readyLangs = ['th', 'en'].filter(l => pairRow[l]);
     const flagFile = { th: 'th', en: 'gb' };
@@ -1636,15 +1634,15 @@ function ectActionsGroupHtml(pairRow) {
     if (pairRow.en) {
         deleteItems.push(`<li><a class="dropdown-item text-danger ect-delete-lang-item" href="#" data-id="${pairRow.en.id}">${langData['ect_delete_english_only'] || 'Delete English only'}</a></li>`);
     }
-    return `<div class="btn-group border rounded-3 bg-white ect-actions-group">
+    return `<div class="d-flex gap-1 justify-content-center ect-actions-group">
         <div class="dropdown">
-            <button type="button" class="btn btn-link text-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['preview'] || 'Preview'}"><i class="fas fa-eye"></i></button>
+            <button type="button" class="btn btn-link btn-circle-action text-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['preview'] || 'Preview'}"><i class="fas fa-eye"></i></button>
             <ul class="dropdown-menu">${previewItems}</ul>
         </div>
-        <button type="button" class="btn btn-link text-warning border-start btn-edit-ect" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link text-primary border-start btn-duplicate-pair-ect" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-ect" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-duplicate-pair-ect" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
         <div class="dropdown">
-            <button type="button" class="btn btn-link py-1 text-danger border-start dropdown-toggle" data-bs-toggle="dropdown" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
+            <button type="button" class="btn btn-link btn-circle-action text-danger dropdown-toggle" data-bs-toggle="dropdown" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
             <ul class="dropdown-menu dropdown-menu-end">${deleteItems.join('')}</ul>
         </div>
     </div>`;

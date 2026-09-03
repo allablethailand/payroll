@@ -97,8 +97,8 @@
             </div>
           </div>
         </div>
-        <div class="d-flex justify-content-end mb-3">
-          <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearDlogFilter">
+        <div class="station-filter-clear-row d-none" id="dlogFilterClearRow">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDlogFilter">
             <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
           </button>
         </div>

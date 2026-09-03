@@ -111,7 +111,8 @@ class PayrollReportDataModel {
         // net_amount columns when computing what to actually transfer.
         $sql = "SELECT d.*, e.employee_no, e.title, e.name_th, e.surname_th, e.name_en, e.surname_en,
                     e.tax_id_no, e.sso_no, e.id_card_no, e.key_version, e.department_id, e.branch_id, e.position_id,
-                    e.bank_id, e.bank_account_no, e.bank_account_name, e.payment_type,
+                    e.bank_id, e.bank_account_no, e.bank_account_name,
+                    e.payment_method_id, mpm.code AS payment_method_code,
                     e.address_line_1_register, e.address_line_2_register,
                     dep.department_name_th, dep.department_name_en,
                     br.branch_name_th, br.branch_name_en,
@@ -130,6 +131,7 @@ class PayrollReportDataModel {
                 LEFT JOIN `structure_positions` pos ON pos.id = e.position_id
                 LEFT JOIN `master_banks` mb ON mb.id = e.bank_id
                 LEFT JOIN `master_addresses` ma ON ma.id = e.master_address_id_register
+                LEFT JOIN `master_payment_methods` mpm ON mpm.id = e.payment_method_id
                 LEFT JOIN (
                     SELECT run_id, employee_id, SUM(gross_amount_paid) AS gross_paid,
                         SUM(deduction_amount_paid) AS deduction_paid, SUM(net_amount_paid) AS net_paid

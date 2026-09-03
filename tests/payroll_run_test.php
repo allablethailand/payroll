@@ -39,6 +39,23 @@ function checkTrue(string $label, bool $actual): void {
     check($label, $actual, true);
 }
 
+// 2026-09-03, Platform Hardening Phase 3 -- structure_roles.can_process_payroll/can_approve_payroll/
+// can_finalize_payroll are retired; PayrollRunModel::userCan() now checks the 1:1 replacement
+// permission keys (payroll_run.process/.approve/.finalize) via PermissionModel::checkPermission()
+// instead. Every fixture role below that used to rely on setting those boolean columns alone now
+// ALSO needs a real role_permissions grant for the matching key, or the corresponding
+// submit()/approve()/revert() call will be refused exactly as if the role had no permission at all
+// (setting the now-dead boolean columns is inert -- nothing reads them anymore). This one helper is
+// used at every such fixture instead of repeating the INSERT by hand.
+function grantPayrollPermission(PDO $pdo, int $roleId, string $permissionKey): void {
+    $permId = (int)$pdo->query("SELECT id FROM permissions WHERE permission_key = " . $pdo->quote($permissionKey))->fetchColumn();
+    if ($permId <= 0) {
+        throw new RuntimeException("Unknown permission_key in test fixture: {$permissionKey}");
+    }
+    $pdo->prepare("INSERT INTO role_permissions (role_id, permission_id, allow_scope, detail_level) VALUES (:r, :p, 'all', 'full')")
+        ->execute([':r' => $roleId, ':p' => $permId]);
+}
+
 try {
     $compId = 1;
     $adminUserId = 1; // used with isAdmin=true throughout except the dedicated permission-denial check
@@ -118,13 +135,13 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_end_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, ot_eligible)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          :employment_date, :employment_end_date, :employee_status_enum, 'full_time', 'office', 'manual',
-         'bank', 'monthly', :base_salary, :salary_effective_date, 'average', 'active',
+         'monthly', :base_salary, :salary_effective_date, 'average', 'active',
          :sso_enrolled, :pvd_enrolled, :tax_exempt, 1)");
 
     $insEmp->execute([
@@ -167,9 +184,9 @@ try {
     ]);
     $employeeLeaverId = (int)$pdo->lastInsertId();
 
-    // Role with no payroll permissions, for the permission-denial check
-    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
-        VALUES (:comp_id, 'ทดสอบไม่มีสิทธิ์', 'Test No Permission', 0, 0, 0)")->execute([':comp_id' => $compId]);
+    // Role with no payroll permissions (no role_permissions grants at all), for the permission-denial check.
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en)
+        VALUES (:comp_id, 'ทดสอบไม่มีสิทธิ์', 'Test No Permission')")->execute([':comp_id' => $compId]);
     $noPermRoleId = (int)$pdo->lastInsertId();
     $pdo->prepare("UPDATE `employees` SET role_id = :role_id WHERE id = :id")->execute([':role_id' => $noPermRoleId, ':id' => $employeeFullId]);
 
@@ -649,6 +666,11 @@ try {
     $fromRowOrphan = current(array_filter($afterOrphanDetails, fn($d) => (int)$d['employee_id'] === $employeeFullId));
     checkTrue('the deduction line still applies to the FROM employee', current(array_filter($fromRowOrphan['deduction_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Orphan Transfer')) !== false);
     checkTrue('calc_errors surfaces transfer_payee_not_in_run instead of silently dropping the transfer', strpos((string)($fromRowOrphan['calc_errors'] ?? ''), 'transfer_payee_not_in_run:CUSTOM:Orphan Transfer') !== false);
+    // 2026-09-02, Deduction Destination & Third-Party Remittance: downgraded from blocking to
+    // advisory -- the payee-not-in-run case is now a real, supported outcome (falls back to an
+    // employee_fallback remittance at Approved, see PayrollRemittanceModel), not a dead end that
+    // should stop the run from calculating cleanly.
+    checkTrue('calc_status stays "calculated" despite the orphan transfer (advisory, not blocking, since 2026-09-02)', $fromRowOrphan['calc_status'] === 'calculated');
 
     // ---------- 2026-08-31, same-day follow-up: payroll_run_manual_lines gained the SAME
     // payee_type/include_in_cash_summary concept EmployeeEarningDeductionModel already had (this
@@ -2159,10 +2181,11 @@ try {
     echo "=== revert() permission split: submitter can pull back their own still-undecided" .
         " submission, but not an already-decided one (explicit request: \"ในกรณีที่ส่ง Approve แล้ว" .
         "ยังไม่มีใคร Approve สามารถดึง Process กลับได้\") ===\n";
-    // Submitter-only role: can_process_payroll=1, can_approve_payroll=0.
-    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
-        VALUES (:comp_id, 'ทดสอบผู้ส่งอย่างเดียว', 'Test Submitter Only', 1, 0, 0)")->execute([':comp_id' => $compId]);
+    // Submitter-only role: granted payroll_run.process only, not payroll_run.approve.
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en)
+        VALUES (:comp_id, 'ทดสอบผู้ส่งอย่างเดียว', 'Test Submitter Only')")->execute([':comp_id' => $compId]);
     $submitterOnlyRoleId = (int)$pdo->lastInsertId();
+    grantPayrollPermission($pdo, $submitterOnlyRoleId, 'payroll_run.process');
     $pdo->prepare("UPDATE `employees` SET role_id = :role_id WHERE id = :id")->execute([':role_id' => $submitterOnlyRoleId, ':id' => $employeeFullId]);
 
     $pullbackRunRes = $runModel->create($compId, [
@@ -2204,10 +2227,11 @@ try {
     // test-controlled employee instead of the shared dev-DB admin account (id 1).
     $pdo->prepare("UPDATE `employees` SET department_id = :dept WHERE id = :id")->execute([':dept' => $testDepartmentId, ':id' => $employeeFullId]);
 
-    // Role A: the only can_approve_payroll holder at first, held by an employee in the SAME department.
-    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
-        VALUES (:comp_id, 'ทดสอบผู้อนุมัติ A', 'Test Approver A', 0, 1, 0)")->execute([':comp_id' => $compId]);
+    // Role A: the only payroll_run.approve holder at first, held by an employee in the SAME department.
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en)
+        VALUES (:comp_id, 'ทดสอบผู้อนุมัติ A', 'Test Approver A')")->execute([':comp_id' => $compId]);
     $approverRoleAId = (int)$pdo->lastInsertId();
+    grantPayrollPermission($pdo, $approverRoleAId, 'payroll_run.approve');
     $pdo->prepare("UPDATE `employees` SET role_id = :role_id, department_id = :dept WHERE id = :id")
         ->execute([':role_id' => $approverRoleAId, ':dept' => $testDepartmentId, ':id' => $employeeMidId]);
 
@@ -2229,10 +2253,14 @@ try {
     // Reject it, then change who can approve BEFORE it gets revised/resubmitted (the exact
     // sequence reported: adjust the flow, then send for approval again).
     $runModel->reject($flowRunId, $compId, $adminUserId, true, 'need changes');
-    $pdo->prepare("UPDATE `structure_roles` SET can_approve_payroll = 0 WHERE id = :id")->execute([':id' => $approverRoleAId]);
-    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
-        VALUES (:comp_id, 'ทดสอบผู้อนุมัติ B', 'Test Approver B', 0, 1, 0)")->execute([':comp_id' => $compId]);
+    // "Disable role A's approve permission" is revoking its payroll_run.approve role_permissions row
+    // (structure_roles.can_approve_payroll no longer exists at all -- this IS the only mechanism now).
+    $pdo->prepare("DELETE FROM role_permissions WHERE role_id = :r AND permission_id = (SELECT id FROM permissions WHERE permission_key = 'payroll_run.approve')")
+        ->execute([':r' => $approverRoleAId]);
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en)
+        VALUES (:comp_id, 'ทดสอบผู้อนุมัติ B', 'Test Approver B')")->execute([':comp_id' => $compId]);
     $approverRoleBId = (int)$pdo->lastInsertId();
+    grantPayrollPermission($pdo, $approverRoleBId, 'payroll_run.approve');
     $pdo->prepare("UPDATE `employees` SET role_id = :role_id, department_id = :dept WHERE id = :id")
         ->execute([':role_id' => $approverRoleBId, ':dept' => $testDepartmentId, ':id' => $employeeOptOutId]);
 
@@ -2293,9 +2321,10 @@ try {
         " permission\" -- traced to a real dev-DB submitter with department_id = NULL) ===\n";
     // A submitter with NO department at all (default for a freshly-created test employee --
     // mirrors the real SSO-provisioned placeholder account that triggered this report).
-    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
-        VALUES (:comp_id, 'ทดสอบผู้ส่งไม่มีแผนก', 'Test Submitter No Dept', 1, 0, 0)")->execute([':comp_id' => $compId]);
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en)
+        VALUES (:comp_id, 'ทดสอบผู้ส่งไม่มีแผนก', 'Test Submitter No Dept')")->execute([':comp_id' => $compId]);
     $noDeptSubmitterRoleId = (int)$pdo->lastInsertId();
+    grantPayrollPermission($pdo, $noDeptSubmitterRoleId, 'payroll_run.process');
     $pdo->prepare("UPDATE `employees` SET role_id = :role_id, department_id = NULL WHERE id = :id")
         ->execute([':role_id' => $noDeptSubmitterRoleId, ':id' => $employeeOptOutId]);
 
@@ -2624,7 +2653,81 @@ try {
     check('admin still sees can_approve_payroll=true when no workflow is configured', $runModel->canApprovePayroll($adminUserId, true, $adminFlatFallbackRun), true);
     $adminFlatApproveRes = $runModel->approve($adminFlatFallbackRunId, $compId, $adminUserId, true, 'admin approves via the legacy flat fallback');
     checkTrue('admin can still approve via the flat fallback' . (empty($adminFlatApproveRes['status']) ? " ({$adminFlatApproveRes['message']})" : ''), $adminFlatApproveRes['status']);
+
+    echo "=== 2026-09-03, Platform Hardening Phase 3: payroll_run.approve permission-key/override" .
+        " variants of the SAME round-2 rules above -- the legacy can_approve_payroll boolean is" .
+        " retired, PayrollRunModel now reads payroll_run.approve via PermissionModel::checkPermission()" .
+        " (role grant, or a per-user override) -- these confirm the exact same engine-first ordering" .
+        " still holds under the new lookup mechanism, not just the old raw column. ===\n";
+    // Variant A: the flat-fallback path (no active workflow) genuinely works for a REAL non-admin
+    // employee granted payroll_run.approve via role_permissions -- not just via admin bypass, which
+    // would short-circuit before ever reaching the permission lookup and so wouldn't actually prove
+    // this.
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en) VALUES (:comp_id, 'ทดสอบผู้อนุมัติ Grant', 'Test Flat Approver Grant')")
+        ->execute([':comp_id' => $compId]);
+    $flatApproverRole = (int)$pdo->lastInsertId();
+    grantPayrollPermission($pdo, $flatApproverRole, 'payroll_run.approve');
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'PH3_FLAT_APPROVER_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'FlatApprover', ':name_en' => 'Test', ':surname_en' => 'FlatApprover',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => 30000, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $flatApproverEmp = (int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE `employees` SET role_id = :role_id WHERE id = :id")->execute([':role_id' => $flatApproverRole, ':id' => $flatApproverEmp]);
+    $flatGrantRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_PH3_FLAT_GRANT_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +27 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +27 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +27 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    $flatGrantRunId = $flatGrantRunRes['id'];
+    $runModel->recalculate($flatGrantRunId, $compId, $adminUserId, true);
+    $runModel->submit($flatGrantRunId, $compId, $adminUserId, true);
+    $flatGrantRun = $runModel->get($flatGrantRunId, $compId);
+    check('setup: this run is NOT routed through the engine (workflow still inactive from above)', $flatGrantRun['approval_request_id'], null);
+    checkTrue('a real non-admin employee with a payroll_run.approve ROLE grant can approve via the flat fallback', $runModel->canApprovePayroll($flatApproverEmp, false, $flatGrantRun));
+    $flatGrantApproveRes = $runModel->approve($flatGrantRunId, $compId, $flatApproverEmp, false, 'approved via a real payroll_run.approve role grant');
+    checkTrue('approve() itself succeeds for that employee' . (empty($flatGrantApproveRes['status']) ? " ({$flatGrantApproveRes['message']})" : ''), $flatGrantApproveRes['status']);
+
     $pdo->prepare("UPDATE `approval_workflows` SET status = 'active' WHERE id = :id")->execute([':id' => $testWorkflowId]);
+
+    // Variant B: a per-user DENY override on payroll_run.approve for X (a genuinely configured,
+    // engine-eligible approver on this workflow, per the pool set up earlier in this file) must have
+    // ZERO effect on an engine-routed run -- exactly like the legacy can_approve_payroll boolean was
+    // already provably irrelevant on this same code path (canApproveThisRun() consults the engine
+    // FIRST and returns before the permission/override is ever read at all, see that method's own
+    // docblock). This is the single most important new assertion in this whole file: it proves the
+    // NEW per-user-override feature can't accidentally create a way to lock a real, engine-configured
+    // approver out of (or into) a decision the Approval Workflow engine itself governs.
+    $xPermIdForDeny = (int)$pdo->query("SELECT id FROM permissions WHERE permission_key = 'payroll_run.approve'")->fetchColumn();
+    $pdo->prepare("INSERT INTO employee_permission_overrides (comp_id, employee_id, permission_id, effect) VALUES (:c, :e, :p, 'deny')")
+        ->execute([':c' => $compId, ':e' => $X, ':p' => $xPermIdForDeny]);
+    // Sanity check first: the override alone (outside any workflow) really does deny X the flat
+    // permission -- confirms the override mechanism itself is working, not just that this specific
+    // run happens to not need it.
+    check('sanity: X now has NO flat payroll_run.approve permission at all (deny override in effect)', (new PermissionModel($pdo))->checkPermission($X, 'payroll_run.approve', false, $compId)['allowed'], false);
+
+    $overrideRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'TEST_RUN_PH3_DENY_OVERRIDE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +28 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +28 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +28 months')->format('Y-m-d'),
+    ], $adminUserId, true);
+    checkTrue('setup: deny-override-test run created' . (empty($overrideRunRes['status']) ? " ({$overrideRunRes['message']})" : ''), $overrideRunRes['status']);
+    $overrideRunId = $overrideRunRes['id'];
+    $runModel->recalculate($overrideRunId, $compId, $adminUserId, true);
+    $runModel->submit($overrideRunId, $compId, $adminUserId, true);
+    $overrideRun = $runModel->get($overrideRunId, $compId);
+    checkTrue('setup: this run IS routed through the engine', $overrideRun['approval_request_id'] !== null);
+    checkTrue('X can STILL approve step 1 despite the deny override -- the engine never consults payroll_run.approve at all on this path', $runModel->canApprovePayroll($X, false, $overrideRun));
+    $overrideStep1Res = $runModel->approve($overrideRunId, $compId, $X, false, 'X approves despite holding a deny override on the flat permission');
+    checkTrue('approve() itself succeeds for X' . (empty($overrideStep1Res['status']) ? " ({$overrideStep1Res['message']})" : ''), $overrideStep1Res['status']);
+    $overrideStep2Res = $runModel->approve($overrideRunId, $compId, $Z, false, 'Z decides the remaining step');
+    checkTrue('Z (the other configured approver) can finish the flow normally' . (empty($overrideStep2Res['status']) ? " ({$overrideStep2Res['message']})" : ''), $overrideStep2Res['status']);
+    check('run reaches approved -- the deny override never blocked anything on this engine-routed run', $runModel->get($overrideRunId, $compId)['state'], 'approved');
 
     echo "=== stepBreakdown(): requires_previous_step gating shows up as 'unlocked' flipping" .
         " false->true, and joint_approve_mode='all' lists each person's OWN real per-row status" .
@@ -2710,13 +2813,13 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         'monthly', 30000, '2020-01-01', 'average', 'active',
          1, 1, 0)");
     $recEmpStmt->execute([
         ':comp_id' => $compId, ':employee_no' => 'TEST_RECEARN_' . uniqid(),
@@ -2986,11 +3089,11 @@ try {
     $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'โอเวอร์ไรด์', 'Test', 'Override', '1990-01-01', 'Thai',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active', 1, 1, 0)")
+         'monthly', 30000, '2020-01-01', 'average', 'active', 1, 1, 0)")
         ->execute([':comp_id' => $compId, ':employee_no' => 'TEST_OVERRIDE_' . uniqid()]);
     $employeeOverrideId = (int)$pdo->lastInsertId();
 
@@ -3061,11 +3164,11 @@ try {
     $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'รันเซตติ้ง', 'Test', 'RunSettings', '1990-01-01', 'Thai',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active', 1, 0, 0)")
+         'monthly', 30000, '2020-01-01', 'average', 'active', 1, 0, 0)")
         ->execute([':comp_id' => $compId, ':employee_no' => 'TEST_RUNSET_' . uniqid()]);
     $employeeRunSetId = (int)$pdo->lastInsertId();
 
@@ -3292,11 +3395,11 @@ try {
     $insUnpaidEmp = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          personal_email, mobile_no, employment_date, employment_status, employment_type,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          is_payroll_participant)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'ไม่จ่ายเงินเดือน', 'Test', 'Unpaid', '1990-01-01', 'Thai',
          :email, '0800000001', '2020-01-01', 'permanent', 'full_time',
-         'cash', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         'monthly', 30000, '2020-01-01', 'average', 'active',
          0)");
     $insUnpaidEmp->execute([':comp_id' => $compId, ':employee_no' => 'TEST_UNPAID_' . uniqid(), ':email' => uniqid() . '@test.local']);
     $employeeUnpaidId = (int)$pdo->lastInsertId();
@@ -3393,12 +3496,12 @@ try {
              personal_email, mobile_no, address_line_1_register, address_line_1_contact,
              emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
              employment_date, employment_status, employment_type, workforce_type, record_time_method,
-             payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+             salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
              sso_enrolled, pvd_enrolled, tax_exempt)
             VALUES (:comp_id, :employee_no, :cycle_id, 'mr', 'male', 'ทดสอบ', :surname_th, 'Test', :surname_en, '1990-01-01', 'Thai',
              :email, '0800000000', 'Test Address', 'Test Address', 'Emergency', 'Contact', 'friend', '0899999999',
              '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-             'bank', 'monthly', 30000, '2020-01-01', 'average', 'active', 1, 1, 0)")
+             'monthly', 30000, '2020-01-01', 'average', 'active', 1, 1, 0)")
             ->execute([
                 ':comp_id' => $compId, ':employee_no' => 'T041_EMP_' . $suffix . '_' . uniqid(), ':cycle_id' => $cycleId,
                 ':surname_th' => $suffix, ':surname_en' => $suffix, ':email' => uniqid() . '@test.local',
@@ -3511,12 +3614,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, ot_eligible)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'OTOffCycle', 'Test', 'OTOffCycle', '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address', 'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', :base_salary, '2020-01-01', 'average', 'active', 1, 1, 0, 1)")
+         'monthly', :base_salary, '2020-01-01', 'average', 'active', 1, 1, 0, 1)")
         ->execute([':comp_id' => $compId, ':employee_no' => 'T041_EMP_OT_' . uniqid(), ':email' => uniqid() . '@test.local', ':base_salary' => $t041OtEmpBase]);
     $t041EmpOt = (int)$pdo->lastInsertId();
 
@@ -3559,8 +3662,8 @@ try {
     check('gross_amount is exactly the OT amount (no base salary, no other earning)', (float)$t041OtDetail['gross_amount'], $t041ExpectedOt);
 
     // 2026-08-31, explicit request: per-run "auto-recalculate immediately after edits" checkbox +
-    // payment_type surfaced on getDetails() (backs the Process Detail page's new Bank/Cash filter
-    // checkboxes, 2nd summary-card grid, and "Payment Method Summary" tab).
+    // payment_method_code surfaced on getDetails() (backs the Process Detail page's new Bank/Cash
+    // filter checkboxes, 2nd summary-card grid, and "Payment Method Summary" tab).
     echo "=== Auto-recalculate flag: setAutoRecalculate() persists per-run, draft-only ===\n";
     // $runId may have moved out of draft by this point in the file (earlier sections exercise the
     // full submit/approve/reject state machine on it) -- forced back to draft here since this is the
@@ -3595,11 +3698,14 @@ try {
     check('auto_recalculate defaults to 0 when omitted', (int)$pdo->query("SELECT auto_recalculate FROM payroll_runs WHERE id = {$createWithoutAutoRecalcRes['id']}")->fetchColumn(), 0);
     $pdo->prepare("UPDATE `payroll_runs` SET state = 'draft' WHERE id = :id")->execute([':id' => $runId]);
 
-    echo "=== getDetails(): payment_type surfaced per employee (defaults to 'bank') ===\n";
+    echo "=== getDetails(): payment_method_code surfaced per employee (defaults to 'transfer') ===\n";
+    // 2026-09-02, follow-up: payment_type (legacy enum, defaulted to 'bank') dropped -- getDetails()
+    // now exposes payment_method_code via a master_payment_methods JOIN, defaulting to 'transfer'
+    // when the fixture employee never had a payment_method_id assigned (same as before).
     $detailsWithPaymentType = $runModel->getDetails($runId, $compId);
     $fullDetailPaymentType = current(array_filter($detailsWithPaymentType, fn($d) => (int)$d['employee_id'] === $employeeFullId));
     checkTrue('fixture employee row present', $fullDetailPaymentType !== false);
-    check("payment_type defaults to 'bank' (fixture never set employees.payment_type='cash')", $fullDetailPaymentType['payment_type'] ?? null, 'bank');
+    check("payment_method_code defaults to 'transfer' (fixture never set employees.payment_method_id)", $fullDetailPaymentType['payment_method_code'] ?? null, 'transfer');
 
     // 2026-09-01, explicit request: "ให้สามารถเลือกอ้างอิงรอบได้เหมือนตอน Origami และในหน้า Detail ก็สามารถ
     // แก้ไขเพิ่มได้ Form เหมือนหน้าสร้างเลยครับ" -- update() now accepts a cycle_id change. Same-day
@@ -3734,6 +3840,85 @@ try {
     $syncCycleGuardRunId = $syncRunRes['id'];
     $clearSyncCycleRes = $runModel->update($syncCycleGuardRunId, $compId, ['cycle_id' => null], $adminUserId, true);
     check('update() rejects clearing cycle_id to null for a regular sync-linked run', $clearSyncCycleRes['status'], false);
+
+    // 2026-09-02, explicit request: "การตั้งค่าเงินรวมกันถ้าเกินจำนวนเงินเดือนมีการดักส่วนนี้ไว้ไหม" -- confirmed
+    // via AskUserQuestion that PayrollRunModel::recalculate() itself should reconcile a Mixed-payment
+    // employee's FULL line set (not just transfer, which BankTransferFileReport already checked) the
+    // moment net pay is known. Deliberately uses 2 plain CASH lines (no bank_account_id needed) --
+    // this is precisely the gap CashPaymentSummaryReport never covered (it summed cash lines with no
+    // reconciliation at all), so a cash-only mismatch is the case this fix most needed to prove.
+    echo "=== Mixed payment: full line-set reconciliation against net pay (calc_errors advisory) ===\n";
+    $mixedMethodId = (int)$pdo->query("SELECT id FROM master_payment_methods WHERE code = 'mixed'")->fetchColumn();
+    $cashMethodId = (int)$pdo->query("SELECT id FROM master_payment_methods WHERE code = 'cash'")->fetchColumn();
+    checkTrue('fixture: mixed/cash master_payment_methods ids resolved', $mixedMethodId > 0 && $cashMethodId > 0);
+
+    $mixedPeriodStart = (clone $today)->modify('first day of +160 months')->format('Y-m-d');
+    $mixedPeriodEnd = (clone $today)->modify('last day of +160 months')->format('Y-m-d');
+    $insMixedEmp = $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+         emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         sso_enrolled, pvd_enrolled, tax_exempt, ot_eligible, payment_method_id)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', 'Mixed', 'Tester', 'Mixed', 'Tester', '1990-01-01', 'Thai',
+         :email, '0800000001', 'Test Address', 'Test Address',
+         'Emergency', 'Contact', 'friend', '0899999998',
+         :employment_date, 'permanent', 'full_time', 'office', 'manual',
+         'monthly', 20000, :salary_effective_date, 'average', 'active',
+         0, 0, 1, 1, :payment_method_id)");
+    $mixedEmpNo = 'MIXTEST_' . uniqid();
+    $insMixedEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => $mixedEmpNo, ':email' => $mixedEmpNo . '@test.local',
+        ':employment_date' => $mixedPeriodStart, ':salary_effective_date' => $mixedPeriodStart,
+        ':payment_method_id' => $mixedMethodId,
+    ]);
+    $mixedEmployeeId = (int)$pdo->lastInsertId();
+
+    $mixedRunRes = $runModel->create($compId, [
+        'run_name' => 'MIXED_RECON_' . uniqid(),
+        'period_start_date' => $mixedPeriodStart, 'period_end_date' => $mixedPeriodEnd, 'payment_date' => $mixedPeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: off-cycle run created for mixed-payment reconciliation test' . (empty($mixedRunRes['status']) ? " ({$mixedRunRes['message']})" : ''), $mixedRunRes['status']);
+    $mixedRunId = $mixedRunRes['id'];
+    $joinMixedRes = $runModel->joinEmployees($mixedRunId, $compId, [$mixedEmployeeId], $adminUserId, true);
+    checkTrue('fixture: mixed-payment employee joined into the run' . (empty($joinMixedRes['status']) ? " ({$joinMixedRes['message']})" : ''), $joinMixedRes['status']);
+
+    // Deliberately no employee_payment_method_lines row at all yet -- must NOT fire the mismatch
+    // check (nothing to reconcile against with zero lines; that's a different, already-existing
+    // "no bank/lines configured" gap, not this one).
+    $runModel->recalculate($mixedRunId, $compId, $adminUserId, true);
+    $mixedDetailsNoLines = $runModel->getDetails($mixedRunId, $compId);
+    $mixedRowNoLines = null;
+    foreach ($mixedDetailsNoLines as $row) { if ((int)$row['employee_id'] === $mixedEmployeeId) { $mixedRowNoLines = $row; break; } }
+    checkTrue('fixture: mixed-payment employee row found (no lines yet)', $mixedRowNoLines !== null);
+    check('no mixed_payment_lines_mismatch when the employee has zero mixed lines configured', strpos((string)($mixedRowNoLines['calc_errors'] ?? ''), 'mixed_payment_lines_mismatch') !== false, false);
+    $realNetAmount = (float)$mixedRowNoLines['net_amount'];
+    checkTrue('fixture: real net_amount is a positive number to reconcile against', $realNetAmount > 0);
+
+    // Deliberately mismatched: 2 fixed cash lines that do NOT sum to the real net_amount.
+    $insMixedLine = $pdo->prepare("INSERT INTO `employee_payment_method_lines`
+        (employee_id, sort_order, payment_method_id, amount_type, amount_value, created_by)
+        VALUES (:employee_id, :sort_order, :payment_method_id, 'fixed', :amount_value, :created_by)");
+    $insMixedLine->execute([':employee_id' => $mixedEmployeeId, ':sort_order' => 0, ':payment_method_id' => $cashMethodId, ':amount_value' => 100.00, ':created_by' => $adminUserId]);
+    $insMixedLine->execute([':employee_id' => $mixedEmployeeId, ':sort_order' => 1, ':payment_method_id' => $cashMethodId, ':amount_value' => 50.00, ':created_by' => $adminUserId]);
+    $runModel->recalculate($mixedRunId, $compId, $adminUserId, true);
+    $mixedDetailsMismatch = $runModel->getDetails($mixedRunId, $compId);
+    $mixedRowMismatch = null;
+    foreach ($mixedDetailsMismatch as $row) { if ((int)$row['employee_id'] === $mixedEmployeeId) { $mixedRowMismatch = $row; break; } }
+    checkTrue('mixed_payment_lines_mismatch appears in calc_errors when fixed lines (150) genuinely do not sum to net pay', strpos((string)($mixedRowMismatch['calc_errors'] ?? ''), 'mixed_payment_lines_mismatch') !== false);
+    check('advisory only -- calc_status stays "calculated", never flips to "error"', $mixedRowMismatch['calc_status'] ?? null, 'calculated');
+
+    // Fix the lines so they genuinely sum to the real net_amount -- the warning must clear.
+    $pdo->prepare("DELETE FROM `employee_payment_method_lines` WHERE employee_id = :employee_id")->execute([':employee_id' => $mixedEmployeeId]);
+    $reconciledFirstLine = round($realNetAmount - 50.0, 2);
+    $insMixedLine->execute([':employee_id' => $mixedEmployeeId, ':sort_order' => 0, ':payment_method_id' => $cashMethodId, ':amount_value' => $reconciledFirstLine, ':created_by' => $adminUserId]);
+    $insMixedLine->execute([':employee_id' => $mixedEmployeeId, ':sort_order' => 1, ':payment_method_id' => $cashMethodId, ':amount_value' => 50.00, ':created_by' => $adminUserId]);
+    $runModel->recalculate($mixedRunId, $compId, $adminUserId, true);
+    $mixedDetailsFixed = $runModel->getDetails($mixedRunId, $compId);
+    $mixedRowFixed = null;
+    foreach ($mixedDetailsFixed as $row) { if ((int)$row['employee_id'] === $mixedEmployeeId) { $mixedRowFixed = $row; break; } }
+    check('mixed_payment_lines_mismatch clears once the lines genuinely sum to net pay', strpos((string)($mixedRowFixed['calc_errors'] ?? ''), 'mixed_payment_lines_mismatch') !== false, false);
 
 } finally {
     $pdo->rollBack();

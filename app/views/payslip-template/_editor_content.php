@@ -166,7 +166,7 @@
         <li>
           <div class="px-3 py-1 d-flex align-items-center gap-2" onclick="event.stopPropagation();">
             <span class="small text-secondary" data-i18n="ect_margin_custom">Custom</span>
-            <input type="number" id="pstMarginInput" class="form-control form-control-sm" style="width:70px;" min="0" max="50" step="1">
+            <input type="number" id="pstMarginInput" class="form-control form-control-sm" style="width:70px;" min="0" max="50" step="1" data-i18n="margin_mm_placeholder" placeholder="e.g., 15">
             <span class="small text-secondary">mm</span>
           </div>
         </li>
@@ -195,7 +195,7 @@
   <div class="pst-ribbon card-surface mb-3" id="pstRibbon">
     <div class="pst-ribbon-group">
       <label class="pst-ribbon-label" data-i18n="ect_font_size">Font Size</label>
-      <input type="number" id="pstPropFontSize" class="form-control form-control-sm" min="6" max="96" disabled>
+      <input type="number" id="pstPropFontSize" class="form-control form-control-sm" min="6" max="96" disabled data-i18n="font_size_placeholder" placeholder="e.g., 14">
     </div>
     <div class="pst-ribbon-group">
       <label class="pst-ribbon-label" data-i18n="ect_font_family">Font</label>

@@ -41,20 +41,20 @@ try {
     $insEmp = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'แจ้งเตือน', 'Test', 'Notif', '1990-01-01', 'Thai',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insEmp->execute([':comp_id' => $compId, ':employee_no' => 'NOTIF_TEST_' . uniqid()]);
     $employeeId = (int)$pdo->lastInsertId();
 
     $insEmp2 = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ2', 'แจ้งเตือน2', 'Test2', 'Notif2', '1990-01-01', 'Thai',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insEmp2->execute([':comp_id' => $compId, ':employee_no' => 'NOTIF_TEST2_' . uniqid()]);
     $otherEmployeeId = (int)$pdo->lastInsertId();
 
@@ -79,21 +79,31 @@ try {
     $dedupRow = $pdo->query("SELECT title_th FROM notifications WHERE dedup_key = 'notif_test_dedup_1'")->fetch(PDO::FETCH_ASSOC);
     check('the surviving row is the original insert, untouched by the rejected duplicate', $dedupRow['title_th'], 'A');
 
-    echo "=== createForPermissionHolders() (fan-out to every employee with a given role flag) ===\n";
-    // Give both fixture employees a role with can_process_payroll=1 so the fan-out has real,
-    // isolated targets to count (not comp_id=1's real dev-DB roles, whose membership can drift).
-    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_process_payroll, can_approve_payroll, can_finalize_payroll)
-        VALUES (:comp_id, 'ทดสอบแจ้งเตือน', 'Notif Test Role', 1, 0, 0)")->execute([':comp_id' => $compId]);
+    echo "=== createForPermissionHolders() (fan-out to every employee holding a given permission_key) ===\n";
+    // 2026-09-03, Platform Hardening Phase 3: structure_roles.can_process_payroll/etc. are dropped
+    // entirely -- createForPermissionHolders() now resolves recipients via a real `permission_key`
+    // (PermissionModel::employeesWithPermission()), not a raw role-flag column. Give both fixture
+    // employees a role with a real payroll_run.process grant so the fan-out has real, isolated
+    // targets to count (not comp_id=1's real dev-DB roles, whose membership can drift).
+    $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en)
+        VALUES (:comp_id, 'ทดสอบแจ้งเตือน', 'Notif Test Role')")->execute([':comp_id' => $compId]);
     $notifRoleId = (int)$pdo->lastInsertId();
+    $notifPermId = (int)$pdo->query("SELECT id FROM permissions WHERE permission_key = 'payroll_run.process'")->fetchColumn();
+    $pdo->prepare("INSERT INTO role_permissions (role_id, permission_id, allow_scope, detail_level) VALUES (:r, :p, 'all', 'full')")
+        ->execute([':r' => $notifRoleId, ':p' => $notifPermId]);
     $pdo->prepare("UPDATE employees SET role_id = :role_id WHERE id IN ({$employeeId}, {$otherEmployeeId})")->execute([':role_id' => $notifRoleId]);
-    $model->createForPermissionHolders($compId, 'can_process_payroll', 'fanout_type', 'Fan', 'Fan', null, null, '/x', null, null, 'notif_test_fanout');
+    $model->createForPermissionHolders($compId, 'payroll_run.process', 'fanout_type', 'Fan', 'Fan', null, null, '/x', null, null, 'notif_test_fanout');
     $fanoutRows = $pdo->query("SELECT employee_id FROM notifications WHERE type = 'fanout_type'")->fetchAll(PDO::FETCH_COLUMN);
     $fanoutForFixture = array_intersect($fanoutRows, [$employeeId, $otherEmployeeId]);
-    check('both fixture employees (both now can_process_payroll) received their own row', count($fanoutForFixture), 2);
-    checkTrue('an invalid permission column name is silently ignored, not a crash/injection vector', true); // exercised next line
-    $model->createForPermissionHolders($compId, 'not_a_real_column; DROP TABLE notifications', 'should_not_exist', 'x', 'x', null, null, null);
+    check('both fixture employees (both now granted payroll_run.process) received their own row', count($fanoutForFixture), 2);
+    // Real SQL injection is structurally impossible regardless (employeesWithPermission() always
+    // binds the key as a PDO parameter, never interpolates it into raw SQL) -- an unknown
+    // permission_key just naturally matches zero rows via the LEFT JOIN against `permissions`,
+    // same safe end result as the old whitelist array used to guarantee a different way.
+    checkTrue('an unknown permission_key is safely a no-op, not a crash/injection vector', true); // exercised next line
+    $model->createForPermissionHolders($compId, "not_a_real_key; DROP TABLE notifications", 'should_not_exist', 'x', 'x', null, null, null);
     $badColCount = (int)$pdo->query("SELECT COUNT(*) FROM notifications WHERE type = 'should_not_exist'")->fetchColumn();
-    check('an invalid permission column produces zero rows (whitelist-checked, not passed through to SQL)', $badColCount, 0);
+    check('an unknown permission_key produces zero rows (parameterized, never reaches raw SQL)', $badColCount, 0);
 
     echo "=== createForEmployees() (explicit recipient list, e.g. resolved approval-workflow approvers) ===\n";
     $model->createForEmployees($compId, [$employeeId, $otherEmployeeId, $employeeId], 'explicit_type', 'E', 'E', null, null, '/y', null, null, 'notif_test_explicit');
@@ -227,10 +237,10 @@ try {
     $insEmp3 = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ3', 'แจ้งเตือน3', 'Test3', 'Notif3', '1990-01-01', 'Thai',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insEmp3->execute([':comp_id' => $compId, ':employee_no' => 'NOTIF_TEST3_' . uniqid()]);
     $dtEmployeeId = (int)$pdo->lastInsertId();
 

@@ -604,31 +604,54 @@ function renderRunActionsPr(row) {
     // 2026-08-28, explicit request: "Process ที่ Cancel ให้สามารถลบข้อมูลออกไปได้" -- delete is now
     // also allowed for a cancelled run, not just draft (see PayrollRunModel::delete()'s own docblock).
     const isDeletable = isDraft || row.state === 'cancelled';
-    let html = '<div class="btn-group border rounded-3 bg-white row-actions" role="group">';
+    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+    // ".btn-circle-action" section) replace the old adjacent .btn-group.
+    // 2026-09-02, same-day follow-up, explicit request: "ปุ่ม Export ให้เป็นปุ่มเดียว กดแล้วมี Dropdown ให้
+    // เลือกว่า Excel หรือ PDF...ปุ่มในตาราง อยากให้แสดงเป็นแถวเดียว" -- the 2 separate circular
+    // Excel/PDF buttons below are merged into ONE dropdown-toggle button (same `.dropdown` +
+    // `.btn-circle-action.dropdown-toggle` pattern this app's own Employment Certificate Template
+    // list already established, see ectActionsGroupHtml()) both to cut the row down to fewer buttons
+    // AND because 2 separate export icons was genuinely redundant next to each other. The 2 dropdown
+    // items are plain `<button class="dropdown-item ...">` (not `<a href="#">`) reusing the exact
+    // same `.btn-export-run-register`/`.btn-preview-run-register-pdf` classes + `data-id` the
+    // existing $(document).on('click', ...) handlers below already bind to -- zero handler changes
+    // needed, only the trigger markup moved into a dropdown menu. `flex-wrap` on the row's own
+    // wrapper is also dropped here (`flex-nowrap` instead) now that this page always fits within one
+    // row -- a narrow column scrolls horizontally rather than wrapping onto a second line.
+    let html = '<div class="d-flex gap-1 justify-content-center flex-nowrap row-actions">';
     const viewHref = `${BASE_URL}/payroll-process/${row.public_id}${isDraft ? '' : '#run-reports-tab'}`;
     const viewIcon = isDraft ? 'fa-pen-to-square' : 'fa-download';
     const viewTitleKey = isDraft ? 'action_edit' : 'print_reports';
     const viewTitleFallback = isDraft ? 'Edit' : 'Print Reports';
-    html += `<a href="${viewHref}" target="_blank" rel="noopener" class="btn ${isDraft ? 'btn-link text-warning' : 'btn-link text-info'}" title="${langData[viewTitleKey] || viewTitleFallback}"><i class="fa-solid ${viewIcon}"></i></a>`;
+    html += `<a href="${viewHref}" target="_blank" rel="noopener" class="btn btn-circle-action ${isDraft ? 'btn-link text-warning' : 'btn-link text-info'}" title="${langData[viewTitleKey] || viewTitleFallback}"><i class="fa-solid ${viewIcon}"></i></a>`;
     // 2026-08-31, same-day follow-up, explicit request: "Excel ให้ออกมาสรุปเป็น Column By Column
     // พนักงาน...สามารถ Export ได้จากหน้า List เอง...ให้ Export รายงวดเท่านั้น" -- per-row export
     // (PAYROLL_REGISTER, this ONE run's own employee-by-employee breakdown) is deliberately the
     // ONLY export entry point left on this page (the earlier whole-list-summary and occurrence-
     // reconciliation buttons were both removed per explicit follow-up request). Available for every
-    // state (internal report, no state gate).
-    html += `<button type="button" class="btn btn-link text-success border-start btn-export-run-register" data-id="${row.id}" title="${langData['export_excel'] || 'Export Excel'}"><i class="fa-solid fa-file-excel"></i></button>`;
+    // state (internal report, no state gate). PDF (2026-09-02) opens a small preview-then-choose-
+    // language modal instead of downloading directly (#runRegisterPdfPreviewModal, this page's own
+    // copy of the same pattern Process Detail's #reportPreviewModal already established -- see
+    // runRegisterPdfPreview()); Excel stays a direct one-click download.
+    html += `<div class="dropdown">
+        <button type="button" class="btn btn-link btn-circle-action text-primary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['export'] || 'Export'}"><i class="fa-solid fa-file-export"></i></button>
+        <ul class="dropdown-menu">
+            <li><button type="button" class="dropdown-item btn-export-run-register" data-id="${row.id}"><i class="fa-solid fa-file-excel text-success me-2"></i>${langData['export_excel'] || 'Export Excel'}</button></li>
+            <li><button type="button" class="dropdown-item btn-preview-run-register-pdf" data-id="${row.id}"><i class="fa-solid fa-file-pdf text-danger me-2"></i>${langData['export_pdf'] || 'Export PDF'}</button></li>
+        </ul>
+    </div>`;
     // 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ให้ Verify ได้ทั้ง Process ทั้ง Detail
     // และหน้า List" -- same action as the Detail page's #btnVerifyAllEmployees button, just reachable
     // without opening the run first. Draft-only (PayrollRunModel::setEmployeeVerified() itself
     // refuses any other state), matching the Detail-page button's own visibility gate.
     if (isDraft) {
-        html += `<button type="button" class="btn btn-link text-success border-start btn-verify-all-run" data-id="${row.id}" title="${langData['action_verify_all'] || 'Verify All'}"><i class="fa-solid fa-check-double"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action text-success btn-verify-all-run" data-id="${row.id}" title="${langData['action_verify_all'] || 'Verify All'}"><i class="fa-solid fa-check-double"></i></button>`;
     }
     if (['draft', 'pending_approval', 'approved', 'rejected'].includes(row.state)) {
-        html += `<button type="button" class="btn btn-link text-danger border-start btn-cancel-run" data-id="${row.id}" title="${langData['action_cancel'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-cancel-run" data-id="${row.id}" title="${langData['action_cancel'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
     }
     if (isDeletable) {
-        html += `<button type="button" class="btn btn-link text-danger border-start btn-delete-run" data-id="${row.id}" title="${langData['action_delete'] || 'Delete'}"><i class="fa-solid fa-trash-alt"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-run" data-id="${row.id}" title="${langData['action_delete'] || 'Delete'}"><i class="fa-solid fa-trash-alt"></i></button>`;
     }
     html += '</div>';
     return html;
@@ -952,15 +975,20 @@ function initPendingSyncTable() {
                     // standalone run -- always left available, e.g. for when the target run isn't
                     // draft anymore, see PayrollRunModel::mergeSupplementalIntoRun()'s own refusal
                     // paths).
+                    // 2026-09-02, explicit request: "ไม่ต้องมี Word ก็ได้มันต่างเพื่อน" -- Pull to
+                    // Run/Merge into Target used to carry their own text label while their sibling
+                    // View/Reject buttons in the SAME group were already icon-only, making the group
+                    // look inconsistent. Dropped the text (title="" tooltip still carries the label)
+                    // so every button in this row-actions group is icon-only, matching its neighbors.
                     const mergeBtn = (row.run_kind === 'supplemental' && row.attribution_tax_treatment === 'merge')
                         ? `<button type="button" class="btn btn-info btn-merge-sync" data-id="${row.id}"
                             data-label="${escapeHtmlPr(row.process_subject || row.process_no)}"
                             data-target="${escapeHtmlPr(row.attribution_target_process_no || ('#' + row.attribution_target_origami_process_id))}"
-                            title="${langData['btn_merge_sync'] || 'Merge into Target'}"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">${langData['btn_merge_sync'] || 'Merge into Target'}</span></button>`
+                            title="${langData['btn_merge_sync'] || 'Merge into Target'}"><i class="fa-solid fa-code-merge"></i></button>`
                         : '';
                     return `
                     <div class="btn-group rounded-3 row-actions" role="group">
-                        <button type="button" class="btn btn-warning btn-pull-sync text-nowrap" data-id="${row.id}"
+                        <button type="button" class="btn btn-warning btn-pull-sync" data-id="${row.id}"
                             data-label="${escapeHtmlPr(row.process_subject || row.process_no)}"
                             data-subject="${escapeHtmlPr(row.process_subject || '')}"
                             data-description="${escapeHtmlPr(row.process_description || '')}"
@@ -969,10 +997,10 @@ function initPendingSyncTable() {
                             data-tax-treatment="${row.attribution_tax_treatment || ''}"
                             data-matched-cycle-id="${row.matched_cycle_id || ''}"
                             data-matched-cycle-name="${escapeHtmlPr(row.matched_cycle_name || '')}"
-                            title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">${langData['btn_pull_to_run'] || 'Pull to Run'}</span></button>
+                            title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>
                         ${mergeBtn}
                         <button type="button" class="btn btn-outline-info btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
-                        <button type="button" class="btn btn-outline-danger btn-reject-sync" data-id="${row.id}" data-label="${escapeHtmlPr(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-ban"></i></button>
+                        <button type="button" class="btn btn-outline-danger btn-reject-sync" data-id="${row.id}" data-label="${escapeHtmlPr(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-reply"></i></button>
                     </div>
                 `;
                 }
@@ -1088,6 +1116,7 @@ function renderSyncItemCardPr(item) {
                 <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_late_mins'] || 'Late (min)'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.late_mins ?? '-')}</span></div>
                 <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_ot_breakdown'] || 'OT (hrs)'}</span><span class="sync-emp-stat-value">${otBreakdown}</span></div>
                 <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_trip_allowance'] || 'Trip Allowance'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.trip_allowance ?? '-')}</span></div>
+                ${syncEmpExtraStatsPr(item)}
             </div>
             <div class="sync-emp-card-footer">
                 <span class="sync-emp-card-payment">${renderPaymentSsoCellPr(item)}</span>
@@ -1111,6 +1140,20 @@ function renderProbationStatusCellPr(item) {
     if (!entry) return '';
     const [cls, key, fallback] = entry;
     return `<span class="badge rounded-pill ${cls}">${langData[key] || fallback}</span>`;
+}
+// 2026-09-02, explicit request: "หน้าต่างตอนกดดูรายละเอียดของรอบที่ส่ง ช่วยปรับให้แสดงข้อมูลครบ" --
+// PayrollSyncModel::getProcessDetail() already sends early_mins/leave_approve_days/leave_wait_days/
+// leave_without_pay_days per item, but the card never rendered them at all. Shown only when the
+// value is genuinely present and non-zero (same "don't clutter with nothing" filtering the
+// item_values badges above already use), appended after Trip Allowance.
+function syncEmpExtraStatsPr(item) {
+    const stats = [
+        ['table_early_mins', 'Early Leave (min)', item.early_mins],
+        ['table_leave_approve_days', 'Leave Approved (days)', item.leave_approve_days],
+        ['table_leave_wait_days', 'Leave Pending (days)', item.leave_wait_days],
+        ['table_leave_without_pay_days', 'Unpaid Leave (days)', item.leave_without_pay_days],
+    ].filter(([, , v]) => v !== null && v !== undefined && Number(v) !== 0);
+    return stats.map(([key, fallback, v]) => `<div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData[key] || fallback}</span><span class="sync-emp-stat-value">${escapeHtmlPr(v)}</span></div>`).join('');
 }
 function renderIdCardCellPr(item) {
     if (!item.id_card_no_masked) {
@@ -1181,6 +1224,11 @@ function renderSyncDetail(data) {
             ${syncSummaryFieldPr('fa-hashtag', 'table_process_no', 'Process No', escapeHtmlPr(data.process_no))}
             ${syncSummaryFieldPr('fa-building', 'table_comp_name', 'Company', escapeHtmlPr(data.origami_comp_name))}
             ${syncSummaryFieldPr('fa-calendar-days', 'table_period', 'Pay Period', escapeHtmlPr(data.period_name || '-'))}
+            <!-- 2026-09-02, reply from Origami's own team re: payroll schedule mapping -- shown here
+                 (not just used silently by matchForSyncProcess()) so an admin can see/verify exactly
+                 what code Origami sent, e.g. when troubleshooting why a document didn't auto-match a
+                 Payroll Schedule. -->
+            ${syncSummaryFieldPr('fa-key', 'table_external_cycle_code', 'External Cycle Code', data.external_cycle_code ? `<code>${escapeHtmlPr(data.external_cycle_code)}</code>` : `<span class="text-muted">-</span>`)}
             ${syncSummaryFieldPr('fa-repeat', 'table_frequency', 'Frequency', escapeHtmlPr(frequencyLabelPr(data.frequency_type)))}
             ${syncSummaryFieldPr('fa-users', 'table_employee_count', 'Employees', escapeHtmlPr(data.item_count))}
             ${syncSummaryFieldPr('fa-triangle-exclamation', 'table_unmapped', 'Unmapped', unmapped > 0 ? `<span class="text-danger">${unmapped}</span>` : unmapped)}
@@ -1458,7 +1506,7 @@ function updateClearFilterVisibility() {
     const purpose = $('#filter_run_purpose').val();
     const hasFilter = !!($('#filter_date_from').val() || $('#filter_date_to').val()
         || (origin && origin !== 'all') || $('#filter_run_cycle').val() || (purpose && purpose !== 'all'));
-    $('#btnClearDateFilter').toggleClass('d-none', !hasFilter);
+    $('#dateFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 $(document).on('changeDate', '#filter_date_from, #filter_date_to', function () {
     updateClearFilterVisibility();
@@ -1784,6 +1832,38 @@ $(document).on('click', '.btn-export-run-register', function () {
     params.set('report_code', 'PAYROLL_REGISTER');
     params.set('format', 'excel');
     params.set('run_id', $(this).data('id'));
+    params.set('source', 'payroll_process_list_row');
+    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
+});
+// 2026-09-02, explicit request: "เพิ่มให้ Export เป็น PDF ได้ด้วย และรองรับ 2 ภาษา...การ Export กดแล้ว
+// แสดงตัวอย่าง แล้วค่อยเลือกจะ Download ภาษาไทยหรือภาษาอังกฤษ" -- additive next to the Excel button
+// above (unchanged). #runRegisterPdfPreviewRunId remembers which run this modal is currently open
+// for, read by the Thai/English download buttons below.
+let runRegisterPdfPreviewRunId = null;
+$(document).on('click', '.btn-preview-run-register-pdf', function () {
+    runRegisterPdfPreviewRunId = $(this).data('id');
+    const $frame = $('#runRegisterPdfPreviewFrame').off('load').addClass('d-none').attr('src', '');
+    const $loading = $('#runRegisterPdfPreviewLoading').removeClass('d-none');
+    new bootstrap.Modal(document.getElementById('runRegisterPdfPreviewModal')).show();
+    const params = new URLSearchParams();
+    params.set('report_code', 'PAYROLL_REGISTER');
+    params.set('format', 'pdf');
+    params.set('run_id', runRegisterPdfPreviewRunId);
+    params.set('language', currentLang === 'en' ? 'en' : 'th');
+    params.set('preview', '1');
+    $frame.on('load', function () {
+        $loading.addClass('d-none');
+        $frame.removeClass('d-none');
+    });
+    $frame.attr('src', `${BASE_URL}/api/report.generate?${params.toString()}`);
+});
+$(document).on('click', '.btn-run-register-pdf-download', function () {
+    if (!runRegisterPdfPreviewRunId) return;
+    const params = new URLSearchParams();
+    params.set('report_code', 'PAYROLL_REGISTER');
+    params.set('format', 'pdf');
+    params.set('run_id', runRegisterPdfPreviewRunId);
+    params.set('language', $(this).data('language') || 'th');
     params.set('source', 'payroll_process_list_row');
     generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
 });

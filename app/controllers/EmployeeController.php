@@ -6,6 +6,7 @@ require_once __DIR__ . '/../models/EmployeeRecurringEarningModel.php';
 require_once __DIR__ . '/../models/EmployeeRecurringDeductionModel.php';
 require_once __DIR__ . '/../models/EmployeeOtRateModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
+require_once __DIR__ . '/../services/ThumbnailGenerator.php';
 class EmployeeController extends Controller {
     private $model;
     private $earningDeductionModel;
@@ -30,6 +31,14 @@ class EmployeeController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    /** @return array{0:?string,1:?string} [ip_address, user_agent] -- same capture pattern ManualEntryController::requestFingerprint() already established, for AuditLogModel::record(). */
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     /** Full employee PII (salary, bank, national ID, documents) requires employee.view/.manage -- list() stays ungated (no PII in its columns). */
     private function requirePermission(string $permissionKey): bool {
         $compId = (int)getCompId();
@@ -44,8 +53,32 @@ class EmployeeController extends Controller {
     public function index() {
         $this->view('employee/list');
     }
+    // 2026-09-02, 3-way Employee submenu split -- Login History and Reports were previously 2 of
+    // this page's own 4 top-level tabs, now their own standalone pages/routes (see header.php's own
+    // Employee submenu). Kept on this same controller/model (not new classes) per this project's
+    // own established precedent from the payslip/* -> payslip-documents/* rename: a menu/route
+    // restructuring changes the URL and menu label, not the controller class.
+    public function loginHistory() {
+        $this->view('employee/login-history');
+    }
+    public function reports() {
+        $this->view('employee/reports');
+    }
+    // 2026-09-03, Platform Hardening Phase 3 Stage 5 -- gates the "Permission Overrides" tab's own
+    // <li> at the VIEW level (not just a client-side hide), same `rbac.view` check the Permission
+    // Matrix's own menu-visibility gate in header.php uses. Deliberately NOT `employee.view`/
+    // `.edit` -- see PermissionController::employeeOverridesGet()'s own docblock on why this stays
+    // scoped to whoever can already manage the Permission Matrix.
+    private function canManagePermissionOverrides(): bool {
+        $compId = (int)getCompId();
+        if (!$compId) {
+            return false;
+        }
+        return $this->permissionModel->checkPermission($this->userId(), 'rbac.view', $this->isAdmin(), $compId)['allowed'];
+    }
+
     public function create() {
-        $this->view('employee/detail', ['employee_no' => null]);
+        $this->view('employee/detail', ['employee_no' => null, 'canManagePermissionOverrides' => $this->canManagePermissionOverrides()]);
     }
     public function detail($data = null) {
         $employee_no = $data;
@@ -54,7 +87,7 @@ class EmployeeController extends Controller {
             echo '404 - Not Found';
             return;
         }
-        $this->view('employee/detail', ['employee_no' => $employee_no]);
+        $this->view('employee/detail', ['employee_no' => $employee_no, 'canManagePermissionOverrides' => $this->canManagePermissionOverrides()]);
     }
     public function list(){
         $compId = getCompId();
@@ -130,6 +163,136 @@ class EmployeeController extends Controller {
             'totals' => $res['totals'],
         ]);
     }
+    /** Phase 1 of the Employee Reports plan -- headcount movement (hires/exits) for one calendar
+     *  year, see EmployeeModel::headcountMovementReport()'s own docblock. Same ungated convention as
+     *  standingSummaryList()/recheckList() above (no requirePermission() gate -- this whole page has
+     *  none for its own list/summary endpoints). */
+    public function headcountMovementReport() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $year = intval($_POST['year'] ?? date('Y'));
+        if ($year < 2000 || $year > 2100) {
+            $this->json(['status' => false, 'message' => 'Invalid year.']);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $res = $this->model->headcountMovementReport((int)$compId, $year, $filters);
+        $this->json(['status' => true, 'data' => $res]);
+    }
+    /** Phase 2 of the Employee Reports plan -- 3 quick-win reports, same ungated convention as the
+     *  rest of this page's own list/summary endpoints. */
+    public function expiryReport() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $withinDays = intval($_POST['within_days'] ?? 90);
+        if (!in_array($withinDays, [30, 60, 90], true)) {
+            $this->json(['status' => false, 'message' => 'Invalid within_days.']);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $res = $this->model->expiryReport((int)$compId, $withinDays, $filters);
+        $this->json(['status' => true, 'data' => $res]);
+    }
+    public function probationReport() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $res = $this->model->probationReport((int)$compId, $filters);
+        $this->json(['status' => true, 'data' => $res]);
+    }
+    public function statutoryEnrollmentReport() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $res = $this->model->statutoryEnrollmentReport((int)$compId, $filters);
+        $this->json(['status' => true, 'data' => $res]);
+    }
+    /** Phase 3 of the Employee Reports plan -- structural/analytical reports, same ungated
+     *  convention as the rest of this page's own list/summary endpoints. */
+    public function headcountStructureReport() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $groupBy = (string)($_POST['group_by'] ?? 'department');
+        if (!in_array($groupBy, ['department', 'position', 'branch', 'employment_type'], true)) {
+            $this->json(['status' => false, 'message' => 'Invalid group_by.']);
+            return;
+        }
+        $res = $this->model->headcountStructureReport((int)$compId, $groupBy);
+        $this->json(['status' => true, 'data' => $res]);
+    }
+    public function tenureReport() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $res = $this->model->tenureReport((int)$compId, $filters);
+        $this->json(['status' => true, 'data' => $res]);
+    }
+    public function birthdayAnniversaryReport() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $month = intval($_POST['month'] ?? date('n'));
+        if ($month < 1 || $month > 12) {
+            $this->json(['status' => false, 'message' => 'Invalid month.']);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $res = $this->model->birthdayAnniversaryReport((int)$compId, $month, $filters);
+        $this->json(['status' => true, 'data' => $res]);
+    }
+    /** Phase 4 (the final phase) of the Employee Reports plan -- company-wide data completeness
+     *  overview, same ungated convention as the rest of this page's own list/summary endpoints. */
+    public function completenessOverviewReport() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $filters = [
+            'department_id' => $_POST['department_id'] ?? '',
+            'branch_id' => $_POST['branch_id'] ?? '',
+        ];
+        $res = $this->model->completenessOverviewReport((int)$compId, $filters);
+        $this->json(['status' => true, 'data' => $res]);
+    }
     public function recheckList() {
         $compId = getCompId();
         if (!$compId) {
@@ -161,7 +324,7 @@ class EmployeeController extends Controller {
      *  this controller. Gated by employee.manage (same permission save() itself requires) since this
      *  changes a real payroll-eligibility flag, not just a display filter. */
     public function setPayrollParticipant() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -275,8 +438,61 @@ class EmployeeController extends Controller {
         $data = $this->model->reportToOptions((int)$compId, $excludeId, $search, $page, $limit);
         $this->json(['status' => true, 'data' => $data]);
     }
+    /** 2026-09-02, explicit request: Probation/Internship "use company policy" read-only info card
+     *  (Salary tab) -- needs the EFFECTIVE company policy values to display, but gating this behind
+     *  payroll_configuration.manage (like PayrollConfigurationController::policyGet()) would hide it
+     *  from anyone who can edit an employee but not payroll config itself. Gated at employee.view
+     *  instead (the same permission the Salary tab's own get() already requires) since this is
+     *  read-only reference data, not a mutation. */
+    public function payrollPolicySettings() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $policyModel = new PayrollPolicyModel();
+        $this->json(['status' => true, 'data' => [
+            'probation' => $policyModel->probationSettings((int)$compId),
+            'intern' => $policyModel->internSettings((int)$compId),
+        ]]);
+    }
+    /** 2026-09-02, explicit request: "เลือกต่อได้ว่าจะใช้บัญชีไหนของรอบนั้น" -- the Salary tab's
+     *  default_bank_account_id picker, scoped to whichever cycle the employee currently has
+     *  selected (falls back to the company's own default account when that cycle has none
+     *  configured -- see EmployeePaymentMethodModel::scopedBankAccountOptions()'s own docblock). */
+    public function paymentAccountOptions() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['items' => [], 'total_count' => 0]]);
+            return;
+        }
+        $cycleId = isset($_POST['cycle_id']) ? (int)$_POST['cycle_id'] : 0;
+        if ($cycleId <= 0) {
+            $this->json(['status' => true, 'data' => ['items' => [], 'total_count' => 0]]);
+            return;
+        }
+        $page = intval($_POST['page'] ?? 1);
+        $limit = intval($_POST['limit'] ?? 10);
+        $search = (string)($_POST['searchTerm'] ?? '');
+        $model = new EmployeePaymentMethodModel();
+        $this->json(['status' => true, 'data' => $model->scopedBankAccountOptions((int)$compId, $cycleId, $search, $page, $limit)]);
+    }
+    /** Mixed-payment line breakdown for one employee (Employment tab's repeatable-row form, only
+     *  populated while payment_method_id resolves to 'mixed') -- get() below already returns the
+     *  employee's own scalar columns, this is the separate 1:many child list. */
+    public function paymentMethodLines() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $employeeId <= 0 || !$this->model->employeeBelongsToComp($employeeId, (int)$compId)) {
+            $this->json(['status' => false, 'message' => 'Employee not found.']);
+            return;
+        }
+        $model = new EmployeePaymentMethodModel();
+        $this->json(['status' => true, 'data' => $model->getLines($employeeId)]);
+    }
     public function save() {
-        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -288,8 +504,13 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // EmployeeModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'employee.edit' : 'employee.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->save((int)$compId, $data, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->save((int)$compId, $data, $userId, $ip, $ua);
         $this->json($result);
     }
     /** 2026-08-26, explicit request: "ในการจัดการพนักงาน เพิ่มการเก็บลายเซ็นต์ของพนักงานแต่ละคนได้" --
@@ -299,7 +520,7 @@ class EmployeeController extends Controller {
      *  method too: a live-drawn signature reaches here as a normal multipart file upload (the
      *  browser's canvas is exported to a PNG Blob client-side), no separate endpoint needed. */
     public function uploadSignature() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -336,7 +557,7 @@ class EmployeeController extends Controller {
             return;
         }
         $relativePath = 'public/uploads/employee_signatures/' . (int)$compId . '/' . $safeName;
-        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'signature_path' => $relativePath]);
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'signature_path' => $relativePath, 'file_size' => (int)$file['size']]);
     }
 
     /** 2026-08-29, real bug found and fixed (explicit report: "ใส่รูปพนักงาน กดบันทึกแล้ว ไม่มาแสดงผล") --
@@ -347,7 +568,7 @@ class EmployeeController extends Controller {
      *  File object), so the photo always reverted to nothing after a real save/reload. Identical
      *  pattern to uploadSignature() above, own folder. */
     public function uploadPhoto() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -384,11 +605,22 @@ class EmployeeController extends Controller {
             return;
         }
         $relativePath = 'public/uploads/employee_photos/' . (int)$compId . '/' . $safeName;
-        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'profile_photo_path' => $relativePath]);
+        // Platform Hardening Phase 5B: real thumbnail for the profile photo (jpg/png only -- GD can't
+        // rasterize SVG, so an SVG upload here simply gets no thumbnail, same as ThumbnailGenerator's
+        // own docblock describes). A generation failure never fails the upload itself.
+        $thumbnailRelativePath = null;
+        if (ThumbnailGenerator::isSupportedMime($detectedMime)) {
+            $thumbName = 'thumb_' . $safeName;
+            if (ThumbnailGenerator::generate($destPath, $uploadDir . $thumbName)) {
+                $thumbnailRelativePath = 'public/uploads/employee_photos/' . (int)$compId . '/' . $thumbName;
+            }
+        }
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'profile_photo_path' => $relativePath,
+            'file_size' => (int)$file['size'], 'thumbnail_path' => $thumbnailRelativePath]);
     }
 
     public function delete() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -481,7 +713,6 @@ class EmployeeController extends Controller {
         }
     }
     public function earningDeductionSave() {
-        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -493,6 +724,10 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // EmployeeEarningDeductionModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'employee.edit' : 'employee.add')) return;
         $employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
         if ($employeeId <= 0) {
             $this->json(['status' => false, 'message' => 'Missing employee_id.']);
@@ -503,7 +738,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     public function earningDeductionStatus() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -523,7 +758,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     public function earningDeductionDelete() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -589,7 +824,6 @@ class EmployeeController extends Controller {
         }
     }
     public function recurringEarningSave() {
-        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -600,6 +834,10 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // EmployeeRecurringEarningModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'employee.edit' : 'employee.add')) return;
         $employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
         if ($employeeId <= 0) {
             $this->json(['status' => false, 'message' => 'Missing employee_id.']);
@@ -609,7 +847,7 @@ class EmployeeController extends Controller {
         $this->json($this->recurringEarningModel->save($employeeId, (int)$compId, $data, $userId));
     }
     public function recurringEarningDelete() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -669,7 +907,6 @@ class EmployeeController extends Controller {
         }
     }
     public function recurringDeductionSave() {
-        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -680,6 +917,10 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // EmployeeRecurringDeductionModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'employee.edit' : 'employee.add')) return;
         $employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
         if ($employeeId <= 0) {
             $this->json(['status' => false, 'message' => 'Missing employee_id.']);
@@ -689,7 +930,7 @@ class EmployeeController extends Controller {
         $this->json($this->recurringDeductionModel->save($employeeId, (int)$compId, $data, $userId));
     }
     public function recurringDeductionDelete() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -719,7 +960,7 @@ class EmployeeController extends Controller {
         $this->json($this->otRateModel->getForEmployee($employeeId, (int)$compId));
     }
     public function otRateSave() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -750,7 +991,6 @@ class EmployeeController extends Controller {
         $this->json(['status' => true, 'data' => $data]);
     }
     private function handleChildSave(string $type): void {
-        if (!$this->requirePermission('employee.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -762,6 +1002,10 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // EmployeeModel::saveChild() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'employee.edit' : 'employee.add')) return;
         $employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
         if ($employeeId <= 0) {
             $this->json(['status' => false, 'message' => 'Missing employee_id.']);
@@ -772,7 +1016,7 @@ class EmployeeController extends Controller {
         $this->json($result);
     }
     private function handleChildDelete(string $type): void {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -802,7 +1046,7 @@ class EmployeeController extends Controller {
         $this->json(['status' => true, 'data' => $data]);
     }
     public function documentUpload() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.add')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -861,8 +1105,17 @@ class EmployeeController extends Controller {
 
         $originalName = basename((string)$file['name']);
         $relativePath = 'storage/uploads/employees/' . $employeeId . '/' . $safeName;
+        // Platform Hardening Phase 5B: thumbnail only for image-mime (jpg/png) rows -- pdf/doc/docx
+        // stay icon-only, per the confirmed policy. A generation failure never fails the upload.
+        $thumbnailRelativePath = null;
+        if (ThumbnailGenerator::isSupportedMime($detectedMime)) {
+            $thumbName = 'thumb_' . $safeName;
+            if (ThumbnailGenerator::generate($destPath, $uploadDir . $thumbName)) {
+                $thumbnailRelativePath = 'storage/uploads/employees/' . $employeeId . '/' . $thumbName;
+            }
+        }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->saveDocument($employeeId, (int)$compId, $documentType, $originalName, $relativePath, $userId);
+        $result = $this->model->saveDocument($employeeId, (int)$compId, $documentType, $originalName, $relativePath, $userId, (int)$file['size'], $thumbnailRelativePath);
         if (!$result['status']) {
             @unlink($destPath);
         }
@@ -901,7 +1154,7 @@ class EmployeeController extends Controller {
         exit;
     }
     public function documentDelete() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);

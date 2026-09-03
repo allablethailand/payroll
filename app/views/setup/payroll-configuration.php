@@ -73,13 +73,16 @@
                     <table class="table table-hover table-border align-middle w-100" id="tb_payroll_cycle">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th scope="col" style="width: 22%;" data-i18n="table_cycle_name">Schedule Name</th>
-                                <th scope="col" style="width: 13%;" data-i18n="table_frequency">Frequency</th>
-                                <th scope="col" style="width: 18%;" data-i18n="table_cutoff">Attendance Cut-off</th>
-                                <th scope="col" style="width: 18%;" data-i18n="table_payment_day">Payment Day</th>
-                                <th scope="col" style="width: 15%;" data-i18n="table_bank_format">Bank Format</th>
                                 <th scope="col" style="width: 8%;" data-i18n="col_status">Status</th>
-                                <th scope="col" style="width: 6%; text-align: center;"></th>
+                                <th scope="col" style="width: 18%;" data-i18n="table_cycle_name">Schedule Name</th>
+                                <th scope="col" style="width: 10%;" data-i18n="table_frequency">Frequency</th>
+                                <!-- 2026-09-02, reply from Origami's own team re: payroll schedule mapping --
+                                     see modals.php's own comment on #external_cycle_code for the full context. -->
+                                <th scope="col" style="width: 13%;" data-i18n="table_external_cycle_code">External Cycle Code</th>
+                                <th scope="col" style="width: 15%;" data-i18n="table_cutoff">Attendance Cut-off</th>
+                                <th scope="col" style="width: 15%;" data-i18n="table_payment_day">Payment Day</th>
+                                <th scope="col" style="width: 13%;" data-i18n="table_bank_format">Bank Format</th>
+                                <th scope="col" style="width: 8%; text-align: center;"></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -93,13 +96,13 @@
                 <table class="table table-hover table-border align-middle w-100" id="tb_earning_type">
                     <thead class="table-light text-secondary">
                         <tr>
+                            <th scope="col" style="width: 8%;" data-i18n="col_status">Status</th>
                             <th scope="col" style="width: 12%;" data-i18n="col_code">Code</th>
                             <th scope="col" style="width: 23%;" data-i18n="col_name">Item Name</th>
                             <th scope="col" style="width: 17%;" data-i18n="col_calc_method">Calculation</th>
                             <th scope="col" style="width: 16%;" data-i18n="col_tax_type">Tax Treatment</th>
                             <th scope="col" style="width: 10%;" data-i18n="col_sso">SSO Cal</th>
                             <th scope="col" style="width: 10%;" data-i18n="col_pf">Provident Fund</th>
-                            <th scope="col" style="width: 8%;" data-i18n="col_status">Status</th>
                             <th scope="col" style="width: 4%; text-align: center;"></th>
                         </tr>
                     </thead>
@@ -112,11 +115,11 @@
                 <table class="table table-hover table-border align-middle w-100" id="tb_deduction_type">
                     <thead class="table-light text-secondary">
                         <tr>
+                            <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
                             <th scope="col" style="width: 15%;" data-i18n="col_code">Code</th>
                             <th scope="col" style="width: 30%;" data-i18n="col_name">Item Name</th>
                             <th scope="col" style="width: 20%;" data-i18n="col_calc_method">Calculation</th>
                             <th scope="col" style="width: 20%;" data-i18n="col_deduct_type">Tax Deduction Impact</th>
-                            <th scope="col" style="width: 10%;" data-i18n="col_status">Status</th>
                             <th scope="col" style="width: 5%; text-align: center;"></th>
                         </tr>
                     </thead>
@@ -277,9 +280,59 @@
                                 <input class="form-check-input" type="checkbox" id="policyProbationDeferPvd">
                                 <label class="form-check-label" for="policyProbationDeferPvd" data-i18n="policy_probation_defer_pvd_label">Defer Provident Fund (PVD) contribution until probation passes</label>
                             </div>
-                            <div class="form-check">
+                            <!-- 2026-09-02, follow-up to close a review-flagged gap: "เงื่อนไขการหักภาษี/
+                                 ประกันสังคมที่แตกต่างจากพนักงานปกติ (ถ้ามี)" -- SSO gets the exact same defer
+                                 mechanism PVD already has, right above. -->
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="policyProbationDeferSso">
+                                <label class="form-check-label" for="policyProbationDeferSso" data-i18n="policy_probation_defer_sso_label">Defer Social Security Fund (SSO) contribution until probation passes</label>
+                            </div>
+                            <div class="form-check mb-3">
                                 <input class="form-check-input" type="checkbox" id="policyProbationDeferRecurringEarning">
                                 <label class="form-check-label" for="policyProbationDeferRecurringEarning" data-i18n="policy_probation_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) until probation passes</label>
+                            </div>
+                        </div>
+                        <!-- 2026-09-02, follow-up to close a review-flagged gap: a soft, CREATE-TIME-
+                             ONLY default for the ALREADY-existing employees.tax_exempt checkbox --
+                             not a new tax formula, same tri-state contract as OT Eligible (Default)
+                             below. -->
+                        <div class="settings-subgroup mt-4">
+                            <div class="settings-subgroup-label" data-i18n="policy_tax_default_label">Tax Withholding (Default)</div>
+                            <div class="row g-4">
+                                <div class="col-md-6">
+                                    <label class="form-label mb-2" data-i18n="policy_tax_exempt_default_label">Tax Exempt (Default)</label>
+                                    <select class="form-select select2-static" id="policyProbationTaxExemptDefault" data-option-keys="policy_ot_default_not_set,policy_tax_default_exempt,policy_tax_default_not_exempt" data-option-values=",1,0"></select>
+                                    <div class="form-text mt-2" data-i18n="policy_tax_exempt_default_hint">Only a starting suggestion, applied once when an employee is created directly into this status -- the employee's own Tax Exempt checkbox (Salary tab) can always be changed afterward.</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 2026-09-02, explicit request: extend Probation pay policy with leave/OT
+                             rights during the period. Leave limit/allow are genuinely informational
+                             for now (no consumer wired yet, same "built, no consumer yet" precedent
+                             this project already uses for e.g. Holiday's own resolveHolidaysForEmployee()
+                             before it had one). OT-eligible-default is a SOFT default only -- applied
+                             once at the moment an employee's own Employment Status transitions INTO
+                             Probation, the employee's own ot_eligible checkbox (Salary tab) can always
+                             be changed afterward and is never overridden again after that one time. -->
+                        <div class="settings-subgroup mt-4">
+                            <div class="settings-subgroup-label" data-i18n="policy_probation_leave_ot_label">Leave &amp; OT Rights During Probation</div>
+                            <div class="row g-4 align-items-start">
+                                <div class="col-md-6">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="policyAllowLeaveDuringProbation" checked>
+                                        <label class="form-check-label" for="policyAllowLeaveDuringProbation" data-i18n="policy_allow_leave_label">Allow leave requests during probation</label>
+                                    </div>
+                                    <label class="form-label mb-2" data-i18n="policy_leave_days_limit_label">Leave Days Limit</label>
+                                    <div class="input-group">
+                                        <input type="number" min="0" step="1" class="form-control" id="policyProbationLeaveDaysLimit" data-i18n="policy_leave_days_limit_placeholder" placeholder="No limit">
+                                        <span class="input-group-text" data-i18n="days_suffix">days</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label mb-2" data-i18n="policy_ot_eligible_default_label">OT Eligible (Default)</label>
+                                    <select class="form-select select2-static" id="policyProbationOtEligibleDefault" data-option-keys="policy_ot_default_not_set,policy_ot_default_eligible,policy_ot_default_not_eligible" data-option-values=",1,0"></select>
+                                    <div class="form-text mt-2" data-i18n="policy_ot_eligible_default_hint">Only a starting suggestion, applied once when an employee enters this status -- the employee's own OT Eligible checkbox (Salary tab) can always be changed afterward.</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -305,6 +358,14 @@
                     </div>
                     <div class="settings-info-card-body">
                         <div class="row g-4 mb-5">
+                            <div class="col-md-6">
+                                <label class="form-label mb-2" data-i18n="policy_intern_period_days_label">Standard Internship Period (days)</label>
+                                <div class="input-group">
+                                    <input type="number" min="0" step="1" class="form-control" id="policyInternPeriodDays" data-i18n="policy_probation_period_days_placeholder" placeholder="Not set">
+                                    <span class="input-group-text" data-i18n="days_suffix">days</span>
+                                </div>
+                                <div class="form-text mt-2" data-i18n="policy_intern_period_days_hint">Reference only -- for display/planning. Does not by itself change any calculation below; those are always driven by the employee's actual Employment Type.</div>
+                            </div>
                             <div class="col-md-6">
                                 <label class="form-label mb-2" data-i18n="policy_intern_base_salary_ratio_label">Base Salary Ratio for Salaried Interns</label>
                                 <div class="input-group">
@@ -356,9 +417,47 @@
                                 <input class="form-check-input" type="checkbox" id="policyInternDeferPvd">
                                 <label class="form-check-label" for="policyInternDeferPvd" data-i18n="policy_intern_defer_pvd_label">Defer Provident Fund (PVD) contribution for interns</label>
                             </div>
-                            <div class="form-check">
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="policyInternDeferSso">
+                                <label class="form-check-label" for="policyInternDeferSso" data-i18n="policy_intern_defer_sso_label">Defer Social Security Fund (SSO) contribution for interns</label>
+                            </div>
+                            <div class="form-check mb-3">
                                 <input class="form-check-input" type="checkbox" id="policyInternDeferRecurringEarning">
                                 <label class="form-check-label" for="policyInternDeferRecurringEarning" data-i18n="policy_intern_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) for interns</label>
+                            </div>
+                        </div>
+                        <!-- 2026-09-02, explicit request: extend Internship pay policy with leave/OT
+                             rights during the period -- direct mirror of #policyProbationCard's own
+                             new subgroup immediately above, own separate field set/columns. -->
+                        <div class="settings-subgroup mt-4">
+                            <div class="settings-subgroup-label" data-i18n="policy_intern_leave_ot_label">Leave &amp; OT Rights During Internship</div>
+                            <div class="row g-4 align-items-start">
+                                <div class="col-md-6">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="policyAllowLeaveDuringIntern" checked>
+                                        <label class="form-check-label" for="policyAllowLeaveDuringIntern" data-i18n="policy_allow_leave_label">Allow leave requests during probation</label>
+                                    </div>
+                                    <label class="form-label mb-2" data-i18n="policy_leave_days_limit_label">Leave Days Limit</label>
+                                    <div class="input-group">
+                                        <input type="number" min="0" step="1" class="form-control" id="policyInternLeaveDaysLimit" data-i18n="policy_leave_days_limit_placeholder" placeholder="No limit">
+                                        <span class="input-group-text" data-i18n="days_suffix">days</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label mb-2" data-i18n="policy_ot_eligible_default_label">OT Eligible (Default)</label>
+                                    <select class="form-select select2-static" id="policyInternOtEligibleDefault" data-option-keys="policy_ot_default_not_set,policy_ot_default_eligible,policy_ot_default_not_eligible" data-option-values=",1,0"></select>
+                                    <div class="form-text mt-2" data-i18n="policy_ot_eligible_default_hint">Only a starting suggestion, applied once when an employee enters this status -- the employee's own OT Eligible checkbox (Salary tab) can always be changed afterward.</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-subgroup mt-4">
+                            <div class="settings-subgroup-label" data-i18n="policy_tax_default_label">Tax Withholding (Default)</div>
+                            <div class="row g-4">
+                                <div class="col-md-6">
+                                    <label class="form-label mb-2" data-i18n="policy_tax_exempt_default_label">Tax Exempt (Default)</label>
+                                    <select class="form-select select2-static" id="policyInternTaxExemptDefault" data-option-keys="policy_ot_default_not_set,policy_tax_default_exempt,policy_tax_default_not_exempt" data-option-values=",1,0"></select>
+                                    <div class="form-text mt-2" data-i18n="policy_tax_exempt_default_hint">Only a starting suggestion, applied once when an employee is created directly into this status -- the employee's own Tax Exempt checkbox (Salary tab) can always be changed afterward.</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -391,7 +490,8 @@
                         </div>
                     </div>
                 </div>
-                <div class="text-end">
+                <div class="d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-light border btn-sm" id="btnCancelPayrollPolicies"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span></button>
                     <button type="button" class="btn btn-primary btn-sm" id="btnSavePayrollPolicies"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
                 </div>
             </div>

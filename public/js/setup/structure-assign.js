@@ -117,19 +117,25 @@ $(document).on('click', '.btn-structure-view-assigned', function () {
 $(document).on('click', '#btnSaPullIn', function () {
     const ids = $('#saOutsideList .sa-emp-checkbox:checked').map(function () { return parseInt($(this).val(), 10); }).get();
     if (!ids.length) return;
+    const $btn = $(this);
     const title = langData['sa_confirm_pull_in_title'] || 'Pull In Employees';
     const message = (langData['sa_confirm_pull_in_message'] || 'Move {count} employee(s) into "{label}"?').replace('{count}', ids.length).replace('{label}', saCurrentLabel);
     showConfirm(title, message, function () {
+        // 2026-09-02, Platform Hardening Phase 1.2 (tier-2 loading state) -- this used to fire the
+        // ajax with no disable/spinner at all (not even the plain disable the other tier-2 handlers
+        // already had), so a fast double-click after confirming could fire the assign twice.
+        setButtonLoading($btn, true);
         $.ajax({
             url: `${BASE_URL}/api/${saRoutePrefix()}.assign.assign`, method: 'POST', contentType: 'application/json',
             data: JSON.stringify({ type: saCurrentType, id: saCurrentRowId, employee_ids: ids }), dataType: 'json',
             success: function (res) {
+                setButtonLoading($btn, false);
                 if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
                 showSuccess(langData['save_success'] || 'Saved successfully.');
                 loadSaInList();
                 loadSaOutsideList();
             },
-            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
         });
     });
 });
@@ -144,6 +150,7 @@ $(document).on('click', '#btnSaPullIn', function () {
 $(document).on('click', '#btnSaMoveOut', function () {
     const ids = $('#saInList .sa-emp-checkbox:checked').map(function () { return parseInt($(this).val(), 10); }).get();
     if (!ids.length) return;
+    const $btn = $(this);
     const title = (langData['sa_confirm_move_out_title'] || 'Move Out of {label}').replace('{label}', saCurrentLabel);
     const destApi = SA_DESTINATION_API[saCurrentType] || '';
     Swal.fire({
@@ -168,10 +175,14 @@ $(document).on('click', '#btnSaMoveOut', function () {
         }
     }).then(function (result) {
         if (!result.isConfirmed) return;
+        // 2026-09-02, Platform Hardening Phase 1.2 (tier-2 loading state) -- same "no disable/spinner
+        // at all" gap as #btnSaPullIn's own identical fix above.
+        setButtonLoading($btn, true);
         $.ajax({
             url: `${BASE_URL}/api/${saRoutePrefix()}.assign.move-out`, method: 'POST', contentType: 'application/json',
             data: JSON.stringify({ type: saCurrentType, employee_ids: ids, destination_id: result.value }), dataType: 'json',
             success: function (res) {
+                setButtonLoading($btn, false);
                 if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
                 showSuccess(langData['save_success'] || 'Saved successfully.');
                 loadSaInList();
@@ -179,7 +190,7 @@ $(document).on('click', '#btnSaMoveOut', function () {
                     loadSaOutsideList();
                 }
             },
-            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
         });
     });
 });

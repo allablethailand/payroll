@@ -4,9 +4,9 @@ require_once __DIR__ . '/../models/HolidaySyncModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 
 /** Interactive "Sync Holidays from Google Calendar" picker -- see HolidaySyncModel's own docblock
- *  for the full design. Gated by the same `holiday.manage` permission key SetupRulesController
- *  already uses for every other Holiday write action (this ultimately inserts/updates real
- *  holidays rows). */
+ *  for the full design. Gated by the same `holiday.view`/`.add` permission keys SetupRulesController
+ *  already uses for reads/writes on Holiday (this ultimately inserts real holidays rows).
+ *  2026-09-03, Phase 3 Stage 3: swapped off the retired coarse `.manage`. */
 class HolidaySyncController extends Controller {
     private HolidaySyncModel $model;
     private PermissionModel $permissionModel;
@@ -42,7 +42,7 @@ class HolidaySyncController extends Controller {
     }
 
     public function candidates() {
-        if (!$this->requirePermission('holiday.manage')) return;
+        if (!$this->requirePermission('holiday.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -52,7 +52,7 @@ class HolidaySyncController extends Controller {
     }
 
     public function apply() {
-        if (!$this->requirePermission('holiday.manage')) return;
+        if (!$this->requirePermission('holiday.add')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -63,7 +63,7 @@ class HolidaySyncController extends Controller {
     }
 
     public function log() {
-        if (!$this->requirePermission('holiday.manage')) return;
+        if (!$this->requirePermission('holiday.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);

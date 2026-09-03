@@ -236,11 +236,14 @@
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
             <button class="nav-link text-secondary" id="family-tab" data-bs-toggle="tab" data-bs-target="#family-pane" type="button" role="tab" aria-controls="family-pane" aria-selected="false"><i class="fa-solid fa-people-roof me-1"></i><span data-i18n="family_tax">Family / Tax Allowance</span><span class="completeness-tab-badge d-none" data-tab-key="family"></span></button>
         </li>
-        <!-- Hidden 2026-08-19 (not needed for Payroll, agreed alongside the rest of the field trim --
-             this specific tab/pane hide was missed in that pass, corrected here): pure file
-             attachments, unrelated to payroll processing. Pane below stays d-none too; its own
-             upload JS is otherwise untouched, so re-showing both later is a two-line revert. -->
-        <li class="nav-item d-none" role="presentation">
+        <!-- 2026-09-03: re-enabled (was hidden 2026-08-19 as "not needed for Payroll" -- that's no
+             longer true now that Origami-synced passport/visa/work-permit document scans need
+             somewhere to be viewed, see EmployeeSyncer::syncDocumentScans()'s own docblock). Same
+             progressive-reveal gate as the other secondary tabs (earningDeduction/social/family) --
+             a brand-new, not-yet-saved employee has no employee_id to attach a document to yet
+             either way (uploadDocumentFile() itself already refuses without one). Backend/JS were
+             never touched by the 2026-08-19 hide, so nothing else needed reverting here. -->
+        <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
             <button class="nav-link text-secondary" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false"><i class="fa-solid fa-paperclip me-1"></i><span data-i18n="documents">Documents</span></button>
         </li>
         <!-- 2026-08-29, explicit request: "ต้องการอีก Tab ใน Employee เพื่อดูประวัติการเข้าใช้งานระบบ" -- new
@@ -250,6 +253,20 @@
         <li class="nav-item d-none" role="presentation" id="loginHistoryTabItem">
             <button class="nav-link text-secondary" id="login-history-tab" data-bs-toggle="tab" data-bs-target="#login-history-pane" type="button" role="tab" aria-controls="login-history-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="login_history">Login History</span></button>
         </li>
+        <!-- 2026-09-03, Platform Hardening Phase 3 Stage 5 -- per-employee permission override tab.
+             Two conditions gate this <li>, ANDed together: `$employee_no` (a brand-new, not-yet-
+             saved employee has no employee_id to attach overrides to yet, same progressive-reveal
+             precedent as every other secondary tab on this page) AND `$canManagePermissionOverrides`
+             (computed server-side in EmployeeController::detail(), same `rbac.view` check the
+             Permission Matrix's own menu-visibility gate in header.php uses -- this tab is never even
+             sent to the DOM for someone who can't already manage the Permission Matrix, not merely
+             hidden client-side, since it lets its holder grant/deny ANY permission in the system to
+             ANY employee). -->
+        <?php if (!empty($canManagePermissionOverrides)): ?>
+        <li class="nav-item d-none" role="presentation" id="permissionOverridesTabItem">
+            <button class="nav-link text-secondary" id="permission-overrides-tab" data-bs-toggle="tab" data-bs-target="#permission-overrides-pane" type="button" role="tab" aria-controls="permission-overrides-pane" aria-selected="false"><i class="fa-solid fa-user-shield me-1"></i><span data-i18n="permission_overrides">Permission Overrides</span></button>
+        </li>
+        <?php endif; ?>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-5" id="employeeTabsContent">
         <div class="tab-pane fade show active" id="info-pane" role="tabpanel" aria-labelledby="info-tab" tabindex="0">
@@ -276,6 +293,8 @@
                          populateEmployeeForm() sets it generically), set by uploadEmpPhotoBlob()'s
                          own AJAX call the moment a file is chosen -- not deferred until Save. -->
                     <input type="hidden" id="emp_profile_photo_path" name="profile_photo_path" value="">
+                    <input type="hidden" id="emp_profile_photo_file_size" name="profile_photo_file_size" value="">
+                    <input type="hidden" id="emp_profile_photo_thumbnail_path" name="profile_photo_thumbnail_path" value="">
                 </div>
             </div>
             <!-- 2026-08-30 (Phase 3, T020, explicit request: field "จ่าย/ไม่จ่ายเงินเดือน", default =
@@ -372,7 +391,7 @@
                     <label class="form-label"><span data-i18n="name_local">Name (Local)</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="name_th" id="name_th">
+                    <input type="text" class="form-control required" name="name_th" id="name_th" data-i18n="name_th_placeholder" placeholder="e.g., สมชาย">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <!-- 2026-08-30 (T023, explicit request: "นามสกุลไม่เป็น required field") -- red asterisk
@@ -380,7 +399,7 @@
                     <label class="form-label"><span data-i18n="surname_local">Surname (Local)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="surname_th" id="surname_th">
+                    <input type="text" class="form-control" name="surname_th" id="surname_th" data-i18n="surname_th_placeholder" placeholder="e.g., ใจดี">
                 </div>
             </div>
             <div class="row">
@@ -388,13 +407,13 @@
                     <label class="form-label"><span data-i18n="name_en">Name (EN)</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="name_en" id="name_en">
+                    <input type="text" class="form-control required" name="name_en" id="name_en" data-i18n="name_en_placeholder" placeholder="e.g., Somchai">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="surname_en">Surname (EN)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="surname_en" id="surname_en">
+                    <input type="text" class="form-control" name="surname_en" id="surname_en" data-i18n="surname_en_placeholder" placeholder="e.g., Jaidee">
                 </div>
             </div>
             <!-- Hidden 2026-08-19 (not needed for Payroll): cosmetic-only, not used in any statutory
@@ -404,13 +423,13 @@
                     <label class="form-label"><span data-i18n="nickname_local">Nickname (Local)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="nickname_th" id="nickname_th">
+                    <input type="text" class="form-control" name="nickname_th" id="nickname_th" data-i18n="employee_nickname_th_placeholder" placeholder="e.g., ชาย">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="nickname_en">Nickname (EN)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="nickname_en" id="nickname_en">
+                    <input type="text" class="form-control" name="nickname_en" id="nickname_en" data-i18n="employee_nickname_en_placeholder" placeholder="e.g., Chai">
                 </div>
             </div>
             <div class="row">
@@ -480,7 +499,7 @@
                         <label class="form-label"><span data-i18n="id_card_no">ID Card No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="id_card_no" id="id_card_no" maxlength="13">
+                        <input type="text" class="form-control" name="id_card_no" id="id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
                         <div class="invalid-feedback" id="id_card_error" data-i18n="invalid_id_card">Invalid ID card number. Please try again.</div>
                     </div>
                     <!-- Hidden 2026-08-19 (not needed for Payroll): not used in any calc/report. -->
@@ -501,13 +520,13 @@
                         <label class="form-label"><span data-i18n="tax_id_no">Tax ID No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="tax_id_no" id="tax_id_no">
+                        <input type="text" class="form-control" name="tax_id_no" id="tax_id_no" data-i18n="tax_id_placeholder" placeholder="e.g., 1234567890123">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="passport_no">Passport No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="passport_no" id="passport_no">
+                        <input type="text" class="form-control" name="passport_no" id="passport_no" data-i18n="passport_no_placeholder" placeholder="e.g., AA1234567">
                     </div>
                 </div>
                 <div class="row">
@@ -524,7 +543,7 @@
                         <label class="form-label"><span data-i18n="work_permit_no">Work Permit No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="work_permit_no" id="work_permit_no">
+                        <input type="text" class="form-control" name="work_permit_no" id="work_permit_no" data-i18n="work_permit_no_placeholder" placeholder="e.g., WP-1234567">
                     </div>
                 </div>
                 <div class="row">
@@ -547,12 +566,65 @@
                         </div>
                     </div>
                 </div>
+                <!-- 2026-09-02, extends the earlier Origami candidates.php field batch (passport_no/
+                     work_permit_no/visa_type already existed) -- field shapes confirmed directly
+                     from Origami's own candidates.php source, not guessed. Zero new JS wiring needed
+                     -- collectEmployeeFormData()/populateEmployeeForm() already handle a plain named
+                     input/datepicker generically once it's in EmployeeModel::allColumns(). -->
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="passport_issued_place">Passport Issued Place</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="passport_issued_place" id="passport_issued_place" data-i18n="place_example_placeholder" placeholder="e.g., Bangkok">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="passport_issue_date">Passport Issue Date</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" name="passport_issue_date" id="passport_issue_date" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="work_permit_issued_place">Work Permit Issued Place</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="work_permit_issued_place" id="work_permit_issued_place" data-i18n="place_example_placeholder" placeholder="e.g., Bangkok">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="visa_no">Visa No.</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="visa_no" id="visa_no" data-i18n="visa_no_placeholder" placeholder="e.g., V1234567">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="visa_issued_place">Visa Issued Place</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="visa_issued_place" id="visa_issued_place" data-i18n="place_example_placeholder" placeholder="e.g., Bangkok">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="visa_issue_date">Visa Issue Date</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" name="visa_issue_date" id="visa_issue_date" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                        </div>
+                    </div>
+                </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="visa_type">Visa Type</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="visa_type" id="visa_type">
+                        <input type="text" class="form-control" name="visa_type" id="visa_type" data-i18n="visa_type_placeholder" placeholder="e.g., Non-B">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="date_visa_expire">Visa Expire Date</span></label>
@@ -564,12 +636,132 @@
                         </div>
                     </div>
                 </div>
+                <!-- 2026-09-02, explicit request following an AskUserQuestion exchange -- plain
+                     per-employee flag, only takes effect when the company enables + sets a flat
+                     rate in Tax & Statutory settings' "Non-Resident Foreign Tax" tab (off by
+                     default everywhere, zero behavior change unless both are set). See
+                     NonResidentTaxSettingModel's own docblock for the full reasoning. -->
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="tax_non_resident">Tax Non-Resident</label>
+                    </div>
+                    <div class="col-sm-10 mt-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="tax_non_resident" id="tax_non_resident">
+                            <label class="form-check-label text-muted small" for="tax_non_resident" data-i18n="tax_non_resident_hint">This employee is a tax non-resident (foreign worker present &lt;180 days/year in Thailand) -- only affects withholding if a flat rate is configured in Tax &amp; Statutory settings.</label>
+                        </div>
+                    </div>
+                </div>
+                <!-- 2026-09-02, explicit request: "ช่วยดูความเหมาะสมของ Form แต่ละกลุ่มอีกที...ส่วนไหนควรแยก"
+                     -- promoted from a plain unnumbered <h6> sub-heading buried inside section "2
+                     Identification" to its own numbered section (was genuinely a different topic:
+                     recruitment agency/arrival logistics/foreign address, not an identity DOCUMENT
+                     like ID/passport/visa above it) -- Signature renumbered 3->4 to make room.
+                     foreign_worker_info (Thai-immigration-arrival-card-style reference data,
+                     Origami's own m_employee_foreign) lives in its own table
+                     (EmployeeForeignWorkerDetailModel), purely informational, never read by any
+                     payroll calculation. Still nested inside #sectionForeigner (same
+                     employee_type='foreigner' gate as everything else in this d-none block) --
+                     only its heading changed, not its visibility condition. -->
+                <h6 class="text-secondary fw-bold mt-4 mb-3">
+                    <label class="label label-head bg-head-first rounded-2 text-white">3</label>
+                    <span data-i18n="foreign_worker_info_section">Foreign Worker Info</span>
+                </h6>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="recruitment_agency">Recruitment Agency</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="recruitment_agency" id="recruitment_agency" data-i18n="recruitment_agency_placeholder" placeholder="e.g., ABC Recruitment Co., Ltd.">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="arrival_card_no">Arrival Card No.</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="arrival_card_no" id="arrival_card_no" data-i18n="arrival_card_no_placeholder" placeholder="e.g., TM.6 card number">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="arrival_date">Arrival Date</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" name="arrival_date" id="arrival_date" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                        </div>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="due_date">Due Date</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" name="due_date" id="due_date" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="arrival_by_vehicle">Arrival By (Vehicle)</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="arrival_by_vehicle" id="arrival_by_vehicle" data-i18n="arrival_by_vehicle_placeholder" placeholder="e.g., Flight TG123 / Bus">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="foreign_address">Address (Non-Thai)</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="address" id="foreign_worker_address" data-i18n="address_line_1_placeholder" placeholder="House no., building, street">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="foreign_soi">Soi</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="soi" id="foreign_worker_soi" data-i18n="foreign_worker_soi_placeholder" placeholder="e.g., Soi 5">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="foreign_province">Province</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="province" id="foreign_worker_province" data-i18n="place_example_placeholder" placeholder="e.g., Bangkok">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="foreign_district">District</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="district" id="foreign_worker_district" data-i18n="foreign_worker_district_placeholder" placeholder="e.g., Watthana">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="foreign_sub_district">Sub-District</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="sub_district" id="foreign_worker_sub_district" data-i18n="foreign_worker_sub_district_placeholder" placeholder="e.g., Khlong Toei Nuea">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label" data-i18n="foreign_tel">Phone (Non-Thai)</label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <span class="input-group-text" style="max-width:35%;">
+                                <input type="text" class="form-control border-0 p-0" name="tel_code" id="foreign_worker_tel_code" placeholder="+00" style="width:100%;">
+                            </span>
+                            <input type="text" class="form-control" name="tel" id="foreign_worker_tel" data-i18n="phone_no_placeholder" placeholder="e.g., 0812345678">
+                        </div>
+                    </div>
+                </div>
             </div>
             <!-- 2026-08-26, explicit request: "ย้าย Tab Signature มาไว้ใน Info" -- moved here from the
                  Contact tab (where it sat since it was first built), same upload-or-draw card as
                  Company Profile's own Authorized Signature section. -->
             <h6 class="text-secondary fw-bold mb-3 mt-5">
-                <label class="label label-head bg-head-first rounded-2 text-white">3</label>
+                <label class="label label-head bg-head-first rounded-2 text-white">4</label>
                 <span data-i18n="employee_signature">Signature</span>
             </h6>
             <div class="row">
@@ -594,11 +786,15 @@
                             </button>
                             <input type="file" id="emp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
                             <input type="hidden" name="signature_path" id="emp_signature_path">
+                            <input type="hidden" name="signature_file_size" id="emp_signature_file_size">
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mt-5">
+            <div class="d-flex justify-content-end gap-2 mt-5">
+                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                    <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
+                </button>
                 <button type="button" class="btn btn-primary" id="btnNextContact">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
@@ -618,13 +814,13 @@
                         <label class="form-label"><span data-i18n="company_email">Company Email</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="email" class="form-control" name="company_email" id="company_email">
+                        <input type="email" class="form-control" name="company_email" id="company_email" data-i18n="company_email_placeholder" placeholder="e.g., name@company.com">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="office_tel">Telephone No.</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="office_tel" id="office_tel">
+                        <input type="text" class="form-control" name="office_tel" id="office_tel" data-i18n="phone_no_placeholder" placeholder="e.g., 0812345678">
                     </div>
                     <div class="col-sm-12 mt-3">
                         <input type="checkbox" class="me-2" name="send_signin_email" id="send_signin_email"><span data-i18n="send_signin_instruction">Send the sign-in instruction email</span>
@@ -640,7 +836,7 @@
                     <label class="form-label"><span data-i18n="personal_email">Personal Email Address</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="email" class="form-control required" name="personal_email" id="personal_email">
+                    <input type="email" class="form-control required" name="personal_email" id="personal_email" data-i18n="personal_email_placeholder" placeholder="e.g., name@email.com">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="mobile_no">Mobile No.</span> <span class="text-danger">*</span></label>
@@ -652,7 +848,7 @@
                          mobile_country_code stays a hidden input kept in sync by detail.js
                          (syncMobileCountryCode()) so the submitted shape ("+66" + national digits
                          in mobile_no) is unchanged from before -- backend validation/schema untouched. -->
-                    <input type="tel" class="form-control required" name="mobile_no" id="mobile_no" maxlength="15">
+                    <input type="tel" class="form-control required" name="mobile_no" id="mobile_no" maxlength="15" data-i18n="phone_no_placeholder" placeholder="e.g., 0812345678">
                     <input type="hidden" name="mobile_country_code" id="mobile_country_code" value="+66">
                 </div>
                 <!-- Hidden 2026-08-19 (not needed for Payroll): preboarding-portal onboarding action, not a payroll field. -->
@@ -663,7 +859,7 @@
                     <label class="form-label"><span data-i18n="line_id">LINE ID</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="line_id" id="line_id">
+                    <input type="text" class="form-control" name="line_id" id="line_id" data-i18n="line_id_placeholder" placeholder="e.g., somchai_j">
                 </div>
             </div>
             <!-- 2026-08-26, explicit request: "เพิ่มให้ใส่ที่อยู่ของพนักงาน" -- re-shown (was hidden
@@ -687,13 +883,13 @@
                         <label class="form-label"><span data-i18n="address_line_1">Address Line 1</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="address_line_1_register" id="address_line_1_register">
+                        <input type="text" class="form-control" name="address_line_1_register" id="address_line_1_register" data-i18n="address_line_1_placeholder" placeholder="House no., building, street">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="address_line_2">Address Line 2 (Optional)</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="address_line_2_register" id="address_line_2_register">
+                        <input type="text" class="form-control" name="address_line_2_register" id="address_line_2_register" data-i18n="address_line_2_placeholder" placeholder="Sub-district, district, province">
                     </div>
                 </div>
                 <div class="row">
@@ -701,10 +897,29 @@
                         <label class="form-label"><span data-i18n="search_address_label">Sub-district / City / Postcode</span></label>
                     </div>
                     <div class="col-sm-4 mt-3 position-relative">
-                        <input type="text" class="form-control autocomplete-address" id="search_address_register" autocomplete="off">
+                        <input type="text" class="form-control autocomplete-address" id="search_address_register" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
                         <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
                         <input type="hidden" name="master_address_id_register" class="master-address-id-field" id="master_address_id_register">
                     </div>
+                </div>
+                <!-- 2026-09-02, explicit request: "ถ้ามีส่งมาให้ให้ Admin Match เอง ต้องมีอะไรบอก และแสดงข้อมูลที่
+                     Sync มาเพื่อให้ Admin รู้" -- address_line_1_register/address_line_2_register can
+                     already be populated (from Origami sync OR manual entry) while
+                     master_address_id_register stays empty (this app deliberately doesn't attempt
+                     automatic text-to-master_addresses matching, see CLAUDE.md/this app's own
+                     project_org_structure_sync-adjacent notes on province/district name-matching
+                     risk) -- previously nothing on this page itself said so; the only signal was the
+                     Recheck tab's generic "required field missing" flag on a completely separate
+                     page. This alert shows right where the admin needs to act, with the actual text
+                     to search with restated so they don't have to scroll back up to re-read it.
+                     updateAddressMatchIndicator('register') in detail.js toggles it on
+                     populateEmployeeForm() and hides it the moment a real match is picked via the
+                     autocomplete-address widget below (or #use_register_address is unchecked with
+                     nothing typed). -->
+                <div class="alert alert-warning py-2 px-3 small mt-2 d-none" id="addressUnmatchedAlertRegister">
+                    <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                    <span data-i18n="address_unmatched_warning">This address text hasn't been matched to a standard address record yet. Please search below and select a match.</span>
+                    <span class="d-block mt-1"><span class="fw-semibold" data-i18n="address_unmatched_current_text">Current text</span>: <span id="addressUnmatchedTextRegister"></span></span>
                 </div>
                 <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
                 <h6 class="text-secondary fw-bold mb-3 mt-5">
@@ -721,13 +936,13 @@
                         <label class="form-label"><span data-i18n="address_line_1">Address Line 1</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="address_line_1_contact" id="address_line_1_contact">
+                        <input type="text" class="form-control" name="address_line_1_contact" id="address_line_1_contact" data-i18n="address_line_1_placeholder" placeholder="House no., building, street">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="address_line_2">Address Line 2 (Optional)</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="address_line_2_contact" id="address_line_2_contact">
+                        <input type="text" class="form-control" name="address_line_2_contact" id="address_line_2_contact" data-i18n="address_line_2_placeholder" placeholder="Sub-district, district, province">
                     </div>
                 </div>
                 <div class="row">
@@ -735,10 +950,18 @@
                         <label class="form-label"><span data-i18n="search_address_label">Sub-district / City / Postcode</span></label>
                     </div>
                     <div class="col-sm-4 mt-3 position-relative">
-                        <input type="text" class="form-control autocomplete-address" id="search_address_contact" autocomplete="off">
+                        <input type="text" class="form-control autocomplete-address" id="search_address_contact" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
                         <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
                         <input type="hidden" name="master_address_id_contact" class="master-address-id-field" id="master_address_id_contact">
                     </div>
+                </div>
+                <!-- Same "not yet matched" indicator as the Register Address block above, own copy
+                     of the same alert scoped to the Current Address fields -- see that block's own
+                     comment for the full reasoning. -->
+                <div class="alert alert-warning py-2 px-3 small mt-2 d-none" id="addressUnmatchedAlertContact">
+                    <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                    <span data-i18n="address_unmatched_warning">This address text hasn't been matched to a standard address record yet. Please search below and select a match.</span>
+                    <span class="d-block mt-1"><span class="fw-semibold" data-i18n="address_unmatched_current_text">Current text</span>: <span id="addressUnmatchedTextContact"></span></span>
                 </div>
                 <!-- 2026-08-26, explicit request: "ส่วนของที่อยู่ให้เพิ่มสามารถปักหมุด Location บน Map ได้"
                      -- one pin for the CONTACT address (where the employee can actually be reached),
@@ -782,13 +1005,13 @@
                         <label class="form-label"><span data-i18n="name">Name</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="emergency_name" id="emergency_name">
+                        <input type="text" class="form-control" name="emergency_name" id="emergency_name" data-i18n="emergency_name_placeholder" placeholder="e.g., Somsri">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="surname">Surname</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="emergency_surname" id="emergency_surname">
+                        <input type="text" class="form-control" name="emergency_surname" id="emergency_surname" data-i18n="surname_th_placeholder" placeholder="e.g., ใจดี">
                     </div>
                 </div>
                 <div class="row">
@@ -796,17 +1019,20 @@
                         <label class="form-label"><span data-i18n="relationship">Relationship</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="emergency_relationship" id="emergency_relationship">
+                        <input type="text" class="form-control" name="emergency_relationship" id="emergency_relationship" data-i18n="emergency_relationship_placeholder" placeholder="e.g., Mother / Spouse / Friend">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="mobile_no">Mobile No.</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="emergency_mobile" id="emergency_mobile" maxlength="10">
+                        <input type="text" class="form-control" name="emergency_mobile" id="emergency_mobile" maxlength="10" data-i18n="phone_no_placeholder" placeholder="e.g., 0812345678">
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mt-5">
+            <div class="d-flex justify-content-end gap-2 mt-5">
+                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                    <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
+                </button>
                 <button type="button" class="btn btn-primary" id="btnNextEmployment">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
@@ -875,7 +1101,7 @@
                     <label class="form-label"><span data-i18n="employee_no">Employee No.</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="employee_no" id="employee_no_input">
+                    <input type="text" class="form-control required" name="employee_no" id="employee_no_input" data-i18n="employee_no_placeholder" placeholder="e.g., EMP0001">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="branch">Branch</span> <span class="text-danger">*</span></label>
@@ -911,6 +1137,19 @@
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                     </div>
                 </div>
+                <!-- 2026-09-02, Origami candidates.php field batch: company-defined employment
+                     classification (e.g. รายเดือน/รายวัน/สัญญาจ้าง), synced from Origami's
+                     employment_type_ref_id/_code/_name -- NOT the same concept as the
+                     employment_type radio above (full_time/part_time/daily/internship, a fixed
+                     enum) or salary_type (pay frequency). Optional, same as Team -- auto-created
+                     by sync (structure_employment_types), not required/completeness-gated. -->
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label"><span data-i18n="employment_type_classification">Employment Type Classification</span></label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <select class="form-select select2-remote" name="employment_type_id" id="employment_type_id" data-api="/api/employment-type.get" data-type="employment_type">
+                    </select>
+                </div>
             </div>
             <h6 class="text-secondary fw-bold mb-3 mt-5">
                 <label class="label label-head bg-head-first rounded-2 text-white">2</label>
@@ -929,6 +1168,24 @@
                         <option value="resigned" data-i18n="resigned">Resigned</option>
                         <option value="terminated" data-i18n="terminated">Terminated</option>
                     </select>
+                    <!-- 2026-09-02, explicit request: "สถานะการจ้างงาน กับ ประเภทการจ้างงาน ข้อมูลเหมือนไม่
+                         สัมพันธ์กัน ถ้า ประเภทการจ้างงาน คือนักศึกษาฝึกงาน สถานะการจ้างงาน ควรเลือกอะไร" --
+                         `employment_status` has no dedicated "intern" value at all
+                         (probation/permanent/contract/resigned/terminated), yet the payroll engine
+                         already treats `employment_type='internship'` as taking precedence over
+                         `employment_status='probation'` wherever both matter (see
+                         EmployeeModel::save()/PayrollRunModel's own "intern takes precedence over
+                         probation" comments) -- confirmed via AskUserQuestion: auto-lock Employment
+                         Status to Probation whenever Employment Type = Internship is ACTIVELY
+                         selected, closing the ambiguity instead of leaving the admin to guess. See
+                         applyEmploymentTypeInternLock() in detail.js -- deliberately only fires on a
+                         genuine user selection (e.originalEvent present), never on the
+                         programmatic populateEmployeeForm() load, so an existing intern record saved
+                         with some OTHER status (e.g. resigned, from before this lock existed) is
+                         never silently flipped back to probation just by opening the page. -->
+                    <div class="form-text text-warning d-none" id="employmentStatusInternLockNote">
+                        <i class="fa-solid fa-lock me-1"></i><span data-i18n="employment_status_intern_locked">Locked to Probation because Employment Type is Internship.</span>
+                    </div>
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label"><span data-i18n="employment_type">Employment Type</span> <span class="text-danger">*</span></label>
@@ -977,7 +1234,7 @@
                     <label class="form-label"><span data-i18n="reason">Reason</span></label>
                 </div>
                 <div class="col-sm-10 mt-3">
-                    <textarea class="form-control" name="employment_end_reason" id="employment_end_reason" maxlength="255" rows="2"></textarea>
+                    <textarea class="form-control" name="employment_end_reason" id="employment_end_reason" maxlength="255" rows="2" data-i18n="employment_end_reason_placeholder" placeholder="e.g., Resignation, End of contract, Retirement"></textarea>
                 </div>
             </div>
             <!-- Hidden 2026-08-19 (not needed for Payroll): none of these 4 fields are read anywhere
@@ -1014,7 +1271,7 @@
                     <label class="form-label"><span data-i18n="driver_license">Driver License No.</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="driver_license_no" id="driver_license_no">
+                    <input type="text" class="form-control" name="driver_license_no" id="driver_license_no" data-i18n="driver_license_no_placeholder" placeholder="e.g., 12345678">
                 </div>
             </div>
             <!-- Hidden 2026-08-19 (not needed for Payroll, confirmed with user): attendance/HR-tracking
@@ -1050,59 +1307,76 @@
                     </select>
                 </div>
             </div>
-            <!-- 2026-08-30 (T020): wrapped in one container so applyPayrollParticipantVisibility()
-                 can hide the whole "Payment Information" section (header + both rows) at once for a
-                 staff-only employee -- payment_type/bank_id/bank_account_no are payroll-specific,
-                 unlike the rest of this Employment tab (org placement), per the explicit scope
-                 decision confirmed for T020. -->
-            <div id="employmentPaymentSection">
-                <h6 class="text-secondary fw-bold mb-3 mt-5">
-                    <label class="label label-head bg-head-first rounded-2 text-white">3</label>
-                    <span data-i18n="payment_information">Payment Information</span>
-                </h6>
+            <!-- 2026-09-02, explicit request: "ตั้งค่าอัตรา OT น่าจะมาอยู่ที่การจ้างงานมากกว่า...ย้ายข้อมูลการ
+                 จ่ายเงิน ไปไว้ Tab เงินเดือน" -- swapped places with "Payment Information" (now section 2
+                 of the Salary tab, see that tab's own comment on this same move). OT eligibility is
+                 an employment-term decision (same family as Employment Status/Type right above in
+                 this same tab), and Payment Information had ended up split across 2 tabs already
+                 (payment_method_id/bank details here, default_bank_account_id already on Salary --
+                 see that field's own 2026-09-02 comment) which read as "different tab, looks odd" per
+                 the explicit report. Section id/number unchanged (still slot "3" of this tab) --
+                 only the CONTENT of this slot changed, so nothing else in this tab needed
+                 renumbering. `#otRateSection`'s own id is untouched (never referenced any tab name).
+                 The old T020 "#employmentPaymentSection" visibility toggle
+                 (applyPayrollParticipantVisibility() in detail.js) is gone too -- now that Payment
+                 lives entirely inside the Salary tab, which ALREADY hides its whole nav-item for a
+                 staff-only employee (see PAYROLL_ONLY_TAB_BUTTON_IDS in that same file), a second,
+                 separate hide of a sub-section within it was redundant. -->
+            <h6 class="text-secondary fw-bold mb-3 mt-5">
+                <label class="label label-head bg-head-first rounded-2 text-white">3</label>
+                <span data-i18n="ot_rate_settings">OT Rate Settings</span>
+            </h6>
+            <div id="otRateSection">
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="payment_type">Payment Type</span> <span class="text-danger">*</span></label>
+                        <label class="form-label"><span data-i18n="ot_eligible">OT Eligible</span></label>
                     </div>
-                    <div class="col-sm-4 mt-3">
-                        <div class="btn-group d-block" role="group" aria-label="Payment type">
-                            <input type="radio" class="btn-check" name="payment_type_radio" id="payment_bank" value="bank" checked>
-                            <label class="btn btn-outline-brand" for="payment_bank" data-i18n="bank">Bank</label>
-                            <input type="radio" class="btn-check" name="payment_type_radio" id="payment_cash" value="cash">
-                            <label class="btn btn-outline-brand" for="payment_cash" data-i18n="cash">Cash</label>
-                        </div>
-                        <input type="hidden" name="payment_type" id="payment_type" value="bank">
+                    <div class="col-sm-4 mt-3 pt-2">
+                        <input type="checkbox" class="me-2" name="ot_eligible" id="ot_eligible"><span data-i18n="eligible_for_overtime">Eligible for overtime pay</span>
                     </div>
                 </div>
-                <div class="row" id="sectionBankPayment">
-                    <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="bank_name">Bank</span> <span class="text-danger">*</span></label>
+                <div id="otRateDependentWrap" class="d-none">
+                    <div class="row">
+                        <div class="col-sm-2 mt-3">
+                            <label class="form-label"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
+                        </div>
+                        <div class="col-sm-4 mt-3">
+                            <div class="btn-group d-block" role="group" id="otRateSourceRadioGroup">
+                                <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_default" value="default" checked>
+                                <label class="btn btn-outline-brand" for="ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
+                                <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_custom" value="custom">
+                                <label class="btn btn-outline-brand" for="ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
+                            </div>
+                        </div>
+                        <div class="col-sm-2 mt-3 ot-rate-set-picker-toggle">
+                            <label class="form-label"><span data-i18n="ot_rate_set_picker_label">OT Rate Set</span></label>
+                        </div>
+                        <div class="col-sm-4 mt-3 ot-rate-set-picker-toggle" id="otRateSetPickerWrapper">
+                            <select class="form-select select2-remote" id="ot_rate_set_id" data-api="/api/ot-rate.set-options" data-type="ot_rate_set"></select>
+                            <div class="small text-muted mt-1" id="otRateSetRecommendHint"></div>
+                        </div>
                     </div>
-                    <div class="col-sm-4 mt-3">
-                        <select class="form-select select2-remote" name="bank_id" id="bank_id" data-api="/api/bank.get" data-type="bank">
-                        </select>
-                    </div>
-                    <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="bank_account_no">Bank Account No.</span> <span class="text-danger">*</span></label>
-                    </div>
-                    <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="bank_account_no" id="bank_account_no">
-                    </div>
-                    <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="bank_account_name">Bank Account Name</span></label>
-                    </div>
-                    <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="bank_account_name" id="bank_account_name">
-                    </div>
-                    <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="bank_branch">Bank Branch</span></label>
-                    </div>
-                    <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="bank_branch" id="bank_branch">
+                    <div id="otRateOverridesContainer" class="d-none mt-3">
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th data-i18n="ot_scope">OT Type</th>
+                                        <th data-i18n="calculation_method">Calculation Method</th>
+                                        <th data-i18n="rate">Rate</th>
+                                        <th data-i18n="calculation_base">Base</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="otRateOverridesBody"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mt-5">
+            <div class="d-flex justify-content-end gap-2 mt-5">
+                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                    <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
+                </button>
                 <button type="button" class="btn btn-primary" id="btnNextSalary">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
@@ -1141,7 +1415,7 @@
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
-                        <input type="number" step="0.01" class="form-control text-end required" name="base_salary_amount" id="base_salary_amount">
+                        <input type="number" step="0.01" class="form-control text-end required" name="base_salary_amount" id="base_salary_amount" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
                         <span class="input-group-text" data-i18n="thb">THB</span>
                     </div>
                 </div>
@@ -1169,82 +1443,124 @@
                     </select>
                 </div>
             </div>
-            <!-- Explicit request: "OT Rate เพิ่มให้สามารถ Assing รายบุคคลได้ด้วย...ถ้ามีสิทธิ์ได้รับ OT ให้เลือก
-                 เพิ่มว่า จากการตั้งค่าหลัก หรือจะตั้งค่าแยก ตามประเภท OT" -- see EmployeeOtRateModel's own docblock
-                 for the full backend design.
-                 2026-08-30 follow-up: OT Rate Source changed from a select2 dropdown to a radio pair
-                 ("แหล่งที่มาอัตรา OT ปรับให้เป็น radio"), its own Save button removed -- saving now folds
-                 into the Salary tab's own #btnNextSalary click (see saveOtRateWithSalaryTab() in
-                 detail.js).
-                 2026-08-31 follow-up (OT Rate Set replacement, "ให้เอาสิทธิ์การได้รับ OT มาไว้ใน card ของ
-                 ตั้งค่าอัตรา OT เลย จะได้เห็นว่าเป็นชุดเดียวกัน") -- the OT Eligible checkbox moved INSIDE this
-                 card (was its own row above it) so the card itself is now ALWAYS visible -- only
-                 #otRateDependentWrap (source radio / Set picker / per-scope table) toggles with the
-                 checkbox, since hiding the whole card would also hide the checkbox that controls it.
-                 Also adds the "which OT Rate Set" picker (#otRateSetPickerWrapper, shown only while
-                 source=default) with a Recommend hint -- "ถ้าเลือกจาก OT ของระบบ จะมีให้เลือกเพิ่มว่า OT
-                 ไหน...เพิ่ม Remark ไว้ Recommend ไว้ว่า...ถ้ายังไม่เลือกว่า OT รายการไหน ให้ Default เป็นรายการ
-                 ที่ใกล้เคียง".
-                 2026-08-31 follow-up ("ใน Tab เงินเดือน OT ให้เพิ่มเป็นหัวข้อที่ 2 ไปเลย แล้วหัวข้อต่อไปก็แก้เป็น
-                 เลขต่อไป และปรับ Design ตรง OT ให้เหมือนหัวข้ออื่น") -- was an unnumbered card-surface
-                 "box" that visually stood out from every other section on this tab (all plain
-                 numbered headings + bare .row rows, no card wrapper) -- dropped the card-surface
-                 wrapper, added the numbered heading, and converted OT Eligible/OT Rate Source/OT Rate
-                 Set to the SAME col-sm-2 (label) + col-sm-4 (field) row shape Base Salary/Tax
-                 Information already use, instead of label-stacked-above-field within one wider
-                 column. Recurring Allowances/Recurring Deductions/Tax Information all shifted down
-                 by one number (2->3, 3->4/new, previous 3->5) to make room. -->
+            <!-- 2026-09-02, explicit request: "เมื่อเลือกรอบแล้ว ให้เลือกต่อได้ว่าจะใช้บัญชีไหนของรอบนั้น...ถ้าไม่
+                 เลือก ใช้บัญชีที่ตั้งเป็น Default ของรอบนั้นอัตโนมัติ" -- moved here from the Employment tab
+                 (where it briefly lived as part of the earlier same-day multi-bank-account payroll
+                 feature) to sit next to cycle_id, since "which account of THIS cycle" only makes
+                 sense once a cycle is actually picked. Options are now CYCLE-SCOPED
+                 (api/employee.payment-account-options, cycle_id sent as a query param -- falls back
+                 to the company's own is_default account when the cycle has none configured, see
+                 EmployeePaymentMethodModel::scopedBankAccountOptions()'s own docblock), replacing the
+                 old company-wide api/payroll-cycle.bank-account.options this field used briefly.
+                 Only relevant while Payment Type (payment_method_id, section 2 below on this same
+                 tab as of the 2026-09-02 Payment/OT tab swap -- previously on the Employment tab,
+                 hence "cross-tab" here originally) resolves to something bank-related (transfer, or
+                 a mixed line using transfer) -- see applyAccountPickerVisibility() in detail.js. -->
+            <div class="row" id="sectionCycleBankAccount">
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label"><span data-i18n="default_bank_account_label">Paid From Company Account</span></label>
+                </div>
+                <div class="col-sm-4 mt-3">
+                    <select class="form-select select2-remote" name="default_bank_account_id" id="default_bank_account_id" data-api="/api/employee.payment-account-options" allow-clear="true"></select>
+                    <div class="form-text" data-i18n="default_bank_account_hint">*Optional. Leave blank to use this cycle's own default account.</div>
+                </div>
+            </div>
+            <!-- 2026-09-02, explicit request: "ย้ายข้อมูลการจ่ายเงิน ไปไว้ Tab เงินเดือนจะดีกว่าไหมครับ พอคนละ
+                 Tab ดูแปลก" -- moved here from the Employment tab (swapped places with OT Rate
+                 Settings, which moved there -- see that tab's own comment on this same move). Every
+                 payment-related field is now on this ONE tab, next to `default_bank_account_id`/
+                 `cycle_id` right above (which had already moved here on its own back on 2026-09-02,
+                 for the same "belongs with the rest of payment info" reason -- see that field's own
+                 comment, left as-is since it's genuinely tied to cycle_id specifically, not moved
+                 again into this section). Section id/number unchanged (still slot "2" of this tab,
+                 same slot OT Rate Settings used to occupy) -- Recurring Allowances/Recurring
+                 Deductions/Tax Information/Internship/Probation below keep their own existing
+                 numbers, nothing else needed renumbering.
+                 `#employmentPaymentSection` was renamed `#paymentInformationSection` (the old name
+                 referenced a tab it's no longer in) -- its one remaining JS reference
+                 (applyPayrollParticipantVisibility()'s own T020 visibility toggle) was removed
+                 entirely rather than renamed, since this whole tab already hides its own nav-item for
+                 a staff-only employee (PAYROLL_ONLY_TAB_BUTTON_IDS in detail.js), making a second,
+                 separate hide of a sub-section within it redundant. The client-side mixed-payment-
+                 lines validation that used to live in saveSalaryTab() (duplicated there because that
+                 function's own #btnNextSalary button used to sit right below this section) was
+                 removed for the same reason -- saveEmployee()'s OWN copy of that same check (used by
+                 EVERY other Save button on this page, #btnNextSocial included, which is this tab's
+                 real closing Save button) already covers it correctly now that this section lives
+                 here. -->
             <h6 class="text-secondary fw-bold mb-3 mt-5">
                 <label class="label label-head bg-head-first rounded-2 text-white">2</label>
-                <span data-i18n="ot_rate_settings">OT Rate Settings</span>
+                <span data-i18n="payment_information">Payment Information</span>
             </h6>
-            <div id="otRateSection">
+            <div id="paymentInformationSection">
+                <!-- 2026-09-02, explicit request: payment method type (transfer/cash/check/mixed) --
+                     replaces the old bank/cash radio pair with a master_payment_methods-backed
+                     picker (this project's own convention for a closed set that may grow later
+                     without a code deploy -- see that table's own migration header). A normal named
+                     select2-remote (not a radio+hidden-mirror pair like the old payment_type_radio),
+                     so collectEmployeeFormData()'s generic [name] loop picks it up directly --
+                     payment_method_id (master_payment_methods) is the sole source of truth end to
+                     end now, the legacy payment_type enum mirror having been dropped entirely (see
+                     database/migrations/2026-09-02_19_drop_legacy_payment_type.sql). -->
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="ot_eligible">OT Eligible</span></label>
+                        <label class="form-label"><span data-i18n="payment_type">Payment Type</span> <span class="text-danger">*</span></label>
                     </div>
-                    <div class="col-sm-4 mt-3 pt-2">
-                        <input type="checkbox" class="me-2" name="ot_eligible" id="ot_eligible"><span data-i18n="eligible_for_overtime">Eligible for overtime pay</span>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-remote required" name="payment_method_id" id="payment_method_id" data-api="/api/payment-method.options"></select>
+                        <!-- JS-only companion field (never submitted -- no name attribute, same
+                             "select without a name" convention #ot_rate_source's own dedicated-save
+                             field uses) holding the resolved code (transfer/cash/check/mixed) so
+                             applyPaymentMethodVisibility()/applyAccountPickerVisibility() in
+                             detail.js don't need their own extra lookup. -->
+                        <input type="hidden" id="payment_method_code">
                     </div>
                 </div>
-                <div id="otRateDependentWrap" class="d-none">
-                    <div class="row">
-                        <div class="col-sm-2 mt-3">
-                            <label class="form-label"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
-                        </div>
-                        <div class="col-sm-4 mt-3">
-                            <div class="btn-group d-block" role="group" id="otRateSourceRadioGroup">
-                                <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_default" value="default" checked>
-                                <label class="btn btn-outline-brand" for="ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
-                                <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_custom" value="custom">
-                                <label class="btn btn-outline-brand" for="ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
-                            </div>
-                        </div>
-                        <div class="col-sm-2 mt-3 ot-rate-set-picker-toggle">
-                            <label class="form-label"><span data-i18n="ot_rate_set_picker_label">OT Rate Set</span></label>
-                        </div>
-                        <div class="col-sm-4 mt-3 ot-rate-set-picker-toggle" id="otRateSetPickerWrapper">
-                            <select class="form-select select2-remote" id="ot_rate_set_id" data-api="/api/ot-rate.set-options" data-type="ot_rate_set"></select>
-                            <div class="small text-muted mt-1" id="otRateSetRecommendHint"></div>
-                        </div>
+                <div class="row" id="sectionBankPayment">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="bank_name">Bank</span> <span class="text-danger">*</span></label>
                     </div>
-                    <!-- Per-scope table visibility UNCHANGED from the 2026-08-30 round (explicit
-                         confirmation: "ถ้าเลือก Default ไม่ต้องแสดงอะไรเพิ่มถูกแล้ว" -- Default hides it,
-                         Custom shows it, exactly as it already worked). -->
-                    <div id="otRateOverridesContainer" class="d-none mt-3">
-                        <div class="table-responsive">
-                            <table class="table table-sm align-middle mb-0">
-                                <thead>
-                                    <tr>
-                                        <th data-i18n="ot_scope">OT Type</th>
-                                        <th data-i18n="calculation_method">Calculation Method</th>
-                                        <th data-i18n="rate">Rate</th>
-                                        <th data-i18n="calculation_base">Base</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="otRateOverridesBody"></tbody>
-                            </table>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-remote" name="bank_id" id="bank_id" data-api="/api/bank.get" data-type="bank">
+                        </select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="bank_account_no">Bank Account No.</span> <span class="text-danger">*</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="bank_account_no" id="bank_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="bank_account_name">Bank Account Name</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="bank_account_name" id="bank_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="bank_branch">Bank Branch</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <input type="text" class="form-control" name="bank_branch" id="bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
+                    </div>
+                </div>
+                <!-- 2026-09-02, explicit request: mixed payment (แบ่งสัดส่วนระหว่าง 2 วิธีขึ้นไป) -- shown
+                     only while payment_method_id resolves to 'mixed'. Repeatable line-item rows, same
+                     "add/remove row" convention as this page's own Earning-Deduction/Recurring
+                     Allowance tables -- each line: method (transfer/cash/check, never mixed itself) +
+                     fixed-amount-or-percent-of-net + a bank account picker shown only on a transfer
+                     line. Client-side validates percent lines sum to 100 before Save (SweetAlert2);
+                     a set containing any fixed-amount line defers its own sum check to payroll-run
+                     time (see EmployeePaymentMethodModel::validateMixedLines()'s own docblock). -->
+                <div class="row d-none" id="sectionMixedPayment">
+                    <div class="col-12 mt-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label mb-0" data-i18n="mixed_payment_lines">Payment Lines</label>
+                            <button type="button" class="btn btn-sm btn-outline-brand" id="btnAddPaymentMethodLine">
+                                <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_line">Add Line</span>
+                            </button>
                         </div>
+                        <div id="paymentMethodLinesWrap"></div>
+                        <div class="form-text" data-i18n="mixed_payment_lines_hint">Percent lines must sum to exactly 100. A line paying by transfer needs its own bank account.</div>
                     </div>
                 </div>
             </div>
@@ -1330,31 +1646,182 @@
                  shown/hidden here purely by reading that field's live value (applyInternPolicyVisibility()
                  in detail.js), same "read a field that lives on another tab of the same form" pattern
                  applyPayrollParticipantVisibility() itself already uses for #is_payroll_participant. -->
+            <!-- 2026-09-02, explicit request: "แสดง checkbox/toggle เลือกก่อนว่า...ใช้นโยบายของบริษัท หรือ
+                 ตั้งค่าแยกเฉพาะบุคคลนี้...Default = ใช้นโยบายของบริษัท...ถ้าเลือกใช้นโยบายบริษัท ไม่ต้องแสดง
+                 Form ให้กรอก แสดงเป็นการ์ดข้อมูล (info display) สรุปว่านโยบายปัจจุบันจ่ายแบบไหน...ดีไซน์ให้สวยงาม
+                 สอดคล้อง glassmorphism" -- redesigned from the old plain-checkbox-reveals-plain-input
+                 pattern into: DEFAULT state = a read-only .settings-info-card (this app's own
+                 established glassmorphism summary-card component, same classes as Payroll
+                 Configuration's own #policyProbationCard/#policyInternCard) showing the CURRENT
+                 EFFECTIVE company policy live (fetched via api/employee.payroll-policy-settings,
+                 renderPolicyInfoCard() in detail.js); checking "Use custom settings for this
+                 employee" reveals the SAME ratio-override field this section has always had (still
+                 the only per-employee-overridable field -- defer_pvd/defer_recurring_earning/leave/
+                 OT-default stay company-wide-only, unchanged scope). Probation gets an identical
+                 sibling section right below (was missing per-employee override entirely before this
+                 round -- genuine gap, not a redesign of something that existed). -->
             <div id="internPolicySection" class="d-none">
                 <h6 class="text-secondary fw-bold mb-3 mt-5">
                     <label class="label label-head bg-head-first rounded-2 text-white">6</label>
                     <span data-i18n="intern_pay_policy">Internship Pay Policy</span>
                 </h6>
-                <div class="row">
+                <div class="settings-info-card mb-3" id="internPolicyInfoCard">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-user-graduate"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="policy_using_company_default_title">Using Company Policy</p>
+                            <p class="settings-info-card-desc" data-i18n="policy_using_company_default_desc">This employee currently follows the company-wide Internship Pay Conditions set in Payroll Configuration.</p>
+                        </div>
+                    </div>
+                    <div class="settings-info-card-body" id="internPolicyInfoCardBody"></div>
+                </div>
+                <div class="form-check mb-3">
+                    <input type="checkbox" class="me-2" id="internRatioOverrideToggle"><span data-i18n="policy_use_custom_for_employee" class="form-check-label">Use custom settings for this employee</span>
+                </div>
+                <!-- 2026-09-02, follow-up to close a review-flagged gap: "ตั้งค่าแยกเฉพาะบุคคลนี้" must
+                     cover EVERY field the company policy has ("ครบทุกช่อง ไม่ตัดทอน"), not just the
+                     ratio -- expanded from 1 field to all 7 intern_* override columns. Boolean-ish
+                     fields use a 3-state select (blank=inherit company default, matching every other
+                     tri-state override in this app) rather than a plain checkbox, since "explicitly
+                     override to No" must be distinguishable from "don't override at all". -->
+                <div class="row d-none" id="internRatioOverrideFieldsRow">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="intern_base_salary_ratio_override_label">Override Intern Pay Ratio for This Employee</span></label>
-                    </div>
-                    <div class="col-sm-4 mt-3 pt-2">
-                        <input type="checkbox" class="me-2" id="internRatioOverrideToggle"><span data-i18n="override">Override</span>
-                    </div>
-                    <div class="col-sm-2 mt-3 d-none" id="internRatioOverrideFieldLabel">
                         <label class="form-label"><span data-i18n="policy_intern_base_salary_ratio_label">Base Salary Ratio for Salaried Interns</span></label>
                     </div>
-                    <div class="col-sm-4 mt-3 d-none" id="internRatioOverrideFieldWrap">
+                    <div class="col-sm-4 mt-3">
                         <div class="input-group">
-                            <input type="number" min="1" max="100" step="0.01" class="form-control" name="intern_base_salary_ratio_override" id="intern_base_salary_ratio_override">
+                            <input type="number" min="1" max="100" step="0.01" class="form-control" name="intern_base_salary_ratio_override" id="intern_base_salary_ratio_override" data-i18n="policy_probation_base_salary_ratio_placeholder" placeholder="100 (no reduction)">
                             <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_intern_defer_pvd_label">Defer Provident Fund (PVD) contribution for interns</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-static" name="intern_defer_pvd_override" id="intern_defer_pvd_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_intern_defer_sso_label">Defer Social Security Fund (SSO) contribution for interns</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-static" name="intern_defer_sso_override" id="intern_defer_sso_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_intern_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) for interns</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-static" name="intern_defer_recurring_earning_override" id="intern_defer_recurring_earning_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_leave_days_limit_label">Leave Days Limit</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="number" min="0" step="1" class="form-control" name="intern_leave_days_limit_override" id="intern_leave_days_limit_override" data-i18n="policy_leave_days_limit_placeholder" placeholder="No limit">
+                            <span class="input-group-text" data-i18n="days_suffix">days</span>
+                        </div>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_allow_leave_label">Allow leave requests during this period</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-static" name="intern_allow_leave_override" id="intern_allow_leave_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_intern_period_days_label">Standard Internship Period (days)</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="number" min="0" step="1" class="form-control" name="intern_period_days_override" id="intern_period_days_override" data-i18n="policy_probation_period_days_placeholder" placeholder="Not set">
+                            <span class="input-group-text" data-i18n="days_suffix">days</span>
                         </div>
                     </div>
                 </div>
                 <p class="text-secondary small mb-0" data-i18n="intern_base_salary_ratio_override_hint">Leave off to use this company's own Internship Pay Conditions default (set in Payroll Configuration > Payroll Policies). Only applies while this employee's Employment Type is Internship.</p>
             </div>
-            <div class="d-flex justify-content-end mt-5">
+            <!-- 2026-09-02, explicit request: Probation never had a per-employee override section at
+                 all before this round -- direct mirror of #internPolicySection immediately above,
+                 own field (probation_base_salary_ratio_override), shown/hidden by Employment Status
+                 = Probation instead of Employment Type = Internship. -->
+            <div id="probationPolicySection" class="d-none">
+                <h6 class="text-secondary fw-bold mb-3 mt-5">
+                    <label class="label label-head bg-head-first rounded-2 text-white">7</label>
+                    <span data-i18n="probation_pay_policy">Probation Pay Policy</span>
+                </h6>
+                <div class="settings-info-card mb-3" id="probationPolicyInfoCard">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-user-clock"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="policy_using_company_default_title">Using Company Policy</p>
+                            <p class="settings-info-card-desc" data-i18n="policy_using_company_default_desc_probation">This employee currently follows the company-wide Probation Pay Conditions set in Payroll Configuration.</p>
+                        </div>
+                    </div>
+                    <div class="settings-info-card-body" id="probationPolicyInfoCardBody"></div>
+                </div>
+                <div class="form-check mb-3">
+                    <input type="checkbox" class="me-2" id="probationRatioOverrideToggle"><span data-i18n="policy_use_custom_for_employee" class="form-check-label">Use custom settings for this employee</span>
+                </div>
+                <!-- 2026-09-02, follow-up to close a review-flagged gap -- direct mirror of the
+                     Internship section's own expanded override row immediately above, own field set. -->
+                <div class="row d-none" id="probationRatioOverrideFieldsRow">
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_probation_base_salary_ratio_label">Base Salary Ratio During Probation</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="number" min="1" max="100" step="0.01" class="form-control" name="probation_base_salary_ratio_override" id="probation_base_salary_ratio_override" data-i18n="policy_probation_base_salary_ratio_placeholder" placeholder="100 (no reduction)">
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_probation_defer_pvd_label">Defer Provident Fund (PVD) contribution until probation passes</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-static" name="probation_defer_pvd_override" id="probation_defer_pvd_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_probation_defer_sso_label">Defer Social Security Fund (SSO) contribution until probation passes</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-static" name="probation_defer_sso_override" id="probation_defer_sso_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_probation_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) until probation passes</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-static" name="probation_defer_recurring_earning_override" id="probation_defer_recurring_earning_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_leave_days_limit_label">Leave Days Limit</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="number" min="0" step="1" class="form-control" name="probation_leave_days_limit_override" id="probation_leave_days_limit_override" data-i18n="policy_leave_days_limit_placeholder" placeholder="No limit">
+                            <span class="input-group-text" data-i18n="days_suffix">days</span>
+                        </div>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_allow_leave_label">Allow leave requests during this period</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <select class="form-select select2-static" name="probation_allow_leave_override" id="probation_allow_leave_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
+                    </div>
+                    <div class="col-sm-2 mt-3">
+                        <label class="form-label"><span data-i18n="policy_probation_period_days_label">Standard Probation Period (days)</span></label>
+                    </div>
+                    <div class="col-sm-4 mt-3">
+                        <div class="input-group">
+                            <input type="number" min="0" step="1" class="form-control" name="probation_period_days_override" id="probation_period_days_override" data-i18n="policy_probation_period_days_placeholder" placeholder="Not set">
+                            <span class="input-group-text" data-i18n="days_suffix">days</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-secondary small mb-0" data-i18n="probation_base_salary_ratio_override_hint">Leave off to use this company's own Probation Pay Conditions default (set in Payroll Configuration > Payroll Policies). Only applies while this employee's Employment Status is Probation.</p>
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-5">
+                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                    <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
+                </button>
                 <button type="button" class="btn btn-primary" id="btnNextSocial">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
@@ -1452,7 +1919,7 @@
                     <div id="ssoDetailFields" class="d-none">
                         <div class="mt-3">
                             <label class="form-label d-block"><span data-i18n="sso_no">Social Security No.</span></label>
-                            <input type="text" class="form-control" name="sso_no" id="sso_no" maxlength="13">
+                            <input type="text" class="form-control" name="sso_no" id="sso_no" maxlength="13" data-i18n="sso_no_placeholder" placeholder="13-digit social security number">
                         </div>
                         <div class="mt-3">
                             <label class="form-label d-block"><span data-i18n="sso_start_date">SSO Start Date</span></label>
@@ -1460,6 +1927,36 @@
                                 <input type="text" class="form-control datepicker" name="sso_start_date" id="sso_start_date" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
+                        </div>
+                        <!-- 2026-09-02, real gap found and fixed (explicit report: "Smart Form...ตัวอย่างเช่น
+                             กองทุนประกันสังคม (สปส.) เลือกไม่มี แต่ให้กรอก Rate") -- these 2 rate-override
+                             fields used to sit OUTSIDE #ssoDetailFields (right after its closing tag),
+                             so they stayed visible/editable even with "Enrolled in Social Security
+                             Fund" set to No -- a rate override for a fund the employee isn't even
+                             enrolled in makes no sense (and StatutoryCalculationEngine never reads it
+                             in that case anyway, since it only applies an override to an item the
+                             employee is actually enrolled in -- see calculateItem()'s own enrollment
+                             gate). Moved inside #ssoDetailFields so the SAME #sso_enrolled change
+                             handler (detail.js) that already shows/hides sso_no/sso_start_date now
+                             covers these too, automatically, with zero new JS. Un-hidden 2026-09-02:
+                             StatutoryCalculationEngine reads these as a real per-employee SSO rate
+                             override (wins over company_statutory_settings' own override, which
+                             itself wins over the master rate). Deliberately left BLANK by default (not
+                             pre-filled with the standard rate) so an untouched field submits NULL =
+                             "no override, use the company/master rate" -- see
+                             database/migrations/2026-09-02_5_sso_contribution_rate_default_cleanup.sql
+                             for why a hardcoded value="5.00" here was a real bug once this field went
+                             live (it would have silently pinned every employee to 5% forever). Synced
+                             from Origami's sso_employee_rate_percent when present (EmployeeSyncer). -->
+                        <div class="mt-3">
+                            <label class="form-label d-block"><span data-i18n="sso_contribution_rate">Employee Contribution Rate Override (%)</span></label>
+                            <input type="number" step="0.01" class="form-control" name="sso_contribution_rate" id="sso_contribution_rate" placeholder="5.00">
+                            <div class="text-muted small" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
+                        </div>
+                        <div class="mt-3">
+                            <label class="form-label d-block"><span data-i18n="sso_employer_contribution_rate">Employer Contribution Rate Override (%)</span></label>
+                            <input type="number" step="0.01" class="form-control" name="sso_employer_contribution_rate" id="sso_employer_contribution_rate" placeholder="5.00">
+                            <div class="text-muted small" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
                         </div>
                     </div>
                     <!-- Hidden 2026-08-19 (not needed for Payroll): informational only (which hospital
@@ -1471,13 +1968,6 @@
                         <select class="form-select" name="sso_hospital_id" id="sso_hospital_id">
                             <option value="" data-i18n="please_choose">Select an option</option>
                         </select>
-                    </div>
-                    <!-- Hidden 2026-08-19 (not needed for Payroll): SSO contribution rate is
-                         company-wide (company_statutory_settings), never read per-employee by the
-                         calculation engine. -->
-                    <div class="mt-3 d-none">
-                        <label class="form-label d-block"><span data-i18n="sso_contribution_rate">Contribution Rate (%)</span></label>
-                        <input type="number" step="0.01" class="form-control" name="sso_contribution_rate" id="sso_contribution_rate" value="5.00">
                     </div>
                 </div>
                 <div class="col-sm-6">
@@ -1500,7 +1990,7 @@
                     <div class="d-none">
                         <div class="mt-3">
                             <label class="form-label d-block"><span data-i18n="pvd_fund_name">Fund Name</span></label>
-                            <input type="text" class="form-control" name="pvd_fund_name" id="pvd_fund_name">
+                            <input type="text" class="form-control" name="pvd_fund_name" id="pvd_fund_name" data-i18n="pvd_fund_name_placeholder" placeholder="e.g., XYZ Provident Fund">
                         </div>
                         <div class="mt-3">
                             <label class="form-label d-block"><span data-i18n="pvd_start_date">Start Date</span></label>
@@ -1511,11 +2001,11 @@
                         </div>
                         <div class="mt-3">
                             <label class="form-label d-block"><span data-i18n="pvd_employee_rate">Employee Rate (%)</span></label>
-                            <input type="number" step="0.01" class="form-control" name="pvd_employee_rate" id="pvd_employee_rate">
+                            <input type="number" step="0.01" class="form-control" name="pvd_employee_rate" id="pvd_employee_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
                         </div>
                         <div class="mt-3">
                             <label class="form-label d-block"><span data-i18n="pvd_employer_rate">Employer Rate (%)</span></label>
-                            <input type="number" step="0.01" class="form-control" name="pvd_employer_rate" id="pvd_employer_rate">
+                            <input type="number" step="0.01" class="form-control" name="pvd_employer_rate" id="pvd_employer_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
                         </div>
                     </div>
                 </div>
@@ -1548,7 +2038,10 @@
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mt-5">
+            <div class="d-flex justify-content-end gap-2 mt-5">
+                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                    <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
+                </button>
                 <button type="button" class="btn btn-primary" id="btnNextFamily">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
@@ -1591,13 +2084,13 @@
                         <label class="form-label"><span data-i18n="spouse_name">Spouse Name</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="spouse_name" id="spouse_name">
+                        <input type="text" class="form-control" name="spouse_name" id="spouse_name" data-i18n="parent_name_placeholder" placeholder="e.g., Somsak Jaidee">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label"><span data-i18n="spouse_id_card_no">Spouse ID Card No.</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <input type="text" class="form-control" name="spouse_id_card_no" id="spouse_id_card_no" maxlength="13">
+                        <input type="text" class="form-control" name="spouse_id_card_no" id="spouse_id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
                     </div>
                 </div>
             </div>
@@ -1634,7 +2127,7 @@
                     <div class="mt-3">
                         <div class="input-group" style="max-width:280px;">
                             <span class="input-group-text" data-i18n="number_of_children">Number of Children</span>
-                            <input type="number" min="0" value="0" class="form-control" id="dependentCount">
+                            <input type="number" min="0" value="0" class="form-control" id="dependentCount" data-i18n="count_placeholder" placeholder="0">
                         </div>
                     </div>
                     <p class="text-secondary small mb-0 mt-3 d-none" id="dependentEmptyHint" data-i18n="child_empty_hint">Enter a number above to add dependent cards.</p>
@@ -1681,13 +2174,13 @@
                         <label class="form-label mb-0"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4">
-                        <input type="text" class="form-control" id="parent_father_name">
+                        <input type="text" class="form-control" id="parent_father_name" data-i18n="parent_name_placeholder" placeholder="e.g., Somsak Jaidee">
                     </div>
                     <div class="col-sm-2 align-self-center">
                         <label class="form-label mb-0"><span data-i18n="id_card_no">ID Card No.</span></label>
                     </div>
                     <div class="col-sm-3">
-                        <input type="text" class="form-control" id="parent_father_id_card_no" maxlength="13">
+                        <input type="text" class="form-control" id="parent_father_id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
                     </div>
                     <div class="col-sm-1 d-flex align-items-center justify-content-end">
                         <button type="button" class="btn btn-sm btn-link text-danger d-none" id="btnDeleteFather" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
@@ -1711,20 +2204,23 @@
                         <label class="form-label mb-0"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4">
-                        <input type="text" class="form-control" id="parent_mother_name">
+                        <input type="text" class="form-control" id="parent_mother_name" data-i18n="parent_name_placeholder" placeholder="e.g., Somsak Jaidee">
                     </div>
                     <div class="col-sm-2 align-self-center">
                         <label class="form-label mb-0"><span data-i18n="id_card_no">ID Card No.</span></label>
                     </div>
                     <div class="col-sm-3">
-                        <input type="text" class="form-control" id="parent_mother_id_card_no" maxlength="13">
+                        <input type="text" class="form-control" id="parent_mother_id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
                     </div>
                     <div class="col-sm-1 d-flex align-items-center justify-content-end">
                         <button type="button" class="btn btn-sm btn-link text-danger d-none" id="btnDeleteMother" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mt-4">
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                    <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
+                </button>
                 <button type="button" class="btn btn-primary" id="btnNextDocuments">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
@@ -1771,6 +2267,20 @@
                     <input type="file" class="form-control" name="doc_other" id="doc_other" multiple accept="image/*,.pdf">
                 </div>
             </div>
+            <!-- 2026-09-03: 2 new types alongside EmployeeSyncer's own document-scan sync (see
+                 EmployeeModel::documentTypes()'s own docblock) -- work_permit_copy already existed
+                 above and is reused as-is for a synced work permit scan, so no 3rd field needed here
+                 for that one. -->
+            <div class="row">
+                <div class="col-sm-3 mt-3">
+                    <label class="form-label" data-i18n="passport_copy">Passport Copy</label>
+                    <input type="file" class="form-control" name="doc_passport_copy" id="doc_passport_copy" accept="image/*,.pdf">
+                </div>
+                <div class="col-sm-3 mt-3">
+                    <label class="form-label" data-i18n="visa_copy">Visa Copy</label>
+                    <input type="file" class="form-control" name="doc_visa_copy" id="doc_visa_copy" accept="image/*,.pdf">
+                </div>
+            </div>
             <div class="row">
                 <div class="col-sm-12 mt-4">
                     <table class="table table-bordered table-sm" id="tableDocumentList">
@@ -1779,6 +2289,7 @@
                                 <th data-i18n="file_name">File Name</th>
                                 <th data-i18n="document_type" style="width:200px;">Type</th>
                                 <th data-i18n="uploaded_date" style="width:150px;">Uploaded</th>
+                                <th data-i18n="source" style="width:120px;">Source</th>
                                 <th style="width:100px;"></th>
                             </tr>
                         </thead>
@@ -1828,8 +2339,8 @@
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mb-3">
-                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearLoginHistoryFilter">
+            <div class="station-filter-clear-row d-none" id="loginHistoryFilterClearRow">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearLoginHistoryFilter">
                     <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
                 </button>
             </div>
@@ -1857,6 +2368,39 @@
                 </table>
             </div>
         </div>
+        <?php if (!empty($canManagePermissionOverrides)): ?>
+        <!-- 2026-09-03, Platform Hardening Phase 3 Stage 5 -- see permissionOverridesTabItem's own
+             comment above for the access-control reasoning. Not a DataTable -- a fixed, always-
+             fetch-everything list (same reasoning as the Permission Matrix's own plain <table>: this
+             is a permission list x ONE-employee grid, not a paginated record list). Lazy-initialized
+             on first tab show (public/js/employee/detail.js's own shown.bs.tab handler), same
+             DataTables-inside-a-hidden-tab caution as every other lazy tab on this page -- though
+             this one isn't a DataTable, fetching before the pane is visible would still be wasted
+             work for a tab most sessions never open. -->
+        <div class="tab-pane fade" id="permission-overrides-pane" role="tabpanel" aria-labelledby="permission-overrides-tab" tabindex="0">
+            <div class="alert alert-light border small mb-3" data-i18n="permission_overrides_hint">
+                Override this employee's individual permissions on top of what their Role normally grants. Leaving a permission at "Inherit" means it simply follows their Role as usual.
+            </div>
+            <div class="d-flex justify-content-end mb-2">
+                <button type="button" class="btn btn-primary btn-sm" id="btnSavePermissionOverrides">
+                    <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle" id="tablePermissionOverrides">
+                    <thead class="table-light">
+                        <tr>
+                            <th data-i18n="permission">Permission</th>
+                            <th class="text-center" style="width:120px;" data-i18n="inherited">Inherited</th>
+                            <th class="text-center" style="width:280px;" data-i18n="override">Override</th>
+                            <th class="text-center" style="width:220px;" data-i18n="scope">Scope</th>
+                        </tr>
+                    </thead>
+                    <tbody id="permissionOverridesTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 <!-- eedModal / recurringEarningModal / empSignaturePadModal / empMapPinModal moved to

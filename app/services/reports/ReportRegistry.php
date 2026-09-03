@@ -11,6 +11,8 @@ require_once __DIR__ . '/payment/PaySlipReport.php';
 require_once __DIR__ . '/payment/BankTransferFileReport.php';
 require_once __DIR__ . '/payment/PaymentVoucherReport.php';
 require_once __DIR__ . '/payment/CashPaymentSummaryReport.php';
+require_once __DIR__ . '/payment/ThirdPartyRemittanceSummaryReport.php';
+require_once __DIR__ . '/payment/BankAccountPaymentSummaryReport.php';
 require_once __DIR__ . '/internal/PayrollRegisterReport.php';
 require_once __DIR__ . '/internal/PayrollRunListSummaryReport.php';
 require_once __DIR__ . '/internal/ScheduledItemOccurrenceReconciliationReport.php';
@@ -39,6 +41,8 @@ class ReportRegistry {
         self::register(new BankTransferFileReport());
         self::register(new PaymentVoucherReport());
         self::register(new CashPaymentSummaryReport());
+        self::register(new ThirdPartyRemittanceSummaryReport());
+        self::register(new BankAccountPaymentSummaryReport());
         self::register(new PayrollRegisterReport());
         self::register(new PayrollRunListSummaryReport());
         self::register(new ScheduledItemOccurrenceReconciliationReport());

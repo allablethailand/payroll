@@ -3,6 +3,7 @@
     "@fortawesome/fontawesome-free": "^7.1.0",
     "bootstrap": "^5.3.3",
     "bootstrap-datepicker": "^1.10.1",
+    "chart.js": "^4.5.1",
     "datatables.net-bs5": "^2.3.8",
     "datatables.net-fixedcolumns": "^6.0.0",
     "datatables.net-fixedcolumns-bs5": "^6.0.0",

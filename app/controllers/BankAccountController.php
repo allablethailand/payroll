@@ -29,7 +29,7 @@ class BankAccountController extends Controller {
     }
 
     public function list() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
@@ -51,7 +51,7 @@ class BankAccountController extends Controller {
     }
     /** 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter rollout. */
     public function columnValues() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'values' => []]);
@@ -64,7 +64,6 @@ class BankAccountController extends Controller {
         $this->json(['status' => true, 'values' => $values]);
     }
     public function save() {
-        if (!$this->requirePermission('bank_account.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -76,12 +75,16 @@ class BankAccountController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // BankAccountModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'bank_account.edit' : 'bank_account.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->model->save((int)$compId, $data, $userId);
         $this->json($result);
     }
     public function delete() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -96,6 +99,26 @@ class BankAccountController extends Controller {
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->model->delete((int)$compId, $id, $userId);
+        $this->json($result);
+    }
+    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
+    // every other converted table's own toggle-status dispatcher.
+    public function toggleStatus() {
+        if (!$this->requirePermission('bank_account.edit')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $result = $this->model->toggleStatus((int)$compId, $id, $userId);
         $this->json($result);
     }
 }

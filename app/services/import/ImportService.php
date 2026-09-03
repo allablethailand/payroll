@@ -104,7 +104,7 @@ class ImportService {
      *         errors: array<array{row:int, message:string}>,
      *         row_results: array<array{row:int, status:string, action?:string, message?:string, source_conflict?:bool, previous_source?:string}>}
      */
-    private function runImport(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, bool $commit, ?string $ipAddress = null, ?string $userAgent = null): array {
+    private function runImport(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, bool $commit, ?string $ipAddress = null, ?string $userAgent = null, ?array $originalFile = null): array {
         $importer = $this->getImporter($entityType);
         if (!$importer) {
             return ['status' => false, 'batch_id' => null, 'total' => 0, 'success' => 0, 'error' => 0, 'conflict' => 0, 'errors' => [], 'row_results' => [],
@@ -128,7 +128,7 @@ class ImportService {
         }
         try {
             $batchModel = new SyncBatchModel($this->db);
-            $batchId = $batchModel->start($compId, $entityType, 'import', 'manual', $triggeredBy, null, null, $ipAddress, $userAgent);
+            $batchId = $batchModel->start($compId, $entityType, 'import', 'manual', $triggeredBy, null, null, $ipAddress, $userAgent, $commit ? $originalFile : null);
 
             $success = 0;
             $errors = [];
@@ -185,8 +185,9 @@ class ImportService {
         return $this->runImport($compId, $entityType, $mappedRows, $triggeredBy, false, $ipAddress, $userAgent);
     }
 
-    /** Same validation/upsert pass as preview(), but commits. $ipAddress/$userAgent are the real request's own -- captured on the persisted sync_batches row for audit (2026-08-30, see SyncBatchModel::start()'s own docblock). */
-    public function commit(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, ?string $ipAddress = null, ?string $userAgent = null): array {
-        return $this->runImport($compId, $entityType, $mappedRows, $triggeredBy, true, $ipAddress, $userAgent);
+    /** Same validation/upsert pass as preview(), but commits. $ipAddress/$userAgent are the real request's own -- captured on the persisted sync_batches row for audit (2026-08-30, see SyncBatchModel::start()'s own docblock).
+     *  @param ?array{path:string,name:string,size:int} $originalFile Platform Hardening Phase 5C -- the already-stored original upload (see ManualEntryController::importPreview()/importCommit()), threaded through to SyncBatchModel::start(). */
+    public function commit(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, ?string $ipAddress = null, ?string $userAgent = null, ?array $originalFile = null): array {
+        return $this->runImport($compId, $entityType, $mappedRows, $triggeredBy, true, $ipAddress, $userAgent, $originalFile);
     }
 }

@@ -66,7 +66,7 @@ function aisCurrentFilters() {
 function aisUpdateClearFilterVisibility() {
     const f = aisCurrentFilters();
     const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
-    $('#aisClearFilterBtn').toggleClass('d-none', !hasFilter);
+    $('#aisFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 
 function loadAisFiscalYears() {
@@ -332,7 +332,7 @@ function aisPitCurrentFilters() {
 function aisPitUpdateClearFilterVisibility() {
     const f = aisPitCurrentFilters();
     const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
-    $('#aisPitClearFilterBtn').toggleClass('d-none', !hasFilter);
+    $('#aisPitFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function loadAisPitFiscalYears() {
     $.ajax({
@@ -445,7 +445,7 @@ function aisMonthlyCurrentFilters() {
 function aisMonthlyUpdateClearFilterVisibility() {
     const f = aisMonthlyCurrentFilters();
     const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id);
-    $('#aisMonthlyClearFilterBtn').toggleClass('d-none', !hasFilter);
+    $('#aisMonthlyFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function loadAisMonthlyYears() {
     $.ajax({

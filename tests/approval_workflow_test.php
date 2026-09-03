@@ -41,13 +41,13 @@ function makeEmployee(PDO $pdo, int $compId, string $employeeNo, ?int $roleId): 
          role_id, personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, department_id)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
          :role_id, :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         'monthly', 30000, '2020-01-01', 'average', 'active',
          1, 1, 0, NULL)");
     $stmt->execute([
         ':comp_id' => $compId, ':employee_no' => $employeeNo,
@@ -74,7 +74,7 @@ try {
         ->execute([':comp_id' => $compId]);
 
     // ---------- Fixtures ----------
-    $stmtRole = $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_approve_payroll) VALUES (:comp_id, :th, :en, 1)");
+    $stmtRole = $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en) VALUES (:comp_id, :th, :en)");
     $stmtRole->execute([':comp_id' => $compId, ':th' => 'ทดสอบผู้อนุมัติ', ':en' => 'Test Approver Role ' . uniqid()]);
     $testRoleId = (int)$pdo->lastInsertId();
 
@@ -493,7 +493,7 @@ try {
     $wfTestCompId = (int)$pdo->lastInsertId();
     $wfTestEmpX = makeEmployee($pdo, $wfTestCompId, 'AWF_ROW_X_' . uniqid(), null);
     $wfTestEmpY = makeEmployee($pdo, $wfTestCompId, 'AWF_ROW_Y_' . uniqid(), null);
-    $stmtWfTestRole = $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en, can_approve_payroll) VALUES (:comp_id, :th, :en, 1)");
+    $stmtWfTestRole = $pdo->prepare("INSERT INTO `structure_roles` (comp_id, role_name_th, role_name_en) VALUES (:comp_id, :th, :en)");
     $stmtWfTestRole->execute([':comp_id' => $wfTestCompId, ':th' => 'ทดสอบ Row', ':en' => 'Test Row Role ' . uniqid()]);
     $wfTestRoleId = (int)$pdo->lastInsertId();
 

@@ -33,6 +33,15 @@
             <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunRegister">
                 <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
             </button>
+            <!-- 2026-09-02, explicit request: "เพิ่มให้ Export เป็น PDF ได้ด้วย...การ Export กดแล้ว แสดง
+                 ตัวอย่าง แล้วค่อยเลือกจะ Download ภาษาไทยหรือภาษาอังกฤษ" -- deliberately additive next to
+                 the Excel button above (unchanged, still a direct one-click download) rather than
+                 replacing it -- Excel stays the quick-download path, this opens the SAME
+                 #reportPreviewModal every other report on this page already uses (PDF preview +
+                 Thai/English download buttons), reused as-is with report_code=PAYROLL_REGISTER. -->
+            <button type="button" class="btn btn-outline-danger btn-sm" id="btnPreviewRunRegisterPdf">
+                <i class="fa-solid fa-file-pdf me-1"></i><span data-i18n="export_pdf">Export PDF</span>
+            </button>
         </div>
         <div class="process-timeline-wrap" id="runProcessTimeline"></div>
         <div id="nextStepBanner" class="next-step-banner"></div>
@@ -74,17 +83,15 @@
                 <i class="fa-solid fa-file-export me-1"></i><span data-i18n="tab_reports">Reports</span>
             </button>
         </li>
-        <!-- 2026-08-31, explicit request: "เพิ่มอีก Tab ที่สรุปรวมว่า บัญชีกี่คน เงินสดกี่คน และเป็นรายการตาราง
-             พนักงานพร้อมช่อง รายได้ รายหัก แบบละเอียด และแสดงยอดสุทธิ มีสรุปใน Footer" -- distinct from Cash
-             Payments' own operational mark-as-paid workflow just below (gated to approved+, since it
-             snapshots amounts once) -- this is a plain read-only breakdown, available at any state
-             the employee table itself is, reusing the SAME per-employee rows already loaded for
-             #tb_run_detail (see initPaymentSummaryTable() in detail.js) rather than a new endpoint. -->
-        <li class="nav-item" role="presentation">
-            <button class="nav-link text-secondary" id="run-payment-tab" data-bs-toggle="tab" data-bs-target="#run-payment-pane" type="button" role="tab" aria-controls="run-payment-pane" aria-selected="false">
-                <i class="fa-solid fa-chart-pie me-1"></i><span data-i18n="tab_payment_summary">Payment Method Summary</span>
-            </button>
-        </li>
+        <!-- 2026-09-02, explicit request: "Tab ที่แสดงผลอยู่ตอนนี้มีส่วนไหนที่ยุบรวมกันได้" -- the
+             "Payment Method Summary" tab that used to sit here (added 2026-08-31: a read-only
+             Employee/Payment-Method/Base-Salary/Gross/Deduction/Net table with footer totals) was
+             removed entirely -- this SAME round added a Payment Method column + Bank/Cash filter
+             checkboxes directly onto the Details tab's own #tb_run_detail (which already had Base
+             Salary/Gross/Deduction/Net + footer totals from before), making that separate tab a
+             100%-redundant duplicate view of the exact same data. The Bank/Cash headcount cards
+             that used to live in this tab are still available -- see #infoPaymentBreakdown inside
+             the Details tab's own "Employees" stat card. -->
         <!-- 2026-08-31, explicit request: "ถ้าพนักงานรับเงินสด...แยก Report ตามแยก ว่าจ่ายเงินสดเท่าไหร่ โอน
              ผ่านธนาคารเท่าไหร่ และสามารถใส่ Status ว่าจ่ายแล้ว" -- interactive per-employee cash payment
              status, separate from the static Reports tab's own CASH_PAYMENT_SUMMARY export (see that
@@ -92,6 +99,29 @@
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-cash-tab" data-bs-toggle="tab" data-bs-target="#run-cash-pane" type="button" role="tab" aria-controls="run-cash-pane" aria-selected="false">
                 <i class="fa-solid fa-money-bill-wave me-1"></i><span data-i18n="tab_cash_payments">Cash Payments</span>
+            </button>
+        </li>
+        <!-- 2026-09-02, multi-bank-account payroll, explicit request: "ในหน้า Detail ก็สามารถเลือกได้ว่าใครจะ
+             โอนผ่านบัญชีไหนในกลุ่มที่รับเงินผ่านบัญชี...ในหน้า Detail ของ Process เพิ่ม Tab ให้จัดการข้อมูลส่วนนี้ได้
+             และมี Report แยกตามบัญชีที่จ่าย" -- one row per bank-paying employee, showing which of the
+             company's OWN settlement accounts (bank_accounts) resolves for them (override > employee
+             default > cycle pin > company default -- see PayrollRunEmployeeBankAccountModel's own
+             docblock) plus a per-run override editor. Same "reports available after approval" posture
+             as Cash Payments/Remittance right beside it. -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link text-secondary" id="run-bank-account-tab" data-bs-toggle="tab" data-bs-target="#run-bank-account-pane" type="button" role="tab" aria-controls="run-bank-account-pane" aria-selected="false">
+                <i class="fa-solid fa-building-columns me-1"></i><span data-i18n="tab_bank_account_assignment">Bank Account Assignment</span>
+            </button>
+        </li>
+        <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -- deduction lines routed to
+             a company account, a third-party bank account, or a fallback employee whose deduction's
+             payee wasn't part of this run get grouped into a batch here once the run is Approved
+             (PayrollRemittanceModel::generateForRun()). Same "reports available after approval"
+             posture as the Cash Payments tab right above (both only have real data once a run's
+             numbers are final). -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link text-secondary" id="run-remittance-tab" data-bs-toggle="tab" data-bs-target="#run-remittance-pane" type="button" role="tab" aria-controls="run-remittance-pane" aria-selected="false">
+                <i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="tab_remittance">Third-Party Remittance</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -314,11 +344,21 @@
             <!-- 2026-08-31, explicit request: "ก่อนตารางพนักงาน ให้มี checkbox ขึ้นมาเพื่อให้เลือกกรองข้อมูล
                  พนักงานที่รับผ่านบัญชี และเงินสดครับ" -- confirmed via AskUserQuestion: 2 independent
                  checkboxes (not a 3-way radio), both checked by default (= show everyone); unticking
-                 one hides that group. Filters #tb_run_detail client-side against its own payment_type
-                 column (see registerPaymentMethodSearchFilter() in detail.js) -- purely a view filter,
+                 one hides that group. Filters #tb_run_detail client-side against its own
+                 payment_method_code column (see registerPaymentMethodSearchFilter() in detail.js) -- purely a view filter,
                  changes nothing about the underlying data. -->
+            <!-- 2026-09-02, same-day follow-up: "ให้เลือกทั้งหมดได้ด้วย" -- filterPaymentAll is a plain
+                 select-all checkbox (checks/unchecks both Bank and Cash together, see
+                 syncPaymentMethodAllCheckbox() in detail.js), NOT a 3rd filter state of its own --
+                 the actual filtering still only ever reads filterPaymentBank/filterPaymentCash (same
+                 registerPaymentMethodSearchFilter() as before), so this stays a pure client-side
+                 .draw() with no ajax/reload either way. -->
             <div class="d-flex align-items-center gap-3 mb-2" id="paymentMethodFilterWrap">
                 <span class="small text-muted" data-i18n="table_payment_method">Payment Method</span>
+                <div class="form-check form-check-inline m-0">
+                    <input class="form-check-input" type="checkbox" id="filterPaymentAll" checked>
+                    <label class="form-check-label small fw-semibold" for="filterPaymentAll" data-i18n="filter_all">All</label>
+                </div>
                 <div class="form-check form-check-inline m-0">
                     <input class="form-check-input" type="checkbox" id="filterPaymentBank" checked>
                     <label class="form-check-label small" for="filterPaymentBank" data-i18n="table_payment_bank">Bank Transfer</label>
@@ -355,13 +395,30 @@
                  initRunDetailTable() means NOTHING ever hides behind an expand arrow either way; a
                  .table-responsive wrapper below gives a plain horizontal scrollbar as the only
                  narrow-viewport fallback, same as every other wide DataTable in this app. -->
+            <!-- 2026-09-02, explicit request: "ปรับให้ตาราง กว้างเท่า card ของตั้งค่ารอบ ตอนนี้ตารางมี padding
+                 นิดหน่อย" -- #runSettingsPanel above sits flush against .detail-section's own edges
+                 (no extra horizontal padding of its own beyond that shared ancestor); .table-responsive
+                 doesn't add any padding itself, but the table's OWN cell padding (Bootstrap's default
+                 `.table > :not(caption) > * > *` padding, ~0.75rem) reads as a narrower table than the
+                 card next to it once its border is compared side-by-side with the card's own straight
+                 edge. rd-detail-table-flush zeroes that horizontal breathing room on the OUTERMOST
+                 edge only (first/last cell of every row) via style.css so the table's border lines up
+                 exactly with #runSettingsPanel's own border, without touching inter-column padding. -->
             <div class="table-responsive">
-            <table class="table table-hover table-border align-middle w-100" id="tb_run_detail">
+            <table class="table table-hover table-border align-middle w-100 rd-detail-table-flush" id="tb_run_detail">
                 <thead class="table-light text-secondary">
                     <tr>
                         <th class="text-center"><input type="checkbox" class="form-check-input" id="runDetailSelectAll"></th>
-                        <th data-i18n="table_employee">Employee</th>
+                        <!-- 2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code
+                             อยู่ก่อน" -- was one combined 2-line cell (name bold on top, code muted
+                             underneath); split into its own Code column, placed before Name. -->
+                        <th data-i18n="employee_no">Employee Code</th>
+                        <th data-i18n="table_employee_name">Name</th>
                         <th data-i18n="table_source">Source</th>
+                        <!-- 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือ
+                             เงินสด" -- was only visible on the separate "Payment Method Summary" tab;
+                             now also its own column here on the main Details table. -->
+                        <th class="text-center" data-i18n="table_payment_method">Payment Method</th>
                         <th class="text-end" data-i18n="table_base_salary">Base Salary</th>
                         <th class="text-end" data-i18n="table_gross_amount">Gross</th>
                         <th class="text-end" data-i18n="table_deduction_amount">Deductions</th>
@@ -382,17 +439,24 @@
                      numeric money column (Base Salary/Gross/Deduction/Net), computed by
                      footerCallback in detail.js's own initRunDetailTable() -- respects the table's
                      own search filter (a filtered view sums only what's visible), same convention
-                     DataTables' own footer-total examples use. -->
+                     DataTables' own footer-total examples use.
+                     2026-09-02, explicit request: "Footer Column ตรวจสอบแล้ว ไม่เอา icon ให้ขึ้นว่าตรวจสอบแล้ว
+                     n/n และ Column การคำนวณ คำนวณแล้ว n/n" -- rdFootVerifyLock dropped its icon in favor
+                     of a plain "verified/total" count text, and the Calculation column (previously
+                     blank in the footer) gets the same "calculated/total" treatment via the new
+                     rdFootCalcStatus id. -->
                 <tfoot class="table-light text-secondary">
                     <tr>
                         <th></th>
                         <th id="rdFootEmployeeCount"></th>
                         <th></th>
+                        <th></th>
+                        <th></th>
                         <th class="text-end" id="rdFootBaseSalary"></th>
                         <th class="text-end" id="rdFootGross"></th>
                         <th class="text-end" id="rdFootDeduction"></th>
                         <th class="text-end" id="rdFootNet"></th>
-                        <th></th>
+                        <th id="rdFootCalcStatus"></th>
                         <th class="text-center" id="rdFootVerifyLock"></th>
                         <th></th>
                     </tr>
@@ -463,9 +527,9 @@
                         </div>
                         </div>
                         <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-primary btn-sm" id="btnAddEmployeeComment"><i class="fa-solid fa-plus me-1"></i><span id="btnAddEmployeeCommentLabel" data-i18n="employee_comment_add">Add Comment</span></button>
                             <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnCancelEditEmployeeComment" data-i18n="cancel">Cancel</button>
                             <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                            <button type="button" class="btn btn-primary btn-sm" id="btnAddEmployeeComment"><i class="fa-solid fa-plus me-1"></i><span id="btnAddEmployeeCommentLabel" data-i18n="employee_comment_add">Add Comment</span></button>
                         </div>
                     </div>
                 </div>
@@ -514,60 +578,6 @@
             </div>
         </div>
 
-        <div class="tab-pane fade" id="run-payment-pane" role="tabpanel" aria-labelledby="run-payment-tab" tabindex="0">
-            <div id="runPaymentSummaryEmpty" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-chart-pie fa-2x mb-3 text-secondary opacity-50"></i>
-                <span data-i18n="no_details_yet">No employees calculated yet. Click "Recalculate" to compute this run.</span>
-            </div>
-            <div id="runPaymentSummaryContent">
-                <div class="row g-3 mb-4">
-                    <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-purple">
-                            <div class="stat-card-icon"><i class="fa-solid fa-building-columns"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="table_payment_bank">Bank Transfer</div>
-                                <div class="stat-card-value" id="paymentSummaryBankCount">-</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-warning">
-                            <div class="stat-card-icon"><i class="fa-solid fa-money-bill-wave"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="table_payment_cash">Cash</div>
-                                <div class="stat-card-value" id="paymentSummaryCashCount">-</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="table-responsive">
-                <table class="table table-hover table-border align-middle w-100" id="tb_run_payment_summary">
-                    <thead class="table-light text-secondary">
-                        <tr>
-                            <th data-i18n="table_employee">Employee</th>
-                            <th data-i18n="table_payment_method">Payment Method</th>
-                            <th class="text-end" data-i18n="table_base_salary">Base Salary</th>
-                            <th class="text-end" data-i18n="table_gross_amount">Gross</th>
-                            <th class="text-end" data-i18n="table_deduction_amount">Deductions</th>
-                            <th class="text-end" data-i18n="table_net_pay">Net Pay</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                    <tfoot class="table-light text-secondary">
-                        <tr>
-                            <th id="paymentSummaryFootEmployeeCount"></th>
-                            <th></th>
-                            <th class="text-end" id="paymentSummaryFootBaseSalary"></th>
-                            <th class="text-end" id="paymentSummaryFootGross"></th>
-                            <th class="text-end" id="paymentSummaryFootDeduction"></th>
-                            <th class="text-end" id="paymentSummaryFootNet"></th>
-                        </tr>
-                    </tfoot>
-                </table>
-                </div>
-            </div>
-        </div>
-
         <div class="tab-pane fade" id="run-cash-pane" role="tabpanel" aria-labelledby="run-cash-tab" tabindex="0">
             <div id="runCashNotReady" class="text-center text-secondary py-4 d-none">
                 <i class="fa-solid fa-money-bill-wave fa-2x mb-3 text-secondary opacity-50"></i>
@@ -608,6 +618,221 @@
                         </thead>
                         <tbody id="runCashTableBody"></tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2026-09-02, multi-bank-account payroll -- see the tab button's own comment above. -->
+        <div class="tab-pane fade" id="run-bank-account-pane" role="tabpanel" aria-labelledby="run-bank-account-tab" tabindex="0">
+            <div id="runBankAccountNotReady" class="text-center text-secondary py-4 d-none">
+                <i class="fa-solid fa-building-columns fa-2x mb-3 text-secondary opacity-50"></i>
+                <span id="runBankAccountNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            </div>
+            <div id="runBankAccountContent" class="d-none">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="text-muted small" data-i18n="bank_account_assignment_hint">Which of the company's own settlement accounts pays each employee this run. Leave unassigned to use the employee's own default or the pay cycle/company default.</div>
+                    <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunBankAccountSummary">
+                        <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle w-100">
+                        <thead class="table-light text-secondary">
+                            <tr>
+                                <th data-i18n="employee_no">Employee No.</th>
+                                <th data-i18n="employee">Employee</th>
+                                <th data-i18n="bank_account">Bank Account</th>
+                                <th class="text-center" data-i18n="bank_account_source">Source</th>
+                                <th class="text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="runBankAccountTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 5 -- deduction lines
+             routed to a company account, a saved third-party bank account, or a fallback employee
+             not part of this run (PayrollRemittanceModel::generateForRun(), triggered right after
+             this run is Approved) get grouped here, one row per destination. "company" rows are
+             always already 'success' (no real external transfer -- kept for audit only); the other
+             two types are real transfers that need Mark as Transferred (evidence upload) -> Confirm
+             Success / Mark as Failed (with a reason, retry-able back to pending). Same layout
+             convention as the Cash Payments tab right above (not-ready state + stat cards + table). -->
+        <div class="tab-pane fade" id="run-remittance-pane" role="tabpanel" aria-labelledby="run-remittance-tab" tabindex="0">
+            <div id="runRemittanceNotReady" class="text-center text-secondary py-4 d-none">
+                <i class="fa-solid fa-money-bill-transfer fa-2x mb-3 text-secondary opacity-50"></i>
+                <span id="runRemittanceNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            </div>
+            <div id="runRemittanceContent" class="d-none">
+                <div class="d-flex justify-content-end mb-3">
+                    <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunRemittance">
+                        <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
+                    </button>
+                </div>
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card stat-card-warning h-100">
+                            <div class="stat-card-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+                            <div>
+                                <div class="stat-card-label" data-i18n="remittance_status_pending">Pending</div>
+                                <div class="stat-card-value" id="runRemittanceTotalPending">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card stat-card-primary h-100">
+                            <div class="stat-card-icon"><i class="fa-solid fa-paper-plane"></i></div>
+                            <div>
+                                <div class="stat-card-label" data-i18n="remittance_status_transferred">Transferred</div>
+                                <div class="stat-card-value" id="runRemittanceTotalTransferred">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card stat-card-success h-100">
+                            <div class="stat-card-icon"><i class="fa-solid fa-circle-check"></i></div>
+                            <div>
+                                <div class="stat-card-label" data-i18n="remittance_status_success">Success</div>
+                                <div class="stat-card-value" id="runRemittanceTotalSuccess">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-card stat-card-danger h-100">
+                            <div class="stat-card-icon"><i class="fa-solid fa-circle-xmark"></i></div>
+                            <div>
+                                <div class="stat-card-label" data-i18n="remittance_status_failed">Failed</div>
+                                <div class="stat-card-value" id="runRemittanceTotalFailed">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle w-100">
+                        <thead class="table-light text-secondary">
+                            <tr>
+                                <th data-i18n="remittance_destination">Destination</th>
+                                <th data-i18n="remittance_destination_type">Type</th>
+                                <th class="text-center" data-i18n="remittance_employee_count">Employees</th>
+                                <th class="text-end" data-i18n="amount">Amount</th>
+                                <th class="text-center" data-i18n="status">Status</th>
+                                <th data-i18n="remittance_transferred_at">Transferred At</th>
+                                <th class="text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="runRemittanceTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Remittance breakdown modal -- lists every (employee, item) line that makes up one
+             grouped remittance row's total, opened from that row's own "view breakdown" button. -->
+        <!-- 2026-09-02, multi-bank-account payroll -- per-run override editor for one employee's
+             paying account (PayrollRunEmployeeBankAccountModel::overrideSave()). Select2 ajax reuses
+             the SAME api/payroll-cycle.bank-account.options endpoint Employee Detail's own
+             #default_bank_account_id and Payroll Configuration's cycle-level picker already use --
+             same company-scoped account list, no new endpoint needed. -->
+        <div class="modal fade" id="bankAccountAssignModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-secondary" data-i18n="bank_account_assign_title">Assign Paying Account</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="bankAccountAssignEmployeeId">
+                        <div class="mb-2">
+                            <div class="text-muted small" data-i18n="employee">Employee</div>
+                            <div class="fw-bold" id="bankAccountAssignEmployeeName">-</div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" data-i18n="bank_account">Bank Account</label>
+                            <select class="form-select select2-remote" id="bankAccountAssignSelect" data-api="/api/payroll-cycle.bank-account.options" allow-clear="true"></select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" data-i18n="note">Note</label>
+                            <textarea class="form-control" id="bankAccountAssignNote" rows="2" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="btnSaveBankAccountAssign" data-i18n="save">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal fade" id="remittanceBreakdownModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-secondary" data-i18n="remittance_breakdown_title">Remittance Breakdown</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle w-100">
+                                <thead class="table-light text-secondary">
+                                    <tr>
+                                        <th data-i18n="employee_no">Employee No.</th>
+                                        <th data-i18n="employee">Employee</th>
+                                        <th data-i18n="item">Item</th>
+                                        <th class="text-end" data-i18n="amount">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="remittanceBreakdownTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mark as Transferred modal -- required evidence file (jpg/png/pdf, 5MB cap, see
+             PayrollRemittanceController::markTransferred()) uploaded via multipart/form-data. -->
+        <div class="modal fade" id="remittanceMarkTransferredModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-secondary" data-i18n="mark_as_transferred">Mark as Transferred</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="remittanceMarkTransferredId">
+                        <label class="form-label" data-i18n="remittance_evidence_file" for="remittanceEvidenceFile">Transfer Evidence (image or PDF)</label>
+                        <input type="file" class="form-control" id="remittanceEvidenceFile" accept=".jpg,.jpeg,.png,.pdf">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="btnConfirmMarkTransferred" data-i18n="confirm">Confirm</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mark as Failed modal -- a reason note is required (PayrollRemittanceModel::markFailed()). -->
+        <div class="modal fade" id="remittanceMarkFailedModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-secondary" data-i18n="mark_as_failed">Mark as Failed</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="remittanceMarkFailedId">
+                        <label class="form-label" data-i18n="remittance_failed_reason" for="remittanceFailedNote">Reason</label>
+                        <textarea class="form-control" id="remittanceFailedNote" rows="3" data-i18n="remittance_failed_note_placeholder" placeholder="e.g., Bank rejected — incorrect account number"></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-danger" id="btnConfirmMarkFailed" data-i18n="confirm">Confirm</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -699,8 +924,8 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="d-flex justify-content-end mb-2">
-                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnReportHistoryClearFilter">
+                        <div class="station-filter-clear-row d-none" id="reportHistoryFilterClearRow">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnReportHistoryClearFilter">
                                 <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
                             </button>
                         </div>
@@ -874,7 +1099,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_run_name">Run Name</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
-                                <input type="text" class="form-control required" id="edit_run_name" name="run_name">
+                                <input type="text" class="form-control required" id="edit_run_name" name="run_name" data-i18n="run_name_placeholder" placeholder="e.g., Payroll July 2026">
                             </div>
                         </div>
                         <div class="row mb-3">
@@ -959,7 +1184,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_notes">Notes</span></label>
                             </div>
                             <div class="col-sm-9">
-                                <textarea class="form-control" id="edit_notes" name="notes" rows="2"></textarea>
+                                <textarea class="form-control" id="edit_notes" name="notes" rows="2" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
                             </div>
                         </div>
                     </div>
@@ -1024,6 +1249,17 @@
                              (universal, every draft-run employee row) from the sync-only Raw Sync Data
                              modal's own "This Run's Settings" card, which only ever opened for a
                              data_source='sync' row. -->
+                        <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 --
+                             per-run override of which account a recurring deduction (Employee
+                             Detail's own "Recurring Deductions" section) is routed to, without
+                             touching that employee's own saved template. Always shown (a run with no
+                             recurring deductions for this employee just shows the empty state, same
+                             convention as "Deduction Adjustments" above). -->
+                        <li class="nav-item" id="manageLinesRecurringDestTabWrap" role="presentation">
+                            <button class="nav-link" id="manageLinesRecurringDestTab" data-bs-toggle="tab" data-bs-target="#manageLinesRecurringDestPane" type="button" role="tab">
+                                <i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="manage_items_tab_recurring_dest">Recurring Deduction Destination</span>
+                            </button>
+                        </li>
                         <li class="nav-item" id="manageLinesCalcTabWrap" role="presentation">
                             <button class="nav-link" id="manageLinesCalcTab" data-bs-toggle="tab" data-bs-target="#manageLinesCalcPane" type="button" role="tab">
                                 <i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="manage_items_tab_calc">Tax &amp; SSO</span>
@@ -1037,6 +1273,12 @@
                                     <div class="btn-group btn-group-sm" role="group" id="manualLineModeToggle">
                                         <button type="button" class="btn btn-outline-secondary active" data-mode="catalog"><i class="fa-solid fa-list me-1"></i><span data-i18n="manual_line_mode_catalog">From List</span></button>
                                         <button type="button" class="btn btn-outline-secondary" data-mode="custom"><i class="fa-solid fa-pen me-1"></i><span data-i18n="manual_line_mode_custom">Custom Item</span></button>
+                                        <!-- 2026-09-02, Deduction Destination & Third-Party Remittance,
+                                             Phase 7 -- reuses #manualLineCustomFields' own free-text
+                                             input verbatim, same as #eedModal's own "Other" mode (see
+                                             that modal's markup comment); is_other=true is the only
+                                             difference sent on submit. -->
+                                        <button type="button" class="btn btn-outline-secondary" data-mode="other"><i class="fa-solid fa-circle-question me-1"></i><span data-i18n="manual_line_mode_other">Other</span></button>
                                     </div>
                                 </div>
                                 <div class="row g-2 align-items-end" id="manualLineCatalogFields">
@@ -1084,6 +1326,8 @@
                                             <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
                                             <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
                                             <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
+                                            <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -->
+                                            <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
                                             <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
                                         </div>
                                     </div>
@@ -1092,6 +1336,45 @@
                                     <div class="col-12">
                                         <label class="form-label mb-1 small text-muted" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                                         <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                    </div>
+                                </div>
+                                <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -- pick an
+                                     existing SAVED destination, or leave blank and fill the new-account
+                                     fields below (which create a one-off or, with the checkbox, a new
+                                     saved destination -- see PaymentDestinationModel::resolveOrCreate()).
+                                     This is metadata attached to the deduction line only -- it never
+                                     affects Net Pay or the calculation itself (see this feature's own
+                                     "Calculation vs Disbursement layer" design note). -->
+                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineDestinationWrapper">
+                                    <div class="col-12">
+                                        <label class="form-label mb-1 small text-muted" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                                        <select class="form-select select2-remote" id="manualLineDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                                    </div>
+                                    <div class="col-12 mt-2" id="manualLineDestinationNewFields">
+                                        <div class="row g-2">
+                                            <div class="col-sm-6">
+                                                <label class="form-label mb-1 small text-muted" data-i18n="destination_account_name">Account Name</label>
+                                                <input type="text" class="form-control form-control-sm" id="manualLineDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <label class="form-label mb-1 small text-muted" data-i18n="destination_account_no">Account No.</label>
+                                                <input type="text" class="form-control form-control-sm" id="manualLineDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <label class="form-label mb-1 small text-muted" data-i18n="destination_bank">Bank</label>
+                                                <select class="form-select select2-remote" id="manualLineDestBank" data-api="/api/bank.get" data-type="bank"></select>
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <label class="form-label mb-1 small text-muted" data-i18n="destination_bank_branch">Branch</label>
+                                                <input type="text" class="form-control form-control-sm" id="manualLineDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
+                                            </div>
+                                            <div class="col-12">
+                                                <div class="form-check">
+                                                    <input type="checkbox" class="form-check-input" id="manualLineDestSaveForReuse">
+                                                    <label class="form-check-label small" for="manualLineDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="row g-2 align-items-end mt-1 d-none" id="manualLineIncludeCashSummaryWrapper">
@@ -1191,6 +1474,45 @@
                             <hr>
                             <p class="text-muted small mb-2" data-i18n="sync_line_override_hint">Override the computed amount, or exclude it entirely, for this run only.</p>
                             <div id="syncLineOverrideList"></div>
+                        </div>
+                        <div class="tab-pane fade" id="manageLinesRecurringDestPane" role="tabpanel">
+                            <p class="text-muted small mb-2" data-i18n="recurring_dest_override_hint">Override which account a recurring deduction is routed to, for this payroll run only -- the employee's own saved default is never changed.</p>
+                            <div id="recurringDestOverrideList"></div>
+                            <div class="border rounded-3 p-3 bg-light bg-opacity-50 mt-3 d-none" id="recurringDestEditorCard">
+                                <input type="hidden" id="recurringDestEditorRecurringId">
+                                <div class="fw-bold text-dark small mb-2" id="recurringDestEditorItemName"></div>
+                                <div class="btn-group btn-group-sm flex-wrap mb-2" role="group" id="recurringDestPayeeTypeToggle">
+                                    <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
+                                </div>
+                                <div class="row g-2 align-items-end d-none" id="recurringDestEmployeeWrapper">
+                                    <div class="col-12">
+                                        <label class="form-label mb-1 small text-muted" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                                        <select class="form-select select2-remote" id="recurringDestPayeeEmployeeSelect" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                    </div>
+                                </div>
+                                <div class="row g-2 align-items-end d-none" id="recurringDestDestinationWrapper">
+                                    <div class="col-12">
+                                        <label class="form-label mb-1 small text-muted" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                                        <select class="form-select select2-remote" id="recurringDestDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                                    </div>
+                                    <div class="col-12 mt-2" id="recurringDestDestinationNewFields">
+                                        <div class="row g-2">
+                                            <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="recurringDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="recurringDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="recurringDestBank" data-api="/api/bank.get" data-type="bank"></select></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="recurringDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
+                                            <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="recurringDestSaveForReuse"><label class="form-check-label small" for="recurringDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="text-end mt-2">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCancelRecurringDestEdit" data-i18n="cancel">Cancel</button>
+                                    <button type="button" class="btn btn-sm btn-primary" id="btnSaveRecurringDestOverride" data-i18n="save">Save</button>
+                                </div>
+                            </div>
                         </div>
                         <!-- 2026-08-29: per-employee, per-run tax/SSO calculation override -- see
                              PayrollRunModel::saveEmployeeExemption()'s own docblock. "Follow Run
@@ -1385,10 +1707,10 @@
                 <div class="modal-footer d-flex justify-content-between align-items-center">
                     <div class="text-muted small" id="joinSelectedCount">0 <span data-i18n="bulk_pull_selected_label">selected</span></div>
                     <div>
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-primary" id="btnJoinSelected" disabled>
                             <i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">Join Employees</span>
                         </button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>
             </div>
@@ -1491,7 +1813,7 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label" data-i18n="payment_reference_label">Payment Reference</label>
-                            <input type="text" class="form-control" id="run_mark_paid_reference" autocomplete="off">
+                            <input type="text" class="form-control" id="run_mark_paid_reference" autocomplete="off" data-i18n="run_mark_paid_reference_placeholder" placeholder="e.g., Bank transfer batch no.">
                         </div>
                         <div class="mb-1">
                             <label class="form-label" data-i18n="modal_payment_date">Payment Date</label>

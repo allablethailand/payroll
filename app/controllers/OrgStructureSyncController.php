@@ -4,8 +4,9 @@ require_once __DIR__ . '/../models/OrgStructureSyncModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 
 /** Interactive "Sync from Origami" picker for Department/Position/Team -- see
- *  OrgStructureSyncModel's own docblock. Gated by the same `company_structure.manage` permission
- *  key CompanyProfileController already uses for every other write action on these 3 entities. */
+ *  OrgStructureSyncModel's own docblock. Gated by the same `company_structure.view`/`.add` permission
+ *  keys CompanyProfileController already uses for reads/writes on these 3 entities -- apply() creates
+ *  new structure rows from Origami candidates, so it maps to `.add`, not `.edit`. */
 class OrgStructureSyncController extends Controller {
     private OrgStructureSyncModel $model;
     private PermissionModel $permissionModel;
@@ -38,7 +39,7 @@ class OrgStructureSyncController extends Controller {
     }
 
     public function candidates() {
-        if (!$this->requirePermission('company_structure.manage')) return;
+        if (!$this->requirePermission('company_structure.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -48,7 +49,7 @@ class OrgStructureSyncController extends Controller {
     }
 
     public function apply() {
-        if (!$this->requirePermission('company_structure.manage')) return;
+        if (!$this->requirePermission('company_structure.add')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -59,7 +60,7 @@ class OrgStructureSyncController extends Controller {
     }
 
     public function log() {
-        if (!$this->requirePermission('company_structure.manage')) return;
+        if (!$this->requirePermission('company_structure.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);

@@ -174,6 +174,65 @@ class CompanyStatutorySettingModel {
         }
     }
 
+    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch. Genuinely more than a
+    // plain UPDATE ... SET status like every other converted table's own toggleStatus(): the value
+    // shown/toggled in the UI is `effective_status` (see list()'s own computed fallback), a company
+    // may have NO `company_statutory_settings` row yet at all (still on the master item's own
+    // default_is_active) -- flipping "off" from that state means INSERTing a new row, not UPDATEing
+    // one that doesn't exist. Preserves whatever override/remark values an EXISTING row already has
+    // (only `status` changes) -- a brand-new row created by this toggle has no overrides at all
+    // (same as `reset()`'s own "back to system default rate, just explicitly enabled/disabled" idea).
+    public function toggleStatus(int $compId, int $itemId, int $userId): array {
+        $countryCode = $this->getCompanyCountry($compId);
+        if ($countryCode === null) {
+            return ['status' => false, 'message' => 'Company not found.'];
+        }
+        $stmtItem = $this->db->prepare("SELECT default_is_active FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL AND status = 'active' AND country_code = :country_code");
+        $stmtItem->execute([':id' => $itemId, ':country_code' => $countryCode]);
+        $item = $stmtItem->fetch(PDO::FETCH_ASSOC);
+        if (!$item) {
+            return ['status' => false, 'message' => 'Statutory item not found.'];
+        }
+        try {
+            // Same "check for ANY row incl. soft-deleted, revive by clearing deleted_at/deleted_by"
+            // pattern save() above already uses -- querying only non-deleted rows here would let a
+            // company that once reset() this item back to default (soft-deleting its own row) end
+            // up with a second, DUPLICATE row on the next toggle, since this table's own
+            // `deleted_at`-aware uniqueness can't reject that at the DB level (see this project's own
+            // convention on that class of bug).
+            $stmtExisting = $this->db->prepare("SELECT id, status, deleted_at FROM `company_statutory_settings` WHERE comp_id = :comp_id AND statutory_item_id = :item_id");
+            $stmtExisting->execute([':comp_id' => $compId, ':item_id' => $itemId]);
+            $existing = $stmtExisting->fetch(PDO::FETCH_ASSOC);
+            // A soft-deleted row's own `status` is 'deleted', not a real active/inactive value --
+            // effective status for a soft-deleted (i.e. reset-to-default) row falls back to the
+            // master item's own default_is_active, same as a company with no row at all.
+            $currentStatus = ($existing && $existing['deleted_at'] === null)
+                ? $existing['status']
+                : (((int)$item['default_is_active']) === 1 ? 'active' : 'inactive');
+            $newStatus = $currentStatus === 'active' ? 'inactive' : 'active';
+
+            if ($existing && $existing['deleted_at'] === null) {
+                // Live row -- just flip status, leave its own overrides/remark exactly as they are
+                // (a quick toggle isn't meant to touch the configured rate, only enable/disable).
+                $stmtUpdate = $this->db->prepare("UPDATE `company_statutory_settings` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+                $stmtUpdate->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $existing['id']]);
+            } elseif ($existing) {
+                // Reviving a row that reset() previously soft-deleted -- reset() never clears the
+                // override columns themselves (only marks the row deleted), so reviving it here MUST
+                // also null them out, or the company's old custom rate would silently reappear even
+                // though the UI showed "Using Default" (system default) right up until this toggle.
+                $stmtUpdate = $this->db->prepare("UPDATE `company_statutory_settings` SET status = :status, employee_rate_override = NULL, employer_rate_override = NULL, employee_amount_override = NULL, employer_amount_override = NULL, remark = NULL, deleted_at = NULL, deleted_by = NULL, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+                $stmtUpdate->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $existing['id']]);
+            } else {
+                $stmtInsert = $this->db->prepare("INSERT INTO `company_statutory_settings` (comp_id, statutory_item_id, status, created_by) VALUES (:comp_id, :item_id, :status, :created_by)");
+                $stmtInsert->execute([':comp_id' => $compId, ':item_id' => $itemId, ':status' => $newStatus, ':created_by' => $userId]);
+            }
+            return ['status' => true, 'new_status' => $newStatus, 'message' => 'Updated successfully.'];
+        } catch (PDOException $e) {
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
     public function reset(int $compId, int $itemId, int $userId): array {
         try {
             $stmtCheck = $this->db->prepare("SELECT id FROM `company_statutory_settings` WHERE comp_id = :comp_id AND statutory_item_id = :item_id AND deleted_at IS NULL");

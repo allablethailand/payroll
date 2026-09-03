@@ -328,6 +328,24 @@ try {
     ], $compId, $userId);
     checkFalse('a 2nd rule for the same (event, team) is rejected as a duplicate', $dupTeamVariant['status']);
 
+    echo "--- 2026-09-02: the rejection carries conflict_id, and re-submitting WITH that id overwrites the existing row instead of failing ---\n";
+    check('duplicate rejection carries the conflicting row\'s own id', $dupTeamVariant['conflict_id'] ?? null, $teamVariantId);
+    $overwrite = $model->ruleSave([
+        'id' => $dupTeamVariant['conflict_id'], 'event_code' => 'late', 'method_code' => 'flat_amount', 'rate_per_unit' => 9.99,
+        'scope_type' => 'team', 'scope_id' => $realTeamId,
+    ], $compId, $userId);
+    checkTrue('re-submitting with conflict_id as the id succeeds (update, not a 2nd insert)' . (empty($overwrite['status']) ? " ({$overwrite['message']})" : ''), $overwrite['status']);
+    check('the overwrite updated the SAME row id, not a new one', $overwrite['id'], $teamVariantId);
+    check('late still has exactly 2 variants (default + the one team variant) -- no duplicate row was created', count($model->ruleGetAll($compId)['late']), 2);
+    $overwrittenVariant = array_values(array_filter($model->ruleGetAll($compId)['late'], fn($v) => $v['id'] == $teamVariantId))[0];
+    check('the overwritten row actually carries the NEW rate_per_unit', (float)$overwrittenVariant['rate_per_unit'], 9.99);
+    // Reset back to the original percent_of_rate config so the rest of this section's own
+    // assertions below (which still expect the multiplier_rate=2.0 shape) are unaffected.
+    $model->ruleSave([
+        'id' => $teamVariantId, 'event_code' => 'late', 'method_code' => 'percent_of_rate', 'multiplier_rate' => 2.0,
+        'scope_type' => 'team', 'scope_id' => $realTeamId, 'label' => 'Warehouse team - stricter late policy',
+    ], $compId, $userId);
+
     echo "--- a DIFFERENT team for the same event is fine (no collision) ---\n";
     $otherTeamVariant = $model->ruleSave([
         'event_code' => 'late', 'method_code' => 'flat_amount', 'rate_per_unit' => 3, 'scope_type' => 'team', 'scope_id' => $realTeamId2,

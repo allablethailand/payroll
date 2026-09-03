@@ -117,6 +117,8 @@ $(document).on('submit', '#documentNumberingForm', function (e) {
         current_number: Number($('#dn_current_number').val()),
         reset_cycle: $('#dn_reset_cycle').val(),
     };
+    const $btn = $(this).find('[type="submit"]');
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/document-numbering.save`,
         method: 'POST',
@@ -124,6 +126,7 @@ $(document).on('submit', '#documentNumberingForm', function (e) {
         dataType: 'json',
         data: JSON.stringify(payload),
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('documentNumberingModal')).hide();
@@ -132,7 +135,7 @@ $(document).on('submit', '#documentNumberingForm', function (e) {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
     });
 });
 $(document).ready(function () {

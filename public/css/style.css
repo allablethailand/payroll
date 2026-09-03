@@ -329,7 +329,12 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     padding: 5px;
     width: 260px;
     box-sizing: border-box;
-    max-height: 450px;
+    /* 2026-09-02, explicit request: "อยากให้ไม่มีต้องมี Scroll Bar ให้กรณีที่ความสูงไม่ถึง 70% ของจอ" --
+       was a fixed 450px cap regardless of viewport size, so a screen tall enough to fit every tile
+       without scrolling could still get clipped into a scrollbar (450px is a fair chunk of a short
+       laptop viewport, and needlessly restrictive on a tall one) -- viewport-relative instead, so a
+       scrollbar only appears once the real content genuinely would exceed 70% of screen height. */
+    max-height: 70vh;
     overflow-x: hidden;
     overflow-y: auto;
     background: rgba(255, 255, 255, 0.85);
@@ -1001,6 +1006,40 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     min-width: 0;
 }
 
+/* 2026-09-02, explicit request: "ปรับหน้าตา Form ให้ดูสวยขึ้นและใช้งานง่ายขึ้น" -- Manual Entry's own
+   #bulkImportModal Attach step used a bare <label>+<input type="file"> with no visual framing at
+   all, reading as a raw admin form rather than a real upload step. Same dashed-border/hover-tint
+   convention as .cp-logo-upload-card above (this app's own established "drop zone" look), just a
+   centered icon-stacked shape instead of that one's side-by-side preview+button layout, since there's
+   no image preview to show here. */
+.bulk-import-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    padding: 1.75rem 1.25rem;
+    border: 1.5px dashed #dcdcdc;
+    border-radius: 12px;
+    background: #fafafa;
+    text-align: center;
+    transition: border-color .15s ease, background .15s ease;
+}
+.bulk-import-dropzone:hover,
+.bulk-import-dropzone.bulk-import-dropzone-filled {
+    border-color: rgba(255, 153, 0, .5);
+    background: rgba(255, 153, 0, .03);
+}
+.bulk-import-dropzone i {
+    font-size: 1.8rem;
+    color: #FF9900;
+}
+.bulk-import-dropzone .bulk-import-dropzone-filename {
+    font-weight: 600;
+    color: #333;
+    word-break: break-all;
+}
+
 /* Generic settings-page info card -- gradient-header-strip + card-surface shell, same convention as
    Payslip Template editor's own .pst-info-card (see that class's own comment). First built 2026-08-30
    for Company Profile's Signatory & Branding tab (explicit request: "Tab Signatory & Branding สามารถ
@@ -1100,6 +1139,97 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .adr-variant-row:last-child {
     border-bottom: none;
+}
+/* 2026-09-02, explicit request: "หัก ไม่หัก ควรตั้งค่าได้จากในหน้า Card เลยครับ" -- a 2nd inline switch
+   (Active/Deduct) added next to each other; stacked in their own small column instead of side-by-side
+   with everything else in the row, each with a compact label so it's clear which switch is which
+   (the original single Active-only switch had no label at all -- fine when it was the only one, not
+   once a 2nd switch sits right next to it). .form-switch-sm is this app's own -- Bootstrap has no
+   built-in small switch size -- shrinking track/thumb/label together so 2 stacked switches don't
+   read as bulkier than the rest of this already-compact row. */
+/* 2026-09-02, explicit request: bulk grid entry for Attendance/Leave/Overtime (Manual Time Entry
+   page) -- see modals.php's own #bulkEntryModal comment for the full design. A dense, sticky-header
+   grid so a long list of rows stays scannable without the column headers scrolling out of view.
+   2026-09-02, same-day follow-up ("ปรับ Design ตรงตารางที่เพิ่มใหม่ ให้ดูเป็นเหมือน Design Excel มากขึ้น") --
+   real spreadsheet-style gridlines on every cell (Excel's own light gray, not Bootstrap's default
+   table border color), a shaded/bold header row, a genuine row-number gutter column (like Excel's
+   own leftmost row headers, populated by bulkEntryRenumberRows() in bulk-entry.js), and a visible
+   focus ring on whichever cell's input is currently active -- the same "which cell am I in" cue a
+   real spreadsheet always gives, which a plain Bootstrap form-control alone doesn't make obvious
+   inside a dense grid like this. */
+.bulk-entry-grid-wrap {
+    max-height: calc(100vh - 280px);
+    overflow-y: auto;
+    border: 1px solid #d0d0d0;
+}
+.bulk-entry-grid {
+    border-collapse: collapse;
+}
+.bulk-entry-grid th,
+.bulk-entry-grid td {
+    border: 1px solid #d9d9d9 !important;
+}
+.bulk-entry-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    white-space: nowrap;
+    background-color: #f3f3f3;
+    color: #495057;
+    font-weight: 600;
+}
+.bulk-entry-grid td {
+    min-width: 130px;
+    vertical-align: middle;
+    padding: 0.25rem 0.4rem;
+}
+.bulk-entry-grid tbody tr:nth-child(even) {
+    background-color: #fafafa;
+}
+.bulk-entry-grid .select2-container {
+    width: 100% !important;
+}
+/* The row-number gutter -- text-content set by bulkEntryRenumberRows(), styled like a spreadsheet's
+   own row header (shaded, centered, monospace, never directly editable). */
+.bulk-entry-grid-rownum {
+    width: 36px;
+    min-width: 36px !important;
+    text-align: center;
+    background-color: #f3f3f3;
+    color: #6c757d;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8125rem;
+    user-select: none;
+}
+/* A cell's own input/select getting focus reads as "the active cell" the same way a real
+   spreadsheet highlights one -- overrides Bootstrap's default focus shadow (too soft to notice in a
+   dense grid full of small inputs) with a solid, unmistakable border color instead. */
+.bulk-entry-grid td:has(:focus) {
+    outline: 2px solid #1a73e8;
+    outline-offset: -2px;
+}
+/* A row whose own save attempt failed (surfaced after clicking Save All, see
+   bulkEntryMarkRowFailed()) -- stays in the grid for the admin to fix and retry, visually flagged so
+   it doesn't blend in with the rows that already saved and were removed. */
+.bulk-entry-grid tr.bulk-entry-row-error {
+    background-color: #fdecea;
+}
+.bulk-entry-grid tr.bulk-entry-row-error td {
+    border-color: #f3c2bd !important;
+}
+.adr-variant-toggles {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+}
+.form-switch-sm .form-check-input {
+    width: 1.75rem;
+    height: 1rem;
+}
+.form-switch-sm .form-check-label {
+    font-size: .78rem;
+    margin-left: .25rem;
 }
 .adr-variant-main {
     flex: 1 1 320px;
@@ -1321,6 +1451,18 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     background-color: rgba(255, 153, 0, .12);
     cursor: pointer;
 }
+/* 2026-09-03, Platform Hardening Phase 2 -- Clear button row (clearBtn:true, public/js/input.js's
+   initDatepicker()), styled to match this datepicker's own brand theme instead of the library's
+   plain default text. */
+.datepicker tfoot tr th.clear {
+    color: #FF9900;
+    font-weight: 600;
+    cursor: pointer;
+}
+.datepicker tfoot tr th.clear:hover {
+    background-color: rgba(255, 153, 0, .12);
+    text-decoration: underline;
+}
 /* ==========================================================================
    Payroll Process "Station" bar + collapsible filter box.
    Adapted from Origami's own Process page (app/views/process.php,
@@ -1378,6 +1520,32 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .station-filter.collapsed .station-filter-toggle {
     color: #94a3b8;
+}
+/* 2026-09-02, Platform Hardening Phase 1.6, explicit request: "ปุ่ม Clear Filter ปัจจุบันแยกลอยออกมา
+   ต่างหาก...ให้เป็นส่วนหนึ่งของกรอบ/การ์ด Filter เอง" -- confirmed via audit: this WAS the standing,
+   intentional convention (CLAUDE.md documents it), copy-pasted at ~24 call sites as a sibling
+   `<div class="d-flex justify-content-end mb-3">` sitting AFTER `.station-filter`'s own closing tag
+   -- a real border/background gap, not just visual perception. This class replaces that ad-hoc
+   wrapper everywhere: negative margin-top pulls it flush against `.station-filter`'s own bottom
+   edge, matching border color on 3 sides (none on top, so the two read as one continuous box) and
+   rounded bottom corners only (radius must match `.station-filter`'s own 10px exactly or the
+   corners visibly mismatch). `.station-filter` itself keeps its own `margin-bottom` for spacing to
+   whatever comes after -- this row sits INSIDE that spacing envelope, not fighting it. Same "hidden
+   until a filter is actually active" convention as before, but now the CONTAINER hides (not just
+   the button inside it) so an inactive filter shows no visible seam/empty strip at all -- toggle
+   this class's own `d-none` alongside (not instead of) the Clear button's, see each page's own JS.
+   STANDING CONVENTION going forward: any NEW `.station-filter` gets one of these immediately after
+   it, not a bare `d-flex justify-content-end` again. */
+.station-filter-clear-row {
+    margin-top: -1px;
+    padding: 8px 16px;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    background: #fff;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .station-row {
@@ -1614,6 +1782,53 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     background-color: #fbfbfc;
 }
 
+/* 2026-09-02, explicit request: "หน้าจัดการสิทธิ์การใช้งาน ช่วยดูเรื่อง Design ให้อีกครั้ง" -- was a bare
+   Bootstrap .table.table-bordered with no dedicated styling at all, unlike every other data table on
+   this page's own module (.sync-detail-table above, .structure-tabs the module pills already reuse).
+   Same "grid to scan" treatment as .sync-detail-table: rounded/bordered container, firmer uppercase
+   header, zebra striping -- plus a sticky first column (the permission name) since a role list can
+   run wide enough to need horizontal scroll, and losing sight of which permission a checkbox belongs
+   to while scrolling sideways would defeat the point of the table. */
+.permission-matrix-table {
+    border: 1px solid #eee;
+    border-radius: 10px;
+}
+.permission-matrix-table thead th {
+    border-top: none;
+    border-bottom-width: 2px;
+    padding: 10px 14px;
+    font-size: 0.9583rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6c757d;
+    white-space: nowrap;
+}
+.permission-matrix-table tbody td {
+    padding: 10px 14px;
+    vertical-align: middle;
+}
+.permission-matrix-table tbody tr:nth-child(even) {
+    background-color: #fbfbfc;
+}
+.permission-matrix-table th:first-child,
+.permission-matrix-table td:first-child {
+    position: sticky;
+    left: 0;
+    background: inherit;
+    background-color: #fff;
+    z-index: 1;
+}
+.permission-matrix-table thead th:first-child {
+    background-color: #f8f9fa;
+}
+.permission-matrix-table tbody tr:nth-child(even) td:first-child {
+    background-color: #fbfbfc;
+}
+.permission-matrix-table .perm-role-select-all {
+    display: block;
+    margin: 0 auto 4px;
+}
+
 /* Per-employee card list (Pending Sync View modal, section 1) -- replaces an 11-column table.
    Color is reserved for status meaning only (the Mapped/Unmapped badge, SSO badge) -- every
    purely decorative icon here (bank, id-card) stays neutral text-muted so nothing competes with
@@ -1628,6 +1843,11 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-radius: 10px;
     padding: 14px 16px;
     background: #fff;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.sync-emp-card:hover {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    border-color: #ffd699;
 }
 .sync-emp-card-unmapped {
     border-color: #f3c2bd;
@@ -1762,6 +1982,43 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     --bs-btn-disabled-bg: #FF9900;
     --bs-btn-disabled-border-color: #FF9900;
     --bs-btn-focus-shadow-rgb: 255, 153, 0;
+}
+/* ==========================================================================
+   2026-09-02, Platform Hardening Phase 1.2, explicit request: "ลำดับปุ่ม: Save (ซ้าย) → Cancel
+   (ขวา)" -- an app-wide audit (Agent research, ~102 modals across 9 files) found the OPPOSITE was
+   the dominant pattern: Cancel/Close (data-bs-dismiss="modal") written first in markup, Save
+   written second -- Bootstrap's own .modal-footer is already `display:flex; justify-content:flex-
+   end`, so re-ordering visually via `order` fixes every STANDARD 2-button footer (Cancel + Save as
+   .modal-footer's own direct children, no wrapping div) app-wide with this ONE rule -- zero HTML
+   edits needed for the ~50+ modals that already have this plain shape, and any NEW modal written
+   the same natural way (Cancel first, Save second, matching every dismiss-button-first convention
+   this app already uses) gets the correct visual order automatically too. A footer with extra
+   content (a status label, wrapped buttons inside their own <div>, 3+ buttons) isn't a direct-child
+   match for this selector and needs its own manual placement -- those are reviewed individually,
+   not covered by this rule, see the Phase 1.2 audit notes in memory for the specific exceptions. */
+.modal-footer > [data-bs-dismiss="modal"] {
+    order: 2;
+}
+/* 2026-09-02, Platform Hardening Phase 1.2 follow-up -- widened from .btn-primary/.btn-warning
+   only to also cover .btn-danger/.btn-success, the affirmative-action color used in destructive-
+   confirm modals (Approve/Reject/Cancel Run/Mark Failed/Delete) -- those buttons were direct
+   children with no `order` applied, so they rendered in DOM order (dismiss button first, action
+   second) instead of action-first. Verified via a full-app grep that no OTHER .btn-danger/.btn-
+   success inside any .modal-footer would be wrongly reordered by this widening (only the 7 modals
+   this was meant to fix use those classes inside a footer at all). */
+.modal-footer > .btn-primary:not([data-bs-dismiss]),
+.modal-footer > .btn-warning:not([data-bs-dismiss]),
+.modal-footer > .btn-danger:not([data-bs-dismiss]),
+.modal-footer > .btn-success:not([data-bs-dismiss]) {
+    order: 1;
+}
+/* 2026-09-02, Platform Hardening Phase 1.2 follow-up -- rateVersionModal's "Back" button is a
+   step-back-within-the-modal action, not a dismiss (no data-bs-dismiss, would be wrong to add one
+   since it doesn't close the modal) -- with no order rule of its own it defaults to order:0, which
+   sorts BEFORE the Save button's order:1 in flex layout regardless of DOM position, so a plain
+   markup reorder alone can't fix it. Explicit order:2 puts it to the right of Save. */
+#btnBackToRateHistory {
+    order: 2;
 }
 /* ==========================================================================
    Payroll Run Detail — process timeline (per-record step tracker) + next-step banner.
@@ -2566,6 +2823,16 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .stat-card-purple .stat-card-icon { background: linear-gradient(135deg, #f1eaf9, #ded0f0); color: #6f42c1; }
 .stat-card-warning { border-left-color: #ffc107; }
 .stat-card-warning .stat-card-icon { background: linear-gradient(135deg, #fff8e1, #ffecb3); color: #a1750a; }
+/* 2026-09-02, explicit bug report: "สีแย่งกันไปหมด" (the Dashboard's own colors were competing) --
+   real collision found: the Dashboard's Active Employees card used `.stat-card-info` (cyan), but
+   the SAME cyan-family hue is already the Payroll Pipeline donut/timeline's own color for the
+   "approved" run state right next to it (see dashboard.js's own DASH_STATE_COLORS) -- an unrelated
+   headcount metric and a specific payroll-run state ended up reading as "the same color means two
+   different things" on one page. This gold tone (this app's own "gold accent" per CLAUDE.md's UI
+   convention, not used anywhere on the Dashboard before this) replaces it there instead of adding
+   yet another unrelated hue. */
+.stat-card-gold { border-left-color: #c9971c; }
+.stat-card-gold .stat-card-icon { background: linear-gradient(135deg, #fbf0d6, #f3dc9e); color: #8a6d1a; }
 
 /* ==========================================================================
    .card-surface -- used as the page-section card wrapper across this app (Payroll Process,
@@ -2620,6 +2887,9 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .row-type-icon.rt-3 { background: linear-gradient(135deg, #6366f1, #a5b4fc); }
 .row-type-icon.rt-4 { background: linear-gradient(135deg, #f04438, #fda29b); }
 .row-type-icon.rt-5 { background: linear-gradient(135deg, #0ba5ec, #7cd4fd); }
+/* 2026-09-02, probation_intern_expiring notification type -- 6th hue, teal, distinct from all 5
+   existing rt-1..rt-5 gradients above. */
+.row-type-icon.rt-6 { background: linear-gradient(135deg, #0d9488, #5eead4); }
 /* 2026-08-30, notifications.js's notification-bell dropdown (.nav-notif-item) already spaces its
    icon from the body text via flexbox `gap: 10px` -- .row-type-icon's own `margin-right: .6rem`
    (meant for inline "badge immediately followed by label text in the same flow" usage, like every
@@ -2673,9 +2943,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    surface itself stays a neutral, content-agnostic wrapper used all over the app for unrelated
    section cards, so it couldn't be the thing restyled here without changing dozens of other cards
    that have nothing to do with page titles. This is deliberately its own class instead.
-   STANDING CONVENTION, not a one-off: every page's top header block should use this pattern going
-   forward (only Employee List has been migrated to it so far -- retrofitting every other page is a
-   separate, larger pass, not done in this commit). Structure:
+   STANDING CONVENTION: every page's top header block uses this pattern (25 view files as of
+   2026-09-02) -- markup shape unchanged since 2026-08-19:
      <div class="page-header-card mb-4">
        <div class="page-header-card-icon"><i class="fa-solid fa-xxx"></i></div>
        <div class="page-header-card-body">
@@ -2683,63 +2952,52 @@ html[data-font-size="l"], html[data-font-size="l"] body {
          <p class="page-header-card-desc" data-i18n="...">Description</p>
        </div>
      </div>
-   Warm gradient background + a soft radial glow in the corner (brand orange, very low opacity) reads
-   as "this app's" header rather than a generic dashboard card; the icon is a solid orange-gradient
-   badge (reuses the same 135deg #ffab26->#FF9900 gradient already used for the profile-photo upload
-   badge/other brand accents elsewhere in this file) instead of the flat tinted square every other
-   icon-in-a-box on this site already uses, so it doesn't blend into every other "icon + label" element
-   on the page. Light-mode only, matching every other color in this file -- no dark-mode variants
-   exist anywhere in this stylesheet.
+   2026-09-02, Platform Hardening Phase 1.4, explicit request: "ดูเก่า...โมเดิร์นแต่ไม่ดูเป็น AI มากเกินไป
+   หลีกเลี่ยง gradient สีรุ้งฉูดฉาด, glass-blur เว่อร์, เงา neon" -- confirmed via a 4-way side-by-side
+   mockup (current + 3 proposals), user picked "Option A / Flat Accent": the old warm gradient
+   background + radial glow blob (a soft blurry corner glow behind a gradient is exactly the kind of
+   generic-SaaS-hero motif the request was naming) is GONE -- flat white surface, a solid 4px left
+   accent bar (reuses THIS app's own existing .border-start.border-4 convention, e.g.
+   .employee-payroll-participant-bar a few sections down in this file -- not a new pattern), and a
+   flat icon tile (solid tint, no gradient, no drop-shadow, smaller/tighter radius) instead of the
+   old glossy gradient badge. Zero markup change needed -- every one of the 25 existing
+   .page-header-card usages gets this automatically just by this CSS changing. Still light-mode only
+   (matches the rest of this stylesheet, no dark-mode variants exist anywhere in it).
    ========================================================================== */
 .page-header-card {
-    position: relative;
-    overflow: hidden;
     display: flex;
     align-items: center;
     gap: 1rem;
-    background: linear-gradient(135deg, #fff8ee 0%, #fff1dc 55%, #ffe8c4 100%);
-    border: 1px solid rgba(255, 153, 0, .18);
-    border-radius: 16px;
-    padding: 1.1rem 1.4rem;
-    box-shadow: 0 4px 16px rgba(255, 153, 0, .08);
-}
-.page-header-card::before {
-    content: '';
-    position: absolute;
-    top: -45%;
-    right: -8%;
-    width: 240px;
-    height: 240px;
-    background: radial-gradient(circle, rgba(255, 153, 0, .16), transparent 70%);
-    pointer-events: none;
+    background: #ffffff;
+    border: 1px solid #eef0f2;
+    border-left: 4px solid #FF9900;
+    border-radius: 8px;
+    padding: 1rem 1.3rem;
 }
 .page-header-card-icon {
-    position: relative;
-    z-index: 1;
-    width: 52px;
-    height: 52px;
-    min-width: 52px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #ffab26, #FF9900);
-    color: #fff;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 8px;
+    background: #fff2df;
+    color: #b45f00;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.35rem;
-    box-shadow: 0 4px 10px rgba(255, 153, 0, .35);
+    font-size: 1.15rem;
 }
 .page-header-card-body {
-    position: relative;
-    z-index: 1;
+    min-width: 0;
 }
 .page-header-card-title {
-    color: #4a3418;
+    color: #1f2430;
     font-weight: 700;
     margin: 0;
+    letter-spacing: -.005em;
 }
 .page-header-card-desc {
-    color: #8a6d47;
-    margin: .25rem 0 0;
+    color: #667085;
+    margin: .2rem 0 0;
 }
 
 /* ==========================================================================
@@ -2790,6 +3048,39 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .detail-section + .detail-section {
     margin-top: 1.75rem;
+}
+/* 2026-09-02, explicit request: "ปรับให้ตาราง กว้างเท่า card ของตั้งค่ารอบ ตอนนี้ตารางมี padding นิดหน่อย"
+   (Process Detail's #tb_run_detail employee table) -- both #runSettingsPanel and this table sit as
+   direct children of the same .detail-section (padding: 1.5rem above), so their outer box already
+   spans the same width -- the perceived mismatch is Bootstrap's own default per-cell horizontal
+   padding on the table's FIRST/LAST column insetting its content noticeably further from the
+   section's edge than #runSettingsPanel's own tighter p-3 border-to-content gap. Zeroes just the
+   outer edge (first/last cell of every row, both thead/tbody/tfoot) so the table's visible content
+   starts/ends flush with the card next to it, without touching padding between inner columns. */
+.rd-detail-table-flush > thead > tr > th:first-child,
+.rd-detail-table-flush > tbody > tr > td:first-child,
+.rd-detail-table-flush > tfoot > tr > th:first-child {
+    padding-left: 0;
+}
+.rd-detail-table-flush > thead > tr > th:last-child,
+.rd-detail-table-flush > tbody > tr > td:last-child,
+.rd-detail-table-flush > tfoot > tr > th:last-child {
+    padding-right: 0;
+}
+/* 2026-09-02, same-day follow-up: "ตอนนี้แน่นไปหมด และความกว้างไม่เท่าเพื่อน" -- this table grew to 12
+   columns (Code/Name split + a new Payment Method column, both added this same round) inside a
+   container that's only as wide as its own .detail-section/#runSettingsPanel sibling. Bootstrap's
+   default (auto) table layout responds to "not enough room" by silently SHRINKING every column
+   (badges/buttons packed edge-to-edge, exactly the "แน่น" complaint) instead of the table simply
+   scrolling -- even though it's already wrapped in .table-responsive (overflow-x:auto), that only
+   kicks in once the table's own rendered width genuinely exceeds its container, which auto-shrink
+   was preventing from ever happening. min-width forces the browser to keep every column at a sane
+   natural size and let the WRAPPER scroll horizontally instead -- the correct trade for a table this
+   dense, matching this app's own established "no DataTables scrollX, just .table-responsive as the
+   narrow-viewport fallback" convention (see CLAUDE.md), just given a floor low enough not to force
+   scrolling on every normal desktop width. */
+.rd-detail-table-flush {
+    min-width: 1180px;
 }
 /* ==========================================================================
    Approval Workflow editor (public/js/setup/approval-workflow.js) -- redesign (2026-08-23,
@@ -5158,6 +5449,42 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 
 /* ==========================================================================
+   Circular table row-action buttons -- 2026-09-02, explicit request: "ปุ่มที่อยู่ในตารางทุกปุ่ม ปรับจาก
+   button group ที่อยู่ติดกันให้เป็นปุ่มวงกลมครับ เริ่มจาก employee ก่อนครับ" -- replaces the OLD
+   `.btn-group border rounded-3 bg-white` (adjacent buttons sharing one bordered rectangle, separated
+   by `border-start`) convention for DataTable ROW actions specifically (Edit/Delete/Sync/etc. inside
+   a row's own Action column) -- NOT the toolbar "Add" button injected into `.dt-search` (unrelated,
+   untouched), and NOT every OTHER `.btn-group` in the app (modal footers, segmented toggles) -- this
+   is scoped to row-action button clusters only. Rolling out page by page, starting with Employee
+   List per the request's own wording -- other pages still use the old grouped style until they're
+   migrated too, so both conventions coexist for now; don't "fix" an un-migrated page's row actions
+   as a drive-by, that's this rollout's own explicit scope, not a bug. Wrap the buttons in a plain
+   `<div class="d-flex gap-1 justify-content-center">` (no shared border/background container
+   anymore, replaces `.btn-group border rounded-3 bg-white`) and drop `border-start`/`py-1` from each
+   button (no longer meaningful once they're not touching) -- keep the existing `btn btn-link
+   text-{color}` classes for icon color, just add `.btn-circle-action` alongside them. */
+.btn-circle-action {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+.btn-circle-action:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(16, 24, 40, .15);
+    background-color: #f9fafb;
+}
+.btn-circle-action i {
+    font-size: .85rem;
+}
+
+/* ==========================================================================
    Excel-style per-column header filter (public/js/table-column-filter.js) -- 2026-08-27, explicit
    request: "ในตารางทุกตาราง ใน thead ของแต่ละ Column เพิ่มให้สามารถ Filter ได้...เหมือนกับ Excel".
    Proof-of-concept wired into Employee List first -- see that JS file's own docblock.
@@ -5456,6 +5783,19 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    page needed: a generic panel wrapper (.dash-section-card) and a Quick Links tile
    grid (.dash-quick-link).
    ========================================================================== */
+/* 2026-09-02, explicit request: "หน้า Dashboard อยากให้เพิ่มกราฟ" -- Chart.js canvases, dashboard.js
+   own docblock. Fixed-size wrapper so the donut never fights the station-row for width on a narrow
+   viewport (it simply wraps below via the flex-wrap on its own parent, not shrunk in place). */
+.dash-pipeline-donut-wrap {
+    width: 110px;
+    height: 110px;
+    flex-shrink: 0;
+}
+.dash-chart-wrap {
+    position: relative;
+    height: 220px;
+    padding: 4px 2px;
+}
 .dash-section-card {
     background: #fff;
     border: 1px solid #eef0f2;
@@ -5614,9 +5954,20 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    subtle-badge family (draft=secondary/pending=warning/approved=info/paid=success/locked=dark) so
    the palette reads as one consistent "this is what each state means" language across the whole
    page, including the mini per-run timeline below. Scoped to #dashStationRow so Payroll Process's
-   real interactive filter row elsewhere in the app is untouched. */
+   real interactive filter row elsewhere in the app is untouched.
+   2026-09-02, real bug found and fixed (explicit report: "บางจุดไม่เข้าใจ" -- these cards used
+   .station-card, which looks exactly like Payroll Process's own clickable filter chevrons (same
+   pointer-cursor/hover affordance from the shared base class), but used to be plain non-interactive
+   `<div>`s here -- `cursor:default` below was added specifically to stop them from LOOKING
+   clickable when they did nothing. They're real `<a>` links to Payroll Process's own matching
+   station filter now (see dashboard.php's own comment on this same markup), so the pointer cursor
+   is honest again -- `cursor:default` removed, and `text-decoration:none` added since these are
+   anchors now, not divs. */
 #dashStationRow .station-card {
-    cursor: default;
+    text-decoration: none;
+}
+#dashStationRow .station-card:hover {
+    text-decoration: none;
 }
 #dashStationRow .station-card[data-state="draft"] { background: #e2e3e5; color: #41464b; }
 #dashStationRow .station-card[data-state="draft"]::after { border-left-color: #e2e3e5; }
@@ -6179,4 +6530,15 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     display: flex;
     align-items: center;
     gap: .4rem;
+}
+
+/* 2026-09-03, Platform Hardening Phase 5B -- small inline thumbnail beside an Employee Documents
+   list row's filename, image-mime rows only (see ThumbnailGenerator's own docblock). */
+.doc-row-thumb {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    border-radius: 4px;
+    vertical-align: middle;
+    border: 1px solid #e0e0e0;
 }

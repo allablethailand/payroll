@@ -46,6 +46,11 @@
     $router->get('api/user-preference.get', 'UserPreferenceController@get');
     $router->post('api/user-preference.save', 'UserPreferenceController@save');
     $router->get('employees', 'EmployeeController@index');
+    // 2026-09-02, 3-way Employee submenu split -- registered here (before 'employees/{id}' further
+    // below) since Router::dispatch() matches routes in registration order and 'employees/{id}'s
+    // own pattern ('([^/]+)') would otherwise swallow these two literal segments first.
+    $router->get('employees/login-history', 'EmployeeController@loginHistory');
+    $router->get('employees/reports', 'EmployeeController@reports');
     $router->get('/payroll-process', 'PayrollController@index');
     $router->get('/payroll-process/{id}', 'PayrollController@detail');
     $router->post('api/payroll-run.options', 'PayrollController@options');
@@ -75,6 +80,10 @@
     // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9a).
     $router->post('api/payroll-run.statutory-line-override.save', 'PayrollController@statutoryLineOverrideSave');
     $router->post('api/payroll-run.statutory-line-override.remove', 'PayrollController@statutoryLineOverrideRemove');
+    // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6.
+    $router->get('api/payroll-run.recurring-deduction-destinations-for-employee', 'PayrollController@recurringDeductionDestinationsForEmployee');
+    $router->post('api/payroll-run.recurring-deduction-destination-override.save', 'PayrollController@recurringDeductionDestinationOverrideSave');
+    $router->post('api/payroll-run.recurring-deduction-destination-override.remove', 'PayrollController@recurringDeductionDestinationOverrideRemove');
     $router->get('api/payroll-run.attendance-data-for-employee', 'PayrollController@attendanceDataForEmployee');
     $router->post('api/payroll-run.attendance-override.save', 'PayrollController@attendanceOverrideSave');
     $router->post('api/payroll-run.attendance-override.remove', 'PayrollController@attendanceOverrideRemove');
@@ -118,7 +127,13 @@
     $router->get('api/payroll-cycle.get', 'PayrollConfigurationController@cycleGet');
     $router->get('api/payroll-cycle.suggest-period', 'PayrollConfigurationController@cycleSuggestPeriod');
     $router->post('api/payroll-cycle.save', 'PayrollConfigurationController@cycleSave');
+    $router->post('api/payroll-cycle.save-bank-accounts', 'PayrollConfigurationController@cycleSaveBankAccounts');
     $router->post('api/payroll-cycle.delete', 'PayrollConfigurationController@cycleDelete');
+    $router->post('api/payroll-cycle.toggle-status', 'PayrollConfigurationController@cycleToggleStatus');
+    // 2026-09-02, explicit request: payment method type (transfer/cash/check/mixed) -- shared
+    // options endpoint (master_payment_methods is global data), used by both the Cycle form's
+    // own "default payment method" picker and the Employee page's Employment-tab picker.
+    $router->post('api/payment-method.options', 'PayrollConfigurationController@paymentMethodOptions');
     $router->post('api/ped-type.source-event-options', 'PayrollConfigurationController@pedSourceEventOptions');
     $router->post('api/ped-type.list', 'PayrollConfigurationController@pedTypeList');
     $router->post('api/ped-type.column-values', 'PayrollConfigurationController@pedTypeColumnValues');
@@ -140,6 +155,7 @@
     $router->get('api/statutory-item.get', 'TaxStatutoryController@itemGet');
     $router->post('api/statutory-item.save', 'TaxStatutoryController@itemSave');
     $router->post('api/statutory-item.delete', 'TaxStatutoryController@itemDelete');
+    $router->post('api/statutory-item.toggle-status', 'TaxStatutoryController@itemToggleStatus');
     $router->get('api/statutory-item.rate-history.list', 'TaxStatutoryController@rateHistoryList');
     $router->get('api/statutory-item.rate-history.get', 'TaxStatutoryController@rateHistoryGet');
     $router->post('api/statutory-item.rate-history.save', 'TaxStatutoryController@rateHistorySave');
@@ -149,9 +165,12 @@
     $router->get('api/company-statutory-setting.get', 'TaxStatutoryController@companySettingGet');
     $router->post('api/company-statutory-setting.save', 'TaxStatutoryController@companySettingSave');
     $router->post('api/company-statutory-setting.reset', 'TaxStatutoryController@companySettingReset');
+    $router->post('api/company-statutory-setting.toggle-status', 'TaxStatutoryController@companySettingToggleStatus');
     // Statutory document format version selector (2026-08-29) -- Tax & Statutory settings, 3rd tab.
     $router->get('api/statutory-format-version.settings', 'StatutoryFormatVersionController@settings');
     $router->post('api/statutory-format-version.save', 'StatutoryFormatVersionController@save');
+    $router->get('api/nonresident-tax-setting.get', 'NonResidentTaxSettingController@get');
+    $router->post('api/nonresident-tax-setting.save', 'NonResidentTaxSettingController@save');
     $router->get('setup/document-approval', 'DocumentApprovalController@index');
     $router->get('api/document-numbering.list', 'DocumentNumberingController@list');
     $router->post('api/document-numbering.save', 'DocumentNumberingController@save');
@@ -210,6 +229,9 @@
     // 2026-08-31, explicit request: Permissions moved out of Company Profile's Organizational
     // Structure tab into its own standalone top-level page.
     $router->get('setup/permissions', 'PermissionController@index');
+    // 2026-09-03, Platform Hardening Phase 3 Stage 5 -- Employee Detail's "Permission Overrides" tab.
+    $router->get('api/permission-employee-overrides.get', 'PermissionController@employeeOverridesGet');
+    $router->post('api/permission-employee-overrides.save', 'PermissionController@employeeOverridesSave');
     $router->get('payslip-template/edit/{key}', 'PayslipTemplateController@editPage');
     $router->post('api/payslip-template.field-options', 'PayslipTemplateController@fieldTypeOptions');
     $router->post('api/payslip-template.assignable-options', 'PayslipTemplateController@assignableOptions');
@@ -287,25 +309,45 @@
     // 2026-08-31, explicit request: per-run cash-vs-bank breakdown + per-employee paid status.
     $router->get('api/payroll-run-cash-payment.list', 'PayrollRunCashPaymentController@list');
     $router->post('api/payroll-run-cash-payment.set-status', 'PayrollRunCashPaymentController@setStatus');
+    // 2026-09-02, multi-bank-account payroll -- "Bank Account Assignment" tab.
+    $router->get('api/payroll-run-employee-bank-account.list', 'PayrollRunEmployeeBankAccountController@list');
+    $router->post('api/payroll-run-employee-bank-account.save', 'PayrollRunEmployeeBankAccountController@save');
+    $router->post('api/payroll-run-employee-bank-account.remove', 'PayrollRunEmployeeBankAccountController@remove');
+    // 2026-09-02, Deduction Destination & Third-Party Remittance.
+    $router->post('api/payment-destination.options', 'PaymentDestinationController@options');
+    $router->get('api/payroll-remittance.list', 'PayrollRemittanceController@list');
+    $router->get('api/payroll-remittance.items', 'PayrollRemittanceController@items');
+    $router->post('api/payroll-remittance.mark-transferred', 'PayrollRemittanceController@markTransferred');
+    $router->post('api/payroll-remittance.confirm-success', 'PayrollRemittanceController@confirmSuccess');
+    $router->post('api/payroll-remittance.mark-failed', 'PayrollRemittanceController@markFailed');
+    $router->post('api/payroll-remittance.retry', 'PayrollRemittanceController@retry');
     $router->get('manual-entry', 'ManualEntryController@index');
     $router->get('api/manual-attendance.list', 'ManualEntryController@attendanceList');
     $router->get('api/manual-attendance.get', 'ManualEntryController@attendanceGet');
     $router->post('api/manual-attendance.save', 'ManualEntryController@attendanceSave');
     $router->post('api/manual-attendance.delete', 'ManualEntryController@attendanceDelete');
+    $router->post('api/manual-attendance.bulk-save', 'ManualEntryController@attendanceBulkSave');
     $router->get('api/manual-leave.list', 'ManualEntryController@leaveList');
     $router->get('api/manual-leave.get', 'ManualEntryController@leaveGet');
     $router->post('api/manual-leave.save', 'ManualEntryController@leaveSave');
     $router->post('api/manual-leave.delete', 'ManualEntryController@leaveDelete');
+    $router->post('api/manual-leave.bulk-save', 'ManualEntryController@leaveBulkSave');
     $router->get('api/manual-overtime.list', 'ManualEntryController@overtimeList');
     $router->get('api/manual-overtime.get', 'ManualEntryController@overtimeGet');
     $router->post('api/manual-overtime.save', 'ManualEntryController@overtimeSave');
     $router->post('api/manual-overtime.delete', 'ManualEntryController@overtimeDelete');
+    $router->post('api/manual-overtime.bulk-save', 'ManualEntryController@overtimeBulkSave');
     $router->get('api/manual-import.template', 'ManualEntryController@importTemplate');
     $router->post('api/manual-import.preview', 'ManualEntryController@importPreview');
     $router->post('api/manual-import.commit', 'ManualEntryController@importCommit');
     $router->get('api/manual-import.batch-list', 'ManualEntryController@importBatchList');
     $router->get('api/manual-import.batch-detail', 'ManualEntryController@importBatchDetail');
     $router->get('api/manual-import.activity-log', 'ManualEntryController@importActivityLog');
+    $router->get('api/manual-import.download-original', 'ManualEntryController@downloadImportOriginal');
+
+    // Platform Hardening Phase 6 pilot -- field-level audit log viewer.
+    $router->get('audit-log', 'AuditLogController@index');
+    $router->get('api/audit-log.list', 'AuditLogController@list');
     // 2026-08-30, Phase 7 (T037/T038/T039) -- session-guard.js's periodic heartbeat poll.
     $router->get('api/session.heartbeat', 'SessionController@heartbeat');
     $router->post('api/ot-rate.scope-options', 'SetupRulesController@otScopeOptions');
@@ -364,6 +406,14 @@
     $router->post('api/employee.list', 'EmployeeController@list');
     $router->post('api/employee.recheck-list', 'EmployeeController@recheckList');
     $router->post('api/employee.standing-summary-list', 'EmployeeController@standingSummaryList');
+    $router->post('api/employee.headcount-movement-report', 'EmployeeController@headcountMovementReport');
+    $router->post('api/employee.expiry-report', 'EmployeeController@expiryReport');
+    $router->post('api/employee.probation-report', 'EmployeeController@probationReport');
+    $router->post('api/employee.statutory-enrollment-report', 'EmployeeController@statutoryEnrollmentReport');
+    $router->post('api/employee.headcount-structure-report', 'EmployeeController@headcountStructureReport');
+    $router->post('api/employee.tenure-report', 'EmployeeController@tenureReport');
+    $router->post('api/employee.birthday-anniversary-report', 'EmployeeController@birthdayAnniversaryReport');
+    $router->post('api/employee.completeness-overview-report', 'EmployeeController@completenessOverviewReport');
     $router->post('api/employee.station-counts', 'EmployeeController@stationCounts');
     $router->post('api/employee.payroll-participant.set', 'EmployeeController@setPayrollParticipant');
     $router->post('api/employee.list-column-values', 'EmployeeController@listColumnValues');
@@ -395,7 +445,16 @@
     $router->post('api/company.get', 'CompanyProfileController@get');
     $router->post('api/company.save', 'CompanyProfileController@save');
     $router->post('api/company.upload-logo', 'CompanyProfileController@uploadLogo');
+    // 2026-09-02, real Origami company.php endpoint confirmed live -- see CompanySyncModel's own docblock.
+    $router->post('api/company.sync-origami', 'CompanyProfileController@syncFromOrigami');
     $router->post('api/company.upload-signature', 'CompanyProfileController@uploadSignature');
+    // 2026-09-02, "Data Sync" page -- UI trigger for MasterDataSyncOrchestrator (department/
+    // position/shift/branch/team/holiday), see MasterDataSyncController's own docblock.
+    $router->get('setup/data-sync', 'MasterDataSyncController@index');
+    $router->post('api/master-data-sync.status', 'MasterDataSyncController@status');
+    $router->post('api/master-data-sync.sync-one', 'MasterDataSyncController@syncOne');
+    $router->post('api/master-data-sync.sync-all', 'MasterDataSyncController@syncAll');
+    $router->post('api/master-data-sync.history', 'MasterDataSyncController@history');
     $router->post('api/country.get', 'MasterController@getMaster');
     $router->post('api/nationality.get', 'MasterController@getMaster');
     $router->post('api/religion.get', 'MasterController@getMaster');
@@ -420,6 +479,14 @@
     $router->post('api/structure.rank.delete', 'CompanyProfileController@rankDelete');
     $router->post('api/structure.team.save', 'CompanyProfileController@teamSave');
     $router->post('api/structure.team.delete', 'CompanyProfileController@teamDelete');
+
+    // 2026-09-02, Platform Hardening Phase 1.1 -- instant-AJAX status toggle per structure type.
+    $router->post('api/structure.branch.toggle-status', 'CompanyProfileController@branchToggleStatus');
+    $router->post('api/structure.role.toggle-status', 'CompanyProfileController@roleToggleStatus');
+    $router->post('api/structure.department.toggle-status', 'CompanyProfileController@departmentToggleStatus');
+    $router->post('api/structure.position.toggle-status', 'CompanyProfileController@positionToggleStatus');
+    $router->post('api/structure.rank.toggle-status', 'CompanyProfileController@rankToggleStatus');
+    $router->post('api/structure.team.toggle-status', 'CompanyProfileController@teamToggleStatus');
     // 2026-08-31, explicit request: generic Assign Employees modal, shared across every structure
     // type (see CompanyProfileModel's own EMPLOYEE_FK_COLUMN docblock) -- `type` travels as a
     // request param, one shared endpoint per action instead of 6 per-type routes.
@@ -432,6 +499,8 @@
     $router->post('api/role.get', 'MasterController@getMaster');
     $router->post('api/position.get', 'MasterController@getMaster');
     $router->post('api/team.get', 'MasterController@getMaster');
+    // 2026-09-02, Origami candidates.php field batch: employment_type_id dropdown (Employee Detail).
+    $router->post('api/employment-type.get', 'MasterController@getMaster');
     $router->post('api/branch.get', 'MasterController@getMaster');
     // 2026-08-31, explicit request: Assign Employees modal's destination-master Select2 -- the 2
     // assignable types that never had a select2-ajax dropdown-options endpoint before (see
@@ -444,6 +513,7 @@
     $router->post('api/bank_account.column-values', 'BankAccountController@columnValues');
     $router->post('api/bank_account.save', 'BankAccountController@save');
     $router->post('api/bank_account.delete', 'BankAccountController@delete');
+    $router->post('api/bank_account.toggle-status', 'BankAccountController@toggleStatus');
     // Bank File Format settings (2026-08-29) -- sub-tab of the same Bank Accounts settings page.
     $router->get('api/bank-file-format.list', 'BankFileFormatController@list');
     $router->get('api/bank-file-format.get', 'BankFileFormatController@get');
@@ -454,6 +524,9 @@
     $router->get('api/bank-file-format.edit-logs', 'BankFileFormatController@editLogs');
     $router->get('api/employee.get', 'EmployeeController@get');
     $router->post('api/employee.save', 'EmployeeController@save');
+    $router->post('api/employee.payment-account-options', 'EmployeeController@paymentAccountOptions');
+    $router->get('api/employee.payment-method-lines', 'EmployeeController@paymentMethodLines');
+    $router->get('api/employee.payroll-policy-settings', 'EmployeeController@payrollPolicySettings');
     $router->post('api/employee.upload-signature', 'EmployeeController@uploadSignature');
     $router->post('api/employee.upload-photo', 'EmployeeController@uploadPhoto');
     $router->post('api/employee.delete', 'EmployeeController@delete');

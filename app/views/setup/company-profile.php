@@ -92,6 +92,17 @@
     </div>
     <div class="tab-content mb-5">
         <div class="tab-pane fade show active" id="cpSub-info-pane" role="tabpanel" aria-labelledby="cpSub-info-tab" tabindex="0">
+            <!-- 2026-09-02, real Origami `GET /api/hr/company` endpoint confirmed live -- always
+                 overwrites (Origami is the data owner, confirmed via AskUserQuestion), so this is
+                 always shown rather than gated behind a link-status check client-side; the backend
+                 (CompanySyncModel::sync()) returns a clear not-connected/not-linked message either
+                 way, same "backend decides, don't guess client-side" convention as every other
+                 Origami-gated action in this app. -->
+            <div class="d-flex justify-content-end mb-3">
+                <button type="button" class="btn btn-outline-brand btn-sm" id="btnSyncCompanyOrigami">
+                    <i class="fa-solid fa-rotate me-1"></i><span data-i18n="sync_from_origami">Sync from Origami</span>
+                </button>
+            </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
                     <label class="form-label">
@@ -109,7 +120,7 @@
                     </label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="global_tax_id">
+                    <input type="text" class="form-control required" name="global_tax_id" data-i18n="tax_id_placeholder" placeholder="e.g., 1234567890123">
                 </div>
             </div>
             <div class="row">
@@ -120,7 +131,7 @@
                     </label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="company_legal_name">
+                    <input type="text" class="form-control required" name="company_legal_name" data-i18n="company_legal_name_placeholder" placeholder="e.g., ABC Company Limited">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label">
@@ -129,7 +140,7 @@
                     </label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="local_name">
+                    <input type="text" class="form-control required" name="local_name" data-i18n="company_local_name_placeholder" placeholder="e.g., บริษัท เอบีซี จำกัด">
                 </div>
                 <!-- 2026-08-29, follow-up to the Annual Income Summary report request: "การตั้งค่ารอบปี
                      ให้เอาไปไว้ในส่วนของการตั้งค่า" -- a single company-wide value (like registered_country
@@ -156,7 +167,7 @@
                     </label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="number" class="form-control" name="prorate_divisor_days" id="prorate_divisor_days" min="1" max="31" value="30">
+                    <input type="number" class="form-control" name="prorate_divisor_days" id="prorate_divisor_days" min="1" max="31" value="30" data-i18n="days_placeholder" placeholder="e.g., 1">
                     <div class="form-text" data-i18n="prorate_divisor_days_hint">Used to calculate partial-month pay when an employee joins or leaves mid-period (Thai labor law: 30).</div>
                 </div>
             </div>
@@ -169,7 +180,7 @@
                     </label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control required" name="address_line_1">
+                    <input type="text" class="form-control required" name="address_line_1" data-i18n="address_line_1_placeholder" placeholder="House no., building, street">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label">
@@ -177,7 +188,7 @@
                     </label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <input type="text" class="form-control" name="address_line_2">
+                    <input type="text" class="form-control" name="address_line_2" data-i18n="address_line_2_placeholder" placeholder="Sub-district, district, province">
                 </div>
             </div>
             <div class="row">
@@ -188,7 +199,7 @@
                     </label>
                 </div>
                 <div class="col-sm-4 mt-3 position-relative">
-                    <input type="text" class="form-control required autocomplete-address" id="search_address" autocomplete="off">
+                    <input type="text" class="form-control required autocomplete-address" id="search_address" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
                     <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
                     <input type="hidden" name="master_address_id" class="master-address-id-field" id="master_address_id">
                     <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
@@ -227,7 +238,7 @@
                             </label>
                         </div>
                         <div class="col-sm-6">
-                            <input type="text" class="form-control required" name="authorized_signatory_name">
+                            <input type="text" class="form-control required" name="authorized_signatory_name" data-i18n="authorized_signatory_name_placeholder" placeholder="e.g., Somchai Jaidee">
                         </div>
                     </div>
                 </div>
@@ -260,6 +271,7 @@
                                     </button>
                                     <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
                                     <input type="hidden" id="cp_logo_path" name="logo_path">
+                                    <input type="hidden" id="cp_logo_file_size" name="logo_file_size">
                                 </div>
                             </div>
                         </div>
@@ -301,6 +313,7 @@
                                     </button>
                                     <input type="file" id="cp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
                                     <input type="hidden" id="cp_signature_path" name="signature_path">
+                                    <input type="hidden" id="cp_signature_file_size" name="signature_file_size">
                                 </div>
                             </div>
                         </div>
@@ -319,7 +332,7 @@
              comment). -->
     </div>
     <div class="text-end">
-        <button type="button" class="btn btn-warning save-company-profile"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
+        <button type="button" class="btn btn-primary save-company-profile"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
         <button type="button" class="btn btn-light cancel-company-profile" data-i18n="cancel">Cancel</button>
     </div>
     </div>
@@ -351,6 +364,7 @@
         <table class="table table-striped table-hover" id="tb_bank_account">
             <thead>
                 <tr>
+                    <th data-i18n="status">Status</th>
                     <th data-i18n="bank_name">Bank</th>
                     <th data-i18n="account_no">Account No.</th>
                     <th data-i18n="account_name">Account Name</th>
@@ -358,7 +372,6 @@
                     <th data-i18n="branch_name">Branch</th>
                     <th data-i18n="account_type">Type</th>
                     <th data-i18n="default">Default</th>
-                    <th data-i18n="status">Status</th>
                     <th style="width: 120px;"></th>
                 </tr>
             </thead>
@@ -402,7 +415,7 @@
                         </div>
                         <div class="col-sm-2" id="bffDelimiterCharWrap">
                             <label class="form-label small" data-i18n="delimiter_char">Delimiter</label>
-                            <input type="text" class="form-control form-control-sm" id="bffDelimiterChar" maxlength="5" value=",">
+                            <input type="text" class="form-control form-control-sm" id="bffDelimiterChar" maxlength="5" value="," data-i18n="bff_field_pad_char_placeholder" placeholder="e.g., 0">
                         </div>
                         <div class="col-sm-2">
                             <label class="form-label small" data-i18n="line_ending">Line Ending</label>
@@ -436,7 +449,7 @@
                         </div>
                     </div>
                     <div class="text-end mt-3">
-                        <button type="button" class="btn btn-warning btn-sm" id="bffSaveConfigBtn"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
+                        <button type="button" class="btn btn-primary btn-sm" id="bffSaveConfigBtn"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
                     </div>
                 </div>
                 <div class="card-surface p-3">
@@ -532,14 +545,14 @@
         <table class="table table-striped table-hover" id="tb_branch">
             <thead>
                 <tr>
+                    <th data-i18n="status">Status</th>
                     <th data-i18n="branch_code">Branch Code</th>
                     <th data-i18n="branch_name">Branch Name</th>
-                    <th data-i18n="tax_branch_id">Tax Branch ID</th> 
+                    <th data-i18n="tax_branch_id">Tax Branch ID</th>
                     <th data-i18n="sso_branch_code">SSO Code</th>
                     <th data-i18n="default">Default</th>
                     <th data-i18n="location">Location</th>
                     <th data-i18n="lock_stamp">Lock Stamp</th>
-                    <th data-i18n="status">Status</th>
                     <th style="width: 120px;"></th>
                 </tr>
             </thead>
@@ -551,9 +564,9 @@
         <table class="table table-striped table-hover" id="tb_role">
             <thead>
                 <tr>
+                    <th data-i18n="status">Status</th>
                     <th data-i18n="role_name">Role Name</th>
                     <th data-i18n="salary_access">Salary Access</th>
-                    <th data-i18n="status">Status</th>
                     <th style="width: 120px;"></th>
                 </tr>
             </thead>
@@ -565,10 +578,10 @@
         <table class="table table-striped table-hover" id="tb_department">
             <thead>
                 <tr>
+                    <th data-i18n="status">Status</th>
                     <th data-i18n="department_code">Department Code</th>
                     <th data-i18n="department_name">Department Name</th>
                     <th data-i18n="cost_center">Cost Center</th>
-                    <th data-i18n="status">Status</th>
                     <th style="width: 120px;"></th>
                 </tr>
             </thead>
@@ -580,10 +593,10 @@
         <table class="table table-striped table-hover" id="tb_position">
             <thead>
                 <tr>
+                    <th data-i18n="status">Status</th>
                     <th data-i18n="position_code">Position Code</th>
                     <th data-i18n="position_name">Position Name</th>
                     <th data-i18n="allowance_base">Allowance (Base)</th>
-                    <th data-i18n="status">Status</th>
                     <th style="width: 120px;"></th>
                 </tr>
             </thead>
@@ -595,11 +608,11 @@
         <table class="table table-striped table-hover" id="tb_rank">
             <thead>
                 <tr>
+                    <th data-i18n="status">Status</th>
                     <th data-i18n="rank_code">Rank Code</th>
                     <th data-i18n="rank_name">Rank Name</th>
                     <th data-i18n="salary_range">Salary Range (Min - Max)</th>
                     <th data-i18n="ot_eligible">OT Eligible</th>
-                    <th data-i18n="status">Status</th>
                     <th style="width: 120px;"></th>
                 </tr>
             </thead>
@@ -635,10 +648,10 @@
         <table class="table table-striped table-hover" id="tb_team">
             <thead>
                 <tr>
+                    <th data-i18n="status">Status</th>
                     <th data-i18n="team_code">Team Code</th>
                     <th data-i18n="team_name">Team Name</th>
                     <th data-i18n="team_client_name">Client / Project</th>
-                    <th data-i18n="status">Status</th>
                     <th style="width: 120px;"></th>
                 </tr>
             </thead>

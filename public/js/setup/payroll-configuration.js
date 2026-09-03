@@ -24,35 +24,29 @@ function statutoryReportTag(row) {
 }
 // 2026-08-30 (Phase 2, T014, explicit request: "ย้าย 'สถานะ' ออกจาก modal ไปไว้ที่แถวในตาราง") -- was a
 // plain read-only badge; the Add/Edit modal no longer has a Status field at all (see the view/JS
-// changes this same round), so this row-level switch is now the ONLY way to change it. Same
-// `.form-check.form-switch` markup convention as setup-rules.js's own statusSwitch() for
-// Holiday/Leave Type/etc, reused here rather than duplicated as a shared global -- this file has no
-// dependency on setup-rules.js being loaded.
-function toggleItemStatus(id) {
-    $.ajax({
-        url: `${BASE_URL}/api/ped-type.toggle-status`, method: 'POST', contentType: 'application/json',
-        data: JSON.stringify({ id }), dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
-            // Both tables share the same underlying catalog -- only one of them actually has this
-            // row, but reloading whichever is currently initialized is cheap and avoids needing to
-            // know which table (earning/deduction) this id belongs to.
-            if (tb_earning_type) tb_earning_type.ajax.reload(null, false);
-            if (tb_deduction_type) tb_deduction_type.ajax.reload(null, false);
-        },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred.'); }
-    });
-}
+// changes this same round), so this row-level switch is now the ONLY way to change it.
+// 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
+// .status-toggle-switch handler in app.js (confirm-before-deactivate + success toast + revert-on-
+// failure, none of which this hand-rolled version had) -- see that function's own docblock. The old
+// per-row `onclick="toggleItemStatus(id)"` handler is gone; app.js's shared delegated handler covers
+// it, this file only needs to know how to reload afterward.
 function statusBadge(row) {
-    const isActive = row.status === 'active';
-    return `<div class="form-check form-switch d-flex justify-content-center m-0">
-        <input class="form-check-input" type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleItemStatus(${row.id})">
-    </div>`;
+    return renderStatusToggleHtml(row.id, row.status === 'active', '/api/ped-type.toggle-status');
 }
+// Both tables share the same underlying catalog -- only one of them actually has any one row, but
+// reloading whichever is currently initialized is cheap and avoids needing to know which table
+// (earning/deduction) a given toggle belongs to. Delegated + scoped to these 2 table ids so it
+// survives every ajax.reload() (only rows redraw, not the table element itself).
+$(document).on('statusToggle:success', '#tb_earning_type, #tb_deduction_type', function () {
+    if (tb_earning_type) tb_earning_type.ajax.reload(null, false);
+    if (tb_deduction_type) tb_deduction_type.ajax.reload(null, false);
+});
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group.
 function actionButtons(row) {
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-warning btn-edit-ped-type" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-ped-type" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-ped-type" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-ped-type" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 function injectAddButton(api, itemType, i18nKey, defaultLabel) {
@@ -88,7 +82,16 @@ function initEarningTypeTable() {
         processing: true,
         serverSide: true,
         responsive: true,
-        order: [[0, 'asc']],
+        // 2026-09-02, Platform Hardening Phase 1.1 follow-up (explicit request: finish repositioning
+        // the status switch to column 0 on every remaining table) -- default sort points to column 1
+        // (item_code) now that column 0 is the non-orderable status switch. This table's own backend
+        // sortColumns map (PayrollEarningDeductionTypeModel::list()) was ALREADY drifted from the
+        // real visible column layout before this change (a separate, pre-existing, documented bug --
+        // see project memory), so colIndex=1 there resolves to `item_name_th`, not `item_code` --
+        // the default sort on first page load is now by name instead of code. Deliberately not
+        // fixing that separate sortColumns map here (same "don't take on that bug as a prerequisite"
+        // decision already applied to Branch/Role/Department/Position/Rank/Team above).
+        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/ped-type.list`,
             type: 'POST',
@@ -98,6 +101,7 @@ function initEarningTypeTable() {
             }
         },
         columns: [
+            { data: null, orderable: false, render: (d, t, row) => statusBadge(row) },
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
             {
                 data: null,
@@ -112,7 +116,6 @@ function initEarningTypeTable() {
             },
             { data: 'calc_sso', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
             { data: 'calc_pf', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
-            { data: null, render: (d, t, row) => statusBadge(row) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
@@ -125,17 +128,17 @@ function initEarningTypeTable() {
             injectAddButton(self, 'earning', 'earning_type', 'Income Type');
             injectSeedDefaultsButton(self);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, server mode. Excludes the composite item-name+tags cell (1), the boolean
-            // calc_sso/calc_pf icons (4, 5), and actions (7). 2026-08-30 (T014): status (6) ALSO
-            // excluded now that it's an interactive switch, not a plain display value -- same
-            // exemption category ("interactive widget, not a filterable value") as Holiday/Leave
-            // Type's own status-switch columns already established.
+            // rollout, server mode. Excludes the interactive status SWITCH (0), the composite
+            // item-name+tags cell (2), the boolean calc_sso/calc_pf icons (5, 6), and actions (7).
+            // 2026-09-02, real bug found and fixed: indices shifted +1 (status switch moved to
+            // column 0, see the columns array's own comment above) -- same "indices never shifted
+            // when the status switch was inserted at column 0" bug as setup-rules.js's 5 tables.
             initExcelColumnFilters(self, {
                 mode: 'server',
                 columns: [
-                    { index: 0, key: 'item_code' },
-                    { index: 2, key: 'calculation_method' },
-                    { index: 3, key: 'tax_treatment' },
+                    { index: 1, key: 'item_code' },
+                    { index: 3, key: 'calculation_method' },
+                    { index: 4, key: 'tax_treatment' },
                 ],
                 fetchValues: function (key, done) {
                     $.ajax({
@@ -164,7 +167,9 @@ function initDeductionTypeTable() {
         processing: true,
         serverSide: true,
         responsive: true,
-        order: [[0, 'asc']],
+        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- same repositioning + same accepted
+        // default-sort side effect as initEarningTypeTable()'s own identical change just above.
+        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/ped-type.list`,
             type: 'POST',
@@ -174,6 +179,7 @@ function initDeductionTypeTable() {
             }
         },
         columns: [
+            { data: null, orderable: false, render: (d, t, row) => statusBadge(row) },
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
             {
                 data: null,
@@ -186,7 +192,6 @@ function initDeductionTypeTable() {
                     ? `<span class="badge bg-danger-subtle text-danger">${langData['impact_before_tax'] || 'Before Tax'}</span>`
                     : `<span class="badge bg-secondary-subtle text-secondary">${langData['impact_after_tax'] || 'After Tax'}</span>`
             },
-            { data: null, render: (d, t, row) => statusBadge(row) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
@@ -199,15 +204,16 @@ function initDeductionTypeTable() {
             injectAddButton(self, 'deduction', 'deduction_type', 'Deduction Type');
             injectSeedDefaultsButton(self);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, server mode. Excludes the composite item-name+tags cell (1) and actions (5).
-            // 2026-08-30 (T014): status (4) ALSO excluded now that it's an interactive switch, same
-            // reasoning as initEarningTypeTable()'s own identical change just above.
+            // rollout, server mode. Excludes the interactive status SWITCH (0), the composite
+            // item-name+tags cell (2), and actions (5).
+            // 2026-09-02, real bug found and fixed: indices shifted +1, same reasoning as
+            // initEarningTypeTable()'s own identical fix just above.
             initExcelColumnFilters(self, {
                 mode: 'server',
                 columns: [
-                    { index: 0, key: 'item_code' },
-                    { index: 2, key: 'calculation_method' },
-                    { index: 3, key: 'tax_deduction_impact' },
+                    { index: 1, key: 'item_code' },
+                    { index: 3, key: 'calculation_method' },
+                    { index: 4, key: 'tax_deduction_impact' },
                 ],
                 fetchValues: function (key, done) {
                     $.ajax({
@@ -404,8 +410,11 @@ $(document).ready(function () {
         initSelect2('#cutoff_day_of_week', { mode: 'static' });
         initSelect2('#payment_day_of_week', { mode: 'static' });
         initSelect2('#bank_file_format_id', { mode: 'ajax' });
-        initSelect2('#cycle_bank_account_id', { mode: 'ajax', allowClear: true });
-        initSelect2('#cycle_status', { mode: 'static' });
+        // 2026-09-02, multi-bank-account payroll -- the old single #cycle_bank_account_id select is
+        // gone, replaced by the checkbox list (rendered/collected directly, no select2 widget --
+        // see renderCycleBankAccountsList()/collectCycleBankAccounts()). Its default payment method
+        // picker is new.
+        initSelect2('#cycle_default_payment_method_id', { mode: 'ajax', allowClear: true });
     }
     // 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า" -- Attendance
     // Bonus/Ledger UI init removed along with their tabs/modals (see the removal comment on
@@ -444,6 +453,13 @@ function applyPolicyInternPayBasisFields(payBasis) {
 $(document).on('change', 'input[name="policyInternPayBasisRadio"]', function () {
     applyPolicyInternPayBasisFields($(this).val());
 });
+// 2026-09-02, Platform Hardening Phase 1.2 -- dirty-check baseline for the new Cancel button.
+let payrollPoliciesBaselineSnapshot = null;
+function refreshPayrollPoliciesBaseline() {
+    if (typeof snapshotFormState === 'function') {
+        payrollPoliciesBaselineSnapshot = snapshotFormState($('#policies-pane'));
+    }
+}
 function loadPayrollPolicies() {
     $.get(`${BASE_URL}/api/payroll-policy.get`, function (res) {
         if (res && res.status && res.data) {
@@ -457,6 +473,24 @@ function loadPayrollPolicies() {
             $('#policyInternBaseSalaryRatio').val(d.intern_base_salary_ratio !== null && d.intern_base_salary_ratio !== undefined ? d.intern_base_salary_ratio : '');
             $('#policyInternDeferPvd').prop('checked', !!d.intern_defer_pvd);
             $('#policyInternDeferRecurringEarning').prop('checked', !!d.intern_defer_recurring_earning);
+            $('#policyInternPeriodDays').val(d.intern_period_days !== null && d.intern_period_days !== undefined ? d.intern_period_days : '');
+            // 2026-09-02, explicit request: leave/OT rights during probation/internship -- the
+            // OT-eligible-default selects are TRI-STATE (null/0/1), populated via select2's own
+            // '' /1/0 values (data-option-values on the view's own markup) so 'not set' round-trips
+            // as a genuinely empty selection, not a false-y 0.
+            $('#policyProbationLeaveDaysLimit').val(d.probation_leave_days_limit !== null && d.probation_leave_days_limit !== undefined ? d.probation_leave_days_limit : '');
+            $('#policyAllowLeaveDuringProbation').prop('checked', d.allow_leave_during_probation !== false);
+            $('#policyProbationOtEligibleDefault').val(d.probation_ot_eligible_default === null || d.probation_ot_eligible_default === undefined ? '' : (d.probation_ot_eligible_default ? '1' : '0')).trigger('change');
+            $('#policyInternLeaveDaysLimit').val(d.intern_leave_days_limit !== null && d.intern_leave_days_limit !== undefined ? d.intern_leave_days_limit : '');
+            $('#policyAllowLeaveDuringIntern').prop('checked', d.allow_leave_during_intern !== false);
+            $('#policyInternOtEligibleDefault').val(d.intern_ot_eligible_default === null || d.intern_ot_eligible_default === undefined ? '' : (d.intern_ot_eligible_default ? '1' : '0')).trigger('change');
+            // 2026-09-02, follow-up to close a review-flagged gap: SSO deferral (same mechanism as
+            // defer_pvd) + a tri-state tax-exempt default (same round-trip pattern as
+            // *_ot_eligible_default immediately above).
+            $('#policyProbationDeferSso').prop('checked', !!d.probation_defer_sso);
+            $('#policyProbationTaxExemptDefault').val(d.probation_tax_exempt_default === null || d.probation_tax_exempt_default === undefined ? '' : (d.probation_tax_exempt_default ? '1' : '0')).trigger('change');
+            $('#policyInternDeferSso').prop('checked', !!d.intern_defer_sso);
+            $('#policyInternTaxExemptDefault').val(d.intern_tax_exempt_default === null || d.intern_tax_exempt_default === undefined ? '' : (d.intern_tax_exempt_default ? '1' : '0')).trigger('change');
             const payBasis = d.pay_basis || 'full_month';
             $('input[name="policyPayBasisRadio"]').prop('checked', false);
             $('input[name="policyPayBasisRadio"][value="' + payBasis + '"]').prop('checked', true);
@@ -473,8 +507,12 @@ function loadPayrollPolicies() {
             // 2026-08-31, same-day follow-up (Origami `attribution` plan's item 3).
             $('#policySupplementalFlatTaxRate').val(d.supplemental_flat_tax_rate_percent !== null && d.supplemental_flat_tax_rate_percent !== undefined ? d.supplemental_flat_tax_rate_percent : '');
         }
+        refreshPayrollPoliciesBaseline();
     });
 }
+$(document).on('click', '#btnCancelPayrollPolicies', function () {
+    confirmIfDirtyThen($('#policies-pane'), payrollPoliciesBaselineSnapshot, loadPayrollPolicies);
+});
 // ONE shared Save for the whole tab (reads every card's fields together) -- see the view's own
 // comment on why a per-card save would silently reset the OTHER card's fields.
 $(document).on('click', '#btnSavePayrollPolicies', function () {
@@ -484,7 +522,15 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
     const probationRatioRaw = $('#policyProbationBaseSalaryRatio').val();
     const internRatioRaw = $('#policyInternBaseSalaryRatio').val();
     const flatTaxRateRaw = $('#policySupplementalFlatTaxRate').val();
-    $btn.prop('disabled', true);
+    const internPeriodDaysRaw = $('#policyInternPeriodDays').val();
+    const probationLeaveDaysLimitRaw = $('#policyProbationLeaveDaysLimit').val();
+    const probationOtDefaultRaw = $('#policyProbationOtEligibleDefault').val();
+    const internLeaveDaysLimitRaw = $('#policyInternLeaveDaysLimit').val();
+    const internOtDefaultRaw = $('#policyInternOtEligibleDefault').val();
+    const probationTaxExemptDefaultRaw = $('#policyProbationTaxExemptDefault').val();
+    const internTaxExemptDefaultRaw = $('#policyInternTaxExemptDefault').val();
+    if (typeof setButtonLoading === 'function') setButtonLoading($btn, true);
+    else $btn.prop('disabled', true);
     $.ajax({
         url: `${BASE_URL}/api/payroll-policy.save`,
         method: 'POST',
@@ -508,17 +554,33 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
             intern_pay_basis_deduct_leave: $('#policyInternPayBasisDeductLeave').is(':checked'),
             // 2026-08-31, direct mirror of the fields above (Origami `attribution` plan's item 3).
             supplemental_flat_tax_rate_percent: flatTaxRateRaw === '' ? null : flatTaxRateRaw,
+            // 2026-09-02, explicit request: leave/OT rights during probation/internship.
+            intern_period_days: internPeriodDaysRaw === '' ? null : internPeriodDaysRaw,
+            probation_leave_days_limit: probationLeaveDaysLimitRaw === '' ? null : probationLeaveDaysLimitRaw,
+            allow_leave_during_probation: $('#policyAllowLeaveDuringProbation').is(':checked'),
+            probation_ot_eligible_default: probationOtDefaultRaw === '' ? null : probationOtDefaultRaw,
+            intern_leave_days_limit: internLeaveDaysLimitRaw === '' ? null : internLeaveDaysLimitRaw,
+            allow_leave_during_intern: $('#policyAllowLeaveDuringIntern').is(':checked'),
+            intern_ot_eligible_default: internOtDefaultRaw === '' ? null : internOtDefaultRaw,
+            // 2026-09-02, follow-up to close a review-flagged gap.
+            probation_defer_sso: $('#policyProbationDeferSso').is(':checked'),
+            probation_tax_exempt_default: probationTaxExemptDefaultRaw === '' ? null : probationTaxExemptDefaultRaw,
+            intern_defer_sso: $('#policyInternDeferSso').is(':checked'),
+            intern_tax_exempt_default: internTaxExemptDefaultRaw === '' ? null : internTaxExemptDefaultRaw,
         }),
         success: function (res) {
-            $btn.prop('disabled', false);
+            if (typeof setButtonLoading === 'function') setButtonLoading($btn, false);
+            else $btn.prop('disabled', false);
             if (res && res.status) {
                 showSuccess(langData['save_success'] || 'Saved successfully.');
+                refreshPayrollPoliciesBaseline();
             } else {
                 showError((res && res.message) || (langData['save_failed'] || 'Save failed'));
             }
         },
         error: function () {
-            $btn.prop('disabled', false);
+            if (typeof setButtonLoading === 'function') setButtonLoading($btn, false);
+            else $btn.prop('disabled', false);
             showError(langData['save_failed'] || 'Save failed');
         },
     });
@@ -672,19 +734,15 @@ function cycleFrequencyBadge(freq) {
     const cls = freq === 'weekly' ? 'bg-info-subtle text-info' : 'bg-primary-subtle text-primary';
     return `<span class="badge ${cls} px-2 py-1">${langData[key] || freq}</span>`;
 }
-function cycleStatusBadge(status) {
-    const isActive = status === 'active';
-    const cls = isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary';
-    const text = isActive ? (langData['active'] || 'Active') : (langData['inactive'] || 'Inactive');
-    return `<span class="badge ${cls}">${text}</span>`;
-}
 function escapeHtmlPc(str) {
     return $('<div>').text(str === null || str === undefined ? '' : str).html();
 }
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group.
 function cycleActionButtons(row) {
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-warning btn-edit-cycle" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-cycle" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-cycle" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-cycle" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 let tb_payroll_cycle;
@@ -700,12 +758,19 @@ function initPayrollCycleTable() {
             dataSrc: 'data'
         },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- status switch is the first
+            // column now (client-side table, safe to reorder), same shared mechanism as every other
+            // table already converted. The old read-only cycleStatusBadge() renderer is gone
+            // (unused after this change, deleted rather than left dead).
+            { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/payroll-cycle.toggle-status') },
             { data: 'cycle_name', render: d => `<strong class="text-dark">${escapeHtmlPc(d)}</strong>` },
             { data: 'payroll_frequency', render: d => cycleFrequencyBadge(d) },
+            // 2026-09-02, reply from Origami's own team re: payroll schedule mapping -- see
+            // modals.php's own comment on #external_cycle_code for the full context.
+            { data: 'external_cycle_code', render: d => d ? `<code>${escapeHtmlPc(d)}</code>` : `<span class="text-muted">-</span>` },
             { data: null, render: (d, t, row) => cycleCutoffCell(row) },
             { data: null, render: (d, t, row) => cyclePaymentCell(row) },
             { data: null, render: (d, t, row) => escapeHtmlPc((currentLang === 'th' ? row.bank_file_format_name_th : row.bank_file_format_name_en) || row.bank_file_format_name_th || row.bank_file_format_name_en || '') },
-            { data: 'status', render: d => cycleStatusBadge(d) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => cycleActionButtons(row) }
@@ -725,22 +790,29 @@ function initPayrollCycleTable() {
                 `);
             }
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes actions (6).
+            // rollout, client mode. Excludes the interactive status SWITCH (0) and actions (7).
+            // 2026-09-02, Platform Hardening Phase 1.1 follow-up: indices shifted +1 now that the
+            // status switch was inserted at column 0, and `status` itself dropped from the filter
+            // list (interactive widget, not a plain display value, same exemption already applied
+            // to every other status-switch column in this app).
             initExcelColumnFilters(self, {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'cycle_name' },
-                    { index: 1, key: 'frequency' },
-                    { index: 2, key: 'cutoff' },
-                    { index: 3, key: 'payment' },
-                    { index: 4, key: 'bank_file_format' },
-                    { index: 5, key: 'status' },
+                    { index: 1, key: 'cycle_name' },
+                    { index: 2, key: 'frequency' },
+                    { index: 3, key: 'external_cycle_code' },
+                    { index: 4, key: 'cutoff' },
+                    { index: 5, key: 'payment' },
+                    { index: 6, key: 'bank_file_format' },
                 ]
             });
         },
         drawCallback: function () { getTableLang(); }
     });
 }
+// 2026-09-02, Platform Hardening Phase 1.1 follow-up -- reload after a successful status toggle,
+// same pattern as every other converted table's own identical listener.
+$(document).on('statusToggle:success', '#tb_payroll_cycle', function () { tb_payroll_cycle.ajax.reload(null, false); });
 function applyFrequencyFields(freq) {
     const isWeekly = freq === 'weekly';
     $('#cutoff_dom_wrapper').toggleClass('d-none', isWeekly);
@@ -760,16 +832,71 @@ function applyLastDayToggle(checkboxId, inputId) {
     $(`#${inputId}`).prop('disabled', checked).toggleClass('required', !checked);
     if (checked) $(`#${inputId}`).val('');
 }
+// 2026-09-02, explicit request: multi-bank-account payroll cycles -- renders the checkbox list of
+// EVERY one of this company's own active accounts (bankAccountOptions() called with a large limit
+// instead of select2's own paginated ajax mode, since a checkbox list needs the WHOLE set up front,
+// not searched page by page -- a company's own bank account list is realistically small). `selected`
+// is an array of {bank_account_id, is_default} from PayrollCycleModel::get()'s own bank_accounts
+// join (empty for a brand-new cycle). Each row: a checkbox (include this account at all) + a radio
+// (which included account is the default) -- the radio is only enabled while its own checkbox is
+// checked, and PayrollCycleModel::saveBankAccounts() itself rejects anything but exactly one default
+// whenever the list isn't empty (this function just keeps the UI from letting that state happen).
+function renderCycleBankAccountsList(selected) {
+    const selectedMap = {};
+    (selected || []).forEach(function (row) { selectedMap[row.bank_account_id] = !!Number(row.is_default); });
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-cycle.bank-account.options`,
+        method: 'POST', dataType: 'json', data: { page: 1, limit: 200, searchTerm: '' },
+        success: function (res) {
+            const items = (res.status && res.data && res.data.items) || [];
+            const $list = $('#cycleBankAccountsList');
+            if (items.length === 0) {
+                $list.html(`<div class="text-muted small" data-i18n="modal_cycle_bank_account_none">This company has no bank accounts configured yet.</div>`);
+                if (typeof updateText === 'function') updateText($list[0]);
+                return;
+            }
+            $list.html(items.map(function (item) {
+                const label = currentLang === 'th' ? (item.text_th || item.text_en) : (item.text_en || item.text_th);
+                const isChecked = Object.prototype.hasOwnProperty.call(selectedMap, item.id);
+                const isDefault = isChecked && selectedMap[item.id];
+                return `
+                    <div class="form-check d-flex align-items-center justify-content-between py-1 cycle-bank-account-row" data-id="${item.id}">
+                        <div class="form-check">
+                            <input class="form-check-input cycle-bank-account-check" type="checkbox" id="cycleBankAcc${item.id}" value="${item.id}"${isChecked ? ' checked' : ''}>
+                            <label class="form-check-label small" for="cycleBankAcc${item.id}">${$('<div>').text(label).html()}</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input cycle-bank-account-default" type="radio" name="cycle_bank_account_default" value="${item.id}"${isDefault ? ' checked' : ''}${!isChecked ? ' disabled' : ''}>
+                            <label class="form-check-label small text-muted" data-i18n="default">Default</label>
+                        </div>
+                    </div>`;
+            }).join(''));
+            if (typeof updateText === 'function') updateText($list[0]);
+        }
+    });
+}
+function collectCycleBankAccounts() {
+    const accounts = [];
+    $('#cycleBankAccountsList .cycle-bank-account-check:checked').each(function () {
+        const id = $(this).val();
+        accounts.push({
+            bank_account_id: id,
+            is_default: $(`#cycleBankAccountsList .cycle-bank-account-default[value="${id}"]`).is(':checked') ? 1 : 0,
+        });
+    });
+    return accounts;
+}
 function resetCycleForm() {
     $('#payrollCycleForm')[0].reset();
     $('#cycle_id').val('');
+    $('#external_cycle_code').val('');
     $('.is-invalid').removeClass('is-invalid');
     $('#payroll_frequency').val('').trigger('change');
     $('#cutoff_day_of_week').val('').trigger('change');
     $('#payment_day_of_week').val('').trigger('change');
     $('#bank_file_format_id').val('').trigger('change');
-    $('#cycle_bank_account_id').val('').trigger('change');
-    $('#cycle_status').val('active').trigger('change');
+    $('#cycle_default_payment_method_id').val('').trigger('change');
+    renderCycleBankAccountsList([]);
     $('#cutoff_day_of_month, #payment_day_of_month, #ot_cutoff_day_of_month').prop('disabled', false);
     applyFrequencyFields('');
     applyOtCutoffFields('same_as_attendance');
@@ -777,6 +904,7 @@ function resetCycleForm() {
 function populateCycleForm(row) {
     $('#cycle_id').val(row.id);
     $('#cycle_name').val(row.cycle_name);
+    $('#external_cycle_code').val(row.external_cycle_code || '');
     $('#payroll_frequency').val(row.payroll_frequency).trigger('change');
     applyFrequencyFields(row.payroll_frequency);
     if (row.payroll_frequency === 'weekly') {
@@ -804,20 +932,18 @@ function populateCycleForm(row) {
     } else {
         $('#bank_file_format_id').val('').trigger('change');
     }
-    // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" --
-    // same preload-a-single-Option pattern as bank_file_format_id above (avoids the select2-remote-
-    // empty-preload gotcha this app has hit before -- see CLAUDE.md). Optional, so a cycle with no
-    // bank_account_id set (falls back to the company's default account) just clears the field.
-    if (row.bank_account_id) {
-        const bankAccountLabel = row.bank_account_name
-            ? `${row.bank_account_name}${row.bank_account_company_code ? ' (' + row.bank_account_company_code + ')' : ''}`
-            : `#${row.bank_account_id}`;
-        const acctOpt = new Option(bankAccountLabel, row.bank_account_id, true, true);
-        $('#cycle_bank_account_id').append(acctOpt).trigger('change');
+    // 2026-09-02, multi-bank-account payroll -- row.bank_accounts comes from
+    // PayrollCycleModel::get()'s own getBankAccounts() join (every account this cycle currently
+    // offers, most-default-first). row.bank_account_id (the single legacy/denormalized column) is
+    // no longer read directly here -- the checkbox list below is the real source of truth now.
+    renderCycleBankAccountsList(row.bank_accounts || []);
+    if (row.default_payment_method_id) {
+        const pmLabel = currentLang === 'th' ? row.default_payment_method_name_th : row.default_payment_method_name_en;
+        const pmOpt = new Option(pmLabel || row.default_payment_method_name_th || row.default_payment_method_name_en || '', row.default_payment_method_id, true, true);
+        $('#cycle_default_payment_method_id').append(pmOpt).trigger('change');
     } else {
-        $('#cycle_bank_account_id').val('').trigger('change');
+        $('#cycle_default_payment_method_id').val('').trigger('change');
     }
-    $('#cycle_status').val(row.status).trigger('change');
 }
 function validateCycleForm() {
     let firstInvalid = null;
@@ -839,11 +965,11 @@ function collectCycleFormData() {
     const data = {
         id: $('#cycle_id').val() || undefined,
         cycle_name: $('#cycle_name').val().trim(),
+        external_cycle_code: $('#external_cycle_code').val().trim() || null,
         payroll_frequency: freq,
         ot_cutoff_type: $('input[name="ot_cutoff_type"]:checked').val(),
         bank_file_format_id: $('#bank_file_format_id').val(),
-        bank_account_id: $('#cycle_bank_account_id').val() || null,
-        status: $('#cycle_status').val()
+        default_payment_method_id: $('#cycle_default_payment_method_id').val() || null
     };
     if (freq === 'weekly') {
         data.cutoff_day_of_week = $('#cutoff_day_of_week').val();
@@ -901,6 +1027,19 @@ function initPayrollCycleUI() {
     $(document).on('change', '#ot_cutoff_use_last_day', function () {
         applyLastDayToggle('ot_cutoff_use_last_day', 'ot_cutoff_day_of_month');
     });
+    // 2026-09-02, multi-bank-account payroll -- an account's own "Default" radio only makes sense
+    // while that account is actually included; unchecking the checkbox disables (and unchecks) its
+    // radio, matching PayrollCycleModel::saveBankAccounts()'s own "exactly one default among the
+    // INCLUDED accounts" invariant.
+    $(document).on('change', '.cycle-bank-account-check', function () {
+        const $row = $(this).closest('.cycle-bank-account-row');
+        const $radio = $row.find('.cycle-bank-account-default');
+        if ($(this).is(':checked')) {
+            $radio.prop('disabled', false);
+        } else {
+            $radio.prop('disabled', true).prop('checked', false);
+        }
+    });
     $(document).on('submit', '#payrollCycleForm', function (e) {
         e.preventDefault();
         const invalidEl = validateCycleForm();
@@ -908,32 +1047,52 @@ function initPayrollCycleUI() {
             showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
             return;
         }
+        // 2026-09-02, multi-bank-account payroll -- client-side mirror of
+        // PayrollCycleModel::saveBankAccounts()'s own "exactly one default among the included
+        // accounts" invariant (an empty list is fine -- falls back to the company default, same as
+        // before this feature existed).
+        const accounts = collectCycleBankAccounts();
+        if (accounts.length > 0 && !accounts.some(function (a) { return a.is_default; })) {
+            showWarning(langData['modal_cycle_bank_account_default_required'] || 'Please mark exactly one account as the default.');
+            return;
+        }
         const payload = collectCycleFormData();
         const $btn = $('#payrollCycleForm button[type="submit"]');
         const originalHtml = $btn.html();
         $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>Saving...</span>');
+        // 2026-09-02, multi-bank-account payroll -- cycle fields and its account list are 2
+        // genuinely separate tables/endpoints (PayrollCycleModel::save() / saveBankAccounts()), so
+        // this chains both AJAX calls under one Save button -- the SECOND call needs the cycle's own
+        // id, which only exists after the FIRST call succeeds for a brand-new cycle.
         $.ajax({
             url: `${BASE_URL}/api/payroll-cycle.save`,
             method: 'POST',
             contentType: 'application/json',
             dataType: 'json',
             data: JSON.stringify(payload),
-            success: function (res) {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                if (res.status) {
-                    showSuccess(langData['save_success'] || 'Saved successfully.');
-                    bootstrap.Modal.getInstance(document.getElementById('payrollCycleModal')).hide();
-                    if (tb_payroll_cycle) tb_payroll_cycle.ajax.reload(null, false);
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-                }
-            },
-            error: function () {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }).then(function (res) {
+            if (!res.status) {
+                return $.Deferred().reject(res).promise();
             }
+            return $.ajax({
+                url: `${BASE_URL}/api/payroll-cycle.save-bank-accounts`,
+                method: 'POST',
+                contentType: 'application/json',
+                dataType: 'json',
+                data: JSON.stringify({ cycle_id: res.id, accounts: accounts }),
+            }).then(function (acctRes) {
+                return acctRes.status ? res : $.Deferred().reject(acctRes).promise();
+            });
+        }).then(function (res) {
+            $btn.prop('disabled', false).html(originalHtml);
+            if (typeof updateText === 'function') updateText($btn[0]);
+            showSuccess(langData['save_success'] || 'Saved successfully.');
+            bootstrap.Modal.getInstance(document.getElementById('payrollCycleModal')).hide();
+            if (tb_payroll_cycle) tb_payroll_cycle.ajax.reload(null, false);
+        }, function (res) {
+            $btn.prop('disabled', false).html(originalHtml);
+            if (typeof updateText === 'function') updateText($btn[0]);
+            showWarning((res && res.message) || langData['save_failed'] || 'Failed to save data.');
         });
     });
     $(document).on('click', '.btn-delete-cycle', function () {
@@ -1068,8 +1227,49 @@ function applyAttendanceDeductionMethodFields(method) {
     $('#attendanceRateUnitWrapper').toggleClass('d-none', method === 'percent_of_rate' || method === 'no_deduction');
     applyAttendanceRateUnitLabels($('#attendanceRateUnit').val() || 'minute');
 }
+/* 2026-09-01, explicit request: "ให้เลือกก่อนว่าหัก หรือไม่หัก เป็น radio จากนั้นค่อยแสดงหรือซ่อน Form ที่
+ * เหลือ" -- 'no_deduction' was already just another #attendanceDeductionMethod option; this promotes
+ * it to an up-front radio (#attendanceRuleDeductChoice) that shows/hides #attendanceRuleDeductFieldsWrapper
+ * (Deduction Method + its rate/amount sub-sections + Calculation Preview) as a whole. Still drives the
+ * SAME underlying <select id="attendanceDeductionMethod"> value under the hood, so
+ * saveAttendanceDeductionRule()/collectAttendanceDeductionDraftForPreview()/AttendanceDeductionRuleModel
+ * needed zero changes -- method_code just arrives as 'no_deduction' exactly like it always could. */
+function attendanceMethodStaticLabel(code) {
+    const key = { percent_of_rate: 'attendance_deduction_method_percent_of_rate', flat_amount: 'attendance_deduction_method_flat_amount', tiered_bracket: 'attendance_deduction_method_tiered_bracket', no_deduction: 'attendance_deduction_method_no_deduction' }[code];
+    return (key && langData[key]) || code;
+}
+let attendanceMethodBeforeNoDeduction = 'percent_of_rate'; // remembers the real method so toggling ไม่หัก -> หัก restores it, not a blank picker
+function applyAttendanceRuleDeductChoice(choice) {
+    const wantsNoDeduction = choice === 'no_deduction';
+    $('#attendanceRuleDeductFieldsWrapper').toggleClass('d-none', wantsNoDeduction);
+    const $method = $('#attendanceDeductionMethod');
+    if (wantsNoDeduction) {
+        const current = $method.val();
+        if (current && current !== 'no_deduction') attendanceMethodBeforeNoDeduction = current;
+        $method.empty().append(new Option(attendanceMethodStaticLabel('no_deduction'), 'no_deduction', true, true)).trigger('change.select2');
+        applyAttendanceDeductionMethodFields('no_deduction');
+    } else {
+        const restoreTo = attendanceMethodBeforeNoDeduction || 'percent_of_rate';
+        $method.empty().append(new Option(attendanceMethodStaticLabel(restoreTo), restoreTo, true, true)).trigger('change.select2');
+        applyAttendanceDeductionMethodFields(restoreTo);
+    }
+    $('#attendanceCalcPreviewResult').addClass('d-none');
+}
+$(document).on('change', 'input[name="attendanceRuleDeductChoice"]', function () {
+    applyAttendanceRuleDeductChoice($(this).val());
+});
 $(document).on('change', '#attendanceDeductionMethod', function () {
-    applyAttendanceDeductionMethodFields($(this).val());
+    const val = $(this).val();
+    // Safety net: the dropdown itself still technically offers 'no_deduction' as a searchable result
+    // (server-side master list, unfiltered) -- if picked directly, keep the radio/wrapper in sync
+    // instead of leaving the radio saying "หัก" while the hidden select says otherwise.
+    if (val === 'no_deduction') {
+        $('#attendanceRuleDeductNo').prop('checked', true);
+        $('#attendanceRuleDeductFieldsWrapper').addClass('d-none');
+    } else if (val) {
+        attendanceMethodBeforeNoDeduction = val;
+    }
+    applyAttendanceDeductionMethodFields(val);
 });
 $(document).on('change', '#attendanceRateUnit', function () {
     applyAttendanceRateUnitLabels($(this).val());
@@ -1116,6 +1316,13 @@ function renderAttendanceDeductionModalFields(eventCode, row) {
     $('#attendanceMultiplierRate').val(r.multiplier_rate || '1.00');
     currentAttendanceBrackets = (r.brackets || []).map(b => ({ min_units: b.min_units, max_units: b.max_units, deduction_amount: b.deduction_amount }));
     renderAttendanceBracketRows();
+    // 2026-09-01: init the หัก/ไม่หัก radio + wrapper visibility to match the loaded row's real
+    // method_code (see applyAttendanceRuleDeductChoice() above for the full mechanism).
+    const isNoDeduction = r.method_code === 'no_deduction';
+    attendanceMethodBeforeNoDeduction = isNoDeduction ? 'percent_of_rate' : (r.method_code || 'percent_of_rate');
+    $('#attendanceRuleDeductYes').prop('checked', !isNoDeduction);
+    $('#attendanceRuleDeductNo').prop('checked', isNoDeduction);
+    $('#attendanceRuleDeductFieldsWrapper').toggleClass('d-none', isNoDeduction);
 }
 function applyAttendanceScopeTargetFields(scopeType) {
     // 2026-08-30, real bug found and fixed (explicit report: "เลือกทีม แต่ select ของ Department ขึ้นมา
@@ -1363,6 +1570,18 @@ function saveAttendanceDeductionRule() {
             deduction_amount: parseFloat(b.deduction_amount) || 0
         }));
     }
+    submitAttendanceDeductionRule(payload);
+}
+// 2026-09-02, explicit request: "Recheck อีกทีว่า ถ้าประเภทเดียว Assign ซ้ำ ต้องมี Alert เตือน และถ้าผู้ใช้
+// ต้องการ Save ทับเพื่อ Update ข้อมูลใหม่ต้องทำได้" -- AttendanceDeductionRuleModel::ruleSave() already
+// refused a duplicate (event_code, scope) pair server-side (confirmed still true, see
+// tests/attendance_deduction_rule_test.php's own "duplicate-variant rejection" section) but the
+// frontend only ever showed it as a plain toast with no way forward -- an admin hitting this had to
+// cancel, go find the existing variant themselves, and re-enter everything by hand. Split the actual
+// ajax call out into its own function so a confirmed "update the existing one instead" can re-invoke
+// it with the SAME payload plus the conflicting row's own id (res.conflict_id, added server-side this
+// same round) -- turning the rejected create into a normal update, no data re-entry needed.
+function submitAttendanceDeductionRule(payload) {
     $.ajax({
         url: `${BASE_URL}/api/attendance-deduction-rule.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
         success: function (res) {
@@ -1372,7 +1591,23 @@ function saveAttendanceDeductionRule() {
                 const modalInstance = bootstrap.Modal.getInstance(modalEl);
                 if (modalInstance) { modalInstance.hide(); }
                 loadAttendanceDeductionCards();
-            } else { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); }
+            } else if (res.conflict_id) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: langData['attendance_deduction_conflict_title'] || 'A Rule Already Exists',
+                    text: res.message,
+                    showCancelButton: true,
+                    confirmButtonText: langData['attendance_deduction_conflict_confirm'] || 'Update the Existing Rule',
+                    cancelButtonText: langData['cancel'] || 'Cancel',
+                    confirmButtonColor: '#FF9900',
+                }).then(function (result) {
+                    if (result.isConfirmed) {
+                        submitAttendanceDeductionRule(Object.assign({}, payload, { id: res.conflict_id }));
+                    }
+                });
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+            }
         },
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
@@ -1422,9 +1657,28 @@ function attendanceDeductionVariantRowHtml(eventCode, r) {
     const isActive = r.is_active !== false; // default true when no row saved yet
     const idAttr = r.id || '';
     const canDelete = !!(r.id && r.scope_type);
+    // 2026-09-02, explicit request: "หัก ไม่หัก ควรตั้งค่าได้จากในหน้า Card เลยครับ และถ้าไม่หักก็ไม่ต้องมี
+    // ปุ่มแก้ไข" -- was only settable inside the Edit modal's own radio (see modals.php's own
+    // attendanceRuleDeductChoice comment). isDeduct mirrors that SAME method_code === 'no_deduction'
+    // check, now surfaced as a second inline switch right next to the existing Active one, saved the
+    // same "toggle -> immediate AJAX save, no modal" way .attendance-deduction-active-toggle already
+    // works. When off, there is nothing left to configure (no rate/method at all for 'no_deduction'
+    // -- see AttendanceDeductionRuleModel's own docblock), so the Edit button is dropped entirely
+    // rather than opening a modal with nothing meaningful in it.
+    const isDeduct = r.method_code !== 'no_deduction';
+    const editBtn = isDeduct
+        ? `<button type="button" class="btn btn-link btn-circle-action text-warning" onclick="openAttendanceDeductionRuleModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>`
+        : '';
     return `<div class="adr-variant-row" data-event="${eventCode}" data-id="${idAttr}">
-        <div class="form-check form-switch mb-0">
-            <input class="form-check-input attendance-deduction-active-toggle" type="checkbox" role="switch" data-event="${eventCode}" data-id="${idAttr}" ${isActive ? 'checked' : ''}>
+        <div class="adr-variant-toggles">
+            <div class="form-check form-switch form-switch-sm mb-1" title="${langData['status'] || 'Status'}">
+                <input class="form-check-input attendance-deduction-active-toggle" type="checkbox" role="switch" data-event="${eventCode}" data-id="${idAttr}" ${isActive ? 'checked' : ''}>
+                <label class="form-check-label small text-muted">${langData['active'] || 'Active'}</label>
+            </div>
+            <div class="form-check form-switch form-switch-sm mb-0" title="${langData['attendance_deduction_apply'] || 'Apply Deduction?'}">
+                <input class="form-check-input attendance-deduction-deduct-toggle" type="checkbox" role="switch" data-event="${eventCode}" data-id="${idAttr}" ${isDeduct ? 'checked' : ''}>
+                <label class="form-check-label small text-muted">${langData['attendance_deduction_apply_yes'] || 'Deduct'}</label>
+            </div>
         </div>
         <div class="adr-variant-main">
             ${attendanceScopeBadgeHtml(r)}
@@ -1433,11 +1687,15 @@ function attendanceDeductionVariantRowHtml(eventCode, r) {
         </div>
         <div class="adr-variant-exemptions">${attendanceDeductionExemptionsSummary(r)}</div>
         <div class="adr-variant-actions">
-            <div class="btn-group border rounded-3 bg-white">
-                <button type="button" class="btn btn-link text-warning" onclick="openAttendanceDeductionRuleModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['attendance_deduction_configure'] || 'Configure'}"><i class="fa-solid fa-gear"></i></button>
-                <button type="button" class="btn btn-link text-primary border-start" onclick="cloneAttendanceDeductionRule('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
-                <button type="button" class="btn btn-link text-secondary border-start" onclick="openAttendanceDeductionAssignModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['attendance_deduction_assign_title'] || 'Exempt Departments / Teams / Employees'}"><i class="fa-solid fa-user-shield"></i></button>
-                ${canDelete ? `<button type="button" class="btn btn-link py-1 text-danger border-start" onclick="deleteAttendanceDeductionVariant(${r.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+            <!-- 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+                 ".btn-circle-action" section) replace the old adjacent .btn-group -- this card's own
+                 per-variant action cluster uses the exact same old convention as every DataTable row,
+                 so it's included in the same rollout for consistency within this settings page. -->
+            <div class="d-flex gap-1 justify-content-center flex-wrap">
+                ${editBtn}
+                <button type="button" class="btn btn-link btn-circle-action text-primary" onclick="cloneAttendanceDeductionRule('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
+                <button type="button" class="btn btn-link btn-circle-action text-secondary" onclick="openAttendanceDeductionAssignModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['attendance_deduction_assign_title'] || 'Exempt Departments / Teams / Employees'}"><i class="fa-solid fa-user-shield"></i></button>
+                ${canDelete ? `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteAttendanceDeductionVariant(${r.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
             </div>
         </div>
     </div>`;
@@ -1543,6 +1801,52 @@ $(document).on('change', '.attendance-deduction-active-toggle', function () {
         error: function () {
             showWarning(langData['save_failed'] || 'An error occurred while saving.');
             $toggle.prop('checked', !isActive);
+        }
+    });
+});
+// 2026-09-02, explicit request: "หัก ไม่หัก ควรตั้งค่าได้จากในหน้า Card เลยครับ" -- same inline
+// toggle-then-immediately-save pattern as .attendance-deduction-active-toggle just above (no modal).
+// Always an UPDATE of an existing row (r.id is always set here -- the un-saved virtual default row
+// already resolves to method_code='percent_of_rate', i.e. isDeduct=true, so its own switch never
+// needs to fire this handler to flip it on), so the duplicate-scope conflict_id flow
+// submitAttendanceDeductionRule() handles elsewhere can never trigger from this toggle -- scope
+// never changes on an update, only on a brand-new variant.
+$(document).on('change', '.attendance-deduction-deduct-toggle', function () {
+    const eventCode = $(this).data('event');
+    const id = $(this).data('id') || null;
+    const wantsDeduct = $(this).is(':checked');
+    const r = findAttendanceVariant(eventCode, id) || {};
+    // Turning deduction back ON with nothing real configured yet (was 'no_deduction', or somehow no
+    // method at all) falls back to the master default (percent_of_rate @ 1.00x) -- the exact same
+    // default a brand-new row already starts with -- rather than guessing at a rate. The Edit button
+    // reappears the moment this saves, so fine-tuning away from the default is still one click away.
+    const needsDefaultMethod = wantsDeduct && (!r.method_code || r.method_code === 'no_deduction');
+    const payload = {
+        event_code: eventCode, is_active: r.is_active !== false,
+        method_code: wantsDeduct ? (needsDefaultMethod ? 'percent_of_rate' : r.method_code) : 'no_deduction',
+        rate_unit: needsDefaultMethod ? (ATTENDANCE_DEFAULT_RATE_UNIT[eventCode] || 'minute') : r.rate_unit,
+        rate_per_unit: needsDefaultMethod ? null : r.rate_per_unit,
+        multiplier_rate: needsDefaultMethod ? '1.00' : r.multiplier_rate,
+        scope_type: r.scope_type || null, scope_id: r.scope_id || null, label: r.label || null,
+        brackets: needsDefaultMethod ? [] : (r.brackets || []).map(b => ({ min_units: b.min_units, max_units: b.max_units, deduction_amount: b.deduction_amount })),
+        exemptions: (r.exemptions || []).map(ex => ({ scope_type: ex.scope_type, scope_id: ex.scope_id })),
+    };
+    if (r.id) { payload.id = r.id; }
+    const $toggle = $(this);
+    $.ajax({
+        url: `${BASE_URL}/api/attendance-deduction-rule.save`, method: 'POST', contentType: 'application/json', data: JSON.stringify(payload), dataType: 'json',
+        success: function (res) {
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                loadAttendanceDeductionCards();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                $toggle.prop('checked', !wantsDeduct);
+            }
+        },
+        error: function () {
+            showWarning(langData['save_failed'] || 'An error occurred while saving.');
+            $toggle.prop('checked', !wantsDeduct);
         }
     });
 });

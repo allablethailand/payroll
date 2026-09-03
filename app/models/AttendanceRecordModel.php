@@ -186,6 +186,54 @@ class AttendanceRecordModel {
         }
     }
 
+    /**
+     * 2026-09-02, explicit request: "การเพิ่มแบบ Manual...อยากให้เพิ่มได้ทีละหลายรายการ เป็นเหมือนหน้า Excel"
+     * -- one call for the whole grid instead of the caller looping one AJAX round trip per row.
+     * Same own-transaction-aware "loop save(), collect per-row success/failure, never all-or-nothing"
+     * pattern PayrollRunModel::bulkSetEmployeeVerified() already established in this app -- a bad row
+     * (duplicate date, bad employee, etc.) doesn't block the other rows in the same batch from
+     * saving, matching how every other bulk action here behaves. save() itself has no transaction of
+     * its own, so wrapping the whole loop in ONE keeps this genuinely atomic-per-batch (a mid-loop
+     * DB error rolls every row in THIS call back, not just the one that failed) while still reporting
+     * per-row validation failures (duplicate/overlap/not-found) as normal, non-fatal results.
+     * @param array $rows each shaped exactly like save()'s own $data (no id = insert)
+     * @return array{status:bool, total:int, succeeded:int, failed:array<array{index:int,message:string}>, results:array<array{index:int,status:bool,message:string,id:?int}>}
+     */
+    public function bulkSave(array $rows, int $compId, int $userId): array {
+        if (empty($rows)) {
+            return ['status' => false, 'total' => 0, 'succeeded' => 0, 'failed' => [], 'results' => [], 'message' => 'No rows to save.'];
+        }
+        $own = !$this->db->inTransaction();
+        $results = [];
+        $succeeded = 0;
+        $failed = [];
+        try {
+            if ($own) { $this->db->beginTransaction(); }
+            foreach ($rows as $i => $row) {
+                if (!is_array($row)) {
+                    $results[] = ['index' => $i, 'status' => false, 'message' => 'Invalid row.', 'id' => null];
+                    $failed[] = ['index' => $i, 'message' => 'Invalid row.'];
+                    continue;
+                }
+                $res = $this->save($row, $compId, $userId);
+                $results[] = ['index' => $i, 'status' => !empty($res['status']), 'message' => $res['message'] ?? '', 'id' => $res['id'] ?? null];
+                if (!empty($res['status'])) {
+                    $succeeded++;
+                } else {
+                    $failed[] = ['index' => $i, 'message' => $res['message'] ?? 'Failed.'];
+                }
+            }
+            if ($own) { $this->db->commit(); }
+        } catch (PDOException $e) {
+            if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'total' => count($rows), 'succeeded' => 0, 'failed' => [], 'results' => [], 'message' => 'Database operation failed.'];
+        }
+        return [
+            'status' => $succeeded > 0, 'total' => count($rows), 'succeeded' => $succeeded, 'failed' => $failed, 'results' => $results,
+            'message' => "{$succeeded}/" . count($rows) . ' row(s) saved' . (empty($failed) ? '.' : ('; ' . count($failed) . ' failed.')),
+        ];
+    }
+
     public function delete(int $id, int $compId, int $userId): array {
         $stmt = $this->db->prepare("SELECT id FROM attendance_records WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);

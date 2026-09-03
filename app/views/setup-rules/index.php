@@ -50,13 +50,13 @@
                 <table class="table" id="tb_shift" style="width:100%">
                     <thead>
                         <tr>
+                            <th data-i18n="status" class="text-center">Status</th>
                             <th data-i18n="shift_name">Shift Name</th>
                             <th data-i18n="shift_code">Shift Code</th>
                             <th data-i18n="time">Time</th>
                             <th data-i18n="working_days">Working Days</th>
                             <th data-i18n="work_location">Work Location</th>
                             <th data-i18n="last_modified">Last Modified</th>
-                            <th data-i18n="status" class="text-center">Status</th>
                             <th class="text-end"></th>
                         </tr>
                     </thead>
@@ -69,11 +69,11 @@
                 <table class="table" id="tb_holiday" style="width:100%">
                     <thead>
                         <tr>
+                            <th data-i18n="status" class="text-center">Status</th>
                             <th data-i18n="holiday_name">Holiday Name</th>
                             <th data-i18n="date">Date</th>
                             <th data-i18n="type">Type</th>
                             <th data-i18n="applies_to">Applies To</th>
-                            <th data-i18n="status" class="text-center">Status</th>
                             <th class="text-end"></th>
                         </tr>
                     </thead>
@@ -86,13 +86,13 @@
                 <table class="table" id="tb_leave" style="width:100%">
                     <thead>
                         <tr>
+                            <th data-i18n="status" class="text-center">Status</th>
                             <th data-i18n="leave_type">Leave Type</th>
                             <th data-i18n="code">Code</th>
                             <th data-i18n="category">Category</th>
                             <th data-i18n="quota_days_per_year">Quota (days/yr)</th>
                             <th data-i18n="pay_type">Pay Type</th>
                             <th data-i18n="carry_over">Carry Over</th>
-                            <th data-i18n="status" class="text-center">Status</th>
                             <th class="text-end"></th>
                         </tr>
                     </thead>
@@ -107,13 +107,13 @@
                 <table class="table" id="tb_ot" style="width:100%">
                     <thead>
                         <tr>
+                            <th data-i18n="status" class="text-center">Status</th>
                             <th data-i18n="ot_rate_set_name">Set Name</th>
                             <th data-i18n="ot_scope_weekday">Weekday</th>
                             <th data-i18n="ot_scope_weekend">Weekend</th>
                             <th data-i18n="holiday">Holiday</th>
                             <th data-i18n="ot_rate_set_assign_title">Assign To</th>
                             <th data-i18n="ot_rate_set_default_column" class="text-center">Default</th>
-                            <th data-i18n="status" class="text-center">Status</th>
                             <th class="text-end"></th>
                         </tr>
                     </thead>
@@ -126,10 +126,10 @@
                 <table class="table" id="tb_work_location" style="width:100%">
                     <thead>
                         <tr>
+                            <th data-i18n="status" class="text-center">Status</th>
                             <th data-i18n="location_name">Location Name</th>
                             <th data-i18n="code">Code</th>
                             <th data-i18n="address">Address</th>
-                            <th data-i18n="status" class="text-center">Status</th>
                             <th class="text-end"></th>
                         </tr>
                     </thead>
@@ -167,7 +167,7 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label" data-i18n="break_minutes">Break (minutes)</label>
-                        <input type="number" min="0" class="form-control" id="shiftBreak" value="0">
+                        <input type="number" min="0" class="form-control" id="shiftBreak" value="0" data-i18n="minutes_placeholder" placeholder="e.g., 30">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="work_location">Work Location</label>
@@ -205,7 +205,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveShift()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary" onclick="saveShift(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -237,7 +237,7 @@
                     </div>
                     <div class="col-12">
                         <label class="form-label" data-i18n="address">Address</label>
-                        <textarea class="form-control" id="workLocationAddress" rows="2"></textarea>
+                        <textarea class="form-control" id="workLocationAddress" rows="2" data-i18n="address_line_1_placeholder" placeholder="House no., building, street"></textarea>
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2 mt-1">
                         <div class="form-check form-switch m-0">
@@ -249,7 +249,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveWorkLocation()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary" onclick="saveWorkLocation(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -317,7 +317,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveHoliday()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary" onclick="saveHoliday(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -361,7 +361,7 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label" data-i18n="quota_amount">Quota Amount</label>
-                        <input type="number" min="0" step="0.5" class="form-control" id="leaveQuota" value="0">
+                        <input type="number" min="0" step="0.5" class="form-control" id="leaveQuota" value="0" data-i18n="days_placeholder" placeholder="e.g., 1">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label" data-i18n="unit_type">Unit</label>
@@ -421,7 +421,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveLeave()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary" onclick="saveLeave(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -526,7 +526,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveOt()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary" onclick="saveOt(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -616,10 +616,10 @@
             <div class="modal-footer justify-content-between">
                 <span class="text-muted small" id="holidaySyncSelectedCountLabel"></span>
                 <div>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="button" class="btn btn-primary d-none" id="btnApplyHolidaySync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="holidaySyncSelectedCount">0</span>)
                     </button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>

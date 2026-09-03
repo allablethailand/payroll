@@ -30,6 +30,14 @@ class PayrollConfigurationController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    /** @return array{0:?string,1:?string} [ip_address, user_agent] -- same capture pattern ManualEntryController::requestFingerprint() already established, for AuditLogModel::record(). */
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     /** Gates the actual CRUD; dropdown-option lookups (*Options methods) stay ungated -- they're consumed by other forms and carry no PII/financial figures. */
     private function requirePermission(string $permissionKey): bool {
         $compId = (int)getCompId();
@@ -74,6 +82,19 @@ class PayrollConfigurationController extends Controller {
         $this->json(['status' => true, 'data' => $this->cycleModel->bankAccountOptions((int)$compId, $search, $page, $limit)]);
     }
 
+    /** 2026-09-02, explicit request: payment method type (transfer/cash/check/mixed) -- feeds BOTH
+     *  the cycle form's own "default payment method" picker AND the Employee page's Employment-tab
+     *  payment method picker (a single shared endpoint, master_payment_methods is global/company-
+     *  agnostic data, no need for a per-controller duplicate). */
+    public function paymentMethodOptions() {
+        $page = intval($_POST['page'] ?? 1);
+        $limit = intval($_POST['limit'] ?? 10);
+        $search = (string)($_POST['searchTerm'] ?? '');
+        $excludeCode = isset($_POST['exclude_code']) ? (string)$_POST['exclude_code'] : null;
+        $model = new EmployeePaymentMethodModel();
+        $this->json(['status' => true, 'data' => $model->methodOptions($search, $page, $limit, $excludeCode)]);
+    }
+
     public function cycleOptions() {
         $compId = getCompId();
         if (!$compId) {
@@ -100,7 +121,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function cycleList() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -110,7 +131,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function cycleGet() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -126,7 +147,6 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function cycleSave() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -138,13 +158,40 @@ class PayrollConfigurationController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // PayrollCycleModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'payroll_configuration.edit' : 'payroll_configuration.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->cycleModel->save((int)$compId, $data, $userId);
         $this->json($result);
     }
 
+    /** 2026-09-02, multi-bank-account payroll -- the cycle edit form's new multi-account picker
+     *  reads the current set via cycleGet() (which now joins bank_accounts via getBankAccounts()),
+     *  this endpoint is the SAVE side. */
+    public function cycleSaveBankAccounts() {
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $cycleId = (is_array($data) && isset($data['cycle_id'])) ? (int)$data['cycle_id'] : 0;
+        $rows = (is_array($data) && isset($data['accounts']) && is_array($data['accounts'])) ? $data['accounts'] : [];
+        if ($cycleId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing cycle_id.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $result = $this->cycleModel->saveBankAccounts($cycleId, (int)$compId, $rows, $userId);
+        $this->json($result);
+    }
+
     public function cycleDelete() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -162,8 +209,32 @@ class PayrollConfigurationController extends Controller {
         $this->json($result);
     }
 
+    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
+    // CompanyProfileController's 6 structure-entity toggle-status dispatchers.
+    public function cycleToggleStatus() {
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        // The shared frontend switch (app.js's renderStatusToggleHtml()/status-toggle-switch
+        // handler) posts a raw JSON body, not form-urlencoded -- $_POST is never populated for that,
+        // same pattern cycleDelete() above already uses.
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $result = $this->cycleModel->toggleStatus((int)$compId, $id, $userId);
+        $this->json($result);
+    }
+
     public function pedTypeList() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['draw' => 1, 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
@@ -194,7 +265,7 @@ class PayrollConfigurationController extends Controller {
      *  columnDistinctValues()'s own docblock on why the result is scoped to the requesting tab's
      *  own item_type). */
     public function pedTypeColumnValues() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'values' => []]);
@@ -213,7 +284,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function pedTypeGet() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $compId = getCompId();
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if (!$compId || $id <= 0) {
@@ -229,7 +300,6 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function pedTypeSave() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -241,14 +311,19 @@ class PayrollConfigurationController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // PayrollEarningDeductionTypeModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'payroll_configuration.edit' : 'payroll_configuration.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->pedTypeModel->save((int)$compId, $data, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->pedTypeModel->save((int)$compId, $data, $userId, $ip, $ua);
         $this->json($result);
     }
 
     /** "Load Default Items" -- inserts the system's starter set of earning/deduction types for this company, skipping any item_code already present (active or soft-deleted). Idempotent, safe to click more than once. */
     public function pedTypeSeedDefaults() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.add')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -266,13 +341,12 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function attendanceDeductionRuleGetAll() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $compId = getCompId();
         $this->json(['status' => true, 'data' => $this->attendanceDeductionRuleModel->ruleGetAll((int)$compId)]);
     }
 
     public function attendanceDeductionRuleSave() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
         $compId = getCompId();
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -280,11 +354,16 @@ class PayrollConfigurationController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
-        $this->json($this->attendanceDeductionRuleModel->ruleSave($data, (int)$compId, $this->userId()));
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // AttendanceDeductionRuleModel::ruleSave() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'payroll_configuration.edit' : 'payroll_configuration.add')) return;
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->attendanceDeductionRuleModel->ruleSave($data, (int)$compId, $this->userId(), $ip, $ua));
     }
 
     public function attendanceDeductionRuleAssignableOptions() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $compId = getCompId();
         $this->json(['status' => true, 'data' => $this->attendanceDeductionRuleModel->assignableOptions((int)$compId)]);
     }
@@ -292,7 +371,7 @@ class PayrollConfigurationController extends Controller {
     /** 2026-08-30, multi-scope rollout -- deletes a team/department-scoped rule variant (the
      *  company-wide default is never deletable, see AttendanceDeductionRuleModel::ruleDelete()). */
     public function attendanceDeductionRuleDelete() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.delete')) return;
         $compId = getCompId();
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -301,11 +380,12 @@ class PayrollConfigurationController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->attendanceDeductionRuleModel->ruleDelete($id, (int)$compId));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->attendanceDeductionRuleModel->ruleDelete($id, (int)$compId, $this->userId(), $ip, $ua));
     }
 
     public function attendanceDeductionRulePreview() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         if (!is_array($data)) {
@@ -318,7 +398,7 @@ class PayrollConfigurationController extends Controller {
     }
 
     public function pedTypeDelete() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.delete')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -332,7 +412,8 @@ class PayrollConfigurationController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->pedTypeModel->delete((int)$compId, $id, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->pedTypeModel->delete((int)$compId, $id, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -344,7 +425,7 @@ class PayrollConfigurationController extends Controller {
      * an item's status.
      */
     public function pedTypeToggleStatus() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -357,20 +438,21 @@ class PayrollConfigurationController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $result = $this->pedTypeModel->toggleStatus((int)$compId, $id, $this->userId());
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->pedTypeModel->toggleStatus((int)$compId, $id, $this->userId(), $ip, $ua);
         $this->json($result);
     }
 
     /* ==================== PAYROLL POLICIES (2026-08-30, new tab) ==================== */
 
     public function policyGet() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.view')) return;
         $compId = getCompId();
         $this->json(['status' => true, 'data' => $this->policyModel->get((int)$compId)]);
     }
 
     public function policySave() {
-        if (!$this->requirePermission('payroll_configuration.manage')) return;
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
         $compId = getCompId();
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -378,6 +460,7 @@ class PayrollConfigurationController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
-        $this->json($this->policyModel->save((int)$compId, $data, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->policyModel->save((int)$compId, $data, $this->userId(), $ip, $ua));
     }
 }

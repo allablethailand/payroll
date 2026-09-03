@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../models/EmploymentCertificateTemplateModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 require_once __DIR__ . '/../services/EmploymentCertificateRenderer.php';
+require_once __DIR__ . '/../services/ThumbnailGenerator.php';
 
 class EmploymentCertificateTemplateController extends Controller {
     private EmploymentCertificateTemplateModel $model;
@@ -55,7 +56,7 @@ class EmploymentCertificateTemplateController extends Controller {
     /** Full department/team/employee lists for the "Assign To" tab's checkbox lists -- mirrors
      *  PayslipTemplateController::assignableOptions() exactly. */
     public function assignableOptions() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => ['departments' => [], 'teams' => [], 'employees' => []]]);
@@ -71,7 +72,7 @@ class EmploymentCertificateTemplateController extends Controller {
     /* ==================== Templates ==================== */
 
     public function list() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         $language = (string)($_GET['language'] ?? '');
         if (!$compId || !in_array($language, ['th', 'en'], true)) {
@@ -84,7 +85,7 @@ class EmploymentCertificateTemplateController extends Controller {
     /** 2026-08-25, explicit request: unified TH/EN list ("ให้มี th กับ eng ในการจัดการเลย ไม่ต้องแยกเป็น
      *  Tab เหมือนเดิม") -- backs the new single DataTable that replaced the language-pill-tab list. */
     public function pairedList() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -95,7 +96,7 @@ class EmploymentCertificateTemplateController extends Controller {
 
     /** "Generate other language, Auto" (2026-08-25, explicit request). */
     public function generateOtherLanguage() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.add')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -107,7 +108,7 @@ class EmploymentCertificateTemplateController extends Controller {
     }
 
     public function get() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         $id = (int)($_GET['id'] ?? 0);
         if (!$compId || $id <= 0) {
@@ -126,7 +127,7 @@ class EmploymentCertificateTemplateController extends Controller {
      *  null). Distinct from get() (a specific known id) -- used on initial tab load / after
      *  create-from-preset when the caller doesn't have an id to ask for yet. */
     public function getDefault() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         $language = (string)($_GET['language'] ?? '');
         if (!$compId || !in_array($language, ['th', 'en'], true)) {
@@ -137,7 +138,6 @@ class EmploymentCertificateTemplateController extends Controller {
     }
 
     public function save() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -148,11 +148,15 @@ class EmploymentCertificateTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // EmploymentCertificateTemplateModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'employment_certificate_template.edit' : 'employment_certificate_template.add')) return;
         $this->json($this->model->save((int)$compId, $data, $this->userId()));
     }
 
     public function createFromPreset() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.add')) return;
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         if (!$compId || !is_array($data)) {
@@ -174,7 +178,7 @@ class EmploymentCertificateTemplateController extends Controller {
     }
 
     public function duplicate() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.add')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         if (!$compId || $id <= 0) {
@@ -185,7 +189,7 @@ class EmploymentCertificateTemplateController extends Controller {
     }
 
     public function delete() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.delete')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         if (!$compId || $id <= 0) {
@@ -198,7 +202,7 @@ class EmploymentCertificateTemplateController extends Controller {
     /** 2026-08-25, unified-list redesign: the list's Duplicate button now duplicates a whole PAIR
      *  (both languages, if both exist) as one action instead of one language at a time. */
     public function duplicatePair() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.add')) return;
         $compId = getCompId();
         $pairKey = trim((string)($_POST['pair_key'] ?? ''));
         if (!$compId || $pairKey === '') {
@@ -214,7 +218,7 @@ class EmploymentCertificateTemplateController extends Controller {
      *  JSON wrapper around the same presetPreviewElements() the PDF-preview endpoint already uses --
      *  no new model logic needed. */
     public function presetElements() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -237,7 +241,7 @@ class EmploymentCertificateTemplateController extends Controller {
     }
 
     public function setDefault() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.edit')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         if (!$compId || $id <= 0) {
@@ -250,7 +254,7 @@ class EmploymentCertificateTemplateController extends Controller {
     /** 2026-08-26, explicit request: "ในหน้า List สามารถเปิด Draft หรือ Public ได้จากหน้านั้นเลย" --
      *  direct port of PayslipTemplateController::publishToggle(). */
     public function publishToggle() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.edit')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $status = (string)($_POST['publish_status'] ?? '');
@@ -291,14 +295,26 @@ class EmploymentCertificateTemplateController extends Controller {
         if (!move_uploaded_file($file['tmp_name'], $destPath)) {
             return null;
         }
+        // Platform Hardening Phase 5B: thumbnail for the reusable Image Library grid (jpg/png only,
+        // SVG skipped -- see ThumbnailGenerator's own docblock). A generation failure never fails the
+        // upload -- thumbnail_path simply stays null (renderImageLibrary() falls back to file_path).
+        $thumbnailRelativePath = null;
+        if (ThumbnailGenerator::isSupportedMime($detectedMime)) {
+            $thumbName = 'thumb_' . $safeName;
+            if (ThumbnailGenerator::generate($destPath, $uploadDir . $thumbName)) {
+                $thumbnailRelativePath = "public/uploads/{$subdir}/{$compId}/{$thumbName}";
+            }
+        }
         return [
             'relative_path' => "public/uploads/{$subdir}/{$compId}/{$safeName}",
             'original_filename' => (string)($file['name'] ?? ''),
+            'file_size' => (int)$file['size'],
+            'thumbnail_path' => $thumbnailRelativePath,
         ];
     }
 
     public function uploadLogo() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -313,7 +329,7 @@ class EmploymentCertificateTemplateController extends Controller {
     }
 
     public function listImages() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -323,7 +339,7 @@ class EmploymentCertificateTemplateController extends Controller {
     }
 
     public function uploadImage() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.add')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -334,11 +350,11 @@ class EmploymentCertificateTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'File upload failed. Use JPG, PNG, or SVG, max 2MB.']);
             return;
         }
-        $this->json($this->model->addImage((int)$compId, $result['relative_path'], $result['original_filename'], $this->userId()));
+        $this->json($this->model->addImage((int)$compId, $result['relative_path'], $result['original_filename'], $this->userId(), $result['file_size'], $result['thumbnail_path']));
     }
 
     public function deleteImage() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.delete')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         if (!$compId || $id <= 0) {
@@ -364,7 +380,7 @@ class EmploymentCertificateTemplateController extends Controller {
      *  watermark (text + on/off, per explicit request -- "ใน Mode Preview ให้ตั้งค่าได้ว่าจะใส่ลายน้ำ
      *  หรือไม่ใส่ลายน้ำ และใส่ลายน้ำคำว่าอะไร") -- preview-only, never persisted to the template. */
     public function preview() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         if (!$compId) {
             http_response_code(400);
@@ -424,7 +440,7 @@ class EmploymentCertificateTemplateController extends Controller {
      *  same PDF-blob response pattern as preview() above, but sourced from a preset code instead of
      *  a client-submitted canvas payload -- nothing is created/persisted here either. */
     public function presetPreview() {
-        if (!$this->requirePermission('employment_certificate_template.manage')) return;
+        if (!$this->requirePermission('employment_certificate_template.view')) return;
         $compId = getCompId();
         if (!$compId) {
             http_response_code(400);

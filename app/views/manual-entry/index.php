@@ -33,16 +33,15 @@
                 <i class="fa-solid fa-stopwatch me-2"></i><span data-i18n="overtime">Overtime</span>
             </button>
         </li>
-        <!-- 2026-08-30 (Phase 5, T030-T035, explicit request) -- Import lives as a 4th tab on this
-             SAME page rather than a separate page, since it writes into the exact same 3 tables the
-             other 3 tabs already manage; T035 (editing an imported record) reuses those 3 tabs' own
-             edit modals directly instead of a second, parallel edit surface -- see
-             ManualEntryController's own docblock for the full reasoning. -->
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="import-tab" data-bs-toggle="tab" data-bs-target="#import-pane" type="button" role="tab" aria-controls="import-pane" aria-selected="false">
-                <i class="fa-solid fa-file-import me-2"></i><span data-i18n="import">Import</span>
-            </button>
-        </li>
+        <!-- 2026-09-02, explicit request ("จะมีอีก Tab ที่เป็น Tab import โดยตรง ถ้าพิจารณาแล้วว่าเป็นการทำงาน
+             ซ้ำซ้อนลบออกได้เลย") -- this standalone Import tab (2026-08-30, Phase 5 T030-T035) is now
+             genuinely superseded: every one of its own steps (download template, attach file, preview
+             row-by-row before committing) is reachable from the new "Import" button on each of the 3
+             other tabs (openBulkImportModal(), see bulk-entry.js), which additionally offers choosing
+             "Save Directly" vs "Load into Grid to Edit" -- something this old tab never had. Removed
+             outright rather than left as a dead-code duplicate path. History tab (below) is UNCHANGED
+             -- it's a genuinely different concern (audit trail across all 3 entity types), not
+             superseded by anything this round added. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="import-history-tab" data-bs-toggle="tab" data-bs-target="#import-history-pane" type="button" role="tab" aria-controls="import-history-pane" aria-selected="false">
                 <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="import_history_tab">History</span>
@@ -62,18 +61,18 @@
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="employee">Employee</label>
                             <select class="form-select select2-remote" id="filter_att_employee" data-api="/api/employee.report_to.get" data-type=""></select>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_att_date_from" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_att_date_to" autocomplete="off">
@@ -83,13 +82,13 @@
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mb-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnAttendanceClearFilter">
+            <div class="station-filter-clear-row d-none" id="attendanceFilterClearRow">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAttendanceClearFilter">
                     <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
                 </button>
             </div>
             <div class="mb-5 table-responsive">
-                <table class="table" id="tb_attendance" style="width:100%">
+                <table class="table table-striped table-hover align-middle" id="tb_attendance" style="width:100%">
                     <thead>
                         <tr>
                             <th data-i18n="employee">Employee</th>
@@ -115,18 +114,18 @@
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="employee">Employee</label>
                             <select class="form-select select2-remote" id="filter_leave_employee" data-api="/api/employee.report_to.get" data-type=""></select>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_leave_date_from" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_leave_date_to" autocomplete="off">
@@ -136,13 +135,13 @@
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mb-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnLeaveClearFilter">
+            <div class="station-filter-clear-row d-none" id="leaveFilterClearRow">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnLeaveClearFilter">
                     <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
                 </button>
             </div>
             <div class="mb-5 table-responsive">
-                <table class="table" id="tb_leave" style="width:100%">
+                <table class="table table-striped table-hover align-middle" id="tb_leave" style="width:100%">
                     <thead>
                         <tr>
                             <th data-i18n="employee">Employee</th>
@@ -167,18 +166,18 @@
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="employee">Employee</label>
                             <select class="form-select select2-remote" id="filter_ot_employee" data-api="/api/employee.report_to.get" data-type=""></select>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_ot_date_from" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_ot_date_to" autocomplete="off">
@@ -188,13 +187,13 @@
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mb-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnOvertimeClearFilter">
+            <div class="station-filter-clear-row d-none" id="overtimeFilterClearRow">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnOvertimeClearFilter">
                     <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
                 </button>
             </div>
             <div class="mb-5 table-responsive">
-                <table class="table" id="tb_overtime" style="width:100%">
+                <table class="table table-striped table-hover align-middle" id="tb_overtime" style="width:100%">
                     <thead>
                         <tr>
                             <th data-i18n="employee">Employee</th>
@@ -209,56 +208,6 @@
                     </thead>
                     <tbody></tbody>
                 </table>
-            </div>
-        </div>
-        <div class="tab-pane fade" id="import-pane" role="tabpanel" aria-labelledby="import-tab" tabindex="0">
-            <div class="card-surface mb-4">
-                <h6 class="mb-3"><span class="badge bg-secondary me-2">1</span><span data-i18n="import_step1_title">Choose a data type and download its template</span></h6>
-                <div class="row g-2 align-items-end">
-                    <div class="col-sm-5 col-md-4">
-                        <label class="form-label mb-1" data-i18n="entity_type">Data Type</label>
-                        <select class="form-select" id="importEntityType" data-option-keys="attendance,leave,overtime" data-option-values="attendance,leave,overtime"></select>
-                    </div>
-                    <div class="col-sm-4 col-md-3">
-                        <button type="button" class="btn btn-outline-primary w-100" id="btnDownloadImportTemplate">
-                            <i class="fa-solid fa-download me-1"></i><span data-i18n="download_template">Download Template</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-            <div class="card-surface mb-4">
-                <h6 class="mb-3"><span class="badge bg-secondary me-2">2</span><span data-i18n="import_step2_title">Upload the filled-in template</span></h6>
-                <div class="row g-2 align-items-end">
-                    <div class="col-sm-6 col-md-5">
-                        <input type="file" class="form-control" id="importFileInput" accept=".csv,.xlsx,.xls">
-                    </div>
-                    <div class="col-sm-4 col-md-3">
-                        <button type="button" class="btn btn-primary w-100" id="btnPreviewImport">
-                            <i class="fa-solid fa-magnifying-glass me-1"></i><span data-i18n="preview">Preview</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-            <div class="card-surface mb-4 d-none" id="importPreviewWrap">
-                <h6 class="mb-3"><span class="badge bg-secondary me-2">3</span><span data-i18n="import_step3_title">Review results and confirm</span></h6>
-                <div class="d-flex flex-wrap gap-2 mb-3" id="importSummaryBadges"></div>
-                <div class="alert alert-warning d-none" id="importUnmappedAlert"></div>
-                <div class="table-responsive mb-3" style="max-height:400px;overflow-y:auto;">
-                    <table class="table table-sm" id="tb_import_preview">
-                        <thead>
-                            <tr>
-                                <th data-i18n="row">Row</th>
-                                <th data-i18n="status">Status</th>
-                                <th data-i18n="action">Action</th>
-                                <th data-i18n="message">Message</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-                <button type="button" class="btn btn-success" id="btnConfirmImport">
-                    <i class="fa-solid fa-check me-1"></i><span data-i18n="confirm_import">Confirm Import</span>
-                </button>
             </div>
         </div>
         <!-- 2026-08-30, explicit follow-up request: "เก็บประวัติการ Download ข้อมูลออกจากระบบ และการ Import
@@ -277,22 +226,22 @@
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="event_type">Event</label>
                             <select class="form-select" id="filter_ih_event_type" data-option-keys="download,import" data-option-values="download,import"></select>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="entity_type">Data Type</label>
                             <select class="form-select" id="filter_ih_entity_type" data-option-keys="attendance,leave,overtime" data-option-values="attendance,leave,overtime"></select>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_ih_date_from" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
-                        <div class="col-sm-4 col-md-3">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_ih_date_to" autocomplete="off">
@@ -302,13 +251,13 @@
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mb-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnImportHistoryClearFilter">
+            <div class="station-filter-clear-row d-none" id="importHistoryFilterClearRow">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnImportHistoryClearFilter">
                     <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
                 </button>
             </div>
             <div class="mb-5 table-responsive">
-                <table class="table" id="tb_import_history" style="width:100%">
+                <table class="table table-striped table-hover align-middle" id="tb_import_history" style="width:100%">
                     <thead>
                         <tr>
                             <th data-i18n="started_at">Date/Time</th>
@@ -332,3 +281,4 @@
 <!-- attendanceModal / leaveModal / overtimeModal / manualEntryDeleteModal moved to
      app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 <script src="<?=asset('public/js/manual-entry/index.js')?>"></script>
+<script src="<?=asset('public/js/manual-entry/bulk-entry.js')?>"></script>

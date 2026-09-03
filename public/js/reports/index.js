@@ -88,10 +88,12 @@ function annualReportRows() {
         return meta.frequency === 'annual';
     });
 }
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group.
 function annualReportActionsHtml(report) {
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-primary btn-annual-report-download" data-code="${report.code}" title="${langData['report_preview_and_download'] || 'Preview & Download'}"><i class="fa-solid fa-download"></i></button>
-        <button type="button" class="btn btn-link text-secondary border-start btn-annual-report-history" data-code="${report.code}" title="${langData['report_view_history'] || 'View Download History'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+    return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-annual-report-download" data-code="${report.code}" title="${langData['report_preview_and_download'] || 'Preview & Download'}"><i class="fa-solid fa-download"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-annual-report-history" data-code="${report.code}" title="${langData['report_view_history'] || 'View Download History'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
     </div>`;
 }
 function renderAnnualReportsTable() {
@@ -391,9 +393,11 @@ function loadCycleReportSummary(runId) {
 function cycleReportActionsHtml(row) {
     const disabledAttr = ''; // every offered run is already approved/paid/locked -- cycleRuns() itself only lists those states
     const downloadTitle = row.per_employee ? (langData['select_employee_to_download'] || 'Select an employee to download') : (langData['report_preview_and_download'] || 'Preview & Download');
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-primary btn-cycle-report-download" data-code="${row.code}" ${disabledAttr} title="${downloadTitle}"><i class="fa-solid fa-download"></i></button>
-        <button type="button" class="btn btn-link text-secondary border-start btn-cycle-report-history" data-code="${row.code}" title="${langData['report_view_history'] || 'View Download History'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+    // ".btn-circle-action" section) replace the old adjacent .btn-group.
+    return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-cycle-report-download" data-code="${row.code}" ${disabledAttr} title="${downloadTitle}"><i class="fa-solid fa-download"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-cycle-report-history" data-code="${row.code}" title="${langData['report_view_history'] || 'View Download History'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
     </div>`;
 }
 
@@ -703,7 +707,7 @@ $(document).on('click', '#exportHistoryStationFilterToggle', function () {
 });
 function updateExportHistoryClearFilterVisibility() {
     const active = !!($('#filter_export_report_type').val() || $('#exportHistoryDateFrom').val() || $('#exportHistoryDateTo').val());
-    $('#btnExportHistoryClearFilter').toggleClass('d-none', !active);
+    $('#exportHistoryFilterClearRow').toggleClass('d-none', !active);
 }
 $(document).on('change', '#exportHistoryDateFrom, #exportHistoryDateTo', function () {
     updateExportHistoryClearFilterVisibility();
