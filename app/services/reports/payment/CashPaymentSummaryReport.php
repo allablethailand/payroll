@@ -5,17 +5,24 @@ require_once __DIR__ . '/../ExcelRendererTrait.php';
 require_once __DIR__ . '/../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../../../models/PayrollRunCashPaymentModel.php';
+require_once __DIR__ . '/../../../models/EmployeePaymentMethodModel.php';
 require_once __DIR__ . '/../LocalizedException.php';
 
 /**
  * Cash Payment Summary (2026-08-31, explicit request: "ถ้าพนักงานรับเงินสด ต้องไม่ดึงไปใน Report Payroll
  * ขึ้นธนาคาร แต่แยก Report ตามแยก ว่าจ่ายเงินสดเท่าไหร่ โอนผ่านธนาคารเท่าไหร่ และสามารถใส่ Status ว่าจ่ายแล้ว")
- * -- a per-run breakdown of every employee by payment_type (cash vs bank), with the cash side's own
+ * -- a per-run breakdown of every employee by payment method (cash vs bank), with the cash side's own
  * paid/unpaid status (PayrollRunCashPaymentModel). This is a plain EXPORT snapshot of that same
  * data -- the interactive "mark as paid" action itself lives on the Payroll Run Detail page's own
  * Cash Payments tab (api/payroll-run-cash-payment.*), not here; this report exists so the same
  * breakdown can be downloaded/archived like every other payment-type report. Same ALLOWED_STATES
  * gate (approved/paid/locked) as PaymentVoucherReport/BankTransferFileReport.
+ * 2026-09-02, follow-up: predates the payment_method_id (transfer/cash/check/mixed) feature -- was a
+ * plain payment_type (bank/cash enum) binary. 'check' now buckets with cash (no bank account
+ * involved either); 'mixed' gets its OWN two rows here (its cash-side lines summed into the cash
+ * total the same way PayrollRunCashPaymentModel::ensureRowsForRun() does, its transfer-side lines
+ * summed into the bank total the same way BankTransferFileReport::generate() does) -- a single
+ * employee genuinely receiving both this cycle needs to show in both totals, not be forced into one.
  */
 class CashPaymentSummaryReport implements ReportGeneratorInterface {
     use ExcelRendererTrait;
@@ -79,20 +86,56 @@ class CashPaymentSummaryReport implements ReportGeneratorInterface {
         $rows = [];
         $totalCash = 0.0;
         $totalBank = 0.0;
+        $paymentMethodModel = new EmployeePaymentMethodModel();
         foreach ($details as $d) {
-            $isCash = ($d['payment_type'] ?? 'bank') === 'cash';
-            $net = (float)$d['net_amount'];
+            $code = $d['payment_method_code'] ?? 'transfer';
+            $net = (float)($d['net_amount_due'] ?? $d['net_amount']);
+            $employeeId = (int)$d['employee_id'];
+            $cashRow = $cashByEmployee[$employeeId] ?? null;
+            if ($code === 'mixed') {
+                $lines = $paymentMethodModel->getLines($employeeId);
+                $netAmountDue = $net;
+                foreach (['cash' => 'เงินสด', 'transfer' => 'โอนธนาคาร'] as $lineCode => $label) {
+                    $matching = array_filter($lines, fn($l) => ($l['payment_method_code'] ?? '') === $lineCode);
+                    if (empty($matching)) {
+                        continue;
+                    }
+                    $sum = 0.0;
+                    foreach ($matching as $l) {
+                        $sum += $l['amount_type'] === 'percent'
+                            ? round($netAmountDue * (float)$l['amount_value'] / 100, 2)
+                            : (float)$l['amount_value'];
+                    }
+                    if ($lineCode === 'cash') {
+                        $totalCash += $sum;
+                    } else {
+                        $totalBank += $sum;
+                    }
+                    $statusLabel = $lineCode === 'cash' ? (($cashRow['status'] ?? 'unpaid') === 'paid' ? 'จ่ายแล้ว' : 'ยังไม่จ่าย') : '';
+                    $rows[] = [
+                        $d['employee_no'],
+                        $this->employeeDisplayName($d, 'th'),
+                        $label . ' (แบบผสม)',
+                        $sum,
+                        $statusLabel,
+                    ];
+                }
+                continue;
+            }
+            $isCash = $code === 'cash' || $code === 'check';
             if ($isCash) {
                 $totalCash += $net;
             } else {
                 $totalBank += $net;
             }
-            $cashRow = $cashByEmployee[(int)$d['employee_id']] ?? null;
-            $statusLabel = $isCash ? (($cashRow['status'] ?? 'unpaid') === 'paid' ? 'จ่ายแล้ว' : 'ยังไม่จ่าย') : '';
+            // 2026-09-02: paid/unpaid status only applies to code='cash' -- PayrollRunCashPaymentModel
+            // never tracks 'check' rows (see its own ensureRowsForRun()), so a check-paying employee
+            // genuinely has no status here, same as a bank-transfer employee's blank status always had.
+            $statusLabel = $code === 'cash' ? (($cashRow['status'] ?? 'unpaid') === 'paid' ? 'จ่ายแล้ว' : 'ยังไม่จ่าย') : '';
             $rows[] = [
                 $d['employee_no'],
                 $this->employeeDisplayName($d, 'th'),
-                $isCash ? 'เงินสด' : 'โอนธนาคาร',
+                $isCash ? ($code === 'check' ? 'เช็ค' : 'เงินสด') : 'โอนธนาคาร',
                 $net,
                 $statusLabel,
             ];

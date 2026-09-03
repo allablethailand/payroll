@@ -92,14 +92,45 @@ if ($compIdForOrigamiFlags > 0) {
 
 // 2026-08-31, explicit request: "สิทธิ์การใช้งาน...อยากให้แยกออกมาเป็นอีก Menu ไปเลย" -- same
 // single-purpose-page hide-the-whole-entry gate as $canViewApprovalWorkflowMenu directly above,
-// gated by rbac.manage (the same permission PermissionController's own matrix()/save() actions
-// already require).
+// gated by rbac.view (the same permission PermissionController's own matrix() action requires).
+// 2026-09-03, Phase 3 Stage 3: swapped off the retired coarse `.manage`.
 $canViewPermissionsMenu = true;
 if ($compIdForOrigamiFlags > 0) {
     $menuUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
     $menuIsAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
-    $canViewPermissionsMenu = (new PermissionModel())->checkPermission($menuUserId, 'rbac.manage', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
+    $canViewPermissionsMenu = (new PermissionModel())->checkPermission($menuUserId, 'rbac.view', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
 }
+
+// 2026-09-03, Platform Hardening Phase 6 pilot -- same single-purpose-page hide-the-whole-entry
+// pattern as $canViewPermissionsMenu directly above, gated by audit_log.view.
+$canViewAuditLogMenu = true;
+if ($compIdForOrigamiFlags > 0) {
+    $menuUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
+    $menuIsAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
+    $canViewAuditLogMenu = (new PermissionModel())->checkPermission($menuUserId, 'audit_log.view', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
+}
+
+// 2026-09-02, explicit request: "ซ่อนเมนู Report ด้วยเลยครับ" (following up on ReportsController now
+// being gated by payroll_run.view end-to-end, see that controller's own requireViewAccess()) --
+// UNLIKE $canViewApprovalWorkflowMenu/$canViewPermissionsMenu above, the "Reports" menu item is a
+// 3-row SUBMENU spanning 2 genuinely different permissions, not one single-purpose page: "Generate
+// Reports" (/reports) and "Payroll Run Audit" (/reports/run-audit) are both ReportsController,
+// gated by payroll_run.view; "Annual Income Summary" (/reports/annual-summary) is a SEPARATE
+// controller (AnnualIncomeSummaryController) gated by its own independent annual_income_summary.view
+// permission, unrelated to payroll_run.view. Hiding the whole submenu behind payroll_run.view alone
+// would incorrectly hide Annual Income Summary from a role deliberately granted ONLY
+// annual_income_summary.view (a real, distinct, already-existing permission) -- so each row is
+// gated by its OWN applicable permission below, and the top-level "Reports" parent only hides when
+// NEITHER sub-permission is held (nothing left underneath it to show).
+$canViewReportsGenerateMenu = true;
+$canViewAnnualIncomeSummaryMenu = true;
+if ($compIdForOrigamiFlags > 0) {
+    $menuUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
+    $menuIsAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
+    $canViewReportsGenerateMenu = (new PermissionModel())->checkPermission($menuUserId, 'payroll_run.view', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
+    $canViewAnnualIncomeSummaryMenu = (new PermissionModel())->checkPermission($menuUserId, 'annual_income_summary.view', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
+}
+$canViewReportsMenu = $canViewReportsGenerateMenu || $canViewAnnualIncomeSummaryMenu;
 
 // 2026-08-29, explicit request: "ให้ดึงรูปไปแสดงที่ header ด้วยครับ" -- the logged-in user's own profile
 // photo (employees.profile_photo_path) shown in the top-right nav dropdown, which previously always
@@ -275,13 +306,50 @@ if ($navUserId > 0) {
                 <span class="menu-text" data-i18n="dashboard">Dashboard</span>
             </a>
         </li>
-        <li class="menu-item">
-            <a href="<?=BASE_URL?>/employees" class="menu-link">
+        <!-- 2026-09-02, explicit request: "ลุยเลยครับ แล้วก็ประวัติการเข้าใช้งานด้วยครับ แยกเป็น 3 ไปเลย" --
+             the plain "Employees" link (List + Recheck Data + Login History + Reports as 4 tabs on
+             one page) is split into 3 standalone pages under this submenu: Employee (List + Recheck
+             Data stay together as 2 tabs, both are per-employee data-management/validation views),
+             Login History, and Reports (the 9-report sub-tab page from the 2026-09-02 Employee
+             Reports phased plan -- now its own destination instead of a 4th top-level tab, same
+             "Payslip & Documents" -> "Requests" submenu precedent already established below). Same
+             .has-submenu/.submenu-toggle markup shape as the existing Reports submenu just below --
+             public/js/app.js's own generic delegated handler needs zero new code for this to work.
+             No permission gate existed on the old plain link either, so none is added here. -->
+        <li class="menu-item has-submenu">
+            <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
                     <img src="<?=BASE_URL?>/public/images/menu/EMPLOYEE.SVG" alt="Employees">
                 </span>
                 <span class="menu-text" data-i18n="employees">Employees</span>
+                <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
             </a>
+            <ul class="submenu">
+                <li>
+                    <a href="<?=BASE_URL?>/employees" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/EMPLOYEE.SVG" alt="Employee">
+                        </span>
+                        <span class="submenu-text" data-i18n="employee_list_menu">Employee List</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/employees/login-history" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/EMPLOYEE.SVG" alt="Login History">
+                        </span>
+                        <span class="submenu-text" data-i18n="login_history">Login History</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/employees/reports" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Reports">
+                        </span>
+                        <span class="submenu-text" data-i18n="employee_reports">Reports</span>
+                    </a>
+                </li>
+            </ul>
         </li>
         <li class="menu-item">
             <a href="<?=BASE_URL?>/payroll-process" class="menu-link">
@@ -315,6 +383,7 @@ if ($navUserId > 0) {
              plain link. Permission (`annual_income_summary.view`) is gated at the controller, same
              as every other permission-gated page in this app -- the link itself is always shown,
              an unauthorized click lands on the shared permission-denied view. -->
+        <?php if ($canViewReportsMenu): ?>
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
@@ -324,6 +393,7 @@ if ($navUserId > 0) {
                 <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
             </a>
             <ul class="submenu">
+                <?php if ($canViewReportsGenerateMenu): ?>
                 <li>
                     <a href="<?=BASE_URL?>/reports" class="submenu-link">
                         <span class="submenu-icon">
@@ -332,6 +402,8 @@ if ($navUserId > 0) {
                         <span class="submenu-text" data-i18n="generate_reports">Generate Reports</span>
                     </a>
                 </li>
+                <?php endif; ?>
+                <?php if ($canViewAnnualIncomeSummaryMenu): ?>
                 <li>
                     <a href="<?=BASE_URL?>/reports/annual-summary" class="submenu-link">
                         <span class="submenu-icon">
@@ -340,10 +412,14 @@ if ($navUserId > 0) {
                         <span class="submenu-text" data-i18n="annual_income_summary">Annual Income Summary</span>
                     </a>
                 </li>
+                <?php endif; ?>
                 <!-- 2026-08-31, same-day follow-up (item 10, explicit request: "Design ให้หน่อยครับ No
                      Idea" -- diff-history audit of every payroll run's manual edits). Same "interactive
                      page, not a generate-and-download document" reasoning as Annual Income Summary
-                     above -- hangs off the same Reports submenu rather than a new top-level icon. -->
+                     above -- hangs off the same Reports submenu rather than a new top-level icon.
+                     Gated by $canViewReportsGenerateMenu (payroll_run.view) since ReportsController::
+                     runAudit() checks the same permission, not its own separate one. -->
+                <?php if ($canViewReportsGenerateMenu): ?>
                 <li>
                     <a href="<?=BASE_URL?>/reports/run-audit" class="submenu-link">
                         <span class="submenu-icon">
@@ -352,8 +428,10 @@ if ($navUserId > 0) {
                         <span class="submenu-text" data-i18n="payroll_run_audit_menu">Payroll Run Audit</span>
                     </a>
                 </li>
+                <?php endif; ?>
             </ul>
         </li>
+        <?php endif; ?>
         <!-- 2026-08-24, explicit request: "Menu Employment Ceritficate น่าจะนำไปรวมใน Play Slip แต่เปลี่ยน
              Menu ส่วนของการตั้งค่าก็เอาไปไว้ด้วยกัน แต่แยก Tab มีแค่ส่วนของการ Request ที่แยก Sub menu ย่อย" --
              the standalone Employment Certificate menu item (added earlier the same day) is now gone;
@@ -448,6 +526,20 @@ if ($navUserId > 0) {
             </a>
         </li>
         <?php endif; ?>
+        <!-- 2026-09-03, Platform Hardening Phase 6 pilot -- own single-link top-level entry, same
+             pattern as Permissions directly above. Reuses REPORT.svg (a log/list of entries reads
+             closest to that icon among what already exists -- same "reuse an existing icon"
+             precedent as every other module without a dedicated icon). Gated by $canViewAuditLogMenu. -->
+        <?php if ($canViewAuditLogMenu): ?>
+        <li class="menu-item">
+            <a href="<?=BASE_URL?>/audit-log" class="menu-link">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Audit Log">
+                </span>
+                <span class="menu-text" data-i18n="audit_log_menu">Audit Log</span>
+            </a>
+        </li>
+        <?php endif; ?>
         <!-- 2026-08-30, explicit request: "การจัดเรียง Menu Setting อยู่ท้ายสุดเสมอครับ" -- already the
              last top-level <li> in $sidebarMenuList (verified, no other file renders this menu) --
              keep it that way: any future top-level menu item goes ABOVE this one, not below. -->
@@ -466,6 +558,14 @@ if ($navUserId > 0) {
                             <img src="<?=BASE_URL?>/public/images/menu/COMPANY.SVG" alt="Company Profile">
                         </span>
                         <span class="submenu-text" data-i18n="company_profile">Company Profile</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/setup/data-sync" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Data Sync">
+                        </span>
+                        <span class="submenu-text" data-i18n="data_sync_menu">Data Sync</span>
                     </a>
                 </li>
                 <li>

@@ -46,8 +46,8 @@
             </div>
         </div>
     </div>
-    <div class="d-flex justify-content-end mb-3">
-        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearApprovalDateFilter">
+    <div class="station-filter-clear-row d-none" id="approvalDateFilterClearRow">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearApprovalDateFilter">
             <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
         </button>
     </div>

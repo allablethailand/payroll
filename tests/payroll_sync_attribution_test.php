@@ -54,12 +54,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'ATTR', 'Test', 'ATTR', '1990-01-01', 'Thai',
          :email, '0812345678', 'A', 'A', 'E', 'E', 'friend', '0898888888',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'cash', 'monthly', 30000, '2020-01-01', 'average', 'active', 0, 0, 0)");
+         'monthly', 30000, '2020-01-01', 'average', 'active', 0, 0, 0)");
     $insEmp->execute([':comp_id' => $compId, ':employee_no' => $empNo, ':email' => uniqid() . '@test.local']);
     $employeeId = (int)$pdo->lastInsertId();
 

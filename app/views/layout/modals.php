@@ -221,8 +221,8 @@
                         </div>
                     </div>
                 </div>
-                <div class="d-flex justify-content-end mb-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnCycleReportHistoryClearFilter">
+                <div class="station-filter-clear-row d-none" id="cycleReportHistoryFilterClearRow">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCycleReportHistoryClearFilter">
                         <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
                     </button>
                 </div>
@@ -346,10 +346,10 @@
             <div class="modal-footer justify-content-between">
                 <span class="text-muted small" id="syncSelectedCountLabel"></span>
                 <div>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="button" class="btn btn-primary d-none" id="btnApplyEmployeeSync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="syncSelectedCount">0</span>)
                     </button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -449,17 +449,17 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label"><span data-i18n="doc_numbering_prefix">Format (Prefix)</span> <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control required" id="dn_prefix_format" maxlength="50">
+                        <input type="text" class="form-control required" id="dn_prefix_format" maxlength="50" data-i18n="document_number_prefix_placeholder" placeholder="e.g., INV-{YYYY}-">
                         <div class="text-secondary small mt-1" data-i18n="doc_numbering_prefix_hint">Placeholders: {YYYY} = year, {MM} = month, {YYYYMMDD} = full date.</div>
                     </div>
                     <div class="row g-3 mb-3">
                         <div class="col-sm-6">
                             <label class="form-label"><span data-i18n="doc_numbering_digits">Digits</span> <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control required" id="dn_digit_count" min="1" max="10" step="1">
+                            <input type="number" class="form-control required" id="dn_digit_count" min="1" max="10" step="1" data-i18n="document_number_digit_count_placeholder" placeholder="e.g., 5">
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label"><span data-i18n="doc_numbering_current">Current Number</span> <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control required" id="dn_current_number" min="0" step="1">
+                            <input type="number" class="form-control required" id="dn_current_number" min="0" step="1" data-i18n="document_number_current_number_placeholder" placeholder="e.g., 1">
                         </div>
                     </div>
                     <div class="mb-2">
@@ -510,6 +510,22 @@
                             <select class="form-select select2-static required" id="payroll_frequency" name="payroll_frequency" data-option-keys="freq_monthly,freq_semi_monthly,freq_weekly,freq_bi_weekly" data-option-values="monthly,semi_monthly,weekly,bi_weekly"></select>
                         </div>
                     </div>
+                    <!-- 2026-09-02, reply from Origami's own team re: "Map รอบการจ่ายเงินเดือน" -- an
+                         optional exact-match key against Origami's own payroll_period.external_cycle_code
+                         (PAYROLL_SYNC_API.md, 2026-09-01 revision), so PayrollCycleModel::
+                         matchForSyncProcess() can join a Pending Pull document to the right schedule
+                         with certainty instead of guessing from frequency+cutoff+payment-day (which
+                         breaks down whenever 2 schedules share the same frequency/dates). Re-enter the
+                         SAME code the company's Origami admin set on their own Setup > Period screen. -->
+                    <div class="row mb-3">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-0" data-i18n="modal_external_cycle_code">External Cycle Code</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control" id="external_cycle_code" name="external_cycle_code" maxlength="100" data-i18n="modal_external_cycle_code_placeholder" placeholder="e.g., PR-MTH-20">
+                            <div class="form-text" data-i18n="modal_external_cycle_code_hint">Optional. Must exactly match the code your Origami admin set for this period on their own Setup &gt; Period screen, so incoming documents can be matched to this schedule automatically.</div>
+                        </div>
+                    </div>
                     <hr class="my-4 text-muted opacity-25">
                     <h6 class="text-secondary fw-bold mb-3">
                         <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
@@ -520,7 +536,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" min="1" max="28" class="form-control required" id="cutoff_day_of_month" name="cutoff_day_of_month">
+                            <input type="number" min="1" max="28" class="form-control required" id="cutoff_day_of_month" name="cutoff_day_of_month" data-i18n="day_of_month_placeholder" placeholder="1-28">
                         </div>
                         <div class="col-sm-6 pt-2">
                             <input type="checkbox" class="me-2" id="cutoff_use_last_day" name="cutoff_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
@@ -540,7 +556,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" min="1" max="28" class="form-control required" id="payment_day_of_month" name="payment_day_of_month">
+                            <input type="number" min="1" max="28" class="form-control required" id="payment_day_of_month" name="payment_day_of_month" data-i18n="day_of_month_placeholder" placeholder="1-28">
                         </div>
                         <div class="col-sm-6 pt-2">
                             <input type="checkbox" class="me-2" id="payment_use_last_day" name="payment_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
@@ -574,7 +590,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_ot_cutoff_day">OT Cut-off Day</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" min="1" max="28" class="form-control" id="ot_cutoff_day_of_month" name="ot_cutoff_day_of_month">
+                            <input type="number" min="1" max="28" class="form-control" id="ot_cutoff_day_of_month" name="ot_cutoff_day_of_month" data-i18n="day_of_month_placeholder" placeholder="1-28">
                         </div>
                         <div class="col-sm-6 pt-2">
                             <input type="checkbox" class="me-2" id="ot_cutoff_use_last_day" name="ot_cutoff_use_last_day"><span data-i18n="use_last_day_of_month">Use last day of the month</span>
@@ -593,26 +609,35 @@
                             <select class="form-select select2-remote required" id="bank_file_format_id" name="bank_file_format_id" data-api="/api/bank-file-format.options"></select>
                         </div>
                     </div>
+                    <!-- 2026-09-02, explicit request: "หน้านี้รองรับการเพิ่มมากกว่า 1 บัญชีธนาคารต่อ 1 รอบจ่าย
+                         เงินเดือนอยู่แล้วหรือไม่...ถ้ายังไม่มีให้เพิ่ม" -- confirmed real gap, replaces the old
+                         single select with a checkbox list (this cycle can offer 2+ accounts) + one
+                         "Default" radio scoped to only the CHECKED accounts (exactly one required
+                         whenever the list isn't empty -- see PayrollCycleModel::saveBankAccounts()'s
+                         own app-layer invariant). An empty list is valid (falls back to the company's
+                         own default account, same as before this feature existed). -->
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="modal_cycle_bank_account">Bank Account</label>
+                            <label class="form-label mb-0" data-i18n="modal_cycle_bank_account">Bank Accounts</label>
                         </div>
                         <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="cycle_bank_account_id" name="bank_account_id" data-api="/api/payroll-cycle.bank-account.options"></select>
-                            <div class="form-text" data-i18n="modal_cycle_bank_account_hint">Leave blank to use the company's default bank account.</div>
+                            <div id="cycleBankAccountsList" class="border rounded-3 p-2" style="max-height:180px;overflow-y:auto;">
+                                <div class="text-muted small" data-i18n="loading">Loading...</div>
+                            </div>
+                            <div class="form-text" data-i18n="modal_cycle_bank_account_hint">Leave every account unchecked to use the company's default bank account.</div>
                         </div>
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="status">Status</label>
+                            <label class="form-label mb-0" data-i18n="default_payment_method_label">Default Payment Method</label>
                         </div>
-                        <div class="col-sm-3">
-                            <select class="form-select select2-static" id="cycle_status" name="status" data-option-keys="active,inactive"></select>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-remote" id="cycle_default_payment_method_id" name="default_payment_method_id" data-api="/api/payment-method.options" allow-clear="true"></select>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" class="btn btn-warning px-4" data-i18n="save">Save</button>
+                    <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 </div>
             </form>
@@ -663,7 +688,7 @@
                             <label class="form-label mb-0"><span data-i18n="item_name_en">Item Name (EN)</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="item_name_en" name="item_name_en">
+                            <input type="text" class="form-control required" id="item_name_en" name="item_name_en" data-i18n="ped_item_name_en_placeholder" placeholder="e.g., Base Salary">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -671,7 +696,7 @@
                             <label class="form-label mb-0"><span data-i18n="item_name_th">Item Name (TH)</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="item_name_th" name="item_name_th">
+                            <input type="text" class="form-control required" id="item_name_th" name="item_name_th" data-i18n="ped_item_name_th_placeholder" placeholder="e.g., เงินเดือนพื้นฐาน">
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">
@@ -722,7 +747,7 @@
                             <label class="form-label mb-0"><span data-i18n="fixed_amount">Fixed Amount</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="fixed_amount" name="fixed_amount">
+                            <input type="number" step="0.01" min="0" class="form-control" id="fixed_amount" name="fixed_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                         </div>
                     </div>
                     <div class="row mb-3 d-none" id="percent_rate_wrapper">
@@ -731,7 +756,7 @@
                         </div>
                         <div class="col-sm-3">
                             <div class="input-group">
-                                <input type="number" step="0.01" min="0" max="100" class="form-control" id="percent_rate" name="percent_rate">
+                                <input type="number" step="0.01" min="0" max="100" class="form-control" id="percent_rate" name="percent_rate" data-i18n="percent_rate_placeholder" placeholder="e.g., 1.5">
                                 <span class="input-group-text">%</span>
                             </div>
                         </div>
@@ -781,7 +806,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" class="btn btn-warning px-4" data-i18n="save">Save</button>
+                    <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 </div>
             </form>
@@ -886,6 +911,27 @@
                     <label class="form-label" data-i18n="attendance_deduction_label">Note (used for what?)</label>
                     <input type="text" class="form-control" id="attendanceRuleLabel" maxlength="150" placeholder="e.g., Warehouse team - stricter late policy">
                 </div>
+                <!-- 2026-09-01, explicit request: "ให้เลือกก่อนว่าหัก หรือไม่หัก เป็น radio จากนั้นค่อยแสดงหรือ
+                     ซ่อน Form ที่เหลือ" -- 'no_deduction' already existed as just another option buried
+                     inside the Deduction Method dropdown; this promotes it to an up-front radio choice
+                     so the rest of the form (method/rate/amount/preview) only ever shows when it's
+                     actually relevant. See payroll-configuration.js's attendanceRuleDeductChoice handler
+                     -- it still just drives #attendanceDeductionMethod's own value under the hood, so
+                     saveAttendanceDeductionRule()/AttendanceDeductionRuleModel needed zero changes. -->
+                <div class="mb-3">
+                    <label class="form-label" data-i18n="attendance_deduction_apply">Apply Deduction?</label>
+                    <div>
+                        <div class="form-check form-check-inline mt-1">
+                            <input class="form-check-input" type="radio" name="attendanceRuleDeductChoice" id="attendanceRuleDeductYes" value="deduct" checked>
+                            <label class="form-check-label" for="attendanceRuleDeductYes" data-i18n="attendance_deduction_apply_yes">Deduct</label>
+                        </div>
+                        <div class="form-check form-check-inline mt-1">
+                            <input class="form-check-input" type="radio" name="attendanceRuleDeductChoice" id="attendanceRuleDeductNo" value="no_deduction">
+                            <label class="form-check-label" for="attendanceRuleDeductNo" data-i18n="attendance_deduction_apply_no">No Deduction</label>
+                        </div>
+                    </div>
+                </div>
+                <div id="attendanceRuleDeductFieldsWrapper">
                 <div class="mb-3">
                     <label class="form-label" data-i18n="attendance_deduction_method">Deduction Method</label>
                     <select class="form-select select2-remote" id="attendanceDeductionMethod" data-api="/api/attendance-deduction-rule.method-options" data-type="attendance_deduction_method"></select>
@@ -900,7 +946,7 @@
                 </div>
                 <div id="attendancePercentSection" class="mb-3 d-none">
                     <label class="form-label" data-i18n="attendance_deduction_multiplier">Multiplier (x of the salary-derived rate)</label>
-                    <input type="number" step="0.01" min="0.01" class="form-control" id="attendanceMultiplierRate" value="1.00">
+                    <input type="number" step="0.01" min="0.01" class="form-control" id="attendanceMultiplierRate" value="1.00" data-i18n="multiplier_rate_placeholder" placeholder="e.g., 1.50">
                 </div>
                 <div id="attendanceBracketSection" class="mb-3 d-none">
                     <label class="form-label d-block" data-i18n="attendance_deduction_brackets">Brackets</label>
@@ -935,19 +981,20 @@
                     <div class="row g-2 mb-2">
                         <div class="col-6">
                             <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_salary">Sample Base Salary</label>
-                            <input type="number" min="1" step="0.01" class="form-control form-control-sm" id="attendanceCalcPreviewBaseSalary" value="30000">
+                            <input type="number" min="1" step="0.01" class="form-control form-control-sm" id="attendanceCalcPreviewBaseSalary" value="30000" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
                         </div>
                         <div class="col-6">
                             <label class="form-label small mb-1" id="attendanceCalcPreviewMinutesLabel" data-i18n="calc_preview_sample_minutes">Sample Minutes Late/Absent</label>
-                            <input type="number" min="0" step="1" class="form-control form-control-sm" id="attendanceCalcPreviewMinutes" value="30">
+                            <input type="number" min="0" step="1" class="form-control form-control-sm" id="attendanceCalcPreviewMinutes" value="30" data-i18n="minutes_placeholder" placeholder="e.g., 30">
                         </div>
                     </div>
                     <div class="calc-preview-result d-none" id="attendanceCalcPreviewResult"></div>
                 </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" onclick="saveAttendanceDeductionRule()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary px-4" onclick="saveAttendanceDeductionRule()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -1030,7 +1077,7 @@
                     <hr>
                     <div class="mb-2">
                         <label class="form-label small" data-i18n="note_optional">Note (optional)</label>
-                        <textarea id="requestActionNote" class="form-control" rows="2" maxlength="500"></textarea>
+                        <textarea id="requestActionNote" class="form-control" rows="2" maxlength="500" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                     </div>
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-success btn-sm" id="btnApproveRequest"><i class="fa-solid fa-check me-1"></i><span data-i18n="approve">Approve</span></button>
@@ -1073,7 +1120,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_name_th">Name (Thai)</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="si_item_name_th" name="name_th">
+                            <input type="text" class="form-control required" id="si_item_name_th" name="name_th" data-i18n="statutory_item_name_th_placeholder" placeholder="e.g., ภาษีเงินได้บุคคลธรรมดา">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -1081,7 +1128,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_name_en">Name (English)</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="si_item_name_en" name="name_en">
+                            <input type="text" class="form-control required" id="si_item_name_en" name="name_en" data-i18n="statutory_item_name_en_placeholder" placeholder="e.g., Personal Income Tax">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -1127,7 +1174,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_decimal_places">Decimal Places</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" min="0" max="4" class="form-control" id="item_decimal_places" name="decimal_places" value="2">
+                            <input type="number" min="0" max="4" class="form-control" id="item_decimal_places" name="decimal_places" value="2" data-i18n="decimal_places_placeholder" placeholder="0-4">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -1135,7 +1182,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_sort_order">Sort Order</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" min="0" class="form-control" id="item_sort_order" name="sort_order" value="0">
+                            <input type="number" min="0" class="form-control" id="item_sort_order" name="sort_order" value="0" data-i18n="count_placeholder" placeholder="0">
                         </div>
                     </div>
                     <div class="row mb-2">
@@ -1152,11 +1199,6 @@
                         </div>
                         <div class="col-sm-6">
                             <input type="checkbox" class="me-2" id="item_is_company_rate_editable" name="is_company_rate_editable"><span data-i18n="modal_company_rate_editable">Company May Adjust Rate</span>
-                        </div>
-                    </div>
-                    <div class="row mb-2 mt-2">
-                        <div class="col-sm-6">
-                            <input type="checkbox" class="me-2" id="item_status" name="status" checked><span data-i18n="active">Active</span>
                         </div>
                     </div>
                 </div>
@@ -1249,7 +1291,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_employee_rate">Employee Rate (%)</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-4">
-                                <input type="number" step="0.0001" min="0" class="form-control" id="rate_employee_rate" name="employee_rate">
+                                <input type="number" step="0.0001" min="0" class="form-control" id="rate_employee_rate" name="employee_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
                             </div>
                         </div>
                         <div class="row mb-3" id="rate_employer_rate_wrapper">
@@ -1257,7 +1299,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_employer_rate">Employer Rate (%)</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-4">
-                                <input type="number" step="0.0001" min="0" class="form-control" id="rate_employer_rate" name="employer_rate">
+                                <input type="number" step="0.0001" min="0" class="form-control" id="rate_employer_rate" name="employer_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
                             </div>
                         </div>
                     </div>
@@ -1268,7 +1310,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_employee_amount">Employee Amount</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-4">
-                                <input type="number" step="0.01" min="0" class="form-control" id="rate_employee_amount" name="employee_amount">
+                                <input type="number" step="0.01" min="0" class="form-control" id="rate_employee_amount" name="employee_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                             </div>
                         </div>
                         <div class="row mb-3" id="rate_employer_amount_wrapper">
@@ -1276,7 +1318,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_employer_amount">Employer Amount</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-4">
-                                <input type="number" step="0.01" min="0" class="form-control" id="rate_employer_amount" name="employer_amount">
+                                <input type="number" step="0.01" min="0" class="form-control" id="rate_employer_amount" name="employer_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                             </div>
                         </div>
                     </div>
@@ -1319,13 +1361,13 @@
                             <label class="form-label mb-0"><span data-i18n="modal_min_base">Minimum Base Amount</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="rate_min_base_amount" name="min_base_amount">
+                            <input type="number" step="0.01" min="0" class="form-control" id="rate_min_base_amount" name="min_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                         </div>
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0"><span data-i18n="modal_max_base">Maximum Base Amount</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_base_amount" name="max_base_amount">
+                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_base_amount" name="max_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -1333,13 +1375,13 @@
                             <label class="form-label mb-0"><span data-i18n="modal_max_employee_contribution">Max Employee Contribution</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_employee_contribution" name="max_employee_contribution">
+                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_employee_contribution" name="max_employee_contribution" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                         </div>
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0"><span data-i18n="modal_max_employer_contribution">Max Employer Contribution</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_employer_contribution" name="max_employer_contribution">
+                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_employer_contribution" name="max_employer_contribution" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -1347,7 +1389,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_remark">Remark</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control" id="rate_remark" name="remark">
+                            <input type="text" class="form-control" id="rate_remark" name="remark" data-i18n="remark_placeholder" placeholder="Optional notes">
                         </div>
                     </div>
 
@@ -1360,15 +1402,15 @@
                         <div class="row g-2 mb-2">
                             <div class="col-6">
                                 <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_amount">Sample Base Amount</label>
-                                <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="rateVersionCalcPreviewBase" value="30000">
+                                <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="rateVersionCalcPreviewBase" value="30000" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
                             </div>
                         </div>
                         <div class="calc-preview-result d-none" id="rateVersionCalcPreviewResult"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" id="btnBackToRateHistory" data-i18n="back">Back</button>
                     <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
+                    <button type="button" class="btn btn-outline-secondary" id="btnBackToRateHistory" data-i18n="back">Back</button>
                 </div>
             </form>
         </div>
@@ -1438,7 +1480,7 @@
                                 <label class="form-label mb-0"><span data-i18n="modal_remark">Remark</span></label>
                             </div>
                             <div class="col-sm-8">
-                                <input type="text" class="form-control" id="cs_remark" name="remark">
+                                <input type="text" class="form-control" id="cs_remark" name="remark" data-i18n="remark_placeholder" placeholder="Optional notes">
                             </div>
                         </div>
                     </div>
@@ -1446,8 +1488,8 @@
                 <div class="modal-footer justify-content-between">
                     <button type="button" class="btn btn-outline-danger" id="btnResetCompanySetting"><i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="reset_to_default">Reset to Default</span></button>
                     <div>
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>
             </form>
@@ -1495,17 +1537,17 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="late_minutes">Late (min)</label>
-                        <input type="number" min="0" class="form-control" id="attendanceLateMinutes" value="0">
+                        <input type="number" min="0" class="form-control" id="attendanceLateMinutes" value="0" data-i18n="minutes_placeholder" placeholder="e.g., 30">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="early_leave_minutes">Early Leave (min)</label>
-                        <input type="number" min="0" class="form-control" id="attendanceEarlyMinutes" value="0">
+                        <input type="number" min="0" class="form-control" id="attendanceEarlyMinutes" value="0" data-i18n="minutes_placeholder" placeholder="e.g., 30">
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveAttendance()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary" onclick="saveAttendance(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -1545,7 +1587,7 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label"><span data-i18n="total_days">Total Days</span> <span class="text-danger">*</span></label>
-                        <input type="number" min="0.5" step="0.5" class="form-control required" id="leaveTotalDays">
+                        <input type="number" min="0.5" step="0.5" class="form-control required" id="leaveTotalDays" data-i18n="days_placeholder" placeholder="e.g., 1">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="status">Status</label>
@@ -1553,13 +1595,13 @@
                     </div>
                     <div class="col-12">
                         <label class="form-label" data-i18n="reason">Reason</label>
-                        <textarea class="form-control" id="leaveReason" rows="2"></textarea>
+                        <textarea class="form-control" id="leaveReason" rows="2" data-i18n="leave_reason_placeholder" placeholder="e.g., Annual leave for family trip"></textarea>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveLeave()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary" onclick="saveLeave(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -1592,11 +1634,11 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label"><span data-i18n="hours">Hours</span> <span class="text-danger">*</span></label>
-                        <input type="number" min="0.5" step="0.5" class="form-control required" id="overtimeHours">
+                        <input type="number" min="0.5" step="0.5" class="form-control required" id="overtimeHours" data-i18n="hours_placeholder" placeholder="e.g., 2">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="amount">Amount</label>
-                        <input type="number" min="0" step="0.01" class="form-control" id="overtimeAmount">
+                        <input type="number" min="0" step="0.01" class="form-control" id="overtimeAmount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="status">Status</label>
@@ -1606,7 +1648,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="saveOvertime()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
+                <button class="btn btn-primary" onclick="saveOvertime(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -1628,7 +1670,150 @@
     </div>
 </div>
 
-<!-- 2026-08-30 (Phase 5, T034) -- drill-down for one import batch's own records (manual-entry/index.php's Import tab). Edit/Delete row buttons reuse openAttendanceModal()/openLeaveModal()/openOvertimeModal()/askDeleteMe() already defined for the other 3 tabs -- no new edit surface, see ManualEntryController's own docblock. -->
+
+<!-- 2026-09-02, explicit request: "การเพิ่มแบบ Manual ตอนนี้เพิ่มได้แบบ 1 ต่อ 1 อยากให้เพิ่ม ให้เพิ่มได้ทีละ
+     หลายรายการ เป็นเหมือนหน้า Excel ในการจัดการ และเพิ่มให้ Import ได้ในหน้า Form นั้นเลย...การจัดการเหมือน
+     Excel แล้วกด Save ทีเดียว เป็น modal fullscreen ก็ได้ครับ" -- ONE generic fullscreen grid, reused for
+     all 3 entity types (Attendance/Leave/Overtime) via public/js/manual-entry/bulk-entry.js's own
+     per-entity column config, rather than 3 near-identical modals. Two ways rows get INTO the grid,
+     both editable/deletable before the ONE final Save:
+       1. "+ Add Row" -- a blank row with the SAME field types (select2 Employee/Shift/Leave Type/OT
+          Rate, native date/time inputs, Status) the existing single-record attendanceModal/
+          leaveModal/overtimeModal already use -- saved via the new .../bulk-save endpoint
+          (AttendanceRecordModel::bulkSave() etc.), data_source='manual', same as today's single Add.
+       2. "Import File" -- reuses the EXISTING api/manual-import.preview endpoint as-is (same
+          template/header-mapping/validation this page's own Import tab already has) to populate the
+          grid with parsed rows instead of showing them in a separate read-only preview table --
+          THESE rows keep the import pipeline's own employee_no/shift_code/leave_type_code/
+          ot_rate_name text-code shape (plain text inputs, not select2 IDs) since that's what
+          api/manual-import.commit expects, and are saved via THAT same existing commit endpoint on
+          Save All (data_source='import', a real sync_batches audit row) -- kept genuinely distinct
+          from manually-typed rows rather than collapsing both into one path, since which of the two
+          actually happened is real, meaningful audit information this app's own data_source column
+          exists to preserve (see AttendanceRecordModel's own class docblock).
+     Manual rows and imported rows can coexist in the SAME grid session -- Save All splits them by
+     origin and calls each row's own correct backend path, then reports one combined result. -->
+<div class="modal fade" id="bulkEntryModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="bulkEntryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="bulkEntryModalLabel">
+                    <i class="fa-solid fa-table-cells me-1" id="bulkEntryModalIcon"></i><span id="bulkEntryModalTitle">-</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3" id="bulkEntrySummaryCards"></div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btnBulkEntryAddRow">
+                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="bulk_entry_add_row">Add Row</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnBulkEntryImport">
+                        <i class="fa-solid fa-file-import me-1"></i><span data-i18n="bulk_entry_import_file">Import File</span>
+                    </button>
+                </div>
+                <div class="table-responsive bulk-entry-grid-wrap">
+                    <table class="table table-bordered align-middle mb-0 bulk-entry-grid" id="tb_bulk_entry">
+                        <thead class="table-light" id="bulkEntryThead"></thead>
+                        <tbody id="bulkEntryTbody"></tbody>
+                    </table>
+                </div>
+                <div class="text-center text-secondary py-5 d-none" id="bulkEntryEmptyState">
+                    <i class="fa-solid fa-table-cells fa-2x mb-3 opacity-50"></i>
+                    <p class="mb-0" data-i18n="bulk_entry_empty_hint">No rows yet -- click "Add Row" or "Import File" to get started.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span class="text-muted small me-auto" data-i18n="bulk_entry_footer_hint">Add or import as many rows as you like, then Save once.</span>
+                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-primary px-4" id="btnBulkEntrySaveAll"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_entry_save_all">Save All</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-09-02, explicit follow-up request -- the "Import File" flow from #bulkEntryModal above gets
+     its own proper wizard modal instead of a silent file-picker click: instructions + Download
+     Template + attach form (step 1, "Attach"), THEN a summary + row-by-row preview BEFORE anything
+     is persisted (step 2, "Review", built by bulk-entry.js's own openBulkImportModal()/
+     bulkImportRunPreview() from the EXISTING api/manual-import.preview response -- unchanged backend,
+     new presentation). This is also the modal that replaced the old standalone Import tab (removed
+     this same round, see manual-entry/index.php's own comment on that) -- reachable both from inside
+     #bulkEntryModal's own "Import File" button (stacked on top of it) AND directly from a new
+     top-level "Import" button on each of the 3 tabs (grid never opened at all in that case).
+     Confirming (step 2's own footer) offers a REAL choice the old tab never had: "Save Directly"
+     (commits immediately via the EXISTING api/manual-import.commit, same as the old tab's own
+     Confirm Import always did) or "Load into Grid to Edit" (drops the parsed rows into
+     #bulkEntryModal's own editable grid instead, opening it fresh if it wasn't already open). -->
+<div class="modal fade" id="bulkImportModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="bulkImportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="bulkImportModalLabel">
+                    <i class="fa-solid fa-file-import me-1"></i><span id="bulkImportModalTitle">-</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="bulkImportAttachStep">
+                    <div class="alert alert-info small d-flex gap-2 align-items-start mb-4" role="alert">
+                        <i class="fa-solid fa-circle-info mt-1"></i>
+                        <div data-i18n="bulk_import_instructions">Download the template below, fill in one row per record using the SAME column order, then attach the completed file here. You'll see a full row-by-row summary before anything is saved.</div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mb-4 flex-wrap">
+                        <button type="button" class="btn btn-outline-primary" id="btnBulkImportDownloadTemplate">
+                            <i class="fa-solid fa-download me-1"></i><span data-i18n="download_template">Download Template</span>
+                        </button>
+                        <a href="javascript:void(0);" class="ms-auto small" id="btnBulkImportViewHistory">
+                            <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="bulk_import_view_history">View Import History</span>
+                        </a>
+                    </div>
+                    <label class="form-label fw-semibold mb-2" data-i18n="bulk_import_attach_file">Attach File</label>
+                    <!-- 2026-09-02, explicit request: "ปรับหน้าตา Form ให้ดูสวยขึ้นและใช้งานง่ายขึ้น" -- the
+                         real `<input type="file">` stays (browsers won't let a custom element trigger
+                         a file picker with a real native dialog on its own), just visually hidden and
+                         wrapped by a clickable styled dropzone card instead of shown as a bare native
+                         control -- clicking anywhere in the card opens the same picker
+                         (bulk-entry.js's own click-passthrough + filename-echo handler). -->
+                    <label class="bulk-import-dropzone w-100" for="bulkImportFileInput" id="bulkImportDropzone">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span data-i18n="bulk_import_dropzone_hint">Click to choose a file, or drag it here</span>
+                        <span class="small text-muted" id="bulkImportDropzoneFilename"></span>
+                    </label>
+                    <input type="file" class="d-none" id="bulkImportFileInput" accept=".csv,.xlsx,.xls">
+                </div>
+                <div id="bulkImportReviewStep" class="d-none">
+                    <div class="row g-2 mb-3" id="bulkImportSummaryCards"></div>
+                    <div class="alert alert-warning d-none" id="bulkImportUnmappedAlert"></div>
+                    <div class="table-responsive" style="max-height:340px;overflow-y:auto;">
+                        <table class="table table-sm" id="tb_bulk_import_preview">
+                            <thead class="table-light">
+                                <tr>
+                                    <th data-i18n="row">Row</th>
+                                    <th data-i18n="status">Status</th>
+                                    <th data-i18n="action">Action</th>
+                                    <th data-i18n="message">Message</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" id="bulkImportAttachFooter">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary px-4" id="btnBulkImportRunPreview"><i class="fa-solid fa-file-import me-1"></i><span data-i18n="bulk_import_run">Import</span></button>
+            </div>
+            <div class="modal-footer d-none" id="bulkImportReviewFooter">
+                <button type="button" class="btn btn-light me-auto" id="btnBulkImportBack"><i class="fa-solid fa-arrow-left me-1"></i><span data-i18n="back">Back</span></button>
+                <button type="button" class="btn btn-outline-primary" id="btnBulkImportLoadToGrid"><i class="fa-solid fa-table-cells me-1"></i><span data-i18n="bulk_import_load_to_grid">Load into Grid to Edit</span></button>
+                <button type="button" class="btn btn-success px-4" id="btnBulkImportSaveDirect"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_import_save_direct">Save Directly</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-08-30 (Phase 5, T034) -- drill-down for one import batch's own records (manual-entry/index.php's History tab). Edit/Delete row buttons reuse openAttendanceModal()/openLeaveModal()/openOvertimeModal()/askDeleteMe() already defined for the other 3 tabs -- no new edit surface, see ManualEntryController's own docblock. -->
 <div class="modal fade" id="importBatchDetailModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -1771,6 +1956,13 @@
                         <div class="btn-group btn-group-sm" role="group" id="eedModeToggle">
                             <button type="button" class="btn btn-outline-brand active" data-mode="catalog"><i class="fa-solid fa-list me-1"></i><span data-i18n="manual_line_mode_catalog">From List</span></button>
                             <button type="button" class="btn btn-outline-brand" data-mode="custom"><i class="fa-solid fa-pen me-1"></i><span data-i18n="manual_line_mode_custom">Custom Item</span></button>
+                            <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 --
+                                 reuses #eedCustomFields' own free-text input verbatim (see
+                                 setEedMode()'s own docblock in detail.js); the only difference from
+                                 "Custom Item" is is_other=true sent on submit, which maps this specific
+                                 entry into the shared "Other Income"/"Other Deduction" aggregation
+                                 bucket instead of its own one-off report column. -->
+                            <button type="button" class="btn btn-outline-brand" data-mode="other"><i class="fa-solid fa-circle-question me-1"></i><span data-i18n="manual_line_mode_other">Other</span></button>
                         </div>
                     </div>
                     <div class="row mb-3" id="eedCatalogFields">
@@ -1811,7 +2003,7 @@
                             <label class="form-label mb-0"><span data-i18n="total_installments">Total Installments</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="1" min="1" class="form-control required" id="eed_total_installments" name="total_installments" value="1">
+                            <input type="number" step="1" min="1" class="form-control required" id="eed_total_installments" name="total_installments" value="1" data-i18n="installments_placeholder" placeholder="e.g., 12">
                         </div>
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-0" id="eed_principal_amount_label">
@@ -1821,7 +2013,7 @@
                             </label>
                         </div>
                         <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_principal_amount" name="principal_amount">
+                            <input type="number" step="0.01" min="0.01" class="form-control required" id="eed_principal_amount" name="principal_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                         </div>
                     </div>
                     <!-- 2026-08-31, explicit request: "Form ที่เป็นรายการหัก ทุก Form ให้เพิ่มว่า คิดดอกเบี้ย
@@ -1897,7 +2089,7 @@
                             <label class="form-label mb-0" data-i18n="external_reference_no">Reference / Contract No.</label>
                         </div>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control" id="eed_external_reference_no" name="external_reference_no" maxlength="100">
+                            <input type="text" class="form-control" id="eed_external_reference_no" name="external_reference_no" maxlength="100" data-i18n="external_reference_no_placeholder" placeholder="e.g., Loan contract no.">
                         </div>
                     </div>
                     <!-- 2026-08-31, explicit request: "หักไปจ่ายใคร หรือจ่ายเข้าบัญชีบริษัท" -- widened
@@ -1921,6 +2113,13 @@
                                 <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
                                 <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
                                 <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
+                                <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 --
+                                     this modal never got the 'other_person' option when Phase 2 first
+                                     built the destination-picker flow (Phase 2 only touched Process
+                                     Detail's own manual-line modal) -- added now since "Other Deduction"
+                                     genuinely needs it, and it applies to any deduction here (catalog or
+                                     custom), same as the rest of this toggle. -->
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
                                 <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
                             </div>
                         </div>
@@ -1931,6 +2130,22 @@
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote" id="eed_payee_employee_id" name="payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                        </div>
+                    </div>
+                    <div class="row g-2 align-items-end mb-3 d-none" id="eedDestinationWrapper">
+                        <div class="col-sm-3"></div>
+                        <div class="col-sm-9">
+                            <label class="form-label mb-1 small text-muted" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                            <select class="form-select select2-remote" id="eed_destination_select" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                        </div>
+                        <div class="col-sm-9 offset-sm-3 mt-2" id="eedDestinationNewFields">
+                            <div class="row g-2">
+                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
+                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
+                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="eed_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
+                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="eed_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
+                                <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="eed_dest_save_for_reuse"><label class="form-check-label small" for="eed_dest_save_for_reuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
+                            </div>
                         </div>
                     </div>
                     <div class="row mb-3 d-none" id="eedIncludeCashSummaryWrapper">
@@ -1948,13 +2163,13 @@
                             <label class="form-label mb-0" data-i18n="notes">Notes</label>
                         </div>
                         <div class="col-sm-9">
-                            <textarea class="form-control" id="eed_notes" name="notes" rows="2"></textarea>
+                            <textarea class="form-control" id="eed_notes" name="notes" rows="2" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
+                    <button type="submit" class="btn btn-primary px-4" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
         </div>
@@ -1987,7 +2202,7 @@
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
-                                <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="ere_amount" name="amount">
+                                <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="ere_amount" name="amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                                 <span class="input-group-text" data-i18n="thb">THB</span>
                             </div>
                         </div>
@@ -2033,13 +2248,13 @@
                             <label class="form-label mb-0" data-i18n="notes">Notes</label>
                         </div>
                         <div class="col-sm-8">
-                            <textarea class="form-control" id="ere_notes" rows="2" maxlength="255"></textarea>
+                            <textarea class="form-control" id="ere_notes" rows="2" maxlength="255" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="ereSaveBtn" data-i18n="save_item">Save Item</button>
+                    <button type="submit" class="btn btn-primary px-4" id="ereSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
         </div>
@@ -2074,7 +2289,7 @@
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
-                                <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="erd_amount" name="amount">
+                                <input type="number" step="0.01" min="0.01" class="form-control text-end required" id="erd_amount" name="amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                                 <span class="input-group-text" data-i18n="thb">THB</span>
                             </div>
                         </div>
@@ -2125,6 +2340,51 @@
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">
+                    <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- same
+                         payee_type toggle convention as #eedModal's own #eedPayeeTypeToggle above,
+                         PLUS the 'other_person' option (a saved/new third-party bank account, via
+                         PaymentDestinationModel -- see that model's own docblock). This is the
+                         TEMPLATE-level default: inherited by every payroll run this recurring
+                         deduction is active in, unless that one run has its own override (Process
+                         Detail's own "Recurring Deduction Destination" panel, this run only, never
+                         written back here). -->
+                    <h6 class="text-secondary fw-bold mb-2"><span data-i18n="payee_type_label">Deducted Money Goes To</span></h6>
+                    <div class="row mb-3">
+                        <div class="col-sm-4 align-self-center"></div>
+                        <div class="col-sm-8">
+                            <div class="btn-group btn-group-sm flex-wrap" role="group" id="erdPayeeTypeToggle">
+                                <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
+                                <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Not Disbursed</span></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3 d-none" id="erdPayeeEmployeeWrapper">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-0" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                        </div>
+                        <div class="col-sm-8">
+                            <select class="form-select select2-remote" id="erd_payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                        </div>
+                    </div>
+                    <div class="row g-2 align-items-end mb-3 d-none" id="erdDestinationWrapper">
+                        <div class="col-12">
+                            <label class="form-label mb-1 small text-muted" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                            <select class="form-select select2-remote" id="erd_destination_select" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                        </div>
+                        <div class="col-12 mt-2" id="erdDestinationNewFields">
+                            <div class="row g-2">
+                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
+                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
+                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="erd_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
+                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="erd_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
+                                <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="erd_dest_save_for_reuse"><label class="form-check-label small" for="erd_dest_save_for_reuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="my-4 text-muted opacity-25">
                     <h6 class="text-secondary fw-bold mb-2"><span data-i18n="suspend_period">Suspend Period</span></h6>
                     <p class="text-secondary small mb-3" data-i18n="suspend_period_hint">*Optional. While set, this allowance is skipped in any payroll run whose pay period overlaps this range, then resumes automatically afterward.</p>
                     <div class="row mb-3">
@@ -2154,13 +2414,13 @@
                             <label class="form-label mb-0" data-i18n="notes">Notes</label>
                         </div>
                         <div class="col-sm-8">
-                            <textarea class="form-control" id="erd_notes" rows="2" maxlength="255"></textarea>
+                            <textarea class="form-control" id="erd_notes" rows="2" maxlength="255" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 text-white" style="background-color: #FF9900; border-color: #FF9900;" id="erdSaveBtn" data-i18n="save_item">Save Item</button>
+                    <button type="submit" class="btn btn-primary px-4" id="erdSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
         </div>
@@ -2220,11 +2480,11 @@
                 <div class="row g-3">
                     <div class="col-6">
                         <label class="form-label" data-i18n="field_label_th">Label (Thai)</label>
-                        <input type="text" class="form-control required" id="bffFieldLabelTh">
+                        <input type="text" class="form-control required" id="bffFieldLabelTh" data-i18n="bff_field_label_th_placeholder" placeholder="e.g., ชื่อบัญชี">
                     </div>
                     <div class="col-6">
                         <label class="form-label" data-i18n="field_label_en">Label (English)</label>
-                        <input type="text" class="form-control required" id="bffFieldLabelEn">
+                        <input type="text" class="form-control required" id="bffFieldLabelEn" data-i18n="bff_field_label_en_placeholder" placeholder="e.g., Account Name">
                     </div>
                     <div class="col-6">
                         <label class="form-label" data-i18n="row_type">Row</label>
@@ -2236,7 +2496,7 @@
                     </div>
                     <div class="col-6">
                         <label class="form-label" data-i18n="order">Order</label>
-                        <input type="number" class="form-control" id="bffFieldSortOrder" min="0" value="0">
+                        <input type="number" class="form-control" id="bffFieldSortOrder" min="0" value="0" data-i18n="count_placeholder" placeholder="0">
                     </div>
                     <div class="col-6">
                         <label class="form-label" data-i18n="source_type">Source Type</label>
@@ -2252,7 +2512,7 @@
                     </div>
                     <div class="col-6 d-none" id="bffFieldConstantWrap">
                         <label class="form-label" data-i18n="constant_value">Fixed Value</label>
-                        <input type="text" class="form-control" id="bffFieldConstantValue">
+                        <input type="text" class="form-control" id="bffFieldConstantValue" data-i18n="bff_field_constant_value_placeholder" placeholder="e.g., 01">
                     </div>
                     <div class="col-6">
                         <label class="form-label" data-i18n="data_type">Data Type</label>
@@ -2264,7 +2524,7 @@
                     </div>
                     <div class="col-6" id="bffFieldDecimalWrap">
                         <label class="form-label" data-i18n="decimal_places">Decimal Places</label>
-                        <input type="number" class="form-control" id="bffFieldDecimalPlaces" min="0" max="6" value="2">
+                        <input type="number" class="form-control" id="bffFieldDecimalPlaces" min="0" max="6" value="2" data-i18n="decimal_places_placeholder" placeholder="0-4">
                     </div>
                     <div class="col-6 d-none" id="bffFieldDateFormatWrap">
                         <label class="form-label" data-i18n="date_format">Date Format</label>
@@ -2272,11 +2532,11 @@
                     </div>
                     <div class="col-4">
                         <label class="form-label" data-i18n="width">Width</label>
-                        <input type="number" class="form-control" id="bffFieldWidth" min="1">
+                        <input type="number" class="form-control" id="bffFieldWidth" min="1" data-i18n="field_width_placeholder" placeholder="e.g., 10">
                     </div>
                     <div class="col-4">
                         <label class="form-label" data-i18n="pad_char">Pad Char</label>
-                        <input type="text" class="form-control" id="bffFieldPadChar" maxlength="1" value=" ">
+                        <input type="text" class="form-control" id="bffFieldPadChar" maxlength="1" value=" " data-i18n="bff_field_pad_char_placeholder" placeholder="e.g., 0">
                     </div>
                     <div class="col-4">
                         <label class="form-label" data-i18n="pad_direction">Pad Direction</label>
@@ -2289,7 +2549,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                <button type="button" class="btn btn-warning" id="bffFieldSaveBtn"><span data-i18n="save">Save</span></button>
+                <button type="button" class="btn btn-primary" id="bffFieldSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
     </div>
@@ -2388,10 +2648,10 @@
             <div class="modal-footer justify-content-between">
                 <span class="text-muted small" id="orgSyncSelectedCountLabel"></span>
                 <div>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="button" class="btn btn-primary d-none" id="btnApplyOrgStructureSync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="orgSyncSelectedCount">0</span>)
                     </button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -2687,7 +2947,7 @@
                             <label class="form-label mb-0"><span data-i18n="modal_notes">Notes</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <textarea class="form-control" id="run_notes" name="notes" rows="2"></textarea>
+                            <textarea class="form-control" id="run_notes" name="notes" rows="2" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
                         </div>
                     </div>
                 </div>
@@ -2830,11 +3090,11 @@
                     <div class="row mb-3">
                         <div class="col-sm-6">
                             <label class="form-label mb-0" data-i18n="name_local">Name (Local)</label>
-                            <input type="text" class="form-control" name="name_th" id="rc_name_th">
+                            <input type="text" class="form-control" name="name_th" id="rc_name_th" data-i18n="name_th_placeholder" placeholder="e.g., สมชาย">
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label mb-0" data-i18n="name_en">Name (EN)</label>
-                            <input type="text" class="form-control" name="name_en" id="rc_name_en">
+                            <input type="text" class="form-control" name="name_en" id="rc_name_en" data-i18n="name_en_placeholder" placeholder="e.g., Somchai">
                         </div>
                     </div>
                     <!-- 2026-08-30, explicit request: "เพิ่มนามสกุล ไทย อังกฤษ ด้วยครับ แต่ไม่ Require Field"
@@ -2843,11 +3103,11 @@
                     <div class="row mb-4">
                         <div class="col-sm-6">
                             <label class="form-label mb-0" data-i18n="surname_local">Surname (Local)</label>
-                            <input type="text" class="form-control" name="surname_th" id="rc_surname_th">
+                            <input type="text" class="form-control" name="surname_th" id="rc_surname_th" data-i18n="surname_th_placeholder" placeholder="e.g., ใจดี">
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label mb-0" data-i18n="surname_en">Surname (EN)</label>
-                            <input type="text" class="form-control" name="surname_en" id="rc_surname_en">
+                            <input type="text" class="form-control" name="surname_en" id="rc_surname_en" data-i18n="surname_en_placeholder" placeholder="e.g., Jaidee">
                         </div>
                     </div>
                     <h6 class="text-secondary fw-bold mb-3">
@@ -2858,21 +3118,21 @@
                     <div class="row mb-4" id="rcDomesticIdWrap">
                         <div class="col-sm-6">
                             <label class="form-label mb-0" data-i18n="id_card_no">ID Card No.</label>
-                            <input type="text" class="form-control" name="id_card_no" id="rc_id_card_no" maxlength="13">
+                            <input type="text" class="form-control" name="id_card_no" id="rc_id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
                         </div>
                     </div>
                     <div class="row mb-4 d-none" id="rcForeignerIdWrap">
                         <div class="col-sm-4">
                             <label class="form-label mb-0" data-i18n="tax_id_no">Tax ID No.</label>
-                            <input type="text" class="form-control" name="tax_id_no" id="rc_tax_id_no">
+                            <input type="text" class="form-control" name="tax_id_no" id="rc_tax_id_no" data-i18n="tax_id_placeholder" placeholder="e.g., 1234567890123">
                         </div>
                         <div class="col-sm-4">
                             <label class="form-label mb-0" data-i18n="passport_no">Passport No.</label>
-                            <input type="text" class="form-control" name="passport_no" id="rc_passport_no">
+                            <input type="text" class="form-control" name="passport_no" id="rc_passport_no" data-i18n="passport_no_placeholder" placeholder="e.g., AA1234567">
                         </div>
                         <div class="col-sm-4">
                             <label class="form-label mb-0" data-i18n="work_permit_no">Work Permit No.</label>
-                            <input type="text" class="form-control" name="work_permit_no" id="rc_work_permit_no">
+                            <input type="text" class="form-control" name="work_permit_no" id="rc_work_permit_no" data-i18n="work_permit_no_placeholder" placeholder="e.g., WP-1234567">
                         </div>
                     </div>
                     <h6 class="text-secondary fw-bold mb-3">
@@ -2883,7 +3143,7 @@
                     <div class="row mb-4">
                         <div class="col-sm-6">
                             <label class="form-label mb-0" data-i18n="personal_email">Personal Email Address</label>
-                            <input type="email" class="form-control" name="personal_email" id="rc_personal_email">
+                            <input type="email" class="form-control" name="personal_email" id="rc_personal_email" data-i18n="personal_email_placeholder" placeholder="e.g., name@email.com">
                         </div>
                         <!-- 2026-08-31, explicit request: "ใน Form ตรงที่เป็นเบอร์มือถือ อยากให้รูปแบบเดียวกับ
                              ใน Employee Detail มี Prefix ด้วย" -- was a plain text input with no country-
@@ -2897,7 +3157,7 @@
                              mobile_country_code's own hidden-input shape 1:1. -->
                         <div class="col-sm-6" id="rc_mobile_no_wrap">
                             <label class="form-label mb-0" data-i18n="mobile_no">Mobile No.</label>
-                            <input type="tel" class="form-control" name="mobile_no" id="rc_mobile_no" maxlength="15">
+                            <input type="tel" class="form-control" name="mobile_no" id="rc_mobile_no" maxlength="15" data-i18n="phone_no_placeholder" placeholder="e.g., 0812345678">
                             <input type="hidden" name="mobile_country_code" id="rc_mobile_country_code" value="+66">
                         </div>
                     </div>
@@ -2948,7 +3208,18 @@
                          is a bigger structural edit left to the full Detail page" call) to a real,
                          editable field, since the user explicitly asked for it selectable here.
                          employee_type stays read-only (#rcEditTypeBadge, unchanged) -- only payment_type
-                         was named in this request. -->
+                         was named in this request.
+                         2026-09-02, follow-up: the underlying payment_type enum (bank/cash only) was
+                         replaced by payment_method_id (master_payment_methods: transfer/cash/check/
+                         mixed, see EmployeePaymentMethodModel) -- this quick modal deliberately keeps
+                         its ORIGINAL transfer-vs-cash-only scope (mixed-line configuration needs the
+                         full line-item editor this modal never had; check was never offered here
+                         either) rather than growing new scope of its own. The radio pair now writes
+                         the resolved method's real id (via rcPaymentMethodIdByCode, populated once
+                         from /api/payment-method.options) into the hidden #rc_payment_method_id input.
+                         An employee already on check/mixed gets the radios disabled with an inline
+                         note pointing at the full Employee Detail page instead of silently
+                         reinterpreting their method as plain bank/cash. -->
                     <h6 class="text-secondary fw-bold mb-3">
                         <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">5</label>
                         <i class="fa-solid fa-building-columns text-secondary mx-1"></i>
@@ -2961,13 +3232,14 @@
                     <div class="row mb-3">
                         <div class="col-sm-6">
                             <label class="form-label mb-0" data-i18n="payment_type">Payment Type</label>
-                            <div class="btn-group d-block" role="group" aria-label="Payment type">
-                                <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_bank" value="bank" checked>
+                            <div class="btn-group d-block" role="group" aria-label="Payment type" id="rcPaymentTypeRadioGroup">
+                                <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_bank" value="transfer" checked>
                                 <label class="btn btn-outline-brand" for="rc_payment_bank" data-i18n="bank">Bank</label>
                                 <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_cash" value="cash">
                                 <label class="btn btn-outline-brand" for="rc_payment_cash" data-i18n="cash">Cash</label>
                             </div>
-                            <input type="hidden" name="payment_type" id="rc_payment_type" value="bank">
+                            <div class="form-text text-warning d-none" id="rcPaymentMethodOtherNote" data-i18n="recheck_payment_method_edit_in_profile">This employee uses Check/Mixed payment -- edit it from the full Employee Detail page.</div>
+                            <input type="hidden" name="payment_method_id" id="rc_payment_type" value="">
                         </div>
                     </div>
                     <div id="rcPaymentSectionWrap">
@@ -2980,7 +3252,7 @@
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label mb-0" data-i18n="bank_account_no">Bank Account No.</label>
-                                <input type="text" class="form-control" name="bank_account_no" id="rc_bank_account_no">
+                                <input type="text" class="form-control" name="bank_account_no" id="rc_bank_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
                             </div>
                         </div>
                     </div>
@@ -2992,7 +3264,7 @@
                     <div class="row mb-4">
                         <div class="col-sm-4">
                             <label class="form-label mb-0" data-i18n="base_salary_amount">Base Salary Amount</label>
-                            <input type="number" step="0.01" class="form-control text-end" name="base_salary_amount" id="rc_base_salary_amount">
+                            <input type="number" step="0.01" class="form-control text-end" name="base_salary_amount" id="rc_base_salary_amount" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
                         </div>
                         <div class="col-sm-4">
                             <label class="form-label mb-0" data-i18n="effective_date">Effective Date</label>
@@ -3072,7 +3344,7 @@
                     <div class="row mb-3 d-none" id="rcSsoDetailWrap">
                         <div class="col-sm-4">
                             <label class="form-label mb-0" data-i18n="sso_no">Social Security No.</label>
-                            <input type="text" class="form-control" name="sso_no" id="rc_sso_no" maxlength="13">
+                            <input type="text" class="form-control" name="sso_no" id="rc_sso_no" maxlength="13" data-i18n="sso_no_placeholder" placeholder="13-digit social security number">
                         </div>
                         <div class="col-sm-4">
                             <label class="form-label mb-0" data-i18n="sso_start_date">SSO Start Date</label>
@@ -3090,7 +3362,7 @@
                         <i class="fa-solid fa-arrow-up-right-from-square me-1"></i><span data-i18n="go_to_full_profile">Go to Full Profile</span>
                     </a>
                     <div>
-                        <button type="submit" class="btn btn-warning px-4" data-i18n="save">Save</button>
+                        <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
                         <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>

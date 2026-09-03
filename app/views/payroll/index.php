@@ -66,8 +66,8 @@
                 </div>
             </div>
         </div>
-        <div class="d-flex justify-content-end mb-3">
-            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearDateFilter">
+        <div class="station-filter-clear-row d-none" id="dateFilterClearRow">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDateFilter">
                 <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
             </button>
         </div>
@@ -212,6 +212,33 @@
          is now a SINGLE shared copy there -- both this page's own index.js and detail.js already
          only ever look it up by id (#runMarkPaidModal/#runMarkPaidForm), no ancestor/proximity
          selectors, so one shared copy works for both pages unchanged. -->
+
+    <!-- 2026-09-02, explicit request: "เพิ่มให้ Export เป็น PDF ได้ด้วย...การ Export กดแล้ว แสดงตัวอย่าง
+         แล้วค่อยเลือกจะ Download ภาษาไทยหรือภาษาอังกฤษ" -- this page's own small preview-then-choose-
+         language modal for the per-row PAYROLL_REGISTER PDF export, same pattern Process Detail's
+         own #reportPreviewModal already established (kept as a SEPARATE local copy rather than
+         moved into layout/modals.php, since this page's own PDF preview only ever targets ONE
+         report/format, not a generic "preview whichever report row was clicked" mechanism the way
+         Detail's own modal is -- see runRegisterPdfPreview() in index.js). -->
+    <div class="modal fade" id="runRegisterPdfPreviewModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary" data-i18n="payroll_register_report">ทะเบียนรายได้-รายหักพนักงาน</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div id="runRegisterPdfPreviewLoading" class="text-center text-muted py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+                    <iframe id="runRegisterPdfPreviewFrame" class="d-none" style="width:100%; height:70vh; border:0;" title="Payroll Register preview"></iframe>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary btn-run-register-pdf-download" data-language="th"><img src="<?=BASE_URL?>/public/flags/th.png" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
+                    <button type="button" class="btn btn-primary btn-run-register-pdf-download" data-language="en"><img src="<?=BASE_URL?>/public/flags/gb.png" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 </div>
 <script src="<?=asset('public/js/payroll/index.js')?>"></script>

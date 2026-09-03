@@ -62,12 +62,15 @@ function notifTimeAgo(isoVal) {
 // continue green->rt-2, lock_reminder_print purple->rt-3 indigo, document_request_pending pink->rt-4
 // red -- the one imperfect match, .row-type-icon has no pink variant) -- uses all 5 existing
 // variants, one each, no new variant needed.
+// 2026-09-02, probation_intern_expiring added -- 6th type, gets its own new rt-6 teal variant
+// (style.css) since all 5 existing hues were already spoken for.
 const NOTIF_TYPE_META = {
     sync_new_data: { rt: 'rt-5', icon: 'fa-arrows-rotate' },
     stale_draft: { rt: 'rt-1', icon: 'fa-hourglass-half' },
     approved_continue: { rt: 'rt-2', icon: 'fa-check' },
     lock_reminder_print: { rt: 'rt-3', icon: 'fa-lock' },
     document_request_pending: { rt: 'rt-4', icon: 'fa-file-signature' },
+    probation_intern_expiring: { rt: 'rt-6', icon: 'fa-hourglass-end' },
 };
 function notifTypeMeta(item) {
     return NOTIF_TYPE_META[item.type] || { rt: 'rt-3', icon: item.icon || 'fa-bell' };
@@ -221,7 +224,7 @@ function notifPageCurrentFilters() {
 }
 function updateClearNotifFilterVisibility() {
     const f = notifPageCurrentFilters();
-    $('#btnClearNotifFilter').toggleClass('d-none', !(f.date_from || f.date_to || f.is_read));
+    $('#notifFilterClearRow').toggleClass('d-none', !(f.date_from || f.date_to || f.is_read));
 }
 function notifPageTableInit() {
     if ($.fn.DataTable.isDataTable('#tb_notification')) {
@@ -316,7 +319,12 @@ $(document).ready(function () {
     $('.nav-notif-btn').on('click', function (e) {
         e.stopPropagation();
         const willOpen = !$('#notifMenu').hasClass('active');
-        $('#notifMenu').toggleClass('active');
+        // 2026-09-02, real bug found and fixed: opening the notif bell never closed the hub/lang/
+        // profile flyouts (and vice versa), so clicking a second header icon stacked its menu on top
+        // of whichever was already open instead of replacing it. See app.js's own closeNavFlyouts()
+        // docblock for the full fix across all 4 header flyouts.
+        if (typeof closeNavFlyouts === 'function') closeNavFlyouts('notif');
+        $('#notifMenu').toggleClass('active', willOpen);
         if (willOpen) notifOpenDropdown();
     });
     // 2026-08-29, real bug found and fixed (explicit report: "ปุ่ม Mark all as read กดแล้วไม่มี Action") --

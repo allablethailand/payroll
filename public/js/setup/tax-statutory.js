@@ -32,12 +32,6 @@ function calcMethodLabelTs(method) {
     const key = 'calc_method_' + method;
     return langData[key] || method;
 }
-function statusBadgeTs(status) {
-    const isActive = status === 'active';
-    const cls = isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary';
-    const text = isActive ? (langData['active'] || 'Active') : (langData['inactive'] || 'Inactive');
-    return `<span class="badge ${cls}">${text}</span>`;
-}
 function fmtNumTs(n) {
     return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -87,11 +81,13 @@ function lastEditedCellTs(row, dateField) {
     const dateStr = typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(raw).split(' ')[0] : raw;
     return `<div class="small">${escapeHtmlTs(dateStr)}</div>${name ? `<div class="text-muted small">${escapeHtmlTs(name)}</div>` : ''}`;
 }
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group.
 function actionButtonsTs(row) {
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-warning btn-edit-item" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link text-primary border-start btn-manage-rate" data-id="${row.id}" title="${langData['manage_rate'] || 'Manage Rate'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
-        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-item" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-item" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-rate" data-id="${row.id}" title="${langData['manage_rate'] || 'Manage Rate'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-item" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 
@@ -121,6 +117,10 @@ function initStatutoryItemTable() {
             }
         },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- status switch is the first
+            // column now (client-side table, safe to reorder), same shared mechanism as every other
+            // table already converted.
+            { data: 'status', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/statutory-item.toggle-status') },
             { data: 'country_code', render: d => `<span class="badge bg-primary-subtle text-primary">${d}</span>` },
             { data: 'code', render: d => `<code class="fw-bold text-dark">${escapeHtmlTs(d)}</code>` },
             { data: null, render: (d, t, row) => escapeHtmlTs(itemNameTs(row)) },
@@ -128,7 +128,6 @@ function initStatutoryItemTable() {
             { data: 'calc_method', render: d => calcMethodLabelTs(d) },
             { data: null, className: 'text-end', render: (d, t, row) => currentRateCellTs(row) },
             { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
-            { data: 'status', render: d => statusBadgeTs(d) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtonsTs(row) }
@@ -148,24 +147,30 @@ function initStatutoryItemTable() {
                 `);
             }
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes Last Updated (6, 2026-08-28 addition -- a compound
-            // date+name cell, orderable:false, same treatment as any actions column) and actions (8).
+            // rollout, client mode. Excludes the interactive status SWITCH (0), Last Updated (7,
+            // 2026-08-28 addition -- a compound date+name cell, orderable:false, same treatment as
+            // any actions column), and actions (8).
+            // 2026-09-02, real bug found and fixed: indices shifted +1 now that the status switch
+            // was inserted at column 0, and `status` itself dropped from the filter list (interactive
+            // widget, not a plain display value, same exemption already applied elsewhere).
             initExcelColumnFilters(self, {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'country_code' },
-                    { index: 1, key: 'code' },
-                    { index: 2, key: 'item_name' },
-                    { index: 3, key: 'category' },
-                    { index: 4, key: 'calc_method' },
-                    { index: 5, key: 'current_rate' },
-                    { index: 7, key: 'status' },
+                    { index: 1, key: 'country_code' },
+                    { index: 2, key: 'code' },
+                    { index: 3, key: 'item_name' },
+                    { index: 4, key: 'category' },
+                    { index: 5, key: 'calc_method' },
+                    { index: 6, key: 'current_rate' },
                 ]
             });
         },
         drawCallback: function () { getTableLang(); }
     });
 }
+// 2026-09-02, Platform Hardening Phase 1.1 follow-up -- reload after a successful status toggle,
+// same pattern as every other converted table's own identical listener.
+$(document).on('statusToggle:success', '#tb_statutory_item', function () { tb_statutory_item.ajax.reload(null, false); });
 
 function resetItemForm() {
     $('#statutoryItemForm')[0].reset();
@@ -174,7 +179,7 @@ function resetItemForm() {
     $('#item_category').val('').trigger('change');
     $('#item_calc_method').val('').trigger('change');
     $('#item_calc_base').val('').trigger('change');
-    $('#item_is_employee_applicable, #item_is_employer_applicable, #item_default_is_active, #item_status').prop('checked', true);
+    $('#item_is_employee_applicable, #item_is_employer_applicable, #item_default_is_active').prop('checked', true);
     $('#item_is_company_rate_editable').prop('checked', false);
     $('#item_sort_order').val(0);
     $('#item_rounding_mode').val('round').trigger('change');
@@ -193,7 +198,6 @@ function populateItemForm(row) {
     $('#item_default_is_active').prop('checked', Number(row.default_is_active) === 1);
     $('#item_is_company_rate_editable').prop('checked', Number(row.is_company_rate_editable) === 1);
     $('#item_sort_order').val(row.sort_order || 0);
-    $('#item_status').prop('checked', row.status === 'active');
     $('#item_rounding_mode').val(row.rounding_mode || 'round').trigger('change');
     $('#item_decimal_places').val(row.decimal_places !== undefined && row.decimal_places !== null ? row.decimal_places : 2);
 }
@@ -227,17 +231,18 @@ function collectItemFormData() {
         default_is_active: $('#item_default_is_active').is(':checked'),
         is_company_rate_editable: $('#item_is_company_rate_editable').is(':checked'),
         sort_order: $('#item_sort_order').val() || 0,
-        status: $('#item_status').is(':checked') ? 'active' : 'inactive',
         rounding_mode: $('#item_rounding_mode').val() || 'round',
         decimal_places: $('#item_decimal_places').val() || 0
     };
 }
 
 /* ---------- Rate History (list) ---------- */
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group.
 function rateHistoryActionButtonsTs(row) {
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-warning btn-edit-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+    return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 }
 function rateSummaryTs(row) {
@@ -391,8 +396,8 @@ function resetRateVersionForm() {
 function populateRateVersionForm(row) {
     $('#rate_id').val(row.id);
     $('#rate_statutory_item_id').val(row.statutory_item_id);
-    $('#rate_effective_date').val(toDisplayDateTs(row.effective_date));
-    $('#rate_end_date').val(toDisplayDateTs(row.end_date));
+    $('#rate_effective_date').val(toDisplayDateTs(row.effective_date)).datepicker('update');
+    $('#rate_end_date').val(toDisplayDateTs(row.end_date)).datepicker('update');
     $('#rate_employee_rate').val(row.employee_rate !== null ? row.employee_rate : '');
     $('#rate_employer_rate').val(row.employer_rate !== null ? row.employer_rate : '');
     $('#rate_employee_amount').val(row.employee_amount !== null ? row.employee_amount : '');
@@ -749,12 +754,6 @@ function initStatutoryItemUI() {
 }
 
 /* ---------- Company Statutory Settings (Part 2) ---------- */
-function csEffectiveStatusBadgeTs(status) {
-    const isActive = status === 'active';
-    const cls = isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary';
-    const text = isActive ? (langData['active'] || 'Active') : (langData['inactive'] || 'Inactive');
-    return `<span class="badge ${cls}">${text}</span>`;
-}
 function csHasOverrideTs(row) {
     return row.employee_rate_override !== null || row.employer_rate_override !== null
         || row.employee_amount_override !== null || row.employer_amount_override !== null;
@@ -790,9 +789,11 @@ function csAdjustableCellTs(row) {
     const adjustable = Number(row.is_company_rate_editable) === 1 && ['flat_rate', 'fixed_amount'].includes(row.calc_method);
     return adjustable ? (langData['yes'] || 'Yes') : `<span class="text-muted">${langData['no'] || 'No'}</span>`;
 }
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group.
 function csActionButtonsTs(row) {
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-warning btn-edit-cs" data-id="${row.statutory_item_id}"><i class="fas fa-edit"></i></button>
+    return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-cs" data-id="${row.statutory_item_id}"><i class="fas fa-edit"></i></button>
     </div>`;
 }
 function initCompanySettingTable() {
@@ -809,11 +810,17 @@ function initCompanySettingTable() {
             dataSrc: 'data'
         },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- status switch is the first
+            // column now, same shared mechanism as every other table already converted. Keyed by
+            // `statutory_item_id` (not a company_statutory_settings row id -- the company may not
+            // have a row for this item yet at all), see CompanyStatutorySettingModel::
+            // toggleStatus()'s own docblock and TaxStatutoryController::companySettingToggleStatus()'s
+            // own comment on why the endpoint reads `id` for what is semantically an item id.
+            { data: 'effective_status', render: (d, t, row) => renderStatusToggleHtml(row.statutory_item_id, d === 'active', '/api/company-statutory-setting.toggle-status') },
             { data: 'code', render: d => `<code class="fw-bold text-dark">${escapeHtmlTs(d)}</code>` },
             { data: null, render: (d, t, row) => escapeHtmlTs(itemNameTs(row)) },
             { data: 'category', render: d => categoryBadgeTs(d) },
             { data: null, className: 'text-end', render: (d, t, row) => csRateInUseCellTs(row) },
-            { data: 'effective_status', render: d => csEffectiveStatusBadgeTs(d) },
             { data: null, render: (d, t, row) => csAdjustableCellTs(row) },
             { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row, 'last_edited_at') },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
@@ -825,8 +832,12 @@ function initCompanySettingTable() {
         // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
         // rollout. Same `searching:false` gotcha as `tb_rate_history` above (see that table's own
         // comment) -- flipped to `searching:true` to keep the filter pipeline alive, native search
-        // box hidden right below to preserve the original look. Excludes Last Updated (6, 2026-08-28
-        // addition) and actions (7).
+        // box hidden right below to preserve the original look.
+        // 2026-09-02, real bug found and fixed: indices shifted +1 now that the status switch was
+        // inserted at column 0, and `effective_status` itself dropped from the filter list
+        // (interactive widget, not a plain display value, same exemption already applied
+        // elsewhere) -- excludes the interactive status SWITCH (0), Last Updated (6, 2026-08-28
+        // addition), and actions (7).
         searching: true,
         initComplete: function () {
             const self = this.api();
@@ -834,17 +845,19 @@ function initCompanySettingTable() {
             initExcelColumnFilters(self, {
                 mode: 'client',
                 columns: [
-                    { index: 0, key: 'code' },
-                    { index: 1, key: 'item_name' },
-                    { index: 2, key: 'category' },
-                    { index: 3, key: 'rate_in_use' },
-                    { index: 4, key: 'effective_status' },
+                    { index: 1, key: 'code' },
+                    { index: 2, key: 'item_name' },
+                    { index: 3, key: 'category' },
+                    { index: 4, key: 'rate_in_use' },
                     { index: 5, key: 'adjustable' },
                 ]
             });
         }
     });
 }
+// 2026-09-02, Platform Hardening Phase 1.1 follow-up -- reload after a successful status toggle,
+// same pattern as every other converted table's own identical listener.
+$(document).on('statusToggle:success', '#tb_company_setting', function () { tb_company_setting.ajax.reload(null, false); });
 function masterRateDisplayTs(row) {
     if (row.calc_method === 'flat_rate') {
         const parts = [];
@@ -984,8 +997,78 @@ $(document).ready(function () {
         if (tabId === 'document-format-tab') {
             loadStatutoryFormatSettings();
         }
+        if (tabId === 'nonresident-tax-tab') {
+            loadNonResidentTaxSettings();
+        }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
     });
+});
+
+/* ---------- Non-Resident Foreign Tax (2026-09-02) ----------
+ * Plain company-configurable flat withholding %, never a hardcoded rate this app asserts is
+ * "correct" -- see NonResidentTaxSettingModel's own docblock for the full reasoning. Singleton
+ * settings row per company, same load/save shape as Document Format's own version-picker above. */
+function applyNonResidentTaxFieldsVisibility() {
+    $('#nonresidentTaxFieldsWrap').toggleClass('d-none', !$('#nonresidentTaxEnabled').is(':checked'));
+}
+$(document).on('change', '#nonresidentTaxEnabled', applyNonResidentTaxFieldsVisibility);
+// 2026-09-02, Platform Hardening Phase 1.2 -- dirty-check baseline for the new Cancel button,
+// re-taken after every load and every successful save (same shared snapshotFormState()/
+// confirmIfDirtyThen() from app.js Employee Detail's own cancelEmployeeEdit() uses).
+let nonresidentTaxBaselineSnapshot = null;
+function loadNonResidentTaxSettings() {
+    $.ajax({
+        url: `${BASE_URL}/api/nonresident-tax-setting.get`,
+        method: 'GET',
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            const d = res.data || {};
+            $('#nonresidentTaxEnabled').prop('checked', !!d.enabled);
+            $('#nonresidentTaxFlatRate').val(d.flat_rate_percent !== null && d.flat_rate_percent !== undefined ? d.flat_rate_percent : '');
+            $('#nonresidentTaxReferenceNote').val(d.reference_note || '');
+            applyNonResidentTaxFieldsVisibility();
+            if (typeof snapshotFormState === 'function') {
+                nonresidentTaxBaselineSnapshot = snapshotFormState($('#nonresident-tax-pane'));
+            }
+        }
+    });
+}
+$(document).on('click', '#nonresidentTaxSaveBtn', function () {
+    const $btn = $(this);
+    if (typeof setButtonLoading === 'function') setButtonLoading($btn, true);
+    else $btn.prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/nonresident-tax-setting.save`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({
+            enabled: $('#nonresidentTaxEnabled').is(':checked'),
+            flat_rate_percent: $('#nonresidentTaxFlatRate').val(),
+            reference_note: $('#nonresidentTaxReferenceNote').val(),
+        }),
+        success: function (res) {
+            if (typeof setButtonLoading === 'function') setButtonLoading($btn, false);
+            else $btn.prop('disabled', false);
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                if (typeof snapshotFormState === 'function') {
+                    nonresidentTaxBaselineSnapshot = snapshotFormState($('#nonresident-tax-pane'));
+                }
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            if (typeof setButtonLoading === 'function') setButtonLoading($btn, false);
+            else $btn.prop('disabled', false);
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
+    });
+});
+$(document).on('click', '#nonresidentTaxCancelBtn', function () {
+    confirmIfDirtyThen($('#nonresident-tax-pane'), nonresidentTaxBaselineSnapshot, loadNonResidentTaxSettings);
 });
 
 /* ---------- Document Format (statutory format version selector, 2026-08-29) ----------
@@ -1047,7 +1130,7 @@ function renderStatutoryFormatCards(forms) {
                     <select class="form-select statutory-format-version-select mb-2" data-form-code="${form.form_code}"></select>
                     <div class="statutory-format-badge-wrap">${verifiedBadge}</div>
                     <div class="text-end mt-auto pt-2">
-                        <button type="button" class="btn btn-warning btn-sm statutory-format-save-btn" data-form-code="${form.form_code}">
+                        <button type="button" class="btn btn-primary btn-sm statutory-format-save-btn" data-form-code="${form.form_code}">
                             <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">${langData['save'] || 'Save'}</span>
                         </button>
                     </div>

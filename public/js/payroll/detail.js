@@ -108,6 +108,25 @@ function calcErrorsRemarkRd(calcErrors) {
             const tpl = langData['calc_error_transfer_payee_not_in_run'] || 'The transfer payee for {item} is not part of this run -- the deduction still applies, but nobody was credited.';
             return tpl.replace('{item}', item);
         }
+        // 2026-09-02, advisory-only (never blocks submit -- see PayrollRunModel::recalculate()'s
+        // own $blockingErrors filter). Origami confirmed this can never fire from a genuine sync
+        // payload (working_days/working_mins share the same umbrella selection flag as Late/Absent,
+        // never independently 0) -- it fires in practice for a Manual Entry/Import-driven cycle run,
+        // where there's genuinely no scheduled working-day count available at all (see
+        // TransactionDataPayAdapter's own docblock). See SyncPayResolver::resolve()'s own 2026-09-02
+        // docblock for the full reasoning.
+        if (code.indexOf('working_days_fallback_with_attendance_deduction:') === 0) {
+            const eventLabel = code.substring('working_days_fallback_with_attendance_deduction:'.length);
+            const tpl = langData['calc_error_working_days_fallback_with_attendance_deduction'] || 'The {event} deduction this period was computed using the fixed 30-day standard divisor (no real scheduled working-day count was available for this period) -- this may under- or over-deduct compared to the period\'s actual working days. Review this amount.';
+            return tpl.replace('{event}', eventLabel);
+        }
+        // 2026-09-02, explicit request: "การตั้งค่าเงินรวมกันถ้าเกินจำนวนเงินเดือนมีการดักส่วนนี้ไว้ไหม" --
+        // PayrollRunModel::recalculate() now checks a Mixed-payment employee's FULL line set
+        // (cash+transfer+check together) against this row's own net pay the moment it's known,
+        // instead of the mismatch only ever surfacing later as a silently-skipped row inside an
+        // exported Bank Transfer/Cash Payment file. Advisory only (never blocks submit -- same
+        // exclusion-list treatment as daily_salary_no_shift_pattern above).
+        if (code === 'mixed_payment_lines_mismatch') return langData['calc_error_mixed_payment_lines_mismatch'] || "This employee's Mixed payment lines don't add up to their net pay -- check the Payment tab on Employee Detail.";
         return code;
     });
     return `<span class="text-danger small">${escapeHtmlRd(labels.join(' '))}</span>`;
@@ -460,9 +479,9 @@ function loadRunReportsTab() {
                 <td class="text-center">${Number(row.download_count) || 0}</td>
                 <td>${row.last_downloaded_at ? formatDisplayDateTime(row.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`}</td>
                 <td class="text-center">
-                    <div class="btn-group border rounded-3 bg-white">
-                        <button type="button" class="btn btn-link text-primary btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
-                        <button type="button" class="btn btn-link text-secondary border-start btn-report-history" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_view_history'] || 'View Download History') : notReadyTitle}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                    <div class="d-flex gap-1 justify-content-center">
+                        <button type="button" class="btn btn-link btn-circle-action text-primary btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
+                        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-report-history" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_view_history'] || 'View Download History') : notReadyTitle}"><i class="fa-solid fa-clock-rotate-left"></i></button>
                     </div>
                 </td>
             </tr>
@@ -510,16 +529,19 @@ function loadRunCashTab() {
                 : `<span class="badge bg-secondary-subtle text-secondary">${langData['status_unpaid'] || 'Unpaid'}</span>`;
             const paidByName = currentLang === 'th' ? row.paid_by_name_th : row.paid_by_name_en;
             const paidAtCell = isPaid ? `${formatDisplayDateTime(row.paid_at)}${paidByName ? `<div class="text-muted small">${escapeHtmlRd(paidByName)}</div>` : ''}` : '-';
+            // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+            // ".btn-circle-action" section) replace the old adjacent .btn-group (and its own former
+            // .btn-sm, redundant now that .btn-circle-action sets a fixed 32x32 size itself).
             const actionBtn = isPaid
-                ? `<button type="button" class="btn btn-link btn-sm text-secondary btn-cash-mark-unpaid" data-id="${row.id}" title="${langData['mark_as_unpaid'] || 'Mark as Unpaid'}"><i class="fa-solid fa-rotate-left"></i></button>`
-                : `<button type="button" class="btn btn-link btn-sm text-success btn-cash-mark-paid" data-id="${row.id}" title="${langData['mark_as_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-check"></i></button>`;
+                ? `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-cash-mark-unpaid" data-id="${row.id}" title="${langData['mark_as_unpaid'] || 'Mark as Unpaid'}"><i class="fa-solid fa-rotate-left"></i></button>`
+                : `<button type="button" class="btn btn-link btn-circle-action text-success btn-cash-mark-paid" data-id="${row.id}" title="${langData['mark_as_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-check"></i></button>`;
             return `<tr>
                 <td>${escapeHtmlRd(row.employee_no)}</td>
                 <td>${name}</td>
                 <td class="text-end">${fmtNumRd(row.amount)}</td>
                 <td class="text-center">${badge}</td>
                 <td>${paidAtCell}</td>
-                <td class="text-center"><div class="btn-group border rounded-3 bg-white">${actionBtn}</div></td>
+                <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtn}</div></td>
             </tr>`;
         }).join('') || `<tr><td colspan="6" class="text-center text-secondary py-3">${langData['no_cash_payments'] || 'No cash-paying employees in this run.'}</td></tr>`);
     });
@@ -554,9 +576,328 @@ $(document).on('click', '.btn-cash-mark-unpaid', function () {
         function () { setRunCashPaymentStatus(id, 'unpaid'); }
     );
 });
-$(document).on('click', '.btn-report-preview', function () {
-    const row = rdReportsRows.find(r => r.code === $(this).data('code'));
+// 2026-09-02, multi-bank-account payroll, explicit request: "ในหน้า Detail ก็สามารถเลือกได้ว่าใครจะโอนผ่าน
+// บัญชีไหน...ในหน้า Detail ของ Process เพิ่ม Tab ให้จัดการข้อมูลส่วนนี้ได้". Same ALLOWED_STATES gate/pattern
+// as loadRunCashTab() above (this is a disbursement concern, only meaningful once a run's numbers
+// are final -- see PayrollRunEmployeeBankAccountModel's own docblock).
+let rdBankAccountRows = [];
+const RD_BANK_ACCOUNT_SOURCE_LABEL_KEY = {
+    override: 'bank_account_source_override',
+    employee_default: 'bank_account_source_employee_default',
+    cycle: 'bank_account_source_cycle',
+    company_default: 'bank_account_source_company_default',
+};
+function loadRunBankAccountTab() {
+    if (!PAYROLL_RUN_ID || !currentRun) return;
+    const isReady = RD_REPORT_ALLOWED_STATES.includes(currentRun.state);
+    $('#runBankAccountNotReady').toggleClass('d-none', isReady);
+    $('#runBankAccountContent').toggleClass('d-none', !isReady);
+    if (!isReady) return;
+    $.getJSON(`${BASE_URL}/api/payroll-run-employee-bank-account.list`, { run_id: PAYROLL_RUN_ID }, function (res) {
+        if (!res.status) {
+            $('#runBankAccountNotReady').removeClass('d-none').find('#runBankAccountNotReadyMessage').text(res.message || '');
+            $('#runBankAccountContent').addClass('d-none');
+            return;
+        }
+        rdBankAccountRows = res.data || [];
+        $('#runBankAccountTableBody').html(rdBankAccountRows.map(row => {
+            const name = escapeHtmlRd((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
+            const bankName = currentLang === 'th' ? row.bank_name_th : row.bank_name_en;
+            const accountCell = row.bank_account_id
+                ? escapeHtmlRd(`${bankName || ''} - ${row.bank_account_name || ''}`)
+                : `<span class="text-danger">${langData['bank_account_unassigned'] || 'No account configured'}</span>`;
+            const sourceBadgeClass = row.is_overridden ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary';
+            const sourceLabel = langData[RD_BANK_ACCOUNT_SOURCE_LABEL_KEY[row.source]] || row.source;
+            // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+            // ".btn-circle-action" section) replace the old adjacent .btn-group.
+            let actionBtns = `<button type="button" class="btn btn-link btn-circle-action text-primary btn-bank-account-edit" data-employee-id="${row.employee_id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`;
+            if (row.is_overridden) {
+                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-bank-account-remove" data-employee-id="${row.employee_id}" title="${langData['bank_account_remove_override'] || 'Remove Override'}"><i class="fa-solid fa-rotate-left"></i></button>`;
+            }
+            return `<tr>
+                <td>${escapeHtmlRd(row.employee_no)}</td>
+                <td>${name}</td>
+                <td>${accountCell}</td>
+                <td class="text-center"><span class="badge ${sourceBadgeClass}">${sourceLabel}</span></td>
+                <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
+            </tr>`;
+        }).join('') || `<tr><td colspan="5" class="text-center text-secondary py-3">${langData['no_cash_payments'] || 'No bank-paying employees in this run.'}</td></tr>`);
+    });
+}
+$(document).on('click', '.btn-bank-account-edit', function () {
+    const employeeId = $(this).data('employee-id');
+    const row = rdBankAccountRows.find(r => Number(r.employee_id) === Number(employeeId));
     if (!row) return;
+    $('#bankAccountAssignEmployeeId').val(employeeId);
+    const name = (currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim();
+    $('#bankAccountAssignEmployeeName').text(`${row.employee_no} - ${name}`);
+    $('#bankAccountAssignNote').val('');
+    const $select = $('#bankAccountAssignSelect').empty();
+    if (row.bank_account_id) {
+        const bankName = currentLang === 'th' ? row.bank_name_th : row.bank_name_en;
+        const option = new Option(`${bankName || ''} - ${row.bank_account_name || ''}`, row.bank_account_id, true, true);
+        $select.append(option);
+    }
+    $select.trigger('change');
+    new bootstrap.Modal(document.getElementById('bankAccountAssignModal')).show();
+});
+$(document).on('click', '#btnSaveBankAccountAssign', function () {
+    const employeeId = $('#bankAccountAssignEmployeeId').val();
+    const bankAccountId = $('#bankAccountAssignSelect').val();
+    if (!bankAccountId) {
+        showWarning(langData['bank_account_select_required'] || 'Please select a bank account.');
+        return;
+    }
+    const $btn = $(this);
+    setButtonLoading($btn, true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run-employee-bank-account.save`, method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: employeeId, bank_account_id: bankAccountId, note: $('#bankAccountAssignNote').val() }),
+        dataType: 'json',
+        success: function (res) {
+            setButtonLoading($btn, false);
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            bootstrap.Modal.getInstance(document.getElementById('bankAccountAssignModal')).hide();
+            loadRunBankAccountTab();
+        },
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
+$(document).on('click', '.btn-bank-account-remove', function () {
+    const employeeId = $(this).data('employee-id');
+    showConfirm(
+        langData['bank_account_remove_override'] || 'Remove Override',
+        langData['confirm_bank_account_remove_message'] || 'Revert this employee back to the default paying account for this run?',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-run-employee-bank-account.remove`, method: 'POST',
+                contentType: 'application/json', data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: employeeId }), dataType: 'json',
+                success: function (res) {
+                    if (!res.status) {
+                        showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                        return;
+                    }
+                    loadRunBankAccountTab();
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            });
+        }
+    );
+});
+$(document).on('click', '#btnExportRunBankAccountSummary', function () {
+    if (!PAYROLL_RUN_ID) return;
+    const params = new URLSearchParams();
+    params.set('report_code', 'BANK_ACCOUNT_PAYMENT_SUMMARY');
+    params.set('format', 'excel');
+    params.set('run_id', PAYROLL_RUN_ID);
+    params.set('source', 'payroll_process_detail');
+    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
+});
+// 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 5 -- one grouped row per
+// destination (PayrollRemittanceModel::generateForRun(), created right after this run is Approved).
+// Same ALLOWED_STATES gate/pattern as loadRunCashTab() right above -- see that function's own
+// comment for why the client-side state check exists at all (purely to show the right empty-state
+// message without a round trip; the server enforces this independently on every mutating action).
+let rdRemittanceRows = [];
+const RD_REMITTANCE_STATUS_BADGE = {
+    pending: 'bg-warning-subtle text-warning',
+    transferred: 'bg-primary-subtle text-primary',
+    success: 'bg-success-subtle text-success',
+    failed: 'bg-danger-subtle text-danger',
+};
+function rdRemittanceDestinationLabel(row) {
+    if (row.destination_type === 'company') {
+        return langData['remittance_destination_company'] || 'Company';
+    }
+    if (row.destination_type === 'employee_fallback') {
+        const name = (currentLang === 'th' ? `${row.fallback_name_th || ''} ${row.fallback_surname_th || ''}` : `${row.fallback_name_en || ''} ${row.fallback_surname_en || ''}`).trim();
+        return `${name}${row.fallback_employee_no ? ` (${row.fallback_employee_no})` : ''}`;
+    }
+    const bankName = currentLang === 'th' ? row.bank_name_th : row.bank_name_en;
+    return `${row.destination_account_name || '-'}${bankName ? ` - ${bankName}` : ''}`;
+}
+function rdRemittanceDestinationTypeLabel(type) {
+    return langData[`remittance_destination_type_${type}`] || type;
+}
+function loadRunRemittanceTab() {
+    if (!PAYROLL_RUN_ID || !currentRun) return;
+    const isReady = RD_REPORT_ALLOWED_STATES.includes(currentRun.state);
+    $('#runRemittanceNotReady').toggleClass('d-none', isReady);
+    $('#runRemittanceContent').toggleClass('d-none', !isReady);
+    if (!isReady) return;
+    $.getJSON(`${BASE_URL}/api/payroll-remittance.list`, { run_id: PAYROLL_RUN_ID }, function (res) {
+        if (!res.status) {
+            $('#runRemittanceNotReady').removeClass('d-none').find('#runRemittanceNotReadyMessage').text(res.message || '');
+            $('#runRemittanceContent').addClass('d-none');
+            return;
+        }
+        rdRemittanceRows = res.data || [];
+        const totals = { pending: 0, transferred: 0, success: 0, failed: 0 };
+        rdRemittanceRows.forEach(row => { totals[row.status] = (totals[row.status] || 0) + Number(row.total_amount); });
+        $('#runRemittanceTotalPending').text(fmtNumRd(totals.pending));
+        $('#runRemittanceTotalTransferred').text(fmtNumRd(totals.transferred));
+        $('#runRemittanceTotalSuccess').text(fmtNumRd(totals.success));
+        $('#runRemittanceTotalFailed').text(fmtNumRd(totals.failed));
+        $('#runRemittanceTableBody').html(rdRemittanceRows.map(row => {
+            const badgeClass = RD_REMITTANCE_STATUS_BADGE[row.status] || 'bg-secondary-subtle text-secondary';
+            const badge = `<span class="badge ${badgeClass}">${langData[`remittance_status_${row.status}`] || row.status}</span>`;
+            const failedNote = row.status === 'failed' && row.note ? `<div class="text-danger small">${escapeHtmlRd(row.note)}</div>` : '';
+            const transferredAtCell = row.transferred_at ? formatDisplayDateTime(row.transferred_at) : '-';
+            // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+            // ".btn-circle-action" section) replace the old adjacent .btn-group.
+            let actionBtns = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-breakdown" data-id="${row.id}" title="${langData['remittance_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-list"></i></button>`;
+            if (row.status === 'pending') {
+                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-primary btn-remittance-mark-transferred" data-id="${row.id}" title="${langData['mark_as_transferred'] || 'Mark as Transferred'}"><i class="fa-solid fa-paper-plane"></i></button>`;
+            } else if (row.status === 'transferred') {
+                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-success btn-remittance-confirm-success" data-id="${row.id}" title="${langData['remittance_confirm_success'] || 'Confirm Success'}"><i class="fa-solid fa-circle-check"></i></button>`;
+                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-remittance-mark-failed" data-id="${row.id}" title="${langData['mark_as_failed'] || 'Mark as Failed'}"><i class="fa-solid fa-circle-xmark"></i></button>`;
+            } else if (row.status === 'failed') {
+                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-retry" data-id="${row.id}" title="${langData['retry'] || 'Retry'}"><i class="fa-solid fa-rotate-left"></i></button>`;
+            }
+            return `<tr>
+                <td>${escapeHtmlRd(rdRemittanceDestinationLabel(row))}</td>
+                <td>${escapeHtmlRd(rdRemittanceDestinationTypeLabel(row.destination_type))}</td>
+                <td class="text-center">${Number(row.employee_count) || 0}</td>
+                <td class="text-end">${fmtNumRd(row.total_amount)}</td>
+                <td class="text-center">${badge}${failedNote}</td>
+                <td>${transferredAtCell}</td>
+                <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
+            </tr>`;
+        }).join('') || `<tr><td colspan="7" class="text-center text-secondary py-3">${langData['no_remittances'] || 'No third-party remittances for this run.'}</td></tr>`);
+    });
+}
+$(document).on('click', '#btnExportRunRemittance', function () {
+    if (!PAYROLL_RUN_ID) return;
+    const params = new URLSearchParams();
+    params.set('report_code', 'THIRD_PARTY_REMITTANCE_SUMMARY');
+    params.set('format', 'excel');
+    params.set('run_id', PAYROLL_RUN_ID);
+    params.set('source', 'payroll_process_detail');
+    generateReport(`${BASE_URL}/api/report.generate?${params.toString()}`);
+});
+$(document).on('click', '.btn-remittance-breakdown', function () {
+    const id = $(this).data('id');
+    $.getJSON(`${BASE_URL}/api/payroll-remittance.items`, { id }, function (res) {
+        if (!res.status) return;
+        $('#remittanceBreakdownTableBody').html((res.data || []).map(item => {
+            const name = escapeHtmlRd((currentLang === 'th' ? `${item.name_th} ${item.surname_th}` : `${item.name_en} ${item.surname_en}`).trim());
+            return `<tr>
+                <td>${escapeHtmlRd(item.employee_no)}</td>
+                <td>${name}</td>
+                <td>${escapeHtmlRd(item.item_code)}</td>
+                <td class="text-end">${fmtNumRd(item.amount)}</td>
+            </tr>`;
+        }).join(''));
+        new bootstrap.Modal(document.getElementById('remittanceBreakdownModal')).show();
+    });
+});
+$(document).on('click', '.btn-remittance-mark-transferred', function () {
+    $('#remittanceMarkTransferredId').val($(this).data('id'));
+    $('#remittanceEvidenceFile').val('');
+    new bootstrap.Modal(document.getElementById('remittanceMarkTransferredModal')).show();
+});
+$(document).on('click', '#btnConfirmMarkTransferred', function () {
+    const id = $('#remittanceMarkTransferredId').val();
+    const fileInput = document.getElementById('remittanceEvidenceFile');
+    if (!fileInput.files.length) {
+        showWarning(langData['remittance_evidence_required'] || 'Please attach transfer evidence.');
+        return;
+    }
+    const formData = new FormData();
+    formData.append('id', id);
+    formData.append('evidence', fileInput.files[0]);
+    const $btn = $(this);
+    setButtonLoading($btn, true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-remittance.mark-transferred`, method: 'POST',
+        data: formData, processData: false, contentType: false, dataType: 'json',
+        success: function (res) {
+            setButtonLoading($btn, false);
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                return;
+            }
+            bootstrap.Modal.getInstance(document.getElementById('remittanceMarkTransferredModal')).hide();
+            loadRunRemittanceTab();
+        },
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
+$(document).on('click', '.btn-remittance-confirm-success', function () {
+    const id = $(this).data('id');
+    showConfirm(
+        langData['remittance_confirm_success'] || 'Confirm Success',
+        langData['confirm_remittance_success_message'] || 'Confirm this transfer completed successfully?',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-remittance.confirm-success`, method: 'POST',
+                contentType: 'application/json', data: JSON.stringify({ id }), dataType: 'json',
+                success: function (res) {
+                    if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                    loadRunRemittanceTab();
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            });
+        }
+    );
+});
+$(document).on('click', '.btn-remittance-mark-failed', function () {
+    $('#remittanceMarkFailedId').val($(this).data('id'));
+    $('#remittanceFailedNote').val('');
+    new bootstrap.Modal(document.getElementById('remittanceMarkFailedModal')).show();
+});
+$(document).on('click', '#btnConfirmMarkFailed', function () {
+    const id = $('#remittanceMarkFailedId').val();
+    const note = $('#remittanceFailedNote').val().trim();
+    if (!note) {
+        showWarning(langData['remittance_failed_reason_required'] || 'A reason is required.');
+        return;
+    }
+    const $btn = $(this);
+    setButtonLoading($btn, true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-remittance.mark-failed`, method: 'POST',
+        contentType: 'application/json', data: JSON.stringify({ id, note }), dataType: 'json',
+        success: function (res) {
+            setButtonLoading($btn, false);
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+            bootstrap.Modal.getInstance(document.getElementById('remittanceMarkFailedModal')).hide();
+            loadRunRemittanceTab();
+        },
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
+$(document).on('click', '.btn-remittance-retry', function () {
+    const id = $(this).data('id');
+    showConfirm(
+        langData['retry'] || 'Retry',
+        langData['confirm_remittance_retry_message'] || 'Revert this back to pending so it can be retried?',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-remittance.retry`, method: 'POST',
+                contentType: 'application/json', data: JSON.stringify({ id }), dataType: 'json',
+                success: function (res) {
+                    if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                    loadRunRemittanceTab();
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            });
+        }
+    );
+});
+// 2026-09-02, explicit request: "เพิ่มให้ Export เป็น PDF ได้ด้วย...การ Export กดแล้ว แสดงตัวอย่าง แล้ว
+// ค่อยเลือกจะ Download ภาษาไทยหรือภาษาอังกฤษ" -- extracted out of the `.btn-report-preview` handler
+// below (unchanged in every other way) so PAYROLL_REGISTER's own dedicated "Export PDF" button
+// (#btnPreviewRunRegisterPdf) can reuse the EXACT same preview-then-choose-language-download modal
+// every other report on this page already uses, without needing to be a row inside the generic
+// Reports-tab table (rdReportsRows) at all -- see this file's own historical comment on why
+// PAYROLL_REGISTER was deliberately excluded from that table in the first place (it already has its
+// own dedicated Export Excel button next to the Timeline; this PDF button sits right beside it).
+function rdOpenReportPreview(row) {
     rdReportPreviewContext = { code: row.code, format: row.format };
     $('#reportPreviewModalTitle').text(rdReportLabel(row));
     // 2026-08-29, same-day follow-up, real bug found and fixed (explicit report: "เหมือนมี iframe
@@ -594,6 +935,19 @@ $(document).on('click', '.btn-report-preview', function () {
         $frame.removeClass('d-none');
     });
     $frame.attr('src', `${BASE_URL}/api/report.generate?${params.toString()}`);
+}
+$(document).on('click', '.btn-report-preview', function () {
+    const row = rdReportsRows.find(r => r.code === $(this).data('code'));
+    if (!row) return;
+    rdOpenReportPreview(row);
+});
+$(document).on('click', '#btnPreviewRunRegisterPdf', function () {
+    rdOpenReportPreview({
+        code: 'PAYROLL_REGISTER',
+        format: 'pdf',
+        supports_preview: true,
+        label: { th: 'ทะเบียนรายได้-รายหักพนักงาน', en: 'Payroll Register' },
+    });
 });
 $(document).on('click', '.btn-report-download', function () {
     if (!rdReportPreviewContext) return;
@@ -628,7 +982,7 @@ function reloadReportHistoryTable() {
 }
 function updateReportHistoryClearFilterVisibility() {
     const active = !!($('#reportHistoryDateFrom').val() || $('#reportHistoryDateTo').val());
-    $('#btnReportHistoryClearFilter').toggleClass('d-none', !active);
+    $('#reportHistoryFilterClearRow').toggleClass('d-none', !active);
 }
 $(document).on('click', '.btn-report-history', function () {
     const row = rdReportsRows.find(r => r.code === $(this).data('code'));
@@ -849,6 +1203,8 @@ function renderRunHeader(run) {
     renderSectionButtons(run);
     loadRunReportsTab();
     loadRunCashTab();
+    loadRunBankAccountTab();
+    loadRunRemittanceTab();
     renderRunSettingsPanel(run);
     loadSyncMissingEmployeesBanner(run);
     renderMergeTargetBanner(run);
@@ -1057,7 +1413,8 @@ $(document).on('click', '#runSettingsToggle', function () {
     $('#runSettingsChevron').toggleClass('fa-chevron-down', collapsed).toggleClass('fa-chevron-up', !collapsed);
 });
 $(document).on('click', '#btnSaveRunSettings', function () {
-    const $btn = $(this).prop('disabled', true);
+    const $btn = $(this);
+    setButtonLoading($btn, true);
     const excludedItemCodes = $('.run-settings-item-check:checked').map(function () { return $(this).val(); }).get();
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.run-settings-save`,
@@ -1069,7 +1426,7 @@ $(document).on('click', '#btnSaveRunSettings', function () {
             excluded_item_codes: excludedItemCodes,
         }),
         success: function (res) {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(langData['save_success'] || 'Saved successfully.');
                 loadRunDetail();
@@ -1077,7 +1434,7 @@ $(document).on('click', '#btnSaveRunSettings', function () {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
         },
-        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });
 
@@ -1465,7 +1822,7 @@ function manageItemsButtonRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
         return '';
     }
-    return `<button type="button" class="btn btn-link text-primary border-start btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>`;
+    return `<button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>`;
 }
 // Raw Sync Data viewer (2026-08-21, explicit request: "ถ้าเป็นการ Sync ข้อมูลมาจาก Origami...เพิ่มปุ่ม
 // ดูข้อมูลดิบได้") -- only for a row that actually came from the sync payload; a manually-added
@@ -1474,7 +1831,7 @@ function rawSyncDataButtonRd(row) {
     if (!currentRun || !currentRun.sync_process_id || row.data_source !== 'sync') {
         return '';
     }
-    return `<button type="button" class="btn btn-link text-secondary border-start btn-raw-sync-data" data-employee-id="${row.employee_id}" title="${langData['action_raw_sync_data'] || 'Raw Sync Data'}"><i class="fa-solid fa-file-code"></i></button>`;
+    return `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-raw-sync-data" data-employee-id="${row.employee_id}" title="${langData['action_raw_sync_data'] || 'Raw Sync Data'}"><i class="fa-solid fa-file-code"></i></button>`;
 }
 // Remove-from-run action, calculation table -- available for EVERY row on any draft run
 // (2026-08-21, explicit request: "พนักงานทุกคน สามารถลบข้อมูลออกจากรอบได้ ต่อให้ Sync มาจาก Origami
@@ -1491,7 +1848,7 @@ function removeEmployeeButtonRd(row) {
     // 2026-08-28, explicit request: "ปรับ icon ให้เป็นรูปถังขยะ" -- trash-can, matching the delete-
     // button icon convention already used everywhere else in this app (Employee List, DataTables
     // row actions, etc.) instead of the previous user-minus icon.
-    return `<button type="button" class="btn btn-link py-1 text-danger border-start btn-remove-manual-employee" data-employee-id="${row.employee_id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-trash-can"></i></button>`;
+    return `<button type="button" class="btn btn-link btn-circle-action text-danger btn-remove-manual-employee" data-employee-id="${row.employee_id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-trash-can"></i></button>`;
 }
 // Breakdown button always shows (any state) -- it's read-only, unlike the other buttons which only
 // make sense while draft. Grouped into one Bootstrap button-group -- same
@@ -1521,8 +1878,17 @@ function verifyLockButtonsRd(row) {
     // btn-link with just a text-color swap (subtle, easy to miss); pressed state is now a solid
     // filled button so it's unmistakable at a glance, not just a slightly different icon tint.
     const verifyBtnCls = row.is_verified ? 'btn-success text-white' : 'btn-outline-secondary';
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn ${verifyBtnCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
+    // 2026-09-02, explicit request: "ปุ่มในตารางพนักงานเหมือนขนาดไม่เท่ากัน" -- btn-sm applied uniformly
+    // here AND on every button in runDetailActionsRd() below so every row-action button in this
+    // table shares the exact same box size, regardless of which .btn-* color/style it uses.
+    // 2026-09-02, same-day follow-up: the wrapping .btn-group border rounded-3 bg-white was
+    // replaced by the plain flex container the rest of this rollout uses, BUT this ONE button
+    // deliberately does NOT get .btn-circle-action -- that class forces background:#fff always
+    // (see style.css), which would silently undo the explicit "solid filled green when verified"
+    // distinction requested the same day this button was built (2026-08-29, "ปุ่ม Lock Verify ถ้ากด
+    // แล้วให้เปลี่ยนสีครับ") -- kept as its own deliberate exception to the circular-button rollout.
+    return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-sm ${verifyBtnCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
     </div>`;
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
@@ -1538,11 +1904,14 @@ function commentButtonRd(row) {
     const countBadge = count > 0
         ? `<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.6rem;">${count}</span>`
         : '';
-    return `<button type="button" class="btn btn-link text-warning border-start btn-comment-employee position-relative" data-employee-id="${row.employee_id}" data-employee-label="${label}" title="${langData['action_comments'] || 'Comments'}"><i class="fa-solid fa-comments"></i>${countBadge}</button>`;
+    return `<button type="button" class="btn btn-link btn-circle-action text-warning btn-comment-employee position-relative" data-employee-id="${row.employee_id}" data-employee-label="${label}" title="${langData['action_comments'] || 'Comments'}"><i class="fa-solid fa-comments"></i>${countBadge}</button>`;
 }
+// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+// ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention this
+// whole cluster previously followed (2026-08-21/29).
 function runDetailActionsRd(row) {
-    return `<div class="btn-group border rounded-3 bg-white">
-        <button type="button" class="btn btn-link text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
+    return `<div class="d-flex gap-1 justify-content-center flex-wrap">
+        <button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
         ${rawSyncDataButtonRd(row)}
         ${manageItemsButtonRd(row)}
         ${commentButtonRd(row)}
@@ -1723,6 +2092,9 @@ function breakdownLineRowsRd(lines) {
         let codeHtml;
         if (line.source === 'transfer_in') {
             codeHtml = `<span class="badge bg-info-subtle text-info"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['transfer_in_badge'] || 'Transfer'}</span>`;
+        } else if (line.is_custom && line.is_other) {
+            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+            codeHtml = `<span class="badge bg-info-subtle text-info"><i class="fa-solid fa-circle-question me-1"></i>${langData['manual_line_other_badge'] || 'Other'}</span>`;
         } else if (line.is_custom) {
             codeHtml = `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
         } else {
@@ -1738,6 +2110,12 @@ function breakdownLineRowsRd(lines) {
             payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
         } else if (line.payee_type === 'company') {
             payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+        } else if (line.payee_type === 'other_person') {
+            // 2026-09-02, Deduction Destination & Third-Party Remittance -- this line shape has no
+            // resolved destination_account_name (that LEFT JOIN only exists in
+            // manualLinesForEmployee()'s own dedicated query, not the persisted breakdown JSON), so
+            // a generic label is shown here, same "no specific detail" treatment 'company' already gets.
+            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-building-columns me-1"></i>${langData['payee_type_other_person'] || 'Other Person / Third Party'}</div>`;
         } else if (line.payee_type === 'not_disbursed') {
             payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
         }
@@ -1985,17 +2363,25 @@ $(document).on('click', '.btn-raw-sync-data', function () {
 // Cash counts) -- computed client-side from the SAME details array already loaded for
 // #tb_run_detail (payment_type added to PayrollRunModel::getDetails() this same round), no separate
 // request needed. Called from both branches of initRunDetailTable() (rebuild and reload-existing).
+// 2026-09-02, follow-up: payment_type (bank/cash-only enum) replaced by payment_method_code
+// (transfer/cash/check/mixed) -- this summary stays a simple 2-bucket Bank/Cash view (matching what
+// was actually asked for here), 'check' buckets with Cash (neither needs a bank account), and
+// 'mixed' counts in BOTH buckets (it genuinely involves both a transfer portion and a cash/check
+// portion) rather than picking one and hiding the other.
+function isBankishPaymentMethod(code) { return code === 'transfer' || code === 'mixed'; }
+function isCashishPaymentMethod(code) { return code === 'cash' || code === 'check' || code === 'mixed'; }
 function updatePaymentMethodSummary(details) {
-    const bankCount = details.filter(d => (d.payment_type || 'bank') === 'bank').length;
-    const cashCount = details.filter(d => d.payment_type === 'cash').length;
+    const bankCount = details.filter(d => isBankishPaymentMethod(d.payment_method_code || 'transfer')).length;
+    const cashCount = details.filter(d => isCashishPaymentMethod(d.payment_method_code)).length;
     // 2026-09-01, explicit correction: "ให้ขึ้นใน card พนักงานครับ มีแค่ 4 Card เหมือนเดิม" -- no longer
     // its own 2-card grid; a compact subtext line inside the existing "Employees" card instead.
     const bankLabel = langData['table_payment_bank'] || 'Bank Transfer';
     const cashLabel = langData['table_payment_cash'] || 'Cash';
-    $('#infoPaymentBreakdown').html(`<i class="fa-solid fa-building-columns me-1"></i>${bankLabel} ${bankCount} <span class="mx-1">·</span><i class="fa-solid fa-money-bill-wave me-1"></i>${cashLabel} ${cashCount}`);
-    // The Payment Method Summary tab's own pair of cards (#run-payment-pane) stayed a genuine
-    // separate grid -- that request never asked to change that tab, only this Employee Breakdown
-    // section's own card -- see refreshPaymentSummaryTable() for those 2 counts.
+    // 2026-09-02, explicit request: "Card ผ่านบัญชีและเงินสดปรับให้ font คนละสี" -- was one plain-colored
+    // line; Bank/Cash now each get the SAME accent color their own badge already uses elsewhere on
+    // this page (payment-method column) so the two figures read apart from each other at a glance
+    // instead of blending into one plain-text line.
+    $('#infoPaymentBreakdown').html(`<span class="text-info-emphasis fw-semibold"><i class="fa-solid fa-building-columns me-1"></i>${bankLabel} ${bankCount}</span><span class="mx-2 text-muted">·</span><span class="text-warning-emphasis fw-semibold"><i class="fa-solid fa-money-bill-wave me-1"></i>${cashLabel} ${cashCount}</span>`);
 }
 // 2026-08-31, explicit request: "ก่อนตารางพนักงาน ให้มี checkbox ขึ้นมาเพื่อให้เลือกกรองข้อมูล พนักงานที่รับผ่าน
 // บัญชี และเงินสด" -- registered ONCE (guarded the same way registerStationSearchFilter() in
@@ -2009,29 +2395,50 @@ function registerPaymentMethodSearchFilter() {
         if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
         const bankOn = $('#filterPaymentBank').is(':checked');
         const cashOn = $('#filterPaymentCash').is(':checked');
-        const type = (rowData && rowData.payment_type) || 'bank';
-        return type === 'cash' ? cashOn : bankOn;
+        const code = (rowData && rowData.payment_method_code) || 'transfer';
+        // 2026-09-02, follow-up: 'mixed' passes the filter if EITHER checkbox is on (see
+        // updatePaymentMethodSummary()'s own comment on why it isn't forced into just one bucket).
+        return (isBankishPaymentMethod(code) && bankOn) || (isCashishPaymentMethod(code) && cashOn);
     });
 }
 // Confirmed via AskUserQuestion: 2 independent checkboxes, both checked by default (show everyone);
 // unticking one hides that group; unticking BOTH is disallowed -- falls back to Bank rather than
 // letting the table go empty with no visible way back in.
+// 2026-09-02, same-day follow-up: "ให้เลือกทั้งหมดได้ด้วย" -- #filterPaymentAll is a plain select-all
+// convenience, not a 3rd filter state: checking it ticks both Bank/Cash, unchecking it clears both
+// (re-guarded right back to Bank-only by the same "never let both end up unchecked" rule below).
+// The actual DataTables search predicate (registerPaymentMethodSearchFilter()) still only ever
+// reads filterPaymentBank/filterPaymentCash directly, so this stays a pure client-side .draw() --
+// no ajax, no data reload, same as before.
+$(document).on('change', '#filterPaymentAll', function () {
+    const checked = $(this).is(':checked');
+    $('#filterPaymentBank, #filterPaymentCash').prop('checked', checked);
+    if (!checked) $('#filterPaymentBank').prop('checked', true);
+    if (tb_run_detail) tb_run_detail.draw();
+});
 $(document).on('change', '#filterPaymentBank, #filterPaymentCash', function () {
     if (!$('#filterPaymentBank').is(':checked') && !$('#filterPaymentCash').is(':checked')) {
         $('#filterPaymentBank').prop('checked', true);
     }
+    $('#filterPaymentAll').prop('checked', $('#filterPaymentBank').is(':checked') && $('#filterPaymentCash').is(':checked'));
     if (tb_run_detail) tb_run_detail.draw();
 });
 
-// 2026-08-31: raw per-employee rows kept module-level so the new "Payment Method Summary" tab
-// (initPaymentSummaryTable() below) can build/refresh its own DataTable off the exact same data
-// #tb_run_detail already has, without a second AJAX round trip.
+// 2026-08-31: raw per-employee rows kept module-level (was also read by the now-removed Payment
+// Method Summary tab, see the 2026-09-02 removal note above initRunDetailTable()).
 let currentRunDetails = [];
+// 2026-09-02, explicit request: "Tab ที่แสดงผลอยู่ตอนนี้มีส่วนไหนที่ยุบรวมกันได้" -- the "Payment Method
+// Summary" tab (buildPaymentSummaryTable()/refreshPaymentSummaryTable(), tb_run_payment_summary)
+// was a plain read-only Employee/Payment-Method/Base-Salary/Gross/Deduction/Net table with footer
+// totals, built off this SAME currentRunDetails array -- it became 100% redundant the moment this
+// same round added a Payment Method column + Bank/Cash filter checkboxes directly onto
+// #tb_run_detail's own Details tab (which already had Base Salary/Gross/Deduction/Net + footer
+// totals from before). Removed entirely rather than left as a duplicate view of the same data --
+// see app/views/payroll/detail.php's own removal comment for the tab nav/pane markup.
 function initRunDetailTable(details) {
     currentRunDetails = details;
     registerPaymentMethodSearchFilter();
     updatePaymentMethodSummary(details);
-    refreshPaymentSummaryTable();
     $('#noDetailsYet').toggleClass('d-none', details.length > 0);
     $('#tb_run_detail').toggleClass('d-none', details.length === 0);
     // 2026-08-29, real bug found and fixed (explicit report: "checkbox ในกรณีที่ส่งไปอนุมัติแล้วยังขึ้นอยู่
@@ -2079,21 +2486,34 @@ function initRunDetailTable(details) {
             // too, when knowing "was this person customized" matters most. Comment count already
             // gets its own red-dot badge on the Comment button itself (commentButtonRd()) -- not
             // repeated here to avoid saying the same thing twice.
-            { data: 'employee_no', orderable: false, render: {
-                display: (d, t, row) => {
-                    const badges = [];
-                    if (Number(row.line_override_count || 0) > 0) {
-                        badges.push(`<i class="fa-solid fa-sliders text-warning ms-1" title="${langData['row_badge_item_override'] || 'Has item override(s)'}"></i>`);
-                    }
-                    if (row.has_calc_override) {
-                        badges.push(`<i class="fa-solid fa-file-invoice-dollar text-info ms-1" title="${langData['row_badge_calc_override'] || 'Has tax/SSO override'}"></i>`);
-                    }
-                    return `<div class="fw-semibold">${escapeHtmlRd(employeeDisplayNameRd(row))}${badges.join('')}</div><div class="small text-muted">${escapeHtmlRd(d)}</div>`;
-                },
-                sort: d => d,
-                filter: (d, t, row) => `${d} ${employeeDisplayNameRd(row)}`,
+            // 2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code อยู่ก่อน" --
+            // was one combined 2-line cell (name bold on top, code muted underneath); split into its
+            // own Code column (badges moved here, since it's the leftmost/anchor column now) and a
+            // separate plain Name column right after it.
+            { data: 'employee_no', orderable: false, render: (d, t, row) => {
+                const badges = [];
+                if (Number(row.line_override_count || 0) > 0) {
+                    badges.push(`<i class="fa-solid fa-sliders text-warning ms-1" title="${langData['row_badge_item_override'] || 'Has item override(s)'}"></i>`);
+                }
+                if (row.has_calc_override) {
+                    badges.push(`<i class="fa-solid fa-file-invoice-dollar text-info ms-1" title="${langData['row_badge_calc_override'] || 'Has tax/SSO override'}"></i>`);
+                }
+                return `<span class="fw-semibold">${escapeHtmlRd(d)}</span>${badges.join('')}`;
             } },
+            { data: null, orderable: false, render: (d, t, row) => escapeHtmlRd(employeeDisplayNameRd(row)) },
             { data: null, className: 'text-center', render: (d, t, row) => dataSourceBadgeRd(row) },
+            // 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือเงินสด" --
+            // same badge markup the (since-removed) Payment Method Summary tab used, reused here for
+            // a consistent look.
+            // 2026-09-02, follow-up: widened from a bank/cash-only binary to the real 4-code
+            // payment_method_code (transfer/cash/check/mixed) -- check gets the same cash-style badge
+            // (no bank account involved either), mixed gets its own distinct badge since it's neither.
+            { data: 'payment_method_code', className: 'text-center', render: d => {
+                if (d === 'cash') return `<span class="badge bg-warning-subtle text-warning-emphasis"><i class="fa-solid fa-money-bill-wave me-1"></i>${langData['table_payment_cash'] || 'Cash'}</span>`;
+                if (d === 'check') return `<span class="badge bg-warning-subtle text-warning-emphasis"><i class="fa-solid fa-money-check me-1"></i>${langData['payment_method_check'] || 'Check'}</span>`;
+                if (d === 'mixed') return `<span class="badge bg-primary-subtle text-primary-emphasis"><i class="fa-solid fa-shuffle me-1"></i>${langData['payment_method_mixed'] || 'Mixed'}</span>`;
+                return `<span class="badge bg-info-subtle text-info-emphasis"><i class="fa-solid fa-building-columns me-1"></i>${langData['table_payment_bank'] || 'Bank Transfer'}</span>`;
+            } },
             // 2026-08-29, explicit follow-up request: "ตรงเงินได้เงินหักสุทธิ์ ปรับการแสดงผลให้ชัดขึ้น หรือแยก
             // Column ไปเลย" -- the combined "Amounts" cell from the previous round packed Base
             // Salary/Gross/Deduction/Net into one cell and wasn't clear enough; split back into their
@@ -2155,114 +2575,46 @@ function initRunDetailTable(details) {
         // strip. Fires on every draw (search/sort/reload) automatically, same as drawCallback --
         // {search:'applied'} means a filtered view sums/counts only what's currently visible, not
         // the whole table, matching DataTables' own footer-total convention.
+        // 2026-09-02, explicit request: "Footer Column ตรวจสอบแล้ว ไม่เอา icon ให้ขึ้นว่าตรวจสอบแล้ว n/n และ
+        // Column การคำนวณ คำนวณแล้ว n/n" -- rdFootVerifyLock drops its icon for a plain "label n/total"
+        // count text; the Calculation column (previously blank in the footer) gets the same
+        // treatment counting calc_status === 'calculated' rows. Column indices below shifted by 2
+        // (Code+Name split into 2 columns, +1 new Payment Method column) from the previous round.
         footerCallback: function () {
             const api = this.api();
             const sumColRd = idx => api.column(idx, { search: 'applied' }).data().toArray().reduce((a, b) => a + (parseFloat(b) || 0), 0);
             const visibleRows = api.rows({ search: 'applied' }).data().toArray();
             $('#rdFootEmployeeCount').text(`${langData['table_employee'] || 'Employee'}: ${visibleRows.length}`);
-            $('#rdFootBaseSalary').text(fmtNumRd(sumColRd(3)));
-            $('#rdFootGross').text(fmtNumRd(sumColRd(4)));
-            $('#rdFootDeduction').text(fmtNumRd(sumColRd(5)));
-            $('#rdFootNet').text(fmtNumRd(sumColRd(6)));
+            $('#rdFootBaseSalary').text(fmtNumRd(sumColRd(5)));
+            $('#rdFootGross').text(fmtNumRd(sumColRd(6)));
+            $('#rdFootDeduction').text(fmtNumRd(sumColRd(7)));
+            $('#rdFootNet').text(fmtNumRd(sumColRd(8)));
+            const calculatedCount = visibleRows.filter(r => r.calc_status === 'calculated').length;
+            $('#rdFootCalcStatus').text(`${langData['calc_status_calculated'] || 'Calculated'} ${calculatedCount}/${visibleRows.length}`);
             const verifiedCount = visibleRows.filter(r => r.is_verified).length;
-            $('#rdFootVerifyLock').html(`<i class="fa-solid fa-check-double text-success me-1" title="${langData['verify_status_verified'] || 'Verified'}"></i>${verifiedCount}`);
+            $('#rdFootVerifyLock').text(`${langData['verify_status_verified'] || 'Verified'} ${verifiedCount}/${visibleRows.length}`);
         },
         // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
         // rollout, client mode (plain `data:` array, no ajax at all). employee_no/name stay excluded
-        // (that column still combines 2 fields into one free-text cell -- the global search box
-        // covers it instead, see searching: true above); base_salary/gross/deduction/net are back to
-        // their own columns as of this same round, so their filters are restored too.
+        // (covered by the global search box instead, see searching: true above); base_salary/gross/
+        // deduction/net/payment_type each get their own filter. Indices shifted +2 from the previous
+        // round (see footerCallback's own comment above for why).
         initComplete: function () {
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 2, key: 'data_source' },
-                    { index: 3, key: 'base_salary_amount' },
-                    { index: 4, key: 'gross_amount' },
-                    { index: 5, key: 'total_deduction_amount' },
-                    { index: 6, key: 'net_amount' },
-                    { index: 7, key: 'calc_status' },
+                    { index: 3, key: 'data_source' },
+                    { index: 4, key: 'payment_method_code' },
+                    { index: 5, key: 'base_salary_amount' },
+                    { index: 6, key: 'gross_amount' },
+                    { index: 7, key: 'total_deduction_amount' },
+                    { index: 8, key: 'net_amount' },
+                    { index: 9, key: 'calc_status' },
                 ]
             });
         }
     });
 }
-
-/* ==================== Payment Method Summary tab (2026-08-31) ====================
-   Explicit request: "เพิ่มอีก Tab ที่สรุปรวมว่า บัญชีกี่คน เงินสดกี่คน และเป็นรายการตารางพนักงานพร้อมช่อง
-   รายได้ รายหัก แบบละเอียด และแสดงยอดสุทธิ มีสรุปใน Footer" -- a plain, read-only itemized table (same
-   Base Salary/Gross/Deduction/Net columns #tb_run_detail already has, plus a Payment Method column,
-   minus the checkbox/Verify/Actions columns that only make sense on the editable Details tab)
-   backed by the SAME currentRunDetails array, not a new endpoint. Built lazily on the tab's own
-   FIRST shown.bs.tab (same "never construct a DataTable while its Bootstrap tab pane is
-   display:none" rule this app follows everywhere else -- columns collapse to 0 width otherwise);
-   every later data reload just updates it in place via refreshPaymentSummaryTable(), whether or not
-   the tab happens to be visible at that moment. ==================== */
-let tb_run_payment_summary;
-let paymentSummaryTableBuilt = false;
-function buildPaymentSummaryTable() {
-    if (paymentSummaryTableBuilt) {
-        tb_run_payment_summary.columns.adjust().draw();
-        return;
-    }
-    paymentSummaryTableBuilt = true;
-    tb_run_payment_summary = $('#tb_run_payment_summary').DataTable({
-        responsive: false,
-        data: currentRunDetails,
-        columns: [
-            { data: 'employee_no', render: (d, t, row) => `<div class="fw-semibold">${escapeHtmlRd(employeeDisplayNameRd(row))}</div><div class="small text-muted">${escapeHtmlRd(d)}</div>` },
-            { data: 'payment_type', className: 'text-center', render: d => d === 'cash'
-                ? `<span class="badge bg-warning-subtle text-warning-emphasis"><i class="fa-solid fa-money-bill-wave me-1"></i>${langData['table_payment_cash'] || 'Cash'}</span>`
-                : `<span class="badge bg-info-subtle text-info-emphasis"><i class="fa-solid fa-building-columns me-1"></i>${langData['table_payment_bank'] || 'Bank Transfer'}</span>` },
-            { data: 'base_salary_amount', className: 'text-end', render: {
-                display: (d, t, row) => row.base_salary_excluded
-                    ? `<span class="text-danger fw-semibold small">${langData['base_salary_excluded_label'] || 'Not Calculated'}</span>`
-                    : `<span class="text-muted">${fmtNumRd(d)}</span>`,
-                sort: d => d,
-                filter: d => d,
-            } },
-            { data: 'gross_amount', className: 'text-end text-success fw-semibold', render: d => fmtNumRd(d) },
-            { data: 'total_deduction_amount', className: 'text-end text-danger fw-semibold', render: d => fmtNumRd(d) },
-            { data: 'net_amount', className: 'text-end', render: d => `<span class="rd-net-pill">${fmtNumRd(d)}</span>` },
-        ],
-        paging: false,
-        searching: currentRunDetails.length > 10,
-        info: false,
-        language: getTableLang(),
-        order: [[0, 'asc']],
-        footerCallback: function () {
-            const api = this.api();
-            const sumColRd = idx => api.column(idx, { search: 'applied' }).data().toArray().reduce((a, b) => a + (parseFloat(b) || 0), 0);
-            const visibleRows = api.rows({ search: 'applied' }).data().toArray();
-            $('#paymentSummaryFootEmployeeCount').text(`${langData['table_employee'] || 'Employee'}: ${visibleRows.length}`);
-            $('#paymentSummaryFootBaseSalary').text(fmtNumRd(sumColRd(2)));
-            $('#paymentSummaryFootGross').text(fmtNumRd(sumColRd(3)));
-            $('#paymentSummaryFootDeduction').text(fmtNumRd(sumColRd(4)));
-            $('#paymentSummaryFootNet').text(fmtNumRd(sumColRd(5)));
-        },
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'payment_type' },
-                    { index: 2, key: 'base_salary_amount' },
-                    { index: 3, key: 'gross_amount' },
-                    { index: 4, key: 'total_deduction_amount' },
-                    { index: 5, key: 'net_amount' },
-                ]
-            });
-        }
-    });
-}
-function refreshPaymentSummaryTable() {
-    $('#runPaymentSummaryEmpty').toggleClass('d-none', currentRunDetails.length > 0);
-    $('#runPaymentSummaryContent').toggleClass('d-none', currentRunDetails.length === 0);
-    $('#paymentSummaryBankCount').text(currentRunDetails.filter(d => (d.payment_type || 'bank') === 'bank').length);
-    $('#paymentSummaryCashCount').text(currentRunDetails.filter(d => d.payment_type === 'cash').length);
-    if (!paymentSummaryTableBuilt) return;
-    tb_run_payment_summary.clear().rows.add(currentRunDetails).draw();
-}
-$(document).on('shown.bs.tab', '#run-payment-tab', buildPaymentSummaryTable);
 
 /* ==================== View Mode (2026-08-29) ====================
    Explicit request: "ตอน View Mode ในกรณีที่แก้ไขหรือทำอะไรไม่ได้แล้ว ส่วนของการแสดงผล อยากให้ปรับให้ดูเป็น
@@ -2531,7 +2883,7 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
     }
     const tag = $('#employeeCommentTagGroup input:checked').val() || null;
     const $btn = $(this);
-    $btn.prop('disabled', true);
+    setButtonLoading($btn, true);
     const isEdit = employeeCommentEditingId !== null;
     const url = isEdit ? '/api/payroll-run.employee-comment.update' : '/api/payroll-run.employee-comment.add';
     const payload = isEdit
@@ -2541,7 +2893,7 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
         url: `${BASE_URL}${url}`, method: 'POST', contentType: 'application/json', dataType: 'json',
         data: JSON.stringify(payload),
         success: function (res) {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             if (res.status) {
                 resetEmployeeCommentForm();
                 loadEmployeeComments();
@@ -2550,7 +2902,7 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
         },
-        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });
 
@@ -2833,10 +3185,15 @@ $(document).on('change', '#chkAutoRecalculate', function () {
    one flat mixed table -- makes it immediately obvious what's earning vs. deduction and what the
    combined effect is, without needing to close the modal and check the outer table. ---------- */
 let manageLinesEmployeeId = null;
+// 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- distinct "Other" badge,
+// same reasoning as eedItemNameCell()'s own update in employee/detail.js.
 function manualLineTagHtml(line) {
-    return line.is_custom
-        ? `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`
-        : `<code class="fw-bold text-dark">${escapeHtmlRd(line.item_code)}</code>`;
+    if (!line.is_custom) {
+        return `<code class="fw-bold text-dark">${escapeHtmlRd(line.item_code)}</code>`;
+    }
+    return line.is_other
+        ? `<span class="badge bg-info-subtle text-info"><i class="fa-solid fa-circle-question me-1"></i>${langData['manual_line_other_badge'] || 'Other'}</span>`
+        : `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
 }
 function manualLineListItemHtml(line) {
     const name = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en;
@@ -2849,6 +3206,11 @@ function manualLineListItemHtml(line) {
         payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
     } else if (line.payee_type === 'company') {
         payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+    } else if (line.payee_type === 'other_person') {
+        // 2026-09-02, Deduction Destination & Third-Party Remittance -- real gap found while
+        // touching this function for Phase 7 (same missing branch already found/fixed in
+        // employee/detail.js's own eedItemNameCell()): 'other_person' had no tag here either.
+        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-building-columns me-1"></i>${escapeHtmlRd(line.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
     } else if (line.payee_type === 'not_disbursed') {
         payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
     }
@@ -2942,13 +3304,14 @@ $(document).on('click', '#btnSaveAttendanceData', function () {
         const val = $(this).find('.attendance-data-input').val();
         fields[field] = (val === '' || val === null) ? null : parseFloat(val);
     });
-    const $btn = $(this).prop('disabled', true);
+    const $btn = $(this);
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.attendance-override.save`,
         method: 'POST', contentType: 'application/json', dataType: 'json',
         data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, fields: fields }),
         success: function (res) {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 loadAttendanceDataRd();
@@ -2959,7 +3322,7 @@ $(document).on('click', '#btnSaveAttendanceData', function () {
             }
         },
         error: function () {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
         }
     });
@@ -3131,7 +3494,8 @@ function runSequentialAjaxRd(calls, onDone) {
     });
 }
 $(document).on('click', '#btnSaveEmpItemExclusion', function () {
-    const $btn = $(this).prop('disabled', true);
+    const $btn = $(this);
+    setButtonLoading($btn, true);
     const calls = [];
     $('#empItemExclusionChecklist .emp-item-exclusion-check:not(:disabled)').each(function () {
         const itemCode = $(this).val();
@@ -3154,16 +3518,17 @@ $(document).on('click', '#btnSaveEmpItemExclusion', function () {
             }));
         }
     });
-    if (!calls.length) { $btn.prop('disabled', false); return; }
+    if (!calls.length) { setButtonLoading($btn, false); return; }
     runSequentialAjaxRd(calls, function () {
-        $btn.prop('disabled', false);
+        setButtonLoading($btn, false);
         showSuccess(langData['save_success'] || 'Saved successfully.');
         loadSyncLineOverridesRd();
         loadRunDetail();
     });
 });
 $(document).on('click', '#btnSaveEmpCalcOverride', function () {
-    const $btn = $(this).prop('disabled', true);
+    const $btn = $(this);
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.save-employee-exemption`,
         method: 'POST',
@@ -3176,7 +3541,7 @@ $(document).on('click', '#btnSaveEmpCalcOverride', function () {
             sso_calculate_override: $('#empCalcSsoGroup input:checked').val() || 'inherit',
         }),
         success: function (res) {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(langData['save_success'] || 'Saved successfully.');
                 loadRunDetail();
@@ -3184,7 +3549,7 @@ $(document).on('click', '#btnSaveEmpCalcOverride', function () {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
         },
-        error: function () { $btn.prop('disabled', false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });
 $(document).on('change', '.sync-line-exclude-check', function () {
@@ -3247,6 +3612,167 @@ $(document).on('click', '.btn-sync-line-reset', function () {
     });
 });
 
+/* ---------- Recurring Deduction Destination override (2026-09-02, Deduction Destination &
+   Third-Party Remittance, Phase 6) -- per-run override of which account a recurring deduction
+   (Employee Detail's own "Recurring Deductions" section) is routed to, without ever touching that
+   employee's own saved template. One shared editor card (#recurringDestEditorCard) reused across
+   every row -- avoids initializing a fresh Select2 instance per row, same reasoning
+   payroll-run.line-override's own per-row plain-input approach already established for this exact
+   modal, just extended to a shared rich sub-form since a payee needs an employee/bank picker, not
+   just a number. ---------- */
+let recurringDestRows = [];
+function recurringDestPayeeSummary(p) {
+    if (!p || !p.payee_type) return langData['payee_type_none'] || "Employee's Own Net Pay";
+    if (p.payee_type === 'employee') return p.payee_label || (langData['payee_type_employee'] || 'Another Employee');
+    if (p.payee_type === 'company') return langData['payee_type_company'] || 'Company Account';
+    if (p.payee_type === 'other_person') return p.destination_label || (langData['payee_type_other_person'] || 'Other Person / Third Party');
+    if (p.payee_type === 'not_disbursed') return langData['payee_type_not_disbursed'] || 'Not Disbursed';
+    return p.payee_type;
+}
+function recurringDestRowHtml(row) {
+    const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
+    const templateLabel = recurringDestPayeeSummary({ payee_type: row.template_payee_type, payee_label: row.template_payee_label, destination_label: row.template_destination_label });
+    const isOverridden = !!row.override;
+    const effectiveLabel = isOverridden ? recurringDestPayeeSummary(row.override) : templateLabel;
+    return `<div class="border rounded-3 p-2 mb-2" data-recurring-id="${row.recurring_id}">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+            <div>
+                <div class="fw-bold text-dark">${escapeHtmlRd(name)}</div>
+                <div class="small text-muted">${langData['recurring_dest_template_default'] || 'Template default'}: ${escapeHtmlRd(templateLabel)}</div>
+                <div class="small">${langData['recurring_dest_effective'] || 'Currently routed to'}: <strong>${escapeHtmlRd(effectiveLabel)}</strong>${isOverridden ? ` <span class="badge bg-warning-subtle text-warning">${langData['recurring_dest_overridden_badge'] || 'Overridden for this run'}</span>` : ''}</div>
+            </div>
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-outline-primary btn-recurring-dest-edit" data-recurring-id="${row.recurring_id}">${isOverridden ? (langData['recurring_dest_change'] || 'Change Override') : (langData['recurring_dest_override'] || 'Override for this run')}</button>
+                ${isOverridden ? `<button type="button" class="btn btn-outline-secondary btn-recurring-dest-reset" data-recurring-id="${row.recurring_id}">${langData['recurring_dest_reset'] || 'Reset to template'}</button>` : ''}
+            </div>
+        </div>
+    </div>`;
+}
+function loadRecurringDeductionDestinationsRd() {
+    $('#recurringDestEditorCard').addClass('d-none');
+    $.getJSON(`${BASE_URL}/api/payroll-run.recurring-deduction-destinations-for-employee`, { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId }, function (res) {
+        if (!res.status) return;
+        recurringDestRows = res.data || [];
+        $('#recurringDestOverrideList').html(recurringDestRows.length
+            ? recurringDestRows.map(recurringDestRowHtml).join('')
+            : `<div class="text-center text-muted small py-2">${langData['recurring_dest_empty'] || 'No recurring deductions active for this employee in this pay period.'}</div>`);
+    });
+}
+function setRecurringDestPayeeType(type) {
+    $('#recurringDestPayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
+    $('#recurringDestEmployeeWrapper').toggleClass('d-none', type !== 'employee');
+    if (type !== 'employee') {
+        $('#recurringDestPayeeEmployeeSelect').val(null).trigger('change');
+    }
+    $('#recurringDestDestinationWrapper').toggleClass('d-none', type !== 'other_person');
+    if (type !== 'other_person') {
+        $('#recurringDestDestinationSelect').val(null).trigger('change');
+        $('#recurringDestAccountName, #recurringDestAccountNo, #recurringDestBankBranch').val('');
+        $('#recurringDestBank').val(null).trigger('change');
+        $('#recurringDestSaveForReuse').prop('checked', false);
+        $('#recurringDestDestinationNewFields').removeClass('d-none');
+    }
+}
+$(document).on('click', '#recurringDestPayeeTypeToggle button', function () {
+    setRecurringDestPayeeType($(this).data('payee-type'));
+});
+$(document).on('select2:select', '#recurringDestDestinationSelect', function () {
+    $('#recurringDestDestinationNewFields').addClass('d-none');
+});
+$(document).on('select2:clear', '#recurringDestDestinationSelect', function () {
+    $('#recurringDestDestinationNewFields').removeClass('d-none');
+});
+$(document).on('click', '.btn-recurring-dest-edit', function () {
+    const recurringId = $(this).data('recurring-id');
+    const row = recurringDestRows.find(r => r.recurring_id === recurringId);
+    if (!row) return;
+    $('#recurringDestEditorRecurringId').val(recurringId);
+    const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
+    $('#recurringDestEditorItemName').text(name);
+    // An override can never be 'none'/null (that's what Reset achieves) -- if the template itself
+    // had no payee at all, default the editor to Company as a neutral starting point, not a guess
+    // at what the admin actually wants.
+    const current = row.override || { payee_type: row.template_payee_type || 'company', payee_employee_id: row.template_payee_employee_id, payee_label: row.template_payee_label, destination_id: row.template_destination_id, destination_label: row.template_destination_label };
+    const initialType = current.payee_type || 'company';
+    setRecurringDestPayeeType(initialType);
+    if (initialType === 'employee' && current.payee_employee_id) {
+        const opt = new Option(current.payee_label || '', current.payee_employee_id, true, true);
+        $('#recurringDestPayeeEmployeeSelect').empty().append(opt).trigger('change');
+    } else if (initialType === 'other_person' && current.destination_id) {
+        const opt = new Option(current.destination_label || '', current.destination_id, true, true);
+        $('#recurringDestDestinationSelect').empty().append(opt).trigger('change');
+        $('#recurringDestDestinationNewFields').addClass('d-none');
+    }
+    $('#recurringDestEditorCard').removeClass('d-none');
+});
+$(document).on('click', '#btnCancelRecurringDestEdit', function () {
+    $('#recurringDestEditorCard').addClass('d-none');
+});
+$(document).on('click', '#btnSaveRecurringDestOverride', function () {
+    const recurringId = $('#recurringDestEditorRecurringId').val();
+    const payeeType = $('#recurringDestPayeeTypeToggle button.active').data('payee-type');
+    const payload = { id: PAYROLL_RUN_ID, recurring_id: recurringId, payee_type: payeeType };
+    if (payeeType === 'employee') {
+        const payeeEmployeeId = $('#recurringDestPayeeEmployeeSelect').val();
+        if (!payeeEmployeeId) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        payload.payee_employee_id = payeeEmployeeId;
+    } else if (payeeType === 'other_person') {
+        const savedDestinationId = $('#recurringDestDestinationSelect').val();
+        if (savedDestinationId) {
+            payload.destination_id = savedDestinationId;
+        } else {
+            const accountName = $('#recurringDestAccountName').val().trim();
+            const accountNo = $('#recurringDestAccountNo').val().trim();
+            const bankId = $('#recurringDestBank').val();
+            if (!accountName || !accountNo || !bankId) {
+                showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
+                return;
+            }
+            payload.account_name = accountName;
+            payload.account_no = accountNo;
+            payload.bank_id = bankId;
+            payload.bank_branch = $('#recurringDestBankBranch').val().trim() || undefined;
+            payload.is_saved = $('#recurringDestSaveForReuse').is(':checked');
+        }
+    }
+    const $btn = $(this);
+    setButtonLoading($btn, true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.recurring-deduction-destination-override.save`, method: 'POST',
+        contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
+        success: function (res) {
+            setButtonLoading($btn, false);
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+            $('#recurringDestEditorCard').addClass('d-none');
+            loadRecurringDeductionDestinationsRd();
+            loadRunDetail();
+        },
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
+});
+$(document).on('click', '.btn-recurring-dest-reset', function () {
+    const recurringId = $(this).data('recurring-id');
+    showConfirm(
+        langData['recurring_dest_reset'] || 'Reset to template',
+        langData['confirm_recurring_dest_reset_message'] || "Revert this recurring deduction back to its own template default for this run?",
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-run.recurring-deduction-destination-override.remove`, method: 'POST',
+                contentType: 'application/json', dataType: 'json', data: JSON.stringify({ id: PAYROLL_RUN_ID, recurring_id: recurringId }),
+                success: function (res) {
+                    if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+                    loadRecurringDeductionDestinationsRd();
+                    loadRunDetail();
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+            });
+        }
+    );
+});
+
 // Live preview under the Add form once an item is picked -- tells the admin whether it's about to
 // land in the Earnings or Deductions panel before they commit, since the dropdown mixes both types
 // together (unlike section 2's per-type panels/modal). item_type rides along on the select2 option
@@ -3260,10 +3786,28 @@ function setManualLinePayeeTypeRd(type) {
     if (type !== 'employee') {
         $('#manualLinePayeeEmployee').val(null).trigger('change');
     }
+    // 2026-09-02, Deduction Destination & Third-Party Remittance.
+    $('#manualLineDestinationWrapper').toggleClass('d-none', type !== 'other_person');
+    if (type !== 'other_person') {
+        $('#manualLineDestinationSelect').val(null).trigger('change');
+        $('#manualLineDestAccountName, #manualLineDestAccountNo, #manualLineDestBankBranch').val('');
+        $('#manualLineDestBank').val(null).trigger('change');
+        $('#manualLineDestSaveForReuse').prop('checked', false);
+        $('#manualLineDestinationNewFields').removeClass('d-none');
+    }
     // Same "never offered for not_disbursed, forced at the model layer" rule as Employee Detail's
     // own #eedIncludeCashSummaryWrapper.
     $('#manualLineIncludeCashSummaryWrapper').toggleClass('d-none', type === 'none' || type === 'not_disbursed');
 }
+// 2026-09-02, Deduction Destination & Third-Party Remittance -- picking an existing saved
+// destination hides the new-account fields entirely (nothing to fill in); clearing it (allow-clear)
+// brings them back so a fresh one can be entered.
+$(document).on('select2:select', '#manualLineDestinationSelect', function () {
+    $('#manualLineDestinationNewFields').addClass('d-none');
+});
+$(document).on('select2:clear', '#manualLineDestinationSelect', function () {
+    $('#manualLineDestinationNewFields').removeClass('d-none');
+});
 function updateManualLineTypePreviewRd(itemType) {
     const $preview = $('#manualLineTypePreview');
     // Transfer-to-payee (2026-08-21) only makes sense on a deduction -- toggled alongside this same
@@ -3298,12 +3842,16 @@ $(document).on('change', '#manualLineCustomType', function () {
 // Toggle between picking a catalog item and typing a custom, not-in-the-catalog one (2026-08-19,
 // explicit request) -- catalog mode is the default since it's still the common case.
 let manualLineMode = 'catalog';
+// 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- "Other" reuses
+// #manualLineCustomFields verbatim, same as #eedModal's own "Other" mode (see that modal's
+// setEedMode() docblock in employee/detail.js) -- only #btnAddManualLine's own click handler below
+// differs (sends is_other=true).
 function setManualLineModeRd(mode) {
     manualLineMode = mode;
     $('#manualLineModeToggle button').removeClass('active').filter(`[data-mode="${mode}"]`).addClass('active');
     $('#manualLineCatalogFields').toggleClass('d-none', mode !== 'catalog');
-    $('#manualLineCustomFields').toggleClass('d-none', mode !== 'custom');
-    updateManualLineTypePreviewRd(mode === 'custom' ? ($('#manualLineCustomType').val() || null) : null);
+    $('#manualLineCustomFields').toggleClass('d-none', mode === 'catalog');
+    updateManualLineTypePreviewRd(mode !== 'catalog' ? ($('#manualLineCustomType').val() || null) : null);
 }
 function resetManualLineFormRd() {
     setManualLineModeRd('catalog');
@@ -3362,6 +3910,7 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
     // previous employee's radios never flash for even a moment.
     $('#empCalcTaxInherit, #empCalcSsoInherit').prop('checked', true);
     loadSyncLineOverridesRd();
+    loadRecurringDeductionDestinationsRd();
     new bootstrap.Modal(document.getElementById('manageLinesModal')).show();
     loadManualLinesRd();
 });
@@ -3369,7 +3918,7 @@ $(document).on('click', '#btnAddManualLine', function () {
     const amount = parseFloat($('#manualLineAmount').val());
     const comment = $('#manualLineComment').val().trim();
     const payload = { id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, amount: amount, note: comment };
-    if (manualLineMode === 'custom') {
+    if (manualLineMode === 'custom' || manualLineMode === 'other') {
         const customName = $('#manualLineCustomName').val().trim();
         const customType = $('#manualLineCustomType').val();
         if (!customName || !customType || !amount || amount <= 0) {
@@ -3378,6 +3927,10 @@ $(document).on('click', '#btnAddManualLine', function () {
         }
         payload.custom_item_name = customName;
         payload.custom_item_type = customType;
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+        if (manualLineMode === 'other') {
+            payload.is_other = true;
+        }
     } else {
         const pedTypeId = $('#manualLineItemSelect').val();
         if (!pedTypeId || !amount || amount <= 0) {
@@ -3398,8 +3951,31 @@ $(document).on('click', '#btnAddManualLine', function () {
         if (payeeType === 'employee') {
             payload.payee_employee_id = $('#manualLinePayeeEmployee').val() || undefined;
         }
+        // 2026-09-02, Deduction Destination & Third-Party Remittance -- either an existing saved
+        // destination_id, or the new-account fields (validated/created server-side by
+        // PaymentDestinationModel::resolveOrCreate(), see addManualLine()'s own docblock).
+        if (payeeType === 'other_person') {
+            const savedDestinationId = $('#manualLineDestinationSelect').val();
+            if (savedDestinationId) {
+                payload.destination = { destination_id: savedDestinationId };
+            } else {
+                const accountName = $('#manualLineDestAccountName').val().trim();
+                const accountNo = $('#manualLineDestAccountNo').val().trim();
+                const bankId = $('#manualLineDestBank').val();
+                if (!accountName || !accountNo || !bankId) {
+                    showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
+                    return;
+                }
+                payload.destination = {
+                    account_name: accountName, account_no: accountNo, bank_id: bankId,
+                    bank_branch: $('#manualLineDestBankBranch').val().trim() || undefined,
+                    is_saved: $('#manualLineDestSaveForReuse').is(':checked'),
+                };
+            }
+        }
     }
-    const $btn = $(this).prop('disabled', true);
+    const $btn = $(this);
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.add-manual-line`,
         method: 'POST',
@@ -3407,7 +3983,7 @@ $(document).on('click', '#btnAddManualLine', function () {
         dataType: 'json',
         data: JSON.stringify(payload),
         success: function (res) {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             if (res.status) {
                 resetManualLineFormRd();
                 loadManualLinesRd();
@@ -3417,7 +3993,7 @@ $(document).on('click', '#btnAddManualLine', function () {
             }
         },
         error: function () {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
         }
     });
@@ -3603,7 +4179,8 @@ $(document).on('change', '#joinSelectAll', function () {
 // this fetches every id matching the current filter/search with no pagination and adds them all to
 // the selection in one click, then redraws so any checkboxes on the current page reflect it.
 $(document).on('click', '#btnJoinSelectAllMatching', function () {
-    const $btn = $(this).prop('disabled', true);
+    const $btn = $(this);
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.manual-employee-all-ids`,
         method: 'POST',
@@ -3621,7 +4198,7 @@ $(document).on('click', '#btnJoinSelectAllMatching', function () {
         },
         dataType: 'json',
         success: function (res) {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             if (!res.status) {
                 showWarning(res.message || langData['save_failed'] || 'An error occurred.');
                 return;
@@ -3631,7 +4208,7 @@ $(document).on('click', '#btnJoinSelectAllMatching', function () {
             if (tb_join_employees) tb_join_employees.draw(false);
         },
         error: function () {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             showWarning(langData['save_failed'] || 'An error occurred.');
         }
     });
@@ -3639,7 +4216,8 @@ $(document).on('click', '#btnJoinSelectAllMatching', function () {
 $(document).on('click', '#btnJoinSelected', function () {
     const employeeIds = Object.keys(joinSelectedEmployees).map(Number);
     if (employeeIds.length === 0) return;
-    const $btn = $(this).prop('disabled', true);
+    const $btn = $(this);
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.join-employees`,
         method: 'POST',
@@ -3647,7 +4225,7 @@ $(document).on('click', '#btnJoinSelected', function () {
         dataType: 'json',
         data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_ids: employeeIds }),
         success: function (res) {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('joinEmployeesModal')).hide();
@@ -3657,7 +4235,7 @@ $(document).on('click', '#btnJoinSelected', function () {
             }
         },
         error: function () {
-            $btn.prop('disabled', false);
+            setButtonLoading($btn, false);
             showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
         }
     });
@@ -3961,6 +4539,19 @@ $(document).ready(function () {
         // Attendance Deduction rate_unit dropdown -- re-initializing a select2 field on every open
         // can leave stale state/duplicate options behind).
         initSelect2('#manualLinePayeeEmployee', { mode: 'ajax', allowClear: true });
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 2 -- real bug found and
+        // fixed while wiring Phase 6's own equivalent fields into this SAME explicit init list
+        // (these two were added to the modal markup but never added here, so the destination
+        // picker never actually initialized as a real Select2 -- see CLAUDE.md's own Dropdown
+        // convention: nothing auto-scans the page for `.select2-remote`, every field needs its own
+        // initSelect2() call somewhere).
+        initSelect2('#manualLineDestinationSelect', { mode: 'ajax', allowClear: true });
+        initSelect2('#manualLineDestBank', { mode: 'ajax' });
+        // Phase 6: run-level recurring-deduction destination override editor (single shared
+        // instance reused across every row -- see recurringDest*() functions below).
+        initSelect2('#recurringDestPayeeEmployeeSelect', { mode: 'ajax', allowClear: true });
+        initSelect2('#recurringDestDestinationSelect', { mode: 'ajax', allowClear: true });
+        initSelect2('#recurringDestBank', { mode: 'ajax' });
         initSelect2('#edit_run_purpose', { mode: 'static' });
         // 2026-09-01: allowClear so an empty selection is a real, reachable "off-schedule/no cycle"
         // choice, same either/or #run_cycle_id represents on the Create form.

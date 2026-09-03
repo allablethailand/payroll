@@ -3,9 +3,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../models/StatutoryFormatVersionModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 
-/** 2026-08-29 -- surfaced in Tax & Statutory settings, reuses that page's existing single
- *  permission key (`tax_statutory.manage`, gates every action on that page including reads --
- *  see TaxStatutoryController for the same pattern) rather than seeding a new permission. */
+/** 2026-08-29 -- surfaced in Tax & Statutory settings, reuses that page's existing
+ *  `tax_statutory.view`/`.edit` keys (see TaxStatutoryController for the same pattern) rather than
+ *  seeding a new permission. 2026-09-03, Phase 3 Stage 3: swapped off the retired coarse `.manage`. */
 class StatutoryFormatVersionController extends Controller {
     private StatutoryFormatVersionModel $model;
     private PermissionModel $permissionModel;
@@ -34,7 +34,7 @@ class StatutoryFormatVersionController extends Controller {
     }
 
     public function settings() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -44,7 +44,7 @@ class StatutoryFormatVersionController extends Controller {
     }
 
     public function save() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);

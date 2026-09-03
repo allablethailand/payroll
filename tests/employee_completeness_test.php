@@ -30,8 +30,24 @@ function check(string $label, $actual, $expected): void {
 function checkTrue(string $label, bool $actual): void { check($label, $actual, true); }
 
 $model = new EmployeeModel();
+$pdo = Database::getInstance()->pdo;
+// 2026-09-02, follow-up: payment_type (legacy enum) dropped -- calculateCompleteness() now resolves
+// the bank-details requirement via payment_method_id (see EmployeeModel::paymentMethodCode()), so
+// these plain-array fixtures need a real resolved id instead of the old 'bank'/'cash' string.
+function resolvePaymentMethodId(PDO $pdo, string $code): int {
+    $stmt = $pdo->prepare("SELECT id FROM `master_payment_methods` WHERE code = :code");
+    $stmt->execute([':code' => $code]);
+    $id = $stmt->fetchColumn();
+    if ($id === false) {
+        throw new RuntimeException("master_payment_methods code '{$code}' not found -- seed missing?");
+    }
+    return (int)$id;
+}
+$transferMethodId = resolvePaymentMethodId($pdo, 'transfer');
+$cashMethodId = resolvePaymentMethodId($pdo, 'cash');
 
 function fullyFilledDomestic(): array {
+    global $transferMethodId;
     return [
         'employee_type' => 'domestic', 'title' => 'mr', 'gender' => 'male',
         'name_th' => 'ทดสอบ', 'surname_th' => 'นามสกุล', 'name_en' => 'Test', 'surname_en' => 'Surname',
@@ -39,7 +55,7 @@ function fullyFilledDomestic(): array {
         'personal_email' => 'test@example.com', 'mobile_no' => '0812345678', 'line_id' => 'test_line',
         'department_id' => 1, 'role_id' => 1, 'position_id' => 1, 'branch_id' => 1,
         'work_location_id' => 1, 'shift_id' => 1, 'employment_date' => '2024-01-01',
-        'payment_type' => 'bank', 'bank_id' => 1, 'bank_account_no' => '1112223334',
+        'payment_method_id' => $transferMethodId, 'bank_id' => 1, 'bank_account_no' => '1112223334',
         'salary_type' => 'monthly', 'base_salary_amount' => 30000, 'salary_effective_date' => '2024-01-01',
         'tax_calculation_method' => 'average',
         'sso_enrolled' => 1, 'sso_no' => '1234567890123',
@@ -62,7 +78,7 @@ $placeholder = [
     'personal_email' => 'sync-pending-emp001-5@placeholder.local', 'mobile_no' => '0000000000', 'line_id' => null,
     'department_id' => null, 'role_id' => null, 'position_id' => null, 'branch_id' => null,
     'work_location_id' => null, 'shift_id' => null, 'employment_date' => '2026-08-19',
-    'payment_type' => 'cash', 'bank_id' => null, 'bank_account_no' => null,
+    'payment_method_id' => $cashMethodId, 'bank_id' => null, 'bank_account_no' => null,
     'salary_type' => 'monthly', 'base_salary_amount' => 0, 'salary_effective_date' => '2026-08-19',
     'tax_calculation_method' => 'average',
     'sso_enrolled' => 0, 'sso_no' => null,
@@ -86,9 +102,9 @@ $foreignerComplete = array_merge($foreignerMissingDocs, ['tax_id_no' => 'TAX123'
 $foreignerCompleteRes = $model->calculateCompleteness($foreignerComplete);
 check('foreigner with all 3 foreigner-path documents scores Info 100%', $foreignerCompleteRes['tabs']['info']['percent'], 100);
 
-$cashNoBank = array_merge(fullyFilledDomestic(), ['payment_type' => 'cash', 'bank_id' => null, 'bank_account_no' => null]);
+$cashNoBank = array_merge(fullyFilledDomestic(), ['payment_method_id' => $cashMethodId, 'bank_id' => null, 'bank_account_no' => null]);
 $cashRes = $model->calculateCompleteness($cashNoBank);
-check('cash payment_type with no bank details still scores Employment 100% (bank check skipped, not penalized)', $cashRes['tabs']['employment']['percent'], 100);
+check('cash payment method with no bank details still scores Employment 100% (bank check skipped, not penalized)', $cashRes['tabs']['employment']['percent'], 100);
 
 $ssoEnrolledNoNumber = array_merge(fullyFilledDomestic(), ['sso_enrolled' => 1, 'sso_no' => null]);
 $ssoRes = $model->calculateCompleteness($ssoEnrolledNoNumber);
@@ -103,7 +119,7 @@ $staffOnly = array_merge(fullyFilledDomestic(), [
     'is_payroll_participant' => 0,
     // Every payroll-specific field genuinely blank -- would score 0% on Salary/Social/Family and
     // fail the bank-details check on Employment if is_payroll_participant weren't honored.
-    'payment_type' => 'bank', 'bank_id' => null, 'bank_account_no' => null,
+    'payment_method_id' => $transferMethodId, 'bank_id' => null, 'bank_account_no' => null,
     'salary_type' => null, 'base_salary_amount' => 0, 'salary_effective_date' => null, 'tax_calculation_method' => null,
     'sso_enrolled' => 1, 'sso_no' => null,
     'has_spouse' => 1, 'spouse_name' => null,

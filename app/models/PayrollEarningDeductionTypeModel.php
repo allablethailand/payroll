@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/AuditLogModel.php';
 class PayrollEarningDeductionTypeModel {
     private $db;
+    private AuditLogModel $auditLog;
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /** Frontend column KEY -> real SQL column for the Excel-style column filter (2026-08-27
@@ -176,7 +179,7 @@ class PayrollEarningDeductionTypeModel {
         return (int)$stmt->fetchColumn() > 0;
     }
 
-    public function save(int $compId, array $data, int $userId): array {
+    public function save(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
         foreach (['item_code', 'item_name_th', 'item_name_en', 'item_type', 'calculation_method'] as $field) {
@@ -294,7 +297,9 @@ class PayrollEarningDeductionTypeModel {
 
         try {
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id, is_sync_only, status FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                // Platform Hardening Phase 6 pilot: SELECT * (not just id/is_sync_only/status) so the
+                // full row is available to AuditLogModel::record() as the "old" side of the diff below.
+                $stmtCheck = $this->db->prepare("SELECT * FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
                 $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
                 if (!$existing) {
@@ -324,6 +329,10 @@ class PayrollEarningDeductionTypeModel {
                 $params[':id'] = $id;
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute($params);
+                $stmtNewRow = $this->db->prepare("SELECT * FROM `payroll_earning_deduction_types` WHERE id = :id");
+                $stmtNewRow->execute([':id' => $id]);
+                $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'payroll_earning_deduction_types', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
                 return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
             }
 
@@ -409,9 +418,9 @@ class PayrollEarningDeductionTypeModel {
         return ['inserted' => $inserted, 'skipped' => $skipped];
     }
 
-    public function delete(int $compId, int $id, int $userId): array {
+    public function delete(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         try {
-            $stmtCheck = $this->db->prepare("SELECT id, is_sync_only FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtCheck = $this->db->prepare("SELECT * FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
             $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
             $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
             if (!$existing) {
@@ -422,6 +431,8 @@ class PayrollEarningDeductionTypeModel {
             }
             $stmt = $this->db->prepare("UPDATE `payroll_earning_deduction_types` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
             $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+            $this->auditLog->record($compId, 'payroll_earning_deduction_types', $id, 'update', $existing,
+                array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
             return ['status' => true, 'message' => 'Deleted successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
@@ -436,7 +447,7 @@ class PayrollEarningDeductionTypeModel {
      * e.g. the Trip Allowance/Diligence "admin deactivates -> excluded from calculation entirely"
      * tests), only CREATE/EDIT/DELETE are blocked for a system-managed row.
      */
-    public function toggleStatus(int $compId, int $id, int $userId): array {
+    public function toggleStatus(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $stmt = $this->db->prepare("SELECT status FROM `payroll_earning_deduction_types` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $current = $stmt->fetchColumn();
@@ -446,6 +457,8 @@ class PayrollEarningDeductionTypeModel {
         $newStatus = $current === 'active' ? 'inactive' : 'active';
         $this->db->prepare("UPDATE `payroll_earning_deduction_types` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
             ->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+        $this->auditLog->record($compId, 'payroll_earning_deduction_types', $id, 'update',
+            ['status' => $current], ['status' => $newStatus], $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
     }
 }

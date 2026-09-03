@@ -38,6 +38,9 @@ class FakeOrigamiSyncClient implements OrigamiSyncClientInterface {
     public function fetchDepartments(int $origamiCompanyId): array { return $this->departments; }
     public function fetchPositions(int $origamiCompanyId): array { return $this->positions; }
     public function fetchShifts(int $origamiCompanyId): array { return $this->shifts; }
+    public function fetchBranches(int $origamiCompanyId): array { return []; }
+    public function fetchTeams(int $origamiCompanyId): array { return []; }
+    public function fetchCompany(int $origamiCompanyId): ?array { return null; }
     public function fetchHolidays(int $origamiCompanyId): array { return $this->holidays; }
     public function fetchLeaveTypes(int $origamiCompanyId): array { return $this->leaveTypes; }
     public function fetchOtRates(int $origamiCompanyId): array { return $this->otRates; }
@@ -133,8 +136,10 @@ try {
     $syncedSetRowAfterResync = $syncedSet->fetch(PDO::FETCH_ASSOC);
     checkTrue('still default after re-sync', (bool)($syncedSetRowAfterResync['is_default'] ?? false));
 
-    // Run the remaining 3 (even with empty fetches) so the gate opens.
-    foreach (['department', 'position', 'holiday'] as $type) {
+    // Run the remaining types (even with empty fetches) so the gate opens -- branch/team added
+    // 2026-09-02 (real Origami endpoints confirmed live, see BranchSyncer/TeamSyncer's own
+    // docblocks), widening MasterDataSyncRegistry from 7 to 9 entity types.
+    foreach (['department', 'position', 'branch', 'team', 'holiday'] as $type) {
         $masterOrch->syncEntity($compId, $type, $adminUserId);
     }
     checkTrue('hasCompletedMasterDataSync() now true', $masterOrch->hasCompletedMasterDataSync($compId));

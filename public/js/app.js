@@ -7,6 +7,258 @@ const langInfo = {
     en: { flag: 'gb', label: 'EN', full: 'English' },
     th: { flag: 'th', label: 'TH', full: 'ไทย' }
 };
+// 2026-09-02, Platform Hardening Phase 1.2, explicit request: "ปุ่ม Save...มี loading state ระหว่างส่ง
+// ข้อมูล (disable + spinner) กัน double-submit". An app-wide audit found this exact
+// `.prop('disabled', true).html('<spinner> Saving...')` / restore-on-complete pattern already
+// hand-rolled independently in ~7 files (employee/detail.js, company-profile.js, most of
+// tax-statutory.js, payroll/index.js, org-structure-sync.js, holiday-sync.js, employee-sync.js) --
+// correct, but never centralized, and several OTHER Save handlers (setup-rules.js's 5 modals,
+// permission-matrix.js, document-numbering.js, employment-certificate-request.js,
+// manual-entry/index.js) had NO loading state at all (real double-submit risk), while a third group
+// (payroll/detail.js's 12 handlers, tax-statutory.js's non-resident section,
+// payroll-configuration.js's policies section, bulk-entry.js, structure-assign.js,
+// payslip-request.js) disabled the button but showed no visible spinner/text change. One shared
+// helper here closes both gaps at once and gives every FUTURE save handler this for free by calling
+// it instead of hand-rolling the same 3 lines again.
+// `$btn.data('originalHtml', ...)` is used (not a module-level variable) so this is safe to call
+// concurrently for multiple different buttons on the same page without one save's restore
+// clobbering another's.
+// 2026-09-02, Platform Hardening Phase 1.1, explicit request: every Active/Inactive status column
+// should be an instant-AJAX toggle switch with a confirm before deactivating and a success toast.
+// An app-wide audit found 8 tables already had a working instant-AJAX switch (Setup & Rules'
+// Shift/Holiday/Work Location/Leave Type/OT Rate Set + Payroll Configuration's PED Types) but NONE
+// of them had a confirm-before-deactivate or a success toast -- each was its own hand-rolled
+// duplicate (statusSwitch()/statusBadge(), 2 near-identical implementations). The BEST existing
+// implementation in the whole app was actually a DIFFERENT concept -- Employment Certificate/
+// Payslip Template's "Draft/Public" switch (ectPublishSwitchesHtml()/.ect-publish-switch,
+// pstPublishSwitchesHtml()/.pst-publish-switch) -- confirm-only-on-the-risky-direction, a success
+// toast, AND revert-on-failure (none of the 8 Active/Inactive switches had that last one either).
+// This generalizes THAT pattern into one shared renderer + one shared delegated handler so every
+// table (existing and future) gets the full behavior for free just by calling
+// renderStatusToggleHtml() in its own column render function -- no per-table toggle-handler
+// duplication needed ever again.
+// Usage: `render: (d, t, row) => renderStatusToggleHtml(row.id, row.status === 'active', '/api/xxx.toggle-status')`
+// then, once, wherever that table's own JS already knows how to reload it:
+// `$(document).on('statusToggle:success', '#tb_xxx', function () { tb_xxx.ajax.reload(null, false); });`
+// (delegated + scoped to that table's own id -- the switch renders INSIDE that table's own <td>, so
+// the event naturally bubbles through it; the table element itself persists across
+// `ajax.reload()`, only its rows are redrawn, so this binding survives every reload).
+function renderStatusToggleHtml(id, isActive, endpoint, extraAttrs) {
+    const safeId = String(endpoint).replace(/[^a-zA-Z0-9]/g, '_') + '_' + id;
+    return `<div class="form-check form-switch d-flex justify-content-center m-0">
+        <input class="form-check-input status-toggle-switch" type="checkbox" role="switch" id="statusToggle_${safeId}"
+            data-id="${id}" data-endpoint="${endpoint}" data-current="${isActive ? 'active' : 'inactive'}" ${isActive ? 'checked' : ''} ${extraAttrs || ''}>
+    </div>`;
+}
+$(document).on('change', '.status-toggle-switch', function () {
+    const $cb = $(this);
+    const id = $cb.data('id');
+    const endpoint = $cb.data('endpoint');
+    const current = $cb.data('current');
+    const target = $cb.is(':checked') ? 'active' : 'inactive';
+    const revert = function () { $cb.prop('checked', current === 'active'); };
+    const doToggle = function () {
+        $.ajax({
+            url: `${BASE_URL}${endpoint}`, method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ id: id }), dataType: 'json',
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                    $cb.data('current', target).attr('data-current', target);
+                    $cb.trigger('statusToggle:success', [id, target]);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+                    revert();
+                }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); revert(); }
+        });
+    };
+    // Activating is always safe/reversible, no confirm needed -- deactivating can immediately hide
+    // this row from every dropdown/picker elsewhere in the app, so it gets a confirm first, same
+    // "confirm only the risky direction" rule the Draft/Public switches already established.
+    if (target === 'inactive') {
+        showConfirm(
+            langData['confirm_deactivate_title'] || 'Deactivate this item?',
+            langData['confirm_deactivate_message'] || 'It will no longer be available for selection elsewhere in the system.',
+            doToggle, revert
+        );
+    } else {
+        doToggle();
+    }
+});
+function setButtonLoading($btn, isLoading, loadingLabel) {
+    if (!$btn || !$btn.length) return;
+    if (isLoading) {
+        if ($btn.data('originalHtml') === undefined) {
+            $btn.data('originalHtml', $btn.html());
+        }
+        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i><span>${loadingLabel || (langData && langData['saving']) || 'Saving...'}</span>`);
+    } else {
+        $btn.prop('disabled', false);
+        const original = $btn.data('originalHtml');
+        if (original !== undefined) {
+            $btn.html(original);
+            $btn.removeData('originalHtml');
+            if (typeof updateText === 'function') updateText($btn[0]);
+        }
+    }
+}
+// 2026-09-02, Platform Hardening Phase 1.2 -- shared "is this form dirty" helper, used both by
+// page-body Cancel buttons (Employee Detail, Tax & Statutory, Payroll Configuration, Permission
+// Matrix) and by the generic modal-close dirty-check guard below. Serializes every named/id'd
+// input/select/textarea inside $container into one comparable string -- cheap, no deep clone, good
+// enough to detect "did any field's value change" without needing per-page bespoke comparison code.
+function snapshotFormState($container) {
+    if (!$container || !$container.length) return '';
+    const parts = [];
+    $container.find('input, select, textarea').each(function () {
+        const $el = $(this);
+        if ($el.is(':disabled')) return;
+        const key = $el.attr('name') || $el.attr('id');
+        if (!key) return;
+        if ($el.is(':checkbox') || $el.is(':radio')) {
+            parts.push(key + '=' + ($el.val() || '') + ':' + ($el.is(':checked') ? '1' : '0'));
+        } else {
+            parts.push(key + '=' + ($el.val() == null ? '' : $el.val()));
+        }
+    });
+    return parts.join('|');
+}
+function isFormDirty($container, baselineSnapshot) {
+    if (baselineSnapshot === undefined || baselineSnapshot === null) return false;
+    return snapshotFormState($container) !== baselineSnapshot;
+}
+// Shared confirm-if-dirty gate: if $container's current state matches baselineSnapshot, runs
+// onProceed() immediately (no interruption for a form nobody actually touched); otherwise asks via
+// SweetAlert2 first. Reused by every page-body Cancel button below (Employee Detail/Tax &
+// Statutory/Payroll Configuration/Permission Matrix all call this the same way).
+function confirmIfDirtyThen($container, baselineSnapshot, onProceed) {
+    if (!isFormDirty($container, baselineSnapshot)) {
+        onProceed();
+        return;
+    }
+    showConfirm(
+        (langData && langData['confirm_discard_changes_title']) || 'Discard unsaved changes?',
+        (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
+        onProceed
+    );
+}
+
+/**
+ * 2026-09-03, Platform Hardening Phase 1.2 -- GENERIC modal-level dirty-check, the deferred item
+ * from this same round's page-body version above. Applies to every Bootstrap modal app-wide with
+ * near-zero per-modal wiring, via delegated `shown.bs.modal`/`hide.bs.modal` handlers rather than
+ * requiring each of ~100 modals to opt in individually.
+ *
+ * Researched before building (full codebase audit, not guessed): every sampled Edit-modal flow in
+ * this app fetches fresh data and populates the modal's fields SYNCHRONOUSLY, BEFORE calling
+ * `.show()` -- so capturing the baseline snapshot at `shown.bs.modal` is safe and won't false-
+ * positive against fields that are still mid-fetch (the one exception, `#userSettingsModal`, uses
+ * `data-bs-toggle="modal"` declarative opening and already has its own bespoke revert-on-close
+ * mechanism -- excluded below, not double-handled). A fieldless modal (pure confirm/delete/preview
+ * dialogs, the majority of the ~100) naturally never registers as dirty at all --
+ * `snapshotFormState()` returns the same empty string before and after, so this sweep needed no
+ * exclude-list for that whole category, only for the handful of modals below that manage their own
+ * unsaved-state semantics already.
+ *
+ * The hard problem this solves: telling "user is abandoning real changes" apart from "this hide()
+ * call is the Save handler's own post-success close" -- the ~29+ Save handlers across the app are
+ * NOT consistent in how they call `.hide()` (jQuery `.modal('hide')` vs `bootstrap.Modal.getInstance
+ * (...).hide()` vs `.getOrCreateInstance(...).hide()`), but EVERY one of them calls `showSuccess()`
+ * synchronously, immediately before closing, without exception (verified via audit) -- so instead of
+ * touching every individual handler, `showSuccess()` itself (alert.js) stamps
+ * `__lastSuccessToastAt`, and a hide arriving within MODAL_DIRTY_CHECK_SKIP_WINDOW_MS of that stamp
+ * is treated as "save just succeeded," skipping the check for that one close. This is a probabilistic
+ * shortcut, not a hard guarantee -- accepted tradeoff, same class as several other documented
+ * timing-window compromises already in this codebase.
+ *
+ * Bootstrap 5.3's own `Modal.hide()` (node_modules/bootstrap/js/dist/modal.js) fires `hide.bs.modal`
+ * and aborts if `event.preventDefault()` was called on it -- confirmed by reading that file directly,
+ * not assumed -- and EVERY dismissal path (dismiss-button click, backdrop click, Esc key) routes
+ * through this same `hide()` method internally, so this ONE delegated handler correctly covers all
+ * 3 dismissal vectors uniformly (no separate click/backdrop/Esc interception needed).
+ */
+let __lastSuccessToastAt = 0;
+const MODAL_DIRTY_CHECK_SKIP_WINDOW_MS = 1500;
+// Modals that manage their own unsaved-state semantics already, or aren't real edit forms --
+// excluded so this generic sweep doesn't double-handle or conflict with them. ect*/pst* (Employment
+// Certificate/Payslip Template canvas-editor sub-modals) matched by prefix below, not listed here
+// individually -- see this function's own docblock above.
+const MODAL_DIRTY_CHECK_EXCLUDE_IDS = [
+    'userSettingsModal',    // own bespoke dirty-tracking + revert-on-close already (see show.bs.modal/hidden.bs.modal handlers above)
+    'empSignaturePadModal', // fire-and-forget blob upload on click, no showSuccess() call, not an edit form
+    'empMapPinModal',
+    'cpSignaturePadModal',
+];
+const __modalDirtyBaselines = {};
+function isModalDirtyCheckExempt(modalId) {
+    if (!modalId) return true;
+    if (MODAL_DIRTY_CHECK_EXCLUDE_IDS.indexOf(modalId) !== -1) return true;
+    // Employment Certificate ("ect...") / Payslip Template ("pst...") canvas-editor sub-modals
+    // (ectTextModal, pstImageLibraryModal, etc.) already have their own bespoke dirty-check per
+    // Phase 1's own audit -- see that module's own docblock.
+    if (/^(ect|pst)[A-Z]/.test(modalId)) return true;
+    return false;
+}
+$(document).on('shown.bs.modal', '.modal', function () {
+    const modalId = this.id;
+    if (isModalDirtyCheckExempt(modalId)) return;
+    __modalDirtyBaselines[modalId] = snapshotFormState($(this));
+});
+$(document).on('hide.bs.modal', '.modal', function (e) {
+    const modalId = this.id;
+    if (isModalDirtyCheckExempt(modalId)) return;
+    if (!(modalId in __modalDirtyBaselines)) return; // never captured (e.g. shown before this script ran) -- don't block
+    const $modal = $(this);
+    // A save-success toast fired very recently -- almost certainly THIS handler's own post-success
+    // close, not an abandon. Skip the check but still clear the baseline so the NEXT open+edit+close
+    // cycle on this same modal is checked fresh.
+    if (Date.now() - __lastSuccessToastAt < MODAL_DIRTY_CHECK_SKIP_WINDOW_MS) {
+        delete __modalDirtyBaselines[modalId];
+        return;
+    }
+    if (!isFormDirty($modal, __modalDirtyBaselines[modalId])) {
+        delete __modalDirtyBaselines[modalId];
+        return;
+    }
+    // Set by the confirm's own onProceed below, right before re-triggering hide() -- lets that
+    // SECOND hide.bs.modal pass through instead of looping back into another confirm.
+    if ($modal.data('dirtyCheckBypass')) {
+        $modal.removeData('dirtyCheckBypass');
+        delete __modalDirtyBaselines[modalId];
+        return;
+    }
+    e.preventDefault();
+    showConfirm(
+        (langData && langData['confirm_discard_changes_title']) || 'Discard unsaved changes?',
+        (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
+        function () {
+            $modal.data('dirtyCheckBypass', true);
+            const inst = bootstrap.Modal.getInstance($modal[0]) || bootstrap.Modal.getOrCreateInstance($modal[0]);
+            inst.hide();
+        }
+    );
+});
+// 2026-09-02, real bug found and fixed (explicit report: "ใน header กดที่ icon ไหนแล้วมี ui ลงมา ถ้าไปกดตัว
+// อื่นตัวเดิมต้อง hide ไป ตอนนี้ขึ้นซ้อนๆกัน") -- the 4 header flyouts (notification bell, hub/switch-app,
+// language, profile) each only ever toggled THEIR OWN menu, never closing the other 3 -- so opening
+// a second one while a first was still open just stacked both open at once instead of replacing it.
+// One shared helper, called by every flyout's own open/toggle handler (below, and notifications.js'
+// own .nav-notif-btn handler) right before it toggles itself, closing every OTHER flyout first.
+// `exceptId` is deliberately excluded from `.nav-lang-menu` when 'lang' (this button toggles its OWN
+// sibling menu right after calling this, so leaving it alone here avoids a close-then-immediately-
+// reopen no-op) and likewise for the other 3. 'notif' is a special case -- #notifMenu manages its
+// OWN outside-click close in notifications.js (a guard that ignores clicks INSIDE the menu, needed
+// for delegated Mark-all-read/item-click handlers to keep firing, see that file's own 2026-08-29
+// docblock) -- this helper still closes it whenever a DIFFERENT flyout opens (that's a legitimate
+// "something else took over" close, not the inside-click case that guard exists for).
+function closeNavFlyouts(exceptId) {
+    if (exceptId !== 'notif') $('#notifMenu').removeClass('active');
+    if (exceptId !== 'hub') $('#hubMenu').removeClass('active');
+    if (exceptId !== 'profile') $('#profileMenu').removeClass('active');
+    if (exceptId !== 'lang') $('.nav-lang-menu').removeClass('active');
+}
 // 2026-08-29, real bug found and fixed (explicit report: "อยากให้แสดง ชื่อ และข้อมูลอื่นๆตามภาษาที่เลือก
 // Auto เปลี่ยนโดยไม่ต้อง Reload หน้า") -- this is much bigger than just the Employee List's Name
 // column. Several controllers (BankAccountController/CompanyProfileController/
@@ -333,7 +585,10 @@ $(document).ready(async function() {
     // the nav itself, so every instance now uses a shared CLASS instead).
     $(document).on('click', '.nav-lang-btn', function(e) {
         e.stopPropagation();
-        $(this).siblings('.nav-lang-menu').toggleClass('active');
+        const $menu = $(this).siblings('.nav-lang-menu');
+        const willOpen = !$menu.hasClass('active');
+        closeNavFlyouts('lang');
+        $menu.toggleClass('active', willOpen);
     });
     $(document).on('click', '.dropdown-lang-item', async function(e) {
         e.preventDefault();
@@ -343,16 +598,24 @@ $(document).ready(async function() {
     });
     $('.nav-hub-btn').on('click', function(e) {
         e.stopPropagation();
-        $('#hubMenu').toggleClass('active');
+        const willOpen = !$('#hubMenu').hasClass('active');
+        closeNavFlyouts('hub');
+        $('#hubMenu').toggleClass('active', willOpen);
     });
     $('.nav-profile-btn').on('click', function(e) {
         e.stopPropagation();
-        $('#profileMenu').toggleClass('active');
+        const willOpen = !$('#profileMenu').hasClass('active');
+        closeNavFlyouts('profile');
+        $('#profileMenu').toggleClass('active', willOpen);
     });
     $(document).on('click', function() {
-        $('.nav-lang-menu').removeClass('active');
-        $('#hubMenu').removeClass('active');
-        $('#profileMenu').removeClass('active');
+        // 'notif' is deliberately excluded here -- #notifMenu manages its own outside-click close
+        // in notifications.js (a smarter guard that ignores clicks INSIDE the menu, needed so
+        // Mark-all-read/item-click delegated handlers keep firing, see that file's own 2026-08-29
+        // docblock). Closing it unconditionally on every document click here would reintroduce that
+        // exact bug. closeNavFlyouts('hub'/'lang'/'profile' calls above already close notif whenever
+        // one of THOSE flyouts is opened instead, via this same shared helper.
+        closeNavFlyouts('notif');
     });
     $('.nav-btn-hamberger').on('click', function(e) {
         e.stopPropagation();
@@ -997,10 +1260,33 @@ function refreshAllTables() {
 //      own PUBLIC `table.page.info()` API (start/end/recordsTotal/recordsDisplay) combined with
 //      getTableLang()'s already-correct camelCase template strings -- this bypasses the closure
 //      entirely rather than trying to patch it.
+// 2026-09-02, real bug found and fixed (explicit report: "RangeError: Maximum call stack size
+// exceeded" on the Data Sync page's history table) -- root cause: this function's own
+// `table.draw(false)` a few lines down re-fires that table's `drawCallback`; a page whose
+// drawCallback calls back into applyLanguage()/refreshAllTables() (as data-sync.js's history table
+// did) re-enters THIS function synchronously, which calls `table.draw(false)` again, which re-fires
+// drawCallback again -- unbounded synchronous self-recursion within one call stack, not an async
+// loop. The actual misuse site (data-sync.js calling applyLanguage() from inside a drawCallback at
+// all) is fixed at its own call site, but this guard is added here too as defense-in-depth: a
+// genuine language switch only ever needs this to run once, and nothing legitimate depends on it
+// being re-entrant, so refusing to re-enter is safe and closes off this entire bug class for any
+// other page that makes the same mistake in the future.
+let _refreshingAllDataTablesLanguage = false;
 function refreshAllDataTablesLanguage() {
     if (!$.fn.dataTable || typeof $.fn.dataTable.tables !== 'function') {
         return;
     }
+    if (_refreshingAllDataTablesLanguage) {
+        return;
+    }
+    _refreshingAllDataTablesLanguage = true;
+    try {
+        _refreshAllDataTablesLanguageInner();
+    } finally {
+        _refreshingAllDataTablesLanguage = false;
+    }
+}
+function _refreshAllDataTablesLanguageInner() {
     const lang = getTableLang();
     // $.fn.dataTable.tables() (no `{api:true}`) returns a plain array of <table> DOM nodes -- the
     // DataTables-documented way to iterate every table on the page one at a time. `{api:true}`

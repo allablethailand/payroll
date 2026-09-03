@@ -1273,7 +1273,7 @@ function renderImageLibrary() {
         const selected = selectedLibraryImageIds.has(Number(img.id));
         $grid.append(`
             <div class="pst-image-grid-item ${selected ? 'selected' : ''}" data-id="${img.id}">
-                <img src="${BASE_URL}/${img.file_path}" alt="">
+                <img src="${BASE_URL}/${img.thumbnail_path || img.file_path}" alt="">
                 <div class="pst-image-selected-badge"><i class="fa-solid fa-check"></i></div>
                 <div class="pst-image-delete" data-id="${img.id}"><i class="fa-solid fa-xmark"></i></div>
             </div>
@@ -1513,15 +1513,17 @@ function pstActionsGroupHtml(pairRow) {
     if (pairRow.en) {
         deleteItems.push(`<li><a class="dropdown-item text-danger pst-delete-lang-item" href="#" data-id="${pairRow.en.id}">${langData['ect_delete_english_only'] || 'Delete English only'}</a></li>`);
     }
-    return `<div class="btn-group border rounded-3 bg-white pst-actions-group">
+    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+    // ".btn-circle-action" section) replace the old adjacent .btn-group.
+    return `<div class="d-flex gap-1 justify-content-center pst-actions-group">
         <div class="dropdown">
-            <button type="button" class="btn btn-link text-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['preview'] || 'Preview'}"><i class="fas fa-eye"></i></button>
+            <button type="button" class="btn btn-link btn-circle-action text-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['preview'] || 'Preview'}"><i class="fas fa-eye"></i></button>
             <ul class="dropdown-menu">${previewItems}</ul>
         </div>
-        <button type="button" class="btn btn-link text-warning border-start btn-edit-pst" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link text-primary border-start btn-duplicate-pair-pst" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-pst" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-duplicate-pair-pst" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
         <div class="dropdown">
-            <button type="button" class="btn btn-link py-1 text-danger border-start dropdown-toggle" data-bs-toggle="dropdown" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
+            <button type="button" class="btn btn-link btn-circle-action text-danger dropdown-toggle" data-bs-toggle="dropdown" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
             <ul class="dropdown-menu dropdown-menu-end">${deleteItems.join('')}</ul>
         </div>
     </div>`;

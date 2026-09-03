@@ -4,6 +4,8 @@ require_once __DIR__ . '/../ReportGeneratorInterface.php';
 require_once __DIR__ . '/../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../../../models/BankFileFormatModel.php';
+require_once __DIR__ . '/../../../models/PayrollRunEmployeeBankAccountModel.php';
+require_once __DIR__ . '/../../../models/EmployeePaymentMethodModel.php';
 require_once __DIR__ . '/../../export/FixedWidthHelperTrait.php';
 require_once __DIR__ . '/../LocalizedException.php';
 
@@ -31,6 +33,23 @@ require_once __DIR__ . '/../LocalizedException.php';
  * is meant to be byte-for-byte what the bank's own import parser expects, and an extra line would
  * risk corrupting that contract for a real upload. The generic-CSV fallback keeps its original
  * warning-comment-row behavior unchanged.
+ *
+ * 2026-09-02, multi-bank-account payroll (explicit request: "ในการตั้งค่ารอบการจ่าย ปรับให้รองรับมากกว่า
+ * 1 บัญชี...ตอนออกรายงานเพื่อส่ง Cashlink ต้องถูกต้อง", confirmed via AskUserQuestion: one SEPARATE FILE
+ * per company account, not one combined file with account-grouped sections -- real bank transfer
+ * file formats assume ONE settlement account per file header, so mixing employees who pay from
+ * different source accounts into a single file/header would misrepresent which account the whole
+ * batch actually debits from). `generate()` now resolves each bank-paying employee's own company
+ * account via `PayrollRunEmployeeBankAccountModel::resolveForRun()` (per-run override > employee's
+ * own default_bank_account_id > cycle's pinned bank_account_id > company's is_default=1 account --
+ * see that model's own docblock), groups employees by the resolved account, and renders ONE file
+ * per group through the SAME renderConfigured()/renderGenericFallback() paths as before (now
+ * parameterized with an explicit `$companyBankAccount`/`$fileSuffix` instead of resolving a single
+ * run-wide account internally). The common case (every employee in a run resolves to the SAME one
+ * account -- true for every company that hasn't touched this feature) still returns a single file
+ * with the EXACT SAME file_name as before this round (`BankTransfer_Run{id}.{ext}`), byte-for-byte
+ * backward compatible. Only when 2+ distinct accounts are actually in play does this return a ZIP
+ * bundling one correctly-named file per account -- see `bundleFiles()`.
  */
 class BankTransferFileReport implements ReportGeneratorInterface {
     use EmployeePiiTrait;
@@ -93,64 +112,185 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         }
 
         $bankFileFormatId = isset($run['bank_file_format_id']) ? (int)$run['bank_file_format_id'] : 0;
+        $fields = [];
+        $config = [];
         if ($bankFileFormatId > 0) {
             $formatModel = new BankFileFormatModel();
             $fields = $formatModel->fieldsForRender($compId, $bankFileFormatId);
             if (!empty($fields)) {
                 $config = $formatModel->getConfig($compId, $bankFileFormatId);
-                $company = $dataModel->getCompany($compId);
-                return $this->renderConfigured($details, $fields, $config, $run, $company, $runId, $compId, $language);
             }
         }
+        $isConfigured = !empty($fields);
+        $company = $isConfigured ? $dataModel->getCompany($compId) : null;
 
-        return $this->renderGenericFallback($details, $runId);
+        // 2026-09-02, multi-bank-account payroll -- group bank-paying employees by which company
+        // account actually pays them (see this class's own docblock), one rendered file per group.
+        $bankAccountModel = new PayrollRunEmployeeBankAccountModel();
+        $resolved = $bankAccountModel->resolveForRun($runId, $compId);
+        // 2026-09-02, mixed payment method -- resolved entirely HERE, in generate()'s own grouping
+        // loop, so renderConfigured()/renderGenericFallback() below need ZERO changes: each mixed
+        // employee's own TRANSFER lines become synthetic detail-shaped rows (same fields a normal
+        // detail row has, net_amount_due overridden to just that ONE line's own resolved amount)
+        // and are grouped into the SAME per-account buckets as any plain transfer employee. Cash/
+        // check lines are not this report's concern (PayrollRunCashPaymentModel's own mirror of this
+        // same logic handles the cash side). A mixed employee's FULL line set only gets included if
+        // it genuinely reconciles: percent lines are always resolvable now (against net_amount_due,
+        // known at this point), but a set containing a FIXED line can only be checked here, at
+        // report-generation time -- if the total doesn't equal net_amount_due, the employee's
+        // transfer lines are skipped entirely (never guess/partially disburse) and their employee_no
+        // is surfaced the same "warning comment row" way missing-bank-details already is below.
+        $paymentMethodModel = new EmployeePaymentMethodModel();
+        $mixedReconciliationWarnings = [];
+        $groups = [];
+        foreach ($details as $d) {
+            $resolvedCode = $d['payment_method_code'] ?? 'transfer';
+            if ($resolvedCode === 'transfer') {
+                $employeeId = (int)$d['employee_id'];
+                $accId = $resolved[$employeeId]['bank_account_id'] ?? null;
+                $key = $accId !== null ? (string)$accId : '__none__';
+                if (!isset($groups[$key])) {
+                    $groups[$key] = ['bank_account_id' => $accId, 'details' => []];
+                }
+                $groups[$key]['details'][] = $d;
+            } elseif ($resolvedCode === 'mixed') {
+                $employeeId = (int)$d['employee_id'];
+                $lines = $paymentMethodModel->getLines($employeeId);
+                $transferLines = array_values(array_filter($lines, fn($l) => ($l['payment_method_code'] ?? '') === 'transfer'));
+                if (empty($transferLines)) {
+                    continue;
+                }
+                $netAmountDue = (float)($d['net_amount_due'] ?? $d['net_amount'] ?? 0);
+                $hasFixed = false;
+                $totalResolved = 0.0;
+                $amountsByLineId = [];
+                foreach ($lines as $l) {
+                    $amt = $l['amount_type'] === 'percent'
+                        ? round($netAmountDue * (float)$l['amount_value'] / 100, 2)
+                        : (float)$l['amount_value'];
+                    if ($l['amount_type'] === 'fixed') {
+                        $hasFixed = true;
+                    }
+                    $amountsByLineId[$l['id']] = $amt;
+                    $totalResolved += $amt;
+                }
+                if ($hasFixed && abs($totalResolved - $netAmountDue) > 0.01) {
+                    $mixedReconciliationWarnings[] = $d['employee_no'];
+                    continue;
+                }
+                foreach ($transferLines as $l) {
+                    $accId = (int)$l['bank_account_id'];
+                    $key = (string)$accId;
+                    if (!isset($groups[$key])) {
+                        $groups[$key] = ['bank_account_id' => $accId, 'details' => []];
+                    }
+                    $syntheticDetail = $d;
+                    $syntheticDetail['net_amount_due'] = $amountsByLineId[$l['id']];
+                    $syntheticDetail['net_amount'] = $amountsByLineId[$l['id']];
+                    $groups[$key]['details'][] = $syntheticDetail;
+                }
+            }
+            // cash/check are not this report's concern, same as before this feature existed. An
+            // employee with payment_method_id still NULL (never assigned one) falls back to
+            // 'transfer' above, same "unset = bank/transfer" default the old payment_type enum had.
+        }
+        if (empty($groups)) {
+            throw new LocalizedException('No employees with a valid bank account were found to include in the transfer file.', 'bank_transfer_no_valid_accounts');
+        }
+
+        // Suffix/split-filename only makes sense once there's genuinely more than one group -- the
+        // common single-account case (every employee resolves to the SAME account) must keep the
+        // EXACT SAME filename this report always returned before this round.
+        $isMultiAccount = count($groups) > 1;
+        $files = [];
+        foreach ($groups as $group) {
+            $companyBankAccount = $group['bank_account_id'] !== null
+                ? $this->accountInfoById($compId, $group['bank_account_id'])
+                : ['account_no' => '', 'company_code' => '', 'label' => ''];
+            if (!$isMultiAccount) {
+                $companyBankAccount['label'] = '';
+            }
+            try {
+                if ($isConfigured) {
+                    $files[] = $this->renderConfigured($group['details'], $fields, $config, $run, $company, $runId, $compId, $language, $companyBankAccount);
+                } else {
+                    $files[] = $this->renderGenericFallback($group['details'], $runId, $companyBankAccount['label'], $mixedReconciliationWarnings);
+                }
+            } catch (LocalizedException $e) {
+                // 2026-09-02: a group where every employee happens to be missing bank details
+                // (rare, but possible) is skipped rather than failing the WHOLE multi-account
+                // export -- each per-employee skip is already surfaced (warning-comment-row for
+                // the generic fallback, silent exclusion for a configured format, same as before
+                // this round), only the top-level "nothing at all was included" case below is a
+                // hard failure.
+                if ($e->getErrorKey() !== 'bank_transfer_no_valid_accounts') {
+                    throw $e;
+                }
+            }
+        }
+        if (empty($files)) {
+            throw new LocalizedException('No employees with a valid bank account were found to include in the transfer file.', 'bank_transfer_no_valid_accounts');
+        }
+        if (count($files) === 1) {
+            return $files[0];
+        }
+        return $this->bundleFiles($files, $runId);
+    }
+
+    /** Zips 2+ per-account files together -- only reached when a run genuinely has employees
+     *  paying from 2+ DIFFERENT company accounts (the common single-account case never gets here,
+     *  see generate()'s own docblock). Uses a real temp file (ZipArchive has no in-memory-only
+     *  mode) cleaned up immediately after reading its bytes back. */
+    private function bundleFiles(array $files, int $runId): array {
+        $tmpPath = tempnam(sys_get_temp_dir(), 'banktransfer_') . '.zip';
+        $zip = new \ZipArchive();
+        $zip->open($tmpPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        foreach ($files as $file) {
+            $zip->addFromString($file['file_name'], $file['content']);
+        }
+        $zip->close();
+        $content = (string)file_get_contents($tmpPath);
+        unlink($tmpPath);
+        return [
+            'content' => $content,
+            'file_name' => "BankTransfer_Run{$runId}.zip",
+            'mime_type' => 'application/zip',
+        ];
     }
 
     /**
-     * Company's own settlement/debit account (the source account the bank debits for the whole
-     * payroll batch) -- needed for a header row like Krungsri's own "เลขที่บัญชีตัดเงินของบริษัท" and
-     * "รหัสบริษัท/รหัสบริการ". 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ
-     * แยกบัญชีในการจ่าย" -- a company may run multiple payroll cycles that each settle from a
-     * DIFFERENT bank_accounts row (each with its own bank-registered Company/Service Code, see
-     * migrations/2026-08-29_5_payroll_cycle_bank_account_and_company_code.sql's own header
-     * comment). Resolution order: 1) the run's own cycle's `bank_account_id` if the cycle has one
-     * pinned, 2) else the company's single `is_default=1` account (unchanged fallback -- every
-     * cycle that predates this feature, or was simply never given a specific account, keeps
-     * working exactly as before). account_no decrypted the same way BankAccountModel itself
-     * decrypts it (EncryptionService::decrypt() keyed by that row's own key_version) -- NOT
-     * EmployeePiiTrait, which is scoped to per-employee PII, not the company's own account.
-     * Returns ['account_no'=>'', 'company_code'=>''] (never throws) when nothing resolves -- a
-     * missing constant/blank field in the rendered output is a config problem for the company to
-     * notice and fix, not a reason to hard-fail the whole file.
-     * @return array{account_no: string, company_code: string}
+     * Company's own settlement/debit account info for ONE specific `bank_accounts` row -- needed
+     * for a header row like Krungsri's own "เลขที่บัญชีตัดเงินของบริษัท" and "รหัสบริษัท/รหัสบริการ".
+     * 2026-09-02, multi-bank-account payroll -- replaced the OLD `resolveCompanyBankAccount()`
+     * (which resolved ONE account for the whole run via cycle-pin > company-default) now that
+     * resolution happens PER EMPLOYEE, one level up in generate()'s own grouping loop
+     * (PayrollRunEmployeeBankAccountModel::resolveForRun()) -- this method just looks up the
+     * DISPLAY info for whichever specific account id that resolution already decided on. account_no
+     * decrypted the same way BankAccountModel itself decrypts it (EncryptionService::decrypt()
+     * keyed by that row's own key_version) -- NOT EmployeePiiTrait, which is scoped to per-employee
+     * PII, not the company's own account. `label` is a filesystem-safe filename fragment
+     * ("KBank_Payroll", spaces/punctuation stripped) used only when 2+ accounts are in play and
+     * this run's file has to split into one-file-per-account (see bundleFiles()).
+     * @return array{account_no: string, company_code: string, label: string}
      */
-    private function resolveCompanyBankAccount(int $compId, ?int $cycleBankAccountId): array {
+    private function accountInfoById(int $compId, int $bankAccountId): array {
         $pdo = Database::getInstance()->pdo;
-        $row = null;
-        if ($cycleBankAccountId !== null && $cycleBankAccountId > 0) {
-            $stmt = $pdo->prepare(
-                "SELECT account_no, key_version, company_code FROM `bank_accounts`
-                 WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active'"
-            );
-            $stmt->execute([':id' => $cycleBankAccountId, ':comp_id' => $compId]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-        }
-        if ($row === null) {
-            $stmt = $pdo->prepare(
-                "SELECT account_no, key_version, company_code FROM `bank_accounts`
-                 WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' AND is_default = 1
-                 ORDER BY id ASC LIMIT 1"
-            );
-            $stmt->execute([':comp_id' => $compId]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-        }
+        $stmt = $pdo->prepare(
+            "SELECT ba.account_no, ba.key_version, ba.company_code, ba.account_name, mb.bank_name_en
+             FROM `bank_accounts` ba LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
+             WHERE ba.id = :id AND ba.comp_id = :comp_id AND ba.deleted_at IS NULL"
+        );
+        $stmt->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
         if (!$row) {
-            return ['account_no' => '', 'company_code' => ''];
+            return ['account_no' => '', 'company_code' => '', 'label' => ''];
         }
         $accountNo = !empty($row['account_no'])
             ? (string)(EncryptionService::decrypt($row['account_no'], $row['key_version'] !== null ? (int)$row['key_version'] : null) ?? '')
             : '';
-        return ['account_no' => $this->digitsOnlyAccountNo($accountNo), 'company_code' => (string)($row['company_code'] ?? '')];
+        $labelSource = trim(($row['bank_name_en'] ?? '') . '_' . ($row['account_name'] ?? ''), '_');
+        $label = preg_replace('/[^A-Za-z0-9_]+/', '', str_replace(' ', '_', $labelSource)) ?: "Account{$bankAccountId}";
+        return ['account_no' => $this->digitsOnlyAccountNo($accountNo), 'company_code' => (string)($row['company_code'] ?? ''), 'label' => $label];
     }
 
     /**
@@ -171,14 +311,26 @@ class BankTransferFileReport implements ReportGeneratorInterface {
 
     /* ---------- Original generic fallback (unchanged shape) ---------- */
 
-    private function renderGenericFallback(array $details, int $runId): array {
+    /** $fileSuffix: non-empty only when this run's employees split across 2+ company accounts (see
+     *  generate()'s own grouping loop) -- appended to the filename so each per-account file in the
+     *  resulting zip is distinguishable; empty string for the (common) single-account case keeps
+     *  the exact same filename this method always returned before this round.
+     *  $extraWarnings: employee_no values generate()'s own mixed-payment reconciliation check
+     *  already decided to skip (see that method's own docblock) -- merged into this method's own
+     *  missing-bank-details warning line.
+     *  2026-09-02: the old `payment_type !== 'bank'` filter here was REMOVED -- generate()'s own
+     *  grouping loop already decides exactly which detail rows belong in $details (plain transfer
+     *  employees AND mixed employees' own synthetic transfer-line rows, whose copied
+     *  `payment_method_code` is the employee's real top-level value, e.g. 'mixed', not 'transfer' --
+     *  re-filtering on it here would have wrongly excluded every mixed employee's transfer lines).
+     *  This method now trusts its caller completely for inclusion; it only decides
+     *  SKIP-for-missing-bank-details among rows
+     *  it was already given. */
+    private function renderGenericFallback(array $details, int $runId, string $fileSuffix = '', array $extraWarnings = []): array {
         $lines = ['เลขที่บัญชี,ชื่อบัญชี,ธนาคาร,รหัสธนาคาร,จำนวนเงิน,หมายเหตุ'];
-        $skipped = [];
+        $skipped = $extraWarnings;
         $total = 0.0;
         foreach ($details as $d) {
-            if (($d['payment_type'] ?? 'bank') !== 'bank') {
-                continue;
-            }
             $accountNo = $this->decryptEmployeeField($d, 'bank_account_no');
             if (empty($accountNo) || empty($d['bank_code'])) {
                 $skipped[] = $d['employee_no'];
@@ -220,9 +372,10 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         // leading UTF-8 BOM (EF BB BF) is the standard fix Excel itself recognizes. Safe here
         // unconditionally -- this fallback is always plain UTF-8 delimited text, human/Excel-facing,
         // never a byte-exact machine format a bank parser depends on.
+        $suffixPart = $fileSuffix !== '' ? "_{$fileSuffix}" : '';
         return [
             'content' => "\xEF\xBB\xBF" . implode("\r\n", $lines) . "\r\n",
-            'file_name' => "BankTransfer_Run{$runId}.csv",
+            'file_name' => "BankTransfer_Run{$runId}{$suffixPart}.csv",
             'mime_type' => 'text/csv',
         ];
     }
@@ -236,7 +389,10 @@ class BankTransferFileReport implements ReportGeneratorInterface {
 
     /* ---------- Configured (company-defined) rendering ---------- */
 
-    private function renderConfigured(array $details, array $fieldRows, array $config, array $run, ?array $company, int $runId, int $compId, string $language): array {
+    /** $companyBankAccount: {account_no, company_code, label} for the ONE account this group's
+     *  employees actually pay from (see accountInfoById()) -- resolved by generate()'s own grouping
+     *  loop, no longer looked up internally here. */
+    private function renderConfigured(array $details, array $fieldRows, array $config, array $run, ?array $company, int $runId, int $compId, string $language, array $companyBankAccount): array {
         $rowsByType = ['header' => [], 'detail' => [], 'trailer' => []];
         foreach ($fieldRows as $f) {
             $rowType = $f['row_type'] ?? 'detail';
@@ -248,10 +404,9 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         $included = [];
         $skippedCount = 0;
         $total = 0.0;
+        // 2026-09-02: same removal as renderGenericFallback()'s own copy of this filter -- see that
+        // method's own comment. generate() already decided inclusion for every row in $details.
         foreach ($details as $d) {
-            if (($d['payment_type'] ?? 'bank') !== 'bank') {
-                continue;
-            }
             $accountNo = $this->decryptEmployeeField($d, 'bank_account_no');
             if (empty($accountNo) || empty($d['bank_code'])) {
                 $skippedCount++;
@@ -282,11 +437,11 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         // payment_date are genuinely new: the header row previously had NO way at all to pull the
         // company's own settlement account or the run's real disbursement date (see
         // BankFileFormatModel::SOURCE_FIELDS' own comment on both).
-        // 2026-08-29, explicit follow-up: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" -- resolved
-        // from the RUN's own cycle (run['bank_account_id'], from PayrollReportDataModel::getRun()'s
-        // own new join) when that cycle has a specific account pinned, else the company's single
-        // default account -- see resolveCompanyBankAccount()'s own docblock.
-        $companyBankAccount = $this->resolveCompanyBankAccount($compId, isset($run['bank_account_id']) ? (int)$run['bank_account_id'] : null);
+        // 2026-08-29, explicit follow-up: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" -- 2026-09-02:
+        // now resolved PER EMPLOYEE one level up (generate()'s own grouping loop via
+        // PayrollRunEmployeeBankAccountModel::resolveForRun()), passed in as $companyBankAccount --
+        // every employee in THIS call's own $details already resolved to the SAME account, so one
+        // header value is correct for the whole group.
         $aggregateContext = [
             'company_name' => $language === 'en' ? ($company['company_legal_name'] ?? ($company['local_name'] ?? '')) : ($company['local_name'] ?? ($company['company_legal_name'] ?? '')),
             'pay_period' => !empty($run['period_start_date']) ? date('Ymd', strtotime((string)$run['period_start_date'])) : '',
@@ -348,9 +503,13 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             $content = "\xEF\xBB\xBF" . $content;
         }
         $extension = $isFixedWidth ? 'txt' : 'csv';
+        // 2026-09-02, multi-bank-account payroll -- see renderGenericFallback()'s own identical
+        // comment on $fileSuffix; empty (the common single-account case) keeps this filename
+        // byte-identical to before this round.
+        $suffixPart = !empty($companyBankAccount['label']) ? "_{$companyBankAccount['label']}" : '';
         return [
             'content' => $content,
-            'file_name' => "BankTransfer_Run{$runId}.{$extension}",
+            'file_name' => "BankTransfer_Run{$runId}{$suffixPart}.{$extension}",
             'mime_type' => $isFixedWidth ? 'text/plain' : 'text/csv',
         ];
     }

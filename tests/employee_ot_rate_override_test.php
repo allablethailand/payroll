@@ -80,12 +80,12 @@ try {
              personal_email, mobile_no, address_line_1_register, address_line_1_contact,
              emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
              employment_date, employment_status, employment_type, workforce_type, record_time_method,
-             payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+             salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
              sso_enrolled, pvd_enrolled, tax_exempt, ot_eligible, ot_rate_source)
             VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', :surname_th, 'Test', :surname_en, '1990-01-01', 'Thai',
              :email, '0800000000', 'Test Address', 'Test Address', 'Emergency', 'Contact', 'friend', '0899999999',
              '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-             'bank', 'monthly', :base_salary, '2020-01-01', 'average', 'active', 1, 1, 0, :ot_eligible, :ot_rate_source)")
+             'monthly', :base_salary, '2020-01-01', 'average', 'active', 1, 1, 0, :ot_eligible, :ot_rate_source)")
             ->execute([
                 ':comp_id' => $compId, ':employee_no' => 'OTOVR_EMP_' . $suffix . '_' . uniqid(),
                 ':surname_th' => $suffix, ':surname_en' => $suffix, ':email' => uniqid() . '@test.local',

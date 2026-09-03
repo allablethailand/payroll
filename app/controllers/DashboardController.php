@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/DashboardModel.php';
 require_once __DIR__ . '/../models/PayrollRunModel.php';
+require_once __DIR__ . '/../models/NotificationModel.php';
 require_once __DIR__ . '/../services/IdCodec.php';
 
 class DashboardController extends Controller {
@@ -122,6 +123,58 @@ class DashboardController extends Controller {
             'pending_my_approval' => count($pendingApprovalRows),
         ];
 
+        // 2026-09-02, explicit request: "หน้า Dashboard อยากให้เพิ่มกราฟ" -- a "Payroll Cost Trend" chart,
+        // last 6 months by payment_date, net pay only. Reuses $allRuns (the SAME array already
+        // fetched above for the pipeline counts) -- zero new query. Only ever computed/returned when
+        // $canViewPayroll -- omitted from the response ENTIRELY otherwise (not just left for the
+        // frontend to hide), same "nothing to leak" posture as redactRunAmounts() above, since every
+        // value in this series IS a money figure.
+        if ($canViewPayroll) {
+            $data['payroll']['cost_trend'] = self::computeCostTrend($allRuns);
+        }
+
+        // 2026-09-02, explicit request (item 5 of a 5-item follow-up list): probation/internship
+        // period-expiry reminder card -- "ทั้งในหน้า Dashboard ถ้าไม่มีไม่ต้องแสดงเลย" (if there's
+        // nothing to show, don't display the card at all). Gated the same way money figures are
+        // (can_process_payroll -- the group who'd actually go adjust the employee's status/type) --
+        // omitted from the response ENTIRELY when not permitted, not just hidden client-side, same
+        // "nothing to leak" posture as cost_trend above (this is employee-status info, not money, but
+        // still not everyone's business). Reuses NotificationModel::probationInternExpiringEmployees()
+        // -- the SAME query that drives the notification-bell reminder, so the two never disagree.
+        if ($this->runModel->canProcessPayroll($userId, $isAdmin)) {
+            $expiring = (new NotificationModel())->probationInternExpiringEmployees($compId);
+            if (!empty($expiring)) {
+                $data['probation_intern_expiring'] = $expiring;
+            }
+        }
+
         $this->json(['status' => true, 'data' => $data]);
+    }
+
+    /**
+     * Last 6 months of net pay by payment_date, summed across every run in that month. Only
+     * final-state runs (approved/paid/locked) count -- same ALLOWED_STATES convention as every
+     * disbursement-layer report in this app (PayrollRunCashPaymentModel/BankTransferFileReport/
+     * etc.) -- a draft/pending run's own numbers can still change, so showing them as historical
+     * cost would be misleading. Pure/static (no DB access, no $this) so it's directly unit-testable
+     * without going through summary()'s own json()-and-exit() response (see
+     * tests/dashboard_cost_trend_test.php).
+     * @param array $allRuns rows from PayrollRunModel::list() (must include state/payment_date/total_net_amount)
+     * @return array<int, array{month: string, net_amount: float}> chronologically ascending
+     */
+    public static function computeCostTrend(array $allRuns): array {
+        $trendByMonth = [];
+        foreach ($allRuns as $row) {
+            if (!in_array($row['state'] ?? '', ['approved', 'paid', 'locked'], true)) continue;
+            if (empty($row['payment_date'])) continue;
+            $month = substr((string)$row['payment_date'], 0, 7); // 'YYYY-MM'
+            $trendByMonth[$month] = ($trendByMonth[$month] ?? 0.0) + (float)($row['total_net_amount'] ?? 0);
+        }
+        ksort($trendByMonth);
+        $trendByMonth = array_slice($trendByMonth, -6, null, true);
+        return array_map(
+            fn($month, $amount) => ['month' => $month, 'net_amount' => $amount],
+            array_keys($trendByMonth), array_values($trendByMonth)
+        );
     }
 }

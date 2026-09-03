@@ -40,6 +40,18 @@ function checkTrue(string $label, bool $actual): void {
     check($label, $actual, true);
 }
 
+// 2026-09-02, follow-up: payment_type (legacy enum) dropped -- assertions below compare against a
+// resolved master_payment_methods.id instead of a raw 'bank'/'cash' string.
+function resolvePaymentMethodId(PDO $pdo, string $code): int {
+    $stmt = $pdo->prepare("SELECT id FROM `master_payment_methods` WHERE code = :code");
+    $stmt->execute([':code' => $code]);
+    $id = $stmt->fetchColumn();
+    if ($id === false) {
+        throw new RuntimeException("master_payment_methods code '{$code}' not found -- seed missing?");
+    }
+    return (int)$id;
+}
+
 try {
     $compCode = 'SYNCTEST_' . uniqid();
 
@@ -56,12 +68,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'ซิงค์', 'Test', 'Sync', '1990-01-01', 'Thai',
          :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insEmp->execute([':comp_id' => $compId, ':employee_no' => $mappedEmployeeNo, ':email' => uniqid() . '@test.local']);
     $mappedEmployeeId = (int)$pdo->lastInsertId();
 
@@ -230,12 +242,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'สอง', 'Test', 'Two', '1990-01-01', 'Thai',
          :email, '0800000001', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999998',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insLateEmp->execute([':comp_id' => $compId, ':employee_no' => $unmappedCode, ':email' => uniqid() . '@test.local']);
     $lateEmployeeId = (int)$pdo->lastInsertId();
 
@@ -268,7 +280,7 @@ try {
     $mappedEmpStmt = $pdo->prepare("SELECT * FROM employees WHERE id = :id");
     $mappedEmpStmt->execute([':id' => $mappedEmployeeId]);
     $mappedEmpRow = $mappedEmpStmt->fetch(PDO::FETCH_ASSOC);
-    check('transfer employee payment_type overwritten to bank', $mappedEmpRow['payment_type'] ?? null, 'bank');
+    check('transfer employee payment_method_id overwritten to transfer', (int)($mappedEmpRow['payment_method_id'] ?? 0), resolvePaymentMethodId($pdo, 'transfer'));
     // No master_banks row for "smbc" existed before this pull -- resolveOrCreateBankId() (2026-08-19
     // "create if missing, else use the existing ID" request) auto-creates one rather than leaving
     // bank_id null.
@@ -300,7 +312,7 @@ try {
     $lateEmpStmt = $pdo->prepare("SELECT * FROM employees WHERE id = :id");
     $lateEmpStmt->execute([':id' => $lateEmployeeId]);
     $lateEmpRow = $lateEmpStmt->fetch(PDO::FETCH_ASSOC);
-    check('cash employee payment_type overwritten to cash', $lateEmpRow['payment_type'] ?? null, 'cash');
+    check('cash employee payment_method_id overwritten to cash', (int)($lateEmpRow['payment_method_id'] ?? 0), resolvePaymentMethodId($pdo, 'cash'));
     check('cash employee bank_id cleared (no bank on this cycle)', $lateEmpRow['bank_id'], null);
     check('cash employee sso_enrolled overwritten to 0 (deduct_sso=false)', (int)($lateEmpRow['sso_enrolled'] ?? -1), 0);
     check('cash employee sso_start_date left NULL (not SSO-enrolled, nothing to default)', $lateEmpRow['sso_start_date'] ?? null, null);
@@ -357,7 +369,7 @@ try {
     // before linking, so the user doesn't have to click "Sync Now" as a separate step) ----------
     echo "=== Auto-sync-on-pull ===\n";
     checkTrue('create() returns a sync_summary when pulling from a sync process', array_key_exists('sync_summary', $linkRes));
-    check('sync_summary attempted all 7 master-data entity types', count($linkRes['sync_summary']['results'] ?? []), 7);
+    check('sync_summary attempted all 9 master-data entity types (branch/team added 2026-09-02)', count($linkRes['sync_summary']['results'] ?? []), 9);
     check('sync_summary remapped_count is 0 (both rows were already resolved before pulling)', $linkRes['sync_summary']['remapped_count'] ?? null, 0);
     check('sync_summary employee_fields_updated re-applies to both mapped employees on every pull', $linkRes['sync_summary']['employee_fields_updated'] ?? null, 2);
     // This fixture's company was never linked to Origami (no companies.ref_id set), so every
@@ -522,7 +534,7 @@ try {
     check('applyEmployeeMasterFields also reaches all four just-created placeholder employees', $placeholderApplyCount, 4);
     $newEmp1Stmt->execute([':id' => $itemsAfterPlaceholder[0]['employee_id']]);
     $newEmp1AfterApply = $newEmp1Stmt->fetch(PDO::FETCH_ASSOC);
-    check('newly-created placeholder employee payment_type populated from sync data', $newEmp1AfterApply['payment_type'] ?? null, 'bank');
+    check('newly-created placeholder employee payment_method_id populated from sync data', (int)($newEmp1AfterApply['payment_method_id'] ?? 0), resolvePaymentMethodId($pdo, 'transfer'));
     $decNewBankNo = EncryptionService::decrypt($newEmp1AfterApply['bank_account_no'], (int)$newEmp1AfterApply['key_version']);
     check('newly-created placeholder employee bank_account_no decrypts to the synced value', $decNewBankNo, '9990001112');
     check('newly-created placeholder employee sso_enrolled populated from sync data', (int)($newEmp1AfterApply['sso_enrolled'] ?? -1), 1);
@@ -579,12 +591,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'ms', 'female', 'เดิม', 'เดิม', 'Old', 'Old', '1990-01-01', 'Thai',
          :email, '0800000002', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999997',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $profileTestOriginalEmail = uniqid() . '@test.local';
     $insProfileEmp->execute([':comp_id' => $compId, ':employee_no' => $profileTestEmployeeNo, ':email' => $profileTestOriginalEmail]);
     $profileTestEmployeeId = (int)$pdo->lastInsertId();
@@ -665,7 +677,9 @@ try {
     check('nickname_th applied from single-source nickname', $profileEmp['nickname_th'] ?? null, 'Nok');
     check('nickname_en applied from single-source nickname', $profileEmp['nickname_en'] ?? null, 'Nok');
     check('nationality resolved from the sent display name ("Thai") to this app\'s own nationality_code ("TH"), not stored raw', $profileEmp['nationality'] ?? null, 'TH');
-    check('religion applied directly', $profileEmp['religion'] ?? null, 'Buddhist');
+    // 2026-09-02: religion resolution fixed, same shape as nationality above -- the fixture sends
+    // 'Buddhist' (this app's own name), which resolves via direct match to 'BUD', not stored raw.
+    check('religion resolved from the sent display name ("Buddhist") to this app\'s own religion_code ("BUD"), not stored raw', $profileEmp['religion'] ?? null, 'BUD');
     check('company_email applied from email (not personal_email)', $profileEmp['company_email'] ?? null, 'worktest@example.com');
     check('personal_email left untouched (not overwritten by email)', $profileEmp['personal_email'] ?? null, $profileTestOriginalEmail);
     check('office_tel applied from emp_tel (not mobile_no)', $profileEmp['office_tel'] ?? null, '0899990000');
@@ -730,6 +744,46 @@ try {
     $profileEmpAfterUnknownNat = $profileEmpStmt->fetch(PDO::FETCH_ASSOC);
     check('unrecognized nationality name leaves the already-resolved code untouched, not overwritten with a non-matching string', $profileEmpAfterUnknownNat['nationality'] ?? null, 'TH');
 
+    // 2026-09-02: religion resolution -- same 2 checks as nationality above, plus a check that
+    // Origami's REAL wire value ("Buddha", not this app's own "Buddhist") resolves correctly via
+    // the alias map, not just the direct-match names.
+    $religionAliasProcessId = random_int(100000, 999999);
+    $religionAliasIngest = $model->ingest([
+        'schema_version' => 1, 'process_id' => $religionAliasProcessId, 'process_no' => 'ORIGAMI-TEST-REL-' . $religionAliasProcessId,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'items' => [[
+            'report_item_id' => 41, 'payroll_code' => $profileTestEmployeeNo,
+            // Origami's own real wire value for religion code 5 (see PAYROLL_SYNC_API.md) -- NOT
+            // this app's own "Judaism" name, exercising RELIGION_NAME_ALIASES specifically, not the
+            // direct-match path the main fixture's 'Buddhist' already covers above.
+            'religion' => 'Judah', 'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    checkTrue('religion-alias-fixture ingest succeeds' . (empty($religionAliasIngest['status']) ? " ({$religionAliasIngest['message']})" : ''), $religionAliasIngest['status']);
+    $model->applyEmployeeMasterFields($religionAliasIngest['process_row_id'] ?? 0, $compId, 1);
+    $profileEmpStmt->execute([':id' => $profileTestEmployeeId]);
+    $profileEmpAfterReligionAlias = $profileEmpStmt->fetch(PDO::FETCH_ASSOC);
+    check('Origami\'s real wire value "Judah" resolves via the alias map to this app\'s own "JEW" (Judaism) code', $profileEmpAfterReligionAlias['religion'] ?? null, 'JEW');
+
+    $unknownRelProcessId = random_int(100000, 999999);
+    $unknownRelIngest = $model->ingest([
+        'schema_version' => 1, 'process_id' => $unknownRelProcessId, 'process_no' => 'ORIGAMI-TEST-REL2-' . $unknownRelProcessId,
+        'report_id' => 7, 'comp_id' => 999, 'comp_code' => $compCode, 'comp_name' => 'Sync Test Co. (Origami name)',
+        'period_id' => 5, 'period_name' => 'Monthly (cutoff 20th)', 'frequency_type' => 'monthly',
+        'items' => [[
+            'report_item_id' => 41, 'payroll_code' => $profileTestEmployeeNo,
+            'religion' => 'Definitely Not A Real Religion', 'item_values' => [],
+        ]],
+        'employee_status' => [],
+    ]);
+    checkTrue('unrecognized-religion-fixture ingest succeeds' . (empty($unknownRelIngest['status']) ? " ({$unknownRelIngest['message']})" : ''), $unknownRelIngest['status']);
+    $model->applyEmployeeMasterFields($unknownRelIngest['process_row_id'] ?? 0, $compId, 1);
+    $profileEmpStmt->execute([':id' => $profileTestEmployeeId]);
+    $profileEmpAfterUnknownRel = $profileEmpStmt->fetch(PDO::FETCH_ASSOC);
+    check('unrecognized religion name leaves the already-resolved code untouched ("JEW" from the alias test above), not overwritten with a non-matching string', $profileEmpAfterUnknownRel['religion'] ?? null, 'JEW');
+
     // ---------- pass_pro is the string "Y"/"N" on the wire, not a real JSON boolean (2026-08-19,
     // explicit correction) -- a plain truthy cast used to store "N" as pass_pro=1 (every non-empty
     // PHP string is truthy). Also covers the derived 3-state probation_status getProcessDetail()
@@ -771,12 +825,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'ms', 'female', 'เดิม', 'เดิม', 'Old', 'Old', '1990-01-01', 'Thai',
          :email, '0800000003', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999996',
          '2020-01-01', :employment_status, 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
 
     $transitionCases = [
         [
@@ -847,12 +901,12 @@ try {
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'ทีมลายเซ็น', 'Test', 'TeamSig', '1990-01-01', 'Thai',
          :email, '0800000004', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999995',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active')");
+         'monthly', 30000, '2020-01-01', 'average', 'active')");
     $insTeamSigEmp->execute([':comp_id' => $compId, ':employee_no' => $teamSigEmployeeNo, ':email' => uniqid() . '@test.local']);
     $teamSigEmployeeId = (int)$pdo->lastInsertId();
 

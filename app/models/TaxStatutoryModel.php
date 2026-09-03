@@ -117,8 +117,20 @@ class TaxStatutoryModel {
         $isCompanyRateEditable = !empty($data['is_company_rate_editable']) ? 1 : 0;
         $sortOrder = isset($data['sort_order']) && is_numeric($data['sort_order']) ? (int)$data['sort_order'] : 0;
 
-        $statusInput = $data['status'] ?? 'active';
-        $status = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : 'active';
+        // 2026-09-02, Platform Hardening Phase 1.1 -- `status` is no longer sent by the Add/Edit
+        // modal (the new row switch, see toggleStatus() below, is now the only way to change it).
+        // Fetch and preserve the EXISTING row's status when absent from the payload, same fix
+        // already applied to CompanyProfileModel::saveStructure()/PayrollCycleModel::save()/
+        // BankAccountModel::save() for the identical reason.
+        $existingStatus = null;
+        if ($id !== null) {
+            $stmtExistingStatus = $this->db->prepare("SELECT status FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL");
+            $stmtExistingStatus->execute([':id' => $id]);
+            $existingStatus = $stmtExistingStatus->fetchColumn();
+            $existingStatus = $existingStatus === false ? null : $existingStatus;
+        }
+        $statusInput = $data['status'] ?? $existingStatus ?? 'active';
+        $status = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : ($existingStatus ?: 'active');
 
         $roundingModeInput = $data['rounding_mode'] ?? 'round';
         if (!in_array($roundingModeInput, self::ROUNDING_MODES, true)) {
@@ -181,6 +193,28 @@ class TaxStatutoryModel {
             $stmt = $this->db->prepare($sql);
             $stmt->execute($params);
             return ['status' => true, 'message' => 'Created successfully.', 'id' => (int)$this->db->lastInsertId()];
+        } catch (PDOException $e) {
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
+    // CompanyProfileModel::toggleStructureStatus()/PayrollCycleModel::toggleStatus()/
+    // BankAccountModel::toggleStatus(). No comp_id param -- `statutory_items` is a global master
+    // catalog (scoped by country_code only), not a per-company entity, same as every other caller
+    // of this table.
+    public function toggleStatus(int $id, int $userId): array {
+        $stmt = $this->db->prepare("SELECT status FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $id]);
+        $current = $stmt->fetchColumn();
+        if ($current === false) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $newStatus = $current === 'active' ? 'inactive' : 'active';
+        try {
+            $stmtUpdate = $this->db->prepare("UPDATE `statutory_items` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+            $stmtUpdate->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+            return ['status' => true, 'new_status' => $newStatus, 'message' => 'Updated successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }

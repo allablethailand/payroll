@@ -29,7 +29,7 @@ declare(strict_types=1);
  * a separate, future feature -- this method never touches MasterDataSyncOrchestrator/EmployeeSyncer.
  *
  * applyEmployeeMasterFields() (called right after createPlaceholderEmployeesForUnmapped(), same
- * Pending Pull moment) overwrites payment_type/bank_id/bank_account_no/sso_enrolled/id_card_no/id_card_issue_date/
+ * Pending Pull moment) overwrites payment_method_id/bank_id/bank_account_no/sso_enrolled/id_card_no/id_card_issue_date/
  * id_card_expire_date on `employees` for every row resolved to an employee this pull -- per
  * explicit request (2026-08-19), this data is treated as HR-owned/source-of-truth on every pull,
  * NOT "payroll-owned, default-once" like the rest of employees' payment/tax config -- the
@@ -101,8 +101,9 @@ declare(strict_types=1);
  *   - .nationality is resolved against master_nationalities (matching nationality_name_en/_th,
  *     case-insensitively) and the matched nationality_code is written -- NOT the raw incoming
  *     value -- see resolveNationalityCode()'s own docblock for why a raw passthrough here would be
- *     wrong. religion is still a direct passthrough (documented risk, not yet fixed the same way --
- *     see resolveNationalityCode()'s docblock for the reason it's out of scope this round).
+ *     wrong. .religion is resolved the same way (2026-09-02) via resolveReligionCode() -- direct
+ *     name match first, an explicit alias map for the names that don't line up cleanly, see that
+ *     method's own docblock.
  *   - nickname maps to BOTH nickname_th and nickname_en (no separate TH/EN source on the wire).
  *   - email maps to company_email (NOT personal_email, which is this app's own NOT NULL field --
  *     overwriting it from an ambiguous upstream source risked clobbering real data with a possibly-
@@ -146,9 +147,13 @@ declare(strict_types=1);
  *     (approval_workflow_steps, holiday_assignments). The accepted tradeoff of this policy: a
  *     dependent/parent a payroll admin added manually, that Origami has no record of, gets removed
  *     on the next pull for that employee -- not an oversight, the explicitly chosen behavior.
- *     `child_type`'s real legitimate/adopted mapping is still unconfirmed (see resolveEmployeeId()
- *     area below) -- every synced child defaults to relationship='child_legitimate' since the
- *     column is NOT NULL and there's no reliable signal to pick 'child_adopted' instead.
+ *     `child_type` does NOT mean legitimate/adopted -- confirmed by the Origami team 2026-09-02
+ *     (a follow-up reply after they were asked for a glossary): it's an AGE-based classification for
+ *     tax-deduction eligibility (1=Preschool, 2=Furthers studying, 3=Work), unrelated to parentage.
+ *     Origami's own payload has no field for legitimate/adopted status at all -- that would need a
+ *     new feature request on their side, not something to derive from this. Every synced child still
+ *     defaults to relationship='child_legitimate' (the column is NOT NULL) -- `child_type`'s value
+ *     is received but currently unused/not stored anywhere on this side.
  *
  * items[].nationality switched on the sending side (PAYROLL_SYNC_API.md, 2026-08-19 revision) from
  * a raw internal Origami ID to a resolved display name (e.g. "Thai"). This mattered here because
@@ -166,13 +171,16 @@ declare(strict_types=1);
  * not a create-if-missing like resolveOrCreateBankId(), since this is a fixed global country list,
  * not something a sync pull should be minting new rows into.
  *
- * religion has the exact same shape of bug (also a raw passthrough into a column
- * EmployeeModel::get() joins against master_religions.religion_code the same way) but is
- * deliberately NOT fixed here -- Origami's documented religion names ("Buddha", "Judah",
+ * religion had the exact same shape of bug (also a raw passthrough into a column
+ * EmployeeModel::get() joins against master_religions.religion_code the same way) -- **fixed
+ * 2026-09-02** via resolveReligionCode(). Origami's documented religion names ("Buddha", "Judah",
  * "Irreligious", "Paganism") don't line up cleanly with this app's master_religions rows
- * ("Buddhist", "Judaism", "None", "Other"; there's also no "Sikh" equivalent on Origami's side),
- * so a correct fix needs an explicit alias table, not the same direct name-match used for
- * nationality. Flagged for a follow-up request rather than guessed at here.
+ * ("Buddhist", "Judaism", "None", "Other"; there's also no "Sikh" equivalent on Origami's side), so
+ * this couldn't reuse the same plain direct-match-only approach nationality uses -- confirmed
+ * Origami's COMPLETE, fixed 0-6 religion code table by reading PAYROLL_SYNC_API.md directly (not
+ * guessed) and built an explicit alias map (RELIGION_NAME_ALIASES) for the 4 names that don't
+ * already match this app's own religion_name_en verbatim -- "Paganism" maps to the generic "Other"
+ * bucket as the best-effort catch-all, since no cleaner equivalent exists.
  *
  * items[].support_team_id / .support_team_text / .signature_drawing (added to the doc's 2026-08-27
  * revision) are handled per explicit request ("ตอนบันทึกข้อมูลพนักงาน ให้ไปบันทึกในตารางทีม และ Assign
@@ -213,8 +221,26 @@ class PayrollSyncModel {
     private const SUPPORTED_SCHEMA_VERSION = 1;
     private const FREQUENCY_TYPES = ['monthly', 'semimonthly', 'weekly', 'biweekly'];
 
+    private ?array $paymentMethodIdsByCode = null;
+
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+    }
+
+    /** 2026-09-02, follow-up cleanup: the legacy employees.payment_type enum this class used to
+     *  write directly is gone -- resolves a master_payment_methods code ('transfer'/'cash') into its
+     *  real id instead, cached the same way EmployeeModel's own paymentMethodCode() caches the
+     *  reverse lookup. Returns null if the code somehow isn't seeded (never expected in practice --
+     *  master_payment_methods is seeded by migration, not admin-editable). */
+    private function paymentMethodIdByCode(string $code): ?int {
+        if ($this->paymentMethodIdsByCode === null) {
+            $this->paymentMethodIdsByCode = [];
+            $stmt = $this->db->query("SELECT id, code FROM `master_payment_methods`");
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $this->paymentMethodIdsByCode[(string)$row['code']] = (int)$row['id'];
+            }
+        }
+        return $this->paymentMethodIdsByCode[$code] ?? null;
     }
 
     public function ingest(array $payload): array {
@@ -290,7 +316,7 @@ class PayrollSyncModel {
             try {
                 $processNo = (string)($payload['process_no'] ?? '');
                 (new NotificationModel())->createForPermissionHolders(
-                    $compId, 'can_process_payroll', 'sync_new_data',
+                    $compId, 'payroll_run.process', 'sync_new_data',
                     "มีข้อมูล Sync ใหม่จาก Origami", "New data synced from Origami",
                     "รอบข้อมูล {$processNo} พร้อมให้ดึงเข้าคำนวณเงินเดือนแล้วครับ", "Sync batch {$processNo} is ready to be pulled into a payroll run",
                     "/payroll-process", 'payroll_sync_process', $processRowId, "sync_new_data:{$processRowId}", 'fa-arrows-rotate'
@@ -344,7 +370,7 @@ class PayrollSyncModel {
         try {
             $processNo = (string)($payload['process_no'] ?? '');
             (new NotificationModel())->createForPermissionHolders(
-                $compId, 'can_process_payroll', 'sync_update_blocked',
+                $compId, 'payroll_run.process', 'sync_update_blocked',
                 "Origami พยายามอัปเดตข้อมูลที่ถูกดึงเข้ารอบเงินเดือนไปแล้ว", "Origami tried to update data already pulled into a payroll run",
                 "รอบข้อมูล {$processNo} มีการแก้ไขจาก Origami หลังถูกดึงเข้ารอบเงินเดือนแล้ว ระบบไม่ได้นำไปใช้อัตโนมัติ กรุณาตรวจสอบก่อนนำไปใช้",
                 "Sync batch {$processNo} was edited by Origami after being pulled into a payroll run. It was NOT applied automatically -- please review before applying it.",
@@ -417,7 +443,7 @@ class PayrollSyncModel {
         // until someone recalculates it; nudge the same audience that got the original block notice.
         try {
             (new NotificationModel())->createForPermissionHolders(
-                $compId, 'can_process_payroll', 'sync_update_applied',
+                $compId, 'payroll_run.process', 'sync_update_applied',
                 "อัปเดตข้อมูล Sync แล้ว กรุณาคำนวณรอบเงินเดือนใหม่", "Sync data updated -- please recalculate the linked payroll run",
                 null, null, "/payroll-process", 'payroll_run', (int)$row['linked_run_id'], "sync_update_applied:{$blockedUpdateId}", 'fa-rotate'
             );
@@ -514,6 +540,14 @@ class PayrollSyncModel {
         $processPaid = $this->nullableDate($p['process_paid'] ?? null);
         $runKind = $this->normalizeRunKind($p['run_kind'] ?? null);
         $attribution = $this->normalizeAttribution($runKind, $p['attribution'] ?? null);
+        // 2026-09-01, PAYROLL_SYNC_API.md revision (per Origami's own reply confirming they picked
+        // the external_cycle_code approach) -- an admin-set free-text code on Origami's own Setup >
+        // Period screen, meant to be re-entered identically against a payroll_cycles row on this
+        // side (PayrollCycleModel::save()'s own `external_cycle_code` field) so
+        // PayrollCycleModel::matchForSyncProcess() can join exactly instead of guessing from
+        // frequency/cutoff/payment-day. `null`/"" both normalize to null, same rule this method
+        // already applies to every other free-text field on this page.
+        $externalCycleCode = !empty($p['external_cycle_code']) ? trim((string)$p['external_cycle_code']) : null;
 
         if ($existingId !== false) {
             $id = (int)$existingId;
@@ -526,6 +560,7 @@ class PayrollSyncModel {
                     origami_report_id = :report_id,
                     origami_comp_code = :comp_code, origami_comp_name = :comp_name,
                     origami_period_id = :period_id, period_name = :period_name, frequency_type = :frequency_type,
+                    external_cycle_code = :external_cycle_code,
                     schema_version = :schema_version, raw_payload = :raw_payload, updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id");
             $stmt->execute([
@@ -539,7 +574,8 @@ class PayrollSyncModel {
                 ':report_id' => $p['report_id'] ?? null,
                 ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
                 ':period_id' => $p['period_id'] ?? null, ':period_name' => $p['period_name'] ?? null,
-                ':frequency_type' => (string)$p['frequency_type'], ':schema_version' => (int)$p['schema_version'],
+                ':frequency_type' => (string)$p['frequency_type'], ':external_cycle_code' => $externalCycleCode,
+                ':schema_version' => (int)$p['schema_version'],
                 ':raw_payload' => $rawPayload, ':id' => $id,
             ]);
             $this->db->prepare("DELETE FROM payroll_sync_items WHERE process_id = :id")->execute([':id' => $id]);
@@ -552,12 +588,12 @@ class PayrollSyncModel {
                  process_start, process_end, process_paid, run_kind,
                  attribution_target_origami_process_id, attribution_target_process_no, attribution_tax_treatment,
                  origami_report_id, origami_comp_code, origami_comp_name,
-                 origami_period_id, period_name, frequency_type, schema_version, raw_payload)
+                 origami_period_id, period_name, frequency_type, external_cycle_code, schema_version, raw_payload)
             VALUES (:comp_id, :pid, :process_no, :process_subject, :process_description,
                  :process_start, :process_end, :process_paid, :run_kind,
                  :attr_target_id, :attr_target_no, :attr_tax_treatment,
                  :report_id, :comp_code, :comp_name,
-                 :period_id, :period_name, :frequency_type, :schema_version, :raw_payload)");
+                 :period_id, :period_name, :frequency_type, :external_cycle_code, :schema_version, :raw_payload)");
         $stmt->execute([
             ':comp_id' => $compId, ':pid' => (int)$p['process_id'], ':process_no' => (string)$p['process_no'],
             ':process_subject' => $processSubject, ':process_description' => $processDescription,
@@ -568,6 +604,7 @@ class PayrollSyncModel {
             ':attr_tax_treatment' => $attribution['tax_treatment'],
             ':report_id' => $p['report_id'] ?? null, ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
             ':period_id' => $p['period_id'] ?? null, ':period_name' => $p['period_name'] ?? null,
+            ':external_cycle_code' => $externalCycleCode,
             ':frequency_type' => (string)$p['frequency_type'], ':schema_version' => (int)$p['schema_version'],
             ':raw_payload' => $rawPayload,
         ]);
@@ -875,6 +912,8 @@ class PayrollSyncModel {
         }
 
         $statusStmt = $this->db->prepare("SELECT emp_name, emp_start_date FROM payroll_sync_employee_status WHERE process_id = :process_id AND payroll_code = :payroll_code LIMIT 1");
+        // 2026-09-02, follow-up: payment_type (legacy enum) dropped -- payment_method_id resolved via
+        // paymentMethodIdByCode('cash') below, same default this placeholder INSERT always used.
         $insertEmployee = $this->db->prepare(
             "INSERT INTO employees
                 (comp_id, employee_no, data_source, is_payroll_ready, employee_type, employee_status,
@@ -883,7 +922,7 @@ class PayrollSyncModel {
                  address_line_1_register, address_line_1_contact,
                  emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
                  employment_date, employment_status, employment_type, workforce_type, record_time_method,
-                 payment_type, salary_type, salary_effective_date, tax_calculation_method)
+                 payment_method_id, salary_type, salary_effective_date, tax_calculation_method)
              VALUES
                 (:comp_id, :employee_no, 'sync', 0, 'domestic', 'active',
                  'mr', 'male', :name_th, :surname_th, :name_en, :surname_en,
@@ -891,8 +930,9 @@ class PayrollSyncModel {
                  'PENDING', 'PENDING',
                  'PENDING', 'PENDING', 'PENDING', '0000000000',
                  :employment_date, 'probation', 'full_time', 'office', 'none',
-                 'cash', 'monthly', :employment_date, 'average')"
+                 :payment_method_id, 'monthly', :employment_date, 'average')"
         );
+        $placeholderCashMethodId = $this->paymentMethodIdByCode('cash');
         $mapItem = $this->db->prepare("UPDATE payroll_sync_items SET employee_id = :employee_id, mapping_status = 'mapped' WHERE id = :id");
 
         $ownTransaction = !$this->db->inTransaction();
@@ -947,6 +987,7 @@ class PayrollSyncModel {
                         ':name_th' => $firstName, ':surname_th' => $lastName,
                         ':name_en' => $firstName, ':surname_en' => $lastName,
                         ':email' => $placeholderEmail, ':employment_date' => $employmentDate,
+                        ':payment_method_id' => $placeholderCashMethodId,
                     ]);
                     $newEmployeeId = (int)$this->db->lastInsertId();
                     $mapItem->execute([':employee_id' => $newEmployeeId, ':id' => $row['id']]);
@@ -1383,6 +1424,49 @@ class PayrollSyncModel {
     }
 
     /**
+     * 2026-09-02: Origami's own fixed religion code table (PAYROLL_SYNC_API.md, confirmed by
+     * reading that doc directly, not guessed) -- `m_employee_info.religion` (0-6) is mapped to one
+     * of these exact display names before being sent: 0->"Irreligious", 1->"Islam",
+     * 2->"Christian", 3->"Hindu", 4->"Buddha", 5->"Judah", 6->"Paganism". 3 of the 7
+     * ("Islam"/"Christian"/"Hindu") already match this app's own master_religions.religion_name_en
+     * exactly, so resolveReligionCode() below finds those via the same direct-match query
+     * resolveNationalityCode() uses; only the remaining 4 need an explicit alias here. "Paganism"
+     * has no clean equivalent in this app's fixed religion list -- mapped to the generic "Other"
+     * bucket as the best-effort catch-all. No Origami code maps to this app's own "Sikh" row --
+     * stays reachable via manual entry only, same as before this fix.
+     */
+    private const RELIGION_NAME_ALIASES = [
+        'irreligious' => 'NON',
+        'buddha' => 'BUD',
+        'judah' => 'JEW',
+        'paganism' => 'OTH',
+    ];
+
+    /**
+     * Resolves an incoming display name (e.g. "Buddha", Origami's own wire value) to this app's own
+     * master_religions.religion_code (e.g. "BUD") -- same "don't write what isn't verified" stance
+     * as resolveNationalityCode() right above, which this mirrors. Tries a direct case-insensitive
+     * match against religion_name_en/_th first (catches the 3 names that already line up), then
+     * falls back to RELIGION_NAME_ALIASES above for the 4 that don't. Returns null on no match --
+     * resolve-only, never creates a new row (a fixed list, not something a sync pull should mint
+     * new rows into).
+     */
+    private function resolveReligionCode(?string $raw): ?string {
+        $name = trim((string)$raw);
+        if ($name === '') {
+            return null;
+        }
+        $stmt = $this->db->prepare("SELECT religion_code FROM master_religions
+            WHERE LOWER(religion_name_en) = LOWER(:name) OR LOWER(religion_name_th) = LOWER(:name) LIMIT 1");
+        $stmt->execute([':name' => $name]);
+        $code = $stmt->fetchColumn();
+        if ($code !== false) {
+            return (string)$code;
+        }
+        return self::RELIGION_NAME_ALIASES[strtolower($name)] ?? null;
+    }
+
+    /**
      * items[].pass_pro is documented (PAYROLL_SYNC_API.md) as a genuine JSON boolean, but the real
      * wire value is the string "Y"/"N" (2026-08-19, explicit correction from the business side) --
      * a plain `$raw ? 1 : 0` truthy cast was silently WRONG for this: every non-empty PHP string,
@@ -1475,8 +1559,14 @@ class PayrollSyncModel {
         $sourceKeyVersion = isset($row['key_version']) ? (int)$row['key_version'] : null;
         $payType = $row['pay_type'] ?? null;
         if ($payType !== null) {
-            $set[] = "payment_type = :payment_type";
-            $params[':payment_type'] = $payType === 'transfer' ? 'bank' : 'cash';
+            // 2026-09-02, follow-up: payment_type (legacy enum) dropped -- writes payment_method_id
+            // instead now, resolved via the same 'transfer'/'cash' code mapping this sync payload's
+            // own pay_type value always used.
+            $resolvedSyncMethodId = $this->paymentMethodIdByCode($payType === 'transfer' ? 'transfer' : 'cash');
+            if ($resolvedSyncMethodId !== null) {
+                $set[] = "payment_method_id = :payment_method_id";
+                $params[':payment_method_id'] = $resolvedSyncMethodId;
+            }
             if ($payType === 'transfer' && !empty($row['pay_bank_no'])) {
                 $plain['bank_account_no'] = EncryptionService::decrypt($row['pay_bank_no'], $sourceKeyVersion);
                 $set[] = "bank_id = :bank_id";
@@ -1590,9 +1680,10 @@ class PayrollSyncModel {
             $set[] = "nationality = :nationality";
             $params[':nationality'] = $nationalityCode;
         }
-        if (!empty($row['religion'])) {
+        $religionCode = $this->resolveReligionCode($row['religion'] ?? null);
+        if ($religionCode !== null) {
             $set[] = "religion = :religion";
-            $params[':religion'] = $row['religion'];
+            $params[':religion'] = $religionCode;
         }
         // email/emp_tel go into company_email/office_tel, not personal_email (NOT NULL, this app's
         // own field, risky to overwrite from an ambiguous source)/mobile_no (NOT NULL, 10-char
@@ -1706,10 +1797,11 @@ class PayrollSyncModel {
                     }
                     $idCardEnc = !empty($child['child_idcard']) ? EncryptionService::encrypt((string)$child['child_idcard']) : null;
                     $dob = !empty($child['child_birthday']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$child['child_birthday']) ? $child['child_birthday'] : null;
-                    // child_type has no confirmed mapping to legitimate/adopted on this app's side
-                    // (see class docblock -- "a raw integer code, this app doesn't resolve them to a
-                    // label") -- 'child_legitimate' is the statistically likely default, not a
-                    // verified mapping; relationship is NOT NULL so a default is unavoidable here.
+                    // child_type is NOT a legitimate/adopted signal (confirmed by Origami 2026-09-02
+                    // -- see class docblock) -- it's an age-based tax-deduction category, unrelated
+                    // to parentage, and Origami's payload has no legitimate/adopted field at all.
+                    // 'child_legitimate' stays the fixed default since relationship is NOT NULL and
+                    // there's genuinely nothing on the wire to distinguish it from adopted.
                     $stmtChild = $this->db->prepare("INSERT INTO employee_dependents
                             (employee_id, name, id_card_no, date_of_birth, relationship, studying, status, key_version, created_by)
                         VALUES (:employee_id, :name, :id_card_no, :date_of_birth, 'child_legitimate', 0, 'active', :key_version, :created_by)");
@@ -1821,7 +1913,7 @@ class PayrollSyncModel {
         $stmt = $this->db->prepare("SELECT p.id, p.origami_process_id, p.process_no, p.process_subject,
                 p.process_start, p.process_end, p.process_paid, p.run_kind,
                 p.attribution_target_origami_process_id, p.attribution_target_process_no, p.attribution_tax_treatment,
-                p.origami_comp_name, p.period_name, p.frequency_type,
+                p.origami_comp_name, p.period_name, p.frequency_type, p.external_cycle_code,
                 p.item_count, p.unmapped_item_count, p.received_at
             FROM payroll_sync_processes p
             LEFT JOIN payroll_runs r ON r.sync_process_id = p.id

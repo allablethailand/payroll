@@ -2,15 +2,42 @@
 /* .station-filter-body's shared max-height (200px, see style.css) fits the Payroll Process page's
    2-field date filter but not this page's 6-field row, which wraps to 3 rows on narrow screens --
    raise it here only. Both the expanded and collapsed variants must be scoped to this page's own
-   id so the collapse-to-0 animation (the more specific .collapsed rule) still wins over this. */
-#employeeStationFilter .station-filter-body,
-#employeeLoginHistoryStationFilter .station-filter-body { max-height: 320px; }
-#employeeStationFilter.collapsed .station-filter-body,
-#employeeLoginHistoryStationFilter.collapsed .station-filter-body { max-height: 0; }
+   id so the collapse-to-0 animation (the more specific .collapsed rule) still wins over this.
+   2026-09-02, 3-way Employee submenu split -- the Login History tab's own equivalent rule moved to
+   login-history.php's own <style> block along with that page. */
+#employeeStationFilter .station-filter-body { max-height: 320px; }
+#employeeStationFilter.collapsed .station-filter-body { max-height: 0; }
 
 #tb_employee tbody tr { transition: background-color .12s ease; }
-.employee-completeness-bar { min-width: 100px; }
-.employee-completeness-bar .progress { height: 6px; background-color: #eef0f2; }
+/* 2026-09-02, explicit request: "ความสมบูรณ์ของ Profile ช่วยปรับเป็น progress วงกลมได้ไหมครับ" -- replaces
+   the old .employee-completeness-bar (horizontal Bootstrap .progress) with a small CSS
+   conic-gradient ring, built inline via completenessRingHtml() in list.js (background set per-row
+   via style attribute -- the color/percentage vary per employee, not something a static class can
+   express). The white inner circle is a plain nested ::before, not a second stacked element, to
+   keep each row's DOM as light as possible across a potentially long employee list. */
+.employee-completeness-ring {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+}
+.employee-completeness-ring::before {
+    content: '';
+    position: absolute;
+    inset: 4px;
+    border-radius: 50%;
+    background: #fff;
+}
+.employee-completeness-ring-value {
+    position: relative;
+    z-index: 1;
+    font-size: .6rem;
+    font-weight: 700;
+}
 /* 2026-08-30, real photo (synced or manually uploaded) shown in place of the initial-letter avatar
    circle once profile_photo_path is set -- object-fit:cover so a non-square upload still fills the
    circle cleanly instead of distorting/letterboxing. */
@@ -57,28 +84,22 @@
          existing #employeeTabs status-filter pills (Active/Probation/Permanent/Resign) stay exactly
          as they were, nested one level deeper inside this new pane -- they filter WITHIN the
          Employee tab, they don't switch pages, so they keep using plain .nav-tabs (not this new
-         outer level's .setup-tabs) same as before. -->
+         outer level's .setup-tabs) same as before.
+         2026-09-02, 3-way Employee submenu split -- this page used to have 4 top-level tabs
+         (Employee/Recheck Data/Reports/Login History); Reports and Login History are now their own
+         standalone pages under the Employee submenu (see header.php), leaving just these 2. -->
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" id="employeeTopTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active setup-menu" id="employee-top-tab" data-bs-toggle="tab" data-bs-target="#employee-top-pane" type="button" role="tab" aria-controls="employee-top-pane" aria-selected="true"><i class="fa-solid fa-users me-1"></i><span data-i18n="employee">Employee</span></button>
         </li>
         <!-- 2026-08-30 (Phase 3, T018, explicit request: "Tab 'Recheck ข้อมูล'...แสดงเป็น column-by-
              column ว่าข้อมูลจำเป็นสำหรับทำเงินเดือนครบหรือไม่") -- same top-level-page-tab pattern as
-             Employee/Login History. Moved to 2nd position (same-day follow-up, "ย้ายตรวจสอบข้อมูลมาไว้
+             Employee. Moved to 2nd position (same-day follow-up, "ย้ายตรวจสอบข้อมูลมาไว้
              Tab ที่ 2") -- pure DOM reorder of the <li>, id/data-bs-target untouched, same
              "position moves, nothing else does" precedent as Team's own tab reorder earlier this
              project (see CLAUDE.md's Team section). -->
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="employee-recheck-top-tab" data-bs-toggle="tab" data-bs-target="#employee-recheck-top-pane" type="button" role="tab" aria-controls="employee-recheck-top-pane" aria-selected="false"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="recheck_data">Recheck Data</span></button>
-        </li>
-        <!-- 2026-08-30, explicit request: "ต้องการอีก Tab ต่อจาก Tab ตรวจสอบข้อมูล เป็น Tab สรุปรวมรายได้
-             รายหักที่ หักหรือได้ประจำ" -- positioned right after Recheck Data. See
-             EmployeeModel::standingSummaryList()'s own docblock for the full backend design. -->
-        <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="employee-summary-top-tab" data-bs-toggle="tab" data-bs-target="#employee-summary-top-pane" type="button" role="tab" aria-controls="employee-summary-top-pane" aria-selected="false"><i class="fa-solid fa-calculator me-1"></i><span data-i18n="standing_items_summary">Standing Items Summary</span></button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="employee-login-history-top-tab" data-bs-toggle="tab" data-bs-target="#employee-login-history-top-pane" type="button" role="tab" aria-controls="employee-login-history-top-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="login_history">Login History</span></button>
         </li>
     </ul>
     <div class="tab-content" id="employeeTopTabsContent">
@@ -141,8 +162,8 @@
             </div>
         </div>
     </div>
-    <div class="d-flex justify-content-end mb-3">
-        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearEmployeeFilter">
+    <div class="station-filter-clear-row d-none" id="employeeFilterClearRow">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeFilter">
             <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
         </button>
     </div>
@@ -250,81 +271,6 @@
         </div>
     </div>
     </div>
-    <!-- 2026-08-29, explicit request: "ในหน้า employee list ก็ให้แยกเป็น 2 tab tab employee กับประวัติการ
-         เข้าใช้ ดูภาพรวมของทุกคน มี Filter ด้วย" -- company-wide overview (every employee), unlike the
-         Employee Detail page's own Login History tab which is scoped to one employee -- see
-         EmployeeLoginLogModel::listForCompany()'s own docblock. Lazy-inits its DataTable on first
-         shown.bs.tab (this app's own standing habit for a DataTable inside a non-default Bootstrap
-         tab -- constructing one while its pane is display:none collapses every column to 0 width). -->
-    <div class="tab-pane fade" id="employee-login-history-top-pane" role="tabpanel" aria-labelledby="employee-login-history-top-tab" tabindex="0">
-        <div class="station-filter" id="employeeLoginHistoryStationFilter">
-            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-            <button type="button" class="station-filter-toggle" id="employeeLoginHistoryStationFilterToggle" title="Toggle filter">
-                <i class="fas fa-chevron-up"></i>
-            </button>
-            <div class="station-filter-body">
-                <div class="row g-2">
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="employee">Employee</label>
-                        <select class="form-select select2-remote" id="loginHistoryOverviewFilterEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" id="loginHistoryOverviewFilterDateFrom" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" id="loginHistoryOverviewFilterDateTo" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="device">Device</label>
-                        <select class="form-select select2-native" id="loginHistoryOverviewFilterDevice"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="browser">Browser</label>
-                        <select class="form-select select2-native" id="loginHistoryOverviewFilterBrowser"></select>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="d-flex justify-content-end mb-3">
-            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearLoginHistoryOverviewFilter">
-                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-            </button>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-striped table-hover w-100" id="tb_login_history_overview">
-                <thead class="table-light text-secondary">
-                    <tr>
-                        <th data-i18n="employee">Employee</th>
-                        <th data-i18n="login_at">Login At</th>
-                        <th data-i18n="logout_at">Logout At</th>
-                        <th data-i18n="ip_address">IP Address</th>
-                        <th data-i18n="location">Location</th>
-                        <th data-i18n="timezone">Timezone</th>
-                        <th data-i18n="device">Device</th>
-                        <th data-i18n="operating_system">OS</th>
-                        <th data-i18n="browser">Browser</th>
-                        <!-- 2026-08-30, Phase 7 (T037/T038) -- see employee/detail.php's own equivalent comment. -->
-                        <th data-i18n="status">Status</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </div>
-    <!-- 2026-08-30 (Phase 3, T018) -- server-side (unbounded employee count, same convention as the
-         main Employee tab's own #tb_employee). Each row = 1 employee; each ready/not-ready column
-         is a derived boolean (not a raw sortable/filterable value), same exemption category this
-         app's own DataTables convention already grants widget-only columns (action buttons, status
-         badges) -- so no Excel-column-filter/per-column sort here, just the shared station filter
-         above (reused, same role/department/team/shift/branch fields) + the search box. -->
     <div class="tab-pane fade" id="employee-recheck-top-pane" role="tabpanel" aria-labelledby="employee-recheck-top-tab" tabindex="0">
         <div class="station-filter" id="employeeRecheckStationFilter">
             <span class="station-filter-label" data-i18n="label_filter">Filter</span>
@@ -356,18 +302,23 @@
                 </div>
             </div>
         </div>
+        <!-- 2026-09-02, Platform Hardening Phase 1.6: Clear Filter split out of the view-toggle row
+             below into its own .station-filter-clear-row (attaches to the filter card right above
+             it) so it reads as part of the filter frame -- the view-toggle group keeps its own row. -->
+        <div class="station-filter-clear-row d-none" id="employeeRecheckFilterClearRow">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeRecheckFilter">
+                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+            </button>
+        </div>
         <!-- 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่ไม่ทำ
              จ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- a view toggle rather than a brand-new tab, so it reuses
              this same table/columns/filters instead of duplicating markup (see EmployeeModel::
              recheckList()'s own $participantMode comment). -->
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div class="mb-3">
             <div class="btn-group" role="group" id="employeeRecheckViewToggle">
                 <button type="button" class="btn btn-sm btn-outline-secondary active" data-view="participant" data-i18n="recheck_view_in_payroll">In Payroll</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-view="excluded" data-i18n="recheck_view_not_in_payroll">Not in Payroll</button>
             </div>
-            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearEmployeeRecheckFilter">
-                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-            </button>
         </div>
         <!-- 2026-08-30, same-day follow-up ("ปรับให้เป็น table responsive เหมือนเพื่อนไปเลยครับ ให้ Column
              แรกกับ Column สุดท้าย อยู่ตำแหน่งเดิม แล้วไป expand ส่วนอื่น") -- reverted from the
@@ -414,78 +365,6 @@
                 </tr>
             </thead>
             <tbody></tbody>
-        </table>
-    </div>
-    <!-- 2026-08-30, explicit request: "ต้องการอีก Tab ต่อจาก Tab ตรวจสอบข้อมูล เป็น Tab สรุปรวมรายได้รายหักที่
-         หักหรือได้ประจำ รวมถึงฐานเงินและ และรายได้ รายหักที่ได้รับเป็นรอบ ให้แสดงตัวเลขในรอบที่รอจ่าย รอหัก และ
-         บอกด้วยว่า งวดที่เท่าไหร่จากทั้งหมดกี่งวด และมีสรุปรวมใน Column ท้าย และ Footer ครับ" -- serverSide
-         table (same "could be many employees" convention as tb_employee/tb_employee_recheck), server-
-         computed totals in a real <tfoot> (same "footer reflects every filtered row, not just the
-         current page" precedent AnnualIncomeSummaryModel's own report already established -- see
-         EmployeeModel::standingSummaryList()'s own docblock). Recurring Earnings / Pending PED
-         Earning / Pending PED Deduction are each a badge (count + subtotal) with a tooltip breakdown
-         per item, same pattern as the Recheck tab's own OT summary badge. -->
-    <div class="tab-pane fade" id="employee-summary-top-pane" role="tabpanel" aria-labelledby="employee-summary-top-tab" tabindex="0">
-        <div class="station-filter" id="employeeSummaryStationFilter">
-            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-            <button type="button" class="station-filter-toggle" id="employeeSummaryStationFilterToggle" title="Toggle filter">
-                <i class="fas fa-chevron-up"></i>
-            </button>
-            <div class="station-filter-body">
-                <div class="row g-2">
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="role">Role</label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_role" data-api="/api/role.get" data-type="role"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="department">Department</label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_department" data-api="/api/department.get" data-type="department"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="team">Team</label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_team" data-api="/api/team.get" data-type="team"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="shift">Shift</label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="branch">Branch</label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="d-flex justify-content-end mb-3">
-            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnClearEmployeeSummaryFilter">
-                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-            </button>
-        </div>
-        <!-- 2026-08-31, explicit request: "ตรงสรุปรายได้ประจำ ตารางไม่เต็ม" -- this table has fewer,
-             narrower (mostly right-aligned money) columns than #tb_employee/#tb_employee_recheck, so
-             DataTables' own default autoWidth left visible empty space on the right instead of
-             stretching to the container -- explicit style="width:100%" forces it to fill, same
-             convention already used elsewhere in this app (e.g. setup-rules/index.php's #tb_ot). -->
-        <table class="table table-striped table-hover" id="tb_employee_summary" style="width:100%">
-            <thead class="table-light text-secondary">
-                <tr>
-                    <th></th>
-                    <!-- 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" --
-                         was one "Employee" column with employee_no/name stacked, split into 2. -->
-                    <th data-i18n="employee_no">Employee No.</th>
-                    <th data-i18n="employee">Employee</th>
-                    <th class="text-end" data-i18n="base_salary_amount">Base Salary Amount</th>
-                    <th class="text-end" data-i18n="recurring_earnings">Recurring Earnings</th>
-                    <th class="text-end" data-i18n="recurring_deductions">Recurring Deductions</th>
-                    <th class="text-end" data-i18n="pending_ped_earning">Pending Earning (Installment)</th>
-                    <th class="text-end" data-i18n="pending_ped_deduction">Pending Deduction (Installment)</th>
-                    <th class="text-end" data-i18n="total_earning">Total Earning</th>
-                    <th class="text-end" data-i18n="total_deduction">Total Deduction</th>
-                    <th class="text-end" data-i18n="net_total">Net Total</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-            <tfoot></tfoot>
         </table>
     </div>
     </div>

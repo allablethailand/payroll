@@ -44,9 +44,21 @@ class ReportsController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
-    /** Every registered report exposes salary/bank/statutory PII for the whole run/period -- same gate as viewing a payroll run. */
+    /** Every registered report exposes salary/bank/statutory PII for the whole run/period -- same gate as viewing a payroll run.
+     *  2026-09-02: ALSO requires payroll_run.view now, same RBAC-layer addition as
+     *  PayrollController::requireViewAccess() (this controller's own view eligibility has always
+     *  been piggybacked on the SAME canView() flags that module uses -- kept that coupling here
+     *  rather than inventing a separate reports.view permission nothing asked for; generate()'s own
+     *  existing salary_amount.view_reports check below is unchanged and still what actually gates
+     *  a real download). */
     private function requireViewAccess(): bool {
         if (!$this->payrollRunModel->canView($this->userId(), $this->isAdmin())) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to generate or view reports.']);
+            return false;
+        }
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->userId(), 'payroll_run.view', $this->isAdmin(), $compId);
+        if (!$check['allowed']) {
             $this->json(['status' => false, 'message' => 'You do not have permission to generate or view reports.']);
             return false;
         }
@@ -451,7 +463,9 @@ class ReportsController extends Controller {
        key nothing in this batch's request asked for. */
 
     public function runAudit() {
-        if (!$this->payrollRunModel->canView($this->userId(), $this->isAdmin())) {
+        $compId = (int)getCompId();
+        $check = $this->permissionModel->checkPermission($this->userId(), 'payroll_run.view', $this->isAdmin(), $compId);
+        if (!$this->payrollRunModel->canView($this->userId(), $this->isAdmin()) || !$check['allowed']) {
             $this->view('permission');
             return;
         }

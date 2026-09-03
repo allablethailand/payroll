@@ -4,10 +4,11 @@ require_once __DIR__ . '/../models/BankFileFormatModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 
 /**
- * 2026-08-29 -- reuses the existing `bank_account.manage` permission (this feature lives as a
+ * 2026-08-29 -- reuses the existing `bank_account.*` permission keys (this feature lives as a
  * sub-tab of the same Bank Accounts settings page, see company-profile.js/BankAccountController's
  * own gate) rather than seeding a brand-new permission key for what's functionally part of the
- * same settings area.
+ * same settings area. 2026-09-03, Platform Hardening Phase 3 Stage 3: swapped off the retired
+ * coarse `.manage` onto view/add/edit/delete per action.
  */
 class BankFileFormatController extends Controller {
     private BankFileFormatModel $model;
@@ -42,7 +43,7 @@ class BankFileFormatController extends Controller {
     }
 
     public function list() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.view')) return;
         $compId = $this->compId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => [], 'default_format_id' => null]);
@@ -56,7 +57,7 @@ class BankFileFormatController extends Controller {
     }
 
     public function get() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.view')) return;
         $compId = $this->compId();
         $formatId = (int)($_GET['bank_file_format_id'] ?? $_POST['bank_file_format_id'] ?? 0);
         if (!$compId || $formatId <= 0) {
@@ -72,7 +73,7 @@ class BankFileFormatController extends Controller {
     }
 
     public function saveConfig() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.edit')) return;
         $compId = $this->compId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -92,7 +93,6 @@ class BankFileFormatController extends Controller {
     }
 
     public function saveField() {
-        if (!$this->requirePermission('bank_account.manage')) return;
         $compId = $this->compId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -103,6 +103,10 @@ class BankFileFormatController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // BankFileFormatModel::saveField() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'bank_account.edit' : 'bank_account.add')) return;
         $formatId = (int)($data['bank_file_format_id'] ?? 0);
         if ($formatId <= 0) {
             $this->json(['status' => false, 'message' => 'Missing bank_file_format_id.']);
@@ -112,7 +116,7 @@ class BankFileFormatController extends Controller {
     }
 
     public function deleteField() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.delete')) return;
         $compId = $this->compId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -129,7 +133,7 @@ class BankFileFormatController extends Controller {
     }
 
     public function resetToDefault() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.edit')) return;
         $compId = $this->compId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -145,7 +149,7 @@ class BankFileFormatController extends Controller {
     }
 
     public function editLogs() {
-        if (!$this->requirePermission('bank_account.manage')) return;
+        if (!$this->requirePermission('bank_account.view')) return;
         $compId = $this->compId();
         $formatId = (int)($_GET['bank_file_format_id'] ?? 0);
         if (!$compId || $formatId <= 0) {

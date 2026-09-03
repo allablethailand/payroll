@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../services/SyncPayResolver.php';
+require_once __DIR__ . '/AuditLogModel.php';
 
 /**
  * Company-configurable "how is this deduction calculated" for the 5 attendance-driven deduction
@@ -66,8 +67,10 @@ class AttendanceDeductionRuleModel {
      *  "per day"; freely changeable once a rule is saved. */
     private const DEFAULT_RATE_UNIT = ['late' => 'minute', 'early_leave' => 'minute', 'absent' => 'day', 'unpaid_leave' => 'day', 'leave_pending' => 'day'];
 
+    private AuditLogModel $auditLog;
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /**
@@ -274,7 +277,7 @@ class AttendanceDeductionRuleModel {
         return array_values(array_unique($exempt));
     }
 
-    public function ruleSave(array $data, int $compId, int $userId): array {
+    public function ruleSave(array $data, int $compId, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
         $eventCode = (string)($data['event_code'] ?? '');
         if (!in_array($eventCode, self::EVENT_CODES, true)) {
@@ -320,9 +323,17 @@ class AttendanceDeductionRuleModel {
                 ? $otherIsDefault
                 : (!$otherIsDefault && $other['scope_type'] === $scopeType && (int)$other['scope_id'] === $scopeId);
             if ($sameVariant) {
+                // 2026-09-02, explicit request: "ถ้าประเภทเดียว Assign ซ้ำ ต้องมี Alert เตือน และถ้าผู้ใช้
+                // ต้องการ Save ทับเพื่อ Update ข้อมูลใหม่ต้องทำได้" -- conflict_id lets the frontend offer
+                // "update the existing rule instead" (re-submit the SAME payload with `id` set to
+                // this) rather than just a dead-end refusal. Safe to hand back: the caller already
+                // knows this row exists (that's WHY it conflicted) and it belongs to this same
+                // comp_id/event_code/scope, so re-submitting with this id can only ever update that
+                // exact row, never something unrelated.
                 return ['status' => false, 'message' => $scopeType === null
                     ? 'A company-wide default rule already exists for this event.'
-                    : 'A rule for this exact team/department is already configured for this event.'];
+                    : 'A rule for this exact team/department is already configured for this event.',
+                    'conflict_id' => (int)$other['id']];
             }
         }
 
@@ -381,10 +392,15 @@ class AttendanceDeductionRuleModel {
             if ($own) { $this->db->beginTransaction(); }
 
             $existingId = null;
+            $oldRowForAudit = null;
             if ($id !== null) {
-                $stmtExisting = $this->db->prepare("SELECT id FROM attendance_deduction_rules WHERE id = :id AND comp_id = :comp_id");
+                // Platform Hardening Phase 6 pilot: SELECT * so the full row is available to
+                // AuditLogModel::record() as the "old" side of the diff below -- only this table's
+                // own scalar columns are diffed, not the child brackets/exemptions rows.
+                $stmtExisting = $this->db->prepare("SELECT * FROM attendance_deduction_rules WHERE id = :id AND comp_id = :comp_id");
                 $stmtExisting->execute([':id' => $id, ':comp_id' => $compId]);
-                $existingId = $stmtExisting->fetchColumn();
+                $oldRowForAudit = $stmtExisting->fetch(PDO::FETCH_ASSOC);
+                $existingId = $oldRowForAudit['id'] ?? null;
                 if (!$existingId) {
                     if ($own) { $this->db->rollBack(); }
                     return ['status' => false, 'message' => 'Record not found.'];
@@ -439,6 +455,12 @@ class AttendanceDeductionRuleModel {
                 }
             }
 
+            if ($oldRowForAudit !== null) {
+                $stmtNewRow = $this->db->prepare("SELECT * FROM attendance_deduction_rules WHERE id = :id");
+                $stmtNewRow->execute([':id' => $ruleId]);
+                $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'attendance_deduction_rules', $ruleId, 'update', $oldRowForAudit, $newRow, $userId, 'web', $ip, $userAgent);
+            }
             if ($own) { $this->db->commit(); }
             return ['status' => true, 'message' => 'Saved successfully.', 'id' => $ruleId];
         } catch (PDOException $e) {
@@ -457,8 +479,8 @@ class AttendanceDeductionRuleModel {
      * ApprovalWorkflowModel::stepDelete() for a config row with no audit/compliance meaning of its
      * own; attendance_deduction_rule_brackets/_exemptions both CASCADE on rule_id.
      */
-    public function ruleDelete(int $id, int $compId): array {
-        $stmt = $this->db->prepare("SELECT scope_type FROM attendance_deduction_rules WHERE id = :id AND comp_id = :comp_id");
+    public function ruleDelete(int $id, int $compId, ?int $userId = null, ?string $ip = null, ?string $userAgent = null): array {
+        $stmt = $this->db->prepare("SELECT * FROM attendance_deduction_rules WHERE id = :id AND comp_id = :comp_id");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
@@ -468,6 +490,7 @@ class AttendanceDeductionRuleModel {
             return ['status' => false, 'message' => 'The company-wide default rule cannot be deleted, only edited.'];
         }
         $this->db->prepare("DELETE FROM attendance_deduction_rules WHERE id = :id AND comp_id = :comp_id")->execute([':id' => $id, ':comp_id' => $compId]);
+        $this->auditLog->record($compId, 'attendance_deduction_rules', $id, 'delete', $row, null, $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 

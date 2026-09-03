@@ -4,9 +4,10 @@ require_once __DIR__ . '/../models/EmployeeSyncModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 
 /** Interactive "Sync Employee from Origami" picker -- see EmployeeSyncModel's own docblock for the
- *  full design. Gated by the same `employee.manage` permission key EmployeeController already uses
- *  for every other write action on this entity (this feature ultimately inserts/updates real
- *  employees rows), no new permission key introduced. */
+ *  full design. Gated by the same `employee.*` permission keys EmployeeController already uses
+ *  for every other action on this entity (this feature ultimately inserts/updates real employees
+ *  rows), no new permission key introduced. 2026-09-03, Phase 3 Stage 3: swapped off the retired
+ *  coarse `.manage` onto view/add/edit per action. */
 class EmployeeSyncController extends Controller {
     private EmployeeSyncModel $model;
     private PermissionModel $permissionModel;
@@ -47,7 +48,7 @@ class EmployeeSyncController extends Controller {
      *  from Origami (mocked) rather than Payroll's own local structure tables -- see
      *  EmployeeSyncModel::filterOptions()'s own docblock. */
     public function filterOptions() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -57,7 +58,7 @@ class EmployeeSyncController extends Controller {
     }
 
     public function candidates() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -67,7 +68,7 @@ class EmployeeSyncController extends Controller {
     }
 
     public function apply() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.add')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -79,7 +80,7 @@ class EmployeeSyncController extends Controller {
 
     /** 2026-08-28, explicit request: per-employee "Re-Sync from Origami" button on Employee Detail. */
     public function resyncOne() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -95,7 +96,7 @@ class EmployeeSyncController extends Controller {
 
     /** 2026-08-29, explicit request: checkbox multi-select + bulk "Sync Selected" on Employee List. */
     public function resyncMany() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -107,7 +108,7 @@ class EmployeeSyncController extends Controller {
 
     /** 2026-08-28, same request -- "last synced" summary shown on Employee Detail. */
     public function lastSyncSummary() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         $employeeId = (int)($_GET['employee_id'] ?? 0);
         if (!$compId || $employeeId <= 0) {
@@ -118,7 +119,7 @@ class EmployeeSyncController extends Controller {
     }
 
     public function log() {
-        if (!$this->requirePermission('employee.manage')) return;
+        if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);

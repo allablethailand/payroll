@@ -1,5 +1,54 @@
 let currentEmployeeId = null;
 let childTablesLoaded = false;
+// 2026-09-02, Platform Hardening Phase 1.2 -- baseline snapshot for cancelEmployeeEdit()'s
+// dirty-check (see app.js's snapshotFormState()/confirmIfDirtyThen()). Re-taken every time the
+// WHOLE form is repopulated from the server (initial load, and after cancelEmployeeEdit() itself
+// re-fetches) and after every successful per-tab save, so a Cancel click always compares against
+// "the last state we know is saved," not the page's very first load.
+let employeeFormBaselineSnapshot = null;
+function refreshEmployeeFormBaseline() {
+    if (typeof snapshotFormState === 'function') {
+        employeeFormBaselineSnapshot = snapshotFormState($('#employeeTabsContent'));
+    }
+}
+// Shared Cancel handler for all 6 tab Save buttons. An existing employee: dirty-check, then
+// re-fetch via the SAME GET /api/employee.get the initial page load uses and repopulate the WHOLE
+// form (mirrors company-profile.js's own .cancel-company-profile reference implementation -- AJAX
+// re-fetch + repopulate, not a hard page reload) -- deliberately does NOT re-run
+// loadEmployeeIfEditing()'s one-time side effects (loadAllChildTables()/loadDocumentList()/
+// activateEmployeeTabFromHash()), since those already ran once and child-table data wasn't part of
+// what the user was editing on this form. A brand-new, not-yet-saved employee has nothing on the
+// server to revert to -- per the playbook's own "reset to blank/default" rule for that case, a full
+// page reload IS the reset (an unsaved new-employee form has no persisted data to lose).
+function cancelEmployeeEdit() {
+    if (!currentEmployeeId) {
+        confirmIfDirtyThen($('#employeeTabsContent'), employeeFormBaselineSnapshot, function () {
+            window.location.reload();
+        });
+        return;
+    }
+    confirmIfDirtyThen($('#employeeTabsContent'), employeeFormBaselineSnapshot, function () {
+        const employeeNo = $('#employee_no').val();
+        $.ajax({
+            url: `${BASE_URL}/api/employee.get`,
+            method: 'GET',
+            data: { employee_no: employeeNo },
+            dataType: 'json',
+            success: function (res) {
+                if (res.status && res.data) {
+                    populateEmployeeForm(res.data);
+                    renderProfileHeader(res.data);
+                    refreshEmployeeFormBaseline();
+                } else {
+                    showWarning(res.message || langData['load_employee_failed'] || 'Failed to load employee data.');
+                }
+            },
+            error: function () {
+                showWarning(langData['load_employee_failed'] || 'Failed to load employee data.');
+            }
+        });
+    });
+}
 const TAB_BUTTON_BY_PANE = {
     'info-pane': 'info-tab',
     'contact-pane': 'contact-tab',
@@ -61,22 +110,53 @@ function applyEmployeeTypeRequired(type) {
     $('#tax_id_no, #passport_no, #work_permit_no, #date_work_permit_issue, #date_work_permit_expire')
         .toggleClass('required', type === 'foreigner').removeClass('is-invalid');
 }
-function applyPaymentTypeRequired(type) {
+// 2026-09-02, explicit request: payment method type (transfer/cash/check/mixed) -- replaces the
+// old radio-driven applyPaymentTypeRequired(bank/cash). `code` is master_payment_methods' own code
+// (transfer/cash/check/mixed), read from #payment_method_code (kept in sync by the select2:select
+// handler below and by populateEmployeeForm() on load).
+function applyPaymentMethodVisibility(code) {
+    $('#payment_method_code').val(code || '');
+    // 2026-09-02, real gap found and fixed BEFORE shipping (not guessed -- caught while wiring the
+    // payroll engine's own BankTransferFileReport read of this same data): a mixed line's own
+    // bank_account_id (employee_payment_method_lines) is which COMPANY account PAYS that line, the
+    // exact same concept as default_bank_account_id -- it is NOT the employee's own RECEIVING bank
+    // account number, which only ever lives in this section's employees.bank_id/bank_account_no
+    // fields. A mixed set with any transfer line still needs those filled in (there's only ONE
+    // place money is actually deposited for an employee, regardless of how many lines route
+    // through transfer) -- shown (not required, see below -- a mixed set might have zero transfer
+    // lines) whenever code is 'transfer' OR 'mixed'.
+    $('#sectionBankPayment').toggleClass('d-none', code !== 'transfer' && code !== 'mixed');
+    $('#sectionMixedPayment').toggleClass('d-none', code !== 'mixed');
     // 2026-08-30 (T020): bank details are never required for a staff-only (is_payroll_participant=0)
     // employee regardless of which Payment Type happens to be selected underneath -- checked here
     // (not just in applyPayrollParticipantVisibility() below) so this stays correct even when the
-    // user changes Payment Type WHILE already set to "No Salary" (the payment_type_radio change
-    // handler calls this function directly, it doesn't know or care about the participant toggle).
+    // user changes Payment Type WHILE already set to "No Salary".
     const isParticipant = $('#is_payroll_participant').val() !== '0';
-    $('#bank_id, #bank_account_no').toggleClass('required', isParticipant && type === 'bank').removeClass('is-invalid');
+    $('#bank_id, #bank_account_no').toggleClass('required', isParticipant && code === 'transfer').removeClass('is-invalid');
+    applyAccountPickerVisibility();
+}
+// 2026-09-02, explicit request: "ตัวเลือกบัญชีในส่วนนี้ต้องสอดคล้องกับประเภทการจ่ายเงินที่เลือกใน Tab การจ้างงาน"
+// -- the Salary tab's own #sectionCycleBankAccount (default_bank_account_id, moved there from
+// Employment) is only relevant while the resolved payment method involves a bank transfer at all
+// (transfer itself, or a mixed line that might use one) -- reads #payment_method_code CROSS-TAB,
+// same established "read a field that lives on another tab of the same form" pattern
+// applyInternPolicyVisibility() already uses for #employment_type.
+function applyAccountPickerVisibility() {
+    const code = $('#payment_method_code').val();
+    $('#sectionCycleBankAccount').toggleClass('d-none', code !== 'transfer' && code !== 'mixed');
 }
 // 2026-08-30 (Phase 3, T020, explicit request: field "จ่าย/ไม่จ่ายเงินเดือน", default = จ่าย) --
 // hides every payroll-specific tab/section for a staff-only employee. Employment tab's own org
-// placement fields (department/position/branch/employment_date/etc.) stay visible either way --
-// only its "Payment Information" sub-section (payment_type/bank details) is payroll-specific,
-// per the explicit scope decision confirmed for this ticket. Social Security/Family-Tax
-// Allowance tabs have no .required fields of their own to strip (already fully optional per
-// calculateCompleteness()'s own conditional checks), so only Salary's 4 required fields need it.
+// placement fields (department/position/branch/employment_date/etc.) stay visible either way.
+// Social Security/Family-Tax Allowance tabs have no .required fields of their own to strip
+// (already fully optional per calculateCompleteness()'s own conditional checks), so only Salary's
+// 4 required fields need it.
+// 2026-09-02, explicit request: "ย้ายข้อมูลการจ่ายเงิน ไปไว้ Tab เงินเดือน" -- Payment Information
+// (payment_type/bank details) moved from the Employment tab into the Salary tab (see that
+// section's own comment in detail.php), so the separate `#employmentPaymentSection` hide this
+// function used to do is gone -- the whole Salary tab is ALREADY in PAYROLL_ONLY_TAB_BUTTON_IDS
+// below and gets its nav-item hidden entirely for a staff-only employee, which now covers Payment
+// too without a second, redundant toggle.
 const PAYROLL_ONLY_TAB_BUTTON_IDS = ['salary-tab', 'earningDeduction-tab', 'social-tab', 'family-tab'];
 function applyPayrollParticipantVisibility(isParticipant) {
     // Sets the hidden field itself (not just left to whichever caller happens to have already set
@@ -97,10 +177,9 @@ function applyPayrollParticipantVisibility(isParticipant) {
     } else {
         $payrollTabItems.addClass('d-none');
     }
-    $('#employmentPaymentSection').toggleClass('d-none', !isParticipant);
     $('#salary_type, #base_salary_amount, #salary_effective_date, #tax_calculation_method')
         .toggleClass('required', isParticipant).removeClass('is-invalid');
-    applyPaymentTypeRequired($('#payment_type').val());
+    applyPaymentMethodVisibility($('#payment_method_code').val());
     // Re-apply on top of the blanket required-toggle just above -- if Tax Exempt is also checked,
     // Tax Calculation Method must stay hidden/non-required regardless of participant status.
     applyTaxExemptVisibility();
@@ -120,7 +199,90 @@ function applyEmploymentEndFieldsVisibility() {
 // "read a field that lives on another tab of the same form" precedent
 // applyPayrollParticipantVisibility() already established for #is_payroll_participant.
 function applyInternPolicyVisibility() {
-    $('#internPolicySection').toggleClass('d-none', $('#employment_type').val() !== 'internship');
+    const shown = $('#employment_type').val() === 'internship';
+    $('#internPolicySection').toggleClass('d-none', !shown);
+    if (shown) fetchPayrollPolicySettings(function (settings) { renderPolicyInfoCard($('#internPolicyInfoCardBody'), settings.intern); });
+}
+// 2026-09-02, explicit request: "สถานะการจ้างงาน กับ ประเภทการจ้างงาน ข้อมูลเหมือนไม่สัมพันธ์กัน ถ้า
+// ประเภทการจ้างงาน คือนักศึกษาฝึกงาน สถานะการจ้างงาน ควรเลือกอะไร" -- confirmed via AskUserQuestion:
+// auto-lock Employment Status to Probation whenever Employment Type is ACTIVELY switched to
+// Internship (there is no dedicated "intern" employment_status value, and the payroll engine
+// already treats internship as taking precedence over probation wherever both matter -- this just
+// removes the ambiguity of what the admin should pick). `isUserAction` gates the actual VALUE
+// overwrite -- true only when this fires from a genuine `change` event with `e.originalEvent` set
+// (a real user interaction), never from populateEmployeeForm()'s own programmatic
+// `.val(...).trigger('change')` on page load -- otherwise loading an EXISTING intern record saved
+// with some other status from before this lock existed (e.g. one already resigned/terminated)
+// would silently flip it back to Probation the instant the page opens, before the admin touches
+// anything. The DISABLE/lock-note half is safe to apply unconditionally either way (disabling
+// doesn't change the stored value, just blocks editing while Internship is the current type) --
+// same `.prop('disabled', ...)` on a select2-native field this app already uses elsewhere (see
+// setEedReadOnly()'s own comment: no special select2 handling needed).
+function applyEmploymentTypeInternLock(isUserAction) {
+    const isIntern = $('#employment_type').val() === 'internship';
+    const $status = $('#employment_status');
+    if (isIntern && isUserAction) {
+        $status.val('probation').trigger('change');
+    }
+    $status.prop('disabled', isIntern);
+    $('#employmentStatusInternLockNote').toggleClass('d-none', !isIntern);
+}
+// 2026-09-02, explicit request: Probation gained the same per-employee override section
+// Internship already had -- direct mirror of applyInternPolicyVisibility() immediately above,
+// reads #employment_status (Employment tab) instead of #employment_type.
+function applyProbationPolicyVisibility() {
+    const shown = $('#employment_status').val() === 'probation';
+    $('#probationPolicySection').toggleClass('d-none', !shown);
+    if (shown) fetchPayrollPolicySettings(function (settings) { renderPolicyInfoCard($('#probationPolicyInfoCardBody'), settings.probation); });
+}
+// 2026-09-02, explicit request: "ดึงค่าจาก 4.1 มาแสดง read-only...ดีไซน์ให้สวยงาม" -- shared by both
+// info cards above. Cached for the lifetime of this page load (company policy doesn't change while
+// editing one employee) -- api/employee.payroll-policy-settings.
+let payrollPolicySettingsCache = null;
+function fetchPayrollPolicySettings(callback) {
+    if (payrollPolicySettingsCache) {
+        callback(payrollPolicySettingsCache);
+        return;
+    }
+    $.getJSON(`${BASE_URL}/api/employee.payroll-policy-settings`, function (res) {
+        if (res.status && res.data) {
+            payrollPolicySettingsCache = res.data;
+            callback(res.data);
+        }
+    });
+}
+function policyInfoBadge(label, value) {
+    return `<span class="badge bg-light text-dark border me-2 mb-2 py-2 px-3"><i class="fa-solid fa-check text-success me-1"></i>${escapeHtml(label)}: <strong>${escapeHtml(value)}</strong></span>`;
+}
+// Renders the effective-policy badge row for ONE settings object (probation or intern, same shape
+// -- base_salary_ratio/defer_pvd/defer_recurring_earning/leave_days_limit/allow_leave/
+// ot_eligible_default, see PayrollPolicyModel::probationSettings()/internSettings()).
+function renderPolicyInfoCard($body, settings) {
+    settings = settings || {};
+    const yesNo = (v) => (v ? (langData['yes'] || 'Yes') : (langData['no'] || 'No'));
+    const ratioText = settings.base_salary_ratio !== null && settings.base_salary_ratio !== undefined
+        ? `${settings.base_salary_ratio}%` : (langData['policy_probation_base_salary_ratio_placeholder'] || '100 (no reduction)');
+    const otText = settings.ot_eligible_default === null || settings.ot_eligible_default === undefined
+        ? (langData['policy_ot_default_not_set'] || 'Not Set (No Default)')
+        : (settings.ot_eligible_default ? (langData['policy_ot_default_eligible'] || 'Eligible') : (langData['policy_ot_default_not_eligible'] || 'Not Eligible'));
+    const leaveText = settings.allow_leave === false
+        ? (langData['no'] || 'No')
+        : (settings.leave_days_limit !== null && settings.leave_days_limit !== undefined ? `${settings.leave_days_limit} ${langData['days_suffix'] || 'days'}` : (langData['policy_leave_days_limit_placeholder'] || 'No limit'));
+    // 2026-09-02, follow-up to close a review-flagged gap: SSO deferral + tax-exempt default badges,
+    // same tri-state display convention as otText above.
+    const taxText = settings.tax_exempt_default === null || settings.tax_exempt_default === undefined
+        ? (langData['policy_ot_default_not_set'] || 'Not Set (No Default)')
+        : (settings.tax_exempt_default ? (langData['policy_tax_default_exempt'] || 'Exempt') : (langData['policy_tax_default_not_exempt'] || 'Not Exempt'));
+    $body.html(
+        policyInfoBadge(langData['policy_probation_base_salary_ratio_label'] || 'Base Salary Ratio', ratioText) +
+        policyInfoBadge(langData['policy_probation_defer_pvd_label'] || 'Defer PVD', yesNo(settings.defer_pvd)) +
+        policyInfoBadge(langData['policy_probation_defer_sso_label'] || 'Defer SSO', yesNo(settings.defer_sso)) +
+        policyInfoBadge(langData['policy_probation_defer_recurring_label'] || 'Defer Recurring Allowances', yesNo(settings.defer_recurring_earning)) +
+        policyInfoBadge(langData['policy_leave_days_limit_label'] || 'Leave Days Limit', leaveText) +
+        policyInfoBadge(langData['policy_ot_eligible_default_label'] || 'OT Eligible (Default)', otText) +
+        policyInfoBadge(langData['policy_tax_exempt_default_label'] || 'Tax Exempt (Default)', taxText)
+    );
+    if (typeof updateText === 'function') updateText($body[0]);
 }
 // 2026-08-31, explicit request: "ตรงหัวข้อภาษี ถ้าเลือก ยกเว้นภาษีไม่ต้องให้เลือก วิธีคำนวณภาษี ซ่อนไปเลย" --
 // Tax Calculation Method has nothing to mean once Tax Exempt is checked, so hide it entirely rather
@@ -149,6 +311,81 @@ function populateSelect2Field(name, id, textTh, textEn) {
     const opt = new Option(label, id, true, true);
     $sel.empty().append(opt).trigger('change');
 }
+// 2026-09-02, explicit request: mixed payment lines -- same "repeatable card, plain classes (not
+// name attributes, so collectEmployeeFormData()'s generic [name] loop never sees them individually
+// and can't collide across rows)" shape as dependentCardHtml()/collectDependentCardData() above,
+// just simpler since nothing here has its own save/delete endpoint -- the whole line set is only
+// ever persisted as one atomic batch inside the main employee save (EmployeePaymentMethodModel::
+// saveLines(), delete+reinsert), so a row removed here just isn't sent next Save, no confirm needed.
+function paymentMethodLineRowHtml(line) {
+    line = line || {};
+    return `
+        <div class="payment-method-line card-surface p-3 mb-2">
+            <div class="row g-2 align-items-end">
+                <div class="col-sm-3">
+                    <label class="form-label mb-1 small text-muted"><span data-i18n="payment_method">Method</span> <span class="text-danger">*</span></label>
+                    <select class="form-select form-select-sm select2-remote payment-line-method required" data-api="/api/payment-method.options" data-exclude-code="mixed"></select>
+                </div>
+                <div class="col-sm-2">
+                    <label class="form-label mb-1 small text-muted" data-i18n="amount_type">Amount Type</label>
+                    <select class="form-select form-select-sm payment-line-amount-type">
+                        <option value="fixed" data-i18n="fixed_amount">Fixed Amount</option>
+                        <option value="percent" data-i18n="percent_of_net">% of Net Pay</option>
+                    </select>
+                </div>
+                <div class="col-sm-2">
+                    <label class="form-label mb-1 small text-muted"><span data-i18n="amount">Amount</span> <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" class="form-control form-control-sm payment-line-amount required" value="${line.amount_value !== undefined && line.amount_value !== null ? line.amount_value : ''}">
+                </div>
+                <div class="col-sm-4 payment-line-bank-account-wrap d-none">
+                    <label class="form-label mb-1 small text-muted"><span data-i18n="bank_account">Bank Account</span></label>
+                    <select class="form-select form-select-sm select2-remote payment-line-bank-account" data-api="/api/employee.payment-account-options"></select>
+                </div>
+                <div class="col-sm-1">
+                    <button type="button" class="btn btn-sm btn-link text-danger btn-remove-payment-line" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+            </div>
+        </div>`;
+}
+function initPaymentMethodLineWidgets($row, line) {
+    line = line || {};
+    if (typeof initSelect2 === 'function') {
+        initSelect2($row.find('.payment-line-method'), { mode: 'ajax' });
+        initSelect2($row.find('.payment-line-bank-account'), { mode: 'ajax' });
+    }
+    $row.find('.payment-line-bank-account').attr('data-cycle-id', $('#cycle_id').val() || '');
+    if (line.payment_method_id) {
+        const label = (currentLang === 'th' ? (line.payment_method_name_th || line.payment_method_name_en) : (line.payment_method_name_en || line.payment_method_name_th)) || String(line.payment_method_id);
+        const opt = new Option(label, line.payment_method_id, true, true);
+        $row.find('.payment-line-method').empty().append(opt).trigger('change');
+    }
+    $row.find('.payment-line-amount-type').val(line.amount_type || 'fixed');
+    const isTransfer = line.payment_method_code === 'transfer';
+    $row.find('.payment-line-bank-account-wrap').toggleClass('d-none', !isTransfer);
+    if (line.bank_account_id) {
+        const baLabel = line.bank_account_name || String(line.bank_account_id);
+        const baOpt = new Option(baLabel, line.bank_account_id, true, true);
+        $row.find('.payment-line-bank-account').empty().append(baOpt).trigger('change');
+    }
+}
+function addPaymentMethodLineRow(line) {
+    const $wrap = $('#paymentMethodLinesWrap');
+    $wrap.append(paymentMethodLineRowHtml(line));
+    initPaymentMethodLineWidgets($wrap.find('.payment-method-line').last(), line || {});
+}
+function collectPaymentMethodLines() {
+    const lines = [];
+    $('#paymentMethodLinesWrap .payment-method-line').each(function () {
+        const $row = $(this);
+        lines.push({
+            payment_method_id: $row.find('.payment-line-method').val(),
+            amount_type: $row.find('.payment-line-amount-type').val(),
+            amount_value: $row.find('.payment-line-amount').val(),
+            bank_account_id: $row.find('.payment-line-bank-account').val() || null,
+        });
+    });
+    return lines;
+}
 function collectEmployeeFormData() {
     const data = {};
     $('#employeeTabsContent [name]').each(function () {
@@ -174,6 +411,7 @@ function collectEmployeeFormData() {
     if (employeeSalaryMasked) {
         data.base_salary_amount = 'XXXX';
     }
+    data.payment_method_lines = collectPaymentMethodLines();
     return data;
 }
 // 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถคำนวณเงินเดือน...
@@ -186,6 +424,17 @@ function collectEmployeeFormData() {
 // the real salary the moment ANY tab gets saved). Tracked via a module-level flag + the input's
 // own readonly state (readonly, not disabled, so it still submits/serializes via jQuery .val()).
 let employeeSalaryMasked = false;
+// 2026-09-02, real gotcha caught before shipping applyEmploymentTypeInternLock() below: Select2
+// (even in 'native' mode, see input.js's own isNative branch) fires its OWN selection change
+// through a synthetic jQuery `.trigger('change')` internally too -- so `e.originalEvent` does NOT
+// reliably distinguish a genuine user pick from populateEmployeeForm()'s own programmatic
+// `.val(...).trigger('change')` on page load (both end up looking the same to a change handler).
+// This flag is the actual distinguishing signal instead: true for the ENTIRE synchronous duration
+// of populateEmployeeForm() (set at its very start, cleared at its very end -- that function has
+// only one async tail, the mixed-payment-lines fetch, which never touches #employment_type), so any
+// #employment_type `change` handler that must NOT fire its "real user action" branch during a page
+// load can just check `!isLoadingEmployeeForm`.
+let isLoadingEmployeeForm = false;
 function applyEmployeeSalaryMaskUi(masked) {
     employeeSalaryMasked = masked;
     const $input = $('#base_salary_amount');
@@ -196,8 +445,40 @@ function applyEmployeeSalaryMaskUi(masked) {
         $input.removeAttr('placeholder');
     }
 }
+// 2026-09-02, explicit request: "ถ้ามีส่งมาให้ให้ Admin Match เอง ต้องมีอะไรบอก และแสดงข้อมูลที่ Sync มาเพื่อให้
+// Admin รู้" -- address_line_1_{scope}/address_line_2_{scope} can be populated (from Origami sync
+// or manual entry) while master_address_id_{scope} stays empty, since this app deliberately never
+// auto-matches free-text province/district/sub-district names to `master_addresses` (real risk of a
+// wrong silent match, see this project's own address-sync notes). Condition is source-agnostic --
+// "there's text but no verified match" -- not "this specifically came from sync", so it also covers
+// a manually-typed address that was never searched/picked. See detail.php's own comment on the 2
+// alert blocks this toggles.
+const ADDRESS_MATCH_SCOPES = ['register', 'contact'];
+function updateAddressMatchIndicator(scope) {
+    const text = ($(`#address_line_1_${scope}`).val() || '').trim();
+    const matched = ($(`#master_address_id_${scope}`).val() || '').trim() !== '';
+    const $alert = $(`#addressUnmatchedAlert${scope.charAt(0).toUpperCase()}${scope.slice(1)}`);
+    if (text !== '' && !matched) {
+        $(`#addressUnmatchedText${scope.charAt(0).toUpperCase()}${scope.slice(1)}`).text(text);
+        $alert.removeClass('d-none');
+    } else {
+        $alert.addClass('d-none');
+    }
+}
+function updateAllAddressMatchIndicators() {
+    ADDRESS_MATCH_SCOPES.forEach(updateAddressMatchIndicator);
+}
+$(document).on('input', '#address_line_1_register', function () { updateAddressMatchIndicator('register'); });
+$(document).on('input', '#address_line_1_contact', function () { updateAddressMatchIndicator('contact'); });
+// Fires AFTER input.js's own delegated `.select-address-item` click handler (public/js/input.js,
+// loaded earlier in header.php -- jQuery runs delegated handlers for the same event in bind order),
+// which is what actually writes the real match into `.master-address-id-field` -- by the time this
+// one runs, the field this reads is already up to date.
+$(document).on('click', '.select-address-item', function () { updateAllAddressMatchIndicators(); });
+
 function populateEmployeeForm(data) {
-    const remoteFields = ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'bank_id', 'report_to_id', 'nationality', 'religion', 'cycle_id', 'work_location_id', 'shift_id'];
+    isLoadingEmployeeForm = true;
+    const remoteFields = ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'bank_id', 'default_bank_account_id', 'payment_method_id', 'report_to_id', 'nationality', 'religion', 'cycle_id', 'work_location_id', 'shift_id', 'employment_type_id'];
     applyEmployeeSalaryMaskUi(data.base_salary_amount === 'XXXX');
     Object.keys(data).forEach(function (key) {
         if (remoteFields.indexOf(key) !== -1) return;
@@ -233,15 +514,40 @@ function populateEmployeeForm(data) {
     if (data.gender) {
         $(`input[name="gender_radio"][value="${data.gender}"]`).prop('checked', true).trigger('change');
     }
-    if (data.payment_type) {
-        $(`input[name="payment_type_radio"][value="${data.payment_type}"]`).prop('checked', true).trigger('change');
+    // 2026-09-02, explicit request: payment method type (transfer/cash/check/mixed) -- replaces the
+    // old payment_type_radio sync. #payment_method_code is set directly from the server's own
+    // resolved code (EmployeeModel::get()'s new payment_method_code join) rather than waiting on
+    // the select2 population below to fire its own select2:select event, so
+    // applyPaymentMethodVisibility()/applyAccountPickerVisibility() are correct immediately even
+    // before that remote option has actually loaded.
+    applyPaymentMethodVisibility(data.payment_method_code || '');
+    if (data.payment_method_id) {
+        const pmTextTh = data.payment_method_name_th || '';
+        const pmTextEn = data.payment_method_name_en || '';
+        populateSelect2Field('payment_method_id', data.payment_method_id, pmTextTh, pmTextEn);
     }
-    // 2026-08-31 -- the generic loop above already wrote the raw value into
-    // #intern_base_salary_ratio_override (it's an ordinary named number input, not excluded via
-    // remoteFields/checkbox/datepicker), this just syncs the UI-only override toggle + field
-    // visibility to match whatever value actually loaded.
-    const hasInternRatioOverride = data.intern_base_salary_ratio_override !== null && data.intern_base_salary_ratio_override !== undefined && data.intern_base_salary_ratio_override !== '';
+    // 2026-08-31 -- the generic loop above already wrote the raw values into every *_override field
+    // (ordinary named inputs/selects, not excluded via remoteFields/checkbox/datepicker), this just
+    // syncs the UI-only override toggle + field visibility to match whatever actually loaded.
+    // 2026-09-02, follow-up to close a real bug found while expanding this to 7 fields: checking
+    // ONLY the ratio field to decide the toggle's state would falsely report "no override" (and
+    // then WIPE every other already-loaded override field via the toggle's own clear-on-uncheck
+    // handler) for an employee whose override lives in a DIFFERENT field (e.g. defer_pvd_override
+    // set but ratio_override left blank) -- now checks ALL 7 fields.
+    const hasAnyOverride = (data, ids) => ids.some(function (id) {
+        const v = data[id];
+        return v !== null && v !== undefined && v !== '';
+    });
+    const hasInternRatioOverride = hasAnyOverride(data, ['intern_base_salary_ratio_override', 'intern_defer_pvd_override',
+        'intern_defer_sso_override', 'intern_defer_recurring_earning_override', 'intern_leave_days_limit_override',
+        'intern_allow_leave_override', 'intern_period_days_override']);
     $('#internRatioOverrideToggle').prop('checked', hasInternRatioOverride).trigger('change');
+    // 2026-09-02, explicit request: Probation gained the same per-employee ratio override
+    // Internship already had -- direct mirror of the toggle sync immediately above.
+    const hasProbationRatioOverride = hasAnyOverride(data, ['probation_base_salary_ratio_override', 'probation_defer_pvd_override',
+        'probation_defer_sso_override', 'probation_defer_recurring_earning_override', 'probation_leave_days_limit_override',
+        'probation_allow_leave_override', 'probation_period_days_override']);
+    $('#probationRatioOverrideToggle').prop('checked', hasProbationRatioOverride).trigger('change');
     // 2026-08-30 (T020) -- data.is_payroll_participant is a DB tinyint (0/1, possibly returned as a
     // numeric string), so compare loosely; defaults to paid (matches the DB column's own DEFAULT 1)
     // when the key is genuinely absent from a get() response that predates this field somehow.
@@ -266,6 +572,8 @@ function populateEmployeeForm(data) {
     // below for work_location_id/shift_id (a select2-remote with no <option> preloaded yet just
     // ignores a plain .val(id), so the field reads as empty and overwrites the real value on save).
     populateSelect2Field('team_id', data.team_id, data.team_name_th, data.team_name_en);
+    // 2026-09-02, Origami candidates.php field batch: same silent-data-loss precedent as Team above.
+    populateSelect2Field('employment_type_id', data.employment_type_id, data.employment_type_name_th, data.employment_type_name_en);
     populateSelect2Field('role_id', data.role_id, data.role_name_th, data.role_name_en);
     populateSelect2Field('position_id', data.position_id, data.position_name_th, data.position_name_en);
     populateSelect2Field('branch_id', data.branch_id, data.branch_name_th, data.branch_name_en);
@@ -273,8 +581,29 @@ function populateEmployeeForm(data) {
         const prefix = data.bank_code ? `${data.bank_code} - ` : '';
         populateSelect2Field('bank_id', data.bank_id, prefix + (data.bank_name_th || ''), prefix + (data.bank_name_en || ''));
     }
+    // 2026-09-02, explicit request: cycle-scoped account picker (moved here from Employment tab) --
+    // data-cycle-id set BEFORE population (not via the #cycle_id change handler, which deliberately
+    // does NOT fire on this programmatic populateSelect2Field('cycle_id', ...) call below -- see
+    // that handler's own comment on why: it would otherwise wipe the value being set right here).
+    $('#default_bank_account_id').attr('data-cycle-id', data.cycle_id || '');
+    if (data.default_bank_account_id) {
+        const dbaTextTh = (data.default_bank_account_bank_name_th || '') + ' - ' + (data.default_bank_account_name || '') + (data.default_bank_account_company_code ? ` (${data.default_bank_account_company_code})` : '');
+        const dbaTextEn = (data.default_bank_account_bank_name_en || '') + ' - ' + (data.default_bank_account_name || '') + (data.default_bank_account_company_code ? ` (${data.default_bank_account_company_code})` : '');
+        populateSelect2Field('default_bank_account_id', data.default_bank_account_id, dbaTextTh, dbaTextEn);
+    }
     populateSelect2Field('report_to_id', data.report_to_id, data.report_to_name_th, data.report_to_name_en);
     populateSelect2Field('cycle_id', data.cycle_id, data.cycle_name, data.cycle_name);
+    // 2026-09-02, explicit request: mixed payment lines -- only fetched for an existing employee
+    // whose payment method actually resolves to 'mixed' (a brand-new/unsaved employee has nothing
+    // to fetch yet either way).
+    $('#paymentMethodLinesWrap').empty();
+    if (data.payment_method_code === 'mixed' && data.id) {
+        $.getJSON(`${BASE_URL}/api/employee.payment-method-lines`, { employee_id: data.id }, function (res) {
+            if (res.status && Array.isArray(res.data)) {
+                res.data.forEach(addPaymentMethodLineRow);
+            }
+        });
+    }
     // Real bug fix (2026-08-19, reported as "Employment tab data disappears after save"): these two
     // were never in remoteFields nor explicitly populated, so on every reload they fell through the
     // generic loop's plain .val(id) -- which does nothing on a select2-remote with no matching
@@ -284,6 +613,8 @@ function populateEmployeeForm(data) {
     populateSelect2Field('shift_id', data.shift_id, data.shift_name_th, data.shift_name_en);
     $('#search_address_register').val((currentLang === 'th' ? data.address_display_th_register : data.address_display_en_register) || '');
     $('#search_address_contact').val((currentLang === 'th' ? data.address_display_th_contact : data.address_display_en_contact) || '');
+    updateAllAddressMatchIndicators();
+    isLoadingEmployeeForm = false;
 }
 // Scoped to the tab-pane the Save button lives in (2026-08-19, explicit request: each tab must be
 // saveable independently) -- used to validate ALL of #employeeTabsContent, so saving e.g. the Info
@@ -372,6 +703,7 @@ function applyEmployeeSaveSuccess(res, wasNew) {
         // hidden in that case.
         applyPayrollParticipantVisibility($('#is_payroll_participant').val() !== '0');
     }
+    refreshEmployeeFormBaseline();
 }
 function saveEmployee($btn) {
     const invalidEl = validateEmployeeForm($btn.closest('.tab-pane'));
@@ -379,6 +711,29 @@ function saveEmployee($btn) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         jumpToField(invalidEl);
         return;
+    }
+    // 2026-09-02, explicit request: mixed payment -- client-side mirror of
+    // EmployeePaymentMethodModel::validateMixedLines()'s own percent-only-sums-to-100 rule (a set
+    // containing any fixed-amount line defers its sum check to payroll-run time, same as server
+    // side, since net pay isn't known here either). Every OTHER save button on this page also runs
+    // through this same function (collectEmployeeFormData() always resends the whole form
+    // regardless of which tab's button was clicked), so this check applies no matter which tab was
+    // actually being edited when Save was pressed -- consistent with is_payroll_participant/
+    // employment_type's own cross-tab-visible fields.
+    if (!$('#sectionMixedPayment').hasClass('d-none')) {
+        const lines = collectPaymentMethodLines();
+        if (lines.length === 0) {
+            showWarning(langData['mixed_payment_lines_required'] || 'At least one payment line is required for a mixed payment method.');
+            return;
+        }
+        const hasFixed = lines.some(function (l) { return l.amount_type === 'fixed'; });
+        if (!hasFixed) {
+            const sum = lines.reduce(function (s, l) { return s + (parseFloat(l.amount_value) || 0); }, 0);
+            if (Math.abs(sum - 100) > 0.01) {
+                showWarning((langData['mixed_payment_percent_sum_error'] || 'Percent lines must sum to exactly 100 (currently {sum}).').replace('{sum}', String(sum)));
+                return;
+            }
+        }
     }
     const payload = collectEmployeeFormData();
     const wasNew = !currentEmployeeId;
@@ -635,6 +990,7 @@ function loadEmployeeIfEditing() {
         // table refresh แล้ว data table ไม่ทำงาน") -- a brand-new employee (this branch) has
         // nothing async to wait for, so the URL-hash tab restore is safe to run immediately.
         activateEmployeeTabFromHash();
+        refreshEmployeeFormBaseline();
         return;
     }
     $.ajax({
@@ -658,9 +1014,16 @@ function loadEmployeeIfEditing() {
                 // has actually loaded. The table itself is lazy-initialized on first tab show
                 // (see the shown.bs.tab handler above), not here.
                 $('#loginHistoryTabItem').removeClass('d-none');
+                // 2026-09-03, Platform Hardening Phase 3 Stage 5 -- same "nothing to override on a
+                // not-yet-saved employee" reasoning; this <li> only even exists in the DOM at all
+                // when the server already confirmed the acting user holds rbac.view (see
+                // detail.php's own PHP-level gate), so this jQuery call is a harmless no-op
+                // (selects nothing) for anyone who can't manage overrides.
+                $('#permissionOverridesTabItem').removeClass('d-none');
             } else {
                 showWarning(res.message || langData['employee_not_found'] || 'Employee not found.');
             }
+            refreshEmployeeFormBaseline();
             // 2026-08-30, real bug found and fixed (explicit report: "เข้าใช้งานใน tab ที่เป็น
             // data table refresh แล้ว data table ไม่ทำงาน") -- root cause: the URL-hash tab
             // restore used to fire unconditionally at the end of the page's own $(function(){...})
@@ -699,17 +1062,79 @@ $(function () {
         applyMilitaryStatusVisibility();
     }).filter(':checked').trigger('change');
     $('#employment_status').on('change', applyEmploymentEndFieldsVisibility).trigger('change');
+    $('#employment_status').on('change', applyProbationPolicyVisibility).trigger('change');
     $('#tax_exempt').on('change', applyTaxExemptVisibility).trigger('change');
     $('#employment_type').on('change', applyInternPolicyVisibility).trigger('change');
-    // 2026-08-31, per-employee override of the company-wide intern pay ratio (see
-    // #internPolicySection's own comment in the view) -- unchecking clears the value so a save
-    // correctly submits null (generic empty-string-to-null coercion in EmployeeModel::save()) instead
-    // of silently keeping a stale hidden value.
+    $('#employment_type').on('change', function (e) { applyEmploymentTypeInternLock(!!e.originalEvent); }).trigger('change');
+    // 2026-09-02, explicit request: payment method type (transfer/cash/check/mixed) -- select2:select
+    // (not plain 'change') is the one event whose payload actually carries the picked option's full
+    // item data (including `code`, per input.js's own processResults() spread) -- the page-LOAD path
+    // sets #payment_method_code directly from the server's own resolved value instead (see
+    // populateEmployeeForm()'s own call to applyPaymentMethodVisibility()), since
+    // populateSelect2Field()'s plain `new Option(...)` never carries that extra data through.
+    $(document).on('select2:select', '#payment_method_id', function (e) {
+        applyPaymentMethodVisibility(e.params.data.code || '');
+    });
+    $(document).on('select2:clear', '#payment_method_id', function () {
+        applyPaymentMethodVisibility('');
+    });
+    // 2026-09-02, explicit request: cycle-scoped account picker -- only updates the data-cycle-id
+    // attribute (read fresh on every select2 search, see input.js's own extraData reader) rather
+    // than also clearing the current selection, since this same 'change' event also fires from
+    // populateSelect2Field('cycle_id', ...)'s own programmatic .trigger('change') on page load --
+    // clearing there would wipe the just-loaded default_bank_account_id value before the user ever
+    // touched anything.
+    $('#cycle_id').on('change', function () {
+        const cycleId = $(this).val() || '';
+        $('#default_bank_account_id').attr('data-cycle-id', cycleId);
+        $('.payment-line-bank-account').attr('data-cycle-id', cycleId);
+    });
+    $(document).on('click', '#btnAddPaymentMethodLine', function () {
+        addPaymentMethodLineRow({});
+    });
+    $(document).on('click', '.btn-remove-payment-line', function () {
+        $(this).closest('.payment-method-line').remove();
+    });
+    // Toggles just THIS row's own bank-account picker, independent of the top-level
+    // applyPaymentMethodVisibility() -- a mixed set can freely combine transfer/cash/check lines.
+    $(document).on('select2:select', '.payment-line-method', function (e) {
+        const code = e.params.data.code || '';
+        $(this).closest('.payment-method-line').find('.payment-line-bank-account-wrap').toggleClass('d-none', code !== 'transfer');
+    });
+    $(document).on('select2:clear', '.payment-line-method', function () {
+        $(this).closest('.payment-method-line').find('.payment-line-bank-account-wrap').addClass('d-none');
+    });
+    // 2026-09-02, redesigned into the "use company policy (read-only info card) vs custom" pattern
+    // -- see #internPolicySection's own comment in the view for the full reasoning. Unchecking
+    // clears the value so a save correctly submits null (generic empty-string-to-null coercion in
+    // EmployeeModel::save()) instead of silently keeping a stale hidden value; the info card
+    // reappears the moment "custom" is unchecked, showing the company default that's back in effect.
+    // 2026-09-02, follow-up to close a review-flagged gap: expanded from 1 field (ratio) to ALL 7
+    // intern_*_override columns -- unchecking must clear EVERY one of them, not just the ratio, or
+    // collectEmployeeFormData()'s generic [name] loop would still read+submit a stale hidden value
+    // for a field the user can no longer even see.
+    const INTERN_OVERRIDE_FIELD_IDS = ['intern_base_salary_ratio_override', 'intern_defer_pvd_override',
+        'intern_defer_sso_override', 'intern_defer_recurring_earning_override', 'intern_leave_days_limit_override',
+        'intern_allow_leave_override', 'intern_period_days_override'];
+    const PROBATION_OVERRIDE_FIELD_IDS = ['probation_base_salary_ratio_override', 'probation_defer_pvd_override',
+        'probation_defer_sso_override', 'probation_defer_recurring_earning_override', 'probation_leave_days_limit_override',
+        'probation_allow_leave_override', 'probation_period_days_override'];
     $('#internRatioOverrideToggle').on('change', function () {
         const checked = $(this).is(':checked');
-        $('#internRatioOverrideFieldLabel, #internRatioOverrideFieldWrap').toggleClass('d-none', !checked);
+        $('#internRatioOverrideFieldsRow').toggleClass('d-none', !checked);
+        $('#internPolicyInfoCard').toggleClass('d-none', checked);
         if (!checked) {
-            $('#intern_base_salary_ratio_override').val('');
+            INTERN_OVERRIDE_FIELD_IDS.forEach(function (id) { $(`#${id}`).val('').trigger('change'); });
+        }
+    });
+    // 2026-09-02, Probation gained the same per-employee override Internship already had -- direct
+    // mirror of the toggle handler immediately above.
+    $('#probationRatioOverrideToggle').on('change', function () {
+        const checked = $(this).is(':checked');
+        $('#probationRatioOverrideFieldsRow').toggleClass('d-none', !checked);
+        $('#probationPolicyInfoCard').toggleClass('d-none', checked);
+        if (!checked) {
+            PROBATION_OVERRIDE_FIELD_IDS.forEach(function (id) { $(`#${id}`).val('').trigger('change'); });
         }
     });
     $('#use_register_address').on('change', function () {
@@ -727,13 +1152,10 @@ $(function () {
                 $(`#${toId}`).prop('readonly', false).removeClass('bg-light');
             }
         });
+        // Mirroring above can change master_address_id_contact (matched<->unmatched) either way --
+        // re-check both, same "not yet matched" indicator as populateEmployeeForm()'s own call.
+        updateAllAddressMatchIndicators();
     });
-    $('input[name="payment_type_radio"]').on('change', function () {
-        const type = $(this).val();
-        $('#payment_type').val(type);
-        $('#sectionBankPayment').toggleClass('d-none', type !== 'bank');
-        applyPaymentTypeRequired(type);
-    }).filter(':checked').trigger('change');
     // 2026-08-30 (T020) -- applyPayrollParticipantVisibility() itself sets #is_payroll_participant.
     $('input[name="is_payroll_participant_radio"]').on('change', function () {
         applyPayrollParticipantVisibility($(this).val() === '1');
@@ -818,6 +1240,7 @@ $(function () {
     // above) now saves spouse + father/mother + every dependent card together -- see
     // saveFamilyTab(). Every other tab's button is untouched, still the plain per-tab saveEmployee().
     $('#btnNextDocuments').on('click', function () { saveFamilyTab($(this)); });
+    $('.btn-cancel-employee-tab').on('click', cancelEmployeeEdit);
     loadEmployeeIfEditing();
     initChildTables();
     initDocumentUpload();
@@ -856,6 +1279,11 @@ const DOCUMENT_INPUT_MAP = {
     doc_bank_book_copy: 'bank_book_copy',
     doc_resume: 'resume',
     doc_education_certificate: 'education_certificate',
+    // 2026-09-03, alongside EmployeeSyncer's own document-scan sync (see EmployeeModel::
+    // documentTypes()'s own docblock) -- work_permit_copy above already covers a synced work
+    // permit scan too, no 3rd input needed for that one.
+    doc_passport_copy: 'passport_copy',
+    doc_visa_copy: 'visa_copy',
     doc_other: 'other'
 };
 const DOCUMENT_TYPE_LABEL_KEY = {
@@ -866,22 +1294,44 @@ const DOCUMENT_TYPE_LABEL_KEY = {
     bank_book_copy: 'bank_book_copy',
     resume: 'resume',
     education_certificate: 'education_certificate',
+    passport_copy: 'passport_copy',
+    visa_copy: 'visa_copy',
     other: 'other_documents'
 };
 const ALLOWED_DOC_EXTENSIONS = ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'];
 const MAX_DOC_SIZE = 10 * 1024 * 1024;
+// 2026-09-03, alongside EmployeeSyncer's own document-scan sync -- a plain badge (not editable,
+// not a link) distinguishing a row a human uploaded here from one EmployeeSyncer wrote from an
+// Origami document_url, same "manual vs synced" visual convention this app already uses elsewhere
+// for sync-derived data.
+function documentSourceBadge(source) {
+    if (source === 'sync') {
+        return `<span class="badge bg-info-subtle text-info" data-i18n="document_source_sync">${escapeHtml(langData['document_source_sync'] || 'Synced from Origami')}</span>`;
+    }
+    return `<span class="badge bg-secondary-subtle text-secondary" data-i18n="document_source_manual">${escapeHtml(langData['document_source_manual'] || 'Manual')}</span>`;
+}
 function addDocumentRow(doc) {
     const labelKey = DOCUMENT_TYPE_LABEL_KEY[doc.document_type] || doc.document_type;
     const typeLabel = langData[labelKey] || doc.document_type;
+    // Platform Hardening Phase 5B: a small preview thumbnail for image-mime rows (jpg/png only --
+    // pdf/doc/docx never get one, see ThumbnailGenerator's own docblock) beside the filename, falling
+    // back to plain filename text when thumbnail_path is NULL (non-image doc, or a row uploaded
+    // before this column existed).
+    const thumbHtml = doc.thumbnail_path
+        ? `<img src="${BASE_URL}/${doc.thumbnail_path}" alt="" class="doc-row-thumb me-2">`
+        : '';
     const $tr = $(
         '<tr>' +
-        `<td>${escapeHtml(doc.file_name)}</td>` +
+        `<td>${thumbHtml}${escapeHtml(doc.file_name)}</td>` +
         `<td data-i18n="${labelKey}">${escapeHtml(typeLabel)}</td>` +
         `<td>${escapeHtml(doc.uploaded_at || '')}</td>` +
+        `<td class="text-center">${documentSourceBadge(doc.source)}</td>` +
         '<td class="text-center">' +
-        '<div class="btn-group border rounded-3 bg-white">' +
-        `<a href="${BASE_URL}/api/employee.document.view?id=${encodeURIComponent(doc.id)}" target="_blank" class="btn btn-link text-info"><i class="fa-solid fa-eye"></i></a>` +
-        '<button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-document"><i class="fa-solid fa-trash-can"></i></button>' +
+        // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+        // ".btn-circle-action" section) replace the old adjacent .btn-group.
+        '<div class="d-flex gap-1 justify-content-center">' +
+        `<a href="${BASE_URL}/api/employee.document.view?id=${encodeURIComponent(doc.id)}" target="_blank" class="btn btn-link btn-circle-action text-info"><i class="fa-solid fa-eye"></i></a>` +
+        '<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-document"><i class="fa-solid fa-trash-can"></i></button>' +
         '</div>' +
         '</td>' +
         '</tr>'
@@ -977,7 +1427,7 @@ function initLoginHistoryTable() {
 }
 function updateClearLoginHistoryFilterVisibility() {
     const hasFilter = !!($('#loginHistoryFilterDateFrom').val() || $('#loginHistoryFilterDateTo').val() || $('#loginHistoryFilterDevice').val() || $('#loginHistoryFilterBrowser').val());
-    $('#btnClearLoginHistoryFilter').toggleClass('d-none', !hasFilter);
+    $('#loginHistoryFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 $(document).on('change', '#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo, #loginHistoryFilterDevice, #loginHistoryFilterBrowser', function () {
     updateClearLoginHistoryFilterVisibility();
@@ -1013,6 +1463,207 @@ $(document).on('shown.bs.tab', '#login-history-tab', function () {
     loadLoginHistoryFilterOptions();
     initLoginHistoryTable();
 });
+
+/**
+ * 2026-09-03, Platform Hardening Phase 3 Stage 5 -- "Permission Overrides" tab. Not a DataTable
+ * (a fixed permission-list x ONE-employee grid, same reasoning as the Permission Matrix's own plain
+ * <table>). `poState` is the single source of truth for every row's current choice, mirroring
+ * permission-matrix.js's own `pmState` pattern (never read fresh from the DOM at Save time) --
+ * keyed by permission_id, value is `{effect: 'grant'|'deny'|null, allow_scope, detail_level}`
+ * (`effect: null` means Inherit). `poBaselineSnapshot` backs a simple unsaved-changes guard on tab
+ * switch, matching the Permission Matrix's own Cancel-button dirty-check.
+ *
+ * Module labels duplicate permission-matrix.js's own `permissionModuleLabel()` map on purpose,
+ * not shared via a common helper -- keep both in sync when a new module_code is added to
+ * `permissions` (that file's own docblock already documents having hit this exact "forgot to
+ * update the map" bug twice; this is the SAME map, just present in a second file now that there
+ * are 2 real consumers of it).
+ */
+let poState = {};
+let poRows = [];
+let poBaselineSnapshot = null;
+
+function permissionOverrideModuleLabel(code) {
+    const map = {
+        holiday: langData['holiday'] || 'Holiday',
+        leave_type: langData['leave_type'] || 'Leave Type',
+        approval_workflow: langData['approval_workflow'] || 'Approval Workflow',
+        approval_request: langData['approval_monitor'] || 'Approval Monitor',
+        rbac: langData['permissions_menu'] || langData['permissions'] || 'Permissions',
+        employee: langData['employee'] || 'Employee',
+        company_structure: langData['organization_structure'] || 'Organization Structure',
+        bank_account: langData['bank_account'] || 'Bank Account',
+        payslip_template: langData['payslip_template'] || 'Payslip Template',
+        payroll_configuration: langData['payroll_configuration'] || 'Payroll Configuration',
+        tax_statutory: langData['local_statutory_and_tax_settings'] || 'Local Statutory & Tax Settings',
+        company_profile: langData['company_profile'] || 'Company Profile',
+        employment_certificate_template: langData['employment_certificate_template'] || 'Employment Certificate Template',
+        email_queue: langData['email_queue_log'] || 'Email Queue Log',
+        employee_login_log: langData['login_history'] || 'Login History',
+        payroll_run_cash_payment: langData['tab_cash_payments'] || 'Cash Payments',
+        payroll_sync: langData['origami_sync_summary_title'] || 'Origami Sync',
+        reports: langData['reports'] || 'Reports',
+        salary_amount: langData['permission_module_salary_amount'] || 'Salary Amount Visibility',
+        payroll_run: langData['payroll_process'] || 'Payroll Process',
+        shift: langData['shift'] || 'Shift',
+        work_location: langData['work_location'] || 'Work Location',
+        ot_rate: langData['ot_rate'] || 'OT Rate',
+    };
+    return map[code] || code;
+}
+
+function escapeHtmlPo(str) {
+    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
+}
+
+function initPermissionOverridesTab() {
+    if (!currentEmployeeId) return;
+    const $body = $('#permissionOverridesTableBody');
+    $body.html(`<tr><td colspan="4" class="text-center text-muted py-4"><i class="fa-solid fa-spinner fa-spin"></i></td></tr>`);
+    $.ajax({
+        url: `${BASE_URL}/api/permission-employee-overrides.get`,
+        method: 'GET',
+        data: { employee_id: currentEmployeeId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                $body.html(`<tr><td colspan="4" class="text-center text-muted py-4">${escapeHtmlPo(res.message || langData['load_employee_failed'] || 'Failed to load.')}</td></tr>`);
+                return;
+            }
+            poRows = res.data || [];
+            poState = {};
+            poRows.forEach(r => {
+                poState[r.permission_id] = { effect: r.override_effect, allow_scope: r.allow_scope, detail_level: r.detail_level };
+            });
+            renderPermissionOverridesTable();
+            poBaselineSnapshot = JSON.stringify(poState);
+        },
+        error: function () {
+            $body.html(`<tr><td colspan="4" class="text-center text-muted py-4">${escapeHtmlPo(langData['load_employee_failed'] || 'Failed to load.')}</td></tr>`);
+        }
+    });
+}
+
+function renderPermissionOverridesTable() {
+    const $body = $('#permissionOverridesTableBody');
+    if (!poRows.length) {
+        $body.html(`<tr><td colspan="4" class="text-center text-muted py-4">-</td></tr>`);
+        return;
+    }
+    let html = '';
+    let lastModule = null;
+    poRows.forEach(p => {
+        if (p.module_code !== lastModule) {
+            lastModule = p.module_code;
+            html += `<tr class="table-light"><td colspan="4"><strong>${escapeHtmlPo(permissionOverrideModuleLabel(p.module_code))}</strong></td></tr>`;
+        }
+        const state = poState[p.permission_id] || { effect: null, allow_scope: 'all', detail_level: 'full' };
+        const effect = state.effect || 'inherit';
+        const isApprovalAct = p.permission_key === 'approval_request.act';
+        const isSalaryAmount = p.permission_key.indexOf('salary_amount.') === 0;
+        const showScope = effect === 'grant' && (isApprovalAct || isSalaryAmount);
+        html += `<tr data-permission-id="${p.permission_id}">
+            <td>${escapeHtmlPo(currentLang === 'th' ? p.name_th : p.name_en)}</td>
+            <td class="text-center">
+                ${p.role_granted
+                    ? `<i class="fa-solid fa-check text-success" title="${escapeHtmlPo(langData['inherited'] || 'Inherited')}"></i>`
+                    : `<i class="fa-solid fa-minus text-muted" title="${escapeHtmlPo(langData['inherited'] || 'Inherited')}"></i>`}
+            </td>
+            <td class="text-center">
+                <div class="btn-group btn-group-sm po-effect-group" role="group">
+                    <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-inherit-${p.permission_id}" value="" ${effect === 'inherit' ? 'checked' : ''}>
+                    <label class="btn btn-outline-secondary" for="po-inherit-${p.permission_id}">${escapeHtmlPo(langData['override_inherit'] || 'Inherit')}</label>
+                    <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-grant-${p.permission_id}" value="grant" ${effect === 'grant' ? 'checked' : ''}>
+                    <label class="btn btn-outline-success" for="po-grant-${p.permission_id}">${escapeHtmlPo(langData['override_grant'] || 'Grant')}</label>
+                    <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-deny-${p.permission_id}" value="deny" ${effect === 'deny' ? 'checked' : ''}>
+                    <label class="btn btn-outline-danger" for="po-deny-${p.permission_id}">${escapeHtmlPo(langData['override_deny'] || 'Deny')}</label>
+                </div>
+            </td>
+            <td class="text-center">`;
+        if (isApprovalAct) {
+            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}" style="width:auto;margin:0 auto;">
+                    <option value="all" ${state.allow_scope === 'own_department' ? '' : 'selected'}>${langData['scope_all'] || 'All'}</option>
+                    <option value="own_department" ${state.allow_scope === 'own_department' ? 'selected' : ''}>${langData['scope_own_department'] || 'Own Dept.'}</option>
+                </select>`;
+        } else if (isSalaryAmount) {
+            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}" style="width:auto;margin:0 auto;">
+                    <option value="all" ${state.allow_scope === 'all' ? 'selected' : ''}>${langData['scope_all'] || 'All'}</option>
+                    <option value="own_only" ${state.allow_scope === 'own_only' ? 'selected' : ''}>${langData['scope_own_only'] || 'Own Only'}</option>
+                </select>`;
+        } else {
+            html += '-';
+        }
+        html += `</td></tr>`;
+    });
+    $body.html(html);
+}
+
+$(document).on('change', '.po-effect-radio', function () {
+    const $row = $(this).closest('tr');
+    const permissionId = $row.data('permission-id');
+    const effect = $(this).val() || null;
+    const prevState = poState[permissionId] || { allow_scope: 'all', detail_level: 'full' };
+    poState[permissionId] = { effect: effect, allow_scope: prevState.allow_scope || 'all', detail_level: prevState.detail_level || 'full' };
+    const p = poRows.find(r => String(r.permission_id) === String(permissionId));
+    const isApprovalAct = p && p.permission_key === 'approval_request.act';
+    const isSalaryAmount = p && p.permission_key.indexOf('salary_amount.') === 0;
+    const showScope = effect === 'grant' && (isApprovalAct || isSalaryAmount);
+    $row.find('.po-scope-select').toggleClass('d-none', !showScope);
+});
+$(document).on('change', '.po-scope-select', function () {
+    const $row = $(this).closest('tr');
+    const permissionId = $row.data('permission-id');
+    if (!poState[permissionId]) return;
+    poState[permissionId].allow_scope = $(this).val();
+});
+
+function permissionOverridesHasUnsavedChanges() {
+    return poBaselineSnapshot !== null && JSON.stringify(poState) !== poBaselineSnapshot;
+}
+
+$(document).on('click', '#btnSavePermissionOverrides', function () {
+    if (!currentEmployeeId) return;
+    const overrides = Object.keys(poState)
+        .filter(permId => poState[permId].effect)
+        .map(permId => ({
+            permission_id: parseInt(permId, 10),
+            effect: poState[permId].effect,
+            allow_scope: poState[permId].allow_scope || 'all',
+            detail_level: poState[permId].detail_level || 'full',
+        }));
+    const $btn = $(this).prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/permission-employee-overrides.save`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ employee_id: currentEmployeeId, overrides: overrides }),
+        dataType: 'json',
+        success: function (res) {
+            $btn.prop('disabled', false);
+            if (res.status) {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+                poBaselineSnapshot = JSON.stringify(poState);
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'An error occurred.');
+            }
+        },
+        error: function () {
+            $btn.prop('disabled', false);
+            showWarning(langData['save_failed'] || 'An error occurred while saving.');
+        }
+    });
+});
+
+// Lazy-init on first tab show, same DataTables-inside-a-hidden-tab caution as every other lazy tab
+// on this page even though this one isn't a DataTable -- no point fetching before the pane is
+// visible. Re-fetches every time the tab is shown again (cheap, always-fresh, same precedent as
+// initLoginHistoryTable()'s own ajax.reload() on a repeat visit) UNLESS there are unsaved changes,
+// in which case switching away and back must not silently discard an in-progress edit.
+$(document).on('shown.bs.tab', '#permission-overrides-tab', function () {
+    if (permissionOverridesHasUnsavedChanges()) return;
+    initPermissionOverridesTab();
+});
+
 function loadDocumentList() {
     if (!currentEmployeeId) return;
     $('#tableDocumentList tbody').empty();
@@ -1436,30 +2087,29 @@ function eedStatusBadge(row) {
 function eedActionButtons(row) {
     const notStarted = Number(row.current_installment) === 0;
     const isOpen = row.status === 'active' || row.status === 'paused';
-    // Button-group wrapper (2026-08-21, explicit request: "ปุ่มในตารางทั้งหมด ปรับให้เป็น button
-    // group ให้หมดเหมือนหน้า Employee") -- same idiom as public/js/employee/list.js's row actions
-    // (.btn-group.border.rounded-3.bg-white, btn-link buttons, border-start divider on every button
-    // after the first) instead of a manually-gapped flex row.
-    let html = '<div class="btn-group border rounded-3 bg-white">';
+    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+    // ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention
+    // this section previously followed (2026-08-21).
+    let html = '<div class="d-flex gap-1 justify-content-center">';
     // View is always available, Edit only while nothing has been paid yet (2026-08-20, explicit
     // request: "Status ของแต่ละงวดการจ่าย...จ่ายแล้วหรือรอจ่าย") -- once current_installment > 0
     // save() permanently blocks edits (see EmployeeEarningDeductionModel::save()), so this is the
     // only way to see the per-installment paid/pending schedule for an assignment already in
     // progress or finished. Same modal, populateEedForm(row, true) just disables everything.
-    html += `<button type="button" class="btn btn-link text-info btn-view-eed" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
+    html += `<button type="button" class="btn btn-link btn-circle-action text-info btn-view-eed" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
     if (isOpen && notStarted) {
-        html += `<button type="button" class="btn btn-link text-warning border-start btn-edit-eed" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-eed" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
     }
     if (isOpen) {
         if (row.status === 'active') {
-            html += `<button type="button" class="btn btn-link text-warning border-start btn-eed-status" data-id="${row.id}" data-status="paused" title="${langData['pause_item'] || 'Pause'}"><i class="fa-solid fa-pause"></i></button>`;
+            html += `<button type="button" class="btn btn-link btn-circle-action text-warning btn-eed-status" data-id="${row.id}" data-status="paused" title="${langData['pause_item'] || 'Pause'}"><i class="fa-solid fa-pause"></i></button>`;
         } else {
-            html += `<button type="button" class="btn btn-link text-success border-start btn-eed-status" data-id="${row.id}" data-status="active" title="${langData['resume_item'] || 'Resume'}"><i class="fa-solid fa-play"></i></button>`;
+            html += `<button type="button" class="btn btn-link btn-circle-action text-success btn-eed-status" data-id="${row.id}" data-status="active" title="${langData['resume_item'] || 'Resume'}"><i class="fa-solid fa-play"></i></button>`;
         }
-        html += `<button type="button" class="btn btn-link text-danger border-start btn-eed-status" data-id="${row.id}" data-status="cancelled" title="${langData['cancel_item'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-eed-status" data-id="${row.id}" data-status="cancelled" title="${langData['cancel_item'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
     }
     if (isOpen && notStarted) {
-        html += `<button type="button" class="btn btn-link py-1 text-danger border-start btn-delete-eed" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-eed" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
     }
     html += '</div>';
     return html;
@@ -1495,7 +2145,15 @@ function eedAmountSummary(row) {
 // instead when the row has no ped_type_id (custom item, see EmployeeEarningDeductionModel::save()).
 function eedItemNameCell(row) {
     const label = escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '');
-    const badge = row.ped_type_id ? '' : ` <span class="badge bg-secondary-subtle text-secondary">${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
+    // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- distinct badge for an
+    // "Other" bucket item (is_other=1) vs a genuinely one-off custom item, so it's visually obvious
+    // this label is aggregated into the shared Other Income/Other Deduction report bucket, not its
+    // own unique line.
+    const badge = row.ped_type_id
+        ? ''
+        : (row.is_other
+            ? ` <span class="badge bg-info-subtle text-info">${langData['manual_line_other_badge'] || 'Other'}</span>`
+            : ` <span class="badge bg-secondary-subtle text-secondary">${langData['manual_line_custom_badge'] || 'Custom'}</span>`);
     const codeLine = row.item_code ? escapeHtml(row.item_code) : '';
     // 2026-08-31: payee_type widened beyond "always another employee" -- 'company' has no
     // payee_employee_id at all (see EmployeeEarningDeductionModel::save()'s own docblock), so this
@@ -1505,6 +2163,13 @@ function eedItemNameCell(row) {
         payeeTag = `<div class="text-muted small"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(row.payee_employee_no || ('#' + row.payee_employee_id))}</div>`;
     } else if (row.payee_type === 'company') {
         payeeTag = `<div class="text-muted small"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+    } else if (row.payee_type === 'other_person') {
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- real gap found
+        // while adding 'other_person' to this modal: this cell already tagged 'employee'/'company'/
+        // 'not_disbursed' but had no branch at all for 'other_person', so a deduction already routed
+        // to a third party (possible via the backend since Phase 1/4, just never reachable through
+        // THIS modal's own UI until this round) would have shown no payee tag whatsoever here.
+        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-building-columns me-1"></i>${escapeHtml(row.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
     } else if (row.payee_type === 'not_disbursed') {
         // 2026-08-31, same-day follow-up.
         payeeTag = `<div class="text-muted small"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
@@ -1750,6 +2415,16 @@ function setEedPayeeType(type) {
     if (type !== 'employee') {
         $('#eed_payee_employee_id').val(null).trigger('change');
     }
+    // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- same destination
+    // sub-form pattern as #erdDestinationWrapper (Phase 6)/#manualLineDestinationWrapper (Phase 2).
+    $('#eedDestinationWrapper').toggleClass('d-none', type !== 'other_person');
+    if (type !== 'other_person') {
+        $('#eed_destination_select').val(null).trigger('change');
+        $('#eed_dest_account_name, #eed_dest_account_no, #eed_dest_bank_branch').val('');
+        $('#eed_dest_bank').val(null).trigger('change');
+        $('#eed_dest_save_for_reuse').prop('checked', false);
+        $('#eedDestinationNewFields').removeClass('d-none');
+    }
     // 2026-08-31, same-day follow-up: 'not_disbursed' never shows this checkbox -- forced excluded
     // at the model layer (EmployeeEarningDeductionModel::save()'s own comment), a toggle here would
     // be misleading since unchecking/checking it would have no actual effect.
@@ -1759,12 +2434,42 @@ function setEedPayeeType(type) {
 // in catalog mode, the custom pair only in custom mode -- validateEedForm() already skips anything
 // inside a .d-none ancestor, so toggling both visibility and .required here is enough, no change
 // needed there.
+// 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- same toggle-button +
+// dependent-fields pattern as setEedPayeeType() above, plus the 'other_person' destination
+// sub-form (mirrors payroll/detail.js's own #manualLineDestinationWrapper handling for the
+// Process Detail manual-line flow -- see that file's own comment for the full reasoning, not
+// repeated here). This is the TEMPLATE-level payee/destination (employee_recurring_deductions);
+// a specific payroll run can still override it for itself only, via that run's own Manage Items
+// modal -- never written back to this form.
+function setErdPayeeType(type) {
+    $('#erdPayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
+    $('#erdPayeeEmployeeWrapper').toggleClass('d-none', type !== 'employee');
+    $('#erd_payee_employee_id').toggleClass('required', type === 'employee');
+    if (type !== 'employee') {
+        $('#erd_payee_employee_id').val(null).trigger('change');
+    }
+    $('#erdDestinationWrapper').toggleClass('d-none', type !== 'other_person');
+    if (type !== 'other_person') {
+        $('#erd_destination_select').val(null).trigger('change');
+        $('#erd_dest_account_name, #erd_dest_account_no, #erd_dest_bank_branch').val('');
+        $('#erd_dest_bank').val(null).trigger('change');
+        $('#erd_dest_save_for_reuse').prop('checked', false);
+        $('#erdDestinationNewFields').removeClass('d-none');
+    }
+}
+// 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- a 3rd mode, "Other"
+// ('other'), reuses #eedCustomFields' own free-text #eed_custom_item_name input VERBATIM (no new
+// DOM) -- the only difference from plain "Custom Item" is that submit() below additionally sends
+// is_other=true, which PayrollRunModel::resolveManualLineRow() uses to derive a FIXED
+// OTHER_INCOME/OTHER_DEDUCTION aggregation code instead of a per-name CUSTOM: one (see that
+// method's own docblock) -- the employee-typed label itself ("ค่าปรับผิดสัญญาจ้าง" etc.) is
+// unchanged and still shown as-is everywhere a custom item's name already shows.
 function setEedMode(mode) {
     $('#eedModeToggle button').removeClass('active').filter(`[data-mode="${mode}"]`).addClass('active');
     $('#eedCatalogFields').toggleClass('d-none', mode !== 'catalog');
-    $('#eedCustomFields').toggleClass('d-none', mode !== 'custom');
+    $('#eedCustomFields').toggleClass('d-none', mode === 'catalog');
     $('#eed_ped_type_id').toggleClass('required', mode === 'catalog');
-    $('#eed_custom_item_name').toggleClass('required', mode === 'custom');
+    $('#eed_custom_item_name').toggleClass('required', mode !== 'catalog');
 }
 // Toggles the whole modal between editable (Add / not-yet-started Edit) and read-only (View, for an
 // assignment that already has paid/skipped installments -- save() permanently blocks editing those,
@@ -1853,7 +2558,10 @@ function populateEedForm(row, readOnly) {
         const opt = new Option(`[${row.item_code}] ${label}`, row.ped_type_id, true, true);
         $('#eed_ped_type_id').empty().append(opt).trigger('change');
     } else {
-        setEedMode('custom');
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- row.is_other picks
+        // which mode button re-activates; the free-text field itself is populated identically
+        // either way (see setEedMode()'s own docblock -- "Other" reuses #eedCustomFields verbatim).
+        setEedMode(row.is_other ? 'other' : 'custom');
         $('#eed_custom_item_name').val(row.item_name_th || row.item_name_en || '');
     }
     // Same datepicker-state-desync bug/fix as populateEmployeeForm() above -- this modal's date
@@ -1871,6 +2579,11 @@ function populateEedForm(row, readOnly) {
         setEedPayeeType('employee');
     } else if (row.payee_type === 'company') {
         setEedPayeeType('company');
+    } else if (row.payee_type === 'other_person' && row.destination_id) {
+        setEedPayeeType('other_person');
+        const destOpt = new Option(row.destination_account_name || '', row.destination_id, true, true);
+        $('#eed_destination_select').empty().append(destOpt).trigger('change');
+        $('#eedDestinationNewFields').addClass('d-none');
     } else if (row.payee_type === 'not_disbursed') {
         // 2026-08-31, same-day follow-up -- without this branch an existing not_disbursed row
         // would silently fall into the 'else' below and reset to 'none' every time it's reopened.
@@ -1948,11 +2661,29 @@ function collectEedFormData() {
         data.fee_percent = feePercent;
         data.fee_base = feeBase;
     }
-    if (mode === 'custom') {
+    if (mode === 'custom' || mode === 'other') {
         data.custom_item_name = $('#eed_custom_item_name').val().trim();
         data.custom_item_type = $('#eed_custom_item_type').val();
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- see setEedMode()'s
+        // own docblock: "Other" reuses the exact same custom-item fields, this flag is the only
+        // difference sent to the backend.
+        if (mode === 'other') {
+            data.is_other = true;
+        }
     } else {
         data.ped_type_id = $('#eed_ped_type_id').val();
+    }
+    if (data.payee_type === 'other_person') {
+        const savedDestinationId = $('#eed_destination_select').val();
+        if (savedDestinationId) {
+            data.destination_id = savedDestinationId;
+        } else {
+            data.account_name = $('#eed_dest_account_name').val().trim();
+            data.account_no = $('#eed_dest_account_no').val().trim();
+            data.bank_id = $('#eed_dest_bank').val();
+            data.bank_branch = $('#eed_dest_bank_branch').val().trim() || undefined;
+            data.is_saved = $('#eed_dest_save_for_reuse').is(':checked');
+        }
     }
     return data;
 }
@@ -1979,6 +2710,8 @@ function initEedUI() {
         // modal opens can leave stale state/duplicate options behind -- matches #eed_ped_type_id's
         // own established once-at-page-load pattern directly above).
         initSelect2('#eed_payee_employee_id', { mode: 'ajax', allowClear: true });
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+        initSelect2('#eed_destination_select', { mode: 'ajax', allowClear: true });
     }
     // 2026-08-30, explicit request: "ทำให้ fixed_amount/percent_rate เป็นค่าเริ่มต้นอัตโนมัติตอน
     // assign ให้พนักงาน" -- catalog fixed_amount/percent_rate are unused for automatic calculation
@@ -2012,6 +2745,12 @@ function initEedUI() {
     });
     $(document).on('click', '#eedPayeeTypeToggle button', function () {
         setEedPayeeType($(this).data('payee-type'));
+    });
+    $(document).on('select2:select', '#eed_destination_select', function () {
+        $('#eedDestinationNewFields').addClass('d-none');
+    });
+    $(document).on('select2:clear', '#eed_destination_select', function () {
+        $('#eedDestinationNewFields').removeClass('d-none');
     });
     $(document).on('click', '.btn-add-earning', function () {
         if (!currentEmployeeId) {
@@ -2072,6 +2811,15 @@ function initEedUI() {
         if (invalidEl) {
             showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
             return;
+        }
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- same either/or
+        // check as the Process Detail manual-line flow's own #manualLineDestinationWrapper (Phase 2).
+        if ($('#eedPayeeTypeToggle button.active').data('payee-type') === 'other_person' && !$('#eed_destination_select').val()) {
+            const hasNewFields = $('#eed_dest_account_name').val().trim() && $('#eed_dest_account_no').val().trim() && $('#eed_dest_bank').val();
+            if (!hasNewFields) {
+                showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
+                return;
+            }
         }
         const payload = collectEedFormData();
         const $btn = $('#eedForm button[type="submit"]');
@@ -2289,6 +3037,15 @@ function initOtRateUI() {
 // Allowance tab. OT rate is only saved when this employee already has an id (a brand-new employee's
 // first save has none yet -- same "save basic info first" precedent as Recurring Allowances) AND
 // OT Eligible is checked (nothing meaningful to save otherwise, the section is hidden).
+// 2026-09-02, explicit request: "ตั้งค่าอัตรา OT น่าจะมาอยู่ที่การจ้างงานมากกว่า...ย้ายข้อมูลการจ่ายเงิน ไปไว้
+// Tab เงินเดือน" -- #btnNextSalary is physically the Save button at the bottom of the EMPLOYMENT tab
+// pane (this function's own name is a "reveals the Salary tab next" label, not "saves Salary tab's
+// own fields" -- see the button-naming convention comment where every #btnNextX handler is wired
+// up). Payment Information (incl. #sectionMixedPayment) has now moved OUT of this tab into Salary,
+// so the mixed-payment-lines guard that used to live here (duplicated from saveEmployee()'s own
+// copy, back when this WAS the most likely save path to catch it on) was removed -- saveEmployee()'s
+// copy already covers it for every other Save button, #btnNextSocial (Salary tab's own real closing
+// Save button) included, now that the section it guards lives there.
 function saveSalaryTab($btn) {
     const invalidEl = validateEmployeeForm($btn.closest('.tab-pane'));
     if (invalidEl) {
@@ -2688,6 +3445,11 @@ function initRecurringDeductionUI() {
     });
     if (typeof initSelect2 === 'function') {
         initSelect2('#erd_ped_type_id', { mode: 'ajax' });
+        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- allowClear override
+        // on top of the generic '.select2-remote' sweep above (same "explicit follow-up call only
+        // for non-default options" precedent #eed_payee_employee_id's own comment documents).
+        initSelect2('#erd_payee_employee_id', { mode: 'ajax', allowClear: true });
+        initSelect2('#erd_destination_select', { mode: 'ajax', allowClear: true });
     }
     $(document).on('select2:select', '#erd_ped_type_id', function (e) {
         const item = e.params && e.params.data;
@@ -2700,6 +3462,15 @@ function initRecurringDeductionUI() {
     });
     $(document).on('click', '#erdFeeToggle button', function () {
         setErdFeeOn($(this).data('value') === 'fee');
+    });
+    $(document).on('click', '#erdPayeeTypeToggle button', function () {
+        setErdPayeeType($(this).data('payee-type'));
+    });
+    $(document).on('select2:select', '#erd_destination_select', function () {
+        $('#erdDestinationNewFields').addClass('d-none');
+    });
+    $(document).on('select2:clear', '#erd_destination_select', function () {
+        $('#erdDestinationNewFields').removeClass('d-none');
     });
     $(document).on('click', '.btn-add-recurring-deduction', function () {
         if (!currentEmployeeId) {
@@ -2757,6 +3528,31 @@ function initRecurringDeductionUI() {
         if (feeOn) {
             payload.fee_percent = $('#erd_fee_percent').val();
             payload.fee_base = $('#erd_fee_base').val();
+        }
+        const payeeType = $('#erdPayeeTypeToggle button.active').data('payee-type') || 'none';
+        if (payeeType !== 'none') {
+            payload.payee_type = payeeType;
+            if (payeeType === 'employee') {
+                payload.payee_employee_id = $('#erd_payee_employee_id').val();
+            } else if (payeeType === 'other_person') {
+                const savedDestinationId = $('#erd_destination_select').val();
+                if (savedDestinationId) {
+                    payload.destination_id = savedDestinationId;
+                } else {
+                    const accountName = $('#erd_dest_account_name').val().trim();
+                    const accountNo = $('#erd_dest_account_no').val().trim();
+                    const bankId = $('#erd_dest_bank').val();
+                    if (!accountName || !accountNo || !bankId) {
+                        showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
+                        return;
+                    }
+                    payload.account_name = accountName;
+                    payload.account_no = accountNo;
+                    payload.bank_id = bankId;
+                    payload.bank_branch = $('#erd_dest_bank_branch').val().trim() || undefined;
+                    payload.is_saved = $('#erd_dest_save_for_reuse').is(':checked');
+                }
+            }
         }
         const $btn = $('#erdSaveBtn');
         const originalHtml = $btn.html();
@@ -2825,6 +3621,7 @@ function resetRecurringDeductionForm() {
     $('.is-invalid', '#recurringDeductionModal').removeClass('is-invalid');
     setErdFeeOn(false);
     $('#erd_fee_percent').val('');
+    setErdPayeeType('none');
     $('#recurringDeductionModalLabel span').attr('data-i18n', 'add_recurring_deduction').text(langData['add_recurring_deduction'] || 'Add Recurring Deduction');
 }
 function populateRecurringDeductionForm(row) {
@@ -2843,6 +3640,17 @@ function populateRecurringDeductionForm(row) {
     const hasFee = !!row.fee_percent;
     setErdFeeOn(hasFee);
     $('#erd_fee_percent').val(hasFee ? row.fee_percent : '');
+    const payeeType = row.payee_type || 'none';
+    setErdPayeeType(payeeType);
+    if (payeeType === 'employee' && row.payee_employee_id) {
+        const payeeLabel = (currentLang === 'th' ? `${row.payee_name_th || ''} ${row.payee_surname_th || ''}` : `${row.payee_name_en || ''} ${row.payee_surname_en || ''}`).trim();
+        const payeeOpt = new Option(`${payeeLabel} (${row.payee_employee_no || ''})`, row.payee_employee_id, true, true);
+        $('#erd_payee_employee_id').empty().append(payeeOpt).trigger('change');
+    } else if (payeeType === 'other_person' && row.destination_id) {
+        const destOpt = new Option(row.destination_account_name || '', row.destination_id, true, true);
+        $('#erd_destination_select').empty().append(destOpt).trigger('change');
+        $('#erdDestinationNewFields').addClass('d-none');
+    }
     $('#recurringDeductionModalLabel span').attr('data-i18n', 'edit_recurring_deduction').text(langData['edit_recurring_deduction'] || 'Edit Recurring Deduction');
 }
 function validateRecurringDeductionForm() {
@@ -2912,6 +3720,8 @@ function uploadEmpPhotoBlob(blob) {
         success: function (res) {
             if (res.status) {
                 $('#emp_profile_photo_path').val(res.profile_photo_path).trigger('change');
+                $('#emp_profile_photo_file_size').val(res.file_size || '');
+                $('#emp_profile_photo_thumbnail_path').val(res.thumbnail_path || '');
                 // Also refreshes the top-right nav photo live, without waiting for the next full page
                 // navigation, when the employee being edited is the currently logged-in user
                 // themselves (the only case the header photo could possibly be showing right now).
@@ -2941,6 +3751,7 @@ function uploadEmpSignatureBlob(blob) {
         success: function (res) {
             if (res.status) {
                 $('#emp_signature_path').val(res.signature_path);
+                $('#emp_signature_file_size').val(res.file_size || '');
                 showEmpSignaturePreview(res.signature_path);
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Upload failed.');
@@ -2957,6 +3768,7 @@ $(document).on('change', '#emp_signature_file', function () {
 });
 $(document).on('click', '#empSignatureRemoveBtn', function () {
     $('#emp_signature_path').val('');
+    $('#emp_signature_file_size').val('');
     showEmpSignaturePreview(null);
 });
 

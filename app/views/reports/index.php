@@ -252,8 +252,8 @@
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-end mb-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnExportHistoryClearFilter">
+            <div class="station-filter-clear-row d-none" id="exportHistoryFilterClearRow">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnExportHistoryClearFilter">
                     <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
                 </button>
             </div>

@@ -46,13 +46,13 @@ function makeEmployee(PDO $pdo, int $compId, string $employeeNo, ?int $roleId, ?
          role_id, department_id, personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_status, employment_type, workforce_type, record_time_method,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt)
         VALUES (:comp_id, :employee_no, 'mr', 'male', :name_th, :surname_th, :name_en, :surname_en, '1990-01-01', 'Thai',
          :role_id, :dept_id, :email, '0800000000', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
-         'bank', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         'monthly', 30000, '2020-01-01', 'average', 'active',
          1, 1, 0)");
     $stmt->execute([
         ':comp_id' => $compId, ':employee_no' => $employeeNo,
@@ -96,15 +96,15 @@ try {
     check('listPermissions() returns every active permission row (live count, not a stale hardcoded one)', count($permissions), $expectedPermissionCount);
 
     // ---------- checkPermission: isAdmin bypass ----------
-    $adminCheck = $model->checkPermission($empStaff, 'holiday.manage', true, $compId);
+    $adminCheck = $model->checkPermission($empStaff, 'holiday.edit', true, $compId);
     checkTrue('isAdmin bypasses regardless of role', $adminCheck['allowed']);
     check('isAdmin bypass reports allow_scope=all', $adminCheck['allow_scope'], 'all');
 
     // ---------- checkPermission: no grants yet ----------
-    $noneCheck = $model->checkPermission($empManager, 'holiday.manage', false, $compId);
+    $noneCheck = $model->checkPermission($empManager, 'holiday.edit', false, $compId);
     checkFalse('no role_permissions rows yet => denied', $noneCheck['allowed']);
 
-    $noRoleCheck = $model->checkPermission($empNoRole, 'holiday.manage', false, $compId);
+    $noRoleCheck = $model->checkPermission($empNoRole, 'holiday.edit', false, $compId);
     checkFalse('employee with no role_id => denied', $noRoleCheck['allowed']);
 
     // ---------- matrix(): empty grants ----------
@@ -113,9 +113,9 @@ try {
     check('matrix returns every active permission (live count)', count($matrixBefore['permissions']), $expectedPermissionCount);
     check('matrix returns 0 grants before any save', count($matrixBefore['grants']), 0);
 
-    // ---------- saveMatrix(): grant holiday.manage (all) to manager, approval_request.act (own_department) to manager ----------
+    // ---------- saveMatrix(): grant holiday.edit (all) to manager, approval_request.act (own_department) to manager ----------
     $saveResult = $model->saveMatrix($compId, [
-        ['role_id' => $roleManager, 'permission_id' => $byKey['holiday.manage'], 'allow_scope' => 'all'],
+        ['role_id' => $roleManager, 'permission_id' => $byKey['holiday.edit'], 'allow_scope' => 'all'],
         ['role_id' => $roleManager, 'permission_id' => $byKey['holiday.view'], 'allow_scope' => 'all'],
         ['role_id' => $roleManager, 'permission_id' => $byKey['approval_request.act'], 'allow_scope' => 'own_department'],
         ['role_id' => $roleStaff, 'permission_id' => $byKey['leave_type.view'], 'allow_scope' => 'all'],
@@ -125,13 +125,13 @@ try {
     $matrixAfter = $model->matrix($compId);
     check('matrix now has 4 grants', count($matrixAfter['grants']), 4);
 
-    // ---------- checkPermission: manager now has holiday.manage, not leave_type.manage ----------
-    $mgrHoliday = $model->checkPermission($empManager, 'holiday.manage', false, $compId);
-    checkTrue('manager granted holiday.manage is now allowed', $mgrHoliday['allowed']);
-    check('manager holiday.manage allow_scope is all', $mgrHoliday['allow_scope'], 'all');
+    // ---------- checkPermission: manager now has holiday.edit, not leave_type.edit ----------
+    $mgrHoliday = $model->checkPermission($empManager, 'holiday.edit', false, $compId);
+    checkTrue('manager granted holiday.edit is now allowed', $mgrHoliday['allowed']);
+    check('manager holiday.edit allow_scope is all', $mgrHoliday['allow_scope'], 'all');
 
-    $mgrLeave = $model->checkPermission($empManager, 'leave_type.manage', false, $compId);
-    checkFalse('manager NOT granted leave_type.manage is denied', $mgrLeave['allowed']);
+    $mgrLeave = $model->checkPermission($empManager, 'leave_type.edit', false, $compId);
+    checkFalse('manager NOT granted leave_type.edit is denied', $mgrLeave['allowed']);
 
     $mgrAct = $model->checkPermission($empManager, 'approval_request.act', false, $compId);
     checkTrue('manager granted approval_request.act is allowed', $mgrAct['allowed']);
@@ -139,20 +139,20 @@ try {
 
     $staffLeaveView = $model->checkPermission($empStaff, 'leave_type.view', false, $compId);
     checkTrue('staff granted leave_type.view is allowed', $staffLeaveView['allowed']);
-    $staffHoliday = $model->checkPermission($empStaff, 'holiday.manage', false, $compId);
-    checkFalse('staff NOT granted holiday.manage is denied', $staffHoliday['allowed']);
+    $staffHoliday = $model->checkPermission($empStaff, 'holiday.edit', false, $compId);
+    checkFalse('staff NOT granted holiday.edit is denied', $staffHoliday['allowed']);
 
     // ---------- saveMatrix(): re-save replaces the whole set (staff loses leave_type.view) ----------
     $resave = $model->saveMatrix($compId, [
-        ['role_id' => $roleManager, 'permission_id' => $byKey['holiday.manage'], 'allow_scope' => 'all'],
+        ['role_id' => $roleManager, 'permission_id' => $byKey['holiday.edit'], 'allow_scope' => 'all'],
     ], $adminUserId);
     checkTrue('re-save with a smaller grant set succeeds', $resave['status']);
     $matrixResaved = $model->matrix($compId);
     check('matrix now has only 1 grant after replace', count($matrixResaved['grants']), 1);
     $staffAfterResave = $model->checkPermission($empStaff, 'leave_type.view', false, $compId);
     checkFalse('staff lost leave_type.view after replace-save', $staffAfterResave['allowed']);
-    $mgrStillHoliday = $model->checkPermission($empManager, 'holiday.manage', false, $compId);
-    checkTrue('manager still has holiday.manage after replace-save', $mgrStillHoliday['allowed']);
+    $mgrStillHoliday = $model->checkPermission($empManager, 'holiday.edit', false, $compId);
+    checkTrue('manager still has holiday.edit after replace-save', $mgrStillHoliday['allowed']);
 
     // ---------- saveMatrix(): validation ----------
     $invalidRole = $model->saveMatrix($compId, [
@@ -173,7 +173,7 @@ try {
     checkTrue('salary_amount.view_reports is seeded', isset($byKey['salary_amount.view_reports']));
 
     $salarySave = $model->saveMatrix($compId, [
-        ['role_id' => $roleManager, 'permission_id' => $byKey['holiday.manage'], 'allow_scope' => 'all'],
+        ['role_id' => $roleManager, 'permission_id' => $byKey['holiday.edit'], 'allow_scope' => 'all'],
         ['role_id' => $roleManager, 'permission_id' => $byKey['salary_amount.view_employee'], 'allow_scope' => 'own_only', 'detail_level' => 'summary'],
     ], $adminUserId);
     checkTrue('saveMatrix accepts allow_scope=own_only + detail_level=summary', $salarySave['status']);

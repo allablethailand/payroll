@@ -1,11 +1,16 @@
 <?php
 /**
- * Lightweight verification script for PayrollCycleModel::matchForSyncProcess() -- the 2026-09-02
+ * Lightweight verification script for PayrollCycleModel::matchForSyncProcess() -- the 2026-09-01
  * best-effort heuristic that lets "Pull to Run" pre-select the Payroll Schedule dropdown from an
  * incoming Origami sync process, when confident (see that method's own docblock for the full rule
- * set and its real limits -- there is no reliable id-based mapping available today). Pure unit test,
- * no DB needed -- the method takes plain PHP arrays (PayrollCycleModel::list()'s own shape /
- * PayrollSyncModel::pendingList()'s own row shape) and returns either a matched cycle row or null.
+ * set and its real limits). Pure unit test, no DB needed -- the method takes plain PHP arrays
+ * (PayrollCycleModel::list()'s own shape / PayrollSyncModel::pendingList()'s own row shape) and
+ * returns either a matched cycle row or null.
+ *
+ * 2026-09-02: gained coverage for `external_cycle_code` -- Origami's own reply to the mapping gap
+ * this heuristic originally flagged (see matchForSyncProcess()'s own docblock) -- checked FIRST as
+ * an exact match, only falling through to the structural heuristic below when absent or unmatched.
+ *
  * Run with: php tests/payroll_cycle_sync_match_test.php
  */
 declare(strict_types=1);
@@ -113,6 +118,39 @@ echo "=== process_paid absent -- still matches on cutoff alone (payment check is
 $syncRowNoPaid = ['frequency_type' => 'monthly', 'process_end' => '2026-08-20', 'process_paid' => '', 'period_name' => ''];
 $mNoPaid = $model->matchForSyncProcess($cyclesSingle, $syncRowNoPaid);
 check('matches on cutoff day alone when process_paid is not provided', $mNoPaid['id'] ?? null, 1);
+
+echo "=== 2026-09-02: external_cycle_code, when present on BOTH sides, matches exactly and bypasses the heuristic entirely ===\n";
+// Deliberately structurally AMBIGUOUS (would refuse to guess under the old heuristic alone, see
+// "ambiguous, no period_name tiebreak" above) -- an exact code match must still resolve it, since
+// it's authoritative, not just another heuristic signal.
+$cyclesWithCodes = [
+    monthlyCycle(1, 'Monthly Cycle A', 20, 25) + ['external_cycle_code' => 'PR-MTH-20'],
+    monthlyCycle(2, 'Monthly Cycle B', 20, 25) + ['external_cycle_code' => 'PR-OTHER'],
+];
+$syncRowWithCode = $syncRow; $syncRowWithCode['external_cycle_code'] = 'PR-MTH-20'; $syncRowWithCode['period_name'] = 'Something Unrelated';
+$mCode = $model->matchForSyncProcess($cyclesWithCodes, $syncRowWithCode);
+check('exact code match wins even when structurally ambiguous and period_name would not tiebreak', $mCode['id'] ?? null, 1);
+
+echo "=== external_cycle_code match is case-insensitive/trimmed, same convention as period_name tiebreak ===\n";
+$syncRowCodeCase = $syncRow; $syncRowCodeCase['external_cycle_code'] = '  pr-mth-20  ';
+$mCodeCase = $model->matchForSyncProcess($cyclesWithCodes, $syncRowCodeCase);
+check('code match ignores case/surrounding whitespace', $mCodeCase['id'] ?? null, 1);
+
+echo "=== external_cycle_code set on the sync row but no active cycle has that code yet -- falls back to the heuristic, not null ===\n";
+$syncRowUnknownCode = $syncRow; $syncRowUnknownCode['external_cycle_code'] = 'NOT-CONFIGURED-YET';
+$mUnknownCode = $model->matchForSyncProcess($cyclesSingle, $syncRowUnknownCode); // cyclesSingle has no external_cycle_code at all
+check('unmatched code falls through to the structural heuristic instead of refusing outright', $mUnknownCode['id'] ?? null, 1);
+
+echo "=== external_cycle_code absent on the sync row (Origami admin never set one) -- heuristic runs exactly as before ===\n";
+$syncRowNoCode = $syncRow; // no external_cycle_code key at all, same shape every pre-2026-09-02 test row above already used
+$mNoCode = $model->matchForSyncProcess($cyclesWithCodes, $syncRowNoCode);
+checkNull('with no code sent, 2 candidates sharing the same structural shape are still refused (period_name doesn\'t tiebreak here either)', $mNoCode);
+
+echo "=== external_cycle_code match ignores an inactive cycle, same as the structural heuristic already does ===\n";
+$cyclesCodeInactive = [
+    ['id' => 6, 'status' => 'inactive', 'payroll_frequency' => 'monthly', 'cutoff_day_of_month' => 20, 'cutoff_use_last_day' => 0, 'cutoff_day_of_week' => null, 'payment_day_of_month' => 25, 'payment_use_last_day' => 0, 'payment_day_of_week' => null, 'cycle_name' => 'Inactive Coded Cycle', 'external_cycle_code' => 'PR-MTH-20'],
+];
+checkNull('an inactive cycle with a matching code is never auto-selected', $model->matchForSyncProcess($cyclesCodeInactive, $syncRowWithCode));
 
 echo "\n" . str_repeat('-', 50) . "\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";

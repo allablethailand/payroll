@@ -81,12 +81,12 @@ try {
              personal_email, mobile_no, address_line_1_register, address_line_1_contact,
              emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
              employment_date, employment_status, employment_type, workforce_type, record_time_method,
-             payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+             salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
              sso_enrolled, pvd_enrolled, tax_exempt, department_id)
             VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'AIS', 'Test', 'AIS', '1990-01-01', 'Thai',
              :email, '0812345678', 'A', 'A', 'E', 'E', 'friend', '0898888888',
              :employment_date, 'permanent', 'full_time', 'office', 'manual',
-             'cash', 'monthly', 30000, '2020-01-01', 'average', 'active',
+             'monthly', 30000, '2020-01-01', 'average', 'active',
              1, 0, 0, :dept_id)");
         $stmt->execute([':comp_id' => $compId, ':employee_no' => 'AIS_' . uniqid(), ':email' => uniqid() . '@test.local', ':dept_id' => $deptId, ':employment_date' => $employmentDate]);
         return (int)$pdo->lastInsertId();
@@ -107,11 +107,11 @@ try {
     $insUnpaidAisEmp = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
          personal_email, mobile_no, employment_date, employment_status, employment_type,
-         payment_type, salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          department_id, is_payroll_participant)
         VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'AIS ไม่จ่าย', 'Test', 'AIS Unpaid', '1990-01-01', 'Thai',
          :email, '0812345679', '2020-01-01', 'permanent', 'full_time',
-         'cash', 'monthly', 30000, '2020-01-01', 'average', 'active',
+         'monthly', 30000, '2020-01-01', 'average', 'active',
          :dept_id, 0)");
     $insUnpaidAisEmp->execute([':comp_id' => $compId, ':employee_no' => 'AIS_UNPAID_' . uniqid(), ':email' => uniqid() . '@test.local', ':dept_id' => $deptId]);
     $emp4Unpaid = (int)$pdo->lastInsertId();

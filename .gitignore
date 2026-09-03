@@ -12,3 +12,6 @@ database/backups/
 
 # User-uploaded payslip logos
 public/uploads/
+
+# User-uploaded employee documents/photos + import originals (Platform Hardening Phase 5C)
+storage/uploads/

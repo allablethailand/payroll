@@ -63,7 +63,7 @@
           </div>
           <div class="col-md-6">
             <label class="form-label"><span data-i18n="template_name">Template Name</span> <span class="text-danger">*</span></label>
-            <input type="text" class="form-control" id="ectNewTemplateNameInput" maxlength="150">
+            <input type="text" class="form-control" id="ectNewTemplateNameInput" maxlength="150" data-i18n="template_name_placeholder" placeholder="e.g., Standard Employment Certificate">
           </div>
           <div class="col-md-2">
             <label class="form-label" data-i18n="ect_page_size">Page Size</label>
@@ -108,7 +108,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <textarea id="ectTextModalInput" class="form-control" rows="5"></textarea>
+        <textarea id="ectTextModalInput" class="form-control" rows="5" data-i18n="canvas_text_placeholder" placeholder="e.g., Employee Name, or a full sentence with {{field_key}} tokens embedded"></textarea>
         <div class="text-secondary small mt-2" data-i18n="ect_token_hint">Tip: use {{field_key}} to merge data anywhere in the text, e.g. "This certifies that {{employee_name}} holds the position of {{position}}."</div>
       </div>
       <div class="modal-footer">
@@ -166,11 +166,11 @@
         <div class="row g-3 mb-3">
           <div class="col-auto">
             <label class="form-label small mb-1" data-i18n="ect_table_rows">Rows</label>
-            <input type="number" class="form-control form-control-sm" id="ectTableRowsInput" min="1" max="20" value="3" style="width:80px;">
+            <input type="number" class="form-control form-control-sm" id="ectTableRowsInput" min="1" max="20" value="3" style="width:80px;" data-i18n="table_rows_placeholder" placeholder="e.g., 3">
           </div>
           <div class="col-auto">
             <label class="form-label small mb-1" data-i18n="ect_table_cols">Columns</label>
-            <input type="number" class="form-control form-control-sm" id="ectTableColsInput" min="1" max="10" value="3" style="width:80px;">
+            <input type="number" class="form-control form-control-sm" id="ectTableColsInput" min="1" max="10" value="3" style="width:80px;" data-i18n="table_cols_placeholder" placeholder="e.g., 3">
           </div>
           <div class="col-auto">
             <label class="form-label small mb-1" data-i18n="ect_table_border_color">Border Color</label>
@@ -178,7 +178,7 @@
           </div>
           <div class="col-auto">
             <label class="form-label small mb-1" data-i18n="ect_table_border_width">Border Width (px)</label>
-            <input type="number" class="form-control form-control-sm" id="ectTableBorderWidthInput" min="0" max="10" value="1" style="width:80px;">
+            <input type="number" class="form-control form-control-sm" id="ectTableBorderWidthInput" min="0" max="10" value="1" style="width:80px;" data-i18n="border_width_placeholder" placeholder="e.g., 1">
           </div>
         </div>
         <div class="text-secondary small mb-2" data-i18n="ect_table_cells_hint">Enter text for each cell (optional).</div>

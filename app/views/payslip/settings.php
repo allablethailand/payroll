@@ -84,7 +84,7 @@
                   </div>
                   <div class="col-md-4">
                     <label class="form-label" data-i18n="send_delay_hours">Send Delay (Hours)</label>
-                    <input type="number" class="form-control" id="pd_delay_hours" min="0" step="1" value="0">
+                    <input type="number" class="form-control" id="pd_delay_hours" min="0" step="1" value="0" data-i18n="hours_placeholder" placeholder="e.g., 2">
                     <div class="text-secondary small mt-1" data-i18n="send_delay_hours_hint">0 = send immediately when the run becomes Paid.</div>
                   </div>
                 </div>

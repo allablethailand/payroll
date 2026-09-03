@@ -34,6 +34,7 @@ $(document).on('change', '#cp_logo_file', function () {
         success: function (res) {
             if (res.status) {
                 $('input[name="logo_path"]').val(res.logo_path);
+                $('input[name="logo_file_size"]').val(res.file_size || '');
                 showCpLogoPreview(res.logo_path);
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Upload failed.');
@@ -49,6 +50,7 @@ $(document).on('change', '#cp_logo_file', function () {
 // anywhere in the app yet for any of the 3).
 $(document).on('click', '#cpLogoRemoveBtn', function () {
     $('input[name="logo_path"]').val('');
+    $('input[name="logo_file_size"]').val('');
     showCpLogoPreview(null);
 });
 
@@ -79,6 +81,7 @@ function uploadCpSignatureBlob(blob) {
         success: function (res) {
             if (res.status) {
                 $('input[name="signature_path"]').val(res.signature_path);
+                $('input[name="signature_file_size"]').val(res.file_size || '');
                 showCpSignaturePreview(res.signature_path);
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Upload failed.');
@@ -97,6 +100,7 @@ $(document).on('change', '#cp_signature_file', function () {
 // no-disk-cleanup convention as #cpLogoRemoveBtn above.
 $(document).on('click', '#cpSignatureRemoveBtn', function () {
     $('input[name="signature_path"]').val('');
+    $('input[name="signature_file_size"]').val('');
     showCpSignaturePreview(null);
 });
 
@@ -294,8 +298,10 @@ function initCompanyData() {
                 $('input[name="address_line_2"]').val(data.address_line_2 || '');
                 $('input[name="authorized_signatory_name"]').val(data.authorized_signatory_name || '');
                 $('input[name="logo_path"]').val(data.logo_path || '');
+                $('input[name="logo_file_size"]').val(data.logo_file_size || '');
                 showCpLogoPreview(data.logo_path || null);
                 $('input[name="signature_path"]').val(data.signature_path || '');
+                $('input[name="signature_file_size"]').val(data.signature_file_size || '');
                 showCpSignaturePreview(data.signature_path || null);
                 if (data.statutory_data && typeof data.statutory_data === 'object') {
                     Object.keys(data.statutory_data).forEach(key => {
@@ -352,7 +358,9 @@ $(document).on('click', '.save-company-profile', function () {
         master_address_id: $('input[name="master_address_id"]').val() || null,
         authorized_signatory_name: $('input[name="authorized_signatory_name"]').val()?.trim() || '',
         logo_path: $('input[name="logo_path"]').val() || null,
+        logo_file_size: $('input[name="logo_file_size"]').val() || null,
         signature_path: $('input[name="signature_path"]').val() || null,
+        signature_file_size: $('input[name="signature_file_size"]').val() || null,
         statutory_data: {}
     };
     $('#dynamic_statutory_fields_container input').each(function () {
@@ -456,7 +464,13 @@ function initBankAccountTable() {
         processing: true,
         serverSide: true,
         responsive: true,
-        order: [[0, 'asc']],
+        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- default sort points to column 1
+        // (bank) now that column 0 is the non-orderable status switch. BankAccountModel::list()'s
+        // own sortColumns[1] already resolves to `mb.bank_name_th` (the bank column's real content),
+        // so this is not a regression the way PED Type's own equivalent change was (see that
+        // table's own comment) -- if anything a slight improvement over the old default (colIndex 0
+        // resolved to a bare `ba.id` sort, not a meaningful column to sort by at all).
+        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/bank_account.list`,
             type: 'POST',
@@ -467,6 +481,9 @@ function initBankAccountTable() {
             }
         },
         columns: [
+            // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- status switch is the first
+            // column now, same shared mechanism as every other table already converted.
+            { data: 'status', orderable: false, render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/bank_account.toggle-status') },
             {
                 data: null,
                 render: function (data, type, row) {
@@ -500,25 +517,19 @@ function initBankAccountTable() {
                 }
             },
             {
-                data: 'status',
-                render: function (data) {
-                    let badge = data === 'active' ? 'bg-success' : 'bg-danger';
-                    let key = data === 'active' ? 'active' : 'inactive';
-                    return `<span class="badge ${badge}" data-i18n="${key}">${langData[key] || key}</span>`;
-                }
-            },
-            {
                 // 2026-08-28: className:'all' keeps this last actions column from collapsing into
                 // the Responsive expand row.
                 data: null,
                 orderable: false,
                 className: 'text-center all',
+                // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+                // ".btn-circle-action" section) replace the old adjacent .btn-group.
                 render: (data, type, row) => `
-                    <div class="btn-group border rounded-3 bg-white">
-                        <button class="btn btn-link text-warning btn-open-modal manage-bank_account" data-action="edit" data-type="bank_account" data-id="${row.id}" data-i18n-title="edit">
+                    <div class="d-flex gap-1 justify-content-center">
+                        <button class="btn btn-link btn-circle-action text-warning btn-open-modal manage-bank_account" data-action="edit" data-type="bank_account" data-id="${row.id}" data-i18n-title="edit">
                             <i class="fa-solid fa-pen-to-square"></i>
                         </button>
-                        <button class="btn btn-link py-1 text-danger border-start btn-delete-item delete-bank_account" data-type="bank_account" data-id="${row.id}" data-i18n-title="delete">
+                        <button class="btn btn-link btn-circle-action text-danger btn-delete-item delete-bank_account" data-type="bank_account" data-id="${row.id}" data-i18n-title="delete">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
                     </div>
@@ -542,16 +553,24 @@ function initBankAccountTable() {
             }
             updateText($wrapper[0]);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, server mode. Excludes the masked account_no (1, not the raw filterable
-            // value), the boolean is_default icon (5), and actions (6).
+            // rollout, server mode.
+            // 2026-09-02, real bug found and fixed (explicit report: "พอเพิ่ม switch เข้าไปแล้ว column
+            // เลื่อนครับ") -- this map was ALREADY drifted from the real column layout before
+            // today's status-switch change too (index 3 was labeled 'branch_name' here but the
+            // actual column at index 3 was `company_code`, added in an earlier round without this
+            // map ever being updated -- the exact same bug class the user is reporting, found while
+            // fixing this table). Rebuilt against the table's real current column order: excludes
+            // the interactive status SWITCH (0), the masked account_no (2, not the raw filterable
+            // value), `company_code` (4 -- not yet backend-filterable, no exprMap entry for it in
+            // BankAccountModel::columnFilterExprMap(), out of scope to add here), the boolean
+            // is_default icon (7), and actions (8).
             initExcelColumnFilters(self, {
                 mode: 'server',
                 columns: [
-                    { index: 0, key: 'bank_name' },
-                    { index: 2, key: 'account_name' },
-                    { index: 3, key: 'branch_name' },
-                    { index: 4, key: 'account_type' },
-                    { index: 6, key: 'status' },
+                    { index: 1, key: 'bank_name' },
+                    { index: 3, key: 'account_name' },
+                    { index: 5, key: 'branch_name' },
+                    { index: 6, key: 'account_type' },
                 ],
                 fetchValues: function (key, done) {
                     $.ajax({
@@ -653,27 +672,51 @@ function initStructure(page) {
 // Excludes boolean-icon columns (is_default/lock_stamp/salary_access/ot_eligible) and
 // computed/composite columns (rank's own salary_min-salary_max range) -- same exclusion policy as
 // every other table in this rollout -- plus the actions column, always last.
+// 2026-09-02, Platform Hardening Phase 1.1 -- every index below shifted +1 (status switch inserted
+// as the new column 0 in getStructureColumns(), see that function's own comment), and each type's
+// own `status` entry moved to `index: 0` to match its new position instead of wherever it used to
+// sit near the end.
 const STRUCTURE_FILTER_COLUMNS = {
     branch: [
-        { index: 0, key: 'branch_code' }, { index: 1, key: 'name' }, { index: 2, key: 'tax_branch_id' },
-        { index: 3, key: 'sso_branch_code' }, { index: 5, key: 'location' }, { index: 7, key: 'status' },
+        { index: 0, key: 'status' }, { index: 1, key: 'branch_code' }, { index: 2, key: 'name' }, { index: 3, key: 'tax_branch_id' },
+        { index: 4, key: 'sso_branch_code' }, { index: 6, key: 'location' },
     ],
     role: [
-        { index: 0, key: 'name' }, { index: 2, key: 'status' },
+        { index: 0, key: 'status' }, { index: 1, key: 'name' },
     ],
     department: [
-        { index: 0, key: 'department_code' }, { index: 1, key: 'name' }, { index: 2, key: 'cost_center' }, { index: 3, key: 'status' },
+        { index: 0, key: 'status' }, { index: 1, key: 'department_code' }, { index: 2, key: 'name' }, { index: 3, key: 'cost_center' },
     ],
     position: [
-        { index: 0, key: 'position_code' }, { index: 1, key: 'name' }, { index: 2, key: 'position_allowance' }, { index: 3, key: 'status' },
+        { index: 0, key: 'status' }, { index: 1, key: 'position_code' }, { index: 2, key: 'name' }, { index: 3, key: 'position_allowance' },
     ],
     rank: [
-        { index: 0, key: 'rank_code' }, { index: 1, key: 'name' }, { index: 4, key: 'status' },
+        { index: 0, key: 'status' }, { index: 1, key: 'rank_code' }, { index: 2, key: 'name' },
     ],
     team: [
-        { index: 0, key: 'team_code' }, { index: 1, key: 'name' }, { index: 2, key: 'client_name' }, { index: 3, key: 'status' },
+        { index: 0, key: 'status' }, { index: 1, key: 'team_code' }, { index: 2, key: 'name' }, { index: 3, key: 'client_name' },
     ],
 };
+// 2026-09-02, Platform Hardening Phase 1.1 -- ONE delegated listener covers all 6 structure tables'
+// reload-after-toggle, instead of 6 separate bindings -- the endpoint each switch used
+// (/api/structure.<type>.toggle-status, see statusRender() above) already tells us which `type`
+// (and therefore which `structureTables[type]` entry) to reload.
+$(document).on('statusToggle:success', '#tb_branch, #tb_role, #tb_department, #tb_position, #tb_rank, #tb_team', function (e) {
+    const endpoint = $(e.target).data('endpoint') || '';
+    const match = /^\/api\/structure\.([a-z_]+)\.toggle-status$/.exec(endpoint);
+    const type = match ? match[1] : null;
+    if (type && structureTables[type]) {
+        structureTables[type].ajax.reload(null, false);
+    }
+});
+// Bank Account's own endpoint (/api/bank_account.toggle-status) doesn't match the `structure.<type>`
+// prefix the listener above parses, so it gets its own small listener instead of overloading that
+// regex for one exception.
+$(document).on('statusToggle:success', '#tb_bank_account', function () {
+    if (structureTables['bank_account']) {
+        structureTables['bank_account'].ajax.reload(null, false);
+    }
+});
 function initStructureTable(type, tableId) {
     if ($.fn.DataTable.isDataTable(tableId)) {
         $(tableId).DataTable().ajax.reload(null, false);
@@ -683,7 +726,11 @@ function initStructureTable(type, tableId) {
         processing: true,
         serverSide: true,
         responsive: true,
-        order: [[0, 'asc']],
+        // 2026-09-02, Platform Hardening Phase 1.1 -- was `[[0, 'asc']]` back when column 0 was
+        // always the entity's own code/name column; now column 0 is the (non-orderable) status
+        // switch, so the default landing sort moves to column 1 (still each type's own code/name
+        // column in every case, see getStructureColumns()'s own new column order).
+        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/structure.${type}`,
             type: "POST",
@@ -790,45 +837,57 @@ function getStructureColumns(type) {
     // established). Both open #structureAssignModal (public/js/setup/structure-assign.js), a fully
     // generic component driven by data-type/data-id/data-label -- View pre-filters to the
     // "employees in this Master" card only (same modal, different initial state).
+    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+    // ".btn-circle-action" section) replace the old adjacent .btn-group.
     const getActionButtons = (row, type) => {
         const label = getLocaleText(row, structureNameFieldByType(type)) || '';
         return `
-            <div class="btn-group border rounded-3 bg-white">
-                <button class="btn btn-link text-warning btn-open-modal manage-${type}" data-action="edit" data-type="${type}" data-id="${row.id}" data-i18n-title="edit">
+            <div class="d-flex gap-1 justify-content-center flex-wrap">
+                <button class="btn btn-link btn-circle-action text-warning btn-open-modal manage-${type}" data-action="edit" data-type="${type}" data-id="${row.id}" data-i18n-title="edit">
                     <i class="fa-solid fa-pen-to-square"></i>
                 </button>
-                <button class="btn btn-link py-1 text-primary border-start btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttrCp(label)}" data-i18n-title="assign_employees">
+                <button class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttrCp(label)}" data-i18n-title="assign_employees">
                     <i class="fa-solid fa-user-plus"></i>
                 </button>
-                <button class="btn btn-link py-1 text-secondary border-start btn-structure-view-assigned" data-type="${type}" data-id="${row.id}" data-label="${escapeAttrCp(label)}" data-i18n-title="view_assigned_employees">
+                <button class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${row.id}" data-label="${escapeAttrCp(label)}" data-i18n-title="view_assigned_employees">
                     <i class="fa-solid fa-users"></i>
                 </button>
-                <button class="btn btn-link py-1 text-danger border-start btn-delete-item delete-${type}" data-type="${type}" data-id="${row.id}" data-i18n-title="delete">
+                <button class="btn btn-link btn-circle-action text-danger btn-delete-item delete-${type}" data-type="${type}" data-id="${row.id}" data-i18n-title="delete">
                     <i class="fa-solid fa-trash-can"></i>
                 </button>
             </div>
         `;
     };
-    const statusRender = (data) => {
-        let badge = data === 'active' || data === 1 || data === true ? 'bg-success' : 'bg-danger';
-        let text = data === 'active' || data === 1 || data === true ? 'Active' : 'Inactive';
-        let textLang = data === 'active' || data === 1 || data === true ? 'active' : 'inactive';
-        return `<span class="badge ${badge}" data-i18n="${textLang}">${text}</span>`;
-    };
+    // 2026-09-02, Platform Hardening Phase 1.1, explicit request -- was a plain read-only badge
+    // (status changed only via the Add/Edit modal's own `status` select field, which is now GONE
+    // for these 6 entity types, see formSchemas' own comment on this same round). Takes `type`
+    // explicitly (not read off the row) since this closure is shared across all 6 `case` branches
+    // below, each needing its own `/api/structure.<type>.toggle-status` endpoint
+    // (CompanyProfileModel::toggleStructureStatus(), one generic method for all 6). `orderable:
+    // false` on the column itself (not here) -- see the column definitions' own comment for why.
+    const statusRender = (structureType) => (data, t, row) => renderStatusToggleHtml(row.id, data === 'active', `/api/structure.${structureType}.toggle-status`);
     const getLocaleText = (row, field) => {
         return row[`${field}_${currentLang}`] || row[`${field}_th`] || row[field] || '-';
     };
     switch(type) {
         case 'branch':
             return [
+                // 2026-09-02, Platform Hardening Phase 1.1 -- status switch is the first column now.
+                // `orderable: false` here -- this table is serverSide:true, and an app-wide audit
+                // found this file's own sortColumns index maps already had real, pre-existing drift
+                // unrelated to this change (documented in project memory) -- inserting a new sortable
+                // column here would need a full, separate audit/fix of every OTHER column's index
+                // mapping too, out of scope for this round. Non-orderable sidesteps that risk
+                // entirely without regressing anything that already sorted correctly.
+                { data: "status", orderable: false, render: statusRender('branch') },
                 { data: "branch_code" },
-                { 
+                {
                     data: null,
                     render: (data, type, row) => getLocaleText(row, 'branch_name')
                 },
                 { data: "tax_branch_id", defaultContent: "-" },
                 { data: "sso_branch_code", defaultContent: "-" },
-                { 
+                {
                     data: "is_default",
                     className: "text-center",
                     render: function (data) {
@@ -836,14 +895,13 @@ function getStructureColumns(type) {
                     }
                 },
                 { data: "location", defaultContent: "-" },
-                { 
+                {
                     data: "lock_stamp",
                     className: "text-center",
                     render: function (data) {
                         return data ? `<i class="fa-solid fa-lock text-warning"></i>` : `<i class="fa-solid fa-lock-open text-muted"></i>`;
                     }
                 },
-                { data: "status", render: statusRender },
                 {
                     data: null,
                     orderable: false,
@@ -853,11 +911,12 @@ function getStructureColumns(type) {
             ];
         case 'role':
             return [
-                { 
+                { data: "status", orderable: false, render: statusRender('role') },
+                {
                     data: null,
                     render: (data, type, row) => getLocaleText(row, 'role_name')
                 },
-                { 
+                {
                     data: "salary_access",
                     render: function (data) {
                         return data ? `
@@ -867,7 +926,6 @@ function getStructureColumns(type) {
                         `;
                     }
                 },
-                { data: "status", render: statusRender },
                 {
                     data: null,
                     orderable: false,
@@ -877,13 +935,13 @@ function getStructureColumns(type) {
             ];
         case 'department':
             return [
+                { data: "status", orderable: false, render: statusRender('department') },
                 { data: "department_code" },
-                { 
+                {
                     data: null,
                     render: (data, type, row) => getLocaleText(row, 'department_name')
                 },
                 { data: "cost_center", defaultContent: "-" },
-                { data: "status", render: statusRender },
                 {
                     data: null,
                     orderable: false,
@@ -893,12 +951,13 @@ function getStructureColumns(type) {
             ];
         case 'position':
             return [
+                { data: "status", orderable: false, render: statusRender('position') },
                 { data: "position_code" },
-                { 
+                {
                     data: null,
                     render: (data, type, row) => getLocaleText(row, 'position_name')
                 },
-                { 
+                {
                     data: "position_allowance",
                     className: "text-end",
                     render: function (data) {
@@ -906,7 +965,6 @@ function getStructureColumns(type) {
                         return amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                     }
                 },
-                { data: "status", render: statusRender },
                 {
                     data: null,
                     orderable: false,
@@ -916,6 +974,7 @@ function getStructureColumns(type) {
             ];
         case 'rank':
             return [
+                { data: "status", orderable: false, render: statusRender('rank') },
                 { data: "rank_code" },
                 {
                     data: null,
@@ -937,7 +996,6 @@ function getStructureColumns(type) {
                         return data ? `<span class="badge bg-info" data-i18n="yes">Yes</span>` : `<span class="badge bg-light text-dark" data-i18n="no">No</span>`;
                     }
                 },
-                { data: "status", render: statusRender },
                 {
                     data: null,
                     orderable: false,
@@ -950,13 +1008,13 @@ function getStructureColumns(type) {
         // plus client_name (the client/project this team is deployed to).
         case 'team':
             return [
+                { data: "status", orderable: false, render: statusRender('team') },
                 { data: "team_code" },
                 {
                     data: null,
                     render: (data, type, row) => getLocaleText(row, 'team_name')
                 },
                 { data: "client_name", defaultContent: "-" },
-                { data: "status", render: statusRender },
                 {
                     data: null,
                     orderable: false,
@@ -985,24 +1043,28 @@ const formSchemas = {
             { name: 'sso_branch_code', label: 'sso_branch_code', type: 'text' },
             { name: 'location', label: 'location', type: 'text' },
             { name: 'is_default', label: 'default', type: 'checkbox' },
-            { name: 'lock_stamp', label: 'lock_stamp', type: 'checkbox' },
-            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+            { name: 'lock_stamp', label: 'lock_stamp', type: 'checkbox' }
+            // 2026-09-02, Platform Hardening Phase 1.1, explicit request: "ย้าย 'สถานะ' ออกจาก modal
+            // ไปไว้ที่แถวในตาราง" (same T014 precedent PayrollEarningDeductionTypeModel::save()
+            // already established) -- `status` field removed from this modal for all 6 structure
+            // entity types; the row-level toggle switch is now the only way to change it. Backend
+            // (CompanyProfileModel::saveStructure()) preserves the existing status on every save from
+            // here since this field no longer sends one at all -- see that method's own comment.
         ]
     },
     role: {
         fields: [
             { name: 'role_name_th', label: 'role_name', type: 'text', required: true, legal_key: 'local_name' },
             { name: 'role_name_en', label: 'role_name', type: 'text', required: true, legal_key: 'en_name' },
-            { name: 'salary_access', label: 'salary_access', type: 'checkbox' },
-            // 2026-08-28, explicit request ("ให้ช่วยเพิ่ม checkbox ให้เลยครับ") -- these 3 previously
-            // had NO UI anywhere (PayrollRunModel::userCan() checks them directly on
-            // structure_roles, a separate mechanism from the Permission Matrix's permissions/
-            // role_permissions tables), defaulting to 0 for every role with no way to enable them
-            // short of raw SQL. Same generic checkbox field type salary_access already uses.
-            { name: 'can_process_payroll', label: 'can_process_payroll', type: 'checkbox' },
-            { name: 'can_approve_payroll', label: 'can_approve_payroll', type: 'checkbox' },
-            { name: 'can_finalize_payroll', label: 'can_finalize_payroll', type: 'checkbox' },
-            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+            { name: 'salary_access', label: 'salary_access', type: 'checkbox' }
+            // 2026-08-28: can_process_payroll/can_approve_payroll/can_finalize_payroll checkboxes
+            // used to live here (structure_roles booleans with no other UI). REMOVED 2026-09-03,
+            // Platform Hardening Phase 3 -- those columns are dropped entirely, folded into the real
+            // permissions/role_permissions system as payroll_run.process/.approve/.finalize instead.
+            // Granting them for a role is now done via the Permission Matrix screen, same as every
+            // other permission -- no special-casing on this Role modal anymore.
+            // 2026-09-02, Platform Hardening Phase 1.1 -- `status` field removed, same as branch's
+            // own comment above.
         ]
     },
     department: {
@@ -1010,8 +1072,7 @@ const formSchemas = {
             { name: 'department_code', label: 'department_code', type: 'text', required: true },
             { name: 'department_name_th', label: 'department_name', type: 'text', required: true, legal_key: 'local_name' },
             { name: 'department_name_en', label: 'department_name', type: 'text', required: true, legal_key: 'en_name' },
-            { name: 'cost_center', label: 'cost_center', type: 'text' },
-            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+            { name: 'cost_center', label: 'cost_center', type: 'text' }
         ]
     },
     position: {
@@ -1019,8 +1080,7 @@ const formSchemas = {
             { name: 'position_code', label: 'position_code', type: 'text', required: true },
             { name: 'position_name_th', label: 'position_name', type: 'text', required: true, legal_key: 'local_name' },
             { name: 'position_name_en', label: 'position_name', type: 'text', required: true, legal_key: 'en_name' },
-            { name: 'position_allowance', label: 'allowance_base', type: 'number', step: '0.01' },
-            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+            { name: 'position_allowance', label: 'allowance_base', type: 'number', step: '0.01' }
         ]
     },
     rank: {
@@ -1030,8 +1090,7 @@ const formSchemas = {
             { name: 'rank_name_en', label: 'rank_name', type: 'text', required: true, legal_key: 'en_name' },
             { name: 'salary_min', label: 'salary_range', type: 'number', step: '0.01', legal_key: 'min' },
             { name: 'salary_max', label: 'salary_range', type: 'number', step: '0.01', legal_key: 'max' },
-            { name: 'ot_eligible', label: 'ot_eligible', type: 'checkbox' },
-            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+            { name: 'ot_eligible', label: 'ot_eligible', type: 'checkbox' }
         ]
     },
     // 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้เป็นการเพิ่ม
@@ -1042,8 +1101,9 @@ const formSchemas = {
             { name: 'team_code', label: 'team_code', type: 'text', required: true },
             { name: 'team_name_th', label: 'team_name', type: 'text', required: true, legal_key: 'local_name' },
             { name: 'team_name_en', label: 'team_name', type: 'text', required: true, legal_key: 'en_name' },
-            { name: 'client_name', label: 'team_client_name', type: 'text' },
-            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+            { name: 'client_name', label: 'team_client_name', type: 'text' }
+            // 2026-09-02, Platform Hardening Phase 1.1 -- `status` field removed, same as branch's
+            // own comment above.
         ]
     },
     bank_account: {
@@ -1059,8 +1119,10 @@ const formSchemas = {
             { name: 'company_code', label: 'bank_account_company_code', type: 'text' },
             { name: 'branch_name', label: 'branch_name', type: 'text' },
             { name: 'account_type', label: 'account_type', type: 'select', optionKeys: ['savings', 'current'] },
-            { name: 'is_default', label: 'default', type: 'checkbox' },
-            { name: 'status', label: 'status', type: 'select', optionKeys: ['active', 'inactive'] }
+            { name: 'is_default', label: 'default', type: 'checkbox' }
+            // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- `status` field removed from this
+            // schema, same convention as branch/role/department/position/rank/team above: the new
+            // row switch (toggleBankAccountStatus()) is now the only way to change it.
         ]
     }
 };
@@ -1109,7 +1171,7 @@ $(document).on('click', '.btn-open-modal', function (e) {
     bodyHtml += `</form>`;
     $('#systemModal .modal-body').html(bodyHtml);
     $('#systemModal .modal-footer').html(`
-        <button type="button" class="btn btn-warning" id="btnSubmitModalForm" data-i18n="save">Save</button>
+        <button type="button" class="btn btn-primary" id="btnSubmitModalForm" data-i18n="save">Save</button>
         <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
     `);
     if (typeof initSelect2 === 'function') {
@@ -1137,6 +1199,37 @@ $(document).on('click', '.btn-open-modal', function (e) {
     const $modalEl = $('#systemModal');
     $modalEl.modal('show');
     if (typeof updateText === 'function') updateText($modalEl[0]);
+});
+// 2026-09-02, real Origami `GET /api/hr/company` endpoint confirmed live -- see
+// CompanySyncModel::sync()'s own docblock. Always overwrites (Origami is the data owner), so
+// this asks for confirmation first, same as any other destructive-to-manual-edits action.
+$(document).on('click', '#btnSyncCompanyOrigami', function () {
+    const $btn = $(this);
+    showConfirm(
+        langData['confirm_sync_company_title'] || 'Sync from Origami?',
+        langData['confirm_sync_company_message'] || 'This will overwrite the company name, tax ID, address, and logo with the current data from Origami. Any manual edits to these fields will be replaced. Continue?',
+        function () {
+            $btn.prop('disabled', true);
+            $.ajax({
+                url: `${BASE_URL}/api/company.sync-origami`,
+                method: 'POST',
+                dataType: 'json',
+                success: function (res) {
+                    $btn.prop('disabled', false);
+                    if (res.status) {
+                        showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                        initCompanyData();
+                    } else {
+                        showError(res.message || langData['save_failed'] || 'Failed.');
+                    }
+                },
+                error: function () {
+                    $btn.prop('disabled', false);
+                    showError(langData['save_failed'] || 'Failed.');
+                }
+            });
+        }
+    );
 });
 $(document).on('click', '#btnSubmitModalForm', function () {
     const $btn = $(this);

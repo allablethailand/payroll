@@ -117,6 +117,8 @@ $(document).on('submit', '#ecrRequestForm', function (e) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
+    const $btn = $(this).find('[type="submit"]');
+    setButtonLoading($btn, true);
     $.ajax({
         url: `${BASE_URL}/api/employment-certificate-request.create`,
         method: 'POST',
@@ -124,6 +126,7 @@ $(document).on('submit', '#ecrRequestForm', function (e) {
         data: JSON.stringify({ employee_id: employeeId, language: language }),
         dataType: 'json',
         success: function (res) {
+            setButtonLoading($btn, false);
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 bootstrap.Modal.getInstance(document.getElementById('ecrRequestModal')).hide();
@@ -132,7 +135,7 @@ $(document).on('submit', '#ecrRequestForm', function (e) {
                 showWarning(res.message || langData['save_failed'] || 'An error occurred.');
             }
         },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });
 

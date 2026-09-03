@@ -15,11 +15,18 @@ class PayrollCycleModel {
     // migration's bank_account_id column now lets a cycle pin down instead of always falling back
     // to the company's single is_default account.
     public function list(int $compId): array {
+        // 2026-09-02, multi-bank-account payroll -- default_payment_method_id joined for display,
+        // same pattern as bank_file_format_id/bank_account_id above it. Account count/default
+        // account itself is NOT joined here (that's a 1:many relationship now, see
+        // getBankAccounts()) -- the list view shows how many accounts + the default one via a
+        // second call from the controller only when the edit form/detail view actually needs it.
         $sql = "SELECT pc.*, f.name_th AS bank_file_format_name_th, f.name_en AS bank_file_format_name_en,
-                    ba.account_name AS bank_account_name, ba.company_code AS bank_account_company_code
+                    ba.account_name AS bank_account_name, ba.company_code AS bank_account_company_code,
+                    mpm.name_th AS default_payment_method_name_th, mpm.name_en AS default_payment_method_name_en
                 FROM `payroll_cycles` pc
                 LEFT JOIN `master_bank_file_formats` f ON f.id = pc.bank_file_format_id
                 LEFT JOIN `bank_accounts` ba ON ba.id = pc.bank_account_id
+                LEFT JOIN `master_payment_methods` mpm ON mpm.id = pc.default_payment_method_id
                 WHERE pc.comp_id = :comp_id AND pc.deleted_at IS NULL ORDER BY pc.id ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':comp_id' => $compId]);
@@ -28,15 +35,140 @@ class PayrollCycleModel {
 
     public function get(int $id, int $compId): ?array {
         $sql = "SELECT pc.*, f.name_th AS bank_file_format_name_th, f.name_en AS bank_file_format_name_en,
-                    ba.account_name AS bank_account_name, ba.company_code AS bank_account_company_code
+                    ba.account_name AS bank_account_name, ba.company_code AS bank_account_company_code,
+                    mpm.name_th AS default_payment_method_name_th, mpm.name_en AS default_payment_method_name_en
                 FROM `payroll_cycles` pc
                 LEFT JOIN `master_bank_file_formats` f ON f.id = pc.bank_file_format_id
                 LEFT JOIN `bank_accounts` ba ON ba.id = pc.bank_account_id
+                LEFT JOIN `master_payment_methods` mpm ON mpm.id = pc.default_payment_method_id
                 WHERE pc.id = :id AND pc.comp_id = :comp_id AND pc.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            $row['bank_accounts'] = $this->getBankAccounts($id);
+        }
         return $row ?: null;
+    }
+
+    /**
+     * 2026-09-02, explicit request: "หน้านี้รองรับการเพิ่มมากกว่า 1 บัญชีธนาคารต่อ 1 รอบจ่ายเงินเดือนอยู่แล้ว
+     * หรือไม่...ถ้ายังไม่มีให้เพิ่ม" -- confirmed real gap, this + saveBankAccounts() below are what
+     * fill it. Every account this cycle currently offers, most-default-first for display.
+     */
+    public function getBankAccounts(int $cycleId): array {
+        $stmt = $this->db->prepare(
+            "SELECT pcba.id AS link_id, pcba.bank_account_id, pcba.is_default, pcba.sort_order,
+                    ba.account_name, ba.company_code, mb.bank_name_th, mb.bank_name_en
+             FROM `payroll_cycle_bank_accounts` pcba
+             JOIN `bank_accounts` ba ON ba.id = pcba.bank_account_id AND ba.deleted_at IS NULL
+             LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
+             WHERE pcba.cycle_id = :cycle_id
+             ORDER BY pcba.is_default DESC, pcba.sort_order ASC, pcba.id ASC"
+        );
+        $stmt->execute([':cycle_id' => $cycleId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Replaces the WHOLE account set for one cycle (delete+reinsert, same "small all-or-nothing
+     * child set" convention this project already uses for e.g. holiday_assignments/
+     * approval_workflow_steps) -- $rows: [{bank_account_id, is_default}, ...]. Enforces EXACTLY ONE
+     * is_default=1 row at the application layer (this project's own established convention for an
+     * invariant MySQL itself can't express cleanly, e.g. the deleted_at+unique pattern documented in
+     * CLAUDE.md) -- rejects zero or 2+ flagged defaults rather than silently picking one. Also syncs
+     * the DENORMALIZED `payroll_cycles.bank_account_id` shortcut to the new default's id, since
+     * PayrollRunEmployeeBankAccountModel::resolveForRun() still reads that column directly (see this
+     * table's own migration header for why that's the cheapest, least-disruptive path).
+     */
+    public function saveBankAccounts(int $cycleId, int $compId, array $rows, int $userId): array {
+        $stmtCheck = $this->db->prepare("SELECT id FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtCheck->execute([':id' => $cycleId, ':comp_id' => $compId]);
+        if (!$stmtCheck->fetch()) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        if (empty($rows)) {
+            // An empty set is valid (cycle falls back to the company's own is_default=1 account,
+            // same as before this feature existed) -- just clear the denormalized shortcut too.
+            $own = !$this->db->inTransaction();
+            if ($own) {
+                $this->db->beginTransaction();
+            }
+            try {
+                $this->db->prepare("DELETE FROM `payroll_cycle_bank_accounts` WHERE cycle_id = :cycle_id")->execute([':cycle_id' => $cycleId]);
+                $this->db->prepare("UPDATE `payroll_cycles` SET bank_account_id = NULL, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
+                    ->execute([':updated_by' => $userId, ':id' => $cycleId]);
+                if ($own) {
+                    $this->db->commit();
+                }
+            } catch (\Throwable $e) {
+                if ($own) {
+                    $this->db->rollBack();
+                }
+                return ['status' => false, 'message' => 'Database operation failed.'];
+            }
+            return ['status' => true, 'message' => 'Saved.'];
+        }
+
+        $defaultCount = 0;
+        $accountIds = [];
+        foreach ($rows as $row) {
+            $accId = !empty($row['bank_account_id']) ? (int)$row['bank_account_id'] : 0;
+            if ($accId <= 0) {
+                return ['status' => false, 'message' => 'Invalid bank_account_id in the account list.'];
+            }
+            $accountIds[] = $accId;
+            if (!empty($row['is_default'])) {
+                $defaultCount++;
+            }
+        }
+        if (count(array_unique($accountIds)) !== count($accountIds)) {
+            return ['status' => false, 'message' => 'The same bank account cannot be added twice to one cycle.'];
+        }
+        if ($defaultCount !== 1) {
+            return ['status' => false, 'message' => 'Exactly one account must be flagged as default.'];
+        }
+        $placeholders = implode(',', array_fill(0, count($accountIds), '?'));
+        $stmtOwn = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE comp_id = ? AND deleted_at IS NULL AND status = 'active' AND id IN ({$placeholders})");
+        $stmtOwn->execute(array_merge([$compId], $accountIds));
+        if (count($stmtOwn->fetchAll()) !== count($accountIds)) {
+            return ['status' => false, 'message' => 'One or more selected accounts are invalid or do not belong to this company.'];
+        }
+
+        $own = !$this->db->inTransaction();
+        if ($own) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $this->db->prepare("DELETE FROM `payroll_cycle_bank_accounts` WHERE cycle_id = :cycle_id")->execute([':cycle_id' => $cycleId]);
+            $ins = $this->db->prepare(
+                "INSERT INTO `payroll_cycle_bank_accounts` (cycle_id, bank_account_id, is_default, sort_order, created_by)
+                 VALUES (:cycle_id, :bank_account_id, :is_default, :sort_order, :created_by)"
+            );
+            $defaultAccountId = null;
+            foreach ($rows as $i => $row) {
+                $accId = (int)$row['bank_account_id'];
+                $isDefault = !empty($row['is_default']) ? 1 : 0;
+                if ($isDefault) {
+                    $defaultAccountId = $accId;
+                }
+                $ins->execute([
+                    ':cycle_id' => $cycleId, ':bank_account_id' => $accId, ':is_default' => $isDefault,
+                    ':sort_order' => $i, ':created_by' => $userId,
+                ]);
+            }
+            $this->db->prepare("UPDATE `payroll_cycles` SET bank_account_id = :bank_account_id, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
+                ->execute([':bank_account_id' => $defaultAccountId, ':updated_by' => $userId, ':id' => $cycleId]);
+            if ($own) {
+                $this->db->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($own) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+        return ['status' => true, 'message' => 'Saved.'];
     }
 
     public function options(int $compId, string $search, int $page, int $limit): array {
@@ -200,18 +332,24 @@ class PayrollCycleModel {
      * dropdown too (not just the period dates, which were already pre-filled from Origami's own
      * process_start/end/paid).
      *
-     * There is NO reliable id-based mapping available today -- payroll_cycles carries no
-     * origami_period_id/origami reference column at all (confirmed via a live `SHOW COLUMNS` check),
-     * and payroll_sync_processes' own origami_period_id has nothing on this side to join against.
-     * This is a heuristic, not a real mapping -- PAYROLL_SYNC_API.md itself (referenced throughout
-     * this codebase's own sync-related comments) is NOT a file that lives in this repo, so nothing
-     * here edits it; flag the actual gap to Origami's own team directly instead (see the reply this
-     * method shipped alongside for the exact ask). What would turn this from a heuristic into a real
-     * mapping: Origami sending back a stable identifier for the payroll cycle/schedule it resolved
-     * the process against on ITS side (a code or id this app could store once against the matching
-     * payroll_cycles row and join on forever after, the same way payroll_sync_processes.
-     * origami_process_id already anchors a whole process unambiguously) -- until that exists, this
-     * method can only ever guess from structural coincidence:
+     * 2026-09-02 revision: Origami's own team replied to the gap flagged below (see
+     * `proposal_payroll_schedule_mapping.docx`, PAYROLL_SYNC_API.md's 2026-09-01 revision at
+     * C:\xampp\htdocs\origami\payroll\docs\) and shipped `external_cycle_code` -- an admin-set
+     * free-text code, sent on both the top-level payload and every `items[]` row, meant to be
+     * re-entered identically against a `payroll_cycles.external_cycle_code` row on this side. This
+     * IS now the real id-based mapping the note below used to say didn't exist -- checked FIRST,
+     * as an exact (case-insensitive/trimmed) string match against every active cycle; if found,
+     * returned immediately, bypassing the structural heuristic entirely (no ambiguity to resolve --
+     * an exact code match is authoritative). Only falls through to the pre-existing heuristic when
+     * `syncRow['external_cycle_code']` is null/empty (the Origami admin hasn't set one for this
+     * period yet) OR is set but doesn't match any of this company's own configured cycles yet (the
+     * transition period before both sides have entered matching codes) -- never a hard failure, so
+     * nothing regresses for a company that hasn't adopted external_cycle_code yet.
+     *
+     * The heuristic below (kept as the fallback) has no reliable id-based mapping of its own --
+     * payroll_cycles carries no origami_period_id/origami reference column, and
+     * payroll_sync_processes' own origami_period_id has nothing on this side to join against. It
+     * can only ever guess from structural coincidence:
      *   1. frequency_type must translate to the SAME payroll_frequency (monthly/
      *      semimonthly->semi_monthly/weekly/biweekly->bi_weekly).
      *   2. process_end's own day-of-month (or weekday, for weekly/bi_weekly) must match the cycle's
@@ -231,6 +369,17 @@ class PayrollCycleModel {
      * @param array $syncRow one row of PayrollSyncModel::pendingList()'s own return shape
      */
     public function matchForSyncProcess(array $activeCycles, array $syncRow): ?array {
+        $externalCode = trim((string)($syncRow['external_cycle_code'] ?? ''));
+        if ($externalCode !== '') {
+            foreach ($activeCycles as $cycle) {
+                if (($cycle['status'] ?? '') !== 'active') continue;
+                $cycleCode = trim((string)($cycle['external_cycle_code'] ?? ''));
+                if ($cycleCode !== '' && strcasecmp($cycleCode, $externalCode) === 0) {
+                    return $cycle;
+                }
+            }
+        }
+
         if (empty($syncRow['process_end']) || empty($syncRow['frequency_type'])) {
             return null;
         }
@@ -424,6 +573,22 @@ class PayrollCycleModel {
         return (int)$stmt->fetchColumn() > 0;
     }
 
+    // 2026-09-02: same duplicate-check shape as isCycleNameDuplicate() above -- case-insensitive
+    // since the whole point is an exact join key with Origami's own admin-entered value, and admins
+    // on either side re-typing the same code with different casing shouldn't create two "different"
+    // matches that both look valid.
+    private function isExternalCycleCodeDuplicate(int $compId, string $code, ?int $excludeId): bool {
+        $sql = "SELECT COUNT(*) FROM `payroll_cycles` WHERE comp_id = :comp_id AND LOWER(external_cycle_code) = LOWER(:code) AND deleted_at IS NULL";
+        $params = [':comp_id' => $compId, ':code' => $code];
+        if ($excludeId !== null) {
+            $sql .= " AND id != :exclude_id";
+            $params[':exclude_id'] = $excludeId;
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn() > 0;
+    }
+
     /**
      * Resolves a "day of month or last day" pair from request data for a given field prefix.
      * Returns [dayOfMonth|null, useLastDay(0|1)] or null on validation failure.
@@ -457,6 +622,20 @@ class PayrollCycleModel {
             return ['status' => false, 'message' => 'This cycle name is already in use.'];
         }
 
+        // 2026-09-02, Origami reply to the payroll-schedule-mapping gap (see matchForSyncProcess()'s
+        // own docblock) -- OPTIONAL (unlike cycle_name above), so a company not yet coordinating
+        // codes with Origami is unaffected. Only checked for duplicates among ACTIVE (non-deleted)
+        // rows when actually set -- two cycles both left blank is not a conflict.
+        $externalCycleCode = !empty($data['external_cycle_code']) ? trim((string)$data['external_cycle_code']) : null;
+        if ($externalCycleCode !== null) {
+            if (mb_strlen($externalCycleCode) > 100) {
+                return ['status' => false, 'message' => 'external_cycle_code must be 100 characters or fewer.'];
+            }
+            if ($this->isExternalCycleCodeDuplicate($compId, $externalCycleCode, $id)) {
+                return ['status' => false, 'message' => 'This external cycle code is already in use by another schedule.'];
+            }
+        }
+
         $frequency = (string)$data['payroll_frequency'];
         if (!in_array($frequency, ['monthly', 'semi_monthly', 'weekly', 'bi_weekly'], true)) {
             return ['status' => false, 'message' => 'Invalid payroll_frequency.'];
@@ -469,18 +648,17 @@ class PayrollCycleModel {
             return ['status' => false, 'message' => 'Invalid bank_file_format_id.'];
         }
 
-        // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" --
-        // OPTIONAL (unlike bank_file_format_id above). NULL means "fall back to the company's own
-        // is_default account" (same behavior as before this column existed) -- see
-        // BankTransferFileReport::resolveCompanyBankAccount()'s own docblock for the actual
-        // resolution order this feeds into. Validated to belong to THIS company (not deleted) when
-        // provided, same "cross-company FK" guard every other optional FK picker in this app uses.
-        $bankAccountId = !empty($data['bank_account_id']) ? (int)$data['bank_account_id'] : null;
-        if ($bankAccountId !== null) {
-            $stmtAccount = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
-            $stmtAccount->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
-            if (!$stmtAccount->fetch()) {
-                return ['status' => false, 'message' => 'Invalid bank_account_id.'];
+        // 2026-09-02, multi-bank-account payroll -- `bank_account_id` is no longer settable directly
+        // through this method. It's now a DENORMALIZED shortcut owned exclusively by
+        // saveBankAccounts() (kept in sync with whichever account in payroll_cycle_bank_accounts is
+        // flagged is_default there) -- see that method's own docblock. This method simply never
+        // touches the column anymore, so an UPDATE here can't silently desync/clear it.
+        $defaultPaymentMethodId = !empty($data['default_payment_method_id']) ? (int)$data['default_payment_method_id'] : null;
+        if ($defaultPaymentMethodId !== null) {
+            $stmtMethod = $this->db->prepare("SELECT id FROM `master_payment_methods` WHERE id = :id AND is_active = 1");
+            $stmtMethod->execute([':id' => $defaultPaymentMethodId]);
+            if (!$stmtMethod->fetch()) {
+                return ['status' => false, 'message' => 'Invalid default_payment_method_id.'];
             }
         }
 
@@ -528,12 +706,28 @@ class PayrollCycleModel {
             [$otCutoffDayOfMonth, $otCutoffUseLastDay] = $otResolved;
         }
 
-        $statusInput = $data['status'] ?? 'active';
-        $status = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : 'active';
+        // 2026-09-02, Platform Hardening Phase 1.1 -- `status` is no longer sent by the Add/Edit
+        // modal (the new row switch, see toggleStatus() below, is now the only way to change it,
+        // same convention already applied to Branch/Role/Department/Position/Rank/Team/PED Type).
+        // Fetch and preserve the EXISTING row's status when the field is absent from the payload,
+        // same `$data['status'] ?? $existingStatus ?? 'active'` fix already applied once to
+        // CompanyProfileModel::saveStructure() for the identical reason -- without this, every
+        // ordinary Edit-and-Save would silently reset an intentionally-deactivated cycle back to
+        // active.
+        $existingStatus = null;
+        if ($id !== null) {
+            $stmtExistingStatus = $this->db->prepare("SELECT status FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtExistingStatus->execute([':id' => $id, ':comp_id' => $compId]);
+            $existingStatus = $stmtExistingStatus->fetchColumn();
+            $existingStatus = $existingStatus === false ? null : $existingStatus;
+        }
+        $statusInput = $data['status'] ?? $existingStatus ?? 'active';
+        $status = in_array($statusInput, ['active', 'inactive'], true) ? $statusInput : ($existingStatus ?: 'active');
 
         $params = [
             ':cycle_name' => $cycleName,
             ':payroll_frequency' => $frequency,
+            ':external_cycle_code' => $externalCycleCode,
             ':cutoff_day_of_month' => $cutoffDayOfMonth,
             ':cutoff_use_last_day' => $cutoffUseLastDay,
             ':cutoff_day_of_week' => $cutoffDayOfWeek,
@@ -544,7 +738,7 @@ class PayrollCycleModel {
             ':ot_cutoff_day_of_month' => $otCutoffDayOfMonth,
             ':ot_cutoff_use_last_day' => $otCutoffUseLastDay,
             ':bank_file_format_id' => $bankFileFormatId,
-            ':bank_account_id' => $bankAccountId,
+            ':default_payment_method_id' => $defaultPaymentMethodId,
             ':status' => $status,
         ];
 
@@ -556,11 +750,11 @@ class PayrollCycleModel {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 $sql = "UPDATE `payroll_cycles` SET
-                            cycle_name = :cycle_name, payroll_frequency = :payroll_frequency,
+                            cycle_name = :cycle_name, payroll_frequency = :payroll_frequency, external_cycle_code = :external_cycle_code,
                             cutoff_day_of_month = :cutoff_day_of_month, cutoff_use_last_day = :cutoff_use_last_day, cutoff_day_of_week = :cutoff_day_of_week,
                             payment_day_of_month = :payment_day_of_month, payment_use_last_day = :payment_use_last_day, payment_day_of_week = :payment_day_of_week,
                             ot_cutoff_type = :ot_cutoff_type, ot_cutoff_day_of_month = :ot_cutoff_day_of_month, ot_cutoff_use_last_day = :ot_cutoff_use_last_day,
-                            bank_file_format_id = :bank_file_format_id, bank_account_id = :bank_account_id, status = :status,
+                            bank_file_format_id = :bank_file_format_id, default_payment_method_id = :default_payment_method_id, status = :status,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $params[':updated_by'] = $userId;
@@ -571,18 +765,38 @@ class PayrollCycleModel {
             }
 
             $sql = "INSERT INTO `payroll_cycles`
-                        (comp_id, cycle_name, payroll_frequency, cutoff_day_of_month, cutoff_use_last_day, cutoff_day_of_week,
+                        (comp_id, cycle_name, payroll_frequency, external_cycle_code, cutoff_day_of_month, cutoff_use_last_day, cutoff_day_of_week,
                          payment_day_of_month, payment_use_last_day, payment_day_of_week,
-                         ot_cutoff_type, ot_cutoff_day_of_month, ot_cutoff_use_last_day, bank_file_format_id, bank_account_id, status, created_by)
+                         ot_cutoff_type, ot_cutoff_day_of_month, ot_cutoff_use_last_day, bank_file_format_id, default_payment_method_id, status, created_by)
                     VALUES
-                        (:comp_id, :cycle_name, :payroll_frequency, :cutoff_day_of_month, :cutoff_use_last_day, :cutoff_day_of_week,
+                        (:comp_id, :cycle_name, :payroll_frequency, :external_cycle_code, :cutoff_day_of_month, :cutoff_use_last_day, :cutoff_day_of_week,
                          :payment_day_of_month, :payment_use_last_day, :payment_day_of_week,
-                         :ot_cutoff_type, :ot_cutoff_day_of_month, :ot_cutoff_use_last_day, :bank_file_format_id, :bank_account_id, :status, :created_by)";
+                         :ot_cutoff_type, :ot_cutoff_day_of_month, :ot_cutoff_use_last_day, :bank_file_format_id, :default_payment_method_id, :status, :created_by)";
             $params[':comp_id'] = $compId;
             $params[':created_by'] = $userId;
             $stmt = $this->db->prepare($sql);
             $stmt->execute($params);
             return ['status' => true, 'message' => 'Created successfully.', 'id' => (int)$this->db->lastInsertId()];
+        } catch (PDOException $e) {
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch (row-level, no confirm
+    // needed on the model side, the shared frontend handler in app.js already confirms before
+    // deactivating). Same shape as CompanyProfileModel::toggleStructureStatus().
+    public function toggleStatus(int $compId, int $id, int $userId): array {
+        $stmt = $this->db->prepare("SELECT status FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $id, ':comp_id' => $compId]);
+        $current = $stmt->fetchColumn();
+        if ($current === false) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $newStatus = $current === 'active' ? 'inactive' : 'active';
+        try {
+            $stmtUpdate = $this->db->prepare("UPDATE `payroll_cycles` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+            $stmtUpdate->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+            return ['status' => true, 'new_status' => $newStatus, 'message' => 'Updated successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }

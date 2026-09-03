@@ -25,7 +25,14 @@ class SetupRulesController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
-    /** Holiday/Leave Type only (the RBAC rollout's agreed scope) -- Shift/Work Location stay ungated. */
+    /** 2026-09-03, Platform Hardening Phase 3 Stage 3: extended from Holiday/Leave Type/Approval
+     *  Workflow (the original RBAC rollout's agreed scope) to also cover Shift/Work Location/
+     *  OT Rate -- a "natural small extension, sits right next to Holiday/Leave Type which are
+     *  already being expanded" (see project_platform_hardening_phase3_2026_09_03 memory's own
+     *  scope-boundary section). New `shift.*`/`work_location.*`/`ot_rate.*` permission keys, no
+     *  role currently holds a non-admin grant for any of them in the real dev DB (checked before
+     *  this rollout -- same as holiday/leave_type had zero real grants either), so this is not a
+     *  behavior change for any configured role today, only for a future one an admin sets up. */
     private function requirePermission(string $permissionKey): bool {
         $compId = (int)getCompId();
         $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
@@ -39,11 +46,13 @@ class SetupRulesController extends Controller {
     /* ==================== SHIFT ==================== */
 
     public function shiftList() {
+        if (!$this->requirePermission('shift.view')) return;
         $compId = getCompId();
         $this->json(['status' => true, 'data' => $this->model->shiftList((int)$compId)]);
     }
 
     public function shiftGet() {
+        if (!$this->requirePermission('shift.view')) return;
         $compId = getCompId();
         $id = (int)($_GET['id'] ?? 0);
         $row = $this->model->shiftGet($id, (int)$compId);
@@ -62,16 +71,29 @@ class SetupRulesController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // SetupRulesModel::shiftSave() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'shift.edit' : 'shift.add')) return;
         $this->json($this->model->shiftSave($data, (int)$compId, $this->userId()));
     }
 
+    // 2026-09-02, real bug found and fixed: this read $_POST['id'], but the shared frontend switch
+    // (app.js's renderStatusToggleHtml()/status-toggle-switch handler) posts a raw JSON body, not
+    // form-urlencoded -- $_POST is never populated for a JSON body, so $id always fell through to 0
+    // and every toggle click on this table's status switch silently failed with "Record not found"
+    // (or whatever the model's own 0-id branch returns). Same fix as
+    // PayrollConfigurationController::pedTypeToggleStatus()/cycleToggleStatus() already use.
     public function shiftToggleStatus() {
+        if (!$this->requirePermission('shift.edit')) return;
         $compId = getCompId();
-        $id = (int)($_POST['id'] ?? 0);
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
         $this->json($this->model->shiftToggleStatus($id, (int)$compId, $this->userId()));
     }
 
     public function shiftDelete() {
+        if (!$this->requirePermission('shift.delete')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->model->shiftDelete($id, (int)$compId, $this->userId()));
@@ -98,7 +120,6 @@ class SetupRulesController extends Controller {
     }
 
     public function holidaySave() {
-        if (!$this->requirePermission('holiday.manage')) return;
         $compId = getCompId();
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -106,32 +127,41 @@ class SetupRulesController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // SetupRulesModel::holidaySave() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'holiday.edit' : 'holiday.add')) return;
         $this->json($this->model->holidaySave($data, (int)$compId, $this->userId()));
     }
 
     public function holidayDelete() {
-        if (!$this->requirePermission('holiday.manage')) return;
+        if (!$this->requirePermission('holiday.delete')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->model->holidayDelete($id, (int)$compId, $this->userId()));
     }
 
+    // 2026-09-02, real bug found and fixed -- same "$_POST['id'] never populates for the shared
+    // switch's raw JSON body" bug as shiftToggleStatus() above.
     public function holidayToggleStatus() {
-        if (!$this->requirePermission('holiday.manage')) return;
+        if (!$this->requirePermission('holiday.edit')) return;
         $compId = getCompId();
-        $id = (int)($_POST['id'] ?? 0);
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
         $this->json($this->model->holidayToggleStatus($id, (int)$compId, $this->userId()));
     }
 
     /* ==================== SHIFT ASSIGNMENT ==================== */
 
     public function shiftAssignedEmployees() {
+        if (!$this->requirePermission('shift.view')) return;
         $compId = getCompId();
         $id = (int)($_GET['id'] ?? 0);
         $this->json(['status' => true, 'data' => $this->model->shiftAssignedEmployees($id, (int)$compId)]);
     }
 
     public function shiftAssignEmployees() {
+        if (!$this->requirePermission('shift.edit')) return;
         $compId = getCompId();
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -146,13 +176,24 @@ class SetupRulesController extends Controller {
 
     /* ==================== SCOPE ASSIGN, generic (2026-08-31, explicit request) ====================
      * Shift/Work Location's own equivalent of CompanyProfileController's own structureEmployees*
-     * methods -- see SetupRulesModel::SCOPE_ASSIGN_CONFIG's own docblock. Ungated (no
-     * requirePermission()) same as every other Shift endpoint on this controller -- Shift/Work
-     * Location are explicitly OUT of this app's RBAC scope (see CLAUDE.md's own note: "Scope...
-     * Holiday, Leave Type, Approval Workflow เท่านั้น -- ไม่รวม Shift/Work Location"). */
+     * methods -- see SetupRulesModel::SCOPE_ASSIGN_CONFIG's own docblock. 2026-09-03, Platform
+     * Hardening Phase 3 Stage 3: gated -- `type` is always exactly 'shift' or 'work_location'
+     * (SCOPE_ASSIGN_CONFIG's own key set), which happens to match this Stage's new permission
+     * module_codes 1:1, so scopePermissionModule() just returns `type` itself, defensively refusing
+     * anything else. */
+    private function scopePermissionModule(string $type): ?string {
+        return in_array($type, ['shift', 'work_location'], true) ? $type : null;
+    }
+
     public function scopeEmployeesInRow() {
         $compId = getCompId();
         $type = (string)($_GET['type'] ?? '');
+        $module = $this->scopePermissionModule($type);
+        if ($module === null) {
+            $this->json(['status' => false, 'message' => 'Invalid entity type.']);
+            return;
+        }
+        if (!$this->requirePermission($module . '.view')) return;
         $rowId = (int)($_GET['id'] ?? 0);
         $search = trim((string)($_GET['search'] ?? ''));
         $this->json($this->model->scopeEmployeesInRow($type, $rowId, (int)$compId, $search));
@@ -161,6 +202,12 @@ class SetupRulesController extends Controller {
     public function scopeEmployeesOutsideRow() {
         $compId = getCompId();
         $type = (string)($_GET['type'] ?? '');
+        $module = $this->scopePermissionModule($type);
+        if ($module === null) {
+            $this->json(['status' => false, 'message' => 'Invalid entity type.']);
+            return;
+        }
+        if (!$this->requirePermission($module . '.view')) return;
         $rowId = (int)($_GET['id'] ?? 0);
         $search = trim((string)($_GET['search'] ?? ''));
         $this->json($this->model->scopeEmployeesOutsideRow($type, $rowId, (int)$compId, $search));
@@ -170,6 +217,12 @@ class SetupRulesController extends Controller {
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $type = (string)($data['type'] ?? '');
+        $module = $this->scopePermissionModule($type);
+        if ($module === null) {
+            $this->json(['status' => false, 'message' => 'Invalid entity type.']);
+            return;
+        }
+        if (!$this->requirePermission($module . '.edit')) return;
         $rowId = (int)($data['id'] ?? 0);
         $employeeIds = is_array($data['employee_ids'] ?? null) ? $data['employee_ids'] : [];
         $this->json($this->model->scopeAssignEmployees($type, $rowId, $employeeIds, (int)$compId, $this->userId()));
@@ -179,6 +232,12 @@ class SetupRulesController extends Controller {
         $compId = getCompId();
         $data = json_decode(file_get_contents('php://input'), true);
         $type = (string)($data['type'] ?? '');
+        $module = $this->scopePermissionModule($type);
+        if ($module === null) {
+            $this->json(['status' => false, 'message' => 'Invalid entity type.']);
+            return;
+        }
+        if (!$this->requirePermission($module . '.edit')) return;
         $employeeIds = is_array($data['employee_ids'] ?? null) ? $data['employee_ids'] : [];
         $destinationRowId = !empty($data['destination_id']) ? (int)$data['destination_id'] : null;
         $this->json($this->model->scopeMoveEmployeesOut($type, $employeeIds, (int)$compId, $destinationRowId, $this->userId()));
@@ -187,10 +246,19 @@ class SetupRulesController extends Controller {
     /* ==================== WORK LOCATION ==================== */
 
     public function workLocationList() {
+        if (!$this->requirePermission('work_location.view')) return;
         $compId = getCompId();
         $this->json(['status' => true, 'data' => $this->model->workLocationList((int)$compId)]);
     }
 
+    // 2026-09-03, Platform Hardening Phase 3 Stage 3: deliberately left UNGATED -- `api/work-
+    // location.options` is registered TWICE in index.php (this method, and MasterController::
+    // getMaster() further down as a generic picker also consumed by structure-assign.js's shared
+    // "Assign Employees" modal for other entity types) -- whichever route wins the match, gating
+    // this one specific method risks nothing (if shadowed, it's unreachable dead code) but could
+    // wrongly lock a generic dropdown picker behind Setup Rules' own admin permission if it turns
+    // out to be the one actually reached. Left as-is per this Stage's own "don't newly-gate an
+    // ambiguous shared endpoint" caution.
     public function workLocationOptions() {
         $compId = getCompId();
         $search = (string)($_POST['searchTerm'] ?? '');
@@ -199,6 +267,7 @@ class SetupRulesController extends Controller {
     }
 
     public function workLocationGet() {
+        if (!$this->requirePermission('work_location.view')) return;
         $compId = getCompId();
         $id = (int)($_GET['id'] ?? 0);
         $row = $this->model->workLocationGet($id, (int)$compId);
@@ -217,18 +286,27 @@ class SetupRulesController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // SetupRulesModel::workLocationSave() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'work_location.edit' : 'work_location.add')) return;
         $this->json($this->model->workLocationSave($data, (int)$compId, $this->userId()));
     }
 
     public function workLocationDelete() {
+        if (!$this->requirePermission('work_location.delete')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->model->workLocationDelete($id, (int)$compId, $this->userId()));
     }
 
+    // 2026-09-02, real bug found and fixed -- same "$_POST['id'] never populates for the shared
+    // switch's raw JSON body" bug as shiftToggleStatus() above.
     public function workLocationToggleStatus() {
+        if (!$this->requirePermission('work_location.edit')) return;
         $compId = getCompId();
-        $id = (int)($_POST['id'] ?? 0);
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
         $this->json($this->model->workLocationToggleStatus($id, (int)$compId, $this->userId()));
     }
 
@@ -259,7 +337,6 @@ class SetupRulesController extends Controller {
     }
 
     public function leaveTypeSave() {
-        if (!$this->requirePermission('leave_type.manage')) return;
         $compId = getCompId();
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -267,25 +344,32 @@ class SetupRulesController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // SetupRulesModel::leaveTypeSave() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'leave_type.edit' : 'leave_type.add')) return;
         $this->json($this->model->leaveTypeSave($data, (int)$compId, $this->userId()));
     }
 
     public function leaveTypeDelete() {
-        if (!$this->requirePermission('leave_type.manage')) return;
+        if (!$this->requirePermission('leave_type.delete')) return;
         $compId = getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json($this->model->leaveTypeDelete($id, (int)$compId, $this->userId()));
     }
 
+    // 2026-09-02, real bug found and fixed -- same "$_POST['id'] never populates for the shared
+    // switch's raw JSON body" bug as shiftToggleStatus() above.
     public function leaveTypeToggleStatus() {
-        if (!$this->requirePermission('leave_type.manage')) return;
+        if (!$this->requirePermission('leave_type.edit')) return;
         $compId = getCompId();
-        $id = (int)($_POST['id'] ?? 0);
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
         $this->json($this->model->leaveTypeToggleStatus($id, (int)$compId, $this->userId()));
     }
 
     public function leaveTypeApplyDefaults() {
-        if (!$this->requirePermission('leave_type.manage')) return;
+        if (!$this->requirePermission('leave_type.edit')) return;
         $compId = getCompId();
         $this->json($this->model->leaveTypeApplyDefaults((int)$compId, $this->userId()));
     }
@@ -300,15 +384,18 @@ class SetupRulesController extends Controller {
      */
 
     public function otScopeOptions() {
+        if (!$this->requirePermission('ot_rate.view')) return;
         $this->json(['status' => true, 'data' => ['items' => $this->model->otScopeOptions(), 'total_count' => 0]]);
     }
 
     public function otRateList() {
+        if (!$this->requirePermission('ot_rate.view')) return;
         $compId = (int)getCompId();
         $this->json(['status' => true, 'data' => (new OtRateSetModel())->list($compId)]);
     }
 
     public function otRateGet() {
+        if (!$this->requirePermission('ot_rate.view')) return;
         $compId = (int)getCompId();
         $id = (int)($_GET['id'] ?? 0);
         $row = (new OtRateSetModel())->get($id, $compId);
@@ -327,28 +414,42 @@ class SetupRulesController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // OtRateSetModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'ot_rate.edit' : 'ot_rate.add')) return;
         $this->json((new OtRateSetModel())->save($data, $compId, $this->userId()));
     }
 
     public function otRateDelete() {
+        if (!$this->requirePermission('ot_rate.delete')) return;
         $compId = (int)getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json((new OtRateSetModel())->delete($id, $compId, $this->userId()));
     }
 
+    // 2026-09-02, real bug found and fixed -- same "$_POST['id'] never populates for the shared
+    // switch's raw JSON body" bug as shiftToggleStatus() above.
     public function otRateToggleStatus() {
+        if (!$this->requirePermission('ot_rate.edit')) return;
         $compId = (int)getCompId();
-        $id = (int)($_POST['id'] ?? 0);
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
         $this->json((new OtRateSetModel())->toggleStatus($id, $compId, $this->userId()));
     }
 
     public function otRateSetDefault() {
+        if (!$this->requirePermission('ot_rate.edit')) return;
         $compId = (int)getCompId();
         $id = (int)($_POST['id'] ?? 0);
         $this->json((new OtRateSetModel())->setDefault($id, $compId, $this->userId()));
     }
 
+    // 2026-09-03, Platform Hardening Phase 3 Stage 3: feeds the OT Rate Set editor's OWN department/
+    // team/position/employee assignment checkbox list (Setup Rules page itself, unlike
+    // otRateSetOptions() below which is a DIFFERENT page's picker) -- safe to gate.
     public function otRateAssignableOptions() {
+        if (!$this->requirePermission('ot_rate.view')) return;
         $compId = (int)getCompId();
         $this->json(['status' => true, 'data' => (new OtRateSetModel())->assignableOptions($compId)]);
     }
@@ -360,6 +461,11 @@ class SetupRulesController extends Controller {
      * app expects (see input.js's own initSelect2()). Only ACTIVE Sets are offered -- an employee
      * should never be able to explicitly pick a Set that's currently deactivated.
      */
+    // 2026-09-03, Platform Hardening Phase 3 Stage 3: deliberately left UNGATED -- consumed by
+    // Employee Detail's own OT Rate Settings card (a different page/permission domain entirely,
+    // see this method's own docblock above), not Setup Rules' own admin UI. Gating this behind
+    // ot_rate.view would wrongly block any employee-editing user who lacks OT Rate Set management
+    // permission from simply picking an existing (already-configured) Set for one employee.
     public function otRateSetOptions() {
         $compId = (int)getCompId();
         $search = trim((string)($_POST['searchTerm'] ?? ''));
@@ -373,6 +479,7 @@ class SetupRulesController extends Controller {
     }
 
     public function otRatePreview() {
+        if (!$this->requirePermission('ot_rate.view')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         if (!is_array($data)) {

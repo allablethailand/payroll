@@ -53,7 +53,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function itemList() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.view')) return;
         $compId = (int)getCompId();
         $countryCode = $this->companyCountry($compId);
         if ($countryCode === null) {
@@ -64,7 +64,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function itemGet() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.view')) return;
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if ($id <= 0) {
             $this->json(['status' => false, 'message' => 'Missing id.']);
@@ -79,13 +79,16 @@ class TaxStatutoryController extends Controller {
     }
 
     public function itemSave() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         if (!is_array($data)) {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // TaxStatutoryModel::save() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'tax_statutory.edit' : 'tax_statutory.add')) return;
         // Country is never taken from the request -- always the acting company's own, so a new/
         // edited item can never end up under a different country than the one this whole page is
         // now locked to (see companyCountry()'s own docblock).
@@ -102,7 +105,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function itemDelete() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.delete')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -115,8 +118,24 @@ class TaxStatutoryController extends Controller {
         $this->json($result);
     }
 
+    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
+    // itemDelete() just above.
+    public function itemToggleStatus() {
+        if (!$this->requirePermission('tax_statutory.edit')) return;
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $result = $this->model->toggleStatus($id, $userId);
+        $this->json($result);
+    }
+
     public function rateHistoryList() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.view')) return;
         $itemId = isset($_GET['item_id']) ? (int)$_GET['item_id'] : 0;
         if ($itemId <= 0) {
             $this->json(['status' => true, 'data' => []]);
@@ -126,7 +145,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function rateHistoryGet() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.view')) return;
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if ($id <= 0) {
             $this->json(['status' => false, 'message' => 'Missing id.']);
@@ -141,20 +160,23 @@ class TaxStatutoryController extends Controller {
     }
 
     public function rateHistorySave() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         if (!is_array($data)) {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
+        // TaxStatutoryModel::rateHistorySave() uses (id present = update).
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'tax_statutory.edit' : 'tax_statutory.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->model->rateHistorySave($data, $userId);
         $this->json($result);
     }
 
     public function rateVersionPreview() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.view')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         if (!is_array($data)) {
@@ -166,7 +188,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function rateHistoryDelete() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.delete')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -180,7 +202,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function companySettingList() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.view')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => true, 'data' => []]);
@@ -190,7 +212,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function companySettingGet() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.view')) return;
         $compId = getCompId();
         $itemId = isset($_GET['item_id']) ? (int)$_GET['item_id'] : 0;
         if (!$compId || $itemId <= 0) {
@@ -206,7 +228,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function companySettingSave() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -224,7 +246,7 @@ class TaxStatutoryController extends Controller {
     }
 
     public function companySettingReset() {
-        if (!$this->requirePermission('tax_statutory.manage')) return;
+        if (!$this->requirePermission('tax_statutory.edit')) return;
         $compId = getCompId();
         if (!$compId) {
             $this->json(['status' => false, 'message' => 'Missing company context.']);
@@ -239,6 +261,32 @@ class TaxStatutoryController extends Controller {
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $result = $this->companySettingModel->reset((int)$compId, $itemId, $userId);
+        $this->json($result);
+    }
+
+    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, keyed by
+    // statutory_item_id (a company may not have a settings row for this item yet at all, see
+    // CompanyStatutorySettingModel::toggleStatus()'s own docblock). Reads `id` (not
+    // `statutory_item_id`, unlike companySettingReset() above) because the shared frontend switch
+    // (app.js's renderStatusToggleHtml()/status-toggle-switch handler) ALWAYS posts `{id: ...}` --
+    // it's a generic component with a fixed payload shape, not something this one endpoint can
+    // customize -- the table's own render call passes `row.statutory_item_id` as that `id` value.
+    public function companySettingToggleStatus() {
+        if (!$this->requirePermission('tax_statutory.edit')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $itemId = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($itemId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid statutory_item_id.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $result = $this->companySettingModel->toggleStatus((int)$compId, $itemId, $userId);
         $this->json($result);
     }
 }
