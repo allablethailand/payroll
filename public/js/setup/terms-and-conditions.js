@@ -19,25 +19,67 @@
 
     function renderContent(active) {
         const content = currentLang === 'en' ? active.content_en : active.content_th;
-        // Plain text with real newlines (see the seeded placeholder's own \n usage) -- not HTML,
-        // so line breaks need an explicit conversion rather than trusting the browser to render
-        // \n inside a plain <div>.
-        $('#termsModalContent').html(escapeHtmlTerms(content).replace(/\n/g, '<br>'));
+        // 2026-09-07: content is now real HTML (headings/bold/bullet lists -- see the
+        // 2026-09-07_2_terms_and_conditions_draft_content.sql migration's own docblock), not the
+        // 2026-09-05 placeholder's plain-text-with-\n -- rendered directly, no escaping. Safe
+        // because this table is DB-seeded/admin-authored only (TermsAndConditionsModel's own
+        // docblock: no user-input path ever writes to content_th/content_en).
+        $('#termsModalContent').html(content || '');
     }
 
+    // 2026-09-07, explicit design question answered: "ถ้ามีหลาย Version จะแสดงยังไง...เป็นตารางก่อน
+    // แล้วค่อยกดดูข้อความ...ช่วย Design ให้แสดงผลใน modal เดียวครับ รองรับ responsive" -- was a plain
+    // <ul> of "label — date" text with no way to see an OLD version's actual content; now a real
+    // (`.table-responsive`, so it never breaks the modal's own width on a narrow screen) table with
+    // a per-row "View" button that swaps #termsModalContent (see the click handler further down).
     function renderHistory(rows) {
         if (!rows || !rows.length) {
             $('#termsModalHistory').html('<div class="text-muted small" data-i18n="terms_and_conditions_history_empty">You have not accepted any version yet.</div>');
-        } else {
-            let html = '<div class="text-muted small fw-semibold mb-1" data-i18n="terms_and_conditions_accepted_on">Accepted on</div><ul class="small text-muted mb-0">';
-            rows.forEach(function (r) {
-                html += '<li>' + escapeHtmlTerms(r.version_label) + ' — ' + escapeHtmlTerms(r.accepted_at) + '</li>';
-            });
-            html += '</ul>';
-            $('#termsModalHistory').html(html);
+            if (typeof applyLanguage === 'function') applyLanguage();
+            return;
         }
+        let html = '<div class="text-muted small fw-semibold mb-2" data-i18n="terms_and_conditions_history_title">Version History</div>'
+            + '<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">'
+            + '<thead class="table-light text-secondary"><tr>'
+            + '<th data-i18n="terms_and_conditions_col_version">Version</th>'
+            + '<th data-i18n="terms_and_conditions_col_effective_date">Effective Date</th>'
+            + '<th data-i18n="terms_and_conditions_accepted_on">Accepted on</th>'
+            + '<th></th>'
+            + '</tr></thead><tbody>';
+        rows.forEach(function (r) {
+            html += '<tr>'
+                + '<td>' + escapeHtmlTerms(r.version_label) + '</td>'
+                + '<td>' + (typeof formatDisplayDate === 'function' ? formatDisplayDate(r.effective_date) : escapeHtmlTerms(r.effective_date || '-')) + '</td>'
+                + '<td>' + (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(r.accepted_at) : escapeHtmlTerms(r.accepted_at || '-')) + '</td>'
+                + '<td class="text-end"><button type="button" class="btn btn-link btn-sm p-0 btn-terms-view-version" data-terms-id="' + r.terms_id + '" data-version-label="' + escapeHtmlTerms(r.version_label) + '" data-accepted-at="' + escapeHtmlTerms(r.accepted_at || '') + '" data-i18n="terms_and_conditions_view_version">View</button></td>'
+                + '</tr>';
+        });
+        html += '</tbody></table></div>';
+        $('#termsModalHistory').html(html);
         if (typeof applyLanguage === 'function') applyLanguage();
     }
+    function showCurrentVersionInModal() {
+        $.get(`${BASE_URL}/api/terms.get`).done(function (res) {
+            if (res && res.status && res.data) renderContent(res.data);
+        });
+        $('#termsModalViewingBanner').addClass('d-none');
+    }
+    $(document).on('click', '.btn-terms-view-version', function () {
+        const termsId = $(this).data('terms-id');
+        const versionLabel = $(this).data('version-label');
+        const acceptedAt = $(this).data('accepted-at');
+        $.get(`${BASE_URL}/api/terms.version`, { id: termsId }).done(function (res) {
+            if (!res || !res.status || !res.data) return;
+            renderContent(res.data);
+            const tpl = (typeof langData !== 'undefined' && langData['terms_and_conditions_viewing_version'])
+                || 'Viewing version {version} (accepted {date}) -- this is not the current version.';
+            const dateText = (typeof formatDisplayDateTime === 'function') ? formatDisplayDateTime(acceptedAt) : acceptedAt;
+            $('#termsModalViewingBannerText').text(tpl.replace('{version}', versionLabel).replace('{date}', dateText));
+            $('#termsModalViewingBanner').removeClass('d-none');
+            document.getElementById('termsModalBody').scrollTop = 0;
+        });
+    });
+    $(document).on('click', '#btnTermsBackToCurrent', showCurrentVersionInModal);
 
     function setForcedUi(forced) {
         const $modal = $('#termsModal');
@@ -53,6 +95,7 @@
         $.get(`${BASE_URL}/api/terms.get`).done(function (res) {
             if (!res || !res.status || !res.data) return; // no active T&C at all -- nothing to show
             setForcedUi(forced && !res.data.accepted);
+            $('#termsModalViewingBanner').addClass('d-none'); // reset any "viewing an old version" state from a previous open
             renderContent(res.data);
             if (!forced) {
                 $.get(`${BASE_URL}/api/terms.history`).done(function (histRes) {

@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/AuditLogModel.php';
 
 /**
  * Document Numbering settings (Document & Approval > "Document Numbering" tab). Was a static
@@ -29,6 +30,7 @@ declare(strict_types=1);
  */
 class DocumentNumberingModel {
     private PDO $db;
+    private AuditLogModel $auditLog;
 
     private const DEFAULTS = [
         'PAYSLIP' => ['prefix_format' => 'PS-{YYYY}{MM}-', 'digit_count' => 4, 'reset_cycle' => 'monthly'],
@@ -39,6 +41,7 @@ class DocumentNumberingModel {
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /** Every fixed document type, seeding any this company has never touched with sensible
@@ -72,7 +75,7 @@ class DocumentNumberingModel {
         }
     }
 
-    public function save(int $compId, string $documentTypeCode, array $data, int $userId): array {
+    public function save(int $compId, string $documentTypeCode, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         if (!array_key_exists($documentTypeCode, self::DEFAULTS)) {
             return ['status' => false, 'message' => 'Invalid document type.'];
         }
@@ -100,6 +103,11 @@ class DocumentNumberingModel {
             return ['status' => false, 'message' => 'Invalid reset cycle.'];
         }
         $this->ensureSeeded($compId);
+        // Platform Hardening Phase 6 (batch 5): SELECT * so the full row is available to
+        // AuditLogModel::record() as the "old" side of the diff below.
+        $stmtExisting = $this->db->prepare("SELECT * FROM `document_numbering_settings` WHERE comp_id = :comp_id AND document_type_code = :code");
+        $stmtExisting->execute([':comp_id' => $compId, ':code' => $documentTypeCode]);
+        $existing = $stmtExisting->fetch(PDO::FETCH_ASSOC) ?: [];
         $stmt = $this->db->prepare("UPDATE `document_numbering_settings`
             SET prefix_format = :prefix, digit_count = :digits, current_number = :current,
                 reset_cycle = :reset, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
@@ -108,6 +116,12 @@ class DocumentNumberingModel {
             ':prefix' => $prefix, ':digits' => $digitCount, ':current' => $currentNumber,
             ':reset' => $resetCycle, ':updated_by' => $userId, ':comp_id' => $compId, ':code' => $documentTypeCode,
         ]);
+        if (!empty($existing['id'])) {
+            $stmtNewRow = $this->db->prepare("SELECT * FROM `document_numbering_settings` WHERE id = :id");
+            $stmtNewRow->execute([':id' => $existing['id']]);
+            $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+            $this->auditLog->record($compId, 'document_numbering_settings', (int)$existing['id'], 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
+        }
         return ['status' => true, 'message' => 'Saved successfully.'];
     }
 

@@ -286,11 +286,14 @@ $(document).on('hide.bs.modal', '.modal', function (e) {
 // for delegated Mark-all-read/item-click handlers to keep firing, see that file's own 2026-08-29
 // docblock) -- this helper still closes it whenever a DIFFERENT flyout opens (that's a legitimate
 // "something else took over" close, not the inside-click case that guard exists for).
+// 2026-09-07 -- 'quicklinks' (the header Quick Links "More" dropdown, public/js/quick-links.js)
+// added as a 5th flyout, same convention as the other 4.
 function closeNavFlyouts(exceptId) {
     if (exceptId !== 'notif') $('#notifMenu').removeClass('active');
     if (exceptId !== 'hub') $('#hubMenu').removeClass('active');
     if (exceptId !== 'profile') $('#profileMenu').removeClass('active');
     if (exceptId !== 'lang') $('.nav-lang-menu').removeClass('active');
+    if (exceptId !== 'quicklinks') $('#navQuickLinksMoreMenu').removeClass('active');
 }
 // 2026-08-29, real bug found and fixed (explicit report: "อยากให้แสดง ชื่อ และข้อมูลอื่นๆตามภาษาที่เลือก
 // Auto เปลี่ยนโดยไม่ต้อง Reload หน้า") -- this is much bigger than just the Employee List's Name
@@ -752,7 +755,17 @@ function getTableLang() {
         // for this exact indicator, not a workaround) -- replaces the library's bare "Processing..."
         // text/default look with the shared brand mark for every table that already spreads
         // ...getTableLang() into its own `language` config (every DataTable in this app does).
-        processing: `${originamiLoaderHtml('md')}<div class="mt-2">${langData.processing || 'Loading...'}</div>`,
+        // 2026-09-07, real bug found and fixed (explicit report: "Loader ใน Datatable...ดูไม่สมส่วน
+        // และไม่สวย") -- datatables.net-bs5's own CSS (`div.dt-processing > div:last-child { width:
+        // 80px; height:15px; ... }`) is written assuming the library's NATIVE 4-bouncing-dots
+        // animation is what's inside `.dt-processing` (that selector targets what would normally be
+        // the dots' own wrapper). Since this text label div is the LAST direct child of
+        // `.dt-processing` regardless, it was being force-squeezed into that same fixed 80x15px box
+        // -- never designed for arbitrary text -- clipping/skewing the label under the spinner.
+        // Wrapped both pieces in one `.om-dt-processing-inner` div so the CSS override in style.css
+        // (see its own comment) can target OUR markup specifically without touching
+        // `div.dt-processing` itself (still needed for the library's own centering/z-index).
+        processing: `<div class="om-dt-processing-inner">${originamiLoaderHtml('md')}<div class="om-dt-processing-label">${langData.processing || 'Loading...'}</div></div>`,
         paginate: {
             first: langData.first || "First",
             last: langData.last || "Last",

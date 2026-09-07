@@ -171,26 +171,6 @@ function deleteAnnouncement(id) {
         }
     );
 }
-// 2026-09-04, Backlog Phase 11, T066 -- this page had no filter at all. Client-side DataTable
-// (small, bounded per-company list -- see this file's own top-of-file comment), so filtering is a
-// custom $.fn.dataTable.ext.search plugin reading the RAW row data (rowData.status/
-// rowData.accept_required) rather than `.column(N).search()` against the rendered cell -- the
-// status/accept_required columns render icons/badges (HTML), not the raw value, per this table's
-// own plain-function `render:` (not the object-form {display,sort,filter} CLAUDE.md's own Table
-// convention calls for on a formatted column) -- restructuring those render functions is out of
-// this fix's own scope (a separate, narrower T067 finding covered only reports/annual-summary.js),
-// so a raw-data search plugin sidesteps the mismatch entirely without touching the columns array.
-$.fn.dataTable.ext.search.push(function (settings, searchData, index, rowData) {
-    if (settings.nTable.id !== 'tb_announcement' || !rowData) return true;
-    const statusFilter = $('#announcement_filter_status').val();
-    if (statusFilter && rowData.status !== statusFilter) return false;
-    const acceptFilter = $('#announcement_filter_accept_required').val();
-    if (acceptFilter !== '' && acceptFilter !== null && acceptFilter !== undefined) {
-        const wantsAccept = acceptFilter === '1';
-        if (Boolean(Number(rowData.accept_required)) !== wantsAccept) return false;
-    }
-    return true;
-});
 function annUpdateClearFilterVisibility() {
     const hasFilter = !!($('#announcement_filter_status').val() || $('#announcement_filter_accept_required').val());
     $('#announcementFilterClearRow').toggleClass('d-none', !hasFilter);
@@ -212,6 +192,38 @@ $(document).on('click', '#btnClearAnnouncementFilter', function () {
 });
 $(document).ready(function () {
     if ($('#tb_announcement').length) {
+        // 2026-09-04, Backlog Phase 11, T066 -- this page had no filter at all. Client-side
+        // DataTable (small, bounded per-company list -- see this file's own top-of-file comment),
+        // so filtering is a custom $.fn.dataTable.ext.search plugin reading the RAW row data
+        // (rowData.status/rowData.accept_required) rather than `.column(N).search()` against the
+        // rendered cell -- the status/accept_required columns render icons/badges (HTML), not the
+        // raw value, per this table's own plain-function `render:` (not the object-form
+        // {display,sort,filter} CLAUDE.md's own Table convention calls for on a formatted column)
+        // -- restructuring those render functions is out of this fix's own scope (a separate,
+        // narrower T067 finding covered only reports/annual-summary.js), so a raw-data search
+        // plugin sidesteps the mismatch entirely without touching the columns array.
+        // 2026-09-07, real bug found and fixed (explicit report: "Uncaught TypeError: Cannot read
+        // properties of undefined (reading 'ext')" at page load) -- this registration used to be a
+        // TOP-LEVEL statement in this file, executing the instant the script tag was parsed. This
+        // page's own <script src="announcements.js"> tag (app/views/setup/announcements.php) sits
+        // in the page's own content, which Controller::view() always renders BEFORE footer.php --
+        // and footer.php is where DataTables' own core script (node_modules/datatables.net/js/
+        // dataTables.js) is loaded, so `$.fn.dataTable` didn't exist yet at that point in the page's
+        // parse order. Moved inside this `ready()` handler (which only fires once the WHOLE page,
+        // footer scripts included, has finished loading) fixes it at the root -- same reason every
+        // other DataTable-related call on this page (and every other page in this app) already
+        // lives inside a ready handler instead of running at the top level.
+        $.fn.dataTable.ext.search.push(function (settings, searchData, index, rowData) {
+            if (settings.nTable.id !== 'tb_announcement' || !rowData) return true;
+            const statusFilter = $('#announcement_filter_status').val();
+            if (statusFilter && rowData.status !== statusFilter) return false;
+            const acceptFilter = $('#announcement_filter_accept_required').val();
+            if (acceptFilter !== '' && acceptFilter !== null && acceptFilter !== undefined) {
+                const wantsAccept = acceptFilter === '1';
+                if (Boolean(Number(rowData.accept_required)) !== wantsAccept) return false;
+            }
+            return true;
+        });
         initAnnouncementTable();
         initSelect2('#announcement_filter_status');
         initSelect2('#announcement_filter_accept_required');

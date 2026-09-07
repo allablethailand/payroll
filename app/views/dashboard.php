@@ -13,39 +13,6 @@
             <h5 class="page-header-card-title" id="dashGreetingTitle">Welcome</h5>
             <p class="page-header-card-desc small" id="dashGreetingDesc">Here is an overview of your payroll workspace.</p>
         </div>
-        <!-- 2026-09-06, explicit request: "อยากให้แทรก Origami Payroll Logo เข้าไปแต่ดูความเหมาะสมให้อีกที" --
-             a quiet attribution mark, not a 2nd brand competing with this page's own header icon/
-             title -- small, muted (never full-opacity color), tucked in the header card's own
-             corner where it reads as "powered by" rather than a competing focal point. Reuses the
-             existing public/images/origami_logo.png asset (previously only used as the Hub
-             app-switcher's own fallback icon, layout/header.php) -- no new asset needed. -->
-        <div class="page-header-card-brandmark" title="Origami Payroll">
-            <img src="<?=BASE_URL?>/public/images/origami_logo.png" alt="Origami Payroll">
-        </div>
-    </div>
-
-    <!-- 2026-09-06, explicit request: "ในหน้า Dashboard สามารถเลือกเดือน ปีย้อนหลังได้ด้วย โดยถ้าเลือกแล้ว
-         ข้อมูลในหน้า Dashboard จะปรับตามที่เลือก" -- confirmed via AskUserQuestion: "everything possible"
-         follows the selection, including headcount (see DashboardController::summary()'s own
-         docblock for exactly which few widgets deliberately never historicize, e.g. Pending My
-         Approval/Upcoming Pay/online users/notifications -- all "right now" concepts with no
-         historical meaning). Omitted entirely (the default) reproduces today's exact live view --
-         see loadDashboardSummary()'s own docblock in dashboard.js. -->
-    <div class="dash-period-bar mb-4">
-        <div class="dash-period-bar-controls">
-            <i class="fa-solid fa-calendar-days text-warning"></i>
-            <span class="small text-muted" data-i18n="dash_viewing_period">Viewing:</span>
-            <select class="form-select form-select-sm select2-static" id="dashPeriodMonth"
-                    data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12"
-                    data-option-values="1,2,3,4,5,6,7,8,9,10,11,12" style="width:150px"></select>
-            <select class="form-select form-select-sm select2-native" id="dashPeriodYear" style="width:110px"></select>
-            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="dashPeriodResetBtn">
-                <i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="dash_back_to_current">Back to Current</span>
-            </button>
-        </div>
-        <div class="dash-historical-badge bg-warning-subtle text-warning-emphasis d-none" id="dashHistoricalBadge">
-            <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="dash_viewing_historical">Viewing historical data</span>
-        </div>
     </div>
 
     <div class="row g-3 mb-4" id="dashStatRow">
@@ -106,30 +73,48 @@
                     <h6 class="mb-0"><i class="fa-solid fa-diagram-project me-2 text-warning"></i><span data-i18n="dash_payroll_pipeline">Payroll Pipeline</span><span class="dash-period-suffix text-muted fw-normal"></span></h6>
                     <a href="<?=BASE_URL?>/payroll-process" class="dash-section-link" data-i18n="dash_view_all">View All</a>
                 </div>
-                <!-- 2026-09-02, explicit request: "หน้า Dashboard อยากให้เพิ่มกราฟ และอะไรให้ดูมีความเป็น
-                     Payroll" -- a donut chart of the SAME state counts the station-row cards already
-                     show (zero new backend data, purely a visual summary alongside them).
-                     2026-09-02, same-day follow-up, explicit request: "สีแย่งกันไปหมด บางจุดไม่เข้าใจ" --
-                     these cards reuse `.station-card` (Payroll Process's own filter-chevron
-                     component), which already carries `cursor:pointer`/a hover state everywhere else
-                     it's used -- but on the Dashboard they used to be plain, non-clickable `<div>`s,
-                     so they LOOKED clickable while doing nothing, a real source of confusion. Now
-                     real `<a>` links straight to the matching station on Payroll Process (reusing
-                     that page's own `#station-<state>` hash filter, see payroll/index.js's own
-                     showStation()/the `location.hash` read on load) -- the pointer-cursor affordance
-                     is honest now, and it doubles as a genuinely useful one-click shortcut instead of
-                     a decorative-only summary. -->
-                <div class="d-flex flex-wrap align-items-center gap-3">
-                    <div class="station-row flex-grow-1" id="dashStationRow">
-                        <div class="station-col"><a href="<?=BASE_URL?>/payroll-process#station-draft" class="station-card" data-state="draft"><span data-i18n="state_draft">In Progress</span> <span class="station-count">0</span></a></div>
-                        <div class="station-col"><a href="<?=BASE_URL?>/payroll-process#station-pending_approval" class="station-card" data-state="pending_approval"><span data-i18n="state_pending_approval">Pending Approval</span> <span class="station-count">0</span></a></div>
-                        <div class="station-col"><a href="<?=BASE_URL?>/payroll-process#station-approved" class="station-card" data-state="approved"><span data-i18n="state_approved">Approved</span> <span class="station-count">0</span></a></div>
-                        <div class="station-col"><a href="<?=BASE_URL?>/payroll-process#station-paid" class="station-card" data-state="paid"><span data-i18n="state_paid">Paid</span> <span class="station-count">0</span></a></div>
-                        <div class="station-col"><a href="<?=BASE_URL?>/payroll-process#station-locked" class="station-card" data-state="locked"><span data-i18n="state_locked">Locked</span> <span class="station-count">0</span></a></div>
-                    </div>
-                    <div class="dash-pipeline-donut-wrap d-none" id="dashPipelineDonutWrap">
-                        <canvas id="dashPipelineDonut" width="110" height="110"></canvas>
-                    </div>
+                <!-- 2026-09-07, explicit request: "ภาพรวมกระบวนการเงินเดือน ปรับ Design ให้ใหม่อีกครั้งครับ
+                     ตอนนี้เป็น pipeline ยังไม่สวย" -- the old station-row-of-cards + a separate Chart.js
+                     donut repeating the exact same 5 numbers in a different shape is replaced with ONE
+                     connected flow: 5 stages, each a colored stop with an icon/count/label, joined by
+                     connector arrows so it actually reads as a pipeline instead of a plain card list.
+                     Same state colors already established elsewhere in this app
+                     (#dashStationRow's own former per-state background/text colors,
+                     .station-card-sm.active[data-state=...]'s own solid variants for the icon
+                     circles) -- reused here, not reinvented, so this still feels like "the same
+                     states" rather than a new color language. Still real `<a>` links to the matching
+                     Payroll Process station (see payroll/index.js's own showStation()/`location.hash`
+                     read), same click-through affordance the 2026-09-02 round already established. -->
+                <div class="dash-pipeline-flow" id="dashPipelineFlow">
+                    <a href="<?=BASE_URL?>/payroll-process#station-draft" class="dash-pipeline-step" data-state="draft">
+                        <span class="dash-pipeline-step-icon"><i class="fa-solid fa-file-alt"></i></span>
+                        <span class="dash-pipeline-step-count">0</span>
+                        <span class="dash-pipeline-step-label" data-i18n="state_draft">In Progress</span>
+                    </a>
+                    <span class="dash-pipeline-connector"><i class="fa-solid fa-chevron-right"></i></span>
+                    <a href="<?=BASE_URL?>/payroll-process#station-pending_approval" class="dash-pipeline-step" data-state="pending_approval">
+                        <span class="dash-pipeline-step-icon"><i class="fa-solid fa-paper-plane"></i></span>
+                        <span class="dash-pipeline-step-count">0</span>
+                        <span class="dash-pipeline-step-label" data-i18n="state_pending_approval">Pending Approval</span>
+                    </a>
+                    <span class="dash-pipeline-connector"><i class="fa-solid fa-chevron-right"></i></span>
+                    <a href="<?=BASE_URL?>/payroll-process#station-approved" class="dash-pipeline-step" data-state="approved">
+                        <span class="dash-pipeline-step-icon"><i class="fa-solid fa-check"></i></span>
+                        <span class="dash-pipeline-step-count">0</span>
+                        <span class="dash-pipeline-step-label" data-i18n="state_approved">Approved</span>
+                    </a>
+                    <span class="dash-pipeline-connector"><i class="fa-solid fa-chevron-right"></i></span>
+                    <a href="<?=BASE_URL?>/payroll-process#station-paid" class="dash-pipeline-step" data-state="paid">
+                        <span class="dash-pipeline-step-icon"><i class="fa-solid fa-money-check-dollar"></i></span>
+                        <span class="dash-pipeline-step-count">0</span>
+                        <span class="dash-pipeline-step-label" data-i18n="state_paid">Paid</span>
+                    </a>
+                    <span class="dash-pipeline-connector"><i class="fa-solid fa-chevron-right"></i></span>
+                    <a href="<?=BASE_URL?>/payroll-process#station-locked" class="dash-pipeline-step" data-state="locked">
+                        <span class="dash-pipeline-step-icon"><i class="fa-solid fa-lock"></i></span>
+                        <span class="dash-pipeline-step-count">0</span>
+                        <span class="dash-pipeline-step-label" data-i18n="state_locked">Locked</span>
+                    </a>
                 </div>
             </div>
 
@@ -179,15 +164,55 @@
             <!-- 2026-09-06, explicit request: "อยากให้มี Calendar โชว์ด้วย" -- confirmed via
                  AskUserQuestion: holidays + payroll cutoff/payment dates + probation/internship end
                  dates combined (see DashboardModel::calendarEvents()'s own docblock). Driven by the
-                 SAME month/year picker as the rest of the page (#dashPeriodMonth/#dashPeriodYear),
-                 not its own independent prev/next control, so it can never disagree with every
-                 other widget about which month is being reviewed. Placed at the TOP of the sidebar
+                 SAME month/year picker as the rest of the page (#dashPeriodPicker, see the header
+                 card above), not its own independent prev/next control, so it can never disagree
+                 with every other widget about which month is being reviewed. Placed at the TOP of the sidebar
                  column -- per explicit request "เข้ามาในหน้า Dashboard แล้วเห็นภาพรวมของระบบทันที", this
                  is the one genuinely NEW at-a-glance visual on the page, so it earns the most
                  visible slot rather than being buried below Notifications/Quick Links. -->
             <div class="dash-section-card mb-4" id="dashCalendarSection">
                 <div class="dash-section-card-header">
                     <h6 class="mb-0"><i class="fa-solid fa-calendar-days me-2 text-warning"></i><span data-i18n="dash_calendar">Calendar</span></h6>
+                </div>
+                <!-- 2026-09-07, explicit request: "ส่วนของปฏิทินในหน้า Dashboard ให้มีเดือนปี กำกับด้วย และ
+                     กด < > ไปดูได้ และส่วนที่เลือกปี เดือน มาอยู่ใน calendar จะดูดีกว่าไหมครับ" -- the
+                     month/year picker (button + popover, unchanged from its own brief stay in the
+                     header card right above -- see .dash-period-picker's own style.css comment)
+                     relocates here, flanked by real `<`/`>` one-month-at-a-time step buttons
+                     (dashboard.js's own dashStepPeriod()). This is the SAME control driving the SAME
+                     whole-page historical lens as before -- only its home moved, a calendar being
+                     the more natural place to browse "which month" than a page header. -->
+                <div class="dash-calendar-nav">
+                    <button type="button" class="dash-calendar-nav-btn" id="dashPeriodPrevBtn" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+                    <div class="dash-period-picker" id="dashPeriodPicker">
+                        <button type="button" class="dash-period-picker-btn" id="dashPeriodPickerBtn">
+                            <span id="dashPeriodPickerLabel">-</span>
+                            <span class="dash-period-picker-live-dot" id="dashPeriodLiveDot"></span>
+                            <i class="fa-solid fa-chevron-down dash-period-picker-caret"></i>
+                        </button>
+                        <div class="dash-period-picker-pop d-none" id="dashPeriodPickerPop">
+                            <div class="dash-period-picker-year-nav">
+                                <button type="button" class="dash-period-picker-year-btn" id="dashPeriodYearPrevBtn"><i class="fa-solid fa-chevron-left"></i></button>
+                                <span id="dashPeriodPickerYearLabel">-</span>
+                                <button type="button" class="dash-period-picker-year-btn" id="dashPeriodYearNextBtn"><i class="fa-solid fa-chevron-right"></i></button>
+                            </div>
+                            <div class="dash-period-picker-months" id="dashPeriodPickerMonths"></div>
+                            <button type="button" class="dash-period-picker-today-link d-none" id="dashPeriodBackToCurrentBtn">
+                                <i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="dash_back_to_current">Back to Current</span>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" class="dash-calendar-nav-btn" id="dashPeriodNextBtn" title="Next month"><i class="fa-solid fa-chevron-right"></i></button>
+                    <!-- 2026-09-07, explicit request: "ให้เพิ่ม Today กดแล้วให้มาเดือนปัจจุบัน" -- the
+                         existing "Back to Current" link (#dashPeriodBackToCurrentBtn above) already did
+                         exactly this, but only from INSIDE the month-picker popover -- this puts the
+                         same jump-to-current-month action directly on the nav row itself, no need to
+                         open the picker first. Same is_historical-driven visibility as that link (see
+                         dashboard.js's own applyDashboardSummary()) -- hidden whenever already viewing
+                         the current month, since there'd be nothing to jump to. -->
+                    <button type="button" class="dash-calendar-nav-btn dash-calendar-today-btn d-none" id="dashCalendarTodayBtn" title="Today" data-i18n-title="dash_today">
+                        <i class="fa-solid fa-calendar-day"></i>
+                    </button>
                 </div>
                 <div class="dash-calendar-wrap">
                     <div class="dash-calendar-grid" id="dashCalendarGrid"></div>
@@ -215,20 +240,10 @@
                 </div>
             </div>
 
-            <!-- 2026-08-29, explicit request: "และตรงการใส่ Comments...และสามารถเพิ่มอะไรได้อีกในหน้า
-                 Dashboard ไหมครับ" -> "สนใจครับ" (confirmed the notification-summary-card suggestion) --
-                 latest few notifications right on the dashboard, not just reachable via the header
-                 bell. Reuses notifItemHtml()/BASE_URL/api/notification.list from notifications.js
-                 (loaded globally, see layout/header.php) rather than duplicating that markup here. -->
-            <div class="dash-section-card mb-4" id="dashNotifSection">
-                <div class="dash-section-card-header">
-                    <h6 class="mb-0"><i class="fa-solid fa-bell me-2 text-warning"></i><span data-i18n="notifications">Notifications</span></h6>
-                    <a href="<?=BASE_URL?>/notifications" class="dash-section-link" data-i18n="notif_view_all">View All</a>
-                </div>
-                <div class="dash-notif-list" id="dashNotifList">
-                    <div class="nav-notif-empty d-none" id="dashNotifEmpty" data-i18n="notif_empty">No notifications yet.</div>
-                </div>
-            </div>
+            <!-- 2026-09-07, explicit request: "ตัดการแจ้งเตือนออกจากใน Dashboard ครับ ให้ขึ้นเฉพาะใน header
+                 พอครับ" -- the notification summary card (added 2026-08-29) is removed outright; the
+                 header bell dropdown (layout/header.php's own .nav-notif-dropdown, notifications.js)
+                 is untouched and stays the only place notifications show. -->
             <!-- 2026-09-04, Backlog Phase 10, T058: "Dashboard shows currently-online users."
                  Presence, not money -- always visible, no can_view_payroll-style gate (see
                  DashboardController::summary()'s own comment). Starts d-none, same
@@ -258,41 +273,11 @@
                 </div>
             </div>
 
-            <div class="dash-section-card">
-                <div class="dash-section-card-header">
-                    <h6 class="mb-0"><i class="fa-solid fa-bolt me-2 text-warning"></i><span data-i18n="dash_quick_links">Quick Links</span></h6>
-                </div>
-                <div class="dash-quick-links">
-                    <a class="dash-quick-link" href="<?=BASE_URL?>/employees">
-                        <span class="dash-quick-link-icon"><img src="<?=BASE_URL?>/public/images/menu/EMPLOYEE.SVG" alt=""></span>
-                        <span data-i18n="employees">Employees</span>
-                    </a>
-                    <a class="dash-quick-link" href="<?=BASE_URL?>/payroll-process">
-                        <span class="dash-quick-link-icon"><img src="<?=BASE_URL?>/public/images/menu/PAYROLL.SVG" alt=""></span>
-                        <span data-i18n="payroll_process">Payroll Process</span>
-                    </a>
-                    <a class="dash-quick-link" href="<?=BASE_URL?>/payroll-approval">
-                        <span class="dash-quick-link-icon"><img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt=""></span>
-                        <span data-i18n="payroll_approval">Payroll Approval</span>
-                    </a>
-                    <a class="dash-quick-link" href="<?=BASE_URL?>/reports">
-                        <span class="dash-quick-link-icon"><img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt=""></span>
-                        <span data-i18n="reports">Reports</span>
-                    </a>
-                    <a class="dash-quick-link" href="<?=BASE_URL?>/payslip-documents/requests">
-                        <span class="dash-quick-link-icon"><img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt=""></span>
-                        <span data-i18n="payslip_menu">Payslip & Documents</span>
-                    </a>
-                    <a class="dash-quick-link" href="<?=BASE_URL?>/setup-rules">
-                        <span class="dash-quick-link-icon"><img src="<?=BASE_URL?>/public/images/menu/TIME.SVG" alt=""></span>
-                        <span data-i18n="time_and_leave">Time & Leave</span>
-                    </a>
-                    <a class="dash-quick-link" href="<?=BASE_URL?>/setup/company-profile">
-                        <span class="dash-quick-link-icon"><img src="<?=BASE_URL?>/public/images/menu/SETTINGS.SVG" alt=""></span>
-                        <span data-i18n="settings">Settings</span>
-                    </a>
-                </div>
-            </div>
+            <!-- 2026-09-07, explicit request: "ทางลัด วางอยู่ล่างเกินไป ใช้งานไม่สะดวกครับ...ปรับเป็นให้อยู่บน
+                 header ไปเลย" -- the Quick Links card that used to sit here (bottom of the sidebar
+                 column, easy to miss) is gone; the same feature now lives in the navbar itself (see
+                 layout/header.php's own .nav-quicklinks, right before the notification bell), and is
+                 per-user customizable via that bar's own "More" > Customize Quick Links entry. -->
         </div>
     </div>
 </div>

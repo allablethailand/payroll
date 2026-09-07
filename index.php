@@ -46,6 +46,10 @@
     $router->get('api/dashboard.calendar', 'DashboardController@calendar');
     $router->get('api/user-preference.get', 'UserPreferenceController@get');
     $router->post('api/user-preference.save', 'UserPreferenceController@save');
+    // 2026-09-07 -- header Quick Links customization (Customize Quick Links modal), see
+    // UserPreferenceModel::quickLinkCatalog()/getQuickLinks()/saveQuickLinks()'s own docblocks.
+    $router->get('api/user-preference.quick-links-get', 'UserPreferenceController@quickLinksGet');
+    $router->post('api/user-preference.quick-links-save', 'UserPreferenceController@quickLinksSave');
     $router->get('employees', 'EmployeeController@index');
     // 2026-09-02, 3-way Employee submenu split -- registered here (before 'employees/{id}' further
     // below) since Router::dispatch() matches routes in registration order and 'employees/{id}'s
@@ -392,6 +396,7 @@
     $router->get('api/terms.get', 'TermsAndConditionsController@get');
     $router->post('api/terms.accept', 'TermsAndConditionsController@accept');
     $router->get('api/terms.history', 'TermsAndConditionsController@history');
+    $router->get('api/terms.version', 'TermsAndConditionsController@version');
     $router->get('help/setup-guide', 'HelpController@setupGuide');
     $router->get('help/version', 'HelpController@version');
     $router->get('api/help.checklist', 'HelpController@checklist');
@@ -439,12 +444,13 @@
     $router->get('api/annual-income-summary.calendar-years', 'AnnualIncomeSummaryController@calendarYears');
     $router->get('api/report.list', 'ReportsController@list');
     $router->get('api/report.cycle-runs', 'ReportsController@cycleRuns');
+    $router->get('api/report.cycle-runs-matrix', 'ReportsController@cycleRunsMatrix');
+    $router->get('api/report.deduction-types-for-run', 'ReportsController@deductionTypesForRun');
     $router->get('api/report.available-years', 'ReportsController@availableYears');
     $router->get('api/report.annual-summary', 'ReportsController@annualReportsSummary');
     $router->get('api/report.generate', 'ReportsController@generate');
     $router->get('api/report.export-logs', 'ReportsController@exportLogs');
     $router->get('api/report.run-summary', 'ReportsController@runReportsSummary');
-    $router->get('api/report.run-cycle-summary', 'ReportsController@runCycleReportsSummary');
     $router->get('api/report.payslip-roster', 'ReportsController@payslipRoster');
     // 2026-08-31, same-day follow-up (item 10) -- Payroll Run Audit diff-history page.
     $router->get('reports/run-audit', 'ReportsController@runAudit');

@@ -66,19 +66,31 @@ function dsLastSyncLine(entry) {
     return tpl.replace('{when}', when).replace('{who}', who);
 }
 
+// 2026-09-07, explicit request: "อยากให้ปรับรูปแบบ Card ให้บอกด้วยว่า Sync ไปแล้วกี่ครั้ง ครั้งล่าสุดเมื่อไหร่
+// และสามารถคลิกดู modal ประวัติการ Sync ของแต่ละ Card ได้" -- a small count badge next to each card's
+// title (SyncBatchModel::lastSyncTimes()'s own new `sync_count` field, see that method's own
+// docblock) plus a "History" button that opens #dsCardHistoryModal filtered to just this entity
+// type (dsOpenCardHistory() below, reuses the SAME api/master-data-sync.history endpoint the
+// Sync History tab's own table already calls -- no new backend endpoint needed).
+function dsSyncCountBadge(count) {
+    const n = Number(count) || 0;
+    const tpl = langData['data_sync_count_badge'] || '{count}x';
+    return `<span class="badge rounded-pill ds-sync-count-badge" title="${escapeAttr((langData['data_sync_count_title'] || 'Synced {count} times').replace('{count}', n))}">${escapeHtml(tpl.replace('{count}', n))}</span>`;
+}
 function dsRenderCards(statusData) {
     const lastSyncAt = statusData.last_sync_at || {};
     let html = '';
     DS_ENTITY_ORDER.forEach(function (type) {
         const meta = DS_ENTITY_META[type];
+        const entry = lastSyncAt[type];
         html += `
             <div class="col-lg-4 col-md-6">
                 <div class="settings-info-card h-100" data-ds-card="${type}">
                     <div class="settings-info-card-header">
                         <i class="fa-solid ${meta.icon}"></i>
                         <div>
-                            <p class="settings-info-card-title mb-0">${escapeHtml(dsEntityLabel(type))}</p>
-                            <p class="settings-info-card-desc mb-0" data-ds-last-sync="${type}">${escapeHtml(dsLastSyncLine(lastSyncAt[type]))}</p>
+                            <p class="settings-info-card-title mb-0 d-flex align-items-center gap-2">${escapeHtml(dsEntityLabel(type))}${dsSyncCountBadge(entry && entry.sync_count)}</p>
+                            <p class="settings-info-card-desc mb-0" data-ds-last-sync="${type}">${escapeHtml(dsLastSyncLine(entry))}</p>
                         </div>
                     </div>
                     <div class="settings-info-card-body">
@@ -87,7 +99,10 @@ function dsRenderCards(statusData) {
                                 <div class="progress-bar" role="progressbar" style="width:0%; background-color:#FF9900;"></div>
                             </div>
                         </div>
-                        <div class="d-flex justify-content-end">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <button type="button" class="btn btn-link btn-sm p-0 ds-view-history-btn" data-entity-type="${type}">
+                                <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="data_sync_view_history">History</span>
+                            </button>
                             <button type="button" class="btn btn-outline-brand btn-sm ds-sync-one-btn" data-entity-type="${type}">
                                 <i class="fa-solid fa-rotate me-1"></i><span data-i18n="sync_now">Sync Now</span>
                             </button>
@@ -382,6 +397,68 @@ function dsInitHistoryTable() {
         }
     });
 }
+
+// 2026-09-07: the per-card History modal -- rebuilt from scratch each open (destroy+recreate,
+// same pattern this app's own Reports module uses for #payslipRosterModal/#cycleReportHistoryModal)
+// since the SAME modal/table id is reused for whichever entity type was clicked, not one modal per
+// type. Unfiltered by date range on purpose -- this is "this ONE type's full history," a narrower
+// question than the Sync History tab's own filterable table, so no extra filter UI was added here.
+let tb_ds_card_history = null;
+function dsOpenCardHistory(type) {
+    $('#dsCardHistoryModalTitle').text(dsEntityLabel(type));
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('dsCardHistoryModal')).show();
+    if ($.fn.DataTable.isDataTable('#tb_ds_card_history')) {
+        tb_ds_card_history.destroy();
+        $('#tb_ds_card_history tbody').empty();
+    }
+    tb_ds_card_history = $('#tb_ds_card_history').DataTable({
+        ajax: {
+            url: `${BASE_URL}/api/master-data-sync.history`,
+            type: 'POST',
+            data: function (d) { d.entity_type = type; },
+            dataSrc: 'data',
+        },
+        columns: [
+            { data: 'status', render: { display: (d) => dsStatusBadge(d), sort: (d) => d, filter: (d) => d } },
+            { data: 'total_count', defaultContent: '0' },
+            { data: 'success_count', defaultContent: '0' },
+            { data: 'error_count', defaultContent: '0' },
+            { data: null, render: (d, t, row) => dsSyncedByCell(row) },
+            {
+                data: 'started_at',
+                render: {
+                    display: (d) => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-',
+                    sort: (d) => d || '',
+                    filter: (d) => d || '',
+                }
+            },
+            {
+                data: 'completed_at',
+                render: {
+                    display: (d) => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-',
+                    sort: (d) => d || '',
+                    filter: (d) => d || '',
+                }
+            },
+            {
+                data: null, orderable: false,
+                render: function (row) {
+                    if (!row.error_detail) return '';
+                    const encoded = escapeHtml(row.error_detail).replace(/"/g, '&quot;');
+                    return `<button type="button" class="btn btn-link btn-sm ds-view-error-btn" data-error-detail="${encoded}"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="data_sync_view_errors">View Errors</span></button>`;
+                }
+            },
+        ],
+        order: [[5, 'desc']],
+        responsive: true,
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang(),
+    });
+}
+$(document).on('click', '.ds-view-history-btn', function () {
+    dsOpenCardHistory($(this).data('entity-type'));
+});
 
 function initDataSyncPage() {
     dsLoadStatus();

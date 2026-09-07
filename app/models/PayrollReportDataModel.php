@@ -40,17 +40,31 @@ class PayrollReportDataModel {
 
     /**
      * Every reportable (usable-state) run for a company, newest pay period first -- backs the
-     * Per-Cycle Reports matrix table (one row per completed run) added 2026-08-27.
+     * Per-Cycle Reports matrix table (one row per completed run) added 2026-08-27, retired to a
+     * single-run picker 2026-08-29, and revived back into a matrix 2026-09-07 (explicit request:
+     * "เปลี่ยนเป็น ตารางแสดงรอบที่สามารถพิมพ์ได้ แล้วให้มี column พิมพ์ตามแบบที่พิมพ์ได้ น่าจะใช้งานง่ายกว่า").
+     * $dateFrom/$dateTo (optional, both inclusive) filter by PAY PERIOD overlap, not by exact
+     * start/end match -- a run whose period spans the requested range at all is included, same
+     * "overlap, not exact bound" semantics every other date-range filter in this app already uses.
      */
-    public function getCompletedRuns(int $compId, array $allowedStates): array {
+    public function getCompletedRuns(int $compId, array $allowedStates, ?string $dateFrom = null, ?string $dateTo = null): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
-        $sql = "SELECT r.id, r.run_name, r.state, r.period_start_date, r.period_end_date, c.cycle_name
+        $sql = "SELECT r.id, r.run_name, r.state, r.period_start_date, r.period_end_date, r.payment_date, c.cycle_name
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
-                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
-                ORDER BY r.period_start_date DESC, r.id DESC";
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})";
+        $params = array_merge([$compId], $allowedStates);
+        if ($dateFrom !== null && $dateFrom !== '') {
+            $sql .= " AND r.period_end_date >= ?";
+            $params[] = $dateFrom;
+        }
+        if ($dateTo !== null && $dateTo !== '') {
+            $sql .= " AND r.period_start_date <= ?";
+            $params[] = $dateTo;
+        }
+        $sql .= " ORDER BY r.period_start_date DESC, r.id DESC";
         $stmt = $this->db->prepare($sql);
-        $stmt->execute(array_merge([$compId], $allowedStates));
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 

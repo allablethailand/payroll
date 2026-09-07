@@ -74,29 +74,48 @@
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
         <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
-            <!-- 2026-08-30, explicit follow-up: "filter 2 tab แรกไม่เป็นไปตามระบบที่ออกไปแบบ" -- was a
-                 custom .reports-period-bar (an orange context bar, distinct visual language from the
-                 system's standard filter component); now the same .station-filter every other page's
-                 filter uses (collapsible, chevron toggle, label). -->
+            <!-- 2026-09-07, explicit request: "Menu สร้างรายงาน ถ้าเปลี่ยนเป็น ตารางแสดงรอบที่สามารถพิมพ์ได้
+                 แล้วให้มี column พิมพ์ตามแบบที่พิมพ์ได้ น่าจะใช้งานง่ายกว่าครับ และ filter ก็ต้องปรับให้รองรับ
+                 การทำงานใหม่" -- reverts the 2026-08-29 "pick ONE run first" redesign back to the
+                 run x report-type MATRIX this tab briefly had 2026-08-27 (see
+                 PayrollReportDataModel::getCompletedRuns()'s own docblock for that full lineage) --
+                 one ROW per completed run, one COLUMN per applicable report, a single print button
+                 per cell. The old filter (a single-run <select>, since there was only ever one run
+                 "selected" at a time) no longer fits a table showing MANY runs at once -- replaced
+                 with a date-range filter narrowing WHICH runs appear as rows, same
+                 .station-filter shape every other list page's filter already uses. Columns
+                 themselves are entirely JS-driven (public/js/reports/index.js's own
+                 renderCycleMatrixTable()) since which reports apply can vary per run (TH_PND1 needs
+                 taxable employees, TH_SSO110 needs SSO-active ones) -- no static <thead> here. -->
             <div class="station-filter" id="cycleReportPeriodBar">
                 <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="cycleReportPeriodBarToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
-                    <div class="text-muted small mb-2" data-i18n="reports_cycle_hint">Select a completed payroll run to view and download its reports.</div>
-                    <!-- 2026-08-30, explicit request: "ใน tab อื่น filter บางตัวกว้างเกินไปอยากให้ความกว้าง
-                         แต่ละ block เป็นมาตรฐานเดียวกัน" -- was col-12 col-md-8 col-lg-6 (half the row on a
-                         large screen for one dropdown), now the SAME col-6 col-md-4 col-lg-2 every other
-                         filter field on this page (Annual's year picker, Export History's own 3 fields)
-                         already uses. -->
+                    <div class="text-muted small mb-2" data-i18n="reports_cycle_hint">Each row is a completed payroll run -- click a report's icon to preview and download it for that run.</div>
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="table_payroll_run">Payroll Run</label>
-                            <select class="form-select form-select-sm select2-native" id="cycleReportRunSelect"></select>
+                            <label class="form-label mb-1" data-i18n="date_from">From</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="cycleReportDateFrom" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <label class="form-label mb-1" data-i18n="date_to">To</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control datepicker" id="cycleReportDateTo" autocomplete="off">
+                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </div>
+            <div class="station-filter-clear-row d-none" id="cycleReportFilterClearRow">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCycleReportClearFilter">
+                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
+                </button>
             </div>
             <div class="reports-not-ready-banner mb-3 d-none" id="cycleReportsNoRunBanner">
                 <div class="reports-not-ready-banner-icon"><i class="fa-solid fa-calendar-xmark"></i></div>
@@ -105,64 +124,8 @@
                     <div class="reports-not-ready-banner-hint" data-i18n="no_completed_runs">No completed payroll runs yet.</div>
                 </div>
             </div>
-            <div id="cycleReportBody" class="d-none">
-                <div class="bg-light rounded-3 p-2 mb-3 structure-tabs-wrap">
-                    <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="cycleReportTypeTabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link structure-menu active" id="cycleType-statutory-tab" data-bs-toggle="tab" data-bs-target="#cycleType-statutory-pane" type="button" role="tab" aria-controls="cycleType-statutory-pane" aria-selected="true" data-report-type="statutory">
-                                <i class="fa-solid fa-landmark me-2"></i><span data-i18n="report_type_statutory">Statutory</span>
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link structure-menu" id="cycleType-payment-tab" data-bs-toggle="tab" data-bs-target="#cycleType-payment-pane" type="button" role="tab" aria-controls="cycleType-payment-pane" aria-selected="false" data-report-type="payment">
-                                <i class="fa-solid fa-money-check-dollar me-2"></i><span data-i18n="report_type_payment">Payment</span>
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link structure-menu" id="cycleType-internal-tab" data-bs-toggle="tab" data-bs-target="#cycleType-internal-pane" type="button" role="tab" aria-controls="cycleType-internal-pane" aria-selected="false" data-report-type="internal">
-                                <i class="fa-solid fa-building me-2"></i><span data-i18n="report_type_internal">Internal</span>
-                            </button>
-                        </li>
-                    </ul>
-                </div>
-                <div class="tab-content">
-                    <div class="tab-pane fade show active" id="cycleType-statutory-pane" role="tabpanel" aria-labelledby="cycleType-statutory-tab" tabindex="0">
-                        <div class="table-responsive"><table class="table table-hover align-middle w-100" id="tb_cycle_statutory">
-                            <thead class="table-light text-secondary"><tr>
-                                <th data-i18n="report_name">Report</th>
-                                <th class="text-center" data-i18n="download_count">Downloaded</th>
-                                <th data-i18n="last_downloaded_at">Last Downloaded</th>
-                                <th class="text-center"></th>
-                            </tr></thead>
-                            <tbody></tbody>
-                        </table></div>
-                        <div class="text-center text-secondary py-4 d-none" id="noCycleReports_statutory"><span></span></div>
-                    </div>
-                    <div class="tab-pane fade" id="cycleType-payment-pane" role="tabpanel" aria-labelledby="cycleType-payment-tab" tabindex="0">
-                        <div class="table-responsive"><table class="table table-hover align-middle w-100" id="tb_cycle_payment">
-                            <thead class="table-light text-secondary"><tr>
-                                <th data-i18n="report_name">Report</th>
-                                <th class="text-center" data-i18n="download_count">Downloaded</th>
-                                <th data-i18n="last_downloaded_at">Last Downloaded</th>
-                                <th class="text-center"></th>
-                            </tr></thead>
-                            <tbody></tbody>
-                        </table></div>
-                        <div class="text-center text-secondary py-4 d-none" id="noCycleReports_payment"><span></span></div>
-                    </div>
-                    <div class="tab-pane fade" id="cycleType-internal-pane" role="tabpanel" aria-labelledby="cycleType-internal-tab" tabindex="0">
-                        <div class="table-responsive"><table class="table table-hover align-middle w-100" id="tb_cycle_internal">
-                            <thead class="table-light text-secondary"><tr>
-                                <th data-i18n="report_name">Report</th>
-                                <th class="text-center" data-i18n="download_count">Downloaded</th>
-                                <th data-i18n="last_downloaded_at">Last Downloaded</th>
-                                <th class="text-center"></th>
-                            </tr></thead>
-                            <tbody></tbody>
-                        </table></div>
-                        <div class="text-center text-secondary py-4 d-none" id="noCycleReports_internal"><span></span></div>
-                    </div>
-                </div>
+            <div class="table-responsive d-none" id="cycleMatrixTableWrap">
+                <table class="table table-hover align-middle w-100" id="tb_cycle_matrix"></table>
             </div>
         </div>
         <div class="tab-pane fade" id="annual-pane" role="tabpanel" aria-labelledby="annual-tab" tabindex="0">

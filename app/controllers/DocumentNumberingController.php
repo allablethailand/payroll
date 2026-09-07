@@ -13,6 +13,15 @@ class DocumentNumberingController extends Controller {
         return (int)($_SESSION['user']['employee_id'] ?? 0);
     }
 
+    // Platform Hardening Phase 6 (batch 5) -- same shape as every other controller's own copy
+    // (BankAccountController, etc.), not promoted to the base Controller class.
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     public function list() {
         $compId = getCompId();
         if (!$compId) {
@@ -29,6 +38,7 @@ class DocumentNumberingController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request.']);
             return;
         }
-        $this->json($this->model->save((int)$compId, (string)$data['document_type_code'], $data, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->save((int)$compId, (string)$data['document_type_code'], $data, $this->userId(), $ip, $ua));
     }
 }

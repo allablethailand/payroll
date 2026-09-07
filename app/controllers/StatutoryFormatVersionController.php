@@ -23,6 +23,14 @@ class StatutoryFormatVersionController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    // Platform Hardening Phase 6 (batch 5) -- same shape as every other controller's own copy.
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     private function requirePermission(string $permissionKey): bool {
         $compId = (int)getCompId();
         $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
@@ -61,6 +69,7 @@ class StatutoryFormatVersionController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing form_code or version_id.']);
             return;
         }
-        $this->json($this->model->saveSelection((int)$compId, $formCode, $versionId, $this->userId() ?: null));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->saveSelection((int)$compId, $formCode, $versionId, $this->userId() ?: null, $ip, $ua));
     }
 }
