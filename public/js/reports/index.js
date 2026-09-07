@@ -1,5 +1,4 @@
 let reportList = [];
-let cycleRuns = [];
 
 /**
  * 2026-08-27, explicit request: "ปรับ Design และโครงสร้างให้หน่อยครับ...แบ่งเป็น Report ที่ต้องดึงจาก
@@ -54,6 +53,10 @@ const REPORT_META = {
     // (built alongside the Cash Payments tab) but was never surfaced on this page -- same
     // "per-run, cycle-frequency, no extra picker" shape as PAYROLL_REGISTER/BANK_TRANSFER_FILE.
     CASH_PAYMENT_SUMMARY: { frequency: 'cycle', extra: [] },
+    // 2026-09-07: DeductionBreakdownReport -- 'cycle' for the same documentation-only reason as
+    // every other cycle entry above (see this const's own top-of-file comment); its real config
+    // step is server-driven via ReportsController::CYCLE_REPORT_NEEDS_CONFIG, not this map's `extra`.
+    DEDUCTION_BREAKDOWN: { frequency: 'cycle', extra: [] },
     TH_PND1K_SUMMARY: { frequency: 'annual', extra: [] },
     TH_KOR20KOR: { frequency: 'annual', extra: [] },
     TH_SSO609: { frequency: 'annual', extra: ['month'] },
@@ -227,8 +230,12 @@ function openReportsPreview(params, label, options = {}) {
         initSelect2('#reportsPreviewEmployeeSelect', { mode: 'ajax', allowClear: true });
         $('#reportsPreviewEmployeeSelect').val(null).trigger('change.select2');
     }
-
-    renderReportsPreviewFrame();
+    $('#reportsPreviewDeductionCodesWrap').toggleClass('d-none', !extra.deductionCodes);
+    if (extra.deductionCodes) {
+        loadDeductionCodesForRun(params.get('run_id'));
+    } else {
+        renderReportsPreviewFrame();
+    }
 }
 function currentReportsPreviewParams() {
     const params = new URLSearchParams(reportsPreviewParams);
@@ -243,14 +250,74 @@ function currentReportsPreviewParams() {
         const empId = $('#reportsPreviewEmployeeSelect').val();
         if (empId) { params.set('employee_id', empId); } else { params.delete('employee_id'); }
     }
+    if (options.extra && options.extra.deductionCodes) {
+        const codes = $('.reports-preview-deduction-code-checkbox:checked').map(function () { return $(this).val(); }).get();
+        params.set('deduction_codes', codes.join(','));
+    }
     return params;
 }
+// 2026-09-07: DeductionBreakdownReport's own checkbox picker -- fetches the codes that actually
+// occurred in this run (default all-checked, per the explicit "Default คือเลือกทั้งหมด" request) and
+// renders them into the dropdown-menu, then refreshes the preview once populated.
+function loadDeductionCodesForRun(runId) {
+    $.getJSON(`${BASE_URL}/api/report.deduction-types-for-run`, { run_id: runId }, function (res) {
+        if (!res.status) return;
+        const codes = res.data || [];
+        const $menu = $('#reportsPreviewDeductionCodesMenu').empty();
+        if (!codes.length) {
+            $menu.append(`<div class="text-muted small px-1" data-i18n="deduction_report_no_types">No deductions found in this run.</div>`);
+            if (typeof applyLanguage === 'function') applyLanguage();
+            updateDeductionCodesCount();
+            renderReportsPreviewFrame();
+            return;
+        }
+        $menu.append(
+            '<div class="d-flex justify-content-between mb-2 px-1">'
+            + '<a href="#" class="small" id="rpdcSelectAll" data-i18n="select_all">Select All</a>'
+            + '<a href="#" class="small" id="rpdcSelectNone" data-i18n="select_none">Select None</a>'
+            + '</div>'
+        );
+        codes.forEach(function (c) {
+            const label = currentLang === 'th' ? c.name_th : (c.name_en || c.name_th);
+            const id = 'rpdc_' + c.code.replace(/[^a-zA-Z0-9_-]/g, '_');
+            $menu.append(
+                '<div class="form-check">'
+                + `<input class="form-check-input reports-preview-deduction-code-checkbox" type="checkbox" value="${escapeAttr(c.code)}" id="${id}" checked>`
+                + `<label class="form-check-label small" for="${id}">${escapeHtml(label)}</label>`
+                + '</div>'
+            );
+        });
+        if (typeof applyLanguage === 'function') applyLanguage();
+        updateDeductionCodesCount();
+        renderReportsPreviewFrame();
+    });
+}
+function updateDeductionCodesCount() {
+    $('#reportsPreviewDeductionCodesCount').text($('.reports-preview-deduction-code-checkbox:checked').length);
+}
+$(document).on('change', '.reports-preview-deduction-code-checkbox', function () {
+    updateDeductionCodesCount();
+    renderReportsPreviewFrame();
+});
+$(document).on('click', '#rpdcSelectAll', function (e) {
+    e.preventDefault();
+    $('.reports-preview-deduction-code-checkbox').prop('checked', true);
+    updateDeductionCodesCount();
+    renderReportsPreviewFrame();
+});
+$(document).on('click', '#rpdcSelectNone', function (e) {
+    e.preventDefault();
+    $('.reports-preview-deduction-code-checkbox').prop('checked', false);
+    updateDeductionCodesCount();
+    renderReportsPreviewFrame();
+});
 function renderReportsPreviewFrame() {
     const params = currentReportsPreviewParams();
     const $frame = $('#reportsPreviewFrame').off('load').addClass('d-none').attr('src', '');
     const $loading = $('#reportsPreviewLoading').addClass('d-none');
     const $unavailable = $('#reportsPreviewUnavailable').addClass('d-none');
     const $selectEmployee = $('#reportsPreviewSelectEmployee').addClass('d-none');
+    const $selectDeduction = $('#reportsPreviewSelectDeduction').addClass('d-none');
 
     // Payment Voucher (the only report with extra.employee) needs an employee picked before there's
     // anything to preview at all -- show a plain hint instead of firing a request that would just
@@ -258,6 +325,14 @@ function renderReportsPreviewFrame() {
     if (reportsPreviewOptions.extra && reportsPreviewOptions.extra.employee && !params.get('employee_id')) {
         $('#reportsPreviewDialog').removeClass('modal-xl');
         $selectEmployee.removeClass('d-none');
+        return;
+    }
+    // Same "nothing to preview yet" idea as the employee guard above, own copy/icon for "every
+    // deduction checkbox unchecked" -- avoids firing a request that would just 400 server-side.
+    if (reportsPreviewOptions.extra && reportsPreviewOptions.extra.deductionCodes
+        && $('.reports-preview-deduction-code-checkbox').length && !$('.reports-preview-deduction-code-checkbox:checked').length) {
+        $('#reportsPreviewDialog').removeClass('modal-xl');
+        $selectDeduction.removeClass('d-none');
         return;
     }
 
@@ -285,6 +360,11 @@ $(document).on('click', '.reports-preview-download-btn', function () {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
+    if (reportsPreviewOptions.extra && reportsPreviewOptions.extra.deductionCodes
+        && $('.reports-preview-deduction-code-checkbox').length && !$('.reports-preview-deduction-code-checkbox:checked').length) {
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
     const dlParams = currentReportsPreviewParams();
     dlParams.set('language', $(this).data('language'));
     generateReport(`${BASE_URL}/api/report.generate?${dlParams.toString()}`, function () {
@@ -296,61 +376,126 @@ $(document).on('click', '.reports-preview-download-btn', function () {
     });
 });
 
-/* ---------- Per-Cycle Reports tab (2026-08-29 rebuild): pick ONE run, then a row-list per report
-   type -- SAME pattern as Payroll Process Detail's own "Reports" tab (Report | Downloads | Last
-   Downloaded | Actions), reusing openReportsPreview() above for the actual Download action. See
-   this tab's own markup comment in reports/index.php for the full "ใช้หลักการเดียวกับหน้า Process"
-   rationale. */
-
+/* ---------- Per-Cycle Reports tab (2026-09-07 rebuild): a run x report-type MATRIX -- one ROW per
+   completed run, one COLUMN per applicable report, a single print button per cell (explicit
+   request: "เปลี่ยนเป็น ตารางแสดงรอบที่สามารถพิมพ์ได้ แล้วให้มี column พิมพ์ตามแบบที่พิมพ์ได้"). Reuses
+   openReportsPreview()/openPayslipRoster() above/below for the actual Download action -- only HOW
+   a run+report pair is picked changed, not what happens once it is. See
+   app/controllers/ReportsController.php's own cycleRunsMatrix() docblock for the backend shape and
+   PayrollReportDataModel::getCompletedRuns()'s own docblock for this tab's full back-and-forth
+   design history (matrix -> single-run picker -> matrix again). */
 
 const REPORT_TYPE_ICONS = { statutory: 'fa-landmark', payment: 'fa-money-check-dollar', internal: 'fa-building' };
 
-let cycleReportRows = []; // flat, current selected run's own rows (from runCycleReportsSummary())
-let selectedCycleRunId = null;
-const cycleTypesInited = { statutory: false, payment: false, internal: false };
+let cycleMatrixRuns = [];    // [{id, run_name, cycle_name, period_start_date, period_end_date, payment_date, state, applicable_codes:[code,...]}]
+let cycleMatrixColumns = []; // [{code, report_type, format, per_employee, label}] -- union of every code applicable to at least one returned run
+let tbCycleMatrix = null;
 
-function runOptionLabel(run) {
-    const start = (typeof formatDisplayDate === 'function') ? formatDisplayDate(run.period_start_date) : run.period_start_date;
-    const end = (typeof formatDisplayDate === 'function') ? formatDisplayDate(run.period_end_date) : run.period_end_date;
-    return `${run.run_name || run.cycle_name || '-'} (${start} - ${end})`;
+function cycleMatrixColumnHeaderHtml(col) {
+    return `<span class="reports-row-report-type-icon rt-${col.report_type}"><i class="fa-solid ${REPORT_TYPE_ICONS[col.report_type] || 'fa-file-lines'}"></i></span>${escapeHtml(reportLabel(col))}`;
 }
-
-function loadCycleRuns() {
+function cycleMatrixCellHtml(run, col) {
+    if (!run.applicable_codes.includes(col.code)) {
+        return '<span class="text-muted">&ndash;</span>';
+    }
+    const title = col.per_employee ? (langData['select_employee_to_download'] || 'Select an employee to download') : (langData['report_preview_and_download'] || 'Preview & Download');
+    return `<button type="button" class="btn btn-link btn-circle-action text-primary btn-cycle-matrix-print" data-run-id="${run.id}" data-code="${col.code}" title="${escapeAttr(title)}"><i class="fa-solid fa-print"></i></button>`;
+}
+function loadCycleRunsMatrix() {
     $.ajax({
-        url: `${BASE_URL}/api/report.cycle-runs`,
+        url: `${BASE_URL}/api/report.cycle-runs-matrix`,
         method: 'GET',
         dataType: 'json',
+        data: {
+            date_from: toIsoDateReports($('#cycleReportDateFrom').val()),
+            date_to: toIsoDateReports($('#cycleReportDateTo').val()),
+        },
         success: function (res) {
             if (!res.status) return;
-            cycleRuns = res.data || [];
-            const $select = $('#cycleReportRunSelect').empty();
-            cycleRuns.forEach(function (run) {
-                $select.append(`<option value="${run.id}">${escapeHtml(runOptionLabel(run))}</option>`);
-            });
-            $('#cycleReportsNoRunBanner').toggleClass('d-none', cycleRuns.length > 0);
-            $('#cycleReportBody').toggleClass('d-none', cycleRuns.length === 0);
-            $('#cycleReportPeriodBar').toggleClass('d-none', cycleRuns.length === 0);
-            if (cycleRuns.length > 0) {
-                // #cycleReportRunSelect (.select2-native) is already select2-initialized by
-                // app.js's own global page-load pass (empty at that point, since this fetch is
-                // async) -- appending real <option> elements to the underlying native <select>
-                // then triggering 'change' is Select2's own standard way to refresh an ALREADY-
-                // initialized widget's option list (distinct from this app's documented
-                // select2-remote-empty-preload gotcha, which is specifically about setting a VALUE
-                // with no matching <option> present -- here the options themselves are what's
-                // being added, so no re-init is needed or attempted). The browser auto-selects the
-                // FIRST appended option (the newest run, cycleRuns[0]) since none carries a
-                // `selected` attribute -- this trigger alone is what loads its summary, via the
-                // #cycleReportRunSelect change handler further down; no separate explicit call
-                // needed (would otherwise double-fetch on first load).
-                $select.trigger('change');
-            }
+            cycleMatrixRuns = (res.data && res.data.runs) || [];
+            cycleMatrixColumns = (res.data && res.data.report_columns) || [];
+            renderCycleMatrixTable();
         },
         error: function () {
             showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
         }
     });
 }
+function renderCycleMatrixTable() {
+    const hasRows = cycleMatrixRuns.length > 0;
+    $('#cycleReportsNoRunBanner').toggleClass('d-none', hasRows);
+    $('#cycleMatrixTableWrap').toggleClass('d-none', !hasRows);
+    if ($.fn.DataTable.isDataTable('#tb_cycle_matrix')) {
+        tbCycleMatrix.destroy();
+    }
+    $('#tb_cycle_matrix').empty();
+    if (!hasRows) return;
+
+    // Column SET (which reports appear as columns at all) can differ between filter results (a
+    // narrower date range might exclude the one run that had SSO-active employees, say) -- the
+    // <thead> is rebuilt from scratch every time alongside the `columns` config below, rather than
+    // written once as static markup, so the two can never drift out of sync with each other.
+    let headHtml = '<thead class="table-light text-secondary"><tr>'
+        + `<th data-i18n="table_payroll_run">${escapeHtml(langData['table_payroll_run'] || 'Payroll Run')}</th>`
+        + `<th data-i18n="pay_period">${escapeHtml(langData['pay_period'] || 'Pay Period')}</th>`;
+    cycleMatrixColumns.forEach(function (col) {
+        headHtml += `<th class="text-center">${cycleMatrixColumnHeaderHtml(col)}</th>`;
+    });
+    headHtml += '</tr></thead><tbody></tbody>';
+    $('#tb_cycle_matrix').html(headHtml);
+
+    const columns = [
+        { data: null, render: { display: (d, t, run) => `<span class="reports-row-report-name">${escapeHtml(run.run_name || run.cycle_name || '-')}</span>`, sort: (d, t, run) => run.run_name || run.cycle_name || '', filter: (d, t, run) => run.run_name || run.cycle_name || '' } },
+        { data: null, render: { display: (d, t, run) => `${formatDisplayDate(run.period_start_date)} - ${formatDisplayDate(run.period_end_date)}`, sort: (d, t, run) => run.period_start_date, filter: (d, t, run) => run.period_start_date } },
+    ];
+    cycleMatrixColumns.forEach(function (col) {
+        columns.push({ data: null, className: 'text-center', orderable: false, render: (d, t, run) => cycleMatrixCellHtml(run, col) });
+    });
+    tbCycleMatrix = $('#tb_cycle_matrix').DataTable({
+        data: cycleMatrixRuns,
+        responsive: true,
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang(),
+        columns: columns,
+        drawCallback: function () { getTableLang(); },
+    });
+}
+$(document).on('click', '.btn-cycle-matrix-print', function () {
+    const runId = $(this).data('run-id');
+    const code = $(this).data('code');
+    const col = cycleMatrixColumns.find(c => c.code === code);
+    if (!col) return;
+    if (col.per_employee) {
+        openPayslipRoster(col, runId);
+        return;
+    }
+    const params = new URLSearchParams();
+    params.set('report_code', col.code);
+    params.set('format', col.format);
+    params.set('run_id', runId);
+    if (col.needs_config === 'deduction_codes') {
+        // DeductionBreakdownReport: excel/pdf choice AND the deduction-type checkbox picker both
+        // live in #reportsPreviewModal's own footer (see openReportsPreview()'s `extra` handling).
+        openReportsPreview(params, reportLabel(col), { formatOptions: ['pdf', 'excel'], extra: { deductionCodes: true } });
+        return;
+    }
+    openReportsPreview(params, reportLabel(col));
+});
+function updateCycleReportFilterVisibility() {
+    const active = !!($('#cycleReportDateFrom').val() || $('#cycleReportDateTo').val());
+    $('#cycleReportFilterClearRow').toggleClass('d-none', !active);
+}
+$(document).on('changeDate', '#cycleReportDateFrom, #cycleReportDateTo', function () {
+    updateCycleReportFilterVisibility();
+    loadCycleRunsMatrix();
+});
+$(document).on('click', '#btnCycleReportClearFilter', function () {
+    $('#cycleReportDateFrom').val('').datepicker('update');
+    $('#cycleReportDateTo').val('').datepicker('update');
+    updateCycleReportFilterVisibility();
+    loadCycleRunsMatrix();
+});
 
 // 2026-08-30, explicit request: "filter ปีให้เลือกจากปีที่มีข้อมูลจริง" -- was a free-typed number
 // input defaulting to the current B.E. year regardless of whether any data actually existed for it;
@@ -368,7 +513,7 @@ function loadAvailableYears() {
         $('#annualReportBody').toggleClass('d-none', years.length === 0);
         $('#annualReportPeriodBar').toggleClass('d-none', years.length === 0);
         if (years.length > 0) {
-            $select.trigger('change'); // same select2-native-already-initialized refresh pattern as loadCycleRuns() above
+            $select.trigger('change'); // #reportsPeriodYear (.select2-native) is already select2-initialized by app.js's own global page-load pass -- appending real <option>s then triggering 'change' is Select2's standard way to refresh an already-initialized widget's option list
         }
     });
 }
@@ -387,107 +532,21 @@ $(document).on('click', '#annualReportPeriodBarToggle', function () {
     $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
 });
 
-function loadCycleReportSummary(runId) {
-    selectedCycleRunId = runId;
-    $.getJSON(`${BASE_URL}/api/report.run-cycle-summary`, { run_id: runId }, function (res) {
-        if (!res.status) return;
-        cycleReportRows = res.data || [];
-        cycleTypesInited.statutory = false;
-        cycleTypesInited.payment = false;
-        cycleTypesInited.internal = false;
-        ['statutory', 'payment', 'internal'].forEach(function (type) {
-            if ($.fn.DataTable.isDataTable(`#tb_cycle_${type}`)) {
-                $(`#tb_cycle_${type}`).DataTable().destroy();
-                $(`#tb_cycle_${type}`).find('tbody').empty();
-            }
-        });
-        const activeType = $('#cycleReportTypeTabs button.active').data('report-type') || 'statutory';
-        ensureCycleTypeInited(activeType);
-    });
-}
-
-function cycleReportActionsHtml(row) {
-    const disabledAttr = ''; // every offered run is already approved/paid/locked -- cycleRuns() itself only lists those states
-    const downloadTitle = row.per_employee ? (langData['select_employee_to_download'] || 'Select an employee to download') : (langData['report_preview_and_download'] || 'Preview & Download');
-    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-    // ".btn-circle-action" section) replace the old adjacent .btn-group.
-    return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-cycle-report-download" data-code="${row.code}" ${disabledAttr} title="${downloadTitle}"><i class="fa-solid fa-download"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-cycle-report-history" data-code="${row.code}" title="${langData['report_view_history'] || 'View Download History'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
-    </div>`;
-}
-
-function renderCycleReportTable(type) {
-    const rows = cycleReportRows.filter(r => r.report_type === type);
-    const $table = $(`#tb_cycle_${type}`);
-    const hasData = rows.length > 0;
-    $table.closest('.table-responsive').toggleClass('d-none', !hasData);
-    const $empty = $(`#noCycleReports_${type}`).toggleClass('d-none', hasData);
-    if (!hasData) {
-        $empty.find('span').text(langData['no_reports_available'] || 'No reports are registered in this category yet.');
-        return;
-    }
-    $table.DataTable({
-        data: rows,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        columns: [
-            // object-form render: sort-safety (this app's own audited convention, see CLAUDE.md) --
-            // sort/filter key off the plain report label / raw ISO timestamp, not the icon-prefixed
-            // HTML or the dd/mm/yyyy display string.
-            { data: null, render: { display: (d, t, row) => `<span class="reports-row-report-type-icon rt-${type}"><i class="fa-solid ${REPORT_TYPE_ICONS[type]}"></i></span><span class="reports-row-report-name">${escapeHtml(reportLabel(row))}</span>`, sort: (d, t, row) => reportLabel(row), filter: (d, t, row) => reportLabel(row) } },
-            { data: 'download_count', className: 'text-center' },
-            { data: 'last_downloaded_at', render: { display: (v) => v ? formatDisplayDateTime(v) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`, sort: (v) => v || '', filter: (v) => v || '' } },
-            { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => cycleReportActionsHtml(row) },
-        ],
-        drawCallback: function () { getTableLang(); }
-    });
-}
-
-/** Guards against the "DataTable(responsive:true) initialized while its Bootstrap tab pane is
- *  display:none collapses every column to 0 width" bug this app has hit repeatedly elsewhere. */
-function ensureCycleTypeInited(type) {
-    if (cycleTypesInited[type]) return;
-    if (!$('#cycle-pane').hasClass('active')) return;
-    renderCycleReportTable(type);
-    cycleTypesInited[type] = true;
-}
-
-$(document).on('shown.bs.tab', '#cycleReportTypeTabs button', function () {
-    ensureCycleTypeInited($(this).data('report-type'));
-});
-$(document).on('change', '#cycleReportRunSelect', function () {
-    const runId = $(this).val();
-    if (runId) loadCycleReportSummary(runId);
-});
-
-/** A report's Download button either opens the shared preview modal directly (openReportsPreview(),
- *  same as every other page here), or -- for a per-employee report (Pay Slip) -- opens the roster
- *  picker instead, since there's no single "the run's own" file to preview/download. */
-$(document).on('click', '.btn-cycle-report-download', function () {
-    const row = cycleReportRows.find(r => r.code === $(this).data('code'));
-    if (!row || !selectedCycleRunId) return;
-    if (row.per_employee) {
-        openPayslipRoster(row, selectedCycleRunId);
-        return;
-    }
-    const params = new URLSearchParams();
-    params.set('report_code', row.code);
-    params.set('format', row.format);
-    params.set('run_id', selectedCycleRunId);
-    openReportsPreview(params, reportLabel(row));
-});
-
 /* ---------- Pay Slip roster picker (2026-08-29, explicit request: "ปรับให้ขึ้นเป็นรายชื่อพนักงานมาเลย และ
    emp code ด้วย แผนกตำแหน่งทีม และมีปุ่มให้กด Download และแสดงด้วยว่า Download ไปแล้วกี่ครั้ง") ---------- */
 let tb_payslip_roster;
+// 2026-09-07, real bug found and fixed -- this used to read the Per-Cycle tab's own
+// `selectedCycleRunId` module variable (set by the old single-run-picker's change handler), which
+// no longer exists now that tab is a matrix with no single "currently selected" run at all. The
+// roster modal itself is still scoped to exactly one run per opening though, so it needs its own
+// small piece of state -- set here, read by the roster's own Download button handler below.
+let payslipRosterRunId = null;
 function employeeNameReports(row) {
     if (currentLang === 'th') return `${row.name_th || ''} ${row.surname_th || ''}`.trim() || row.name_en || '-';
     return `${row.name_en || ''} ${row.surname_en || ''}`.trim() || row.name_th || '-';
 }
 function openPayslipRoster(row, runId) {
+    payslipRosterRunId = runId;
     $('#payslipRosterModalTitle').text(reportLabel(row));
     bootstrap.Modal.getOrCreateInstance(document.getElementById('payslipRosterModal')).show();
     if ($.fn.DataTable.isDataTable('#tb_payslip_roster')) {
@@ -535,7 +594,7 @@ $(document).on('click', '.btn-payslip-roster-download', function () {
     const params = new URLSearchParams();
     params.set('report_code', 'PAY_SLIP');
     params.set('format', 'pdf');
-    params.set('run_id', selectedCycleRunId);
+    params.set('run_id', payslipRosterRunId);
     params.set('employee_id', employeeId);
     const report = reportList.find(r => r.code === 'PAY_SLIP');
     openReportsPreview(params, report ? reportLabel(report) : 'Pay Slip');
@@ -636,11 +695,6 @@ function openReportHistoryModal(reportCode, label, scopeParams) {
         },
     });
 }
-$(document).on('click', '.btn-cycle-report-history', function () {
-    const row = cycleReportRows.find(r => r.code === $(this).data('code'));
-    if (!row || !selectedCycleRunId) return;
-    openReportHistoryModal(row.code, reportLabel(row), { payroll_run_id: selectedCycleRunId });
-});
 $(document).on('click', '.btn-annual-report-history', function () {
     const report = annualReportRows().find(r => r.code === $(this).data('code'));
     const year = $('#reportsPeriodYear').val();
@@ -739,12 +793,14 @@ $(document).on('click', '#btnExportHistoryClearFilter', function () {
 
 $(document).ready(function () {
     loadReportList();
-    loadCycleRuns();
+    loadCycleRunsMatrix();
     loadAvailableYears();
     if (typeof initSelect2 === 'function') {
         initSelect2('#filter_export_report_type', { mode: 'static', allowClear: true });
     }
     if (typeof initDatepicker === 'function') {
+        initDatepicker('#cycleReportDateFrom');
+        initDatepicker('#cycleReportDateTo');
         initDatepicker('#exportHistoryDateFrom');
         initDatepicker('#exportHistoryDateTo');
     }
@@ -752,10 +808,6 @@ $(document).ready(function () {
         const tabId = $(e.target).attr('id');
         if (tabId === 'history-tab') {
             initExportHistoryTable();
-        }
-        if (tabId === 'cycle-tab') {
-            const activeType = $('#cycleReportTypeTabs button.active').data('report-type') || 'statutory';
-            ensureCycleTypeInited(activeType);
         }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
     });

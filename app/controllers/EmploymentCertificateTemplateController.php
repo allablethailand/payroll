@@ -22,6 +22,14 @@ class EmploymentCertificateTemplateController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    // Platform Hardening Phase 6 (batch 5) -- same shape as every other controller's own copy.
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     private function requirePermission(string $permissionKey): bool {
         $compId = (int)getCompId();
         $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
@@ -152,7 +160,8 @@ class EmploymentCertificateTemplateController extends Controller {
         // EmploymentCertificateTemplateModel::save() uses (id present = update).
         $isEdit = !empty($data['id']) && is_numeric($data['id']);
         if (!$this->requirePermission($isEdit ? 'employment_certificate_template.edit' : 'employment_certificate_template.add')) return;
-        $this->json($this->model->save((int)$compId, $data, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->save((int)$compId, $data, $this->userId(), $ip, $ua));
     }
 
     public function createFromPreset() {
@@ -196,7 +205,8 @@ class EmploymentCertificateTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->delete((int)$compId, $id, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->delete((int)$compId, $id, $this->userId(), $ip, $ua));
     }
 
     /** 2026-08-25, unified-list redesign: the list's Duplicate button now duplicates a whole PAIR
@@ -248,7 +258,8 @@ class EmploymentCertificateTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->setDefault((int)$compId, $id, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->setDefault((int)$compId, $id, $this->userId(), $ip, $ua));
     }
 
     /** 2026-08-26, explicit request: "ในหน้า List สามารถเปิด Draft หรือ Public ได้จากหน้านั้นเลย" --
@@ -262,7 +273,8 @@ class EmploymentCertificateTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->setPublishStatus((int)$compId, $id, $status, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->setPublishStatus((int)$compId, $id, $status, $this->userId(), $ip, $ua));
     }
 
     /* ==================== Logo + reusable image library uploads ==================== */

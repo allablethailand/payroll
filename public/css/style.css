@@ -249,6 +249,230 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     display: flex;
     align-items: center;
     gap: 16px;
+    /* 2026-09-07 -- lets .nav-quicklinks-wrap (first child, see below) consume whatever room is
+       left between .nav-left and this row's own fixed-size icons, instead of those icons ever
+       being asked to shrink themselves -- the quick-links bar is the ONE thing in this row that's
+       allowed to give up space, via real JS measurement (public/js/quick-links.js), not CSS
+       guesswork. */
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-end;
+}
+/* Every fixed-size icon in this row stays exactly its natural size regardless of how tight things
+   get -- only .nav-quicklinks-wrap (and, inside it, .nav-quicklinks specifically) is ever allowed
+   to shrink/overflow. */
+.nav-notif-dropdown,
+.nav-hub-dropdown,
+.nav-lang-dropdown,
+.nav-profile-dropdown {
+    flex-shrink: 0;
+}
+/* 2026-09-07, explicit request: "ทางลัด...ปรับเป็นให้อยู่บน header ไปเลย ให้เรียงอยู่ก่อนหน้า notification
+   โดยให้ผู้ใช้เลือกได้ว่าจะโชว์ หรือไม่โชว์เมนูไหน...แต่การแสดงผลต้องไม่ล้นจอ ถ้าผู้ใช้เลือกเยอะให้แสดงเท่าที่จะ
+   แสดงได้ แล้วที่เหลือเป็นปุ่ม more" -- moved out of the Dashboard's own Quick Links card. Two-part
+   layout: `.nav-quicklinks` is the SHRINKING half (icon buttons; `min-width:0` is what actually lets
+   a flex item shrink below its content's natural width -- without it the browser's implicit
+   `min-width:auto` would force this row to overflow the WHOLE PAGE instead of just clipping inside
+   itself) and `.nav-quicklinks-more-dropdown` is the FIXED half (always fully visible, see
+   quick-links.js's own layoutQuickLinks() for the measure-then-move-overflow-here algorithm). */
+.nav-quicklinks-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.nav-quicklinks {
+    display: flex;
+    align-items: center;
+    /* 2026-09-07, real bug found and fixed (explicit report: "ตอนนี้ไปอยู่ชิด logo ด้านซ้ายครับ") --
+       this box spans the WHOLE gap between .nav-left and the More button (that's the point, see the
+       comment above -- it needs the full width available to measure against), but with no
+       `justify-content` its own children default to flex-start, i.e. the LEFT edge of that gap,
+       right next to the logo, instead of the right edge next to the More button they're actually
+       meant to sit beside. */
+    justify-content: flex-end;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+/* 2026-09-07, explicit request: "มีขอบรูปให้ดูเป็นปุ่ม" -- a plain borderless icon read as decoration,
+   not something clickable; a visible frame (same treatment .nav-quicklinks-more-btn gets right
+   below) makes both halves of this cluster read as one consistent set of buttons. */
+.nav-quicklink-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background-color .15s ease, opacity .15s ease, border-color .15s ease;
+}
+.nav-quicklink-btn:hover {
+    background-color: #f8fafc;
+    border-color: #cbd5e1;
+    opacity: .85;
+}
+.nav-quicklink-btn img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+.nav-quicklinks-more-dropdown {
+    position: relative;
+    flex: none;
+}
+/* 2026-09-07, follow-up ("เปลี่ยนแล้วไม่เข้ากับ header ครับ") -- every OTHER icon in this row
+   (.nav-notif-btn/.nav-hub-btn/the language flags/the profile photo) is a custom flat-gradient SVG
+   image, NOT a FontAwesome glyph -- a `fa-*` icon here (first `fa-ellipsis`, then `fa-th`) read as a
+   different, generic icon language dropped into a row of bespoke brand icons, which is exactly what
+   didn't fit. Reverted to an `<img>` (`public/images/MORE.svg`, a plain 2x2 orange-gradient grid,
+   same flat-fill/gradient treatment as Bell.svg/HUB.svg) sized the same way every sibling icon
+   already is. */
+.nav-quicklinks-more-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    background: none;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: opacity .2s ease, border-color .15s ease, background-color .15s ease;
+}
+.nav-quicklinks-more-btn:hover {
+    background-color: #f8fafc;
+    border-color: #cbd5e1;
+    opacity: 0.8;
+}
+.nav-quicklinks-more-btn img {
+    width: 22px;
+    height: 22px;
+}
+/* Same list-dropdown shape as .nav-profile-menu right above (white card, hover row) -- deliberately
+   reused rather than a 3rd dropdown visual language for what is, functionally, the same kind of
+   "click an icon, get a short list of named links" control. */
+.nav-quicklinks-more-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    list-style: none;
+    padding: 6px 0;
+    margin: 0;
+    min-width: 220px;
+    max-width: 280px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+    z-index: 1010;
+}
+.nav-quicklinks-more-menu.active {
+    display: block;
+}
+.nav-quicklinks-more-menu li a,
+.nav-quicklinks-more-menu li button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 16px;
+    background: none;
+    border: none;
+    color: #4a5568;
+    text-decoration: none;
+    font-weight: 400;
+    font-size: .9rem;
+    text-align: left;
+    transition: background-color 0.15s ease;
+}
+.nav-quicklinks-more-menu li a:hover,
+.nav-quicklinks-more-menu li button:hover {
+    background-color: #f1f5f9;
+    color: #1a202c;
+}
+.nav-quicklinks-more-menu li a img {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+}
+.nav-quicklinks-more-menu li button i {
+    width: 16px;
+    text-align: center;
+    color: #FF9900;
+}
+.nav-quicklinks-more-menu-divider {
+    margin: 6px 0;
+    border-top: 1px solid #eef0f2;
+}
+.nav-quicklinks-more-empty {
+    padding: 10px 16px;
+    color: #9ca3af;
+    font-size: .85rem;
+}
+/* Customize Quick Links modal (#quickLinksCustomizeModal, app/views/layout/modals.php) -- one
+   checkbox per catalog item, grouped under its parent menu's own label.
+   2026-09-07, real bug found and fixed (explicit report: "modal body ไม่มี padding เลยครับ") -- same
+   bug CLASS already documented once in this project (Payslip/ECT's Assign-To checkboxes,
+   round-4: a custom class alongside a Bootstrap structural class fighting over layout), a
+   different MECHANISM this time: `.qlc-item` uses `display:flex` (not Bootstrap's own `.form-check`
+   float-based layout), but the `.form-check-input` checkbox still carries Bootstrap's
+   `float:left;margin-left:-1.5em` -- floats are ignored on a flex item, but the plain NEGATIVE
+   MARGIN is not, so the checkbox still got pulled 1.5em (24px) further left than `.qlc-item`'s own
+   4px padding could ever accommodate, overflowing past the row's (and visually, the modal-body's)
+   own left edge -- reading as "no padding at all" even though `.modal-body` itself was never
+   touched. Fixed by neutralizing the float-era margin now that flex is doing the layout instead. */
+.qlc-group + .qlc-group {
+    margin-top: 14px;
+}
+.qlc-group-title {
+    font-size: .82rem;
+    font-weight: 700;
+    color: #8a939e;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    margin-bottom: 6px;
+}
+/* 2026-09-07, explicit request: "ปรับแต่งทางลัด Modal โล่งๆนะครับ ตรง Sub Menu น่าจะแสดงผลเป็น Grid จะสวย
+   กว่า" -- items used to stack one per row in a single column, which looked sparse/empty against
+   this modal's own `modal-lg` width; a 2-column (3 on a wide screen) grid uses that width properly
+   and reads less like an empty list. */
+.qlc-group-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 2px 12px;
+}
+.qlc-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 4px;
+    border-radius: 8px;
+    transition: background-color .12s ease;
+}
+.qlc-item:hover {
+    background-color: rgba(255, 153, 0, .06);
+}
+.qlc-item .form-check-input {
+    float: none;
+    margin-left: 0;
+    flex: none;
+}
+.qlc-item img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    flex: none;
+}
+.qlc-item label {
+    margin: 0;
+    cursor: pointer;
 }
 .nav-icon-link {
     display: flex;
@@ -600,7 +824,13 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     list-style: none;
     padding: 6px 0;
     margin: 0;
-    min-width: 160px;
+    /* 2026-09-07, explicit report: "profile dropdown ขยายขึ้นอีก อยากให้เมนูแสดงผลบรรทัดเดียว" -- 160px
+       was too narrow for "System Access History"/"ประวัติการเข้าใช้งานระบบ" (this menu's own longest
+       item), so it wrapped onto a 2nd line. `min-width` alone won't stop wrapping (only sets a
+       floor) -- `white-space:nowrap` on the item text below is what actually keeps each row on one
+       line; widening the floor here just keeps the shorter items ("Settings"/"Terms and Conditions")
+       from looking cramped once the menu is naturally sized to fit the longest one. */
+    min-width: 220px;
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
     z-index: 1010;
 }
@@ -615,6 +845,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: #4a5568;
     text-decoration: none;
     font-weight: 400;
+    white-space: nowrap;
     transition: background-color 0.15s ease;
 }
 .nav-profile-menu li a:hover {
@@ -625,6 +856,25 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     width: 16px;
     text-align: center;
     color: #FF9900;
+}
+/* 2026-09-07, real bug found and fixed (explicit report: "แต่ละ Card แสดง Content ไม่ครบครับตอนส่วน
+   ท้ายไปทั้งหมดเลยตอนนี้" -- each Card's content not showing completely, the tail end missing
+   entirely now) -- `.modal-body` picked up `d-flex flex-column` when this modal's 3 sections became
+   `.settings-info-card`s (2026-09-07, "จัดหมวดหมู่ให้สวยขึ้น"); a flex CHILD's default `flex-shrink:1`
+   let the browser's flex algorithm compress these cards to fit `.modal-body`'s own
+   `max-height:calc(100vh - 100px - 100px)` (style.css's own global `.modal-body` rule) INSTEAD of
+   letting the already-present `overflow-y:auto` on that same element scroll normally -- combined
+   with `.settings-info-card`'s own (shared, NOT touched here -- see that class's own docblock)
+   `overflow:hidden` (there only to clip its rounded corners, reused on Company Profile/Payroll
+   Configuration too), a compressed card's own bottom content was silently clipped away instead of
+   visibly squished, which is what actually made it look like content had vanished rather than "got
+   smaller." Scoped to just this modal (not `.settings-info-card` itself, which stays untouched for
+   every other page already relying on its exact current behavior) -- forces each card to keep its
+   full natural height regardless of available space, so `.modal-body` handles the overflow via
+   scrolling like it already does everywhere else, instead of the flex algorithm handling it via
+   shrinking. */
+#userSettingsModal .settings-info-card {
+    flex-shrink: 0;
 }
 /* Settings modal -- Font Size slider + preview, Language flag-pair */
 .user-settings-font-slider-wrap {
@@ -1160,6 +1410,13 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: var(--app-text-muted);
     font-size: .8rem;
     margin: .15rem 0 0;
+}
+/* 2026-09-07, Data Sync cards -- "Sync ไปแล้วกี่ครั้ง" count badge next to the card title. */
+.ds-sync-count-badge {
+    background: var(--app-accent-soft-bg, #fff2df);
+    color: var(--app-accent-soft-text, #b45f00);
+    font-size: .68rem;
+    font-weight: 600;
 }
 .settings-info-card-body {
     padding: 1.25rem;
@@ -2330,6 +2587,24 @@ html, body {
 .modal-footer > .btn-success:not([data-bs-dismiss]) {
     order: 1;
 }
+/* 2026-09-07, real bug found (explicit report: "/payroll/payroll-process modal footer ยังซ้อนกันอยู่
+   ครับ") -- exactly the "extra content" exception the Phase 1.2 docblock above already anticipated
+   but 2 modals slipped through review: #reportPreviewModal (Process Detail's own report-preview
+   modal) and #runRegisterPdfPreviewModal (Process List's own Payroll Register PDF preview), both
+   with a bare 3-button `.modal-footer` (Close + Thai download + English download, all direct
+   children, no wrapping div) where Close ALSO carries `me-auto` to pin it on the far left while the
+   2 download buttons sit on the far right. The blanket `order: 2` rule above forces Close to render
+   LAST (after both download buttons), which strands its own `me-auto` with nothing left to push --
+   all 3 buttons collapse together on the right instead of the intended far-left/far-right split
+   (read by the user as buttons "stacked/overlapping"). Fixed by resetting Close's `order` back to 0
+   (matches the Thai button's own default, untouched, order) for just these 2 modals -- restores the
+   original DOM order (Close, Thai, English) so `me-auto` works as designed, without touching the
+   app-wide rule itself (every OTHER plain 2-button Cancel+Save footer this rule was built for is
+   unaffected). */
+#reportPreviewModal .modal-footer > [data-bs-dismiss="modal"],
+#runRegisterPdfPreviewModal .modal-footer > [data-bs-dismiss="modal"] {
+    order: 0;
+}
 /* ==========================================================================
    Payroll Run Detail — process timeline (per-record step tracker) + next-step banner.
    Adapted from Origami's own Process Detail page (C:\xampp\htdocs\origami\payroll,
@@ -3084,7 +3359,7 @@ html, body {
 }
 /* 2026-08-29, explicit request: "ปรับให้หน้า Dashboard ดูสวยขึ้นครับ" -- a subtle hover lift, same
    language every other interactive dashboard surface on this page already uses
-   (.dash-quick-link:hover/.dash-run-row:hover). */
+   (.dash-pipeline-step:hover/.dash-run-row:hover). */
 .stat-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(16, 24, 40, .08);
@@ -3309,62 +3584,182 @@ html, body {
     color: var(--app-text-muted);
     margin: .2rem 0 0;
 }
-/* 2026-09-06, Dashboard redesign: a quiet "powered by Origami" attribution mark, NOT a competing
-   brand focal point -- margin-left:auto pushes it to the header card's own far right regardless of
-   how wide .page-header-card-body's own text happens to be (a flex item never grows to fill space
-   by default, so this can't rely on the body "using up" the row on its own). Muted via opacity
-   (not a color/filter swap) so it reads as a faint watermark in both themes without a separate
-   dark-mode override -- kept small (28px tall) and never full-strength so it visually stays
-   secondary to the page's own icon/title. Hidden below md (Dashboard's own header card already
-   wraps to 2 lines on narrow screens -- a 3rd flex item there would just add clutter, not context). */
-.page-header-card-brandmark {
-    margin-left: auto;
-    flex-shrink: 0;
-    opacity: .45;
-    display: none;
-}
-.page-header-card-brandmark img {
-    height: 28px;
-    width: auto;
-    display: block;
-}
-@media (min-width: 768px) {
-    .page-header-card-brandmark { display: block; }
-}
+/* 2026-09-07, Dashboard redesign: the old "powered by Origami" brandmark that used to occupy this
+   header-card corner is removed outright (explicit request: "ตัด Origami Payroll Logo ออก ดูไม่เข้ากับ
+   เพื่อนครับ") -- that slot is empty again now (see the follow-up comment below on where the picker
+   that briefly lived there actually ended up). */
 
-/* 2026-09-06, Dashboard redesign: month/year historical picker bar -- sits between the page header
-   and the stat cards, since selecting a past month changes almost everything below it (see
-   DashboardController::summary()'s own docblock for the few "right now" widgets that deliberately
-   never historicize). Deliberately its own thin bar, not folded into .page-header-card itself --
-   this is an interactive control row, not descriptive text, and treating it as one would make the
-   header card's own click-through/hover affordances ambiguous. */
-.dash-period-bar {
+/* 2026-09-07, same-day follow-up ("ส่วนที่เลือกปี เดือน มาอยู่ใน calendar จะดูดีกว่าไหมครับ") -- this
+   picker briefly lived in .page-header-card's own top-right corner (see the retired comment above);
+   moved again, this time into the Calendar card's own header as `.dash-calendar-nav` (see that
+   class below) alongside real `<` `>` month-step buttons, since a calendar is the more natural home
+   for "which month am I looking at" than a page header. Still the SAME button opening the SAME
+   popover (year navigation + a 12-month grid) -- only the surrounding container changed, so
+   `margin-left:auto` (a page-header-card-specific placement trick) is gone; `.dash-calendar-nav`
+   itself now centers this via flexbox. Selecting a past month still changes almost everything on
+   the page (see DashboardController::summary()'s own docblock for the few "right now" widgets that
+   deliberately never historicize). */
+.dash-period-picker {
+    position: relative;
+    flex-shrink: 0;
+}
+.dash-period-picker-btn {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    background: var(--app-accent-soft-bg);
+    color: var(--app-accent-soft-text);
+    border: 1px solid rgba(255, 153, 0, .25);
+    border-radius: 10px;
+    padding: .5rem .8rem;
+    font-size: .85rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.dash-period-picker-btn:hover {
+    border-color: rgba(255, 153, 0, .5);
+}
+/* Green = "right now" (live), amber = a past period is being viewed -- same live/historical
+   distinction the old .dash-historical-badge used to spell out in text, now a quiet dot instead of
+   a whole separate pill so the header card doesn't get crowded. */
+.dash-period-picker-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #16a34a;
+    flex-shrink: 0;
+}
+.dash-period-picker-live-dot.dash-period-picker-live-dot-historical {
+    background: #f59e0b;
+}
+.dash-period-picker-caret {
+    font-size: .7rem;
+    opacity: .6;
+}
+/* Centered under the button (not right-aligned) -- inside .dash-calendar-nav the button itself sits
+   in the MIDDLE of the row (between the `<`/`>` step buttons), not pinned to a far edge the way it
+   was in the old page-header-card placement, so a fixed `right:0` would hang the popover off to one
+   side instead of under the control that opens it. */
+.dash-period-picker-pop {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1030;
+    width: 260px;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(16, 24, 40, .16);
+    padding: 12px;
+}
+.dash-period-picker-year-nav {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    flex-wrap: wrap;
-    gap: .75rem;
-    background: var(--app-surface-bg);
-    border: 1px solid var(--app-border);
-    border-radius: 8px;
-    padding: .6rem 1rem;
+    margin-bottom: 10px;
+    font-weight: 700;
+    color: var(--app-heading);
 }
-.dash-period-bar-controls {
+.dash-period-picker-year-btn {
+    border: none;
+    background: transparent;
+    color: var(--app-text-muted);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+}
+.dash-period-picker-year-btn:hover {
+    background: var(--app-accent-soft-bg);
+    color: #b45f00;
+}
+.dash-period-picker-months {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+.dash-period-picker-month-btn {
+    border: 1px solid var(--app-border);
+    background: transparent;
+    color: var(--app-text);
+    border-radius: 8px;
+    padding: 7px 4px;
+    font-size: .74rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dash-period-picker-month-btn:hover {
+    border-color: rgba(255, 153, 0, .5);
+    background: var(--app-accent-soft-bg);
+}
+.dash-period-picker-month-btn.active {
+    background: #FF9900;
+    border-color: #FF9900;
+    color: #fff;
+}
+.dash-period-picker-today-link {
     display: flex;
     align-items: center;
-    gap: .6rem;
-    flex-wrap: wrap;
-}
-/* Colored via Bootstrap's own bg-warning-subtle/text-warning-emphasis utility classes in the markup
-   (already dark-mode-aware in this app's Bootstrap 5.3 build, same as e.g. the Probation/Internship
-   card's own expiry badges) -- this class only owns layout, not color, so no separate dark-mode
-   override is needed here. */
-.dash-historical-badge {
-    font-size: .8rem;
+    justify-content: center;
+    width: 100%;
+    margin-top: 10px;
+    padding-top: 10px;
+    border: none;
+    border-top: 1px solid var(--app-border);
+    background: transparent;
+    font-size: .78rem;
     font-weight: 600;
-    padding: .3rem .7rem;
-    border-radius: 20px;
-    white-space: nowrap;
+    color: #FF9900;
+}
+.dash-period-picker-today-link:hover {
+    color: #b45f00;
+    text-decoration: underline;
+}
+/* 2026-09-07 -- Calendar card's own nav row: `<` [Month YYYY picker] `>`, replacing the plain
+   "Calendar" title as the header once the period picker moved in here (see .dash-period-picker's
+   own comment above for why). The prev/next buttons step one month at a time (dashboard.js's own
+   dashStepPeriod()) -- same historical-lens semantics as picking a month from the popover, just a
+   quicker one-click way to browse adjacent months without opening it. */
+.dash-calendar-nav {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--app-border);
+}
+/* 2026-09-07: the "Today" button sits at the row's own right edge via absolute positioning rather
+   than as a 4th flex child -- keeps the `<` [Month YYYY] `>` group visually centered exactly as
+   before (a 4th flex-row child would shift that group's center off from the picker), same "add
+   without disturbing the existing centered layout" approach already used for constrained header
+   rows elsewhere in this app. */
+.dash-calendar-today-btn {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.dash-calendar-nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-bg);
+    color: var(--app-text-muted);
+    border-radius: 8px;
+    transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.dash-calendar-nav-btn:hover {
+    background: var(--app-accent-soft-bg);
+    color: #b45f00;
+    border-color: rgba(255, 153, 0, .4);
 }
 
 /* ==========================================================================
@@ -6161,17 +6556,85 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 /* ==========================================================================
    Dashboard (2026-08-28) -- overview page, built on the same .page-header-card/
    .stat-card/.station-row primitives already used by Payroll Process/Detail so it
-   doesn't introduce a competing visual language, plus two small new pieces this
-   page needed: a generic panel wrapper (.dash-section-card) and a Quick Links tile
-   grid (.dash-quick-link).
+   doesn't introduce a competing visual language, plus a generic panel wrapper
+   (.dash-section-card). Quick Links itself moved out to the navbar 2026-09-07 (see
+   .nav-quicklinks further up this file) and no longer has a Dashboard-local widget.
    ========================================================================== */
-/* 2026-09-02, explicit request: "หน้า Dashboard อยากให้เพิ่มกราฟ" -- Chart.js canvases, dashboard.js
-   own docblock. Fixed-size wrapper so the donut never fights the station-row for width on a narrow
-   viewport (it simply wraps below via the flex-wrap on its own parent, not shrunk in place). */
-.dash-pipeline-donut-wrap {
-    width: 110px;
-    height: 110px;
-    flex-shrink: 0;
+/* 2026-09-07, Dashboard redesign: replaces the old .station-row-of-cards + a separate Chart.js donut
+   repeating the exact same 5 numbers in a different shape ("ภาพรวมกระบวนการเงินเดือน ปรับ Design ให้
+   ใหม่อีกครั้งครับ ตอนนี้เป็น pipeline ยังไม่สวย") with ONE connected flow: 5 stages, each a colored stop
+   with an icon/count/label, joined by connector arrows so it actually reads as a pipeline instead of
+   a plain card list next to an unrelated chart. Same state colors already established elsewhere in
+   this app (the former #dashStationRow .station-card[data-state=...] background/text pairs,
+   .station-card-sm.active[data-state=...]'s own solid variants for the icon circles) -- reused here,
+   not reinvented, so this still reads as "the same 5 states" rather than a new color language. */
+.dash-pipeline-flow {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+.dash-pipeline-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1 1 0;
+    min-width: 96px;
+    padding: 16px 8px;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: transform .12s ease, box-shadow .12s ease;
+}
+.dash-pipeline-step:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 16px rgba(16, 24, 40, .1);
+    text-decoration: none;
+}
+.dash-pipeline-step-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 1rem;
+}
+.dash-pipeline-step-count {
+    font-size: 1.3rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+.dash-pipeline-step-label {
+    font-size: .72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.dash-pipeline-connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 0 2px;
+    color: #ced4da;
+    font-size: .85rem;
+}
+.dash-pipeline-step[data-state="draft"] { background: #e2e3e5; color: #41464b; }
+.dash-pipeline-step[data-state="draft"] .dash-pipeline-step-icon { background: #64748b; }
+.dash-pipeline-step[data-state="pending_approval"] { background: #fff3cd; color: #92720c; }
+.dash-pipeline-step[data-state="pending_approval"] .dash-pipeline-step-icon { background: #f59e0b; }
+.dash-pipeline-step[data-state="approved"] { background: #cff4fc; color: #055160; }
+.dash-pipeline-step[data-state="approved"] .dash-pipeline-step-icon { background: #0ea5e9; }
+.dash-pipeline-step[data-state="paid"] { background: #d1e7dd; color: #0f5132; }
+.dash-pipeline-step[data-state="paid"] .dash-pipeline-step-icon { background: #16a34a; }
+.dash-pipeline-step[data-state="locked"] { background: #e0e7ff; color: #3730a3; }
+.dash-pipeline-step[data-state="locked"] .dash-pipeline-step-icon { background: #4f46e5; }
+@media (max-width: 575.98px) {
+    .dash-pipeline-connector { display: none; }
+    .dash-pipeline-step { min-width: 84px; }
 }
 .dash-chart-wrap {
     position: relative;
@@ -6231,58 +6694,101 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     text-decoration: underline;
 }
 
-.dash-quick-links {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-}
-.dash-quick-link {
-    display: flex;
-    flex-direction: column;
+/* 2026-09-07, Employee Reports "wow" redesign -- Org Structure/Tenure/Data Completeness sub-tabs
+   (explicit request: "โครงสร้างพนักงาน ขอ Design ใหม่ครับเห็นแล้ว Wow tab อายุงานก็เช่นเดียวกัน Tab
+   ความสมบูรณ์ของข้อมูลก็เช่นเดียวกันครับ"). Reuses .dash-section-card/.dash-section-card-header
+   verbatim for each chart's own header (no new header CSS needed) -- these are the net-new pieces:
+   a gold/silver/bronze rank badge for the top-3 groups in Org Structure's own table, a mini
+   horizontal progress bar (replaces Data Completeness's old plain colored % text), a colored pill
+   per tenure bucket, a small star for an employee sitting on/near a round-number tenure milestone,
+   and a center-labeled gauge (a doughnut with cutout + an absolutely-positioned number on top) for
+   Data Completeness's own average. */
+.rank-badge {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 14px 8px;
-    text-align: center;
-    text-decoration: none;
-    color: #4a3418;
-    font-size: .8rem;
-    font-weight: 600;
-    background: linear-gradient(135deg, #fff8ee 0%, #fff1dc 100%);
-    border: 1px solid rgba(255, 153, 0, .16);
-    border-radius: 12px;
-    transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-size: .68rem;
+    font-weight: 700;
+    color: #fff;
+    margin-right: 8px;
+    flex-shrink: 0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
 }
-.dash-quick-link:hover {
-    color: #b45f00;
-    border-color: rgba(255, 153, 0, .4);
-    box-shadow: 0 4px 12px rgba(255, 153, 0, .14);
-    transform: translateY(-2px);
+.rank-badge-1 { background: linear-gradient(135deg, #ffe08a, #e8a800); }
+.rank-badge-2 { background: linear-gradient(135deg, #dcdcdc, #a3a3a3); }
+.rank-badge-3 { background: linear-gradient(135deg, #e3a970, #ad6a2e); }
+
+.mini-progress-track {
+    position: relative;
+    width: 100%;
+    max-width: 130px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--app-border);
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
 }
-.dash-quick-link-icon {
-    width: 34px;
-    height: 34px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.dash-quick-link-icon img {
-    width: 26px;
-    height: 26px;
-    object-fit: contain;
+.mini-progress-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 4px;
+    transition: width .3s ease;
 }
 
-/* 2026-08-29, explicit request: Dashboard notification summary card -- reuses .nav-notif-item's own
-   markup/classes (notifications.js) but restyled as standalone rows (own border/radius/hover) since
-   this card has real room, unlike the header dropdown's own denser list. */
-.dash-notif-list .nav-notif-item {
-    border: 1px solid #eef0f2;
-    border-radius: 10px;
-    margin-bottom: 8px;
-    padding: 10px 12px;
+.tenure-bucket-chip {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: .72rem;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
 }
-.dash-notif-list .nav-notif-item:last-child { margin-bottom: 0; }
-.dash-notif-list .nav-notif-item:hover { background: rgba(255, 153, 0, .06); border-color: #ffe3b3; }
+.milestone-star {
+    color: #FF9900;
+    margin-left: 5px;
+}
+
+/* 2026-09-07: sizes to the gauge itself (140px) rather than stretching to share the flex row's
+   space 50/50 -- pairs with the plain flexbox split that replaced the old `.row`/`.col-*` markup,
+   see that markup's own comment in employee/reports.php. */
+.completeness-gauge-flex-item {
+    flex: 0 0 auto;
+    width: 100%;
+}
+@media (min-width: 768px) {
+    .completeness-gauge-flex-item { width: auto; }
+}
+.completeness-gauge-wrap {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    margin: 0 auto;
+}
+.completeness-gauge-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    pointer-events: none;
+}
+.completeness-gauge-center .val {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--app-heading);
+    line-height: 1.1;
+}
+.completeness-gauge-center .lbl {
+    font-size: .68rem;
+    color: var(--app-text-muted);
+}
+
 .dash-run-row {
     display: flex;
     flex-direction: column;
@@ -6384,45 +6890,6 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     margin-bottom: 2px;
 }
 
-/* 2026-08-29, explicit request: "แถบสเตตัส ภาพรวมกระบวนการเงินเดือน ใส่สีให้สวยๆ" -- unlike Payroll
-   Process's own #stationRow (where .station-card stays neutral grey until clicked as a filter,
-   .active being the ONE currently-selected filter), every one of these 5 dashboard cards is always
-   "on" at once (they're simultaneous counts, not a single-select filter -- nothing here ever
-   toggles .active), so each gets its own permanent, distinct tint instead of relying on that
-   click-to-highlight mechanism. Colors intentionally echo dashStateBadge()'s own Bootstrap
-   subtle-badge family (draft=secondary/pending=warning/approved=info/paid=success/locked=dark) so
-   the palette reads as one consistent "this is what each state means" language across the whole
-   page, including the mini per-run timeline below. Scoped to #dashStationRow so Payroll Process's
-   real interactive filter row elsewhere in the app is untouched.
-   2026-09-02, real bug found and fixed (explicit report: "บางจุดไม่เข้าใจ" -- these cards used
-   .station-card, which looks exactly like Payroll Process's own clickable filter chevrons (same
-   pointer-cursor/hover affordance from the shared base class), but used to be plain non-interactive
-   `<div>`s here -- `cursor:default` below was added specifically to stop them from LOOKING
-   clickable when they did nothing. They're real `<a>` links to Payroll Process's own matching
-   station filter now (see dashboard.php's own comment on this same markup), so the pointer cursor
-   is honest again -- `cursor:default` removed, and `text-decoration:none` added since these are
-   anchors now, not divs. */
-#dashStationRow .station-card {
-    text-decoration: none;
-}
-#dashStationRow .station-card:hover {
-    text-decoration: none;
-}
-#dashStationRow .station-card[data-state="draft"] { background: #e2e3e5; color: #41464b; }
-#dashStationRow .station-card[data-state="draft"]::after { border-left-color: #e2e3e5; }
-#dashStationRow .station-card[data-state="pending_approval"] { background: #fff3cd; color: #92720c; }
-#dashStationRow .station-card[data-state="pending_approval"]::after { border-left-color: #fff3cd; }
-#dashStationRow .station-card[data-state="approved"] { background: #cff4fc; color: #055160; }
-#dashStationRow .station-card[data-state="approved"]::after { border-left-color: #cff4fc; }
-#dashStationRow .station-card[data-state="paid"] { background: #d1e7dd; color: #0f5132; }
-#dashStationRow .station-card[data-state="paid"]::after { border-left-color: #d1e7dd; }
-#dashStationRow .station-card[data-state="locked"] { background: #e0e7ff; color: #3730a3; }
-#dashStationRow .station-card[data-state="locked"]::after { border-left-color: #e0e7ff; }
-#dashStationRow .station-count {
-    background: rgba(0, 0, 0, .08);
-    color: inherit;
-}
-
 /* Mini per-run pipeline (public/js/dashboard.js's dashRunTimelineHtml()) -- same chevron-notch
    technique as the full-size .station-card above, just scaled down to fit inline in a compact list
    row; deliberately its own small parallel rule set rather than reusing .station-card at a smaller
@@ -6512,11 +6979,6 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .station-card-sm.active.station-card-sm--info { background: #0d6efd; color: #fff; }
 .station-card-sm.active.station-card-sm--info::after { border-left-color: #0d6efd; }
 
-@media (max-width: 991px) {
-    .dash-quick-links {
-        grid-template-columns: repeat(3, 1fr);
-    }
-}
 /* 2026-08-29, explicit request: "Sync from Origami...ตารางที่แสดงผลอยู่ดูแน่นมาก ช่วยปรับให้สวยขึ้นหน่อย
    ครับ" -- the New/Already-Exists picker panels (public/js/employee/employee-sync.js,
    app/views/employee/list.php's #employeeSyncModal). Modal itself went modal-fullscreen (see that
@@ -6666,52 +7128,71 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    both themes from day one, unlike most of the rest of this pre-existing page's own hardcoded colors
    (a known, separate gap -- see .dash-section-card's own 2026-09-06 comment for why only that ONE
    shared wrapper was fixed as part of this same change, not an audit of every color on this page). */
+/* 2026-09-07, explicit report: "ปฏิทินตัวอักษรเล็กเกินไป และ Design ค่อนข้างดูยากครับ" -- day numbers
+   (.75rem) and weekday headers (.68rem) were genuinely small for a daily-glance widget, and every
+   cell looked visually flat (no border/depth to separate one day from the next, dots barely
+   visible at 6px). Bumped type sizes, added a subtle border + hover affordance to every cell (not
+   just ones with events, so the grid itself reads as a real calendar surface instead of a flat grid
+   of numbers), and enlarged the event dots -- same color language/tokens as before, no behavior
+   change, purely a legibility pass. */
 .dash-calendar-grid {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
 }
 .dash-calendar-row {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
+    gap: 4px;
 }
 .dash-calendar-cell {
     aspect-ratio: 1 / 1;
-    min-height: 34px;
+    min-height: 42px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    border-radius: 6px;
-    font-size: .75rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: .92rem;
     color: var(--app-text);
+    transition: background-color .12s ease, border-color .12s ease;
+}
+.dash-calendar-day {
+    border-color: var(--app-border);
 }
 .dash-calendar-weekday {
     font-weight: 700;
-    font-size: .68rem;
+    font-size: .78rem;
     color: var(--app-text-muted);
     text-transform: uppercase;
     aspect-ratio: auto;
     min-height: auto;
-    padding: 2px 0 6px;
+    border: none;
+    padding: 2px 0 8px;
 }
 .dash-calendar-cell-empty {
     background: transparent;
+    border: none;
 }
 .dash-calendar-day-num {
     line-height: 1.1;
+    font-weight: 600;
 }
 .dash-calendar-today {
     background: var(--app-accent-soft-bg);
+    border-color: rgba(255, 153, 0, .4);
     color: var(--app-accent-soft-text) !important;
-    font-weight: 700;
+    font-weight: 800;
+}
+.dash-calendar-day:hover {
+    border-color: rgba(255, 153, 0, .35);
 }
 .dash-calendar-has-events {
     cursor: pointer;
 }
 .dash-calendar-has-events:hover {
-    background: rgba(255, 153, 0, .1);
+    background: rgba(255, 153, 0, .12);
 }
 .dash-calendar-day-selected {
     outline: 2px solid #FF9900;
@@ -6719,15 +7200,16 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 }
 .dash-cal-dots {
     display: flex;
-    gap: 2px;
-    margin-top: 2px;
+    gap: 3px;
+    margin-top: 3px;
 }
 .dash-cal-dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     display: inline-block;
     flex-shrink: 0;
+    box-shadow: 0 0 0 1px var(--app-surface-bg);
 }
 .dash-cal-dot-holiday { background: #dc2626; }
 .dash-cal-dot-cutoff { background: #f59e0b; }
@@ -6736,17 +7218,22 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .dash-calendar-legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 12px;
-    padding-top: 10px;
+    gap: 12px;
+    margin-top: 14px;
+    padding-top: 12px;
     border-top: 1px solid var(--app-border);
 }
 .dash-cal-legend-item {
     display: flex;
     align-items: center;
-    gap: 5px;
-    font-size: .72rem;
+    gap: 6px;
+    font-size: .8rem;
     color: var(--app-text-muted);
+}
+.dash-cal-legend-item .dash-cal-dot {
+    width: 8px;
+    height: 8px;
+    box-shadow: none;
 }
 .dash-calendar-day-detail {
     margin-top: 10px;
@@ -7139,6 +7626,55 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 @keyframes om-spin-reverse { to { transform: rotate(-360deg); } }
 @media (prefers-reduced-motion: reduce) {
     .om-loader { animation: none; }
+}
+
+/* 2026-09-07, real bug found and fixed (explicit report: "Loader ใน Datatable...ดูไม่สมส่วน และไม่สวย")
+   -- datatables.net-bs5's own stylesheet hardcodes `div.dt-processing > div:last-child { width:80px;
+   height:15px; margin:1em auto; }`, sized for the library's NATIVE 4-bouncing-dots animation (that
+   selector targets what's normally the dots' own wrapper) -- see app.js's own getTableLang()
+   docblock for how this app's `processing` HTML (spinner + text label) collided with it: the label
+   div, being the last child, was squeezed into that same fixed 80x15px box, clipping/skewing text
+   that box was never sized for. Also gives the whole overlay real visual weight (a card, not bare
+   floating text over the table) matching this app's own surface/border/shadow language elsewhere.
+   `div.dt-processing` itself (outer positioning/centering/z-index, from the library) is left alone
+   -- only ITS OWN sizing is widened here since the library's fixed 200px/-100px centering math
+   assumes a narrower box than a full card treatment needs. */
+div.dt-processing {
+    width: auto;
+    min-width: 180px;
+    margin-left: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 50%;
+    margin-top: 0;
+    padding: 0;
+}
+.om-dt-processing-inner {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 26px;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(16, 24, 40, .12);
+}
+.om-dt-processing-label {
+    font-size: .82rem;
+    font-weight: 500;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+}
+/* Overrides the library's own `div.dt-processing > div:last-child` fixed-box rule for OUR markup
+   specifically (`.om-dt-processing-inner` is that same last-child) -- same class-pairing technique
+   already used elsewhere in this app to out-specificity a library default without touching its file. */
+div.dt-processing > div.om-dt-processing-inner:last-child {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    text-align: center;
 }
 
 .om-page-loader {

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../services/reports/ReportRegistry.php';
+require_once __DIR__ . '/AuditLogModel.php';
 
 /**
  * 2026-08-29, follow-up to Bank File Format: "ส่วน Format เอกสารของการนำส่งสรรพากร และ ประกันสังคม ก็อยาก
@@ -43,9 +44,11 @@ require_once __DIR__ . '/../services/reports/ReportRegistry.php';
  */
 class StatutoryFormatVersionModel {
     private PDO $db;
+    private AuditLogModel $auditLog;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /** Same 1-line lookup CompanyStatutorySettingModel::getCompanyCountry()/TaxStatutoryController::
@@ -213,7 +216,7 @@ class StatutoryFormatVersionModel {
         return $defaultCode !== false ? (string)$defaultCode : null;
     }
 
-    public function saveSelection(int $compId, string $formCode, int $versionId, ?int $userId): array {
+    public function saveSelection(int $compId, string $formCode, int $versionId, ?int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $stmt = $this->db->prepare(
             "SELECT id FROM master_statutory_format_versions WHERE id = :id AND form_code = :form_code AND is_active = 1"
         );
@@ -221,16 +224,25 @@ class StatutoryFormatVersionModel {
         if (!$stmt->fetch()) {
             return ['status' => false, 'message' => 'Invalid version for this form.'];
         }
+        // Platform Hardening Phase 6 (batch 5): SELECT * (not just `id`) so the full row is
+        // available to AuditLogModel::record() as the "old" side of the diff below.
         $stmtExisting = $this->db->prepare(
-            "SELECT id FROM company_statutory_format_settings WHERE comp_id = :comp_id AND form_code = :form_code"
+            "SELECT * FROM company_statutory_format_settings WHERE comp_id = :comp_id AND form_code = :form_code"
         );
         $stmtExisting->execute([':comp_id' => $compId, ':form_code' => $formCode]);
-        $existingId = $stmtExisting->fetchColumn();
-        if ($existingId) {
+        $existing = $stmtExisting->fetch(PDO::FETCH_ASSOC);
+        if ($existing) {
+            $existingId = (int)$existing['id'];
             $this->db->prepare(
                 "UPDATE company_statutory_format_settings SET version_id = :version_id, updated_by = :user_id, updated_at = CURRENT_TIMESTAMP WHERE id = :id"
             )->execute([':version_id' => $versionId, ':user_id' => $userId, ':id' => $existingId]);
+            $stmtNewRow = $this->db->prepare("SELECT * FROM company_statutory_format_settings WHERE id = :id");
+            $stmtNewRow->execute([':id' => $existingId]);
+            $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+            $this->auditLog->record($compId, 'company_statutory_format_settings', $existingId, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
         } else {
+            // First-ever selection for this form_code -- a create, not logged (no-CREATE-logging
+            // convention, same as every other model wired into this audit log).
             $this->db->prepare(
                 "INSERT INTO company_statutory_format_settings (comp_id, form_code, version_id, created_by) VALUES (:comp_id, :form_code, :version_id, :user_id)"
             )->execute([':comp_id' => $compId, ':form_code' => $formCode, ':version_id' => $versionId, ':user_id' => $userId]);

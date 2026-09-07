@@ -153,7 +153,30 @@ class SyncBatchModel {
                 'triggered_by_surname_th' => $row['triggered_by_surname_th'],
                 'triggered_by_name_en' => $row['triggered_by_name_en'],
                 'triggered_by_surname_en' => $row['triggered_by_surname_en'],
+                'sync_count' => 0,
             ];
+        }
+        // 2026-09-07, explicit request: "อยากให้ปรับรูปแบบ Card ให้บอกด้วยว่า Sync ไปแล้วกี่ครั้ง" -- how
+        // many times THIS entity type has completed a sync, total. A plain COUNT(*) grouped by
+        // entity_type, counting only 'completed' batches (a failed attempt was never actually a
+        // successful sync, so it shouldn't inflate this number) -- merged into the same per-type map
+        // the last-sync-at/who-ran-it fields above already build, so the Sync tab's cards still need
+        // only this one endpoint/round trip.
+        $countStmt = $this->db->prepare("SELECT entity_type, COUNT(*) AS cnt FROM sync_batches
+            WHERE comp_id = :comp_id AND source = :source AND status = 'completed' GROUP BY entity_type");
+        $countStmt->execute([':comp_id' => $compId, ':source' => $source]);
+        foreach ($countStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (!isset($result[$row['entity_type']])) {
+                // A type that has completed syncs but somehow none matched the MAX(completed_at)
+                // join above shouldn't happen in practice, but fail safe rather than drop the count.
+                $result[$row['entity_type']] = [
+                    'last_sync_at' => null, 'triggered_by' => null,
+                    'triggered_by_name_th' => null, 'triggered_by_surname_th' => null,
+                    'triggered_by_name_en' => null, 'triggered_by_surname_en' => null,
+                    'sync_count' => 0,
+                ];
+            }
+            $result[$row['entity_type']]['sync_count'] = (int)$row['cnt'];
         }
         return $result;
     }

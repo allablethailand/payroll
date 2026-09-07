@@ -625,8 +625,11 @@
                 </div>
             </div>
             <div class="dash-section-card mb-4">
-                <div class="dash-chart-wrap">
-                    <canvas id="employeeStructureChart" height="90"></canvas>
+                <div class="dash-section-card-header">
+                    <h6 class="mb-0"><i class="fa-solid fa-chart-simple"></i><span class="ms-2" data-i18n="structure_chart_title">Headcount by Group</span></h6>
+                </div>
+                <div class="dash-chart-wrap" style="height:320px;">
+                    <canvas id="employeeStructureChart"></canvas>
                 </div>
             </div>
             <div class="table-responsive">
@@ -635,6 +638,7 @@
                         <tr>
                             <th data-i18n="structure_group_label">Group</th>
                             <th class="text-end" data-i18n="structure_headcount">Headcount</th>
+                            <th class="text-end" data-i18n="structure_share">Share</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -697,8 +701,11 @@
                 </div>
             </div>
             <div class="dash-section-card mb-4">
-                <div class="dash-chart-wrap">
-                    <canvas id="employeeTenureChart" height="90"></canvas>
+                <div class="dash-section-card-header">
+                    <h6 class="mb-0"><i class="fa-solid fa-layer-group"></i><span class="ms-2" data-i18n="tenure_chart_title">Tenure Distribution</span></h6>
+                </div>
+                <div class="dash-chart-wrap" style="height:280px;">
+                    <canvas id="employeeTenureChart"></canvas>
                 </div>
             </div>
             <div class="table-responsive">
@@ -711,6 +718,7 @@
                             <th data-i18n="branch">Branch</th>
                             <th data-i18n="start_work_date">Start Date</th>
                             <th class="text-end" data-i18n="tenure_years">Tenure (Years)</th>
+                            <th data-i18n="tenure_bucket_col">Bucket</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -869,8 +877,33 @@
                 </div>
             </div>
             <div class="dash-section-card mb-4">
-                <div class="dash-chart-wrap">
-                    <canvas id="employeeCompletenessChart" height="90"></canvas>
+                <div class="dash-section-card-header">
+                    <h6 class="mb-0"><i class="fa-solid fa-chart-pie"></i><span class="ms-2" data-i18n="completeness_chart_title">Completeness Overview</span></h6>
+                </div>
+                <!-- 2026-09-07: was a Bootstrap `.row`/`.col-12 col-md-4`+`.col-12 col-md-8` grid --
+                     real bug found (explicit report: "ตารางมี padding เหมือนติด col-12 มา ทำให้ความกว้าง
+                     ไม่เท่ากับ header"): `.row`'s own negative left/right margin (`calc(var(--bs-
+                     gutter-x)*-.5)`) sits directly inside `.dash-section-card`'s padding with nothing
+                     to re-cancel it, so this row's rendered content box didn't line up with the
+                     card's own edges (and by extension the page-header-card/table above and below
+                     it) the way every OTHER plain (non-`.row`) block on this page does. Replaced with
+                     a plain flexbox split -- same responsive stack-on-narrow/side-by-side-on-md+
+                     behavior, no `.row`/`.col-*` negative-margin mechanic involved at all. -->
+                <div class="d-flex flex-wrap flex-md-nowrap align-items-center gap-3">
+                    <div class="completeness-gauge-flex-item">
+                        <div class="completeness-gauge-wrap">
+                            <canvas id="employeeCompletenessGauge"></canvas>
+                            <div class="completeness-gauge-center">
+                                <div class="val" id="empCompletenessGaugeValue">-</div>
+                                <div class="lbl" data-i18n="completeness_average_short">Average</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 w-100">
+                        <div class="dash-chart-wrap" style="height:220px;">
+                            <canvas id="employeeCompletenessChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="table-responsive">

@@ -16,6 +16,7 @@ require_once __DIR__ . '/payment/BankAccountPaymentSummaryReport.php';
 require_once __DIR__ . '/internal/PayrollRegisterReport.php';
 require_once __DIR__ . '/internal/PayrollRunListSummaryReport.php';
 require_once __DIR__ . '/internal/ScheduledItemOccurrenceReconciliationReport.php';
+require_once __DIR__ . '/internal/DeductionBreakdownReport.php';
 
 /**
  * Central lookup for all registered ReportGeneratorInterface implementations.
@@ -46,6 +47,7 @@ class ReportRegistry {
         self::register(new PayrollRegisterReport());
         self::register(new PayrollRunListSummaryReport());
         self::register(new ScheduledItemOccurrenceReconciliationReport());
+        self::register(new DeductionBreakdownReport());
         self::$initialized = true;
     }
 

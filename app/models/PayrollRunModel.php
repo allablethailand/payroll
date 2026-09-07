@@ -1338,15 +1338,39 @@ class PayrollRunModel {
      * so there is no key to wait on for one of those -- confirmed via AskUserQuestion).
      * @return array{id:int}|null the matching active (non-cancelled, non-deleted) run, or null
      */
-    private function findActiveRunForCyclePeriod(int $compId, int $cycleId, string $start, string $end, ?int $excludeId): ?array {
+    /**
+     * 2026-09-07, real behavior change (explicit request: "รอบอนาคต...น่าจะเปลี่ยนเป็นรอบเดือนของวันที่จ่าย
+     * เพราะเราจะดึงข้อมูลของรอบเดือนที่จ่าย เช่น จ่าย 15 กย ก็จะนำไปรวมกับที่จ่าย 30 กย") -- was
+     * `findActiveRunForCyclePeriod()`, matching on an EXACT `period_start_date`/`period_end_date`
+     * pair (the same cycle's one specific occurrence). Confirmed with the user this undersold their
+     * real need: a company whose SAME recurring Payroll Cycle produces more than one run inside a
+     * single calendar month (e.g. a semi-monthly cycle paying on the 15th AND the 30th) wants a
+     * future merge target to resolve against WHICHEVER of that cycle's own occurrences lands in the
+     * target month, not one exact, hand-predicted period. Still scoped to a single named `cycle_id`
+     * (never any-cycle-in-the-company) -- the "confirmed via AskUserQuestion: the only kind of future
+     * round this app can name in advance is a recurring Payroll Cycle's own next occurrence" design
+     * principle from 2026-09-06 is unchanged, only WHICH occurrence of that one cycle counts as a
+     * match got looser. `$targetMonthAnchor` is the stored `merge_target_period_start_date` (the
+     * only date this feature has ever collected from the admin) -- its own YEAR/MONTH stands in for
+     * "the target payment month" since no separate target-payment-date field exists or is needed;
+     * matched against the CANDIDATE run's actual `payment_date` (not ITS OWN period dates), since
+     * payment date -- not period -- is what genuinely determines which calendar month a run belongs
+     * to for this purpose (a period can straddle a month boundary; its payment date does not).
+     * `ORDER BY period_start_date ASC LIMIT 1` picks the earliest-period occurrence deterministically
+     * on the rare chance more than one already exists in that month (e.g. both the 15th and 30th runs
+     * already created before this target was even set up) -- an edge case, not the common path.
+     */
+    private function findActiveRunForCyclePaymentMonth(int $compId, int $cycleId, string $targetMonthAnchor, ?int $excludeId): ?array {
         $sql = "SELECT id FROM `payroll_runs`
-                WHERE comp_id = :comp_id AND cycle_id = :cycle_id AND period_start_date = :start AND period_end_date = :end
+                WHERE comp_id = :comp_id AND cycle_id = :cycle_id
+                  AND YEAR(payment_date) = YEAR(:anchor) AND MONTH(payment_date) = MONTH(:anchor)
                 AND deleted_at IS NULL AND state != 'cancelled'";
-        $params = [':comp_id' => $compId, ':cycle_id' => $cycleId, ':start' => $start, ':end' => $end];
+        $params = [':comp_id' => $compId, ':cycle_id' => $cycleId, ':anchor' => $targetMonthAnchor];
         if ($excludeId !== null) {
             $sql .= " AND id != :exclude_id";
             $params[':exclude_id'] = $excludeId;
         }
+        $sql .= " ORDER BY period_start_date ASC LIMIT 1";
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1430,9 +1454,11 @@ class PayrollRunModel {
                 if (!$stmtMtCycle->fetch()) {
                     return ['status' => false, 'message' => 'Invalid or inactive target payroll cycle.'];
                 }
-                // Immediate resolution -- see this method's own docblock: if a real run already
-                // exists for this exact cycle+period, this is no longer a "future" target at all.
-                $existingTargetRun = $this->findActiveRunForCyclePeriod($compId, $newCycleId, $mtStart, $mtEnd, $excludeRunId);
+                // Immediate resolution -- see findActiveRunForCyclePaymentMonth()'s own docblock: if
+                // a real run of this cycle already exists whose payment_date falls in the same
+                // month as $mtStart, this is no longer a "future" target at all (2026-09-07: was an
+                // exact cycle+period match, now a same-cycle+same-payment-month match).
+                $existingTargetRun = $this->findActiveRunForCyclePaymentMonth($compId, $newCycleId, $mtStart, $excludeRunId);
                 if ($existingTargetRun !== null) {
                     $mergeTargetRunId = (int)$existingTargetRun['id'];
                     $mergeTargetCycleId = null;
@@ -1735,11 +1761,18 @@ class PayrollRunModel {
             }
         }
         if ($cycleId !== null) {
+            // 2026-09-07: was an exact `merge_target_period_start_date = :start AND
+            // merge_target_period_end_date = :end` match against THIS new run's own period -- now
+            // matches by PAYMENT MONTH instead (this run's own $payDate against the waiting target's
+            // stored merge_target_period_start_date, whose year/month stands in for "target month" --
+            // see findActiveRunForCyclePaymentMonth()'s own docblock for the full reasoning, same
+            // change applied here for the auto-detect path since a run can arrive via Add/Pull/Bulk
+            // Pull in any order relative to when the future-target was set up).
             $stmtFutureMerge = $this->db->prepare("SELECT id, run_name FROM `payroll_runs`
                 WHERE comp_id = :comp_id AND state = 'draft' AND deleted_at IS NULL
                   AND merge_target_run_id IS NULL AND merge_target_cycle_id = :cycle_id
-                  AND merge_target_period_start_date = :start AND merge_target_period_end_date = :end");
-            $stmtFutureMerge->execute([':comp_id' => $compId, ':cycle_id' => $cycleId, ':start' => $start, ':end' => $end]);
+                  AND YEAR(merge_target_period_start_date) = YEAR(:pay_date) AND MONTH(merge_target_period_start_date) = MONTH(:pay_date)");
+            $stmtFutureMerge->execute([':comp_id' => $compId, ':cycle_id' => $cycleId, ':pay_date' => $payDate]);
             foreach ($stmtFutureMerge->fetchAll(PDO::FETCH_ASSOC) as $fm) {
                 // Resolve immediately into the plain, already-fully-tested merge_target_run_id case
                 // -- see resolveMergeTargetSpec()'s own docblock for why this is the right moment,

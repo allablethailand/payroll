@@ -72,52 +72,107 @@
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <div class="mb-4">
-                    <label class="form-label fw-semibold mb-1" data-i18n="user_settings_font_size_label">Font Size</label>
-                    <div class="user-settings-font-slider-wrap">
-                        <input type="range" class="form-range" id="userSettingsFontSizeSlider" min="0" max="2" step="1" value="1">
-                        <div class="user-settings-font-slider-labels">
-                            <span data-font-size-option="s" data-i18n="user_settings_font_size_small">Small</span>
-                            <span data-font-size-option="m" data-i18n="user_settings_font_size_medium">Medium</span>
-                            <span data-font-size-option="l" data-i18n="user_settings_font_size_large">Large</span>
+            <!-- 2026-09-07, explicit request: "ตั้งค่า คลิกที่ Profile อยากให้จัดหมวดหมู่ให้สวยขึ้น" --
+                 each section was a plain stacked <label>+control block with no visual separation at
+                 all; now one `.settings-info-card` per section (icon+title+description header, same
+                 established "titled section, visually distinct from a plain modal body" component
+                 this app already reuses on Company Profile/Payroll Configuration's own settings
+                 tabs -- see that class's own docblock in style.css: "reuse this anywhere a settings
+                 page needs a titled section...rather than inventing a new one-off card class per
+                 page"). Every id/class the JS (app.js) already reads/writes is untouched -- only the
+                 surrounding wrapper markup changed. -->
+            <div class="modal-body d-flex flex-column gap-3">
+                <div class="settings-info-card">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-text-height"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="user_settings_font_size_label">Font Size</p>
+                            <p class="settings-info-card-desc" data-i18n="user_settings_font_size_desc">Adjust the text size across the app to your comfort.</p>
                         </div>
                     </div>
-                    <div class="user-settings-font-preview" id="userSettingsFontPreview" data-i18n="user_settings_font_size_preview">The quick brown fox jumps over the lazy dog.</div>
-                </div>
-                <!-- 2026-09-04, Backlog Phase 11, T069 Step 1 -- 3-way theme toggle, same section
-                     styling/markup shape as Font Size just above (label + a segmented row of
-                     options) for visual consistency, not a copy-paste of the slider control itself
-                     (theme is 3 discrete, unordered choices -- a slider implies an ordered scale,
-                     which doesn't fit). "System" is just the null/unset state server-side (see
-                     UserPreferenceModel's own docblock) -- selecting it sends '' to the save
-                     endpoint, same null-means-unset convention userSettingsFontSizeSlider's own
-                     language sibling already uses. -->
-                <div class="mb-4">
-                    <label class="form-label fw-semibold mb-1" data-i18n="user_settings_theme_label">Theme</label>
-                    <div class="user-settings-theme-options" id="userSettingsThemeOptions">
-                        <button type="button" class="user-settings-theme-option" data-theme-option="light">
-                            <i class="fa-solid fa-sun"></i>
-                            <span data-i18n="user_settings_theme_light">Light</span>
-                        </button>
-                        <button type="button" class="user-settings-theme-option" data-theme-option="dark">
-                            <i class="fa-solid fa-moon"></i>
-                            <span data-i18n="user_settings_theme_dark">Dark</span>
-                        </button>
-                        <button type="button" class="user-settings-theme-option" data-theme-option="system">
-                            <i class="fa-solid fa-circle-half-stroke"></i>
-                            <span data-i18n="user_settings_theme_system">System</span>
-                        </button>
+                    <div class="settings-info-card-body">
+                        <div class="user-settings-font-slider-wrap">
+                            <input type="range" class="form-range" id="userSettingsFontSizeSlider" min="0" max="2" step="1" value="1">
+                            <div class="user-settings-font-slider-labels">
+                                <span data-font-size-option="s" data-i18n="user_settings_font_size_small">Small</span>
+                                <span data-font-size-option="m" data-i18n="user_settings_font_size_medium">Medium</span>
+                                <span data-font-size-option="l" data-i18n="user_settings_font_size_large">Large</span>
+                            </div>
+                        </div>
+                        <div class="user-settings-font-preview" id="userSettingsFontPreview" data-i18n="user_settings_font_size_preview">The quick brown fox jumps over the lazy dog.</div>
                     </div>
                 </div>
-                <div id="userSettingsNotifPrefsWrap">
-                    <label class="form-label fw-semibold mb-1" data-i18n="notification_preferences_label">Notification Preferences</label>
-                    <div id="userSettingsNotifPrefsList" class="d-flex flex-column gap-2"></div>
+                <!-- 2026-09-04, Backlog Phase 11, T069 Step 1 -- 3-way theme toggle. "System" is just
+                     the null/unset state server-side (see UserPreferenceModel's own docblock) --
+                     selecting it sends '' to the save endpoint, same null-means-unset convention
+                     userSettingsFontSizeSlider's own language sibling already uses. -->
+                <div class="settings-info-card">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-circle-half-stroke"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="user_settings_theme_label">Theme</p>
+                            <p class="settings-info-card-desc" data-i18n="user_settings_theme_desc">Choose how Origami Payroll looks on this device.</p>
+                        </div>
+                    </div>
+                    <div class="settings-info-card-body">
+                        <div class="user-settings-theme-options" id="userSettingsThemeOptions">
+                            <button type="button" class="user-settings-theme-option" data-theme-option="light">
+                                <i class="fa-solid fa-sun"></i>
+                                <span data-i18n="user_settings_theme_light">Light</span>
+                            </button>
+                            <button type="button" class="user-settings-theme-option" data-theme-option="dark">
+                                <i class="fa-solid fa-moon"></i>
+                                <span data-i18n="user_settings_theme_dark">Dark</span>
+                            </button>
+                            <button type="button" class="user-settings-theme-option" data-theme-option="system">
+                                <i class="fa-solid fa-circle-half-stroke"></i>
+                                <span data-i18n="user_settings_theme_system">System</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-info-card" id="userSettingsNotifPrefsWrap">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-bell"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="notification_preferences_label">Notification Preferences</p>
+                            <p class="settings-info-card-desc" data-i18n="notification_preferences_desc">Choose which notifications you want to receive.</p>
+                        </div>
+                    </div>
+                    <div class="settings-info-card-body">
+                        <div id="userSettingsNotifPrefsList" class="d-flex flex-column gap-2"></div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveUserSettings" data-i18n="save">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-09-07, explicit request: "ให้ผู้ใช้เลือกได้ว่าจะโชว์ หรือไม่โชว์เมนูไหน เลือกได้ทั้งเมนู และ sub menu" --
+     opened from the header's Quick Links "More" dropdown (`public/js/quick-links.js`'s own
+     openQuickLinksCustomizeModal()), which populates #quickLinksCustomizeList with one checkbox per
+     catalog item (UserPreferenceModel::quickLinkCatalog()), grouped under its own parent menu's
+     label, standalone top-level items (Dashboard, Payroll Process, ...) listed first ungrouped. -->
+<div class="modal fade" id="quickLinksCustomizeModal" tabindex="-1" aria-labelledby="quickLinksCustomizeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="quickLinksCustomizeModalLabel">
+                    <i class="fa-solid fa-bolt me-2"></i><span data-i18n="quick_links_customize_title">Customize Quick Links</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3" data-i18n="quick_links_customize_hint">Choose which menu items appear as quick links in the header. If more are selected than fit on screen, the rest are shown under "More".</p>
+                <div id="quickLinksCustomizeList"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="btnSaveQuickLinks" data-i18n="save">Save</button>
             </div>
         </div>
     </div>
@@ -140,8 +195,22 @@
                 <button type="button" class="btn-close terms-modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="termsModalBody">
+                <!-- 2026-09-07, explicit design question answered: "ถ้ามีหลาย Version จะแสดงยังไง...
+                     เป็นตารางก่อน แล้วค่อยกดดูข้อความ...ช่วย Design ให้แสดงผลใน modal เดียวครับ รองรับ
+                     responsive" -- one modal, two states: the CURRENT version's text shows by
+                     default (below), and #termsModalHistory's own table (further down) lets an
+                     employee click "View" on any PAST version they've accepted to swap the SAME
+                     #termsModalContent area to show that version's text instead -- this banner is
+                     the only visual cue distinguishing "viewing history" from "viewing current",
+                     plus the one-click way back. Never shown in forced (login-gate) mode -- there's
+                     no history table there at all (see setForcedUi()). -->
+                <div id="termsModalViewingBanner" class="alert alert-warning py-2 px-3 small d-none mb-3">
+                    <i class="fa-solid fa-clock-rotate-left me-1"></i>
+                    <span id="termsModalViewingBannerText"></span>
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" id="btnTermsBackToCurrent" data-i18n="terms_and_conditions_back_to_current">Back to current version</button>
+                </div>
                 <div id="termsModalContent" class="terms-modal-content"></div>
-                <div id="termsModalHistory" class="terms-modal-history mt-3"></div>
+                <div id="termsModalHistory" class="terms-modal-history mt-4"></div>
             </div>
             <div class="modal-footer terms-modal-footer-forced">
                 <div class="text-muted small me-auto" id="termsModalScrollHint" data-i18n="terms_and_conditions_scroll_hint">Please scroll to the bottom to continue.</div>
@@ -151,10 +220,14 @@
     </div>
 </div>
 
-<!-- 2026-09-05, Backlog Phase 13 -- Profile > "System Access History", self-service. Plain list,
-     not a DataTable -- a quick recent-history glance (last 50 rows), see
-     EmployeeLoginLogController::myHistory()'s own docblock for why this deliberately doesn't reuse
-     the admin-facing paginated/filterable table. -->
+<!-- 2026-09-05, Backlog Phase 13 -- Profile > "System Access History", self-service (last 50 rows,
+     see EmployeeLoginLogController::myHistory()'s own docblock for why this deliberately doesn't
+     reuse the admin-facing paginated/filterable table's own server-side endpoint). 2026-09-07,
+     explicit request: "ให้เป็น Datatable ครับ" -- a real client-side DataTable now (the whole small,
+     bounded 50-row fetch already happens in one shot, same "client-side for a small bounded list"
+     convention as e.g. Payroll Cycle's own table, see CLAUDE.md's Table convention section) instead
+     of a plain <table>, so sort/search work on it like every other list in this app -- see
+     public/js/setup/system-access-history.js's own docblock for the render details. -->
 <div class="modal fade" id="systemAccessHistoryModal" tabindex="-1" aria-labelledby="systemAccessHistoryModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
@@ -166,16 +239,16 @@
             </div>
             <div class="modal-body">
                 <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle">
+                    <table class="table table-sm table-hover align-middle w-100" id="tb_system_access_history">
                         <thead>
                             <tr>
                                 <th data-i18n="audit_log_performed_at">When</th>
-                                <th>IP</th>
-                                <th>Device</th>
-                                <th>Browser</th>
+                                <th data-i18n="ip_address">IP Address</th>
+                                <th data-i18n="device">Device</th>
+                                <th data-i18n="browser">Browser</th>
                             </tr>
                         </thead>
-                        <tbody id="systemAccessHistoryBody"></tbody>
+                        <tbody></tbody>
                     </table>
                 </div>
             </div>
@@ -253,6 +326,15 @@
                     </div>
                     <div class="fw-semibold text-secondary mb-1" data-i18n="report_preview_select_employee">Select an employee above to preview.</div>
                 </div>
+                <!-- 2026-09-07: same "nothing to preview yet" shape as #reportsPreviewSelectEmployee
+                     above, own copy since the trigger/wording differs (DeductionBreakdownReport's
+                     checkbox picker, not the employee picker). -->
+                <div id="reportsPreviewSelectDeduction" class="text-center d-none py-4 px-4">
+                    <div class="report-preview-unavailable-icon mx-auto mb-3">
+                        <i class="fa-solid fa-list-check"></i>
+                    </div>
+                    <div class="fw-semibold text-secondary mb-1" data-i18n="report_preview_select_deduction">Check at least one deduction type above to preview.</div>
+                </div>
             </div>
             <div class="modal-footer flex-wrap justify-content-between">
                 <div class="d-flex flex-wrap gap-2 align-items-center" id="reportsPreviewExtraFields">
@@ -265,6 +347,17 @@
                     </div>
                     <div class="d-none" id="reportsPreviewEmployeeWrap">
                         <select class="form-select form-select-sm select2-remote" id="reportsPreviewEmployeeSelect" style="min-width:200px;" data-api="/api/employee.report_to.get"></select>
+                    </div>
+                    <!-- 2026-09-07: DeductionBreakdownReport's own config picker -- a checkbox
+                         dropdown (not a plain <select multiple>, so multiple boxes can be toggled
+                         without the dropdown closing -- data-bs-auto-close="outside") listing every
+                         deduction code that actually occurred in the run, default all-checked (see
+                         ReportsController::deductionTypesForRun()). -->
+                    <div class="dropdown d-none" id="reportsPreviewDeductionCodesWrap">
+                        <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" id="reportsPreviewDeductionCodesBtn">
+                            <span data-i18n="deduction_report_types">Deduction Types</span> (<span id="reportsPreviewDeductionCodesCount">0</span>)
+                        </button>
+                        <div class="dropdown-menu p-2" id="reportsPreviewDeductionCodesMenu" style="min-width:280px; max-height:320px; overflow-y:auto;"></div>
                     </div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">

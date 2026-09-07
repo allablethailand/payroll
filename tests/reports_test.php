@@ -240,7 +240,9 @@ try {
     // ScheduledItemOccurrenceReconciliationReport (SCHEDULED_ITEM_OCCURRENCE_RECONCILIATION, own
     // dedicated coverage in tests/payroll_sync_item_occurrences_test.php) both added alongside the
     // original PayrollRegisterReport.
-    check('internal type has 3 reports', count(ReportRegistry::byType('internal')), 3);
+    // 2026-09-07: +1 for DeductionBreakdownReport (DEDUCTION_BREAKDOWN) -- see its own dedicated
+    // "=== DeductionBreakdownReport (internal, new) ===" section further down in this same file.
+    check('internal type has 4 reports', count(ReportRegistry::byType('internal')), 4);
     check('unknown code returns null', ReportRegistry::get('NOPE'), null);
 
     // ---------- Payroll Register (internal, Excel, any state) ----------
@@ -717,6 +719,86 @@ try {
     check('SLF txt citizen_id matches decrypted id_card_no (not tax_id_no, per the spec\'s own field label)', $slfFields[1], $idCardNo);
     check('SLF txt full_name field decodes to prefix+first+last', iconv('TIS-620', 'UTF-8', $slfFields[2]), 'นาย ทดสอบ รายงาน');
     check('SLF txt amount matches the first installment (12000/12)', $slfFields[3], '1000.00');
+
+    // ---------- Deduction Breakdown (internal, new 2026-09-07) ----------
+    // Explicit request: "รายงานการหัก...ให้ติ๊กได้ว่าต้องการรายงานการหักอะไรบ้าง โดย Default คือเลือกทั้งหมด...
+    // export เลือกได้ว่า excel หรือ pdf" -- reuses this same fixture run (its own deduction_breakdown
+    // has exactly the 1 SLF installment line built above, real amount 1000.0) rather than building a
+    // separate fixture from scratch, same "piggyback on the shared run" precedent every other report
+    // section in this file already follows.
+    echo "=== DeductionBreakdownReport (internal, new) ===\n";
+    $dedReport = ReportRegistry::get('DEDUCTION_BREAKDOWN');
+    checkTrue('DEDUCTION_BREAKDOWN is registered', $dedReport !== null);
+    check('reportType is internal', $dedReport->reportType(), 'internal');
+    check('supports excel and pdf only', $dedReport->supportedFormats(), ['excel', 'pdf']);
+
+    // Discover the real deduction code the fixture actually produced (the SLF item_code is
+    // randomly generated above, not captured into its own variable) -- same lookup
+    // ReportsController::deductionTypesForRun() itself does, so this test exercises the exact
+    // shape that endpoint hands the frontend's own checkbox picker.
+    $reportDataModelForDed = new PayrollReportDataModel();
+    $dedRunDetails = $reportDataModelForDed->getRunDetails($runId);
+    $dedCodesFound = [];
+    foreach ($dedRunDetails as $ddRow) {
+        foreach (($ddRow['deduction_breakdown'] ?? []) as $ddLine) {
+            if (($ddLine['amount'] ?? 0) != 0) $dedCodesFound[$ddLine['code']] = true;
+        }
+    }
+    $dedCodesFound = array_keys($dedCodesFound);
+    check('fixture run has exactly 1 distinct deduction code (the SLF installment)', count($dedCodesFound), 1);
+    $dedRealCode = $dedCodesFound[0];
+
+    $dedExcelAll = $dedReport->generate(['comp_id' => $compId, 'run_id' => $runId], 'excel');
+    checkTrue('excel (no filter = every code) content is non-empty', strlen($dedExcelAll['content']) > 0);
+    $tmpXlsxDed = sys_get_temp_dir() . '/reports_test_' . uniqid() . '.xlsx';
+    file_put_contents($tmpXlsxDed, $dedExcelAll['content']);
+    $dedSheet = (new \PhpOffice\PhpSpreadsheet\Reader\Xlsx())->load($tmpXlsxDed)->getActiveSheet();
+    check('data row 2 has the test employee number', strpos((string)$dedSheet->getCell('A2')->getValue(), 'RPT_TEST_') === 0, true);
+    check('data row 2 amount (col D, 1 code column before Total) matches the SLF installment (1000)', (float)$dedSheet->getCell('D2')->getValue(), 1000.0);
+    check('data row 2 total (col E) matches too (only 1 code selected)', (float)$dedSheet->getCell('E2')->getValue(), 1000.0);
+    unlink($tmpXlsxDed);
+
+    $dedPdfAll = $dedReport->generate(['comp_id' => $compId, 'run_id' => $runId], 'pdf');
+    checkTrue('pdf (no filter) starts with %PDF header', str_starts_with($dedPdfAll['content'], '%PDF'));
+
+    // Narrowed to the real code -- same result as "no filter" here since the fixture only has 1 code.
+    $dedExcelNarrowed = $dedReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'deduction_codes' => $dedRealCode], 'excel');
+    checkTrue('narrowed to the real code: still produces a non-empty excel', strlen($dedExcelNarrowed['content']) > 0);
+    // Also accepts an array (not just a comma-string) for deduction_codes, same as the JSON api
+    // context array shape any PHP caller (not the HTTP controller) would naturally pass.
+    $dedExcelArrayForm = $dedReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'deduction_codes' => [$dedRealCode]], 'excel');
+    checkTrue('array-form deduction_codes also works', strlen($dedExcelArrayForm['content']) > 0);
+
+    // Narrowed to a code that never occurred in this run -- "0 selected deductions occurred" must
+    // throw, never silently generate an empty/near-empty file (this app's own standing convention,
+    // see ReportGeneratorInterface's own contract).
+    $dedEmptyBlocked = false;
+    $dedEmptyErrorKey = null;
+    try {
+        $dedReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'deduction_codes' => 'NO_SUCH_CODE_XYZ'], 'excel');
+    } catch (LocalizedException $e) {
+        $dedEmptyBlocked = true;
+        $dedEmptyErrorKey = $e->getErrorKey();
+    }
+    checkTrue('a code that never occurred in this run throws instead of generating an empty file', $dedEmptyBlocked);
+    check('error_key is deduction_breakdown_no_data', $dedEmptyErrorKey, 'deduction_breakdown_no_data');
+
+    // Same run-state gate as every other cycle-shaped report in this file (StudentLoanReport above,
+    // PayrollRegisterReport is the one deliberate exception with no gate at all).
+    $dedDraftBlocked = false;
+    try {
+        $dedReport->generate(['comp_id' => $compId, 'run_id' => $draftRunId], 'excel');
+    } catch (RuntimeException $e) {
+        $dedDraftBlocked = true;
+    }
+    checkTrue('blocked for a draft run', $dedDraftBlocked);
+
+    // EN language: label resolution differs (English deduction name), same figure.
+    $dedExcelEn = $dedReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'en'], 'excel');
+    file_put_contents($tmpXlsxDed, $dedExcelEn['content']);
+    $dedSheetEn = (new \PhpOffice\PhpSpreadsheet\Reader\Xlsx())->load($tmpXlsxDed)->getActiveSheet();
+    check('EN header row uses "Employee No." not the Thai label', (string)$dedSheetEn->getCell('A1')->getValue(), 'Employee No.');
+    unlink($tmpXlsxDed);
 
     // ---------- Bank Transfer File ----------
     echo "=== BankTransferFileReport (payment) ===\n";

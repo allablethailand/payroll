@@ -178,6 +178,34 @@ function renderEmployeeHeadcountCards(summary) {
     $('#empHeadcountCardNetChange').text((net > 0 ? '+' : '') + net.toLocaleString());
     $('#empHeadcountCardTurnoverRate').text((Number(summary.turnover_rate) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%');
 }
+// 2026-09-07, explicit request: "รายงานคนเข้าคนออก อยากให้เป็นกราฟเส้นครับคนละสีเหมือนเดิมและมีจำนวนประกอบ"
+// -- bar -> line (same 2 colors as before, #198754 hires / #dc3545 exits) plus the actual number
+// drawn above each point. This app doesn't carry the chartjs-plugin-datalabels package (not a
+// dependency anywhere in package.json) -- rather than add a new npm dependency for one small label,
+// a tiny inline Chart.js plugin object does the same job in ~10 lines, scoped to THIS chart
+// instance only (passed via the `plugins:` chart option, not Chart.register()) so it can never
+// affect the SSO/PVD donut charts elsewhere on this same page.
+const empHeadcountDataLabelsPlugin = {
+    id: 'empHeadcountDataLabels',
+    afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        chart.data.datasets.forEach((dataset, i) => {
+            const meta = chart.getDatasetMeta(i);
+            if (meta.hidden) return;
+            meta.data.forEach((point, index) => {
+                const value = dataset.data[index];
+                if (value === null || value === undefined) return;
+                ctx.save();
+                ctx.fillStyle = dataset.borderColor || '#333';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText(String(value), point.x, point.y - 6);
+                ctx.restore();
+            });
+        });
+    },
+};
 function renderEmployeeHeadcountChart(byMonth) {
     const $canvas = $('#employeeHeadcountChart');
     if (!$canvas.length || typeof Chart === 'undefined') return;
@@ -194,17 +222,19 @@ function renderEmployeeHeadcountChart(byMonth) {
         return;
     }
     empHeadcountChartInstance = new Chart($canvas[0].getContext('2d'), {
-        type: 'bar',
+        type: 'line',
         data: {
             labels: labels,
             datasets: [
-                { label: langData['headcount_total_hires'] || 'Total Hires', data: hiresData, backgroundColor: '#198754', borderRadius: 4, maxBarThickness: 28 },
-                { label: langData['headcount_total_exits'] || 'Total Exits', data: exitsData, backgroundColor: '#dc3545', borderRadius: 4, maxBarThickness: 28 },
+                { label: langData['headcount_total_hires'] || 'Total Hires', data: hiresData, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.12)', pointBackgroundColor: '#198754', pointBorderColor: '#fff', pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: .3, fill: true },
+                { label: langData['headcount_total_exits'] || 'Total Exits', data: exitsData, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.12)', pointBackgroundColor: '#dc3545', pointBorderColor: '#fff', pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: .3, fill: true },
             ],
         },
+        plugins: [empHeadcountDataLabelsPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            layout: { padding: { top: 16 } },
             plugins: { legend: { display: true, position: 'top' } },
             scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
         },
@@ -613,27 +643,62 @@ function loadEmployeeStructureReport() {
             const largest = groups.length ? groups.reduce((a, b) => (b.count > a.count ? b : a)) : null;
             $('#empStructureCardLargest').text(largest ? `${(currentLang === 'th' ? largest.label_th : largest.label_en) || '-'} (${largest.count})` : '-');
 
-            const labels = groups.map(g => (currentLang === 'th' ? g.label_th : g.label_en) || '-');
-            const data = groups.map(g => Number(g.count) || 0);
+            const sortedDesc = [...groups].sort((a, b) => (Number(b.count) || 0) - (Number(a.count) || 0));
+            const labels = sortedDesc.map(g => (currentLang === 'th' ? g.label_th : g.label_en) || '-');
+            const data = sortedDesc.map(g => Number(g.count) || 0);
+            const total = Number(res.data.total) || 0;
+            // 2026-09-07, "wow" redesign: horizontal bar (indexAxis:'y') so long group names stay
+            // readable regardless of how many groups exist, plus a gradient fill and the actual
+            // count drawn at the end of each bar (same lightweight inline-plugin approach as the
+            // Headcount Movement chart above -- see empHeadcountDataLabelsPlugin's own comment for
+            // why this app doesn't reach for chartjs-plugin-datalabels).
             if (typeof Chart !== 'undefined' && $('#employeeStructureChart').length) {
                 if (empStructureChartInstance) {
                     empStructureChartInstance.data.labels = labels;
                     empStructureChartInstance.data.datasets[0].data = data;
                     empStructureChartInstance.update();
                 } else {
-                    empStructureChartInstance = new Chart($('#employeeStructureChart')[0].getContext('2d'), {
+                    const ctx = $('#employeeStructureChart')[0].getContext('2d');
+                    const gradient = ctx.createLinearGradient(0, 0, 400, 0);
+                    gradient.addColorStop(0, '#ffcb66');
+                    gradient.addColorStop(1, '#FF9900');
+                    empStructureChartInstance = new Chart(ctx, {
                         type: 'bar',
-                        data: { labels: labels, datasets: [{ data: data, backgroundColor: '#FF9900', borderRadius: 4, maxBarThickness: 40 }] },
+                        data: { labels: labels, datasets: [{ data: data, backgroundColor: gradient, borderRadius: 6, maxBarThickness: 26 }] },
+                        plugins: [{
+                            id: 'empStructureDataLabels',
+                            afterDatasetsDraw(chart) {
+                                const c = chart.ctx;
+                                const meta = chart.getDatasetMeta(0);
+                                meta.data.forEach((bar, i) => {
+                                    const value = chart.data.datasets[0].data[i];
+                                    c.save();
+                                    c.fillStyle = '#b45f00';
+                                    c.font = 'bold 11px sans-serif';
+                                    c.textAlign = 'left';
+                                    c.textBaseline = 'middle';
+                                    c.fillText(String(value), bar.x + 6, bar.y);
+                                    c.restore();
+                                });
+                            },
+                        }],
                         options: {
+                            indexAxis: 'y',
                             responsive: true, maintainAspectRatio: false,
+                            layout: { padding: { right: 28 } },
                             plugins: { legend: { display: false } },
-                            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                            scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
                         },
                     });
                 }
             }
 
-            const rows = groups.map(g => ({ label: (currentLang === 'th' ? g.label_th : g.label_en) || '-', count: g.count }));
+            const rows = sortedDesc.map((g, i) => ({
+                label: (currentLang === 'th' ? g.label_th : g.label_en) || '-',
+                count: Number(g.count) || 0,
+                share: total > 0 ? (Number(g.count) || 0) / total * 100 : 0,
+                rank: i + 1,
+            }));
             if ($.fn.DataTable.isDataTable('#tb_employee_structure')) {
                 tb_employee_structure.clear().rows.add(rows).draw();
             } else {
@@ -645,8 +710,23 @@ function loadEmployeeStructureReport() {
                     language: getTableLang(),
                     order: [[1, 'desc']],
                     columns: [
-                        { data: 'label', render: d => escapeHtml(d || '-') },
+                        {
+                            data: 'label',
+                            render: (d, t, row) => {
+                                const badge = row.rank <= 3 ? `<span class="rank-badge rank-badge-${row.rank}">${row.rank}</span>` : '';
+                                return badge + escapeHtml(d || '-');
+                            }
+                        },
                         { data: 'count', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
+                        {
+                            data: 'share',
+                            className: 'text-end',
+                            render: {
+                                display: d => `<div class="d-flex align-items-center justify-content-end gap-2"><span class="small text-muted">${(Number(d) || 0).toFixed(1)}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, Number(d) || 0)}%; background:#FF9900;"></span></span></div>`,
+                                sort: d => Number(d) || 0,
+                                filter: d => Number(d) || 0,
+                            }
+                        },
                     ],
                 });
                 if (typeof initExcelColumnFilters === 'function') {
@@ -672,6 +752,23 @@ $(document).on('change', '#employee_structure_filter_group_by', function () {
 let tb_employee_tenure;
 let empTenureChartInstance = null;
 const EMP_TENURE_BUCKET_LABEL_KEYS = { '<1': 'tenure_bucket_under_1', '1-3': 'tenure_bucket_1_3', '3-5': 'tenure_bucket_3_5', '5-10': 'tenure_bucket_5_10', '10+': 'tenure_bucket_10_plus' };
+// 2026-09-07, "wow" redesign: one color per bucket (same idea as Data Completeness's own
+// EMP_COMPLETENESS_BUCKET_COLORS, cooler palette since tenure buckets aren't a good/bad scale).
+const EMP_TENURE_BUCKET_COLORS = { '<1': '#6c757d', '1-3': '#0dcaf0', '3-5': '#20c997', '5-10': '#FF9900', '10+': '#6f42c1' };
+function employeeTenureBucketKey(years) {
+    const y = Number(years) || 0;
+    if (y < 1) return '<1';
+    if (y < 3) return '1-3';
+    if (y < 5) return '3-5';
+    if (y < 10) return '5-10';
+    return '10+';
+}
+// A little delight, not a metric: flags an employee sitting on (or about to reach, within ~1 month)
+// a round-number work anniversary (5/10/15/20/25/30 years) with a star in the table.
+function employeeTenureIsMilestone(years) {
+    const y = Number(years) || 0;
+    return [5, 10, 15, 20, 25, 30].some(m => Math.abs(y - m) <= 0.1);
+}
 function currentEmployeeTenureFilters() {
     return {
         department_id: $('#employee_tenure_filter_department').val() || '',
@@ -708,7 +805,29 @@ function initEmployeeTenureTable(items) {
                     filter: d => d,
                 }
             },
-            { data: 'tenure_years', className: 'text-end', render: d => (Number(d) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) },
+            {
+                data: 'tenure_years',
+                className: 'text-end',
+                render: {
+                    display: d => {
+                        const years = Number(d) || 0;
+                        const text = years.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                        const star = employeeTenureIsMilestone(years) ? '<i class="fa-solid fa-star milestone-star" title="Milestone"></i>' : '';
+                        return text + star;
+                    },
+                    sort: d => Number(d) || 0,
+                    filter: d => Number(d) || 0,
+                }
+            },
+            {
+                data: 'tenure_years',
+                render: d => {
+                    const key = employeeTenureBucketKey(d);
+                    const label = langData[EMP_TENURE_BUCKET_LABEL_KEYS[key]] || key;
+                    const color = EMP_TENURE_BUCKET_COLORS[key] || '#6c757d';
+                    return `<span class="tenure-bucket-chip" style="background:${color};">${escapeHtml(label)}</span>`;
+                }
+            },
         ],
     });
     if (typeof initExcelColumnFilters === 'function') {
@@ -733,17 +852,24 @@ function loadEmployeeTenureReport() {
             const buckets = res.data.buckets || [];
             const labels = buckets.map(b => langData[EMP_TENURE_BUCKET_LABEL_KEYS[b.key]] || b.key);
             const data = buckets.map(b => Number(b.count) || 0);
+            const colors = buckets.map(b => EMP_TENURE_BUCKET_COLORS[b.key] || '#6c757d');
+            // 2026-09-07, "wow" redesign: one color per bucket (was a single flat cyan for every
+            // bar) + the count drawn above each bar, same inline-plugin approach as the other 2
+            // charts on this page (see empHeadcountDataLabelsPlugin's own comment for why).
             if (typeof Chart !== 'undefined' && $('#employeeTenureChart').length) {
                 if (empTenureChartInstance) {
                     empTenureChartInstance.data.labels = labels;
                     empTenureChartInstance.data.datasets[0].data = data;
+                    empTenureChartInstance.data.datasets[0].backgroundColor = colors;
                     empTenureChartInstance.update();
                 } else {
                     empTenureChartInstance = new Chart($('#employeeTenureChart')[0].getContext('2d'), {
                         type: 'bar',
-                        data: { labels: labels, datasets: [{ data: data, backgroundColor: '#0dcaf0', borderRadius: 4, maxBarThickness: 48 }] },
+                        data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderRadius: 8, maxBarThickness: 56 }] },
+                        plugins: [empHeadcountDataLabelsPlugin],
                         options: {
                             responsive: true, maintainAspectRatio: false,
+                            layout: { padding: { top: 16 } },
                             plugins: { legend: { display: false } },
                             scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
                         },
@@ -880,6 +1006,7 @@ $(document).on('click', '#btnClearEmployeeBirthdayFilter', function () {
    aggregates the SAME per-employee % already shown on the List/Recheck tabs. ==================== */
 let tb_employee_completeness;
 let empCompletenessChartInstance = null;
+let empCompletenessGaugeInstance = null;
 const EMP_COMPLETENESS_BUCKET_LABEL_KEYS = { under_50: 'completeness_bucket_under_50', '50_80': 'completeness_bucket_50_80', '80_plus': 'completeness_bucket_80_plus' };
 const EMP_COMPLETENESS_BUCKET_COLORS = { under_50: '#dc3545', '50_80': '#ffc107', '80_plus': '#198754' };
 function currentEmployeeCompletenessFilters() {
@@ -897,6 +1024,43 @@ function employeeCompletenessColor(percent) {
     if (percent >= 80) return '#198754';
     if (percent >= 50) return '#FF9900';
     return '#dc3545';
+}
+// 2026-09-07, "wow" redesign: a center-labeled gauge for the average -- a plain doughnut with a
+// cutout, colored by the SAME 3-tier scale as the per-employee progress bars below, plus a plain
+// gray remainder segment so the ring always reads as "X% of a whole" rather than a 2-slice pie.
+// The actual number is a real DOM element (.completeness-gauge-center, absolutely centered over
+// the canvas via CSS) rather than a canvas-drawn plugin -- simpler and already exactly how this
+// app's own stat-cards render numbers, no plugin needed for a single always-centered value.
+function renderEmployeeCompletenessGauge(averagePercent) {
+    const $canvas = $('#employeeCompletenessGauge');
+    if (!$canvas.length || typeof Chart === 'undefined') return;
+    const pct = Math.max(0, Math.min(100, Number(averagePercent) || 0));
+    const color = employeeCompletenessColor(pct);
+    $('#empCompletenessGaugeValue').text(pct.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%');
+    const trackColor = (getComputedStyle(document.documentElement).getPropertyValue('--app-border') || '').trim() || '#e9ecef';
+    if (empCompletenessGaugeInstance) {
+        empCompletenessGaugeInstance.data.datasets[0].data = [pct, 100 - pct];
+        empCompletenessGaugeInstance.data.datasets[0].backgroundColor = [color, trackColor];
+        empCompletenessGaugeInstance.update();
+        return;
+    }
+    empCompletenessGaugeInstance = new Chart($canvas[0].getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: ['', ''],
+            datasets: [{
+                data: [pct, 100 - pct],
+                backgroundColor: [color, trackColor],
+                borderWidth: 0,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '78%',
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        },
+    });
 }
 function initEmployeeCompletenessTable(items) {
     if ($.fn.DataTable.isDataTable('#tb_employee_completeness')) {
@@ -919,7 +1083,13 @@ function initEmployeeCompletenessTable(items) {
                 data: 'completeness',
                 className: 'text-end',
                 render: {
-                    display: d => `<span class="fw-semibold" style="color:${employeeCompletenessColor(Number(d) || 0)};">${Number(d) || 0}%</span>`,
+                    // 2026-09-07, "wow" redesign: was plain colored text -- a mini progress bar reads
+                    // at a glance across a whole column of rows the way a bare number doesn't.
+                    display: d => {
+                        const pct = Number(d) || 0;
+                        const color = employeeCompletenessColor(pct);
+                        return `<div class="d-flex align-items-center justify-content-end gap-2"><span class="fw-semibold small" style="color:${color};">${pct}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, pct)}%; background:${color};"></span></span></div>`;
+                    },
                     sort: d => Number(d) || 0,
                     filter: d => Number(d) || 0,
                 }
@@ -946,6 +1116,7 @@ function loadEmployeeCompletenessReport() {
             $('#empCompletenessCardAverage').text((Number(res.data.average_percent) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%');
             const underAttention = buckets.find(b => b.key === 'under_50');
             $('#empCompletenessCardNeedsAttention').text(((underAttention && underAttention.count) || 0).toLocaleString());
+            renderEmployeeCompletenessGauge(res.data.average_percent);
 
             const labels = buckets.map(b => langData[EMP_COMPLETENESS_BUCKET_LABEL_KEYS[b.key]] || b.key);
             const data = buckets.map(b => Number(b.count) || 0);
@@ -959,9 +1130,11 @@ function loadEmployeeCompletenessReport() {
                 } else {
                     empCompletenessChartInstance = new Chart($('#employeeCompletenessChart')[0].getContext('2d'), {
                         type: 'bar',
-                        data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderRadius: 4, maxBarThickness: 60 }] },
+                        data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderRadius: 8, maxBarThickness: 60 }] },
+                        plugins: [empHeadcountDataLabelsPlugin],
                         options: {
                             responsive: true, maintainAspectRatio: false,
+                            layout: { padding: { top: 16 } },
                             plugins: { legend: { display: false } },
                             scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
                         },

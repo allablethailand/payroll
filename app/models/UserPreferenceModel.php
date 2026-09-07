@@ -77,4 +77,142 @@ class UserPreferenceModel {
         $stmt->execute([':language' => $language, ':font_size' => $fontSize, ':theme' => $theme, ':id' => $employeeId, ':comp_id' => $compId]);
         return ['status' => true, 'message' => 'Saved successfully.'];
     }
+
+    /**
+     * 2026-09-07, explicit request: "ทางลัด...ปรับเป็นให้อยู่บน header ไปเลย...โดยให้ผู้ใช้เลือกได้ว่าจะโชว์
+     * หรือไม่โชว์เมนูไหน" -- per-user header Quick Links selection, same `employees` table as
+     * ui_language/ui_font_size/ui_theme above (see 2026-09-07_1_employee_ui_quick_links.sql).
+     *
+     * Returns `null` (not `[]`) when the column itself is NULL -- the one meaningful distinction a
+     * plain array can't carry on its own: `null` means "this employee has never opened Customize
+     * Quick Links at all" (caller should fall back to the built-in default set), while `[]` means
+     * "opened it and explicitly unchecked everything" (caller must respect that and show none).
+     * layout/header.php's own `$quickLinkSelectedKeys = $savedQuickLinkKeys ?? $defaultQuickLinkKeys;`
+     * is the one place this distinction actually matters.
+     *
+     * @return ?string[] catalog keys, in the user's own saved display order
+     */
+    public function getQuickLinks(int $employeeId, int $compId): ?array {
+        $stmt = $this->db->prepare("SELECT ui_quick_links FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $raw = $stmt->fetchColumn();
+        if ($raw === false || $raw === null || $raw === '') {
+            return null;
+        }
+        $decoded = json_decode((string)$raw, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+        return array_values(array_filter($decoded, 'is_string'));
+    }
+
+    /** @param string[] $keys catalog keys (see layout/header.php's own $quickLinkCatalog), in the
+     *   order the user wants them to appear -- validated against $validKeys (the CURRENTLY VISIBLE
+     *   catalog, permission-filtered) so a stale/tampered key can never get persisted; duplicates
+     *   are silently collapsed to their first occurrence rather than rejected outright, since a
+     *   double-click on a checkbox is a plausible client-side accident, not a meaningful error. */
+    public function saveQuickLinks(int $employeeId, int $compId, array $keys, array $validKeys): array {
+        $validSet = array_flip($validKeys);
+        $clean = [];
+        foreach ($keys as $key) {
+            if (is_string($key) && isset($validSet[$key]) && !in_array($key, $clean, true)) {
+                $clean[] = $key;
+            }
+        }
+        $stmtExists = $this->db->prepare("SELECT id FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtExists->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        if ($stmtExists->fetchColumn() === false) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $stmt = $this->db->prepare("UPDATE `employees` SET ui_quick_links = :links WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':links' => json_encode($clean, JSON_UNESCAPED_UNICODE), ':id' => $employeeId, ':comp_id' => $compId]);
+        return ['status' => true, 'message' => 'Saved successfully.', 'data' => $clean];
+    }
+
+    /**
+     * The ONE canonical list of every sidebar link (top-level AND submenu) eligible to be a Quick
+     * Link -- called from BOTH layout/header.php (to render the bar + feed the Customize modal's
+     * checkbox list) and UserPreferenceController::quickLinksSave() (to validate incoming keys)
+     * so there is exactly one place this list is defined; header.php's sidebar markup itself is
+     * NOT generated from this array (that would be a much larger, riskier refactor of a 700-line
+     * file for no real benefit here) -- this is a deliberately hand-maintained MIRROR of it. If a
+     * future sidebar item is added/removed/re-gated, mirror the same change here too.
+     *
+     * Each entry's `group` is the EXACT i18n key its own parent sidebar group already renders as
+     * its label (`employees`/`payroll_menu`/`reports`/`payslip_menu`/`time_and_leave`/`settings`/
+     * `help_menu`) -- reused as-is by the Customize modal's own group headers, `null` for a
+     * top-level item with no submenu of its own (only Dashboard, as of the 2026-09-07 sidebar
+     * consolidation -- Payroll Process/Approval, Audit Log, and Announcements all moved under a
+     * parent group that same round, see header.php's own sidebar comments on each move).
+     * Static (no DB access of its own) -- every permission check is delegated to PermissionModel,
+     * the same single source of truth header.php's own sidebar `$canView*Menu` flags already use.
+     *
+     * @return array<int, array{key:string, url:string, icon:string, label:string, group:?string}>
+     */
+    public static function quickLinkCatalog(int $compId, int $employeeId, bool $isAdmin): array {
+        $perm = new PermissionModel();
+        $can = function (string $permissionKey) use ($perm, $employeeId, $isAdmin, $compId): bool {
+            return $perm->checkPermission($employeeId, $permissionKey, $isAdmin, $compId)['allowed'];
+        };
+        $catalog = [
+            ['key' => 'dashboard', 'url' => '/dashboard', 'icon' => 'DASHBOARD.SVG', 'label' => 'dashboard', 'group' => null],
+            ['key' => 'employees.list', 'url' => '/employees', 'icon' => 'EMPLOYEE.SVG', 'label' => 'employee_list_menu', 'group' => 'employees'],
+            ['key' => 'employees.login_history', 'url' => '/employees/login-history', 'icon' => 'EMPLOYEE.SVG', 'label' => 'login_history', 'group' => 'employees'],
+            ['key' => 'employees.reports', 'url' => '/employees/reports', 'icon' => 'REPORT.SVG', 'label' => 'employee_reports', 'group' => 'employees'],
+            ['key' => 'payroll_process', 'url' => '/payroll-process', 'icon' => 'PAYROLL.SVG', 'label' => 'payroll_process', 'group' => 'payroll_menu'],
+            ['key' => 'payroll_approval', 'url' => '/payroll-approval', 'icon' => 'APPROVAL.SVG', 'label' => 'payroll_approval', 'group' => 'payroll_menu'],
+            ['key' => 'payslip.requests', 'url' => '/payslip-documents/requests', 'icon' => 'APPROVAL.SVG', 'label' => 'requests', 'group' => 'payslip_menu'],
+            ['key' => 'payslip.settings', 'url' => '/payslip-documents/settings', 'icon' => 'SETTINGS.SVG', 'label' => 'settings', 'group' => 'payslip_menu'],
+            ['key' => 'time_leave.setup_rules', 'url' => '/setup-rules', 'icon' => 'Shift.SVG', 'label' => 'setup_and_rules', 'group' => 'time_and_leave'],
+            ['key' => 'time_leave.manual_entry', 'url' => '/manual-entry', 'icon' => 'TIME.SVG', 'label' => 'manual_time_entry', 'group' => 'time_and_leave'],
+            ['key' => 'settings.company_profile', 'url' => '/setup/company-profile', 'icon' => 'COMPANY.SVG', 'label' => 'company_profile', 'group' => 'settings'],
+            ['key' => 'settings.data_sync', 'url' => '/setup/data-sync', 'icon' => 'ORIGAMI_APP.SVG', 'label' => 'data_sync_menu', 'group' => 'settings'],
+            ['key' => 'settings.payroll_configuration', 'url' => '/setup/payroll-configuration', 'icon' => 'ORIGAMI_APP.SVG', 'label' => 'payroll_configuration', 'group' => 'settings'],
+            ['key' => 'settings.tax_statutory', 'url' => '/setup/tax-statutory', 'icon' => 'TAX.SVG', 'label' => 'tax_and_statutory', 'group' => 'settings'],
+            ['key' => 'help.setup_guide', 'url' => '/help/setup-guide', 'icon' => 'REPORT.SVG', 'label' => 'setup_guide_menu', 'group' => 'help_menu'],
+            ['key' => 'help.version', 'url' => '/help/version', 'icon' => 'REPORT.SVG', 'label' => 'version_menu', 'group' => 'help_menu'],
+        ];
+        if ($can('payroll_run.view')) {
+            $catalog[] = ['key' => 'reports.generate', 'url' => '/reports', 'icon' => 'REPORT.SVG', 'label' => 'generate_reports', 'group' => 'reports'];
+        }
+        if ($can('annual_income_summary.view')) {
+            $catalog[] = ['key' => 'reports.annual_summary', 'url' => '/reports/annual-summary', 'icon' => 'REPORT.SVG', 'label' => 'annual_income_summary', 'group' => 'reports'];
+        }
+        if ($can('payroll_run.view')) {
+            $catalog[] = ['key' => 'reports.run_audit', 'url' => '/reports/run-audit', 'icon' => 'REPORT.SVG', 'label' => 'payroll_run_audit_menu', 'group' => 'reports'];
+        }
+        if ($can('approval_workflow.view')) {
+            $catalog[] = ['key' => 'settings.document_approval', 'url' => '/setup/document-approval', 'icon' => 'APPROVAL.SVG', 'label' => 'document_and_approval', 'group' => 'settings'];
+        }
+        if ($can('rbac.view')) {
+            $catalog[] = ['key' => 'settings.permissions', 'url' => '/setup/permissions', 'icon' => 'APPROVAL.SVG', 'label' => 'permissions_menu', 'group' => 'settings'];
+        }
+        // 2026-09-07 -- both folded into an existing sidebar submenu (Reports / Settings
+        // respectively) during that day's menu consolidation; `group` updated to match so the
+        // Customize modal lists them under the correct heading (see header.php's own sidebar
+        // comments on each move for the reasoning).
+        if ($can('audit_log.view')) {
+            $catalog[] = ['key' => 'audit_log', 'url' => '/audit-log', 'icon' => 'REPORT.SVG', 'label' => 'audit_log_menu', 'group' => 'reports'];
+        }
+        if ($can('announcement.manage')) {
+            $catalog[] = ['key' => 'announcements', 'url' => '/setup/announcements', 'icon' => 'APPROVAL.SVG', 'label' => 'announcement_menu', 'group' => 'settings'];
+        }
+        return $catalog;
+    }
+
+    /** The built-in selection shown until an employee opens Customize Quick Links for the first
+     *  time -- mirrors what the OLD Dashboard "Quick Links" card used to show (see dashboard.php's
+     *  own git history), just relocated, so nobody's screen changes on deploy day. Filtered against
+     *  the CURRENTLY VISIBLE catalog by the caller (header.php), same as any saved selection. */
+    public static function defaultQuickLinkKeys(): array {
+        return [
+            'employees.list',
+            'payroll_process',
+            'payroll_approval',
+            'reports.generate',
+            'payslip.requests',
+            'time_leave.setup_rules',
+            'settings.company_profile',
+        ];
+    }
 }

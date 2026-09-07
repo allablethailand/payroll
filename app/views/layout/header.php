@@ -208,7 +208,29 @@ if ($navUserId > 0) {
     $navPhotoStmt->execute([':id' => $navUserId]);
     $navProfilePhotoPath = $navPhotoStmt->fetchColumn() ?: null;
 }
+
+// 2026-09-07, explicit request: "ทางลัด วางอยู่ล่างเกินไป ใช้งานไม่สะดวกครับ...ปรับเป็นให้อยู่บน header ไปเลย
+// ให้เรียงอยู่ก่อนหน้า notification โดยให้ผู้ใช้เลือกได้ว่าจะโชว์ หรือไม่โชว์เมนูไหน เลือกได้ทั้งเมนู และ sub menu
+// แต่การแสดงผลต้องไม่ล้นจอ...ที่เหลือเป็นปุ่ม more" -- Quick Links moves out of the Dashboard's own
+// bottom-of-sidebar card into the navbar itself, right before .nav-notif-dropdown below. The catalog
+// (every sidebar link, top-level AND submenu, permission-filtered) and this employee's own saved
+// selection are computed ONCE here and handed to the client as plain JSON -- `public/js/quick-
+// links.js` does the actual rendering/overflow-measurement/Customize-modal wiring, so this file
+// stays pure data. See UserPreferenceModel::quickLinkCatalog()'s own docblock for why the catalog is
+// a hand-maintained mirror of the sidebar below, not generated from it.
+$quickLinkCatalog = [];
+$quickLinkSelectedKeys = [];
+if ($compIdForOrigamiFlags > 0 && $navUserId > 0) {
+    $quickLinkCatalog = UserPreferenceModel::quickLinkCatalog($compIdForOrigamiFlags, $navUserId, ($_SESSION['user']['role'] ?? '') === 'admin');
+    $quickLinkCatalogKeys = array_column($quickLinkCatalog, 'key');
+    $quickLinkSavedKeys = (new UserPreferenceModel())->getQuickLinks($navUserId, $compIdForOrigamiFlags);
+    $quickLinkSelectedKeys = array_values(array_intersect($quickLinkSavedKeys ?? UserPreferenceModel::defaultQuickLinkKeys(), $quickLinkCatalogKeys));
+}
 ?>
+<script>
+    const QUICK_LINK_CATALOG = <?=json_encode($quickLinkCatalog, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
+    const QUICK_LINK_SELECTED = <?=json_encode($quickLinkSelectedKeys, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
+</script>
 </head>
 <body>
 <script src="<?=BASE_URL?>/node_modules/jquery/dist/jquery.min.js"></script>
@@ -231,6 +253,7 @@ if ($navUserId > 0) {
      EntityAssignmentModel's own docblock for the full architecture. -->
 <script src="<?=asset('public/js/setup/assign-widget.js')?>"></script>
 <script src="<?=asset('public/js/notifications.js')?>"></script>
+<script src="<?=asset('public/js/quick-links.js')?>"></script>
 <nav class="origami-navbar">
     <div class="nav-container">
         <div class="nav-left">
@@ -257,6 +280,23 @@ if ($navUserId > 0) {
             <?php endif; ?>
         </div>
         <div class="nav-right">
+            <!-- 2026-09-07, explicit request: "ทางลัด...ปรับเป็นให้อยู่บน header ไปเลย ให้เรียงอยู่ก่อนหน้า
+                 notification" -- moved out of the Dashboard's own Quick Links card (dashboard.php),
+                 now here, first child of .nav-right so it always renders before the notification
+                 bell. `#navQuickLinksBar` is the SHRINKING half (icon buttons, JS decides how many
+                 fit) and `#navQuickLinksMoreBtn`'s dropdown is the FIXED half (always fully visible,
+                 holds whatever overflowed + a permanent "Customize Quick Links" entry) -- see
+                 public/js/quick-links.js's own docblock for the measure-and-overflow algorithm and
+                 why it's real DOM measurement, not a guessed pixel budget. -->
+            <div class="nav-quicklinks-wrap" id="navQuickLinksWrap">
+                <div class="nav-quicklinks" id="navQuickLinksBar"></div>
+                <div class="nav-quicklinks-more-dropdown">
+                    <button type="button" class="nav-quicklinks-more-btn" id="navQuickLinksMoreBtn" title="More" data-i18n-title="quick_links_more">
+                        <img src="<?=BASE_URL?>/public/images/MORE.svg" alt="More">
+                    </button>
+                    <ul class="nav-quicklinks-more-menu" id="navQuickLinksMoreMenu"></ul>
+                </div>
+            </div>
             <!-- 2026-08-29, explicit request: "บน header มี icon noti อยู่ ช่วยวางระบบการแจ้งเตือนพร้อมทั้ง
                  Design การมองเห็นหน่อยครับ โดยเป็นของใครของมัน...และสามารถคลิกจาก item นั้นแล้วไปหน้านั้นได้เลย
                  โดย Slide ลงมาสุดท้ายแล้วค่อยๆทยอยโหลด และมีเปิดเพื่อดูทั้งหมดเป็นอีกหน้า" -- this was a dead
@@ -456,21 +496,39 @@ if ($navUserId > 0) {
                 </li>
             </ul>
         </li>
-        <li class="menu-item">
-            <a href="<?=BASE_URL?>/payroll-process" class="menu-link">
+        <!-- 2026-09-07, explicit request: "เมนูเยอะไปหมดตอนนี้...อย่างประมวลผลเงินเดือนกับอนุมัติเงินเดือน
+             ถ้ารวมไปอยู่ใน Menu เดียวกันได้ก็ควรรวมครับ" -- Payroll Process and Payroll Approval merge
+             into ONE top-level "Payroll" menu with a 2-item submenu. Routes/controllers/permissions
+             are completely unchanged (still /payroll-process and /payroll-approval, same pages) --
+             only the sidebar entry point consolidates. UserPreferenceModel::quickLinkCatalog()'s own
+             `group` for both catalog keys was updated to match (see that method's own docblock on
+             keeping this a hand-maintained mirror of the sidebar). -->
+        <li class="menu-item has-submenu">
+            <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
-                    <img src="<?=BASE_URL?>/public/images/menu/PAYROLL.SVG" alt="Payroll Process">
+                    <img src="<?=BASE_URL?>/public/images/menu/PAYROLL.SVG" alt="Payroll">
                 </span>
-                <span class="menu-text" data-i18n="payroll_process">Payroll Process</span>
+                <span class="menu-text" data-i18n="payroll_menu">Payroll</span>
+                <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
             </a>
-        </li>
-        <li class="menu-item">
-            <a href="<?=BASE_URL?>/payroll-approval" class="menu-link">
-                <span class="menu-icon">
-                    <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Payroll Approval">
-                </span>
-                <span class="menu-text" data-i18n="payroll_approval">Payroll Approval</span>
-            </a>
+            <ul class="submenu">
+                <li>
+                    <a href="<?=BASE_URL?>/payroll-process" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/PAYROLL.SVG" alt="Payroll Process">
+                        </span>
+                        <span class="submenu-text" data-i18n="payroll_process">Payroll Process</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/payroll-approval" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Payroll Approval">
+                        </span>
+                        <span class="submenu-text" data-i18n="payroll_approval">Payroll Approval</span>
+                    </a>
+                </li>
+            </ul>
         </li>
         <!-- 2026-08-23, explicit request ("เมนูช่วยเรียงลำดับเมนูตามความสำคัญให้ใหม่อีกครั้ง") -- Reports
              ranked above Payslip: statutory filings (ภ.ง.ด./สปส.) carry a hard monthly compliance
@@ -484,11 +542,19 @@ if ($navUserId > 0) {
              Annual Income Summary page is conceptually a report (per-employee income/deduction/net,
              just an interactive live table instead of a generate-and-download document like the
              rest of the Reports module), so it hangs off the SAME "Reports" concept rather than
-             claiming its own top-level menu icon -- Reports becomes a 2-item submenu instead of a
-             plain link. Permission (`annual_income_summary.view`) is gated at the controller, same
-             as every other permission-gated page in this app -- the link itself is always shown,
-             an unauthorized click lands on the shared permission-denied view. -->
-        <?php if ($canViewReportsMenu): ?>
+             claiming its own top-level menu icon -- Reports becomes a submenu instead of a plain
+             link. Permission (`annual_income_summary.view`) is gated at the controller, same as
+             every other permission-gated page in this app -- the link itself is always shown, an
+             unauthorized click lands on the shared permission-denied view.
+             2026-09-07, explicit request: "เมนูเยอะไปหมดตอนนี้ ช่วย group รวม Menu ที่ควรอยู่ด้วยกัน" --
+             the standalone "Audit Log" top-level entry (see its own retired comment further down)
+             folds into this SAME submenu as a 4th item -- both are, at heart, "look at a history of
+             what changed" tools (one payroll-run-scoped, one system-wide field-level), so they read
+             naturally as one family under "Reports" instead of two separate top-level icons. Gate
+             widened to `$canViewReportsMenu || $canViewAuditLogMenu` so the parent still shows for
+             someone who can see ONLY Audit Log (e.g. no payroll_run.view/annual_income_summary.view
+             grant at all) with nothing else in the submenu visible to them. -->
+        <?php if ($canViewReportsMenu || $canViewAuditLogMenu): ?>
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
@@ -531,6 +597,16 @@ if ($navUserId > 0) {
                             <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Payroll Run Audit">
                         </span>
                         <span class="submenu-text" data-i18n="payroll_run_audit_menu">Payroll Run Audit</span>
+                    </a>
+                </li>
+                <?php endif; ?>
+                <?php if ($canViewAuditLogMenu): ?>
+                <li>
+                    <a href="<?=BASE_URL?>/audit-log" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Audit Log">
+                        </span>
+                        <span class="submenu-text" data-i18n="audit_log_menu">Audit Log</span>
                     </a>
                 </li>
                 <?php endif; ?>
@@ -611,32 +687,14 @@ if ($navUserId > 0) {
                 </li>
             </ul>
         </li>
-        <!-- 2026-09-03, Platform Hardening Phase 6 pilot -- own single-link top-level entry, same
-             pattern as Permissions directly above. Reuses REPORT.svg (a log/list of entries reads
-             closest to that icon among what already exists -- same "reuse an existing icon"
-             precedent as every other module without a dedicated icon). Gated by $canViewAuditLogMenu. -->
-        <?php if ($canViewAuditLogMenu): ?>
-        <li class="menu-item">
-            <a href="<?=BASE_URL?>/audit-log" class="menu-link">
-                <span class="menu-icon">
-                    <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Audit Log">
-                </span>
-                <span class="menu-text" data-i18n="audit_log_menu">Audit Log</span>
-            </a>
-        </li>
-        <?php endif; ?>
-        <!-- 2026-09-04, Backlog Phase 10, T057 -- same single-link top-level entry pattern as
-             Permissions/Audit Log directly above, gated by $canViewAnnouncementMenu. -->
-        <?php if ($canViewAnnouncementMenu): ?>
-        <li class="menu-item">
-            <a href="<?=BASE_URL?>/setup/announcements" class="menu-link">
-                <span class="menu-icon">
-                    <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Announcements">
-                </span>
-                <span class="menu-text" data-i18n="announcement_menu">Announcements</span>
-            </a>
-        </li>
-        <?php endif; ?>
+        <!-- 2026-09-07, explicit request: "เมนูเยอะไปหมดตอนนี้ ช่วย group รวม Menu ที่ควรอยู่ด้วยกัน" --
+             "Audit Log" (2026-09-03, Platform Hardening Phase 6 pilot) moved into the Reports
+             submenu above -- see that submenu's own comment. "Announcements" (2026-09-04, Backlog
+             Phase 10 T057) moved into the Settings submenu below -- both were single-purpose
+             top-level entries that read more naturally as part of an existing group (a history/audit
+             tool alongside Reports' own Payroll Run Audit; a company-wide broadcast CONFIGURATION
+             tool alongside Settings' other admin config pages) than as their own icons in an
+             already-long sidebar. Routes/controllers/permissions unchanged either way. -->
         <!-- 2026-09-06, explicit request: "ย้ายเมนูช่วยเหลือ มาไว้หลังตั้งค่า เมนูสิทธิ์การใช้งานมาไว้ภายใต้
              เมนูตั้งค่า" -- supersedes the 2026-08-30 "Settings is always last" rule right below (that
              comment is now historical/inaccurate -- Help moved to AFTER Settings, deliberately).
@@ -704,6 +762,25 @@ if ($navUserId > 0) {
                             <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Permissions">
                         </span>
                         <span class="submenu-text" data-i18n="permissions_menu">Permissions</span>
+                    </a>
+                </li>
+                <?php endif; ?>
+                <!-- 2026-09-07: moved here from its own standalone top-level entry (originally added
+                     2026-09-04, Backlog Phase 10 T057) -- explicit request: "เมนูเยอะไปหมดตอนนี้ ช่วย
+                     group รวม Menu ที่ควรอยู่ด้วยกัน" -- a company-wide broadcast CONFIGURATION tool
+                     (`announcement.manage`) reads as one more admin setting alongside Company
+                     Profile/Payroll Configuration/etc., same reasoning Permissions' own move here
+                     already established. Route/permission gate/icon unchanged -- an employee's own
+                     view of announcements they've received (Dashboard widget, Notifications, the
+                     plain /announcements "my list" page) never went through this sidebar item at
+                     all either way, see that permission's own header.php docblock. -->
+                <?php if ($canViewAnnouncementMenu): ?>
+                <li>
+                    <a href="<?=BASE_URL?>/setup/announcements" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Announcements">
+                        </span>
+                        <span class="submenu-text" data-i18n="announcement_menu">Announcements</span>
                     </a>
                 </li>
                 <?php endif; ?>

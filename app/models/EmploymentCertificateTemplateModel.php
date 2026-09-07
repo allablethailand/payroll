@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/TemplateDesignerModelTrait.php';
+require_once __DIR__ . '/AuditLogModel.php';
 
 /**
  * Employment Certificate Template designer backend.
@@ -28,9 +29,11 @@ class EmploymentCertificateTemplateModel {
     use TemplateDesignerModelTrait;
 
     private PDO $db;
+    private AuditLogModel $auditLog;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /* ==================== TemplateDesignerModelTrait's own abstract table-name hooks ==================== */
@@ -383,7 +386,7 @@ class EmploymentCertificateTemplateModel {
      * @param array $data {id?:int, language:string, template_name:string, page_size?:string,
      *   orientation?:string, logo_path?:?string, elements:array}
      */
-    public function save(int $compId, array $data, int $userId): array {
+    public function save(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $language = (string)($data['language'] ?? '');
         if (!in_array($language, self::LANGUAGES, true)) {
             return ['status' => false, 'message' => 'Invalid language.'];
@@ -451,9 +454,15 @@ class EmploymentCertificateTemplateModel {
                 $this->db->beginTransaction();
             }
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `employment_certificate_templates` WHERE id = :id AND comp_id = :comp_id AND status = 'active'");
+                // Platform Hardening Phase 6 (batch 5): SELECT * (was just `id`) so the full row is
+                // available to AuditLogModel::record() as the "old" side of the header-row diff
+                // below. Only the HEADER row's own scalar columns are diffed -- elements/assignments
+                // (both DELETE+INSERT every save a few lines down) are NOT diffed, same "don't diff
+                // child-table replace-semantics" precedent as PayslipTemplateModel's own wiring.
+                $stmtCheck = $this->db->prepare("SELECT * FROM `employment_certificate_templates` WHERE id = :id AND comp_id = :comp_id AND status = 'active'");
                 $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-                if (!$stmtCheck->fetch()) {
+                $existingRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existingRow) {
                     if ($own) { $this->db->rollBack(); }
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
@@ -470,6 +479,10 @@ class EmploymentCertificateTemplateModel {
                 }
                 $stmt->execute($params);
                 $templateId = $id;
+                $stmtNewHeaderRow = $this->db->prepare("SELECT * FROM `employment_certificate_templates` WHERE id = :id");
+                $stmtNewHeaderRow->execute([':id' => $templateId]);
+                $newHeaderRow = $stmtNewHeaderRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'employment_certificate_templates', $templateId, 'update', $existingRow, $newHeaderRow, $userId, 'web', $ip, $userAgent);
             } else {
                 // 2026-08-25, explicit request: unified TH/EN list ("ให้มี th กับ eng ในการจัดการเลย
                 // ไม่ต้องแยกเป็น Tab") -- every template gets a pair_key from creation onward, either
@@ -621,19 +634,22 @@ class EmploymentCertificateTemplateModel {
         }
     }
 
-    public function delete(int $compId, int $id, int $userId): array {
-        $stmtCheck = $this->db->prepare("SELECT id FROM `employment_certificate_templates` WHERE id = :id AND comp_id = :comp_id AND status = 'active'");
+    public function delete(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        $stmtCheck = $this->db->prepare("SELECT * FROM `employment_certificate_templates` WHERE id = :id AND comp_id = :comp_id AND status = 'active'");
         $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-        if (!$stmtCheck->fetch()) {
+        $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $stmt = $this->db->prepare("UPDATE `employment_certificate_templates` SET status = 'deleted', deleted_by = :deleted_by, deleted_at = CURRENT_TIMESTAMP WHERE id = :id");
         $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+        // Same soft-delete-is-a-status-change convention as every other model in this audit log.
+        $this->auditLog->record($compId, 'employment_certificate_templates', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 
     /** Single-default-per-(comp_id,language) enforcement -- same pattern as PayslipTemplateModel. */
-    public function setDefault(int $compId, int $id, int $userId): array {
+    public function setDefault(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $template = $this->get($compId, $id);
         if (!$template) {
             return ['status' => false, 'message' => 'Record not found.'];
@@ -646,6 +662,9 @@ class EmploymentCertificateTemplateModel {
                 ->execute([':comp_id' => $compId, ':language' => $template['language']]);
             $this->db->prepare("UPDATE `employment_certificate_templates` SET is_default = 1, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
                 ->execute([':updated_by' => $userId, ':id' => $id]);
+            // Only THIS row's own is_default flip is logged -- same "log the record the admin acted
+            // on, not every sibling side effect" precedent as PayslipTemplateModel::setDefault().
+            $this->auditLog->record($compId, 'employment_certificate_templates', $id, 'update', ['is_default' => (int)$template['is_default']], ['is_default' => 1], $userId, 'web', $ip, $userAgent);
             if ($own) { $this->db->commit(); }
             return ['status' => true, 'message' => 'Default template updated.'];
         } catch (PDOException $e) {
@@ -657,17 +676,19 @@ class EmploymentCertificateTemplateModel {
     /** 2026-08-26, explicit request: "ให้มี Draft Mode และ Public Mode...ในหน้า List สามารถเปิด Draft
      *  หรือ Public ได้จากหน้านั้นเลย" -- direct port of PayslipTemplateModel::setPublishStatus() (see
      *  that method's own docblock: never touched by save()/autosave, only this dedicated action). */
-    public function setPublishStatus(int $compId, int $id, string $status, int $userId): array {
+    public function setPublishStatus(int $compId, int $id, string $status, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         if (!in_array($status, ['draft', 'public'], true)) {
             return ['status' => false, 'message' => 'Invalid publish status.'];
         }
-        $stmt = $this->db->prepare("SELECT id FROM `employment_certificate_templates` WHERE id = :id AND comp_id = :comp_id AND status = 'active'");
+        $stmt = $this->db->prepare("SELECT id, publish_status FROM `employment_certificate_templates` WHERE id = :id AND comp_id = :comp_id AND status = 'active'");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
-        if (!$stmt->fetch()) {
+        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $this->db->prepare("UPDATE `employment_certificate_templates` SET publish_status = :publish_status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
             ->execute([':publish_status' => $status, ':updated_by' => $userId, ':id' => $id]);
+        $this->auditLog->record($compId, 'employment_certificate_templates', $id, 'update', ['publish_status' => $existing['publish_status']], ['publish_status' => $status], $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Updated successfully.', 'publish_status' => $status];
     }
 

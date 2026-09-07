@@ -33,9 +33,17 @@ function auditLogValueCell(value) {
     return `<span title="${escapeAttr(value)}">${escapeAttr(truncated)}</span>`;
 }
 let dtAuditLog = null;
+// 2026-09-07 -- `filter_al_table_name` is now select2-static ("All Tables" can't be a genuinely
+// blank `data-option-values` entry, see employee/list.js's own comment on this same static-select2
+// gotcha), so its "no filter" value is the literal string 'all', remapped to '' here before it ever
+// reaches the backend.
+function auditLogTableFilterValue() {
+    const v = $('#filter_al_table_name').val();
+    return (!v || v === 'all') ? '' : v;
+}
 function updateAuditLogClearFilterVisibility() {
-    const active = !!($('#filter_al_table_name').val() || $('#filter_al_record_id').val() || $('#filter_al_date_from').val() || $('#filter_al_date_to').val());
-    $('#btnAuditLogClearFilter').toggleClass('d-none', !active);
+    const active = !!(auditLogTableFilterValue() || $('#filter_al_record_id').val() || $('#filter_al_date_from').val() || $('#filter_al_date_to').val());
+    $('#auditLogFilterClearRow').toggleClass('d-none', !active);
 }
 function renderAuditLogTable() {
     if ($.fn.DataTable.isDataTable('#tb_audit_log')) { dtAuditLog.ajax.reload(null, false); return; }
@@ -47,7 +55,7 @@ function renderAuditLogTable() {
         ajax: {
             url: `${BASE_URL}/api/audit-log.list`, method: 'GET',
             data: function (d) {
-                d.table_name = $('#filter_al_table_name').val() || '';
+                d.table_name = auditLogTableFilterValue();
                 d.record_id = $('#filter_al_record_id').val() || '';
                 d.date_from = toIsoDateAl($('#filter_al_date_from').val());
                 d.date_to = toIsoDateAl($('#filter_al_date_to').val());
@@ -68,9 +76,15 @@ function renderAuditLogTable() {
         language: { ...getTableLang(), emptyTable: langData['no_data_found'] || 'No records found.' },
     });
 }
+$(document).on('click', '#auditLogStationFilterToggle', function () {
+    const $filter = $('#auditLogStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
 $(document).ready(function () {
     if (!$('#tb_audit_log').length) return;
     initDatepicker('#filter_al_date_from, #filter_al_date_to');
+    if (typeof initSelect2 === 'function') initSelect2('#filter_al_table_name', { mode: 'static', selectedValue: 'all' });
     renderAuditLogTable();
     $('#filter_al_table_name, #filter_al_record_id').on('change input', function () {
         updateAuditLogClearFilterVisibility();
@@ -81,7 +95,7 @@ $(document).ready(function () {
         dtAuditLog.ajax.reload();
     });
     $('#btnAuditLogClearFilter').on('click', function () {
-        $('#filter_al_table_name').val('');
+        $('#filter_al_table_name').val('all').trigger('change.select2');
         $('#filter_al_record_id').val('');
         $('#filter_al_date_from').val('').datepicker('update');
         $('#filter_al_date_to').val('').datepicker('update');

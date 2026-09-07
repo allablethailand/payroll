@@ -49,4 +49,42 @@ class UserPreferenceController extends Controller {
         }
         $this->json($result);
     }
+
+    private function isAdmin(): bool {
+        return ($_SESSION['user']['role'] ?? '') === 'admin';
+    }
+
+    /** Feeds the Customize Quick Links modal: the full VISIBLE catalog (permission-filtered, for
+     *  this employee/company right now) + this employee's current selection, so the modal never
+     *  has to trust anything the header already rendered server-side (it may be stale if
+     *  permissions changed since page load). */
+    public function quickLinksGet() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $employeeId = $this->userId();
+        $catalog = UserPreferenceModel::quickLinkCatalog((int)$compId, $employeeId, $this->isAdmin());
+        $catalogKeys = array_column($catalog, 'key');
+        $saved = $this->model->getQuickLinks($employeeId, (int)$compId);
+        $selected = $saved ?? UserPreferenceModel::defaultQuickLinkKeys();
+        $selected = array_values(array_intersect($selected, $catalogKeys));
+        $this->json(['status' => true, 'data' => ['catalog' => $catalog, 'selected' => $selected]]);
+    }
+
+    public function quickLinksSave() {
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'No company context.']);
+            return;
+        }
+        $employeeId = $this->userId();
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $keys = is_array($input['keys'] ?? null) ? $input['keys'] : [];
+        $catalog = UserPreferenceModel::quickLinkCatalog((int)$compId, $employeeId, $this->isAdmin());
+        $catalogKeys = array_column($catalog, 'key');
+        $result = $this->model->saveQuickLinks($employeeId, (int)$compId, $keys, $catalogKeys);
+        $this->json($result);
+    }
 }
