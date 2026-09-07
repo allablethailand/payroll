@@ -82,6 +82,104 @@ class AnnouncementController extends Controller {
         $this->json($result);
     }
 
+    /** "สามารถแนบปกได้" -- same decoupled-upload pattern as CompanyProfileController::uploadLogo()/
+     *  PayslipTemplateController::uploadLogo(): uploads immediately and returns the path for the
+     *  client to include in save()'s own payload as `cover_image_path` (validated again there via
+     *  AnnouncementModel::isValidCoverPath() before it's ever persisted). */
+    public function uploadCover() {
+        if (!$this->requirePermission('announcement.manage')) { return; }
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            $this->json(['status' => false, 'message' => 'File upload failed.']);
+            return;
+        }
+        $file = $_FILES['file'];
+        $maxSize = 3 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            $this->json(['status' => false, 'message' => 'File size exceeds 3MB limit.']);
+            return;
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->file($file['tmp_name']);
+        if (!isset($allowedMimes[$detectedMime])) {
+            $this->json(['status' => false, 'message' => 'Unsupported file type. Use JPG, PNG, or WEBP.']);
+            return;
+        }
+        $ext = $allowedMimes[$detectedMime];
+
+        $uploadDir = __DIR__ . '/../../public/uploads/announcement_covers/' . (int)$compId . '/';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $this->json(['status' => false, 'message' => 'Failed to prepare storage directory.']);
+            return;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $ext;
+        $destPath = $uploadDir . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            $this->json(['status' => false, 'message' => 'Failed to save file.']);
+            return;
+        }
+        $relativePath = 'public/uploads/announcement_covers/' . (int)$compId . '/' . $safeName;
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'cover_image_path' => $relativePath]);
+    }
+
+    /** "จัดรูปแบบเนื้อหาได้" -- backs the Quill editor's own Image toolbar button (public/js/setup/
+     *  announcements.js's own custom image handler). Quill's DEFAULT image-button behavior embeds
+     *  the picked file as a base64 `data:` URI directly in the content -- deliberately NOT used here:
+     *  (1) body_th/body_en are a TEXT column (65,535-byte cap), a single embedded image alone can
+     *  blow past that; (2) AnnouncementModel::sanitizeRichHtml() strips `data:`/`javascript:` URLs
+     *  from every href/src as a blanket XSS defense (a `data:image/svg+xml;base64,...` can smuggle an
+     *  embedded <script>), which would silently reduce a base64-embedded image to a broken <img> tag
+     *  anyway. This endpoint uploads the file for real and returns a URL for the editor to insert
+     *  instead -- same decoupled-upload pattern as uploadCover() above, separate storage root (this
+     *  is inline BODY content, not the one distinguished cover_image_path column, so no
+     *  isValidCoverPath()-style path-shape re-check is needed on save() -- sanitizeRichHtml() itself
+     *  is the only gate an <img src> in body content needs to pass). */
+    public function uploadContentImage() {
+        if (!$this->requirePermission('announcement.manage')) { return; }
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            $this->json(['status' => false, 'message' => 'File upload failed.']);
+            return;
+        }
+        $file = $_FILES['file'];
+        $maxSize = 3 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            $this->json(['status' => false, 'message' => 'File size exceeds 3MB limit.']);
+            return;
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->file($file['tmp_name']);
+        if (!isset($allowedMimes[$detectedMime])) {
+            $this->json(['status' => false, 'message' => 'Unsupported file type. Use JPG, PNG, GIF, or WEBP.']);
+            return;
+        }
+        $ext = $allowedMimes[$detectedMime];
+
+        $uploadDir = __DIR__ . '/../../public/uploads/announcement_content/' . (int)$compId . '/';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $this->json(['status' => false, 'message' => 'Failed to prepare storage directory.']);
+            return;
+        }
+        $safeName = bin2hex(random_bytes(16)) . '.' . $ext;
+        $destPath = $uploadDir . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            $this->json(['status' => false, 'message' => 'Failed to save file.']);
+            return;
+        }
+        $relativePath = 'public/uploads/announcement_content/' . (int)$compId . '/' . $safeName;
+        $this->json(['status' => true, 'message' => 'Uploaded successfully.', 'url' => BASE_URL . '/' . $relativePath]);
+    }
+
     public function delete() {
         $data = $this->readJsonBody();
         if ($data === null) {

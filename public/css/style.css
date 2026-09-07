@@ -7860,3 +7860,65 @@ div.dt-processing > div.om-dt-processing-inner:last-child {
         right: -100%;
     }
 }
+
+/* 2026-09-07, explicit request: "จัดรูปแบบเนื้อหาได้" (Announcement CMS rich-text formatting) -- Quill
+   (snow theme) editor wrapper. Quill's own CSS hardcodes a white toolbar/content background and black
+   text, so it needs explicit dark-mode overrides here (same --app-* token convention as every other
+   component this app themes -- see T069) rather than being left to Quill's own light-only defaults. */
+.ann-quill-wrap .ql-toolbar.ql-snow {
+    border-color: var(--app-border);
+    border-radius: 8px 8px 0 0;
+    background: var(--app-surface-bg);
+}
+.ann-quill-wrap .ql-container.ql-snow {
+    border-color: var(--app-border);
+    border-radius: 0 0 8px 8px;
+    background: var(--app-surface-bg);
+    min-height: 160px;
+    font-family: inherit;
+}
+.ann-quill-wrap .ql-editor {
+    color: var(--app-text);
+    min-height: 160px;
+}
+.ann-quill-wrap .ql-editor.ql-blank::before {
+    color: var(--app-text-muted);
+    font-style: normal;
+}
+:root:not([data-theme="light"]) .ann-quill-wrap .ql-snow .ql-stroke { stroke: var(--app-text-muted); }
+:root:not([data-theme="light"]) .ann-quill-wrap .ql-snow .ql-fill { fill: var(--app-text-muted); }
+:root:not([data-theme="light"]) .ann-quill-wrap .ql-snow .ql-picker { color: var(--app-text-muted); }
+:root:not([data-theme="light"]) .ann-quill-wrap .ql-snow .ql-picker-options { background: var(--app-surface-bg); border-color: var(--app-border); }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .ann-quill-wrap .ql-snow .ql-stroke { stroke: var(--app-text-muted); }
+    :root:not([data-theme="light"]) .ann-quill-wrap .ql-snow .ql-fill { fill: var(--app-text-muted); }
+}
+:root[data-theme="dark"] .ann-quill-wrap .ql-snow .ql-stroke { stroke: var(--app-text-muted); }
+:root[data-theme="dark"] .ann-quill-wrap .ql-snow .ql-fill { fill: var(--app-text-muted); }
+:root[data-theme="dark"] .ann-quill-wrap .ql-snow .ql-picker { color: var(--app-text-muted); }
+:root[data-theme="dark"] .ann-quill-wrap .ql-snow .ql-picker-options { background: var(--app-surface-bg); border-color: var(--app-border); }
+
+/* Rendered (read-only) rich content -- the featured-on-dashboard card, the first-login click-through
+   modal, and the employee-facing "My Announcements" list all inject sanitized HTML from body_th/
+   body_en via .html() now instead of .text() (see dashboard.js/announcements/my-list.php) -- this
+   class resets Quill's own .ql-editor spacing assumptions so the same content looks right OUTSIDE a
+   Quill instance too (a plain rendering container, not a live editor). */
+.ann-rich-content { color: var(--app-text); line-height: 1.6; }
+.ann-rich-content p { margin: 0 0 .5rem; }
+.ann-rich-content p:last-child { margin-bottom: 0; }
+.ann-rich-content img { max-width: 100%; border-radius: 6px; }
+.ann-rich-content a { color: var(--app-accent-soft-text, #FF9900); }
+.ann-cover-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 1px solid var(--app-border);
+}
+.ann-cover-banner {
+    width: 100%;
+    max-height: 220px;
+    object-fit: cover;
+    border-radius: 10px;
+    margin-bottom: .75rem;
+}

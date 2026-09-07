@@ -73,6 +73,35 @@
             <div class="modal-body">
                 <input type="hidden" id="ann_id">
                 <div class="row g-3">
+                    <!-- 2026-09-07, explicit request: "สามารถแนบปกได้" -- same drop-zone card look/markup
+                         as Company Profile's own Logo upload card (.cp-logo-upload-card and friends,
+                         see style.css -- generic classes, not scoped to that one page), a decoupled
+                         upload (api/announcement.upload-cover) that returns a path stored in the hidden
+                         field below and included in save()'s own payload. Optional -- an announcement
+                         with no cover renders exactly as before this feature. -->
+                    <div class="col-12">
+                        <label class="form-label mb-1" data-i18n="announcement_cover_image">Cover Image</label>
+                        <div class="cp-logo-upload-card" id="annCoverUploadCard">
+                            <div class="cp-logo-preview-box" id="annCoverPreviewBox">
+                                <img id="annCoverPreviewImg" src="" alt="Cover" class="d-none">
+                                <div class="cp-logo-placeholder" id="annCoverPlaceholder">
+                                    <i class="fa-solid fa-image"></i>
+                                    <span data-i18n="announcement_no_cover_uploaded">No cover image uploaded</span>
+                                </div>
+                            </div>
+                            <div class="cp-logo-actions">
+                                <label class="btn btn-outline-secondary btn-sm" for="ann_cover_file">
+                                    <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_image">Upload Image</span>
+                                </label>
+                                <button type="button" class="btn btn-outline-danger btn-sm d-none" id="annCoverRemoveBtn">
+                                    <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
+                                </button>
+                                <input type="file" id="ann_cover_file" accept=".jpg,.jpeg,.png,.webp" class="d-none">
+                                <input type="hidden" id="ann_cover_image_path">
+                            </div>
+                        </div>
+                        <p class="text-muted small mb-0 mt-1" data-i18n="announcement_cover_image_hint">Shown at the top of the announcement (dashboard card, first-login modal, and "View All" list). Optional.</p>
+                    </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1" data-i18n="title_th">Title (Thai)</label>
                         <input type="text" class="form-control" id="ann_title_th" maxlength="255">
@@ -81,13 +110,17 @@
                         <label class="form-label mb-1" data-i18n="title_en">Title (English)</label>
                         <input type="text" class="form-control" id="ann_title_en" maxlength="255">
                     </div>
+                    <!-- 2026-09-07, explicit request: "จัดรูปแบบเนื้อหาได้" -- plain <textarea> replaced with a
+                         Quill (snow theme) rich-text editor per language, see announcements.js's own
+                         initAnnQuillEditors(). Content is persisted as sanitized HTML
+                         (AnnouncementModel::sanitizeRichHtml()), not plain text. -->
                     <div class="col-md-6">
                         <label class="form-label mb-1" data-i18n="body_th">Body (Thai)</label>
-                        <textarea class="form-control" id="ann_body_th" rows="5"></textarea>
+                        <div class="ann-quill-wrap"><div id="ann_body_th_editor"></div></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1" data-i18n="body_en">Body (English)</label>
-                        <textarea class="form-control" id="ann_body_en" rows="5"></textarea>
+                        <div class="ann-quill-wrap"><div id="ann_body_en_editor"></div></div>
                     </div>
                     <div class="col-12">
                         <div class="form-check form-switch">

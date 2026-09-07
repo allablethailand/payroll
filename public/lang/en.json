@@ -2872,5 +2872,10 @@
     "announcement_none": "No announcements yet.",
     "announcement_acknowledged": "Acknowledged",
     "announcement_pending": "Pending",
+    "announcement_cover_image": "Cover Image",
+    "announcement_cover_image_hint": "Shown at the top of the announcement (dashboard card, first-login modal, and \"View All\" list). Optional.",
+    "announcement_no_cover_uploaded": "No cover image uploaded",
+    "upload_image": "Upload Image",
+    "upload_failed": "Failed to upload file.",
     "required_fields_missing": "Please fill in all required fields."
 }
