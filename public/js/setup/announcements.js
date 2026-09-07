@@ -1,9 +1,68 @@
 /* Backlog Phase 10, T057 -- Announcement CMS management page (setup/announcements). Client-side
  * DataTable (small, bounded list per company). "Edit Recipients" reuses T055's assign-widget.js
- * (openAssignModal()/assignSummaryBadgeHtml()) against entity_type='announcement' server-side. */
+ * (openAssignModal()/assignSummaryBadgeHtml()) against entity_type='announcement' server-side.
+ *
+ * 2026-09-07, explicit follow-up: "แก้ไข เพิ่มเป็น CMS แบบ 100% จัดรูปแบบเนื้อหาได้ สามารถแนบปกได้ ใส่
+ * Subject ได้ รองรับการจัดการเนื้อหาแบบ 2 ภาษา" -- Create/Edit/Delete and 2-language content already
+ * existed (see save()/delete() below, and title_th/title_en+body_th/body_en's own long-standing
+ * shape) -- "Subject" is the existing Title field (title_th/title_en's own i18n label is literally
+ * "หัวข้อ" = Subject/Title in Thai, see public/lang/th.json), no new field was needed for that part.
+ * The 2 genuinely new pieces this round are rich-text body formatting (Quill, see
+ * initAnnQuillEditors() below) and a cover image (see the ann_cover_* handlers below). */
 let annTable = null;
 let annCurrentAssignments = [];
 let annAssignableOptionsCache = null;
+let annQuillTh = null;
+let annQuillEn = null;
+
+/** Quill's OWN default Image-button behavior embeds the picked file as a base64 `data:` URI directly
+ *  in the content -- deliberately overridden here to upload for real instead (see
+ *  AnnouncementController::uploadContentImage()'s own docblock for why: body_th/body_en is a
+ *  65,535-byte TEXT column, and AnnouncementModel::sanitizeRichHtml() strips `data:` URLs from every
+ *  src/href as a blanket XSS defense anyway, which would silently leave a broken <img> behind). */
+function annQuillImageHandler() {
+    const quill = this.quill;
+    const input = document.createElement('input');
+    input.setAttribute('type', 'file');
+    input.setAttribute('accept', 'image/png,image/jpeg,image/gif,image/webp');
+    input.onchange = function () {
+        const file = input.files && input.files[0];
+        if (!file) { return; }
+        const formData = new FormData();
+        formData.append('file', file);
+        const range = quill.getSelection(true);
+        $.ajax({
+            url: `${BASE_URL}/api/announcement.upload-content-image`, method: 'POST', data: formData,
+            processData: false, contentType: false, dataType: 'json',
+            success: function (res) {
+                if (res.status) { quill.insertEmbed(range.index, 'image', res.url, 'user'); quill.setSelection(range.index + 1); }
+                else { showWarning(res.message || langData['upload_failed'] || 'Failed to upload file.'); }
+            }
+        });
+    };
+    input.click();
+}
+/** Lazy-init (only once) -- called every time the modal opens since Quill can't init into a hidden
+ *  (display:none, inside an un-shown Bootstrap modal) container and get correct toolbar sizing; once
+ *  created the SAME instance is reused on every subsequent open (re-running `new Quill(...)` on an
+ *  already-quill-ified element throws), its content just gets cleared/repopulated each time instead. */
+function initAnnQuillEditors() {
+    if (annQuillTh && annQuillEn) { return; }
+    const toolbarOptions = {
+        container: [
+            [{ header: [1, 2, 3, false] }],
+            ['bold', 'italic', 'underline', 'strike'],
+            [{ color: [] }, { background: [] }],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            [{ align: [] }],
+            ['link', 'image'],
+            ['clean']
+        ],
+        handlers: { image: annQuillImageHandler }
+    };
+    annQuillTh = new Quill('#ann_body_th_editor', { theme: 'snow', modules: { toolbar: toolbarOptions } });
+    annQuillEn = new Quill('#ann_body_en_editor', { theme: 'snow', modules: { toolbar: toolbarOptions } });
+}
 
 function annStatusBadge(status) {
     return status === 'published'
@@ -30,7 +89,11 @@ function initAnnouncementTable() {
         ajax: { url: `${BASE_URL}/api/announcement.list`, dataSrc: 'data' },
         columns: [
             { data: 'status', render: (d) => annStatusBadge(d) },
-            { data: null, render: (d, t, row) => escapeHtml(currentLang === 'th' ? row.title_th : row.title_en) },
+            { data: null, render: (d, t, row) => {
+                const title = escapeHtml(currentLang === 'th' ? row.title_th : row.title_en);
+                if (!row.cover_image_path) { return title; }
+                return `<div class="d-flex align-items-center gap-2"><img src="${BASE_URL}/${row.cover_image_path}" class="ann-cover-thumb" alt=""> <span>${title}</span></div>`;
+            } },
             { data: 'accept_required', className: 'text-center', render: (d) => d ? `<i class="fa-solid fa-check text-success"></i>` : `<i class="fa-solid fa-minus text-muted"></i>` },
             { data: null, className: 'text-center', render: (d, t, row) => row.status === 'published' ? `${row.acknowledged_count} / ${row.recipient_count}` : '<span class="text-muted">-</span>' },
             { data: 'is_dashboard_featured', className: 'text-center', render: (d) => d ? `<i class="fa-solid fa-star text-warning"></i>` : '' },
@@ -48,12 +111,26 @@ function initAnnouncementTable() {
         }
     });
 }
+function annSetCoverPreview(path) {
+    $('#ann_cover_image_path').val(path || '');
+    if (path) {
+        $('#annCoverPreviewImg').attr('src', `${BASE_URL}/${path}`).removeClass('d-none');
+        $('#annCoverPlaceholder').addClass('d-none');
+        $('#annCoverRemoveBtn').removeClass('d-none');
+    } else {
+        $('#annCoverPreviewImg').attr('src', '').addClass('d-none');
+        $('#annCoverPlaceholder').removeClass('d-none');
+        $('#annCoverRemoveBtn').addClass('d-none');
+    }
+}
 function resetAnnouncementForm() {
     $('#ann_id').val('');
     $('#ann_title_th').val('');
     $('#ann_title_en').val('');
-    $('#ann_body_th').val('');
-    $('#ann_body_en').val('');
+    initAnnQuillEditors();
+    annQuillTh.setText('');
+    annQuillEn.setText('');
+    annSetCoverPreview(null);
     $('#ann_accept_required').prop('checked', false);
     annCurrentAssignments = [];
     $('#ann_assign_badge').html(assignSummaryBadgeHtml([]));
@@ -70,8 +147,9 @@ function openAnnouncementModal(id) {
                 $('#ann_id').val(row.id);
                 $('#ann_title_th').val(row.title_th);
                 $('#ann_title_en').val(row.title_en);
-                $('#ann_body_th').val(row.body_th);
-                $('#ann_body_en').val(row.body_en);
+                annQuillTh.root.innerHTML = row.body_th || '';
+                annQuillEn.root.innerHTML = row.body_en || '';
+                annSetCoverPreview(row.cover_image_path || null);
                 $('#ann_accept_required').prop('checked', !!row.accept_required);
                 annCurrentAssignments = (row.assignments || []).map(a => ({ scope_type: a.scope_type, scope_id: a.scope_id }));
                 $('#ann_assign_badge').html(assignSummaryBadgeHtml(annCurrentAssignments));
@@ -83,6 +161,24 @@ function openAnnouncementModal(id) {
         new bootstrap.Modal(document.getElementById('announcementModal')).show();
     }
 }
+$(document).on('click', '#annCoverRemoveBtn', function () {
+    annSetCoverPreview(null);
+});
+$(document).on('change', '#ann_cover_file', function () {
+    const file = this.files && this.files[0];
+    if (!file) { return; }
+    const formData = new FormData();
+    formData.append('file', file);
+    $.ajax({
+        url: `${BASE_URL}/api/announcement.upload-cover`, method: 'POST', data: formData,
+        processData: false, contentType: false, dataType: 'json',
+        success: function (res) {
+            if (res.status) { annSetCoverPreview(res.cover_image_path); }
+            else { showWarning(res.message || langData['upload_failed'] || 'Failed to upload file.'); }
+        },
+        complete: function () { $('#ann_cover_file').val(''); }
+    });
+});
 $(document).on('click', '#annOpenAssignBtn', function () {
     function open() {
         openAssignModal({
@@ -106,14 +202,17 @@ $(document).on('click', '#annOpenAssignBtn', function () {
 $(document).on('click', '#annSaveBtn', function () {
     const titleTh = $('#ann_title_th').val().trim();
     const titleEn = $('#ann_title_en').val().trim();
-    const bodyTh = $('#ann_body_th').val().trim();
-    const bodyEn = $('#ann_body_en').val().trim();
-    if (!titleTh || !titleEn || !bodyTh || !bodyEn) {
+    // Quill's own getText() always includes a trailing "\n" even when empty -- trim() before checking.
+    const bodyThPlain = annQuillTh.getText().trim();
+    const bodyEnPlain = annQuillEn.getText().trim();
+    if (!titleTh || !titleEn || !bodyThPlain || !bodyEnPlain) {
         showWarning(langData['required_fields_missing'] || 'Please fill in all required fields.');
         return;
     }
     const payload = {
-        title_th: titleTh, title_en: titleEn, body_th: bodyTh, body_en: bodyEn,
+        title_th: titleTh, title_en: titleEn,
+        body_th: annQuillTh.root.innerHTML, body_en: annQuillEn.root.innerHTML,
+        cover_image_path: $('#ann_cover_image_path').val() || null,
         accept_required: $('#ann_accept_required').is(':checked'),
         assignments: annCurrentAssignments,
     };

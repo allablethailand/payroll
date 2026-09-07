@@ -34,6 +34,111 @@ class AnnouncementModel {
         return $row;
     }
 
+    /** cover_image_path must exactly match what AnnouncementController::uploadCover() itself produces
+     *  for THIS company -- same traversal-proofing pattern as CompanyProfileModel::isValidLogoPath()/
+     *  PayslipTemplateModel::isValidLogoPath(). */
+    public static function isValidCoverPath(?string $path, int $compId): bool {
+        if ($path === null || $path === '') {
+            return true;
+        }
+        $pattern = '#^public/uploads/announcement_covers/' . $compId . '/[a-f0-9]{32}\.(jpg|jpeg|png|webp)$#';
+        return (bool)preg_match($pattern, $path);
+    }
+
+    /** 2026-09-07, "จัดรูปแบบเนื้อหาได้" -- body_th/body_en are now real HTML authored via a Quill
+     *  editor (public/js/setup/announcements.js), not plain text. Content is authored exclusively by
+     *  employees holding `announcement.manage` -- same trust boundary as every other admin-authored
+     *  free-text-with-markup field in this app (e.g. Employment Certificate Template's own token-
+     *  embedding text elements) -- but unlike those (plain text escaped via htmlspecialchars() then
+     *  token-substituted), this is genuine HTML rendered as-is to every recipient, so it is still
+     *  stripped down to a conservative allowlist here (DOMDocument-based, not a regex strip -- regex
+     *  HTML sanitization is well-known to be unreliable) rather than trusted verbatim: no <script>/
+     *  <style>/<iframe>/<object>/<embed>/<form>, no `on*` event-handler attributes on anything that
+     *  survives, and no `javascript:`/`data:` URLs in href/src (an admin account being compromised, or
+     *  simply pasting rich content from an untrusted source into the editor, must not become a stored-
+     *  XSS vector against every employee who opens the announcement). */
+    private const RICH_ALLOWED_TAGS = [
+        'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'span', 'div',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code',
+        'ul', 'ol', 'li', 'a', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'sub', 'sup',
+    ];
+    private const RICH_ALLOWED_ATTRS = ['style', 'class', 'href', 'src', 'target', 'rel', 'colspan', 'rowspan', 'width', 'height', 'alt'];
+    /** Disallowed tags whose entire SUBTREE must be dropped rather than unwrapped -- their "content"
+     *  is source code/non-visible-text (script/style), or an embed of something this app cannot
+     *  vouch for (iframe/object/embed/form/interactive form controls), not display markup a plain
+     *  unwrap would correctly reduce to inert text. Anything disallowed but NOT in this list (e.g. a
+     *  stray <font>/<center> from pasted content) is unwrapped instead -- see sanitizeNode(). */
+    private const RICH_REMOVE_ENTIRELY_TAGS = [
+        'script', 'style', 'iframe', 'object', 'embed', 'applet', 'form', 'button', 'input', 'select',
+        'textarea', 'noscript', 'svg', 'math', 'template', 'link', 'meta', 'base', 'head', 'title',
+        'audio', 'video', 'source', 'track', 'canvas',
+    ];
+
+    private static function sanitizeRichHtml(string $html): string {
+        $html = trim($html);
+        if ($html === '') {
+            return '';
+        }
+        $doc = new DOMDocument();
+        libxml_use_internal_errors(true);
+        $doc->loadHTML('<?xml encoding="utf-8"?><div id="sanitize-root">' . $html . '</div>', LIBXML_NOERROR | LIBXML_NOWARNING);
+        libxml_clear_errors();
+        $root = $doc->getElementById('sanitize-root');
+        if (!$root) {
+            return '';
+        }
+        self::sanitizeNode($doc, $root);
+        $out = '';
+        foreach (iterator_to_array($root->childNodes) as $child) {
+            $out .= $doc->saveHTML($child);
+        }
+        return trim($out);
+    }
+
+    private static function sanitizeNode(DOMDocument $doc, DOMNode $node): void {
+        foreach (iterator_to_array($node->childNodes) as $child) {
+            if ($child->nodeType === XML_TEXT_NODE) {
+                continue;
+            }
+            if ($child->nodeType !== XML_ELEMENT_NODE) {
+                $node->removeChild($child);
+                continue;
+            }
+            /** @var DOMElement $child */
+            $tag = strtolower($child->tagName);
+            if (in_array($tag, self::RICH_REMOVE_ENTIRELY_TAGS, true)) {
+                $node->removeChild($child);
+                continue;
+            }
+            if (!in_array($tag, self::RICH_ALLOWED_TAGS, true)) {
+                // Unwrap disallowed tags (keep their text/children) instead of dropping content outright.
+                while ($child->firstChild) {
+                    $node->insertBefore($child->firstChild, $child);
+                }
+                $node->removeChild($child);
+                continue;
+            }
+            foreach (iterator_to_array($child->attributes ?? []) as $attr) {
+                $attrName = strtolower($attr->name);
+                if (!in_array($attrName, self::RICH_ALLOWED_ATTRS, true)) {
+                    $child->removeAttribute($attr->name);
+                    continue;
+                }
+                if (in_array($attrName, ['href', 'src'], true)) {
+                    $val = trim($attr->value);
+                    if (preg_match('#^\s*(javascript|data|vbscript):#i', $val)) {
+                        $child->removeAttribute($attr->name);
+                        continue;
+                    }
+                }
+                if (str_starts_with($attrName, 'on')) {
+                    $child->removeAttribute($attr->name);
+                }
+            }
+            self::sanitizeNode($doc, $child);
+        }
+    }
+
     public function list(int $compId): array {
         $stmt = $this->db->prepare("SELECT a.*,
                 (SELECT COUNT(*) FROM announcement_recipients ar WHERE ar.announcement_id = a.id) AS recipient_count,
@@ -70,10 +175,20 @@ class AnnouncementModel {
     public function save(int $compId, array $data, int $userId): array {
         $titleTh = trim((string)($data['title_th'] ?? ''));
         $titleEn = trim((string)($data['title_en'] ?? ''));
-        $bodyTh = trim((string)($data['body_th'] ?? ''));
-        $bodyEn = trim((string)($data['body_en'] ?? ''));
-        if ($titleTh === '' || $titleEn === '' || $bodyTh === '' || $bodyEn === '') {
+        $bodyTh = self::sanitizeRichHtml((string)($data['body_th'] ?? ''));
+        $bodyEn = self::sanitizeRichHtml((string)($data['body_en'] ?? ''));
+        // "empty" means no real text AND no image either -- an image-only body (e.g. a poster/
+        // infographic) is legitimate content, not a blank submission; strip_tags() alone would treat
+        // it as blank since an <img> has no text content of its own.
+        if ($titleTh === '' || $titleEn === ''
+            || (trim(strip_tags($bodyTh)) === '' && !str_contains($bodyTh, '<img'))
+            || (trim(strip_tags($bodyEn)) === '' && !str_contains($bodyEn, '<img'))
+        ) {
             return ['status' => false, 'message' => 'Title and body (both languages) are required.'];
+        }
+        $coverImagePath = !empty($data['cover_image_path']) ? (string)$data['cover_image_path'] : null;
+        if ($coverImagePath !== null && !self::isValidCoverPath($coverImagePath, $compId)) {
+            return ['status' => false, 'message' => 'Invalid cover image path.'];
         }
         $acceptRequired = !empty($data['accept_required']) ? 1 : 0;
         $id = isset($data['id']) ? (int)$data['id'] : 0;
@@ -94,20 +209,22 @@ class AnnouncementModel {
                     return ['status' => false, 'message' => 'A published announcement can no longer be edited.'];
                 }
                 $this->db->prepare("UPDATE `announcements` SET title_th = :title_th, title_en = :title_en,
-                        body_th = :body_th, body_en = :body_en, accept_required = :accept_required,
+                        body_th = :body_th, body_en = :body_en, cover_image_path = :cover_image_path, accept_required = :accept_required,
                         updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id AND comp_id = :comp_id")
                     ->execute([
                         ':title_th' => $titleTh, ':title_en' => $titleEn, ':body_th' => $bodyTh, ':body_en' => $bodyEn,
+                        ':cover_image_path' => $coverImagePath,
                         ':accept_required' => $acceptRequired, ':updated_by' => $userId, ':id' => $id, ':comp_id' => $compId,
                     ]);
             } else {
                 $this->db->prepare("INSERT INTO `announcements`
-                        (comp_id, title_th, title_en, body_th, body_en, accept_required, status, created_by)
-                    VALUES (:comp_id, :title_th, :title_en, :body_th, :body_en, :accept_required, 'draft', :created_by)")
+                        (comp_id, title_th, title_en, body_th, body_en, cover_image_path, accept_required, status, created_by)
+                    VALUES (:comp_id, :title_th, :title_en, :body_th, :body_en, :cover_image_path, :accept_required, 'draft', :created_by)")
                     ->execute([
                         ':comp_id' => $compId, ':title_th' => $titleTh, ':title_en' => $titleEn,
-                        ':body_th' => $bodyTh, ':body_en' => $bodyEn, ':accept_required' => $acceptRequired, ':created_by' => $userId,
+                        ':body_th' => $bodyTh, ':body_en' => $bodyEn, ':cover_image_path' => $coverImagePath,
+                        ':accept_required' => $acceptRequired, ':created_by' => $userId,
                     ]);
                 $id = (int)$this->db->lastInsertId();
             }
@@ -235,7 +352,7 @@ class AnnouncementModel {
     }
 
     public function getDashboardFeatured(int $compId): ?array {
-        $stmt = $this->db->prepare("SELECT id, title_th, title_en, body_th, body_en, published_at FROM `announcements`
+        $stmt = $this->db->prepare("SELECT id, title_th, title_en, body_th, body_en, cover_image_path, published_at FROM `announcements`
             WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'published' AND is_dashboard_featured = 1 LIMIT 1");
         $stmt->execute([':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -266,7 +383,7 @@ class AnnouncementModel {
      *  have NOT yet acknowledged -- the first-login click-through modal's own queue, and its
      *  remaining-count. Oldest-published-first so the queue has a stable, predictable order. */
     public function pendingForEmployee(int $compId, int $employeeId): array {
-        $stmt = $this->db->prepare("SELECT a.id, a.title_th, a.title_en, a.body_th, a.body_en, a.accept_required, a.published_at
+        $stmt = $this->db->prepare("SELECT a.id, a.title_th, a.title_en, a.body_th, a.body_en, a.cover_image_path, a.accept_required, a.published_at
             FROM `announcements` a
             INNER JOIN `announcement_recipients` ar ON ar.announcement_id = a.id AND ar.employee_id = :employee_id
             LEFT JOIN `announcement_acknowledgments` aa ON aa.announcement_id = a.id AND aa.employee_id = :employee_id2
@@ -283,7 +400,7 @@ class AnnouncementModel {
 
     /** This employee's own full announcement history (past + pending), for the "View All" list page. */
     public function listForEmployee(int $compId, int $employeeId): array {
-        $stmt = $this->db->prepare("SELECT a.id, a.title_th, a.title_en, a.body_th, a.body_en, a.accept_required, a.published_at,
+        $stmt = $this->db->prepare("SELECT a.id, a.title_th, a.title_en, a.body_th, a.body_en, a.cover_image_path, a.accept_required, a.published_at,
                 aa.acknowledged_at
             FROM `announcements` a
             INNER JOIN `announcement_recipients` ar ON ar.announcement_id = a.id AND ar.employee_id = :employee_id
