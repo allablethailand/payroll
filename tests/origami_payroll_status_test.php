@@ -134,6 +134,50 @@ try {
         check('logged origami_process_id matches the fixture', (int)$rejectLogRow['origami_process_id'], $uniqueTag);
     }
 
+    // ---------- 2026-09-06, confirmed by Origami: their own ProcessModel::pullBackFromPayrollRejection()
+    // lets an admin pull a "sync_rejected" (our own status='rejected', never pulled into a run)
+    // process back to draft and resend it with the SAME origami_process_id -- a real, intentionally-
+    // designed flow, not a hypothetical. Before this fix, upsertProcess()'s UPDATE branch never reset
+    // status/rejected_reason/rejected_by/rejected_at, so a resent process stayed permanently excluded
+    // from pendingList()'s own `AND p.status = 'pending'` filter -- fresh, corrected data could never
+    // be pulled into a run again. ----------
+    echo "=== 2026-09-06: re-ingest (resend) of a REJECTED process resets status back to pending ===\n";
+    $resendItem = [
+        'report_item_id' => 1, 'emp_id' => 1, 'emp_code' => 'E-1', 'payroll_code' => 'NONEXISTENT_' . $uniqueTag,
+        'working_days' => 22, 'trip_allowance' => 0, 'item_values' => [], 'children' => [],
+    ];
+    $resendPayload = [
+        'schema_version' => 1, 'process_id' => $uniqueTag, 'process_no' => 'RJTEST-' . $uniqueTag . '-RESENT',
+        'process_subject' => 'Resent after rejection', 'comp_id' => 1, 'comp_code' => 'TESTCODE', 'comp_name' => 'Test Co',
+        'frequency_type' => 'monthly', 'run_kind' => 'regular', 'items' => [$resendItem], 'employee_status' => [],
+    ];
+    // Fixture sanity: TESTCODE isn't necessarily a real companies.origami_payroll_comp_code in this
+    // dev DB, so resolveCompanyId() would fail ingest() before ever reaching upsertProcess() -- point
+    // this resend at comp_id=1's OWN real comp_code instead (same company the rest of this file
+    // already uses throughout).
+    $realCompCode = (string)$pdo->query("SELECT origami_payroll_comp_code FROM companies WHERE id = 1")->fetchColumn();
+    checkTrue('fixture sanity: comp_id=1 has a real origami_payroll_comp_code to resend against', $realCompCode !== '');
+    $resendPayload['comp_code'] = $realCompCode;
+
+    $resendResult = $syncModel->ingest($resendPayload);
+    checkTrue('fixture: the resend (same origami_process_id, still not linked to any run) ingests cleanly, not blocked' . (empty($resendResult['status']) ? " ({$resendResult['message']})" : ''), $resendResult['status']);
+    check('the resend updates the SAME payroll_sync_processes row (same id), not a new one', $resendResult['process_row_id'] ?? null, $processId);
+
+    $processRowAfterResend = $pdo->query("SELECT * FROM payroll_sync_processes WHERE id = {$processId}")->fetch(PDO::FETCH_ASSOC);
+    check('status reset back to pending after the resend', $processRowAfterResend['status'], 'pending');
+    checkTrue('rejected_reason cleared', $processRowAfterResend['rejected_reason'] === null);
+    checkTrue('rejected_by cleared', $processRowAfterResend['rejected_by'] === null);
+    checkTrue('rejected_at cleared', $processRowAfterResend['rejected_at'] === null);
+    check('process_subject reflects the newly-resent payload (a genuine re-ingest, not a no-op)', $processRowAfterResend['process_subject'], 'Resent after rejection');
+
+    $pendingAfterResend = $syncModel->pendingList($compId);
+    checkTrue('the resent process reappears in pendingList()', in_array($processId, array_map('intval', array_column($pendingAfterResend, 'id')), true));
+
+    // Can be rejected again cleanly -- confirms this isn't some half-reset state stuck between
+    // 'pending' and 'rejected'.
+    $rejectResendedProcess = $syncModel->rejectProcess($processId, $compId, 'still wrong, rejecting again', $adminUserId);
+    checkTrue('the resent (now-pending) process can be rejected again cleanly' . (empty($rejectResendedProcess['status']) ? " ({$rejectResendedProcess['message']})" : ''), $rejectResendedProcess['status']);
+
     echo "=== rejectProcess() refuses a process already pulled into a run ===\n";
     $uniqueTag2 = rand(100000000, 999999999);
     $insProc->execute([':comp_id' => $compId, ':origami_process_id' => $uniqueTag2, ':process_no' => 'RJTEST2-' . $uniqueTag2]);

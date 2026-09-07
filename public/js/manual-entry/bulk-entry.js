@@ -170,7 +170,7 @@ function openOrFocusBulkEntryGrid(entityType) {
 function bulkEntryRenderThead(cfg) {
     let html = '<tr><th class="bulk-entry-grid-rownum"></th><th style="width:110px;" data-i18n="bulk_entry_source_col">Source</th>';
     cfg.columns.forEach(col => {
-        html += `<th>${escapeHtmlMe(bulkEntryColLabel(col))}${col.required ? ' <span class="text-danger">*</span>' : ''}</th>`;
+        html += `<th>${escapeHtml(bulkEntryColLabel(col))}${col.required ? ' <span class="text-danger">*</span>' : ''}</th>`;
     });
     html += '<th style="width:48px;"></th></tr>';
     $('#bulkEntryThead').html(html);
@@ -300,7 +300,7 @@ $(document).on('change', '[data-field="employee_id"]', function () {
 
 /* ---------- Imported rows ---------- */
 function bulkEntryImportCellHtml(col, rowId, value) {
-    return `<input type="text" class="form-control form-control-sm" data-field="${col.importField}" data-row-id="${rowId}" value="${escapeHtmlMe(value ?? '')}">`;
+    return `<input type="text" class="form-control form-control-sm" data-field="${col.importField}" data-row-id="${rowId}" value="${escapeHtml(value ?? '')}">`;
 }
 function bulkEntryAddImportRow(mappedRow, rowResult) {
     const cfg = BULK_ENTRY_CONFIG[bulkEntryEntityType];
@@ -308,7 +308,7 @@ function bulkEntryAddImportRow(mappedRow, rowResult) {
     const isError = rowResult && rowResult.status === 'error';
     const badgeCls = isError ? 'bg-danger-subtle text-danger' : 'bg-info-subtle text-info';
     const badgeIcon = isError ? 'fa-triangle-exclamation' : 'fa-file-import';
-    const badgeTitle = rowResult && rowResult.message ? ` title="${escapeHtmlMe(rowResult.message)}"` : '';
+    const badgeTitle = rowResult && rowResult.message ? ` title="${escapeHtml(rowResult.message)}"` : '';
     let html = `<tr data-source="import" data-row-id="${rowId}">
         <td class="bulk-entry-grid-rownum"></td>
         <td><span class="badge ${badgeCls}"${badgeTitle}><i class="fa-solid ${badgeIcon} me-1"></i>${langData['bulk_entry_source_import'] || 'Imported'}</span></td>`;
@@ -570,7 +570,7 @@ function bulkImportRenderReview(res) {
     if (res.unmapped_headers && res.unmapped_headers.length > 0) {
         $('#bulkImportUnmappedAlert').removeClass('d-none').html(
             `<i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['import_unmapped_headers_warning'] || 'These file columns could not be matched to the template and were ignored:'} ` +
-            res.unmapped_headers.map(h => `<code>${escapeHtmlMe(h)}</code>`).join(', ')
+            res.unmapped_headers.map(h => `<code>${escapeHtml(h)}</code>`).join(', ')
         );
     } else {
         $('#bulkImportUnmappedAlert').addClass('d-none').empty();
@@ -584,8 +584,8 @@ function bulkImportRenderReview(res) {
         $tbody.append(`<tr>
             <td>${r.row}</td>
             <td>${importRowStatusBadge(r)}</td>
-            <td>${escapeHtmlMe(r.action || '-')}</td>
-            <td>${escapeHtmlMe(message)}</td>
+            <td>${escapeHtml(r.action || '-')}</td>
+            <td>${escapeHtml(message)}</td>
         </tr>`);
     });
 }

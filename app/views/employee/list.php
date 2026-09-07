@@ -105,7 +105,7 @@
     <div class="tab-content" id="employeeTopTabsContent">
     <div class="tab-pane fade show active" id="employee-top-pane" role="tabpanel" aria-labelledby="employee-top-tab" tabindex="0">
     <div class="station-filter" id="employeeStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="employeeStationFilterToggle" title="Toggle filter">
             <i class="fas fa-chevron-up"></i>
         </button>
@@ -273,7 +273,7 @@
     </div>
     <div class="tab-pane fade" id="employee-recheck-top-pane" role="tabpanel" aria-labelledby="employee-recheck-top-tab" tabindex="0">
         <div class="station-filter" id="employeeRecheckStationFilter">
-            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="employeeRecheckStationFilterToggle" title="Toggle filter">
                 <i class="fas fa-chevron-up"></i>
             </button>

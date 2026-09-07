@@ -215,6 +215,21 @@ function initProfilePane() {
         initSelect2('#fiscal_year_start_month', { mode: 'static' });
         initSelect2('#base_currency', { mode: 'static' });
     }
+    // 2026-09-04, Backlog Phase 9, T050 -- shared widget, see origami-sync-widget.js's own
+    // docblock. #tmpl-profile-pane is re-rendered fresh every time this pane is opened, so
+    // #cpCompanySyncBtnWrap is a brand-new empty container each call -- always (re-)init here
+    // rather than guarding against a "second init", the widget's own idempotency check is for
+    // DataTable initComplete re-fires on the SAME container, not this case.
+    if (typeof initOrigamiSyncButton === 'function') {
+        initOrigamiSyncButton({
+            container: $('#cpCompanySyncBtnWrap'),
+            url: `${BASE_URL}/api/company.sync-origami`,
+            entityLabel: '',
+            confirmTitle: langData['confirm_sync_company_title'] || 'Sync from Origami?',
+            confirmMessage: langData['confirm_sync_company_message'] || 'This will overwrite the company name, tax ID, address, and logo with the current data from Origami. Any manual edits to these fields will be replaced. Continue?',
+            onSuccess: function () { initCompanyData(); }
+        });
+    }
     initCompanyData();
 }
 function renderCountrySpecificForm(countryCode) {
@@ -768,9 +783,12 @@ function initStructureTable(type, tableId) {
             }
             // 2026-08-28, explicit request: "ส่วนของ Department หรือข้อมูลที่ดึง Filter ได้ตอนนี้
             // เพิ่มปุ่มให้ Sync ได้ด้วย แต่...ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น" -- see
-            // public/js/setup/org-structure-sync.js for the picker this opens. Only Department/
-            // Position/Team have anything to sync (Branch/Role/Rank have no Origami-side
-            // equivalent at all), and only when this company is actually Origami-HR-linked.
+            // public/js/setup/org-structure-sync.js for the picker this opens (review-first:
+            // fetch candidates -> tick New/Existing -> apply only what's selected). Department/
+            // Position/Team only -- their candidate source (OrigamiEmployeeCandidateClient::
+            // fetchFilterOptions()) has no `branches` key at all (confirmed by reading it), so
+            // Branch can't use this same picker. Role/Rank genuinely have no Origami-side
+            // equivalent of any kind. Gated on IS_ORIGAMI_HR_LINKED same as below.
             const ORG_SYNC_ENTITY_TYPES = ['department', 'position', 'team'];
             if (ORG_SYNC_ENTITY_TYPES.includes(type) && typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
                 if ($searchDiv.find('.btn-open-org-sync').length === 0) {
@@ -784,6 +802,20 @@ function initStructureTable(type, tableId) {
                     `;
                     $searchDiv.append(syncBtn);
                 }
+            }
+            // 2026-09-04, Backlog Phase 9, T050 -- Branch DOES have a real Origami-side master now
+            // (api/hr/master/branches, wired via MasterDataSyncOrchestrator/BranchSyncer since
+            // 2026-09-02) even though it can't use org-structure-sync.js's review-first picker
+            // above (see that block's own comment) -- uses the simpler direct-overwrite shared
+            // widget instead, same one Company Profile's own sync button uses.
+            if (type === 'branch' && typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED && typeof initOrigamiSyncButton === 'function') {
+                initOrigamiSyncButton({
+                    container: $searchDiv,
+                    url: `${BASE_URL}/api/master-data-sync.sync-one`,
+                    payload: { entity_type: 'branch' },
+                    entityLabel: langData['branch'] || 'Branch',
+                    onSuccess: function () { self.ajax.reload(null, false); }
+                });
             }
             let $input = $searchDiv.find('input').off(`.${type}Search`);
             $input.on(`keypress.${type}Search`, function (e) {
@@ -825,9 +857,6 @@ function initStructureTable(type, tableId) {
 // own data-label (a plain .text().html() escapes <,>,& but not the double quote a data- attribute
 // needs, same bug class documented elsewhere in this app, e.g. escapeAttrEct() in
 // employment-certificate-template.js).
-function escapeAttrCp(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html().replace(/"/g, '&quot;');
-}
 // Maps a structureConfig() type to the *_name_th/*_name_en column prefix getLocaleText() below
 // already reads for every OTHER column in this same table -- every one of the 6 types follows this
 // exact "{type}_name_th"/"{type}_name_en" naming convention (confirmed against structureConfig()
@@ -852,10 +881,10 @@ function getStructureColumns(type) {
                 <button class="btn btn-link btn-circle-action text-warning btn-open-modal manage-${type}" data-action="edit" data-type="${type}" data-id="${row.id}" data-i18n-title="edit">
                     <i class="fa-solid fa-pen-to-square"></i>
                 </button>
-                <button class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttrCp(label)}" data-i18n-title="assign_employees">
+                <button class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees">
                     <i class="fa-solid fa-user-plus"></i>
                 </button>
-                <button class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${row.id}" data-label="${escapeAttrCp(label)}" data-i18n-title="view_assigned_employees">
+                <button class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${row.id}" data-label="${escapeAttr(label)}" data-i18n-title="view_assigned_employees">
                     <i class="fa-solid fa-users"></i>
                 </button>
                 <button class="btn btn-link btn-circle-action text-danger btn-delete-item delete-${type}" data-type="${type}" data-id="${row.id}" data-i18n-title="delete">
@@ -1209,34 +1238,9 @@ $(document).on('click', '.btn-open-modal', function (e) {
 // 2026-09-02, real Origami `GET /api/hr/company` endpoint confirmed live -- see
 // CompanySyncModel::sync()'s own docblock. Always overwrites (Origami is the data owner), so
 // this asks for confirmation first, same as any other destructive-to-manual-edits action.
-$(document).on('click', '#btnSyncCompanyOrigami', function () {
-    const $btn = $(this);
-    showConfirm(
-        langData['confirm_sync_company_title'] || 'Sync from Origami?',
-        langData['confirm_sync_company_message'] || 'This will overwrite the company name, tax ID, address, and logo with the current data from Origami. Any manual edits to these fields will be replaced. Continue?',
-        function () {
-            $btn.prop('disabled', true);
-            $.ajax({
-                url: `${BASE_URL}/api/company.sync-origami`,
-                method: 'POST',
-                dataType: 'json',
-                success: function (res) {
-                    $btn.prop('disabled', false);
-                    if (res.status) {
-                        showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
-                        initCompanyData();
-                    } else {
-                        showError(res.message || langData['save_failed'] || 'Failed.');
-                    }
-                },
-                error: function () {
-                    $btn.prop('disabled', false);
-                    showError(langData['save_failed'] || 'Failed.');
-                }
-            });
-        }
-    );
-});
+// 2026-09-04, Backlog Phase 9, T050 -- this bespoke handler was retired in favor of the shared
+// initOrigamiSyncButton() widget call in initProfilePane() above (same id-less button, injected
+// into #cpCompanySyncBtnWrap, same confirm wording, same behavior).
 $(document).on('click', '#btnSubmitModalForm', function () {
     const $btn = $(this);
     const $form = $('#modalForm');
@@ -1332,9 +1336,6 @@ let bffFormats = [];
 let bffSelectedFormatId = null;
 let bffCurrentDetail = null;
 
-function escapeHtmlBff(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 function bffFormatLabel(f) {
     const bankName = (currentLang === 'th' ? f.bank_name_th : f.bank_name_en) || f.bank_name_th || f.bank_name_en || '';
     const formatName = (currentLang === 'th' ? f.name_th : f.name_en) || f.name_th || f.name_en || f.code;
@@ -1389,7 +1390,7 @@ function bffRenderFormatList(defaultFormatId) {
         const $item = $(`
             <button type="button" class="btn btn-light text-start bff-format-item ${isActive ? 'active border-warning' : ''}" data-id="${f.id}">
                 <div class="d-flex justify-content-between align-items-center">
-                    <span class="fw-semibold small">${escapeHtmlBff(bffFormatLabel(f))}</span>
+                    <span class="fw-semibold small">${escapeHtml(bffFormatLabel(f))}</span>
                     ${isDefault ? `<i class="fa-solid fa-star text-warning ms-1" title="${langData['default'] || 'Default'}"></i>` : ''}
                 </div>
                 <div class="mt-1">${verifiedBadge}</div>
@@ -1486,7 +1487,7 @@ function bffRowTypeBadge(rowType) {
 }
 function bffSourceSummary(field) {
     if (field.source_type === 'constant') {
-        return `<span class="text-secondary small" data-i18n="source_type_constant">Fixed Value</span>: "${escapeHtmlBff(field.constant_value || '')}"`;
+        return `<span class="text-secondary small" data-i18n="source_type_constant">Fixed Value</span>: "${escapeHtml(field.constant_value || '')}"`;
     }
     if (field.source_type === 'blank') {
         return `<span class="text-secondary small" data-i18n="source_type_blank">Blank</span>`;
@@ -1494,7 +1495,7 @@ function bffSourceSummary(field) {
     const label = bffCurrentDetail && bffCurrentDetail.source_fields && bffCurrentDetail.source_fields[field.source_field]
         ? bffCurrentDetail.source_fields[field.source_field][currentLang === 'en' ? 'en' : 'th']
         : field.source_field;
-    return escapeHtmlBff(label || field.source_field || '');
+    return escapeHtml(label || field.source_field || '');
 }
 
 function bffRenderFieldsTable(fieldsGrouped) {
@@ -1506,7 +1507,7 @@ function bffRenderFieldsTable(fieldsGrouped) {
                 <tr>
                     <td>${bffRowTypeBadge(rowType)}</td>
                     <td>${field.sort_order}</td>
-                    <td>${escapeHtmlBff(label)}</td>
+                    <td>${escapeHtml(label)}</td>
                     <td>${bffSourceSummary(field)}</td>
                     <td>${field.width || '-'}</td>
                     <td class="text-end">
@@ -1735,7 +1736,7 @@ $(document).on('click', '#bffViewLogBtn', function () {
                 html += `<tr>
                     <td>${formatDisplayDateTime(row.changed_at)}</td>
                     <td><span data-i18n="${actionKey}">${langData[actionKey] || row.action}</span></td>
-                    <td>${escapeHtmlBff(by)}</td>
+                    <td>${escapeHtml(by)}</td>
                 </tr>`;
             });
             html += '</tbody></table></div>';

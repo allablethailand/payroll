@@ -64,6 +64,27 @@ check('a run with no payment_date is skipped, not crashed on', DashboardControll
 $allDraft = [run('draft', '2026-06-05', 100000.0), run('pending_approval', '2026-06-06', 200000.0)];
 check('a company with ONLY non-final-state runs returns an empty trend (nothing final to show yet)', DashboardController::computeCostTrend($allDraft), []);
 
+echo "=== computeCostTrend(\$endMonthStart): re-centers the 6-month window at a past month (Dashboard's own month/year picker, 2026-09-06) ===\n";
+$trendHistorical = DashboardController::computeCostTrend($manyMonths, '2026-06-01');
+check('exactly 6 months kept (Jan-Jun are <= the selected June end month, exactly fills the window)', count($trendHistorical), 6);
+check('the oldest kept month is January (all 6 real months at/before June fit within the window)', $trendHistorical[0]['month'], '2026-01');
+check('the newest kept month is June (the selected end month), NOT July/August/September', $trendHistorical[5]['month'], '2026-06');
+
+// A cutoff with MORE than 6 real months before it -- the "last 6, dropping the earliest" slicing
+// still applies WITHIN the historical window, not just against "today".
+$trendHistoricalCapped = DashboardController::computeCostTrend($manyMonths, '2026-08-01');
+check('capped at 6 even within a historical window (Jan-Aug = 8 real months, keeps only the last 6)', count($trendHistoricalCapped), 6);
+check('the oldest kept month is March (Jan/Feb dropped by the 6-month cap)', $trendHistoricalCapped[0]['month'], '2026-03');
+check('the newest kept month is August (the selected end month), NOT September', $trendHistoricalCapped[5]['month'], '2026-08');
+
+$trendHistoricalFull = DashboardController::computeCostTrend($manyMonths, '2026-09-01');
+check('endMonthStart equal to the latest real data reproduces the exact same 6-month window as the default (today) case', $trendHistoricalFull, $trendMany);
+
+check('null endMonthStart (the default) is byte-identical to calling with no 2nd arg at all', DashboardController::computeCostTrend($rows, null), DashboardController::computeCostTrend($rows));
+
+$trendHistoricalEmpty = DashboardController::computeCostTrend($allDraft, '2026-06-01');
+check('a historical window with zero final-state data still returns an empty array, not zero-padded', $trendHistoricalEmpty, []);
+
 echo "\n" . str_repeat('-', 50) . "\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";
 echo $failures === 0 ? "ALL TESTS PASSED\n" : "SOME TESTS FAILED\n";

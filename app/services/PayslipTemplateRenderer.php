@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/reports/EmployeePiiTrait.php';
+require_once __DIR__ . '/PdfCanvasRendererTrait.php';
 require_once __DIR__ . '/../models/PayrollSyncModel.php';
 
 /**
@@ -32,11 +33,28 @@ require_once __DIR__ . '/../models/PayrollSyncModel.php';
  */
 class PayslipTemplateRenderer {
     use EmployeePiiTrait;
+    // 2026-09-04, Backlog Phase 11, T064 (part 1 of 4) -- shared PDF-canvas-renderer infrastructure
+    // with EmploymentCertificateRenderer (dompdf setup, page-size math, symbol-fallback detection,
+    // upload-path resolution), extracted after verifying every method body-for-body identical
+    // between the two classes -- see PdfCanvasRendererTrait's own docblock for exactly what's here
+    // and what was deliberately left out.
+    use PdfCanvasRendererTrait;
 
     private PDO $db;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+    }
+
+    /** PdfCanvasRendererTrait::resolveImageAssetPaths()'s own 2 required facts for this renderer's
+     *  image library (payslip_images) -- see that trait's own docblock for why these are abstract
+     *  requirements instead of a hardcoded value shared between this class and
+     *  EmploymentCertificateRenderer. */
+    protected function imageLibraryTableName(): string {
+        return 'payslip_images';
+    }
+    protected function imageLibraryUploadSubdir(): string {
+        return 'payslip_images';
     }
 
     /** font_family code => CSS font-family name -- identical set to EmploymentCertificateRenderer's
@@ -71,19 +89,8 @@ class PayslipTemplateRenderer {
         0x266A, 0x266B,
     ];
 
-    /** True if $content contains any codepoint TH Sarabun New has no glyph for (see the constant's
-     *  own docblock) -- used to force a PDF-only font fallback for exactly those elements. */
-    private function needsSymbolFontFallback(string $content): bool {
-        if (function_exists('mb_str_split')) {
-            foreach (mb_str_split($content, 1, 'UTF-8') as $char) {
-                $cp = mb_ord($char, 'UTF-8');
-                if ($cp !== false && in_array($cp, self::SYMBOL_CODEPOINTS_MISSING_IN_SARABUN, true)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
+    /** needsSymbolFontFallback() now lives in PdfCanvasRendererTrait (identical body, verified
+     *  before extraction) -- see this class's own `use PdfCanvasRendererTrait;` above. */
 
     /** The 3 "block" field_keys that expand into a real itemized table instead of a single
      *  substituted value -- see this class's own docblock for why these need no special schema. */
@@ -106,10 +113,9 @@ class PayslipTemplateRenderer {
         'Statement' => [139.7, 215.9],
     ];
 
-    public static function pageDimensionsMm(string $pageSize, string $orientation): array {
-        [$w, $h] = self::PAGE_SIZES_MM[$pageSize] ?? self::PAGE_SIZES_MM['A4'];
-        return $orientation === 'landscape' ? [$h, $w] : [$w, $h];
-    }
+    /** pageDimensionsMm() now lives in PdfCanvasRendererTrait (identical body, verified before
+     *  extraction) -- still callable as PayslipTemplateRenderer::pageDimensionsMm(...) exactly as
+     *  before, PHP trait methods are indistinguishable from the class's own from the outside. */
 
     /** th/en pick -- 2026-08-25 follow-up ("รูปแบบการทำเหมือนกัน"): Payslip Template's `language_mode`
      *  ('both' concatenated "{th} / {en}") is gone, replaced by `language` (strictly 'th' or 'en',
@@ -157,6 +163,13 @@ class PayslipTemplateRenderer {
         $address = trim(($company['address_line_1'] ?? '') . ' ' . ($company['address_line_2'] ?? ''));
         $tokens = [
             'employee_no' => (string)($detail['employee_no'] ?? ''),
+            // 2026-09-04, Backlog Phase 11, T061 -- DocumentNumberingModel-generated code, stamped
+            // once per (run, employee) pair by PaySlipReport::resolvePayslipNumber() BEFORE this
+            // renderer ever runs (already sitting on $detail by the time generate() calls
+            // renderForRun()). '-' when numbering hasn't produced a value (same fallback every
+            // other token here already uses for a missing/blank source field, e.g. department/
+            // position above).
+            'payslip_number' => (string)($detail['payslip_number'] ?? '-'),
             'employee_name' => $this->pick($employeeNameTh, $employeeNameEn, $language),
             'department' => $this->pick((string)($detail['department_name_th'] ?? ''), (string)($detail['department_name_en'] ?? ''), $language) ?: '-',
             'position' => $this->pick((string)($detail['position_name_th'] ?? ''), (string)($detail['position_name_en'] ?? ''), $language) ?: '-',
@@ -414,39 +427,8 @@ class PayslipTemplateRenderer {
             . '</style></head><body>' . $pagesHtml . '</body></html>';
     }
 
-    /** Same TH Sarabun New registration + widened chroot as EmploymentCertificateRenderer -- see that
-     *  class's own docblock for the full "dompdf's bundled DejaVu has ZERO Thai glyphs" finding this
-     *  fixes, and why the chroot needs widening (font registration + local <img> embeds both fail
-     *  dompdf's default vendor-only chroot otherwise). */
-    private function registerThaiFonts(\Dompdf\Dompdf $dompdf): void {
-        $fontMetrics = $dompdf->getFontMetrics();
-        $dir = realpath(__DIR__ . '/../../storage/fonts/thsarabun');
-        if ($dir === false) {
-            return;
-        }
-        $toFileUri = fn(string $path): string => 'file://' . str_replace('\\', '/', $path);
-        $variants = [
-            ['weight' => 'normal', 'style' => 'normal', 'file' => 'THSarabun.ttf'],
-            ['weight' => 'bold', 'style' => 'normal', 'file' => 'THSarabun-Bold.ttf'],
-            ['weight' => 'normal', 'style' => 'italic', 'file' => 'THSarabun-Italic.ttf'],
-            ['weight' => 'bold', 'style' => 'italic', 'file' => 'THSarabun-BoldItalic.ttf'],
-        ];
-        foreach ($variants as $v) {
-            $path = $dir . DIRECTORY_SEPARATOR . $v['file'];
-            if (is_file($path)) {
-                $fontMetrics->registerFont(['family' => 'TH Sarabun New', 'weight' => $v['weight'], 'style' => $v['style']], $toFileUri($path));
-            }
-        }
-    }
-
-    private function newDompdf(): \Dompdf\Dompdf {
-        $options = new \Dompdf\Options();
-        $options->set('isRemoteEnabled', false);
-        $options->setChroot([realpath(__DIR__ . '/../../')]);
-        $dompdf = new \Dompdf\Dompdf($options);
-        $this->registerThaiFonts($dompdf);
-        return $dompdf;
-    }
+    /** registerThaiFonts()/newDompdf() now live in PdfCanvasRendererTrait (identical body, verified
+     *  before extraction). */
 
     /** @param array{page_size?:string, orientation?:string} $template */
     public function renderPdf(array $template, string $html): string {
@@ -459,19 +441,8 @@ class PayslipTemplateRenderer {
         return $dompdf->output();
     }
 
-    /** Resolves a value already validated as `public/uploads/{$subdir}/{comp_id}/{hash}.{ext}` to a
-     *  traversal-safe absolute path, or null if unset/missing on disk. */
-    private function resolveUploadAbsPath(?string $relativePath, string $subdir): ?string {
-        if (empty($relativePath)) {
-            return null;
-        }
-        $uploadsRoot = realpath(__DIR__ . '/../../public/uploads/' . $subdir);
-        $abs = realpath(__DIR__ . '/../../' . ltrim($relativePath, '/'));
-        if ($uploadsRoot === false || $abs === false || strpos($abs, $uploadsRoot) !== 0 || !is_file($abs)) {
-            return null;
-        }
-        return $abs;
-    }
+    /** resolveUploadAbsPath() now lives in PdfCanvasRendererTrait (identical body, verified before
+     *  extraction). */
 
     /** Template's own logo first, falling back to the Company Profile logo -- same fallback pattern
      *  as EmploymentCertificateRenderer/the old PaySlipReport::resolveTemplateOrCompanyLogo(). */
@@ -483,26 +454,9 @@ class PayslipTemplateRenderer {
         return $this->resolveUploadAbsPath($companyLogoPath, 'company_logos');
     }
 
-    /** @param int[] $imageAssetIds
-     *  @return array<int,string> image_asset_id => resolved absolute path, only for ids belonging to
-     *  this company and present on disk. */
-    public function resolveImageAssetPaths(int $compId, array $imageAssetIds): array {
-        $imageAssetIds = array_values(array_unique(array_map('intval', array_filter($imageAssetIds))));
-        if (empty($imageAssetIds)) {
-            return [];
-        }
-        $placeholders = implode(',', array_fill(0, count($imageAssetIds), '?'));
-        $stmt = $this->db->prepare("SELECT id, file_path FROM `payslip_images` WHERE comp_id = ? AND id IN ({$placeholders})");
-        $stmt->execute(array_merge([$compId], $imageAssetIds));
-        $paths = [];
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $abs = $this->resolveUploadAbsPath($row['file_path'], 'payslip_images');
-            if ($abs !== null) {
-                $paths[(int)$row['id']] = $abs;
-            }
-        }
-        return $paths;
-    }
+    /** resolveImageAssetPaths() now lives in PdfCanvasRendererTrait -- structurally identical to
+     *  EmploymentCertificateRenderer's own copy, parameterized via imageLibraryTableName()/
+     *  imageLibraryUploadSubdir() above for the one real per-class difference (table/subdir names). */
 
     /** Full render for a real payroll run + employee -- called by PaySlipReport::generate() once it
      *  has resolved the company's default template + real run/detail data. */

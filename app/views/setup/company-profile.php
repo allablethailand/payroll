@@ -97,15 +97,17 @@
                  always shown rather than gated behind a link-status check client-side; the backend
                  (CompanySyncModel::sync()) returns a clear not-connected/not-linked message either
                  way, same "backend decides, don't guess client-side" convention as every other
-                 Origami-gated action in this app. -->
-            <div class="d-flex justify-content-end mb-3">
-                <button type="button" class="btn btn-outline-brand btn-sm" id="btnSyncCompanyOrigami">
-                    <i class="fa-solid fa-rotate me-1"></i><span data-i18n="sync_from_origami">Sync from Origami</span>
-                </button>
-            </div>
+                 Origami-gated action in this app.
+                 2026-09-04, Backlog Phase 9, T050 -- button itself now injected by the shared
+                 initOrigamiSyncButton() widget (public/js/setup/origami-sync-widget.js) instead of
+                 static markup + its own bespoke click handler, so this is the SAME implementation
+                 every other "Sync from Origami" button in the app now uses. Same visible
+                 id/wording/confirm text/behavior as before -- see the widget call in
+                 company-profile.js's initCompanyData(). -->
+            <div class="d-flex justify-content-end mb-3" id="cpCompanySyncBtnWrap"></div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span data-i18n="registered_country">Registered Country</span>
                         <span class="text-danger">*</span>
                     </label>
@@ -114,7 +116,7 @@
                     <select id="registered_country" class="select2-remote" data-api="/api/country.get" data-type="country"></select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span id="tax_id_label" data-i18n="tax_id_ein">Tax ID / EIN</span>
                         <span class="text-danger">*</span>
                     </label>
@@ -134,7 +136,7 @@
                      already picked a currency never gets silently reset back to the country default on
                      load; only actively switching the Country dropdown re-suggests one. -->
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span data-i18n="base_currency">Currency</span>
                         <span class="text-danger">*</span>
                     </label>
@@ -148,7 +150,7 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span data-i18n="company_legal_name">Company Legal Name</span>
                         <span class="text-danger">*</span>
                     </label>
@@ -157,7 +159,7 @@
                     <input type="text" class="form-control required" name="company_legal_name" data-i18n="company_legal_name_placeholder" placeholder="e.g., ABC Company Limited">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span data-i18n="company_local_name">Local Name</span>
                         <span class="text-danger">*</span>
                     </label>
@@ -172,7 +174,7 @@
                      own year grouping/filter (1=January, the default, is a plain calendar year -- so a
                      company that never touches this sees no behavior change at all). -->
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span data-i18n="fiscal_year_start_month">Fiscal Year Start Month</span>
                     </label>
                 </div>
@@ -185,7 +187,7 @@
                      uses for a monthly-rate employee's mid-period join/leave proration -- default 30
                      matches the Thai labor law convention named outright in the request. -->
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span data-i18n="prorate_divisor_days">Proration Divisor (Days)</span>
                     </label>
                 </div>
@@ -197,7 +199,7 @@
             <h6 class="text-secondary fw-bold mb-3 mt-4" data-i18n="registered_address">Registered Address</h6>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span data-i18n="address_line_1">Address Line 1</span>
                         <span class="text-danger">*</span>
                     </label>
@@ -206,7 +208,7 @@
                     <input type="text" class="form-control required" name="address_line_1" data-i18n="address_line_1_placeholder" placeholder="House no., building, street">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span data-i18n="address_line_2">Address Line 2 (Optional)</span>
                     </label>
                 </div>
@@ -216,7 +218,7 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label">
+                    <label class="form-label mb-1">
                         <span id="address_search_label" data-i18n="search_address_label">Sub-district / City / Postcode</span>
                         <span class="text-danger">*</span>
                     </label>
@@ -255,7 +257,7 @@
                 <div class="settings-info-card-body">
                     <div class="row">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0">
+                            <label class="form-label mb-1">
                                 <span data-i18n="authorized_signatory_name">Authorized Signatory Name</span>
                                 <span class="text-danger">*</span>
                             </label>
@@ -430,25 +432,25 @@
                     </div>
                     <div class="row g-3">
                         <div class="col-sm-3">
-                            <label class="form-label small" data-i18n="delimiter_type">Layout Type</label>
+                            <label class="form-label small mb-1" data-i18n="delimiter_type">Layout Type</label>
                             <select class="form-select form-select-sm" id="bffDelimiterType">
                                 <option value="delimited" data-i18n="delimited">Delimited (CSV)</option>
                                 <option value="fixed_width" data-i18n="fixed_width">Fixed-Width</option>
                             </select>
                         </div>
                         <div class="col-sm-2" id="bffDelimiterCharWrap">
-                            <label class="form-label small" data-i18n="delimiter_char">Delimiter</label>
+                            <label class="form-label small mb-1" data-i18n="delimiter_char">Delimiter</label>
                             <input type="text" class="form-control form-control-sm" id="bffDelimiterChar" maxlength="5" value="," data-i18n="bff_field_pad_char_placeholder" placeholder="e.g., 0">
                         </div>
                         <div class="col-sm-2">
-                            <label class="form-label small" data-i18n="line_ending">Line Ending</label>
+                            <label class="form-label small mb-1" data-i18n="line_ending">Line Ending</label>
                             <select class="form-select form-select-sm" id="bffLineEnding">
                                 <option value="crlf">CRLF</option>
                                 <option value="lf">LF</option>
                             </select>
                         </div>
                         <div class="col-sm-2">
-                            <label class="form-label small" data-i18n="text_encoding">Encoding</label>
+                            <label class="form-label small mb-1" data-i18n="text_encoding">Encoding</label>
                             <select class="form-select form-select-sm" id="bffTextEncoding">
                                 <option value="utf8">UTF-8</option>
                                 <option value="tis620">TIS-620</option>
@@ -684,6 +686,10 @@
 <!-- cpSignaturePadModal / orgStructureSyncModal / orgStructureSyncLogModal moved to
      app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 
+<!-- 2026-09-04, Backlog Phase 9, T050 -- shared "Sync from Origami" button widget, loaded before
+     company-profile.js since initProfilePane()/initStructureTable() both call
+     initOrigamiSyncButton() directly. -->
+<script src="<?=asset('public/js/setup/origami-sync-widget.js')?>"></script>
 <script src="<?=asset('public/js/setup/company-profile.js')?>"></script>
 <script src="<?=asset('public/js/setup/structure-assign.js')?>"></script>
 <script src="<?=asset('public/js/setup/notification-preferences-matrix.js')?>"></script>

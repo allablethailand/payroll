@@ -8,9 +8,6 @@
  */
 let tb_email_queue_log;
 
-function escapeHtmlEql(str) {
-    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
-}
 
 function emailQueueStatusBadge(status) {
     if (status === 'sent') {
@@ -63,11 +60,11 @@ function initEmailQueueLogTable() {
             data: function (d) { Object.assign(d, currentEmailQueueFilters()); }
         },
         columns: [
-            { data: 'to_address', render: d => escapeHtmlEql(d) },
-            { data: 'subject', render: d => escapeHtmlEql(d) },
+            { data: 'to_address', render: d => escapeAttr(d) },
+            { data: 'subject', render: d => escapeAttr(d) },
             { data: 'status', render: d => emailQueueStatusBadge(d) },
             { data: 'attempts', className: 'text-center' },
-            { data: 'error_message', render: d => d ? `<span class="text-danger small" title="${escapeHtmlEql(d)}">${escapeHtmlEql(d.length > 60 ? d.substring(0, 60) + '...' : d)}</span>` : '-' },
+            { data: 'error_message', render: d => d ? `<span class="text-danger small" title="${escapeAttr(d)}">${escapeAttr(d.length > 60 ? d.substring(0, 60) + '...' : d)}</span>` : '-' },
             // object-form render (display only) -- see payslip-delivery-log.js's own identical
             // comment on why: this table's default sort is by this column and has no serverSide:true.
             { data: 'created_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },

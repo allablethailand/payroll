@@ -7,17 +7,6 @@
 let runAuditTable = null;
 let runAuditDiffModal = null;
 
-function escapeHtmlRa(str) {
-    return String(str == null ? '' : str).replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
-}
-// masking (item 3, PermissionModel::MASK_VALUE) -- passthrough for the literal 'XXXX' marker, same
-// guard convention as fmtNumPr()/fmtNumRd() (see PayrollController::maskAuditDiffLines()).
-function fmtNumRa(n) {
-    if (n === 'XXXX') return 'XXXX';
-    if (n === null || n === undefined || n === '') return '-';
-    const num = Number(n);
-    return isNaN(num) ? '-' : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function runAuditOriginLabel(origin) {
     const map = {
@@ -99,11 +88,11 @@ function initRunAuditTable() {
             },
         },
         columns: [
-            { data: 'run_name', render: d => escapeHtmlRa(d) },
-            { data: 'cycle_name', render: d => escapeHtmlRa(d || '-') },
-            { data: 'origin', render: d => escapeHtmlRa(runAuditOriginLabel(d)) },
-            { data: 'state', render: d => escapeHtmlRa(d) },
-            { data: null, render: (d, t, row) => `${escapeHtmlRa(row.period_start_date)} - ${escapeHtmlRa(row.period_end_date)}` },
+            { data: 'run_name', render: d => escapeAttr(d) },
+            { data: 'cycle_name', render: d => escapeAttr(d || '-') },
+            { data: 'origin', render: d => escapeAttr(runAuditOriginLabel(d)) },
+            { data: 'state', render: d => escapeAttr(d) },
+            { data: null, render: (d, t, row) => `${escapeAttr(row.period_start_date)} - ${escapeAttr(row.period_end_date)}` },
             { data: 'edit_count', className: 'text-end', render: { display: d => Number(d).toLocaleString(), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
             {
                 data: null, orderable: false, className: 'text-center', render: (d, t, row) => `
@@ -146,17 +135,17 @@ function runAuditDiffRowHtml(line, maxEdits) {
         if (!edit) { editCells += '<td class="text-muted">-</td>'; continue; }
         const who = (currentLang === 'th' ? edit.changed_by_name_th : edit.changed_by_name_en) || edit.changed_by_name_th || '';
         editCells += `<td>
-            <div>${fmtNumRa(edit.new_value)}</div>
-            <div class="small text-muted">${escapeHtmlRa(who)}<br>${edit.changed_at ? formatDisplayDateTime(edit.changed_at) : ''}</div>
+            <div>${fmtNum(edit.new_value)}</div>
+            <div class="small text-muted">${escapeAttr(who)}<br>${edit.changed_at ? formatDisplayDateTime(edit.changed_at) : ''}</div>
         </td>`;
     }
     return `<tr>
-        <td>${escapeHtmlRa(line.employee_no)} ${escapeHtmlRa(name)}</td>
-        <td>${escapeHtmlRa(runAuditLineTypeLabel(line.line_type))}</td>
-        <td><code>${escapeHtmlRa(line.item_code)}</code></td>
-        <td>${fmtNumRa(line.original_value)}</td>
+        <td>${escapeAttr(line.employee_no)} ${escapeAttr(name)}</td>
+        <td>${escapeAttr(runAuditLineTypeLabel(line.line_type))}</td>
+        <td><code>${escapeAttr(line.item_code)}</code></td>
+        <td>${fmtNum(line.original_value)}</td>
         ${editCells}
-        <td class="fw-bold">${fmtNumRa(line.current_value)}</td>
+        <td class="fw-bold">${fmtNum(line.current_value)}</td>
     </tr>`;
 }
 

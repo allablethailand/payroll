@@ -30,7 +30,7 @@
          paint now (see login-history.js's own top-of-file comment).
     -->
         <div class="station-filter" id="employeeLoginHistoryStationFilter">
-            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="employeeLoginHistoryStationFilterToggle" title="Toggle filter">
                 <i class="fas fa-chevron-up"></i>
             </button>

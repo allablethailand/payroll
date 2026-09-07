@@ -4,12 +4,6 @@
  * (an ever-growing append-only log, always sorted newest-first, has no real "sort by other column"
  * use case) CLAUDE.md's own Table convention already documents for Login History.
  */
-function escapeHtmlAl(str) {
-    if (str === null || str === undefined) return '';
-    return String(str).replace(/[&<>"']/g, function (c) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-}
 function toIsoDateAl(displayValue) {
     if (!displayValue) return '';
     const parts = String(displayValue).split('/');
@@ -26,7 +20,7 @@ function auditLogActionBadge(action) {
         delete: { key: 'audit_log_action_delete', cls: 'bg-danger-subtle text-danger' },
     };
     const m = map[action] || { key: action, cls: 'bg-secondary-subtle text-secondary' };
-    return `<span class="badge ${m.cls}">${escapeHtmlAl(langData[m.key] || action)}</span>`;
+    return `<span class="badge ${m.cls}">${escapeAttr(langData[m.key] || action)}</span>`;
 }
 function auditLogByLabel(row) {
     const nameTh = [row.performed_by_name_th, row.performed_by_surname_th].filter(Boolean).join(' ');
@@ -36,7 +30,7 @@ function auditLogByLabel(row) {
 function auditLogValueCell(value) {
     if (value === null || value === undefined || value === '') return '<span class="text-muted">-</span>';
     const truncated = String(value).length > 80 ? String(value).substring(0, 80) + '...' : String(value);
-    return `<span title="${escapeHtmlAl(value)}">${escapeHtmlAl(truncated)}</span>`;
+    return `<span title="${escapeAttr(value)}">${escapeAttr(truncated)}</span>`;
 }
 let dtAuditLog = null;
 function updateAuditLogClearFilterVisibility() {
@@ -61,14 +55,14 @@ function renderAuditLogTable() {
         },
         columns: [
             { data: 'performed_at', render: (v) => v ? String(v).replace('T', ' ').substring(0, 16) : '-' },
-            { data: 'table_name', render: (v) => escapeHtmlAl(auditLogTableLabel(v)) },
+            { data: 'table_name', render: (v) => escapeAttr(auditLogTableLabel(v)) },
             { data: 'record_id' },
             { data: 'action', className: 'text-center', render: (v) => auditLogActionBadge(v) },
-            { data: 'field_name', render: (v) => v ? escapeHtmlAl(v) : '<span class="text-muted">-</span>' },
+            { data: 'field_name', render: (v) => v ? escapeAttr(v) : '<span class="text-muted">-</span>' },
             { data: 'old_value', render: (v) => auditLogValueCell(v) },
             { data: 'new_value', render: (v) => auditLogValueCell(v) },
-            { data: null, render: (d, t, row) => escapeHtmlAl(auditLogByLabel(row)) },
-            { data: 'source', render: (v) => escapeHtmlAl(v || '-') },
+            { data: null, render: (d, t, row) => escapeAttr(auditLogByLabel(row)) },
+            { data: 'source', render: (v) => escapeAttr(v || '-') },
         ],
         pageLength: pageLength, lengthMenu: lengthMenu,
         language: { ...getTableLang(), emptyTable: langData['no_data_found'] || 'No records found.' },

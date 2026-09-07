@@ -20,9 +20,6 @@ function initNotificationRoleMatrix() {
     });
 }
 
-function escapeHtmlNrm(str) {
-    return $('<div>').text(str || '').html();
-}
 
 function renderNotificationRoleMatrix(data) {
     const roles = data.roles || [];
@@ -44,19 +41,19 @@ function renderNotificationRoleMatrix(data) {
     let html = `<table class="table table-bordered align-middle permission-matrix-table" id="tb_notification_role_matrix">
         <thead class="table-light"><tr><th style="min-width:260px;">${langData['notifications'] || 'Notification'}</th>`;
     roles.forEach(r => {
-        html += `<th class="text-center">${escapeHtmlNrm(currentLang === 'th' ? r.role_name_th : r.role_name_en)}</th>`;
+        html += `<th class="text-center">${escapeHtml(currentLang === 'th' ? r.role_name_th : r.role_name_en)}</th>`;
     });
     html += `</tr></thead><tbody>`;
 
     types.forEach(t => {
-        html += `<tr><td>${escapeHtmlNrm(currentLang === 'th' ? t.label_th : t.label_en)}</td>`;
+        html += `<tr><td>${escapeHtml(currentLang === 'th' ? t.label_th : t.label_en)}</td>`;
         roles.forEach(r => {
             // No row for this (role, type) yet = the true default = enabled -- same "no row = on"
             // convention shouldNotify() itself uses server-side.
             const key = r.id + ':' + t.type;
             const enabled = Object.prototype.hasOwnProperty.call(grantMap, key) ? grantMap[key] : true;
             html += `<td class="text-center">
-                <input type="checkbox" class="form-check-input notif-role-cell" data-role-id="${r.id}" data-type="${escapeHtmlNrm(t.type)}" ${enabled ? 'checked' : ''}>
+                <input type="checkbox" class="form-check-input notif-role-cell" data-role-id="${r.id}" data-type="${escapeHtml(t.type)}" ${enabled ? 'checked' : ''}>
             </td>`;
         });
         html += `</tr>`;

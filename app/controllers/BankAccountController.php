@@ -28,6 +28,15 @@ class BankAccountController extends Controller {
         return true;
     }
 
+    /** Platform Hardening Phase 6 (batch 2): same capture pattern ManualEntryController::
+     *  requestFingerprint() already established, for AuditLogModel::record(). */
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     public function list() {
         if (!$this->requirePermission('bank_account.view')) return;
         $compId = getCompId();
@@ -80,7 +89,8 @@ class BankAccountController extends Controller {
         $isEdit = !empty($data['id']) && is_numeric($data['id']);
         if (!$this->requirePermission($isEdit ? 'bank_account.edit' : 'bank_account.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->save((int)$compId, $data, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->save((int)$compId, $data, $userId, $ip, $ua);
         $this->json($result);
     }
     public function delete() {
@@ -98,7 +108,8 @@ class BankAccountController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->delete((int)$compId, $id, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->delete((int)$compId, $id, $userId, $ip, $ua);
         $this->json($result);
     }
     // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
@@ -118,7 +129,8 @@ class BankAccountController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->toggleStatus((int)$compId, $id, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->toggleStatus((int)$compId, $id, $userId, $ip, $ua);
         $this->json($result);
     }
 }

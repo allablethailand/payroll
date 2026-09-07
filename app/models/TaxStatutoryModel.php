@@ -1,16 +1,20 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
+require_once __DIR__ . '/AuditLogModel.php';
 class TaxStatutoryModel {
     private $db;
-    private const CATEGORIES = ['tax', 'social_insurance', 'provident_fund', 'other'];
+    private AuditLogModel $auditLog;
+    // 2026-09-04, Backlog Phase 9, T047, explicit request: "generic/extensible form for future
+    // deduction types... not hardcoded to only the items that exist today" -- category/calc_base
+    // used to be hardcoded PHP const arrays (CATEGORIES/CALC_BASES, removed here) mirroring a DB
+    // ENUM, meaning adding a new value to either needed a code deploy on BOTH sides. Replaced with
+    // isValidCategory()/isValidCalcBase() DB lookups against the new master_statutory_categories/
+    // master_statutory_calc_bases tables (see migration 2026-09-04_1_statutory_category_calc_base_
+    // master_tables.sql's own docblock for why calc_method/rounding_mode were deliberately NOT
+    // converted the same way -- both are tied to real calculation-engine code, not free-standing
+    // classification data).
     private const CALC_METHODS = ['flat_rate', 'progressive_bracket', 'fixed_amount', 'formula'];
-    // 2026-08-29, real bug found while adding rounding config (below): this list was never
-    // updated when migrations/2026-08-29_sso_pf_eligible_earnings_base.sql widened the DB enum
-    // and repointed TH_SSO/TH_PVD's own calc_base at these 2 new values -- meaning save() on
-    // EITHER of those 2 items (through the Tax & Statutory settings UI, or this file's own test)
-    // has been unconditionally rejected with "Invalid calc_base." ever since that migration ran.
-    private const CALC_BASES = ['basic_salary', 'gross_salary', 'taxable_income', 'net_income', 'sso_eligible_earnings', 'pf_eligible_earnings', 'custom'];
     /**
      * 2026-08-29, explicit request: "ให้มีการกำหนดเพิ่มได้ว่าปัดเศษ หรือไม่ปัด ถ้าปัดปัดแบบไหน และทศนิยม
      * ได้กี่ตำแหน่ง แล้วตอนคำนวณให้นำไปใช้ด้วย" -- 'round' = standard round-half-up (unchanged
@@ -22,8 +26,14 @@ class TaxStatutoryModel {
 
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
+    // 2026-09-03, Backlog Phase 9, T045 -- `comp_id IS NULL` added: this is the MASTER catalog
+    // browser (used by whatever eventual superadmin master-management screen T045 leaves for
+    // later, see itemList()'s own controller-side comment) -- without this, a company's own custom
+    // items (which didn't exist before this column was added) would leak into a query that's
+    // supposed to be master-only.
     public function list(string $countryCode = ''): array {
         // editor: COALESCE(updated_by, created_by) -- 2026-08-28, explicit request to surface "last
         // edited when/by whom". updated_at is itself NOT NULL with an ON UPDATE CURRENT_TIMESTAMP
@@ -41,7 +51,7 @@ class TaxStatutoryModel {
                     ORDER BY effective_date DESC, id DESC LIMIT 1
                 )
                 LEFT JOIN `employees` editor ON editor.id = COALESCE(si.updated_by, si.created_by)
-                WHERE si.deleted_at IS NULL";
+                WHERE si.deleted_at IS NULL AND si.comp_id IS NULL";
         $params = [];
         if ($countryCode !== '') {
             $sql .= " AND si.country_code = :country_code";
@@ -60,9 +70,37 @@ class TaxStatutoryModel {
         return $row ?: null;
     }
 
-    private function isCodeDuplicate(string $countryCode, string $code, ?int $excludeId): bool {
+    // 2026-09-03, Backlog Phase 9, T045 -- scoped by comp_id now (see migration
+    // 2026-09-03_12_statutory_master_clone_comp_id.sql's own docblock on why the DB-level
+    // UNIQUE KEY was dropped): a master item's code (comp_id IS NULL) must be unique among OTHER
+    // master items only, and a company's own custom item's code must be unique among THAT company's
+    // own custom items only -- two different companies choosing the same custom item code is fine,
+    // they never see each other's items at all.
+    // 2026-09-04, Backlog Phase 9, T047 -- replaces the old CATEGORIES/CALC_BASES const-array
+    // checks now that both are master tables (see this class's own top-of-file docblock). A new
+    // value added to either table takes effect immediately, no code deploy needed -- confirmed via
+    // AskUserQuestion as the scope for T047 (calc_method/rounding_mode deliberately stay hardcoded,
+    // both tied to real calculation-engine code).
+    private function isValidCategory(string $category): bool {
+        $stmt = $this->db->prepare("SELECT 1 FROM `master_statutory_categories` WHERE code = :code AND is_active = 1 LIMIT 1");
+        $stmt->execute([':code' => $category]);
+        return (bool)$stmt->fetchColumn();
+    }
+    private function isValidCalcBase(string $calcBase): bool {
+        $stmt = $this->db->prepare("SELECT 1 FROM `master_statutory_calc_bases` WHERE code = :code AND is_active = 1 LIMIT 1");
+        $stmt->execute([':code' => $calcBase]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    private function isCodeDuplicate(string $countryCode, string $code, ?int $excludeId, ?int $compId): bool {
         $sql = "SELECT COUNT(*) FROM `statutory_items` WHERE country_code = :country_code AND code = :code AND deleted_at IS NULL";
         $params = [':country_code' => $countryCode, ':code' => $code];
+        if ($compId === null) {
+            $sql .= " AND comp_id IS NULL";
+        } else {
+            $sql .= " AND comp_id = :comp_id";
+            $params[':comp_id'] = $compId;
+        }
         if ($excludeId !== null) {
             $sql .= " AND id != :exclude_id";
             $params[':exclude_id'] = $excludeId;
@@ -72,7 +110,19 @@ class TaxStatutoryModel {
         return (int)$stmt->fetchColumn() > 0;
     }
 
-    public function save(array $data, int $userId): array {
+    /**
+     * 2026-09-03, Backlog Phase 9, T045 -- `$compId` is the Master/Clone scope this call operates
+     * in, NOT just an audit field: `null` (the default, matches every pre-T045 caller unchanged) =
+     * operate on the system-wide MASTER catalog (comp_id IS NULL) -- gated by
+     * `tax_statutory.promote_master` at the controller layer now (TaxStatutoryController::itemSave()),
+     * not the old `tax_statutory.add`/`.edit` every ordinary company admin already has, precisely
+     * because that combination is what let one company silently mutate every other company's data
+     * before T044/T045 (see this method's own git history / the migration's docblock). Non-null =
+     * operate ONLY on that one company's own custom items (comp_id = $compId) -- an UPDATE first
+     * verifies the existing row's own comp_id matches, so a company can never edit another
+     * company's custom item OR a master item through this path even if it guesses a valid id.
+     */
+    public function save(array $data, int $userId, ?int $compId = null, ?string $ip = null, ?string $userAgent = null): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
         foreach (['country_code', 'code', 'name_th', 'name_en', 'category', 'calc_method', 'calc_base'] as $field) {
@@ -89,12 +139,12 @@ class TaxStatutoryModel {
         }
 
         $code = trim((string)$data['code']);
-        if ($this->isCodeDuplicate($countryCode, $code, $id)) {
+        if ($this->isCodeDuplicate($countryCode, $code, $id, $compId)) {
             return ['status' => false, 'message' => 'This code is already in use for the selected country.'];
         }
 
         $category = (string)$data['category'];
-        if (!in_array($category, self::CATEGORIES, true)) {
+        if (!$this->isValidCategory($category)) {
             return ['status' => false, 'message' => 'Invalid category.'];
         }
 
@@ -104,7 +154,7 @@ class TaxStatutoryModel {
         }
 
         $calcBase = (string)$data['calc_base'];
-        if (!in_array($calcBase, self::CALC_BASES, true)) {
+        if (!$this->isValidCalcBase($calcBase)) {
             return ['status' => false, 'message' => 'Invalid calc_base.'];
         }
 
@@ -122,10 +172,21 @@ class TaxStatutoryModel {
         // Fetch and preserve the EXISTING row's status when absent from the payload, same fix
         // already applied to CompanyProfileModel::saveStructure()/PayrollCycleModel::save()/
         // BankAccountModel::save() for the identical reason.
+        // 2026-09-03, Backlog Phase 9, T045 -- scoped by comp_id (same Master/Clone ownership rule
+        // as isCodeDuplicate() above): a comp_id-scoped caller can only see/preserve the status of
+        // ITS OWN row, never a master row or another company's row, even if it guesses a valid id.
         $existingStatus = null;
         if ($id !== null) {
-            $stmtExistingStatus = $this->db->prepare("SELECT status FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL");
-            $stmtExistingStatus->execute([':id' => $id]);
+            $sqlExisting = "SELECT status FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL";
+            $paramsExisting = [':id' => $id];
+            if ($compId === null) {
+                $sqlExisting .= " AND comp_id IS NULL";
+            } else {
+                $sqlExisting .= " AND comp_id = :comp_id";
+                $paramsExisting[':comp_id'] = $compId;
+            }
+            $stmtExistingStatus = $this->db->prepare($sqlExisting);
+            $stmtExistingStatus->execute($paramsExisting);
             $existingStatus = $stmtExistingStatus->fetchColumn();
             $existingStatus = $existingStatus === false ? null : $existingStatus;
         }
@@ -161,9 +222,23 @@ class TaxStatutoryModel {
 
         try {
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL");
-                $stmtCheck->execute([':id' => $id]);
-                if (!$stmtCheck->fetch()) {
+                // Ownership check -- see this method's own docblock: a comp_id-scoped caller can
+                // never reach a master row or another company's row through this UPDATE, even with a
+                // guessed valid id, because the WHERE clause itself excludes it (0 rows found, not a
+                // permission-denied response -- same "not found" framing as every other ownership
+                // check in this app to avoid confirming a guessed id exists at all).
+                $sqlCheck = "SELECT * FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL";
+                $paramsCheck = [':id' => $id];
+                if ($compId === null) {
+                    $sqlCheck .= " AND comp_id IS NULL";
+                } else {
+                    $sqlCheck .= " AND comp_id = :comp_id";
+                    $paramsCheck[':comp_id'] = $compId;
+                }
+                $stmtCheck = $this->db->prepare($sqlCheck);
+                $stmtCheck->execute($paramsCheck);
+                $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existing) {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 $sql = "UPDATE `statutory_items` SET
@@ -178,15 +253,30 @@ class TaxStatutoryModel {
                 $params[':id'] = $id;
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute($params);
+                // Platform Hardening Phase 6 (batch 4) -- only a company's OWN custom item
+                // (comp_id !== null) is logged into the per-company audit_logs table; editing the
+                // system-wide MASTER catalog (comp_id === null) is a different ownership story
+                // entirely (affects every company on the platform at once, same as
+                // CompanyStatutorySettingModel::promoteOverrideToMaster() already being out of
+                // scope for this same reason) -- out of scope here too.
+                if ($compId !== null) {
+                    $stmtNewRow = $this->db->prepare("SELECT * FROM `statutory_items` WHERE id = :id");
+                    $stmtNewRow->execute([':id' => $id]);
+                    $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                    $this->auditLog->record($compId, 'statutory_items', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
+                }
                 return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
             }
 
+            // comp_id on INSERT is exactly the Master/Clone scope this save() call was given -- NULL
+            // creates a new master item, non-null creates a new custom item owned by that company.
+            $params[':comp_id'] = $compId;
             $sql = "INSERT INTO `statutory_items`
-                        (country_code, code, name_th, name_en, category, calc_method, calc_base,
+                        (comp_id, country_code, code, name_th, name_en, category, calc_method, calc_base,
                          is_employee_applicable, is_employer_applicable, default_is_active, is_company_rate_editable,
                          sort_order, status, rounding_mode, decimal_places, created_by)
                     VALUES
-                        (:country_code, :code, :name_th, :name_en, :category, :calc_method, :calc_base,
+                        (:comp_id, :country_code, :code, :name_th, :name_en, :category, :calc_method, :calc_base,
                          :is_employee_applicable, :is_employer_applicable, :default_is_active, :is_company_rate_editable,
                          :sort_order, :status, :rounding_mode, :decimal_places, :created_by)";
             $params[':created_by'] = $userId;
@@ -200,12 +290,21 @@ class TaxStatutoryModel {
 
     // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
     // CompanyProfileModel::toggleStructureStatus()/PayrollCycleModel::toggleStatus()/
-    // BankAccountModel::toggleStatus(). No comp_id param -- `statutory_items` is a global master
-    // catalog (scoped by country_code only), not a per-company entity, same as every other caller
-    // of this table.
-    public function toggleStatus(int $id, int $userId): array {
-        $stmt = $this->db->prepare("SELECT status FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL");
-        $stmt->execute([':id' => $id]);
+    // BankAccountModel::toggleStatus().
+    // 2026-09-03, Backlog Phase 9, T045 -- gained the SAME `?int $compId = null` Master/Clone scope
+    // as save() above (null = master scope, non-null = that company's own custom items only) --
+    // `statutory_items` is no longer a purely global catalog now that custom items exist.
+    public function toggleStatus(int $id, int $userId, ?int $compId = null, ?string $ip = null, ?string $userAgent = null): array {
+        $sql = "SELECT status FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL";
+        $params = [':id' => $id];
+        if ($compId === null) {
+            $sql .= " AND comp_id IS NULL";
+        } else {
+            $sql .= " AND comp_id = :comp_id";
+            $params[':comp_id'] = $compId;
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
         $current = $stmt->fetchColumn();
         if ($current === false) {
             return ['status' => false, 'message' => 'Record not found.'];
@@ -214,22 +313,76 @@ class TaxStatutoryModel {
         try {
             $stmtUpdate = $this->db->prepare("UPDATE `statutory_items` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
             $stmtUpdate->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+            // Batch 4 -- same custom-item-only scope as save() above.
+            if ($compId !== null) {
+                $this->auditLog->record($compId, 'statutory_items', $id, 'update', ['status' => $current], ['status' => $newStatus], $userId, 'web', $ip, $userAgent);
+            }
             return ['status' => true, 'new_status' => $newStatus, 'message' => 'Updated successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
     }
 
-    public function delete(int $id, int $userId): array {
+    // 2026-09-03, Backlog Phase 9, T045 -- same `?int $compId = null` Master/Clone scope as save()/
+    // toggleStatus() above.
+    public function delete(int $id, int $userId, ?int $compId = null, ?string $ip = null, ?string $userAgent = null): array {
         try {
-            $stmtCheck = $this->db->prepare("SELECT id FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL");
-            $stmtCheck->execute([':id' => $id]);
-            if (!$stmtCheck->fetch()) {
+            $sqlCheck = "SELECT * FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL";
+            $paramsCheck = [':id' => $id];
+            if ($compId === null) {
+                $sqlCheck .= " AND comp_id IS NULL";
+            } else {
+                $sqlCheck .= " AND comp_id = :comp_id";
+                $paramsCheck[':comp_id'] = $compId;
+            }
+            $stmtCheck = $this->db->prepare($sqlCheck);
+            $stmtCheck->execute($paramsCheck);
+            $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+            if (!$existing) {
                 return ['status' => false, 'message' => 'Record not found.'];
             }
             $stmt = $this->db->prepare("UPDATE `statutory_items` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
             $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+            // Batch 4 -- same custom-item-only scope as save()/toggleStatus() above.
+            if ($compId !== null) {
+                $this->auditLog->record($compId, 'statutory_items', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
+            }
             return ['status' => true, 'message' => 'Deleted successfully.'];
+        } catch (PDOException $e) {
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    /**
+     * 2026-09-03, Backlog Phase 9, T045 -- "Update as system default" for a company's own CUSTOM
+     * item (the item itself, not a rate override -- see CompanyStatutorySettingModel::
+     * promoteOverrideToMaster() for the other promote case, a rate override on an EXISTING master
+     * item). Ownership-checked (must belong to $compId) then simply hands the row over to the
+     * system-wide master catalog (comp_id -> NULL) -- its rate_history moves with it automatically
+     * since that table is keyed by the same statutory_item_id, unaffected by this. Guarded by a
+     * code-collision check against EXISTING master items in the same country (the DB no longer
+     * enforces this itself, see the migration's own docblock) -- refuses rather than silently
+     * creating two master items with the same code. `promoted_from_comp_id` is set once and never
+     * cleared again, even if the item changes hands again later, as a permanent "which company
+     * originated this" audit trail. Gated by the NEW `tax_statutory.promote_master` permission at
+     * the controller layer (TaxStatutoryController::customItemPromote()), never the ordinary
+     * `tax_statutory.edit` every company admin already has -- this action affects EVERY company on
+     * the platform at once.
+     */
+    public function promoteToMaster(int $itemId, int $compId, int $userId): array {
+        $stmt = $this->db->prepare("SELECT * FROM `statutory_items` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $itemId, ':comp_id' => $compId]);
+        $item = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$item) {
+            return ['status' => false, 'message' => 'Custom item not found or not owned by your company.'];
+        }
+        if ($this->isCodeDuplicate($item['country_code'], $item['code'], $itemId, null)) {
+            return ['status' => false, 'message' => 'A master item with this code already exists for this country. Rename your custom item before promoting it.'];
+        }
+        try {
+            $stmt = $this->db->prepare("UPDATE `statutory_items` SET comp_id = NULL, promoted_from_comp_id = COALESCE(promoted_from_comp_id, :comp_id), updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+            $stmt->execute([':comp_id' => $compId, ':updated_by' => $userId, ':id' => $itemId]);
+            return ['status' => true, 'message' => 'Promoted to system master successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
@@ -314,7 +467,7 @@ class TaxStatutoryModel {
         return ['status' => true];
     }
 
-    public function rateHistorySave(array $data, int $userId): array {
+    public function rateHistorySave(array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
         if (empty($data['statutory_item_id']) || !is_numeric($data['statutory_item_id']) || empty($data['effective_date'])) {
@@ -430,9 +583,10 @@ class TaxStatutoryModel {
             ];
 
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `statutory_item_rate_history` WHERE id = :id AND deleted_at IS NULL");
+                $stmtCheck = $this->db->prepare("SELECT * FROM `statutory_item_rate_history` WHERE id = :id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id]);
-                if (!$stmtCheck->fetch()) {
+                $existingRateRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existingRateRow) {
                     if ($ownTransaction) {
                         $this->db->rollBack();
                     }
@@ -465,6 +619,19 @@ class TaxStatutoryModel {
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute($params);
                 $rateHistoryId = $id;
+                // Platform Hardening Phase 6 (batch 4) -- resolve the owning item's OWN comp_id
+                // (already fetched into $item above) to decide whether this rate edit belongs in
+                // the per-company audit_logs table at all: a MASTER item's rate history
+                // (comp_id === null, e.g. editing the national SSO rate) is a system-wide change
+                // affecting every company on the platform, same out-of-scope reasoning as save()/
+                // toggleStatus()/delete() above -- only a company's OWN custom item's rate history
+                // is logged, scoped to that company.
+                if (($item['comp_id'] ?? null) !== null) {
+                    $stmtNewRateRow = $this->db->prepare("SELECT * FROM `statutory_item_rate_history` WHERE id = :id");
+                    $stmtNewRateRow->execute([':id' => $id]);
+                    $newRateRow = $stmtNewRateRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                    $this->auditLog->record((int)$item['comp_id'], 'statutory_item_rate_history', $id, 'update', $existingRateRow, $newRateRow, $userId, 'web', $ip, $userAgent);
+                }
             } else {
                 $sql = "INSERT INTO `statutory_item_rate_history`
                             (statutory_item_id, effective_date, end_date, employee_rate, employer_rate, employee_amount, employer_amount,
@@ -614,15 +781,26 @@ class TaxStatutoryModel {
         ];
     }
 
-    public function rateHistoryDelete(int $id, int $userId): array {
+    public function rateHistoryDelete(int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         try {
-            $stmtCheck = $this->db->prepare("SELECT id FROM `statutory_item_rate_history` WHERE id = :id AND deleted_at IS NULL");
+            // Batch 4 -- SELECT rh.*, si.comp_id so the owning item's comp_id (needed to decide
+            // whether this belongs in the per-company audit_logs table, same reasoning as
+            // rateHistorySave() above) is available without a second round-trip.
+            $stmtCheck = $this->db->prepare("SELECT rh.*, si.comp_id AS item_comp_id FROM `statutory_item_rate_history` rh
+                JOIN `statutory_items` si ON si.id = rh.statutory_item_id
+                WHERE rh.id = :id AND rh.deleted_at IS NULL");
             $stmtCheck->execute([':id' => $id]);
-            if (!$stmtCheck->fetch()) {
+            $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+            if (!$existing) {
                 return ['status' => false, 'message' => 'Record not found.'];
             }
+            $itemCompId = $existing['item_comp_id'];
+            unset($existing['item_comp_id']);
             $stmt = $this->db->prepare("UPDATE `statutory_item_rate_history` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
             $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+            if ($itemCompId !== null) {
+                $this->auditLog->record((int)$itemCompId, 'statutory_item_rate_history', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
+            }
             return ['status' => true, 'message' => 'Deleted successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];

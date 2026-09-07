@@ -11,9 +11,6 @@
  */
 let tb_payslip_request;
 
-function escapeHtmlPr(str) {
-    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
-}
 
 function payslipRequestStatusBadge(status) {
     const map = {
@@ -29,8 +26,8 @@ function payslipRequestStatusBadge(status) {
 }
 
 function formatPayPeriod(row) {
-    if (!row.period_start_date || !row.period_end_date) return escapeHtmlPr(row.run_name);
-    return `${escapeHtmlPr(row.run_name)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
+    if (!row.period_start_date || !row.period_end_date) return escapeAttr(row.run_name);
+    return `${escapeAttr(row.run_name)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
 }
 
 function initPayslipRequestTable() {
@@ -42,9 +39,9 @@ function initPayslipRequestTable() {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/payslip-request.list`, dataSrc: 'data' },
         columns: [
-            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtmlPr(row.employee_no)} - ${escapeHtmlPr(currentLang === 'th' ? row.employee_name_th : row.employee_name_en)}</strong>` },
+            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeAttr(row.employee_no)} - ${escapeAttr(currentLang === 'th' ? row.employee_name_th : row.employee_name_en)}</strong>` },
             { data: null, render: (d, t, row) => formatPayPeriod(row) },
-            { data: null, render: (d, t, row) => escapeHtmlPr((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeAttr((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || '-') },
             { data: 'status', render: d => payslipRequestStatusBadge(d) },
             // object-form render (display only) -- client-side table, defaults to sorting by this
             // exact column (order: [[4,'desc']] below), see reports/index.js's own comment for why

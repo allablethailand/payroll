@@ -9,6 +9,20 @@
  * not Feb 28) via month-end cutoffs/semi-monthly second-halves feeding into short months
  * (Feb) and 30-day months (Apr) -- this is exactly the class of bug that's easy to introduce
  * silently in this kind of date arithmetic.
+ *
+ * 2026-09-04, Backlog Phase 10, T060 Step B ("support daily/weekly/bi-weekly pay frequency") --
+ * added: (1) 'daily' as a working payroll_frequency (period_start === period_end, no cutoff-day
+ * concept applies at all -- see PayrollCycleModel::nextDailyPeriod()'s own docblock), (2) a
+ * save()-level validation section that also proves a real, pre-existing, unrelated bug found and
+ * fixed in the same edit -- save() only ever branched on `freq === 'weekly'` for the day-of-week
+ * fields, so a 'bi_weekly' cycle could NEVER be saved with cutoff_day_of_week/payment_day_of_week
+ * set (it silently required day-of-month fields instead), even though suggestNextPeriod() above
+ * has always read bi_weekly's period math from cutoff_day_of_week -- the exact same bug also
+ * existed in public/js/setup/payroll-configuration.js's applyFrequencyFields() (fixed alongside),
+ * so a bi_weekly cycle's day-of-week fields never even appeared in the form to begin with. (3) a
+ * real end-to-end proof through PayrollRunModel::recalculate() that a daily-frequency cycle
+ * combined with a salary_type='daily' employee (2026-08-31, already-existing divisor) computes
+ * the correct 1-day base salary with zero changes needed to PayrollRunModel.php itself.
  */
 declare(strict_types=1);
 
@@ -17,7 +31,9 @@ $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
+require_once __DIR__ . '/../app/services/EncryptionService.php';
 require_once __DIR__ . '/../app/models/PayrollCycleModel.php';
+require_once __DIR__ . '/../app/models/PayrollRunModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -36,6 +52,9 @@ function check(string $label, $actual, $expected): void {
 }
 function checkTrue(string $label, bool $actual): void {
     check($label, $actual, true);
+}
+function checkFalse(string $label, bool $actual): void {
+    check($label, $actual, false);
 }
 
 try {
@@ -170,6 +189,16 @@ try {
     check('next 14-day period starts the day after the last one ended', $res['period_start_date'] ?? null, '2026-02-09');
     check('next period ends exactly 14 days later', $res['period_end_date'] ?? null, '2026-02-22');
 
+    // ---------- Daily (Backlog Phase 10, T060 Step B) ----------
+    echo "=== Daily (1-day period) ===\n";
+    $cDaily = makeCycle($pdo, $compId, ['payroll_frequency' => 'daily']);
+    makeFixtureRun($pdo, $compId, $cDaily, '2026-02-08', '2026-02-08', '2026-02-08');
+    $res = $model->suggestNextPeriod($cDaily, $compId);
+    checkTrue('status true', $res['status']);
+    check('next daily period starts the day after the last one ended', $res['period_start_date'] ?? null, '2026-02-09');
+    check('next daily period is exactly 1 day (start === end)', $res['period_end_date'] ?? null, '2026-02-09');
+    check('payment defaults to the same day as the period (no configured offset for daily)', $res['payment_date'] ?? null, '2026-02-09');
+
     // ---------- No prior run at all -- just check invariants, not exact dates (today-dependent) ----------
     echo "=== No prior run (invariants only, not date-dependent) ===\n";
     $cFresh = makeCycle($pdo, $compId, ['cutoff_day_of_month' => 25, 'payment_day_of_month' => 5]);
@@ -190,6 +219,79 @@ try {
     // ---------- Unknown cycle id ----------
     $res = $model->suggestNextPeriod(999999999, $compId);
     check('unknown cycle id fails gracefully', $res['status'], false);
+
+    // ---------- save() validation (Backlog Phase 10, T060 Step B) ----------
+    echo "=== save(): daily accepted with no cutoff fields, bi_weekly day-of-week bug fixed ===\n";
+    $saveDaily = $model->save($compId, [
+        'cycle_name' => 'Save_Daily_' . uniqid(), 'payroll_frequency' => 'daily',
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1,
+    ], $userId = 1);
+    checkTrue('save() accepts payroll_frequency=daily with no cutoff_day_of_month/_of_week at all', $saveDaily['status']);
+
+    // Real, pre-existing, unrelated bug: before this fix, save() only branched on 'weekly' for the
+    // day-of-week fields, so this bi_weekly save (day-of-week fields set, NO day-of-month fields)
+    // would have been wrongly routed into the day-of-month validation branch and REJECTED.
+    $saveBiWeekly = $model->save($compId, [
+        'cycle_name' => 'Save_BiWeekly_' . uniqid(), 'payroll_frequency' => 'bi_weekly',
+        'cutoff_day_of_week' => 'sunday', 'payment_day_of_week' => 'friday',
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1,
+    ], $userId);
+    checkTrue('save() now accepts bi_weekly with day-of-week fields (real bug fixed, was wrongly rejected before)', $saveBiWeekly['status']);
+    $savedBiWeekly = $model->get((int)$saveBiWeekly['id'], $compId);
+    check('the saved bi_weekly row really persisted cutoff_day_of_week', $savedBiWeekly['cutoff_day_of_week'] ?? null, 'sunday');
+
+    $saveBiWeeklyMissing = $model->save($compId, [
+        'cycle_name' => 'Save_BiWeekly_Bad_' . uniqid(), 'payroll_frequency' => 'bi_weekly',
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1,
+    ], $userId);
+    checkFalse('save() still rejects bi_weekly with NO day-of-week fields at all', $saveBiWeeklyMissing['status']);
+
+    $saveInvalidFreq = $model->save($compId, [
+        'cycle_name' => 'Save_Bad_Freq_' . uniqid(), 'payroll_frequency' => 'yearly',
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1,
+    ], $userId);
+    checkFalse('save() rejects a genuinely invalid payroll_frequency', $saveInvalidFreq['status']);
+
+    // ---------- Real end-to-end proof through PayrollRunModel::recalculate() ----------
+    echo "=== Real end-to-end: daily-frequency cycle + salary_type='daily' employee ===\n";
+    $runModel = new PayrollRunModel($pdo);
+    $dailyCycleId = (int)$saveDaily['id'];
+    $insEmp = $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, employee_type, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+         emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         sso_enrolled, pvd_enrolled, tax_exempt, cycle_id)
+        VALUES (:comp_id, :employee_no, 'domestic', 'mr', 'male', 'ทดสอบ', 'รายวัน', 'Test', 'Daily', '1990-01-01', 'Thai',
+         :email, '0812345678', 'A', 'A', 'E', 'E', 'friend', '0898888888',
+         '2018-01-01', 'permanent', 'full_time', 'office', 'manual',
+         'daily', 1000, '2018-01-01', 'average', 'active', 0, 0, 1, :cycle_id)");
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'DAILY_' . uniqid(), ':email' => uniqid() . '@test.local',
+        ':cycle_id' => $dailyCycleId,
+    ]);
+    $dailyEmployeeId = (int)$pdo->lastInsertId();
+
+    $runRes = $runModel->create($compId, [
+        'cycle_id' => $dailyCycleId, 'run_name' => 'Daily_Run_' . uniqid(),
+        'period_start_date' => '2026-03-10', 'period_end_date' => '2026-03-10', 'payment_date' => '2026-03-10',
+    ], $userId, true);
+    checkTrue('run created for the 1-day period', $runRes['status'] ?? false);
+    if (!empty($runRes['status'])) {
+        $runId = (int)$runRes['id'];
+        $recalc = $runModel->recalculate($runId, $compId, $userId, true);
+        checkTrue('recalculate() succeeds for a daily-frequency run, zero PayrollRunModel changes needed', $recalc['status'] ?? false);
+        $details = $runModel->getDetails($runId, $compId);
+        $row = current(array_filter($details, fn($d) => (int)$d['employee_id'] === $dailyEmployeeId));
+        checkTrue('the daily employee has a run detail row', $row !== false);
+        if ($row !== false) {
+            // salary_type='daily' divisor is 1 (base_salary_amount IS the daily rate already) --
+            // 1 payable day (2026-03-10 is a Tuesday, no shift assigned so every day counts as a
+            // work day, no holidays configured for this fresh company) * 1000 = 1000.00.
+            check('base_salary_amount = the daily rate itself for exactly 1 payable day', (float)$row['base_salary_amount'], 1000.00);
+        }
+    }
 } catch (Throwable $e) {
     $failures++;
     echo "  FAIL  uncaught exception: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

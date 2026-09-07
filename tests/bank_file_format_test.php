@@ -41,7 +41,14 @@ function checkFalse(string $label, bool $actual): void { check($label, $actual, 
 
 try {
     $userId = 1;
-    $BAY_FORMAT_ID = 9; // master_bank_file_formats.id for BAY, seeded with a 4-field DRAFT default
+    // 2026-09-05, Phase 12 T072: BAY's default field template was REPLACED entirely with a real,
+    // confirmed "Krungsri Cashlink CON128" layout (14 header + 8 detail = 22 fields, each row
+    // exactly 128 bytes -- see database/migrations/2026-09-05_3_bank_file_format_bay_con128.sql's
+    // own header comment for the full derivation, including the ONE deliberate correction vs. the
+    // reference VBA tool's own apparent typo on the beneficiary-account field's fill character).
+    // The pre-2026-09-05 layout (12 header + 8 detail, 102/80 bytes) was an honest, DOCUMENTED
+    // guess -- genuinely a different, unconfirmed layout, not a refinement of it.
+    $BAY_FORMAT_ID = 9; // master_bank_file_formats.id for BAY
 
     $insComp = $pdo->prepare("INSERT INTO companies (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name, setup_status)
         VALUES (:name, :name, 'TH', '1234567890123', 'Test Address', 'Tester', 'active')");
@@ -74,18 +81,15 @@ try {
     $bay = null;
     foreach ($formats as $f) { if ((int)$f['id'] === $BAY_FORMAT_ID) $bay = $f; }
     checkTrue('BAY format is in the active list', $bay !== null);
-    // 2026-08-29: 20 fields (12 header + 8 detail) -- was 21 (13 header) until a real bug fix the
-    // same day removed a stray 1-byte blank field between total_count and total_amount in the
-    // header (explicit report: "ตรง head มันมีช่องว่างก่อนข้อมูลชุดสุดท้าย แต่ไฟล์ต้นฉบับจะต่อกันเลย" -- see
-    // migrations/2026-08-29_8_krungsri_header_no_gap_before_total_amount.sql's own header comment).
-    check('BAY field_count reflects the real Krungsri layout (12 header + 8 detail = 20)', $bay['field_count'] ?? null, 20);
+    // 2026-09-05, Phase 12 T072: 22 fields (14 header + 8 detail), see this file's own top comment.
+    check('BAY field_count reflects the real Krungsri CON128 layout (14 header + 8 detail = 22)', $bay['field_count'] ?? null, 22);
     checkFalse('BAY has_own_override is false before this company edits anything', $bay['has_own_override'] ?? true);
 
     /* ---------- getFormatDetail() default template ---------- */
     echo "=== getFormatDetail() (system default) ===\n";
     $detail = $model->getFormatDetail($compId, $BAY_FORMAT_ID);
     checkTrue('detail found', $detail !== null);
-    check('12 header-row fields in the default template', count($detail['fields']['header']), 12);
+    check('14 header-row fields in the default template', count($detail['fields']['header']), 14);
     check('8 detail-row fields in the default template', count($detail['fields']['detail']), 8);
     checkFalse('none of the default fields are company-owned yet', $detail['fields']['detail'][0]['is_company_owned']);
     // 2026-08-29: getConfig()'s virtual default is now inferred from the fields themselves (every
@@ -112,7 +116,7 @@ try {
     checkTrue('saveField (new company field) succeeds' . (empty($saveField1['status']) ? " ({$saveField1['message']})" : ''), $saveField1['status']);
     $detailAfterFork = $model->getFormatDetail($compId, $BAY_FORMAT_ID);
     check('company now has 9 of its own detail fields (8 forked + 1 new)', count($detailAfterFork['fields']['detail']), 9);
-    check('header fields (12) were forked too, untouched by this detail-only edit', count($detailAfterFork['fields']['header']), 12);
+    check('header fields (14) were forked too, untouched by this detail-only edit', count($detailAfterFork['fields']['header']), 14);
     checkTrue('every field is now company-owned (forked from default)', $detailAfterFork['fields']['detail'][0]['is_company_owned']);
 
     $formatsAfterFork = $model->listFormats($compId);
@@ -121,7 +125,7 @@ try {
     checkTrue('has_own_override is now true', $bayAfterFork['has_own_override'] ?? false);
 
     $stillOriginalCount = $pdo->query("SELECT COUNT(*) FROM bank_file_format_fields WHERE bank_file_format_id = " . $BAY_FORMAT_ID . " AND comp_id IS NULL")->fetchColumn();
-    check('the shared system-default template is untouched (still 20 rows)', (int)$stillOriginalCount, 20);
+    check('the shared system-default template is untouched (still 22 rows)', (int)$stillOriginalCount, 22);
 
     $badField = $model->saveField($compId, $BAY_FORMAT_ID, [
         'row_type' => 'detail', 'source_type' => 'employee_field', 'source_field' => 'not_a_real_field',
@@ -279,20 +283,26 @@ try {
     $fieldsBeforeFork = $model->fieldsForRender($compId2, $BAY_FORMAT_ID);
     checkTrue('fixture: comp2 has never forked BAY before this test (fields still comp_id IS NULL)', $fieldsBeforeFork[0]['comp_id'] === null);
     $defaultDetail = $model->getFormatDetail($compId2, $BAY_FORMAT_ID);
+    // 2026-09-05, Phase 12 T072: the seeded "bank product code" header field (sort_order=14) is
+    // the ONE constant in the new confirmed layout with no real-world value supplied by the
+    // reference spec -- placeholder 'PAYROLL', field label says explicitly to confirm/edit it with
+    // the bank. Same "editing a genuinely-uncustomized default constant for the first time" shape
+    // the old (pre-2026-09-05) "รหัสอ้างอิงงวดจ่าย" field exercised, just a different real field now.
     $defaultRefField = null;
     foreach ($defaultDetail['fields']['header'] as $f) {
-        if ($f['source_type'] === 'constant' && $f['sort_order'] == 9) { $defaultRefField = $f; }
+        if ($f['source_type'] === 'constant' && $f['sort_order'] == 14) { $defaultRefField = $f; }
     }
-    checkTrue('found the seeded default "reference prefix" header field (sort_order=9)', $defaultRefField !== null);
+    checkTrue('found the seeded default "bank product code" header field (sort_order=14)', $defaultRefField !== null);
     checkFalse('that field is NOT yet company-owned (comp2 never forked)', $defaultRefField['is_company_owned']);
+    check('the seeded placeholder value is PAYROLL before this company edits it', $defaultRefField['constant_value'], 'PAYROLL');
     $defaultFieldId = (int)$defaultRefField['id'];
 
     // Same payload shape the real Edit modal sends: the field's CURRENT id (still the shared
     // default template's own id at this point) plus the edited constant_value.
     $editDefaultRes = $model->saveField($compId2, $BAY_FORMAT_ID, [
-        'id' => $defaultFieldId, 'row_type' => 'header', 'sort_order' => 9,
+        'id' => $defaultFieldId, 'row_type' => 'header', 'sort_order' => 14,
         'field_label_th' => $defaultRefField['field_label_th'], 'field_label_en' => $defaultRefField['field_label_en'],
-        'source_type' => 'constant', 'constant_value' => '001', 'data_type' => 'text', 'width' => 3,
+        'source_type' => 'constant', 'constant_value' => 'ABCPAYROLL01', 'data_type' => 'text', 'width' => 10,
         'pad_char' => ' ', 'pad_direction' => 'right',
     ], $userId);
     checkTrue('saveField() succeeds editing a default field on the very first edit' . (empty($editDefaultRes['status']) ? " ({$editDefaultRes['message']})" : ''), $editDefaultRes['status']);
@@ -300,22 +310,22 @@ try {
     $detailAfterFirstEdit = $model->getFormatDetail($compId2, $BAY_FORMAT_ID);
     $editedField = null;
     foreach ($detailAfterFirstEdit['fields']['header'] as $f) {
-        if ($f['sort_order'] == 9) { $editedField = $f; }
+        if ($f['sort_order'] == 14) { $editedField = $f; }
     }
     checkTrue('field is now company-owned (forked)', $editedField['is_company_owned']);
-    check('constant_value was genuinely updated to 001, not left at XXX', $editedField['constant_value'], '001');
+    check('constant_value was genuinely updated to the company\'s own code, not left at PAYROLL', $editedField['constant_value'], 'ABCPAYROLL01');
     // The shared system-default template itself must be completely untouched by this.
     $stillDefaultUnchanged = $pdo->prepare("SELECT constant_value FROM bank_file_format_fields WHERE id = :id");
     $stillDefaultUnchanged->execute([':id' => $defaultFieldId]);
-    check('the shared default template row itself keeps its original placeholder (XXX), never mutated', $stillDefaultUnchanged->fetchColumn(), 'XXX');
+    check('the shared default template row itself keeps its original placeholder (PAYROLL), never mutated', $stillDefaultUnchanged->fetchColumn(), 'PAYROLL');
 
-    /* ---------- Full real Krungsri header+detail layout, language selection ---------- */
-    // 2026-08-29, explicit request: "ปรับ Format นี้ให้เป็น Format มาตรฐานของกรุงศรี และตอน Export ให้เลือก
-    // เพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่ออกมาจะตามนั้นครับ" -- resetToDefault() restores this
-    // company's BAY config back to the real (unmodified) 13-header/8-detail layout the section
-    // above forked+stripped down, so this exercises the ACTUAL shipped Krungsri layout end to end,
-    // not the deliberately-minimized 2-field version used for the byte-exact assertion above.
-    echo "=== Full Krungsri header+detail layout via BankTransferFileReport ===\n";
+    /* ---------- Full real Krungsri CON128 header+detail layout, language selection ---------- */
+    // 2026-09-05, Phase 12 T072: resetToDefault() restores this company's BAY config back to the
+    // real (unmodified) 14-header/8-detail CON128 layout the section above forked+stripped down to
+    // just 2 fields, so this exercises the ACTUAL shipped Krungsri layout end to end. Byte offsets
+    // below are re-derived from database/migrations/2026-09-05_3_bank_file_format_bay_con128.sql's
+    // own field list (0-indexed for PHP substr()), NOT inherited from the old 102/80-byte layout.
+    echo "=== Full Krungsri CON128 header+detail layout via BankTransferFileReport ===\n";
     $reset = $model->resetToDefault($compId, $BAY_FORMAT_ID, $userId);
     checkTrue('resetToDefault() succeeds' . (empty($reset['status']) ? " ({$reset['message']})" : ''), $reset['status']);
 
@@ -323,31 +333,25 @@ try {
     $linesTh = explode("\r\n", rtrim($resultTh['content'], "\r\n"));
     check('exactly 2 lines rendered (1 header + 1 detail, 1 employee in this fixture)', count($linesTh), 2);
     [$headerLine, $detailLineTh] = $linesTh;
-    check('header line is exactly 102 bytes (Krungsri spec width)', strlen($headerLine), 102);
-    check('detail line is exactly 80 bytes (Krungsri spec width)', strlen($detailLineTh), 80);
-    check('header starts with record type 0000 + 2 blanks', substr($headerLine, 0, 6), '0000  ');
-    check('header payment date (DDMMYY) matches the run\'s own payment_date', substr($headerLine, 6, 6), date('dmy', strtotime($periodEnd)));
-    // company_account_no (header, bytes 13-22) resolves+decrypts the SAME default bank_accounts row
-    // seeded at the top of this file (account_no='1112223334', is_default=1) -- this is the
-    // genuinely-new source_field this round added (see BankFileFormatModel::SOURCE_FIELDS' own
-    // comment: this had NO source at all before, not even a constant a company could type in).
-    check("header company_account_no (bytes 13-22) resolves the company's own default bank account, right-padded to 10", substr($headerLine, 12, 10), '1112223334');
-    // 2026-08-29, explicit follow-up: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" -- the
-    // "รหัสบริษัท/รหัสบริการ" field (header, bytes 43-45) now resolves company_service_code from
-    // bank_accounts.company_code on the SAME resolved account, no longer a hand-typed constant.
-    check('header company_service_code (bytes 43-45) resolves the company\'s own bank account.company_code', substr($headerLine, 42, 3), '712');
-    check('header payment type constant "A" at byte 73', substr($headerLine, 72, 1), 'A');
+    check('header line is exactly 128 bytes (Krungsri CON128 spec width)', strlen($headerLine), 128);
+    check('detail line is exactly 128 bytes (Krungsri CON128 spec width)', strlen($detailLineTh), 128);
+    check('header starts with the "001001" record-type constant (bytes 1-6)', substr($headerLine, 0, 6), '001001');
+    check('header payment date (DDMMYY, bytes 7-12) matches the run\'s own payment_date', substr($headerLine, 6, 6), date('dmy', strtotime($periodEnd)));
+    // company_account_no (header, bytes 13-42) resolves+decrypts the SAME default bank_accounts row
+    // seeded at the top of this file (account_no='1112223334', is_default=1).
+    check("header company_account_no (bytes 13-42) resolves the company's own default bank account, right-padded to 30", rtrim(substr($headerLine, 12, 30)), '1112223334');
+    check('header financial institution code constant "712" (bytes 43-45)', substr($headerLine, 42, 3), '712');
+    check('header payment type constant "A" (byte 73)', substr($headerLine, 72, 1), 'A');
+    check('header record control code constant "0010001" (bytes 74-80)', substr($headerLine, 73, 7), '0010001');
     check('header total record count (bytes 81-87) is 0000001 (1 employee)', substr($headerLine, 80, 7), '0000001');
-    // 2026-08-29, real bug found and fixed (explicit report: "ตรง head มันมีช่องว่างก่อนข้อมูลชุดสุดท้าย แต่
-    // ไฟล์ต้นฉบับจะต่อกันเลย") -- the 1-byte blank gap that used to sit between total_count and
-    // total_amount was a transcription slip in the original hand-typed sample, not real; removed,
-    // and total_amount widened 14->15 bytes to absorb it (bytes 88-102 now, was 89-102/14 wide).
     $expectedTotalAmountField = str_pad((string)(int)round($netAmount * 100), 15, '0', STR_PAD_LEFT);
-    check('header total amount (bytes 88-102, no gap before it, implied decimal, no literal point) matches the real net_amount', substr($headerLine, 87, 15), $expectedTotalAmountField);
-    check('detail starts with record type 0000 + 2 blanks', substr($detailLineTh, 0, 6), '0000  ');
-    check('detail employee bank account no (bytes 7-16)', substr($detailLineTh, 6, 10), '9998887770');
+    check('header total amount (bytes 88-102, implied decimal, no literal point) matches the real net_amount', substr($headerLine, 87, 15), $expectedTotalAmountField);
+    check('header bank product code placeholder "PAYROLL" (bytes 119-128)', rtrim(substr($headerLine, 118, 10)), 'PAYROLL');
+    check('detail starts with the "001001" record-type constant (bytes 1-6)', substr($detailLineTh, 0, 6), '001001');
+    check('detail employee bank account no (bytes 7-16)', rtrim(substr($detailLineTh, 6, 10)), '9998887770');
     $expectedDetailAmountField = str_pad((string)(int)round($netAmount * 100), 11, '0', STR_PAD_LEFT);
     check('detail transfer amount (bytes 37-47, implied decimal, no literal point)', substr($detailLineTh, 36, 11), $expectedDetailAmountField);
+    check('detail record control code constant "0010001" (bytes 74-80)', substr($detailLineTh, 73, 7), '0010001');
 
     // "ตอน Export ให้เลือกเพิ่มเติมได้ว่าเอาภาษาไทยหรือภาษาอังกฤษ ข้อมูลที่ออกมาจะตามนั้นครับ" -- the employee
     // name field (bytes 17-36 of the detail line) is the one place this fixture's th/en names
@@ -369,9 +373,9 @@ try {
     $nameFieldEn = trim(substr($detailLineEn, 16, 20));
     check('th export name field is the Thai display name', $nameFieldTh, 'ทดสอบ ไฟล์ธนาคาร');
     check('en export name field is the English display name', $nameFieldEn, 'Test BankFile');
-    // Every OTHER field (account no, amount, reference) must be byte-identical between the two
-    // language calls -- only the name field is language-dependent.
-    check('account_no/amount/reference segments are identical regardless of language', [substr($detailLineTh, 6, 10), substr($detailLineTh, 36, 40)], [substr($detailLineEn, 6, 10), substr($detailLineEn, 36, 40)]);
+    // Every OTHER field (account no, amount, and everything after it) must be byte-identical
+    // between the two language calls -- only the name field is language-dependent.
+    check('account_no + everything from the amount field onward is identical regardless of language', [substr($detailLineTh, 6, 10), substr($detailLineTh, 36)], [substr($detailLineEn, 6, 10), substr($detailLineEn, 36)]);
 
     $invalidLangResult = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'fr'], 'csv');
     $invalidLangDetailLine = explode("\r\n", rtrim($invalidLangResult['content'], "\r\n"))[1];
@@ -417,7 +421,10 @@ try {
     checkTrue('generate() throws instead of silently shipping a file with a truncated name', $utf8OverflowCaught);
     $overflowEmployeeNo = (string)$pdo->query("SELECT employee_no FROM employees WHERE id = {$employeeId}")->fetchColumn();
     checkTrue('the exception names the overflowing employee', str_contains($utf8OverflowMessage, $overflowEmployeeNo));
-    checkTrue('the exception names the overflowing field', str_contains($utf8OverflowMessage, 'ชื่อ-นามสกุลพนักงาน'));
+    // 2026-09-05, Phase 12 T072: field label text changed with the CON128 layout rewrite (see
+    // this file's own top comment) -- was "ชื่อ-นามสกุลพนักงาน", now "ชื่อพนักงาน (ตามภาษาที่เลือกตอน Export)"
+    // per the new migration's own field_label_th for this same source_field (employee_name).
+    checkTrue('the exception names the overflowing field', str_contains($utf8OverflowMessage, 'ชื่อพนักงาน'));
 
     // The underlying padByte() character-boundary safety (the ORIGINAL "เลือกเป็น UTF-8 แล้วแต่่ยังอ่าน
     // ไม่ออก" bug fix) is still real, load-bearing behavior -- generate() no longer exercises it for
@@ -482,8 +489,11 @@ try {
 
     $resultPinned = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
     $headerLinePinned = explode("\r\n", rtrim($resultPinned['content'], "\r\n"))[0];
-    check("header company_account_no resolves the PINNED account, digits only (dashes stripped from the stored '{$secondAccountNoDashed}')", substr($headerLinePinned, 12, 10), $secondAccountNo);
-    check('header company_service_code now resolves the PINNED account\'s own code (999, not the default account\'s 712)', substr($headerLinePinned, 42, 3), '999');
+    // 2026-09-05, Phase 12 T072: company_account_no is now bytes 13-42 (width 30, was 10) -- the
+    // new CON128 layout has no company_service_code field at all (the reference spec's own "128"
+    // branch never exposes a per-account service/company code the way the old, unconfirmed layout
+    // guessed one existed), so that half of this assertion is dropped, not just re-offset.
+    check("header company_account_no resolves the PINNED account, digits only (dashes stripped from the stored '{$secondAccountNoDashed}')", rtrim(substr($headerLinePinned, 12, 30)), $secondAccountNo);
 
     $unpinRes = $cycleModel->saveBankAccounts($cycleId, $compId, [], $userId);
     checkTrue('saveBankAccounts() with an empty account list clears the pin back to null' . (empty($unpinRes['status']) ? " ({$unpinRes['message']})" : ''), $unpinRes['status']);
@@ -491,27 +501,26 @@ try {
     check('bank_account_id is null again after unpinning', $cycleAfterUnpin['bank_account_id'], null);
     $resultUnpinned = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
     $headerLineUnpinned = explode("\r\n", rtrim($resultUnpinned['content'], "\r\n"))[0];
-    check("header company_account_no falls back to the company's is_default account again after unpinning", substr($headerLineUnpinned, 12, 10), '1112223334');
+    check("header company_account_no falls back to the company's is_default account again after unpinning", rtrim(substr($headerLineUnpinned, 12, 30)), '1112223334');
 
-    /* ---------- Real bug: reference code's MMYY must follow payment_date, not period_start_date ---------- */
+    /* ---------- Real bug (pre-2026-09-05 layout): a date field must follow payment_date, not period_start_date ---------- */
     // 2026-08-29, real bug found and fixed (explicit report: "0726 ไม่ใช่ครับต้องเป็น 0826 ตามเดือนที่จ่าย")
-    // -- a pay period and its actual disbursement date routinely land in different calendar
-    // months (e.g. period ends July 31, paid Aug 5th); the reference code's own MMYY portion (both
-    // header and detail) must track WHEN THE MONEY WAS ACTUALLY PAID, same as the header's own
-    // separate "Payment Date" field right next to it -- not the period's start date. This
-    // fixture's own run has payment_date == period_end_date (same month, see this file's own
-    // period/payment setup above), which would NOT distinguish the bug -- temporarily moves
-    // payment_date one calendar month later (still rolled back by this whole file's own enclosing
-    // transaction) to genuinely exercise the fix.
-    echo "=== Reference code MMYY follows payment_date, not period_start_date (real bug fix) ===\n";
+    // -- a pay period and its actual disbursement date routinely land in different calendar months
+    // (e.g. period ends July 31, paid Aug 5th); any date-derived field in this file must track WHEN
+    // THE MONEY WAS ACTUALLY PAID, not the period's start date. The pre-2026-09-05 layout had a
+    // separate MMYY "reference code" field this bug was originally caught on; the new CON128 layout
+    // has no such field (see this file's own top comment), so this now re-verifies the SAME
+    // underlying fix through the one date-derived field the new layout DOES have -- the header's
+    // own Payment Date column. This fixture's own run has payment_date == period_end_date (same
+    // month), which would NOT distinguish the bug -- temporarily moves payment_date one calendar
+    // month later (still rolled back by this whole file's own enclosing transaction) to genuinely
+    // exercise it.
+    echo "=== Header Payment Date follows payment_date, not period_start_date (regression guard) ===\n";
     $shiftedPaymentDate = (new DateTime($periodEnd))->modify('+1 month')->format('Y-m-d');
     $pdo->prepare("UPDATE `payroll_runs` SET payment_date = :pd WHERE id = :id")->execute([':pd' => $shiftedPaymentDate, ':id' => $runId]);
     $resultShiftedPayment = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
     $linesShiftedPayment = explode("\r\n", rtrim($resultShiftedPayment['content'], "\r\n"));
-    $expectedShiftedMy = date('my', strtotime($shiftedPaymentDate));
-    check('header reference code MMYY (bytes 77-80) matches the SHIFTED payment_date, not period_start_date', substr($linesShiftedPayment[0], 76, 4), $expectedShiftedMy);
-    check('header Payment Date field (DDMMYY, bytes 7-12) also reflects the shifted payment_date', substr($linesShiftedPayment[0], 6, 6), date('dmy', strtotime($shiftedPaymentDate)));
-    check('detail reference code MMYY (last 4 bytes of the row) matches the SAME shifted payment_date', substr($linesShiftedPayment[1], -4), $expectedShiftedMy);
+    check('header Payment Date field (DDMMYY, bytes 7-12) reflects the SHIFTED payment_date, not period_start_date', substr($linesShiftedPayment[0], 6, 6), date('dmy', strtotime($shiftedPaymentDate)));
     // Restore payment_date so nothing downstream in this shared-fixture file is affected.
     $pdo->prepare("UPDATE `payroll_runs` SET payment_date = :pd WHERE id = :id")->execute([':pd' => $periodEnd, ':id' => $runId]);
 

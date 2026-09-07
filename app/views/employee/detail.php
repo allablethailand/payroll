@@ -334,7 +334,7 @@
             </h6>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="type">Type</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="type">Type</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="btn-group d-block" role="group" aria-label="Employee type">
@@ -346,7 +346,7 @@
                     <input type="hidden" name="employee_type" id="employee_type" value="domestic">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employee_status">Employee Status</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="employee_status">Employee Status</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="employee_status" id="employee_status">
@@ -361,7 +361,7 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="title">Title</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="title">Title</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="title" id="title">
@@ -372,7 +372,7 @@
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="gender">Gender</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="gender">Gender</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="btn-group d-block" role="group" aria-label="Gender">
@@ -388,7 +388,7 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="name_local">Name (Local)</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="name_local">Name (Local)</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control required" name="name_th" id="name_th" data-i18n="name_th_placeholder" placeholder="e.g., สมชาย">
@@ -396,7 +396,7 @@
                 <div class="col-sm-2 mt-3">
                     <!-- 2026-08-30 (T023, explicit request: "นามสกุลไม่เป็น required field") -- red asterisk
                          + .required removed; first name (name_th/name_en) stays required, surname does not. -->
-                    <label class="form-label"><span data-i18n="surname_local">Surname (Local)</span></label>
+                    <label class="form-label mb-1"><span data-i18n="surname_local">Surname (Local)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control" name="surname_th" id="surname_th" data-i18n="surname_th_placeholder" placeholder="e.g., ใจดี">
@@ -404,13 +404,13 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="name_en">Name (EN)</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="name_en">Name (EN)</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control required" name="name_en" id="name_en" data-i18n="name_en_placeholder" placeholder="e.g., Somchai">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="surname_en">Surname (EN)</span></label>
+                    <label class="form-label mb-1"><span data-i18n="surname_en">Surname (EN)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control" name="surname_en" id="surname_en" data-i18n="surname_en_placeholder" placeholder="e.g., Jaidee">
@@ -420,13 +420,13 @@
                  calc/report. Field stays in the DOM (value still submits/saves/syncs normally). -->
             <div class="row d-none">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="nickname_local">Nickname (Local)</span></label>
+                    <label class="form-label mb-1"><span data-i18n="nickname_local">Nickname (Local)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control" name="nickname_th" id="nickname_th" data-i18n="employee_nickname_th_placeholder" placeholder="e.g., ชาย">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="nickname_en">Nickname (EN)</span></label>
+                    <label class="form-label mb-1"><span data-i18n="nickname_en">Nickname (EN)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control" name="nickname_en" id="nickname_en" data-i18n="employee_nickname_en_placeholder" placeholder="e.g., Chai">
@@ -434,7 +434,7 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="date_of_birth">Date of Birth</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="date_of_birth">Date of Birth</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
@@ -443,7 +443,7 @@
                     </div>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="nationality">Nationality</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="nationality">Nationality</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote required" name="nationality" id="nationality" data-api="/api/nationality.get" data-type="nationality"></select>
@@ -456,13 +456,13 @@
                  Both fields stay in the DOM (values still submit/save/sync normally). -->
             <div class="row d-none">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="religion">Religion</span></label>
+                    <label class="form-label mb-1"><span data-i18n="religion">Religion</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="religion" id="religion" data-api="/api/religion.get" data-type="religion"></select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="marital_status">Marital Status</span></label>
+                    <label class="form-label mb-1"><span data-i18n="marital_status">Marital Status</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native" name="marital_status" id="marital_status">
@@ -476,7 +476,7 @@
             </div>
             <div class="row d-none" id="militaryStatusGroup">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="military_status">Military Status</span></label>
+                    <label class="form-label mb-1"><span data-i18n="military_status">Military Status</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native" name="military_status" id="military_status">
@@ -496,7 +496,7 @@
             <div class="d-none" id="sectionDomestic">
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="id_card_no">ID Card No.</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="id_card_no">ID Card No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="id_card_no" id="id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
@@ -504,7 +504,7 @@
                     </div>
                     <!-- Hidden 2026-08-19 (not needed for Payroll): not used in any calc/report. -->
                     <div class="col-sm-2 mt-3 d-none">
-                        <label class="form-label"><span data-i18n="id_card_expire">ID Card Expire Date</span></label>
+                        <label class="form-label mb-1"><span data-i18n="id_card_expire">ID Card Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3 d-none">
                         <div class="input-group">
@@ -517,13 +517,13 @@
             <div class="d-none" id="sectionForeigner">
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="tax_id_no">Tax ID No.</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="tax_id_no">Tax ID No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="tax_id_no" id="tax_id_no" data-i18n="tax_id_placeholder" placeholder="e.g., 1234567890123">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="passport_no">Passport No.</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="passport_no">Passport No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="passport_no" id="passport_no" data-i18n="passport_no_placeholder" placeholder="e.g., AA1234567">
@@ -531,7 +531,7 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="passport_expire">Passport Expire Date</span></label>
+                        <label class="form-label mb-1"><span data-i18n="passport_expire">Passport Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -540,7 +540,7 @@
                         </div>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="work_permit_no">Work Permit No.</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="work_permit_no">Work Permit No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="work_permit_no" id="work_permit_no" data-i18n="work_permit_no_placeholder" placeholder="e.g., WP-1234567">
@@ -548,7 +548,7 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="date_work_permit_issue">Date Work Permit Issue</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="date_work_permit_issue">Date Work Permit Issue</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -557,7 +557,7 @@
                         </div>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="date_work_permit_expire">Date Work Permit Expire</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="date_work_permit_expire">Date Work Permit Expire</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -573,13 +573,13 @@
                      input/datepicker generically once it's in EmployeeModel::allColumns(). -->
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="passport_issued_place">Passport Issued Place</label>
+                        <label class="form-label mb-1" data-i18n="passport_issued_place">Passport Issued Place</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="passport_issued_place" id="passport_issued_place" data-i18n="place_example_placeholder" placeholder="e.g., Bangkok">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="passport_issue_date">Passport Issue Date</label>
+                        <label class="form-label mb-1" data-i18n="passport_issue_date">Passport Issue Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -590,13 +590,13 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="work_permit_issued_place">Work Permit Issued Place</label>
+                        <label class="form-label mb-1" data-i18n="work_permit_issued_place">Work Permit Issued Place</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="work_permit_issued_place" id="work_permit_issued_place" data-i18n="place_example_placeholder" placeholder="e.g., Bangkok">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="visa_no">Visa No.</label>
+                        <label class="form-label mb-1" data-i18n="visa_no">Visa No.</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="visa_no" id="visa_no" data-i18n="visa_no_placeholder" placeholder="e.g., V1234567">
@@ -604,13 +604,13 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="visa_issued_place">Visa Issued Place</label>
+                        <label class="form-label mb-1" data-i18n="visa_issued_place">Visa Issued Place</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="visa_issued_place" id="visa_issued_place" data-i18n="place_example_placeholder" placeholder="e.g., Bangkok">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="visa_issue_date">Visa Issue Date</label>
+                        <label class="form-label mb-1" data-i18n="visa_issue_date">Visa Issue Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -621,13 +621,13 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="visa_type">Visa Type</span></label>
+                        <label class="form-label mb-1"><span data-i18n="visa_type">Visa Type</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="visa_type" id="visa_type" data-i18n="visa_type_placeholder" placeholder="e.g., Non-B">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="date_visa_expire">Visa Expire Date</span></label>
+                        <label class="form-label mb-1"><span data-i18n="date_visa_expire">Visa Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -643,7 +643,7 @@
                      NonResidentTaxSettingModel's own docblock for the full reasoning. -->
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="tax_non_resident">Tax Non-Resident</label>
+                        <label class="form-label mb-1" data-i18n="tax_non_resident">Tax Non-Resident</label>
                     </div>
                     <div class="col-sm-10 mt-3">
                         <div class="form-check form-switch">
@@ -669,13 +669,13 @@
                 </h6>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="recruitment_agency">Recruitment Agency</label>
+                        <label class="form-label mb-1" data-i18n="recruitment_agency">Recruitment Agency</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="recruitment_agency" id="recruitment_agency" data-i18n="recruitment_agency_placeholder" placeholder="e.g., ABC Recruitment Co., Ltd.">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="arrival_card_no">Arrival Card No.</label>
+                        <label class="form-label mb-1" data-i18n="arrival_card_no">Arrival Card No.</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="arrival_card_no" id="arrival_card_no" data-i18n="arrival_card_no_placeholder" placeholder="e.g., TM.6 card number">
@@ -683,7 +683,7 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="arrival_date">Arrival Date</label>
+                        <label class="form-label mb-1" data-i18n="arrival_date">Arrival Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -692,7 +692,7 @@
                         </div>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="due_date">Due Date</label>
+                        <label class="form-label mb-1" data-i18n="due_date">Due Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -703,13 +703,13 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="arrival_by_vehicle">Arrival By (Vehicle)</label>
+                        <label class="form-label mb-1" data-i18n="arrival_by_vehicle">Arrival By (Vehicle)</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="arrival_by_vehicle" id="arrival_by_vehicle" data-i18n="arrival_by_vehicle_placeholder" placeholder="e.g., Flight TG123 / Bus">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="foreign_address">Address (Non-Thai)</label>
+                        <label class="form-label mb-1" data-i18n="foreign_address">Address (Non-Thai)</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="address" id="foreign_worker_address" data-i18n="address_line_1_placeholder" placeholder="House no., building, street">
@@ -717,13 +717,13 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="foreign_soi">Soi</label>
+                        <label class="form-label mb-1" data-i18n="foreign_soi">Soi</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="soi" id="foreign_worker_soi" data-i18n="foreign_worker_soi_placeholder" placeholder="e.g., Soi 5">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="foreign_province">Province</label>
+                        <label class="form-label mb-1" data-i18n="foreign_province">Province</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="province" id="foreign_worker_province" data-i18n="place_example_placeholder" placeholder="e.g., Bangkok">
@@ -731,13 +731,13 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="foreign_district">District</label>
+                        <label class="form-label mb-1" data-i18n="foreign_district">District</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="district" id="foreign_worker_district" data-i18n="foreign_worker_district_placeholder" placeholder="e.g., Watthana">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="foreign_sub_district">Sub-District</label>
+                        <label class="form-label mb-1" data-i18n="foreign_sub_district">Sub-District</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="sub_district" id="foreign_worker_sub_district" data-i18n="foreign_worker_sub_district_placeholder" placeholder="e.g., Khlong Toei Nuea">
@@ -745,7 +745,7 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label" data-i18n="foreign_tel">Phone (Non-Thai)</label>
+                        <label class="form-label mb-1" data-i18n="foreign_tel">Phone (Non-Thai)</label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -811,13 +811,13 @@
                 </h6>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="company_email">Company Email</span></label>
+                        <label class="form-label mb-1"><span data-i18n="company_email">Company Email</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="email" class="form-control" name="company_email" id="company_email" data-i18n="company_email_placeholder" placeholder="e.g., name@company.com">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="office_tel">Telephone No.</span></label>
+                        <label class="form-label mb-1"><span data-i18n="office_tel">Telephone No.</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="office_tel" id="office_tel" data-i18n="phone_no_placeholder" placeholder="e.g., 0812345678">
@@ -833,13 +833,13 @@
             </h6>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="personal_email">Personal Email Address</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="personal_email">Personal Email Address</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="email" class="form-control required" name="personal_email" id="personal_email" data-i18n="personal_email_placeholder" placeholder="e.g., name@email.com">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="mobile_no">Mobile No.</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="mobile_no">Mobile No.</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3" id="mobile_no_wrap">
                     <!-- Country flag/dial-code picker via intl-tel-input (2026-08-20, replaced the
@@ -856,7 +856,7 @@
                     <input type="checkbox" class="me-2" name="send_preboarding_email" id="send_preboarding_email"><span data-i18n="send_preboarding">Send preboarding access email.</span>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="line_id">LINE ID</span></label>
+                    <label class="form-label mb-1"><span data-i18n="line_id">LINE ID</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control" name="line_id" id="line_id" data-i18n="line_id_placeholder" placeholder="e.g., somchai_j">
@@ -880,13 +880,13 @@
                 </h6>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="address_line_1">Address Line 1</span></label>
+                        <label class="form-label mb-1"><span data-i18n="address_line_1">Address Line 1</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="address_line_1_register" id="address_line_1_register" data-i18n="address_line_1_placeholder" placeholder="House no., building, street">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="address_line_2">Address Line 2 (Optional)</span></label>
+                        <label class="form-label mb-1"><span data-i18n="address_line_2">Address Line 2 (Optional)</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="address_line_2_register" id="address_line_2_register" data-i18n="address_line_2_placeholder" placeholder="Sub-district, district, province">
@@ -894,7 +894,7 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="search_address_label">Sub-district / City / Postcode</span></label>
+                        <label class="form-label mb-1"><span data-i18n="search_address_label">Sub-district / City / Postcode</span></label>
                     </div>
                     <div class="col-sm-4 mt-3 position-relative">
                         <input type="text" class="form-control autocomplete-address" id="search_address_register" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
@@ -933,13 +933,13 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="address_line_1">Address Line 1</span></label>
+                        <label class="form-label mb-1"><span data-i18n="address_line_1">Address Line 1</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="address_line_1_contact" id="address_line_1_contact" data-i18n="address_line_1_placeholder" placeholder="House no., building, street">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="address_line_2">Address Line 2 (Optional)</span></label>
+                        <label class="form-label mb-1"><span data-i18n="address_line_2">Address Line 2 (Optional)</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="address_line_2_contact" id="address_line_2_contact" data-i18n="address_line_2_placeholder" placeholder="Sub-district, district, province">
@@ -947,7 +947,7 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="search_address_label">Sub-district / City / Postcode</span></label>
+                        <label class="form-label mb-1"><span data-i18n="search_address_label">Sub-district / City / Postcode</span></label>
                     </div>
                     <div class="col-sm-4 mt-3 position-relative">
                         <input type="text" class="form-control autocomplete-address" id="search_address_contact" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
@@ -971,7 +971,7 @@
                      own signature-pad modal already established). -->
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="map_location">Map Location</span></label>
+                        <label class="form-label mb-1"><span data-i18n="map_location">Map Location</span></label>
                     </div>
                     <div class="col-sm-8 mt-3 d-flex align-items-center flex-wrap gap-2">
                         <!-- 2026-08-26, explicit request: "ถ้ามี Pin Location แล้วให้สามารถลบ Pin ได้ด้วยมี
@@ -1002,13 +1002,13 @@
                 </h6>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="name">Name</span></label>
+                        <label class="form-label mb-1"><span data-i18n="name">Name</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="emergency_name" id="emergency_name" data-i18n="emergency_name_placeholder" placeholder="e.g., Somsri">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="surname">Surname</span></label>
+                        <label class="form-label mb-1"><span data-i18n="surname">Surname</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="emergency_surname" id="emergency_surname" data-i18n="surname_th_placeholder" placeholder="e.g., ใจดี">
@@ -1016,13 +1016,13 @@
                 </div>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="relationship">Relationship</span></label>
+                        <label class="form-label mb-1"><span data-i18n="relationship">Relationship</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="emergency_relationship" id="emergency_relationship" data-i18n="emergency_relationship_placeholder" placeholder="e.g., Mother / Spouse / Friend">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="mobile_no">Mobile No.</span></label>
+                        <label class="form-label mb-1"><span data-i18n="mobile_no">Mobile No.</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="emergency_mobile" id="emergency_mobile" maxlength="10" data-i18n="phone_no_placeholder" placeholder="e.g., 0812345678">
@@ -1045,7 +1045,7 @@
             </h6>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="department">Department</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="department">Department</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote required" name="department_id" id="department_id" data-api="/api/department.get" data-type="department">
@@ -1064,7 +1064,7 @@
                      it now purely means "this person has no system permissions", which is correct
                      for the common case. -->
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="role">Role</span></label>
+                    <label class="form-label mb-1"><span data-i18n="role">Role</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="role_id" id="role_id" data-api="/api/role.get" data-type="role">
@@ -1082,14 +1082,14 @@
                  MIDDLE -- a trailing lone field reads normally, a lone field mid-section looked broken. -->
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="team">Team</span></label>
+                    <label class="form-label mb-1"><span data-i18n="team">Team</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="team_id" id="team_id" data-api="/api/team.get" data-type="team">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="position">Position</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="position">Position</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote required" name="position_id" id="position_id" data-api="/api/position.get" data-type="position">
@@ -1098,13 +1098,13 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employee_no">Employee No.</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="employee_no">Employee No.</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control required" name="employee_no" id="employee_no_input" data-i18n="employee_no_placeholder" placeholder="e.g., EMP0001">
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="branch">Branch</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="branch">Branch</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote required" name="branch_id" id="branch_id" data-api="/api/branch.get" data-type="branch">
@@ -1113,14 +1113,14 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="work_location">Work Location</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="work_location">Work Location</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote required" name="work_location_id" id="work_location_id" data-api="/api/work-location.options" data-type="location">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="shift">Shift</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="shift">Shift</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote required" name="shift_id" id="shift_id" data-api="/api/shift.options" data-type="shift">
@@ -1129,7 +1129,7 @@
             </div>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employment_date">Employment Date</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="employment_date">Employment Date</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
@@ -1152,7 +1152,7 @@
                      Origami)" / EN "Job Classification (from Origami)" -- i18n text only, no
                      schema/JS change, this is still the exact same `employment_type_id` field. -->
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employment_type_classification">Job Classification (from Origami)</span></label>
+                    <label class="form-label mb-1"><span data-i18n="employment_type_classification">Job Classification (from Origami)</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="employment_type_id" id="employment_type_id" data-api="/api/employment-type.get" data-type="employment_type">
@@ -1174,7 +1174,7 @@
                  change. -->
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employment_type">Employment Type</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="employment_type">Employment Type</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="employment_type" id="employment_type">
@@ -1186,7 +1186,7 @@
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employment_status">Employment Status</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="employment_status">Employment Status</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native required" name="employment_status" id="employment_status">
@@ -1238,7 +1238,7 @@
                  same philosophy as most other fields on this page; only format matters where it does. -->
             <div class="row d-none" id="employmentEndFields">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="effective_date">Effective Date</span></label>
+                    <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
@@ -1247,7 +1247,7 @@
                     </div>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="employment_last_report_date">Last Date for Reports</span></label>
+                    <label class="form-label mb-1"><span data-i18n="employment_last_report_date">Last Date for Reports</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
@@ -1256,7 +1256,7 @@
                     </div>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="reason">Reason</span></label>
+                    <label class="form-label mb-1"><span data-i18n="reason">Reason</span></label>
                 </div>
                 <div class="col-sm-10 mt-3">
                     <textarea class="form-control" name="employment_end_reason" id="employment_end_reason" maxlength="255" rows="2" data-i18n="employment_end_reason_placeholder" placeholder="e.g., Resignation, End of contract, Retirement"></textarea>
@@ -1267,14 +1267,14 @@
                  only. Fields stay in the DOM (values still submit/save/sync normally). -->
             <div class="row d-none">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="report_to">Report To</span></label>
+                    <label class="form-label mb-1"><span data-i18n="report_to">Report To</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="report_to_id" id="report_to_id" data-api="/api/employee.report_to.get" data-type="">
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="date_contract_expire">Date Contract Expire</span></label>
+                    <label class="form-label mb-1"><span data-i18n="date_contract_expire">Date Contract Expire</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
@@ -1285,7 +1285,7 @@
             </div>
             <div class="row d-none">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="holiday_calendar">Holiday Calendar</span></label>
+                    <label class="form-label mb-1"><span data-i18n="holiday_calendar">Holiday Calendar</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select" name="holiday_calendar_id" id="holiday_calendar_id">
@@ -1293,7 +1293,7 @@
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="driver_license">Driver License No.</span></label>
+                    <label class="form-label mb-1"><span data-i18n="driver_license">Driver License No.</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <input type="text" class="form-control" name="driver_license_no" id="driver_license_no" data-i18n="driver_license_no_placeholder" placeholder="e.g., 12345678">
@@ -1307,7 +1307,7 @@
                  fields would silently block every employee save. -->
             <div class="row d-none">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="workforce_type">Workforce Type</span></label>
+                    <label class="form-label mb-1"><span data-i18n="workforce_type">Workforce Type</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native" name="workforce_type" id="workforce_type">
@@ -1319,7 +1319,7 @@
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="record_time_method">Time Record Method</span></label>
+                    <label class="form-label mb-1"><span data-i18n="record_time_method">Time Record Method</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-native" name="record_time_method" id="record_time_method">
@@ -1354,7 +1354,7 @@
             <div id="otRateSection">
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="ot_eligible">OT Eligible</span></label>
+                        <label class="form-label mb-1"><span data-i18n="ot_eligible">OT Eligible</span></label>
                     </div>
                     <div class="col-sm-4 mt-3 pt-2">
                         <input type="checkbox" class="me-2" name="ot_eligible" id="ot_eligible"><span data-i18n="eligible_for_overtime">Eligible for overtime pay</span>
@@ -1363,7 +1363,7 @@
                 <div id="otRateDependentWrap" class="d-none">
                     <div class="row">
                         <div class="col-sm-2 mt-3">
-                            <label class="form-label"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
+                            <label class="form-label mb-1"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
                         </div>
                         <div class="col-sm-4 mt-3">
                             <div class="btn-group d-block" role="group" id="otRateSourceRadioGroup">
@@ -1374,7 +1374,7 @@
                             </div>
                         </div>
                         <div class="col-sm-2 mt-3 ot-rate-set-picker-toggle">
-                            <label class="form-label"><span data-i18n="ot_rate_set_picker_label">OT Rate Set</span></label>
+                            <label class="form-label mb-1"><span data-i18n="ot_rate_set_picker_label">OT Rate Set</span></label>
                         </div>
                         <div class="col-sm-4 mt-3 ot-rate-set-picker-toggle" id="otRateSetPickerWrapper">
                             <select class="form-select select2-remote" id="ot_rate_set_id" data-api="/api/ot-rate.set-options" data-type="ot_rate_set"></select>
@@ -1414,7 +1414,7 @@
             </h6>
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="salary_type">Salary Type</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="salary_type">Salary Type</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <!-- 2026-08-31, explicit request/investigation: "ถ้าเป็นพนักงานรายวัน การระบุเงินเดือน
@@ -1436,7 +1436,7 @@
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="base_salary_amount">Base Salary Amount</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="base_salary_amount">Base Salary Amount</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
@@ -1457,7 +1457,7 @@
                  group instead of being split across two separate rows. -->
             <div class="row">
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <div class="input-group">
@@ -1466,7 +1466,7 @@
                     </div>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
+                    <label class="form-label mb-1"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
                     <select class="form-select select2-remote" name="cycle_id" id="cycle_id" data-api="/api/payroll-cycle.options">
@@ -1519,7 +1519,7 @@
                      database/migrations/2026-09-02_19_drop_legacy_payment_type.sql). -->
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="payment_type">Payment Type</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="payment_type">Payment Type</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-remote required" name="payment_method_id" id="payment_method_id" data-api="/api/payment-method.options"></select>
@@ -1547,7 +1547,7 @@
                      applyAccountPickerVisibility() in detail.js. -->
                 <div class="row" id="sectionCycleBankAccount">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="default_bank_account_label">Paid From Company Account</span></label>
+                        <label class="form-label mb-1"><span data-i18n="default_bank_account_label">Paid From Company Account</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-remote" name="default_bank_account_id" id="default_bank_account_id" data-api="/api/employee.payment-account-options" allow-clear="true"></select>
@@ -1556,26 +1556,26 @@
                 </div>
                 <div class="row" id="sectionBankPayment">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="bank_name">Bank</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="bank_name">Bank</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-remote" name="bank_id" id="bank_id" data-api="/api/bank.get" data-type="bank">
                         </select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="bank_account_no">Bank Account No.</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="bank_account_no">Bank Account No.</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="bank_account_no" id="bank_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="bank_account_name">Bank Account Name</span></label>
+                        <label class="form-label mb-1"><span data-i18n="bank_account_name">Bank Account Name</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="bank_account_name" id="bank_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="bank_branch">Bank Branch</span></label>
+                        <label class="form-label mb-1"><span data-i18n="bank_branch">Bank Branch</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="bank_branch" id="bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
@@ -1592,7 +1592,7 @@
                 <div class="row d-none" id="sectionMixedPayment">
                     <div class="col-12 mt-3">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <label class="form-label mb-0" data-i18n="mixed_payment_lines">Payment Lines</label>
+                            <label class="form-label mb-1" data-i18n="mixed_payment_lines">Payment Lines</label>
                             <button type="button" class="btn btn-sm btn-outline-brand" id="btnAddPaymentMethodLine">
                                 <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_line">Add Line</span>
                             </button>
@@ -1655,7 +1655,7 @@
             </h6>
             <div class="row">
                 <div class="col-sm-2 mt-3 tax-calc-method-toggle">
-                    <label class="form-label"><span data-i18n="tax_calculation_method">Tax Calculation Method</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="tax_calculation_method">Tax Calculation Method</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3 tax-calc-method-toggle">
                     <select class="form-select select2-native required" name="tax_calculation_method" id="tax_calculation_method">
@@ -1665,7 +1665,7 @@
                     </select>
                 </div>
                 <div class="col-sm-2 mt-3">
-                    <label class="form-label"><span data-i18n="tax_exempt">Tax Exempt</span></label>
+                    <label class="form-label mb-1"><span data-i18n="tax_exempt">Tax Exempt</span></label>
                 </div>
                 <div class="col-sm-4 mt-3 pt-2">
                     <input type="checkbox" class="me-2" name="tax_exempt" id="tax_exempt"><span data-i18n="exempt_from_wht">Exempt from withholding tax</span>
@@ -1724,7 +1724,7 @@
                      override to No" must be distinguishable from "don't override at all". -->
                 <div class="row d-none" id="internRatioOverrideFieldsRow">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_intern_base_salary_ratio_label">Base Salary Ratio for Salaried Interns</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_intern_base_salary_ratio_label">Base Salary Ratio for Salaried Interns</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -1733,25 +1733,25 @@
                         </div>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_intern_defer_pvd_label">Defer Provident Fund (PVD) contribution for interns</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_intern_defer_pvd_label">Defer Provident Fund (PVD) contribution for interns</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-static" name="intern_defer_pvd_override" id="intern_defer_pvd_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_intern_defer_sso_label">Defer Social Security Fund (SSO) contribution for interns</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_intern_defer_sso_label">Defer Social Security Fund (SSO) contribution for interns</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-static" name="intern_defer_sso_override" id="intern_defer_sso_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_intern_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) for interns</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_intern_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) for interns</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-static" name="intern_defer_recurring_earning_override" id="intern_defer_recurring_earning_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_leave_days_limit_label">Leave Days Limit</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_leave_days_limit_label">Leave Days Limit</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -1760,13 +1760,13 @@
                         </div>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_allow_leave_label">Allow leave requests during this period</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_allow_leave_label">Allow leave requests during this period</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-static" name="intern_allow_leave_override" id="intern_allow_leave_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_intern_period_days_label">Standard Internship Period (days)</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_intern_period_days_label">Standard Internship Period (days)</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -1803,7 +1803,7 @@
                      Internship section's own expanded override row immediately above, own field set. -->
                 <div class="row d-none" id="probationRatioOverrideFieldsRow">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_probation_base_salary_ratio_label">Base Salary Ratio During Probation</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_probation_base_salary_ratio_label">Base Salary Ratio During Probation</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -1812,25 +1812,25 @@
                         </div>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_probation_defer_pvd_label">Defer Provident Fund (PVD) contribution until probation passes</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_probation_defer_pvd_label">Defer Provident Fund (PVD) contribution until probation passes</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-static" name="probation_defer_pvd_override" id="probation_defer_pvd_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_probation_defer_sso_label">Defer Social Security Fund (SSO) contribution until probation passes</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_probation_defer_sso_label">Defer Social Security Fund (SSO) contribution until probation passes</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-static" name="probation_defer_sso_override" id="probation_defer_sso_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_probation_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) until probation passes</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_probation_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) until probation passes</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-static" name="probation_defer_recurring_earning_override" id="probation_defer_recurring_earning_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_leave_days_limit_label">Leave Days Limit</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_leave_days_limit_label">Leave Days Limit</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -1839,13 +1839,13 @@
                         </div>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_allow_leave_label">Allow leave requests during this period</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_allow_leave_label">Allow leave requests during this period</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select select2-static" name="probation_allow_leave_override" id="probation_allow_leave_override" data-option-keys="policy_override_use_default,yes,no" data-option-values=",1,0"></select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="policy_probation_period_days_label">Standard Probation Period (days)</span></label>
+                        <label class="form-label mb-1"><span data-i18n="policy_probation_period_days_label">Standard Probation Period (days)</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -1890,6 +1890,14 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="eedDeductionSub-tab" data-bs-toggle="pill" data-bs-target="#eedDeductionSub-pane" type="button" role="tab" aria-controls="eedDeductionSub-pane" aria-selected="false"><i class="fa-solid fa-arrow-trend-down me-2"></i><span data-i18n="deduction_singular">Deduction</span></button>
                     </li>
+                    <!-- 2026-09-04, Backlog Phase 9->10, T051: read-only history of Origami-sync-
+                         derived pay lines (Diligence/Trip Allowance/opted-in Student Loan/etc.) across
+                         pay periods -- see PayrollSyncTransactionLogModel's own docblock. Deliberately
+                         a 3rd pill, not folded into Income/Deduction, since it's not an editable
+                         assignment the way those 2 tables are -- no Add/Edit/Delete anywhere in this pane. -->
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="eedSyncHistorySub-tab" data-bs-toggle="pill" data-bs-target="#eedSyncHistorySub-pane" type="button" role="tab" aria-controls="eedSyncHistorySub-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="sync_transaction_history">Sync History</span></button>
+                    </li>
                 </ul>
             </div>
             <div class="tab-content" id="eedSubTabsContent">
@@ -1917,6 +1925,33 @@
                                 <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
                                 <th data-i18n="col_status" style="width:100px;">Status</th>
                                 <th style="width:130px;"></th>
+                            </tr>
+                        </thead>
+                    </table>
+                </div>
+                <div class="tab-pane fade" id="eedSyncHistorySub-pane" role="tabpanel" aria-labelledby="eedSyncHistorySub-tab" tabindex="0">
+                    <p class="text-secondary small mb-3" data-i18n="sync_transaction_history_hint">*Read-only history of pay lines resolved automatically from Origami sync (Diligence, Trip Allowance, and any other linked event) across pay periods. Nothing here can be added, edited, or deleted directly -- it reflects what each approved payroll run already calculated.</p>
+                    <h6 class="text-secondary fw-bold mb-2" data-i18n="sync_transaction_log_title">Sync-Resolved Pay Lines</h6>
+                    <table class="table table-bordered table-sm align-middle mb-4" id="tableSyncTransactionLog" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th data-i18n="pay_period">Pay Period</th>
+                                <th data-i18n="item_name">Item</th>
+                                <th data-i18n="col_status" style="width:100px;">Type</th>
+                                <th data-i18n="amount" style="width:150px;">Amount</th>
+                                <th data-i18n="remark">Remark</th>
+                            </tr>
+                        </thead>
+                    </table>
+                    <h6 class="text-secondary fw-bold mb-2" data-i18n="scheduled_item_occurrence_title">Scheduled Installments (from Origami)</h6>
+                    <table class="table table-bordered table-sm align-middle" id="tableScheduledItemOccurrence" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th data-i18n="applied_date">Applied Date</th>
+                                <th data-i18n="item_name">Item</th>
+                                <th data-i18n="installment_progress" style="width:110px;">Installment #</th>
+                                <th data-i18n="amount" style="width:150px;">Amount</th>
+                                <th data-i18n="reference">Reference / Run</th>
                             </tr>
                         </thead>
                     </table>
@@ -1956,11 +1991,11 @@
                     </div>
                     <div id="ssoDetailFields" class="d-none">
                         <div class="mt-3">
-                            <label class="form-label d-block"><span data-i18n="sso_no">Social Security No.</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="sso_no">Social Security No.</span></label>
                             <input type="text" class="form-control" name="sso_no" id="sso_no" maxlength="13" data-i18n="sso_no_placeholder" placeholder="13-digit social security number">
                         </div>
                         <div class="mt-3">
-                            <label class="form-label d-block"><span data-i18n="sso_start_date">SSO Start Date</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="sso_start_date">SSO Start Date</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" name="sso_start_date" id="sso_start_date" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -1987,12 +2022,12 @@
                              live (it would have silently pinned every employee to 5% forever). Synced
                              from Origami's sso_employee_rate_percent when present (EmployeeSyncer). -->
                         <div class="mt-3">
-                            <label class="form-label d-block"><span data-i18n="sso_contribution_rate">Employee Contribution Rate Override (%)</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="sso_contribution_rate">Employee Contribution Rate Override (%)</span></label>
                             <input type="number" step="0.01" class="form-control" name="sso_contribution_rate" id="sso_contribution_rate" placeholder="5.00">
                             <div class="text-muted small" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
                         </div>
                         <div class="mt-3">
-                            <label class="form-label d-block"><span data-i18n="sso_employer_contribution_rate">Employer Contribution Rate Override (%)</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="sso_employer_contribution_rate">Employer Contribution Rate Override (%)</span></label>
                             <input type="number" step="0.01" class="form-control" name="sso_employer_contribution_rate" id="sso_employer_contribution_rate" placeholder="5.00">
                             <div class="text-muted small" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
                         </div>
@@ -2002,7 +2037,7 @@
                          and isn't read by StatutoryCalculationEngine or the SSO reports (those use
                          sso_no). -->
                     <div class="mt-3 d-none">
-                        <label class="form-label d-block"><span data-i18n="sso_hospital">Hospital</span></label>
+                        <label class="form-label d-block mb-1"><span data-i18n="sso_hospital">Hospital</span></label>
                         <select class="form-select" name="sso_hospital_id" id="sso_hospital_id">
                             <option value="" data-i18n="please_choose">Select an option</option>
                         </select>
@@ -2027,22 +2062,22 @@
                          the DOM (values still submit/save/sync normally). -->
                     <div class="d-none">
                         <div class="mt-3">
-                            <label class="form-label d-block"><span data-i18n="pvd_fund_name">Fund Name</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="pvd_fund_name">Fund Name</span></label>
                             <input type="text" class="form-control" name="pvd_fund_name" id="pvd_fund_name" data-i18n="pvd_fund_name_placeholder" placeholder="e.g., XYZ Provident Fund">
                         </div>
                         <div class="mt-3">
-                            <label class="form-label d-block"><span data-i18n="pvd_start_date">Start Date</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="pvd_start_date">Start Date</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" name="pvd_start_date" id="pvd_start_date" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
                         <div class="mt-3">
-                            <label class="form-label d-block"><span data-i18n="pvd_employee_rate">Employee Rate (%)</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="pvd_employee_rate">Employee Rate (%)</span></label>
                             <input type="number" step="0.01" class="form-control" name="pvd_employee_rate" id="pvd_employee_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
                         </div>
                         <div class="mt-3">
-                            <label class="form-label d-block"><span data-i18n="pvd_employer_rate">Employer Rate (%)</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="pvd_employer_rate">Employer Rate (%)</span></label>
                             <input type="number" step="0.01" class="form-control" name="pvd_employer_rate" id="pvd_employer_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
                         </div>
                     </div>
@@ -2058,7 +2093,7 @@
                 </h6>
                 <div class="row">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="insurance_plan">Insurance Plan</span></label>
+                        <label class="form-label mb-1"><span data-i18n="insurance_plan">Insurance Plan</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <select class="form-select" name="insurance_plan_id" id="insurance_plan_id">
@@ -2066,7 +2101,7 @@
                         </select>
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="insurance_start_date">Coverage Start Date</span></label>
+                        <label class="form-label mb-1"><span data-i18n="insurance_start_date">Coverage Start Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <div class="input-group">
@@ -2107,7 +2142,7 @@
                      question on this tab (Father/Mother, and now Spouse/Children too) uses. -->
                 <div class="row">
                     <div class="col-sm-3 align-self-center">
-                        <label class="form-label mb-0"><span data-i18n="has_dependent_spouse">Has spouse with no income (eligible for tax allowance)</span></label>
+                        <label class="form-label mb-1"><span data-i18n="has_dependent_spouse">Has spouse with no income (eligible for tax allowance)</span></label>
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="hasSpouseToggle">
@@ -2119,13 +2154,13 @@
                 </div>
                 <div id="spouseDetailFields" class="row d-none">
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="spouse_name">Spouse Name</span></label>
+                        <label class="form-label mb-1"><span data-i18n="spouse_name">Spouse Name</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="spouse_name" id="spouse_name" data-i18n="parent_name_placeholder" placeholder="e.g., Somsak Jaidee">
                     </div>
                     <div class="col-sm-2 mt-3">
-                        <label class="form-label"><span data-i18n="spouse_id_card_no">Spouse ID Card No.</span></label>
+                        <label class="form-label mb-1"><span data-i18n="spouse_id_card_no">Spouse ID Card No.</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
                         <input type="text" class="form-control" name="spouse_id_card_no" id="spouse_id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
@@ -2152,7 +2187,7 @@
                      the matching comment on the Spouse question above). -->
                 <div class="row">
                     <div class="col-sm-3 align-self-center">
-                        <label class="form-label mb-0"><span data-i18n="has_children_question">Does this employee have children?</span></label>
+                        <label class="form-label mb-1"><span data-i18n="has_children_question">Does this employee have children?</span></label>
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="hasChildrenToggle">
@@ -2197,7 +2232,7 @@
                      detail.js); only the immediate, already-confirmed Delete action remains here. -->
                 <div class="row">
                     <div class="col-sm-3 align-self-center">
-                        <label class="form-label mb-0"><span data-i18n="claim_father_question">Claim father for tax allowance?</span></label>
+                        <label class="form-label mb-1"><span data-i18n="claim_father_question">Claim father for tax allowance?</span></label>
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="useFatherToggle">
@@ -2209,13 +2244,13 @@
                 <div id="fatherDetailFields" class="row mt-3 d-none">
                     <input type="hidden" id="parent_father_id">
                     <div class="col-sm-2 align-self-center">
-                        <label class="form-label mb-0"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4">
                         <input type="text" class="form-control" id="parent_father_name" data-i18n="parent_name_placeholder" placeholder="e.g., Somsak Jaidee">
                     </div>
                     <div class="col-sm-2 align-self-center">
-                        <label class="form-label mb-0"><span data-i18n="id_card_no">ID Card No.</span></label>
+                        <label class="form-label mb-1"><span data-i18n="id_card_no">ID Card No.</span></label>
                     </div>
                     <div class="col-sm-3">
                         <input type="text" class="form-control" id="parent_father_id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
@@ -2227,7 +2262,7 @@
                 <hr class="my-4 text-muted opacity-25">
                 <div class="row">
                     <div class="col-sm-3 align-self-center">
-                        <label class="form-label mb-0"><span data-i18n="claim_mother_question">Claim mother for tax allowance?</span></label>
+                        <label class="form-label mb-1"><span data-i18n="claim_mother_question">Claim mother for tax allowance?</span></label>
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="useMotherToggle">
@@ -2239,13 +2274,13 @@
                 <div id="motherDetailFields" class="row mt-3 d-none">
                     <input type="hidden" id="parent_mother_id">
                     <div class="col-sm-2 align-self-center">
-                        <label class="form-label mb-0"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="name">Name</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4">
                         <input type="text" class="form-control" id="parent_mother_name" data-i18n="parent_name_placeholder" placeholder="e.g., Somsak Jaidee">
                     </div>
                     <div class="col-sm-2 align-self-center">
-                        <label class="form-label mb-0"><span data-i18n="id_card_no">ID Card No.</span></label>
+                        <label class="form-label mb-1"><span data-i18n="id_card_no">ID Card No.</span></label>
                     </div>
                     <div class="col-sm-3">
                         <input type="text" class="form-control" id="parent_mother_id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
@@ -2271,37 +2306,37 @@
             </h6>
             <div class="row">
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="id_card_copy">ID Card Copy</label>
+                    <label class="form-label mb-1" data-i18n="id_card_copy">ID Card Copy</label>
                     <input type="file" class="form-control" name="doc_id_card_copy" id="doc_id_card_copy" accept="image/*,.pdf">
                 </div>
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="house_registration_copy">House Registration Copy</label>
+                    <label class="form-label mb-1" data-i18n="house_registration_copy">House Registration Copy</label>
                     <input type="file" class="form-control" name="doc_house_registration_copy" id="doc_house_registration_copy" accept="image/*,.pdf">
                 </div>
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="work_permit_copy">Work Permit Copy</label>
+                    <label class="form-label mb-1" data-i18n="work_permit_copy">Work Permit Copy</label>
                     <input type="file" class="form-control" name="doc_work_permit_copy" id="doc_work_permit_copy" accept="image/*,.pdf">
                 </div>
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="employment_contract">Employment Contract</label>
+                    <label class="form-label mb-1" data-i18n="employment_contract">Employment Contract</label>
                     <input type="file" class="form-control" name="doc_employment_contract" id="doc_employment_contract" accept="image/*,.pdf">
                 </div>
             </div>
             <div class="row">
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="bank_book_copy">Bank Book Copy</label>
+                    <label class="form-label mb-1" data-i18n="bank_book_copy">Bank Book Copy</label>
                     <input type="file" class="form-control" name="doc_bank_book_copy" id="doc_bank_book_copy" accept="image/*,.pdf">
                 </div>
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="resume">Resume / CV</label>
+                    <label class="form-label mb-1" data-i18n="resume">Resume / CV</label>
                     <input type="file" class="form-control" name="doc_resume" id="doc_resume" accept=".pdf,.doc,.docx">
                 </div>
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="education_certificate">Education Certificate</label>
+                    <label class="form-label mb-1" data-i18n="education_certificate">Education Certificate</label>
                     <input type="file" class="form-control" name="doc_education_certificate" id="doc_education_certificate" accept="image/*,.pdf">
                 </div>
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="other_documents">Other Documents</label>
+                    <label class="form-label mb-1" data-i18n="other_documents">Other Documents</label>
                     <input type="file" class="form-control" name="doc_other" id="doc_other" multiple accept="image/*,.pdf">
                 </div>
             </div>
@@ -2311,11 +2346,11 @@
                  for that one. -->
             <div class="row">
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="passport_copy">Passport Copy</label>
+                    <label class="form-label mb-1" data-i18n="passport_copy">Passport Copy</label>
                     <input type="file" class="form-control" name="doc_passport_copy" id="doc_passport_copy" accept="image/*,.pdf">
                 </div>
                 <div class="col-sm-3 mt-3">
-                    <label class="form-label" data-i18n="visa_copy">Visa Copy</label>
+                    <label class="form-label mb-1" data-i18n="visa_copy">Visa Copy</label>
                     <input type="file" class="form-control" name="doc_visa_copy" id="doc_visa_copy" accept="image/*,.pdf">
                 </div>
             </div>
@@ -2352,7 +2387,7 @@
                  detail.js's own initLoginHistoryTable()/loadLoginHistoryFilterOptions() needed no
                  changes -- only the wrapper markup + a new toggle/clear-visibility JS pair. -->
             <div class="station-filter" id="loginHistoryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="loginHistoryStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -2416,6 +2451,27 @@
              this one isn't a DataTable, fetching before the pane is visible would still be wasted
              work for a tab most sessions never open. -->
         <div class="tab-pane fade" id="permission-overrides-pane" role="tabpanel" aria-labelledby="permission-overrides-tab" tabindex="0">
+            <!-- 2026-09-04, Backlog Phase 10, T059 -- Suspend/Unsuspend control, same tab as the
+                 per-permission overrides it reuses under the hood (bulk deny via the exact same
+                 employee_permission_overrides mechanism). Hidden entirely for the viewer's own
+                 record (self-suspend is refused server-side anyway, but there's no reason to show
+                 an always-refused button). -->
+            <div class="card-surface p-3 mb-3" id="employeeSuspensionCard">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h6 class="mb-1"><i class="fa-solid fa-user-lock me-1"></i><span data-i18n="access_suspension_title">System Access</span></h6>
+                        <div id="employeeSuspensionStatusText" class="small text-muted">-</div>
+                    </div>
+                    <div>
+                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="btnSuspendEmployee">
+                            <i class="fa-solid fa-ban me-1"></i><span data-i18n="suspend_access">Suspend Access</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-success btn-sm d-none" id="btnUnsuspendEmployee">
+                            <i class="fa-solid fa-lock-open me-1"></i><span data-i18n="unsuspend_access">Restore Access</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
             <div class="alert alert-light border small mb-3" data-i18n="permission_overrides_hint">
                 Override this employee's individual permissions on top of what their Role normally grants. Leaving a permission at "Inherit" means it simply follows their Role as usual.
             </div>

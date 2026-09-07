@@ -140,16 +140,20 @@ try {
     // straight from employees.employment_end_date and isn't tied to any specific run.
     $resignedSsoNo = '1112223334445';
     $encResignedSso = EncryptionService::encrypt($resignedSsoNo);
+    // 2026-09-05, Phase 12 T071: id_card_no added -- Sso609Exporter's new 'txt' format needs it
+    // (the spec's own field 2 is explicitly "เลขประจำตัวประชาชน", the national ID, not sso_no).
+    $resignedIdCardNo = '2100300400556';
+    $encResignedIdCard = EncryptionService::encrypt($resignedIdCardNo);
     $insResigned = $pdo->prepare("INSERT INTO `employees`
         (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
-         sso_no, key_version,
+         sso_no, id_card_no, key_version,
          personal_email, mobile_no, address_line_1_register, address_line_1_contact,
          emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
          employment_date, employment_end_date, employment_status, employment_type, workforce_type, record_time_method,
          salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
          sso_enrolled, pvd_enrolled, tax_exempt, department_id)
         VALUES (:comp_id, :employee_no, 'ms', 'female', 'ทดสอบ', 'ลาออก', 'Test', 'Resigned', '1990-01-01', 'Thai',
-         :sso_no, :key_version,
+         :sso_no, :id_card_no, :key_version,
          :email, '0811111111', 'Test Address', 'Test Address',
          'Emergency', 'Contact', 'friend', '0899999999',
          '2019-01-01', :employment_end_date, 'resigned', 'full_time', 'office', 'manual',
@@ -157,7 +161,7 @@ try {
          1, 0, 0, NULL)");
     $insResigned->execute([
         ':comp_id' => $compId, ':employee_no' => 'RPT_RESIGNED_' . uniqid(),
-        ':sso_no' => $encResignedSso['value'], ':key_version' => $encResignedSso['key_version'],
+        ':sso_no' => $encResignedSso['value'], ':id_card_no' => $encResignedIdCard['value'], ':key_version' => $encResignedSso['key_version'],
         ':email' => uniqid() . '@test.local',
         ':employment_end_date' => (clone $today)->modify('first day of last month')->modify('+5 days')->format('Y-m-d'),
     ]);
@@ -365,6 +369,29 @@ try {
     checkTrue('PDF content starts with %PDF header', str_starts_with($slipResult['content'], '%PDF'));
     check('mime type is pdf', $slipResult['mime_type'], 'application/pdf');
 
+    // ---------- Backlog Phase 11, T061: DocumentNumberingModel wired to PAYSLIP ----------
+    echo "=== PaySlipReport: DocumentNumberingModel wiring (T061) ===\n";
+    $stmtPsNo = $pdo->prepare("SELECT payslip_number FROM payroll_run_details WHERE run_id = :run_id AND employee_id = :employee_id");
+    $stmtPsNo->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+    $psNumberAfterFirstGenerate = $stmtPsNo->fetchColumn();
+    checkTrue('a payslip_number was stamped after the first generate() call', !empty($psNumberAfterFirstGenerate));
+    // Re-generate (simulates re-downloading the same real payslip) -- must reuse the SAME number,
+    // never assign a new one on every render.
+    $slipResultSecond = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
+    $stmtPsNo->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+    check('re-generating the SAME payslip reuses the identical payslip_number (idempotent, not re-assigned)', $stmtPsNo->fetchColumn(), $psNumberAfterFirstGenerate);
+
+    // ---------- Backlog Phase 12, T073: generate-once-persist-reuse (Option C) for the PDF itself ----------
+    echo "=== PaySlipReport: PDF cache (T073, Option C) ===\n";
+    $stmtPdfPath = $pdo->prepare("SELECT payslip_pdf_path FROM payroll_run_details WHERE run_id = :run_id AND employee_id = :employee_id");
+    $stmtPdfPath->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+    $pdfPathAfterFirstGenerate = $stmtPdfPath->fetchColumn();
+    checkTrue('a payslip_pdf_path was persisted after the first generate() call', !empty($pdfPathAfterFirstGenerate));
+    checkTrue('the persisted file genuinely exists on disk', is_file(__DIR__ . '/../' . $pdfPathAfterFirstGenerate));
+    check('re-generating the SAME payslip returns byte-identical content (served from cache, not re-rendered)', $slipResultSecond['content'], $slipResult['content']);
+    $stmtPdfPath->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+    check('re-generating the SAME payslip did not create/point to a different cached file', $stmtPdfPath->fetchColumn(), $pdfPathAfterFirstGenerate);
+
     $blockedByState = false;
     try {
         $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $draftRunId, 'employee_id' => $employeeId], 'pdf');
@@ -412,6 +439,21 @@ try {
     checkTrue('template published', $payslipTemplateModel->setPublishStatus($compId, (int)$templateSave['template_id'], 'public', $adminUserId)['status']);
     checkTrue('getDefault() now finds the new default template', $payslipTemplateModel->getDefault($compId, 'th') !== null);
 
+    // 2026-09-05, Phase 12 T073: this (run, employee) pair was already cached by the earlier T061/
+    // T073 sections above (BEFORE this template even existed) -- without clearing it, generate()
+    // would correctly (per the new caching design) keep serving that OLDER fixed-layout fallback
+    // PDF forever, making every assertion below about the TEMPLATE-driven render meaningless. See
+    // the identical clear-before-re-testing-a-changed-scenario pattern a few sections below (the
+    // company-logo-fallback check) for the same reasoning.
+    $stmtPdfPath = $pdo->prepare("SELECT payslip_pdf_path FROM payroll_run_details WHERE run_id = :run_id AND employee_id = :employee_id");
+    $stmtPdfPath->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+    $pathBeforeTemplate = $stmtPdfPath->fetchColumn();
+    if (!empty($pathBeforeTemplate)) {
+        @unlink(__DIR__ . '/../' . $pathBeforeTemplate);
+    }
+    $pdo->prepare("UPDATE `payroll_run_details` SET payslip_pdf_path = NULL WHERE run_id = :run_id AND employee_id = :employee_id")
+        ->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+
     $templatedSlip = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
     checkTrue('templated PDF content starts with %PDF header', str_starts_with($templatedSlip['content'], '%PDF'));
     checkTrue('templated PDF has non-trivial content length', strlen($templatedSlip['content']) > 1000);
@@ -429,6 +471,20 @@ try {
     file_put_contents(__DIR__ . '/../' . $companyLogoRel, $tinyPng);
     try {
         $pdo->prepare('UPDATE `companies` SET logo_path = :p WHERE id = :id')->execute([':p' => $companyLogoRel, ':id' => $compId]);
+        // 2026-09-05, Phase 12 T073: this exact (run, employee) pair was already cached by earlier
+        // sections in this file -- generate() would otherwise correctly (per the new "generate
+        // once, never re-render" design) serve that OLDER, logo-less cached PDF here instead of a
+        // fresh render, which would make this specific before/after comparison meaningless. Clears
+        // the cache column (+ its now-orphaned file) to force one genuinely fresh render, same as
+        // the very first time anyone ever asks for this payslip -- this is testing the render path
+        // itself, not the cache.
+        $stmtPdfPath->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+        $oldCachedPath = $stmtPdfPath->fetchColumn();
+        if (!empty($oldCachedPath)) {
+            @unlink(__DIR__ . '/../' . $oldCachedPath);
+        }
+        $pdo->prepare("UPDATE `payroll_run_details` SET payslip_pdf_path = NULL WHERE run_id = :run_id AND employee_id = :employee_id")
+            ->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         $slipWithCompanyLogoFallback = $paySlipReport->generate(['comp_id' => $compId, 'run_id' => $runId, 'employee_id' => $employeeId], 'pdf');
         checkTrue('PDF still valid when falling back to the company logo', str_starts_with($slipWithCompanyLogoFallback['content'], '%PDF'));
         checkTrue('PDF is larger than the no-logo-at-all version (company logo actually embedded)', strlen($slipWithCompanyLogoFallback['content']) > strlen($templatedSlip['content']));
@@ -462,19 +518,22 @@ try {
     // comp_id=1 is the real shared dev DB company, which by now has other real employees with
     // approved runs in this same calendar year, so an exact "1 line total" count is no longer
     // meaningful here (it was 12, not 1, the moment this ran against real accumulated data). Finds
-    // THIS fixture employee's own line by its known tax_id instead of assuming array position/count
-    // -- still a real assertion (the fixture's own line must exist and be correctly formatted), just
-    // no longer dependent on how much other real data comp_id=1 has accumulated.
+    // THIS fixture employee's own line by its known id_card_no instead of assuming array
+    // position/count -- still a real assertion (the fixture's own line must exist and be correctly
+    // formatted), just no longer dependent on how much other real data comp_id=1 has accumulated.
+    // 2026-09-05, Phase 12 T071: field index moved from 0 to 1 (11-field layout now, id_card_no
+    // -- not tax_id_no -- see PndOneKorSummaryReport's own docblock for that real fix).
     $fixtureLine = null;
     foreach ($lines as $line) {
         $f = explode('|', $line);
-        if (($f[0] ?? null) === $taxId) {
+        if (($f[1] ?? null) === $idCardNo) {
             $fixtureLine = $f;
             break;
         }
     }
-    checkTrue('txt includes a line for the fixture employee (comp_id=1 has other real employees with approved runs this year -- searched by tax_id, not assumed to be the only/first line)', $fixtureLine !== null);
-    check('txt tax_id field matches the decrypted value', $fixtureLine[0] ?? null, $taxId);
+    checkTrue('txt includes a line for the fixture employee (comp_id=1 has other real employees with approved runs this year -- searched by id_card_no, not assumed to be the only/first line)', $fixtureLine !== null);
+    check('txt id_card_no field matches the decrypted value', $fixtureLine[1] ?? null, $idCardNo);
+    check('txt prefix field is Thai text นาย, not the raw title code (real bug fixed alongside the rewrite)', iconv('TIS-620', 'UTF-8', $fixtureLine[2] ?? ''), 'นาย');
 
     $pnd1kExcel = $pnd1kReport->generate(['comp_id' => $compId, 'year' => $periodYearBe], 'excel');
     checkTrue('excel content is non-empty', strlen($pnd1kExcel['content']) > 0);
@@ -513,29 +572,28 @@ try {
     checkTrue('year with no approved runs rejected with a clear error', $noDataForYear);
 
     // ---------- PND1 (monthly) ----------
-    // 2026-08-29, rewritten against a structural field-order description the user gave directly
-    // -- see PndOneExporter/PndOneReport's own docblocks for the full 20-field layout and the
-    // one flagged data gap (no structured house-no./moo/building/soi/road columns exist).
+    // 2026-09-05, Phase 12 T071: PndOneExporter/PndOneReport rewritten against a confirmed
+    // reference spec (11-field pipe layout, no address fields at all) -- see those classes' own
+    // docblocks. The pre-2026-09-05 20-field layout (form-type-code constant, structured address
+    // sub-fields) is gone entirely.
     echo "=== PndOneReport (statutory, monthly) ===\n";
     $pnd1Report = ReportRegistry::get('TH_PND1');
     $pnd1Txt = $pnd1Report->generate(['comp_id' => $compId, 'run_id' => $runId], 'txt');
     $pnd1Lines = explode("\r\n", rtrim($pnd1Txt['content'], "\r\n"));
     check('monthly txt has 1 employee line', count($pnd1Lines), 1);
     $pnd1Fields = explode('|', $pnd1Lines[0]);
-    check('field 1: form type code is the constant 401N', $pnd1Fields[0], '401N');
-    check('field 2: sequence number starts at 1', $pnd1Fields[1], '1');
-    // insured_id is the employee's id_card_no (matches SSO110's own same-week convention), not
-    // tax_id_no -- see PndOneReport's own docblock.
-    check('field 3: id_card_no matches decrypted value', $pnd1Fields[2], $idCardNo);
-    check('field 4: prefix is the Thai text นาย (mr), not a numeric code', $pnd1Fields[3], 'นาย');
-    check('20 total pipe-delimited fields per row', count($pnd1Fields), 20);
+    check('11 total pipe-delimited fields per row', count($pnd1Fields), 11);
+    check('field 1: sequence number starts at 1', $pnd1Fields[0], '1');
+    check('field 2: id_card_no matches decrypted value', $pnd1Fields[1], $idCardNo);
+    check('field 3: prefix is the Thai text นาย (mr), not a numeric code', iconv('TIS-620', 'UTF-8', $pnd1Fields[2]), 'นาย');
+    check('field 8: literal 0.00 rate placeholder', $pnd1Fields[7], '0.00');
 
     // "รองรับ 2 ภาษาเหมือนกัน" -- employee/company name + prefix follow the requested language.
     $pnd1TxtEn = $pnd1Report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'en'], 'txt');
     $pnd1FieldsEn = explode('|', explode("\r\n", rtrim($pnd1TxtEn['content'], "\r\n"))[0]);
-    check('en language: prefix is the English text Mr.', $pnd1FieldsEn[3], 'Mr.');
+    check('en language: prefix is the English text Mr.', $pnd1FieldsEn[2], 'Mr.');
     checkTrue('en language produces a different row than th (name/prefix change)', $pnd1Fields !== $pnd1FieldsEn);
-    check('en language: id_card_no field identical regardless of language', $pnd1FieldsEn[2], $pnd1Fields[2]);
+    check('en language: id_card_no field identical regardless of language', $pnd1FieldsEn[1], $pnd1Fields[1]);
 
     $pnd1DraftBlocked = false;
     try {
@@ -561,27 +619,27 @@ try {
     checkTrue('PND1 PDF embeds a real TH Sarabun font (not a Thai-blind fallback like DejaVu/Times)', $pnd1EmbedsThaiFont);
 
     // ---------- SSO 1-10 ----------
-    // 2026-08-29, rewritten against a real user-supplied sample -- see Sso110Exporter/Sso110Report's
-    // own docblocks. Header=135 bytes, detail=108 bytes (genuinely different row lengths).
+    // 2026-09-05, Phase 12 T071: Sso110Exporter/Sso110Report rewritten against a confirmed
+    // reference spec (7-field pipe layout, no header/batch-total row at all) -- see those
+    // classes' own docblocks. The pre-2026-09-05 fixed-width (135/108-byte) layout is gone.
     echo "=== Sso110Report (statutory) ===\n";
     $sso110Report = ReportRegistry::get('TH_SSO110');
     $sso110Txt = $sso110Report->generate(['comp_id' => $compId, 'run_id' => $runId], 'txt');
     $sso110Rows = explode("\r\n", rtrim($sso110Txt['content'], "\r\n"));
-    check('SSO110 has 1 header + 1 detail row', count($sso110Rows), 2);
-    check('SSO110 header row is 135 bytes', strlen($sso110Rows[0]), 135);
-    check('SSO110 detail row is 108 bytes', strlen($sso110Rows[1]), 108);
-    // insured_id is now the employee's id_card_no (bytes 3-15, after the 2-byte record type "25"),
-    // not sso_no -- see Sso110Report's own docblock for why.
-    check('SSO110 detail insured_id matches decrypted id_card_no', substr($sso110Rows[1], 2, 13), $idCardNo);
-    check('SSO110 detail prefix_code matches mr->03 mapping', substr($sso110Rows[1], 15, 2), '03');
+    check('SSO110 has exactly 1 detail row (no header row anymore)', count($sso110Rows), 1);
+    $sso110Fields = explode('|', $sso110Rows[0]);
+    check('7 total pipe-delimited fields per row', count($sso110Fields), 7);
+    check('SSO110 seq field is zero-padded to 5 digits', $sso110Fields[0], '00001');
+    check('SSO110 insured_id matches decrypted id_card_no', $sso110Fields[1], $idCardNo);
+    check('SSO110 prefix is Thai text นาย, not a numeric code', iconv('TIS-620', 'UTF-8', $sso110Fields[2]), 'นาย');
 
     // 2026-08-29, explicit request: "รองรับ 2 ภาษาเหมือนกัน" -- employee name follows the requested
     // language; the fixture's own name_en/surname_en ('Test'/'Report') differ from name_th/
     // surname_th ('ทดสอบ'/'รายงาน'), so this genuinely exercises the language switch.
     $sso110TxtEn = $sso110Report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'en'], 'txt');
-    $sso110RowsEn = explode("\r\n", rtrim($sso110TxtEn['content'], "\r\n"));
-    checkTrue('SSO110 en language produces a different detail row (employee name changes)', $sso110Rows[1] !== $sso110RowsEn[1]);
-    check('SSO110 en detail id_card_no/prefix/amount fields identical regardless of language', [substr($sso110Rows[1], 2, 13), substr($sso110Rows[1], 82, 26)], [substr($sso110RowsEn[1], 2, 13), substr($sso110RowsEn[1], 82, 26)]);
+    $sso110FieldsEn = explode('|', explode("\r\n", rtrim($sso110TxtEn['content'], "\r\n"))[0]);
+    checkTrue('SSO110 en language produces a different row (employee name changes)', $sso110Fields !== $sso110FieldsEn);
+    check('SSO110 en id_card_no/wage/contribution fields identical regardless of language', [$sso110FieldsEn[1], $sso110FieldsEn[5], $sso110FieldsEn[6]], [$sso110Fields[1], $sso110Fields[5], $sso110Fields[6]]);
 
     // ---------- SSO 6-09 ----------
     echo "=== Sso609Report (statutory) ===\n";
@@ -603,6 +661,18 @@ try {
         $sso609NoData = true;
     }
     checkTrue('SSO609 rejects a month with no resignations', $sso609NoData);
+
+    // 2026-09-05, Phase 12 T071: SSO 6-09 gained a real 'txt' format this round (previously
+    // PDF/Excel only, "no field-layout basis exists" per this class's own pre-existing docblock).
+    // See Sso609Exporter's own docblock for the field layout.
+    $sso609Txt = $sso609Report->generate(['comp_id' => $compId, 'year' => $resignedYearBe, 'month' => $resignedMonth], 'txt');
+    $sso609Rows = explode("\r\n", rtrim($sso609Txt['content'], "\r\n"));
+    check('SSO609 txt has exactly the 1 resigned employee row', count($sso609Rows), 1);
+    $sso609Fields = explode('|', $sso609Rows[0]);
+    check('5 total pipe-delimited fields per row', count($sso609Fields), 5);
+    check('SSO609 txt citizen_id matches decrypted id_card_no (not sso_no)', $sso609Fields[1], $resignedIdCardNo);
+    check('SSO609 txt full_name field decodes to prefix+first+last', iconv('TIS-620', 'UTF-8', $sso609Fields[2]), 'นางสาว ทดสอบ ลาออก');
+    check('SSO609 txt reason defaults to 01 (resign) when employment_end_reason is unset', $sso609Fields[4], '01');
 
     // ---------- Kor.20Kor (PVD annual) ----------
     echo "=== Kor20KorReport (statutory, annual PVD) ===\n";
@@ -636,6 +706,18 @@ try {
     }
     checkTrue('SLF blocked for a draft run', $slfDraftBlocked);
 
+    // 2026-09-05, Phase 12 T071: Student Loan Fund gained a real 'txt' format this round
+    // (previously PDF/Excel only, "no field-layout basis exists at all" per this class's own
+    // pre-existing docblock). See StudentLoanExporter's own docblock for the field layout.
+    $slfTxt = $slfReport->generate(['comp_id' => $compId, 'run_id' => $runId], 'txt');
+    $slfRows = explode("\r\n", rtrim($slfTxt['content'], "\r\n"));
+    check('SLF txt has the 1 test employee row', count($slfRows), 1);
+    $slfFields = explode('|', $slfRows[0]);
+    check('4 total pipe-delimited fields per row', count($slfFields), 4);
+    check('SLF txt citizen_id matches decrypted id_card_no (not tax_id_no, per the spec\'s own field label)', $slfFields[1], $idCardNo);
+    check('SLF txt full_name field decodes to prefix+first+last', iconv('TIS-620', 'UTF-8', $slfFields[2]), 'นาย ทดสอบ รายงาน');
+    check('SLF txt amount matches the first installment (12000/12)', $slfFields[3], '1000.00');
+
     // ---------- Bank Transfer File ----------
     echo "=== BankTransferFileReport (payment) ===\n";
     $bankReport = ReportRegistry::get('BANK_TRANSFER_FILE');
@@ -648,7 +730,28 @@ try {
     // mojibake. A leading UTF-8 BOM fixes that; this fixture's own Thai header row proves it's
     // still valid content right after the BOM, not corrupted by it.
     checkTrue('CSV starts with a UTF-8 BOM (fixes Excel Thai-encoding mojibake on open)', str_starts_with($bankCsv['content'], "\xEF\xBB\xBF"));
-    checkTrue('Thai header row still immediately follows the BOM intact', strpos($bankCsv['content'], "\xEF\xBB\xBF" . 'เลขที่บัญชี') === 0);
+    // 2026-09-04, Backlog Phase 11, T061: BANK_TRANSFER is now wired to DocumentNumberingModel --
+    // a real file-reference comment line is unshifted ABOVE the header the moment a code is
+    // assigned (which now happens on every real generate() call, see the wiring assertions right
+    // below), so "the header is always the very first line after the BOM" is no longer literally
+    // true -- was: strpos(..., BOM.'เลขที่บัญชี') === 0. Now: the header row appears somewhere near
+    // the top (right after the file-code comment line), not necessarily at byte 0 post-BOM.
+    checkTrue('Thai header row still present near the top of the file (after the BOM + file-code comment line)', strpos($bankCsv['content'], 'เลขที่บัญชี,ชื่อบัญชี') !== false);
+
+    // ---------- Backlog Phase 11, T061: DocumentNumberingModel wired to BANK_TRANSFER ----------
+    echo "=== BankTransferFileReport: DocumentNumberingModel wiring (T061) ===\n";
+    checkTrue('the generated CSV leads with a "# เลขที่ไฟล์:" file-reference comment line', str_starts_with($bankCsv['content'], "\xEF\xBB\xBF" . '# เลขที่ไฟล์: '));
+    $stmtBtCode = $pdo->prepare("SELECT bank_transfer_file_code FROM payroll_runs WHERE id = :id");
+    $stmtBtCode->execute([':id' => $runId]);
+    $btCodeAfterFirstGenerate = $stmtBtCode->fetchColumn();
+    checkTrue('a bank_transfer_file_code was stamped after the first generate() call', !empty($btCodeAfterFirstGenerate));
+    checkTrue('the file-code comment line embeds that exact persisted code', strpos($bankCsv['content'], $btCodeAfterFirstGenerate) !== false);
+    // Re-generate (simulates re-downloading the same real transfer file) -- must reuse the SAME
+    // code, never assign a new one on every render.
+    $bankCsvAgain = $bankReport->generate(['comp_id' => $compId, 'run_id' => $runId], 'csv');
+    $stmtBtCode->execute([':id' => $runId]);
+    check('re-generating the SAME transfer file reuses the identical bank_transfer_file_code (idempotent, not re-assigned)', $stmtBtCode->fetchColumn(), $btCodeAfterFirstGenerate);
+    checkTrue('the re-generated CSV embeds that same code too', strpos($bankCsvAgain['content'], $btCodeAfterFirstGenerate) !== false);
     $bankDraftBlocked = false;
     try {
         $bankReport->generate(['comp_id' => $compId, 'run_id' => $draftRunId], 'csv');

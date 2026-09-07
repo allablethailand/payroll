@@ -26,11 +26,14 @@ declare(strict_types=1);
  * whenever that run's pay period overlaps the suspend window at all, and automatically resumes once
  * the run's period moves past `suspended_to` -- no separate re-activation step needed.
  */
+require_once __DIR__ . '/AuditLogModel.php';
 class EmployeeRecurringEarningModel {
     private PDO $db;
+    private AuditLogModel $auditLog;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     private function employeeCompId(int $employeeId): ?int {
@@ -71,7 +74,7 @@ class EmployeeRecurringEarningModel {
         return $row ?: null;
     }
 
-    public function save(int $employeeId, int $compId, array $data, int $userId): array {
+    public function save(int $employeeId, int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         if ($this->employeeCompId($employeeId) !== $compId) {
             return ['status' => false, 'message' => 'Invalid employee.'];
         }
@@ -137,9 +140,10 @@ class EmployeeRecurringEarningModel {
                 $this->db->beginTransaction();
             }
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `employee_recurring_earnings` WHERE id = :id AND employee_id = :employee_id AND deleted_at IS NULL");
+                $stmtCheck = $this->db->prepare("SELECT * FROM `employee_recurring_earnings` WHERE id = :id AND employee_id = :employee_id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':employee_id' => $employeeId]);
-                if (!$stmtCheck->fetch()) {
+                $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existing) {
                     if ($own) {
                         $this->db->rollBack();
                     }
@@ -155,6 +159,10 @@ class EmployeeRecurringEarningModel {
                     ':suspended_from' => $suspendedFrom, ':suspended_to' => $suspendedTo, ':notes' => $notes,
                     ':updated_by' => $userId, ':id' => $id,
                 ]);
+                $stmtNewRow = $this->db->prepare("SELECT * FROM `employee_recurring_earnings` WHERE id = :id");
+                $stmtNewRow->execute([':id' => $id]);
+                $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'employee_recurring_earnings', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
             } else {
                 $stmt = $this->db->prepare("INSERT INTO `employee_recurring_earnings`
                         (employee_id, ped_type_id, amount, effective_date, suspended_from, suspended_to, notes, status, created_by)
@@ -177,25 +185,56 @@ class EmployeeRecurringEarningModel {
         }
     }
 
-    public function delete(int $id, int $compId, int $employeeId, int $userId): array {
-        $stmtCheck = $this->db->prepare("SELECT ere.id FROM `employee_recurring_earnings` ere
+    public function delete(int $id, int $compId, int $employeeId, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        $stmtCheck = $this->db->prepare("SELECT ere.* FROM `employee_recurring_earnings` ere
             JOIN `employees` e ON e.id = ere.employee_id
             WHERE ere.id = :id AND ere.employee_id = :employee_id AND e.comp_id = :comp_id AND ere.deleted_at IS NULL");
         $stmtCheck->execute([':id' => $id, ':employee_id' => $employeeId, ':comp_id' => $compId]);
-        if (!$stmtCheck->fetch()) {
+        $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $this->db->prepare("UPDATE `employee_recurring_earnings` SET status = 'deleted', deleted_by = :deleted_by, deleted_at = CURRENT_TIMESTAMP WHERE id = :id")
             ->execute([':deleted_by' => $userId, ':id' => $id]);
+        $this->auditLog->record($compId, 'employee_recurring_earnings', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
+
+    /** Same settled-run state list Step A's StatutoryCalculationEngine::MONTHLY_USAGE_STATES
+     *  already uses for its own monthly-ceiling accumulation (mirrored here, not shared as a
+     *  cross-class constant, since these 2 classes have no other coupling and this project's own
+     *  convention elsewhere is small per-class duplication over a speculative shared trait for a
+     *  3-item array). Excludes the still-editable DRAFT run currently being calculated. */
+    private const SETTLED_STATES = ['approved', 'paid', 'locked'];
 
     /**
      * Rows to include in a payroll run whose pay period is [$periodStart, $periodEnd] -- excludes
      * anything not yet effective, and anything whose suspend window (suspended_from/suspended_to,
      * both-or-neither) overlaps the period at all. Called from PayrollRunModel::recalculate().
+     *
+     * 2026-09-04, Backlog Phase 10, T060 Step C -- real bug found and fixed: this method has always
+     * been purely a "does this item's own effective/suspend window cover this ONE period" check,
+     * with ZERO awareness of whether the SAME recurring item was already paid out earlier THIS SAME
+     * CALENDAR MONTH by a different run. For a `payroll_cycles.payroll_frequency='monthly'` company
+     * this was invisible (there's only ever 1 run per employee per month, so "already paid this
+     * month" can never be true) -- but for a non-monthly frequency (weekly/bi_weekly/semi_monthly,
+     * already shipped since 2026-08-31), a recurring allowance meant to represent a MONTHLY-cadence
+     * benefit (e.g. a flat 3,000 THB/month Position Allowance -- confirmed via this class's own
+     * docblock and the literal Thai request that created it, "รายรับที่ได้ทุกเดือน") was being
+     * included, in FULL, in EVERY run whose period fell in that month -- a weekly company would pay
+     * a "monthly" allowance 4-5x over. Fixed by excluding any recurring_id already present in a
+     * SETTLED run's own persisted earning_breakdown this same calendar month (see
+     * alreadyPaidThisMonth() below) -- mirrors StatutoryCalculationEngine::
+     * monthlyUsagePriorToThisPeriod()'s own query shape/state-filter/date-boundary logic (Step A of
+     * this same T060 effort), adapted from "how much of a ceiling was already consumed" (a
+     * proration/capping concept) to "was this exact item already paid at all this month" (a plain
+     * exclusion concept -- a recurring monthly allowance either gets paid once that month or it
+     * doesn't; there's no partial/remaining-capacity concept the way a wage-base ceiling has one).
+     * $compId is required only to scope that accumulation query -- PayrollRunModel::recalculate()
+     * already has it in scope at every call site, so this is a pure additive param, not a breaking
+     * signature change in spirit (every real caller already has $compId on hand).
      */
-    public function activeForPeriod(int $employeeId, string $periodStart, string $periodEnd): array {
+    public function activeForPeriod(int $employeeId, string $periodStart, string $periodEnd, ?int $compId = null): array {
         $stmt = $this->db->prepare("SELECT ere.id AS recurring_id, ere.amount, pt.item_code, pt.item_name_th, pt.item_name_en
             FROM `employee_recurring_earnings` ere
             JOIN `payroll_earning_deduction_types` pt ON pt.id = ere.ped_type_id
@@ -208,6 +247,58 @@ class EmployeeRecurringEarningModel {
             ':employee_id' => $employeeId, ':period_end' => $periodEnd,
             ':period_end2' => $periodEnd, ':period_start' => $periodStart,
         ]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows) || $compId === null) {
+            // $compId===null preserves the exact pre-T060 return shape for any caller that hasn't
+            // been updated to pass it (defensive -- every real call site in this codebase does pass
+            // it after this change, but a legacy/test caller with no company/period timeline to
+            // accumulate against gets the original, unfiltered behavior, same "no context = no-op"
+            // posture Step A's own calculate()/calculateItem() already established).
+            return $rows;
+        }
+        $alreadyPaid = $this->alreadyPaidThisMonth($compId, $employeeId, $periodStart);
+        if (empty($alreadyPaid)) {
+            return $rows;
+        }
+        return array_values(array_filter($rows, static fn(array $r): bool => !in_array((int)$r['recurring_id'], $alreadyPaid, true)));
+    }
+
+    /**
+     * recurring_id values already present in a SETTLED run's own persisted earning_breakdown
+     * (source='recurring_earning') for this employee, whose period_start_date falls in the SAME
+     * CALENDAR MONTH as $periodStartDate, strictly BEFORE it. See activeForPeriod()'s own docblock
+     * for the full T060 Step C reasoning -- direct structural mirror of
+     * StatutoryCalculationEngine::monthlyUsagePriorToThisPeriod() (Step A), scoped to
+     * earning_breakdown/recurring_id instead of statutory_breakdown/item code. For a genuine
+     * MONTHLY payroll_frequency company this always returns an empty set (never a 2nd settled run
+     * for the same employee in the same calendar month by construction), which is why
+     * activeForPeriod() needs no explicit payroll_frequency branch anywhere -- this query's own
+     * natural result already makes the exclusion a no-op for the existing monthly case.
+     *
+     * @return int[] recurring_id values to exclude from the CURRENT period
+     */
+    private function alreadyPaidThisMonth(int $compId, int $employeeId, string $periodStartDate): array {
+        $year = (int)substr($periodStartDate, 0, 4);
+        $month = (int)substr($periodStartDate, 5, 2);
+        $placeholders = implode(',', array_fill(0, count(self::SETTLED_STATES), '?'));
+        $stmt = $this->db->prepare("SELECT d.earning_breakdown FROM `payroll_run_details` d
+            JOIN `payroll_runs` r ON r.id = d.run_id
+            WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
+                AND YEAR(r.period_start_date) = ? AND MONTH(r.period_start_date) = ?
+                AND r.period_start_date < ? AND d.employee_id = ?");
+        $stmt->execute(array_merge([$compId], self::SETTLED_STATES, [$year, $month, $periodStartDate, $employeeId]));
+        $ids = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $json) {
+            $lines = json_decode((string)$json, true);
+            if (!is_array($lines)) {
+                continue;
+            }
+            foreach ($lines as $line) {
+                if (($line['source'] ?? null) === 'recurring_earning' && isset($line['recurring_id'])) {
+                    $ids[] = (int)$line['recurring_id'];
+                }
+            }
+        }
+        return array_values(array_unique($ids));
     }
 }

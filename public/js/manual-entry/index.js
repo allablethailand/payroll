@@ -14,18 +14,15 @@ function toDisplayDateMe(isoVal) {
     const [yyyy, mm, dd] = parts;
     return `${dd}/${mm}/${yyyy}`;
 }
-function escapeHtmlMe(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 function employeeNameMe(row) {
     return currentLang === 'th' ? row.employee_name_th : row.employee_name_en;
 }
 function employeeCellMe(row) {
-    return `${escapeHtmlMe(row.employee_no)} - ${escapeHtmlMe(employeeNameMe(row))}`;
+    return `${escapeHtml(row.employee_no)} - ${escapeHtml(employeeNameMe(row))}`;
 }
 function badgeMe(map, value) {
     const m = map[value] || { key: value, cls: 'bg-light text-dark' };
-    return `<span class="badge ${m.cls}">${escapeHtmlMe(langData[m.key] || value)}</span>`;
+    return `<span class="badge ${m.cls}">${escapeHtml(langData[m.key] || value)}</span>`;
 }
 function attendanceStatusBadge(status) {
     return badgeMe({
@@ -148,7 +145,7 @@ function renderAttendance() {
         columns: [
             { data: null, render: (d, t, row) => employeeCellMe(row) },
             { data: null, render: (d, t, row) => toDisplayDateMe(row.work_date) },
-            { data: null, render: (d, t, row) => escapeHtmlMe((currentLang === 'th' ? row.shift_name_th : row.shift_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.shift_name_th : row.shift_name_en) || '-') },
             { data: null, render: (d, t, row) => row.clock_in ? String(row.clock_in).substring(11, 16) : '-' },
             { data: null, render: (d, t, row) => row.clock_out ? String(row.clock_out).substring(11, 16) : '-' },
             { data: null, className: 'text-end', render: (d, t, row) => row.actual_work_minutes ? (row.actual_work_minutes / 60).toFixed(1) : '-' },
@@ -156,7 +153,7 @@ function renderAttendance() {
             { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openAttendanceModal(${row.id})`, `askDeleteMe('attendance', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.work_date))}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openAttendanceModal(${row.id})`, `askDeleteMe('attendance', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.work_date))}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_attendance_yet'] || 'No attendance records have been added yet.' },
@@ -305,7 +302,7 @@ function renderLeave() {
         },
         columns: [
             { data: null, render: (d, t, row) => employeeCellMe(row) },
-            { data: null, render: (d, t, row) => escapeHtmlMe(currentLang === 'th' ? row.leave_type_name_th : row.leave_type_name_en) },
+            { data: null, render: (d, t, row) => escapeHtml(currentLang === 'th' ? row.leave_type_name_th : row.leave_type_name_en) },
             { data: null, render: (d, t, row) => toDisplayDateMe(row.start_date) },
             { data: null, render: (d, t, row) => toDisplayDateMe(row.end_date) },
             { data: 'total_days', className: 'text-end' },
@@ -313,7 +310,7 @@ function renderLeave() {
             { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openLeaveModal(${row.id})`, `askDeleteMe('leave', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.start_date))}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openLeaveModal(${row.id})`, `askDeleteMe('leave', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.start_date))}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_leave_yet'] || 'No leave records have been added yet.' },
@@ -425,7 +422,7 @@ function renderOvertime() {
         },
         columns: [
             { data: null, render: (d, t, row) => employeeCellMe(row) },
-            { data: null, render: (d, t, row) => escapeHtmlMe(currentLang === 'th' ? row.ot_name_th : row.ot_name_en) },
+            { data: null, render: (d, t, row) => escapeHtml(currentLang === 'th' ? row.ot_name_th : row.ot_name_en) },
             { data: null, render: (d, t, row) => toDisplayDateMe(row.ot_date) },
             { data: 'hours', className: 'text-end' },
             { data: null, className: 'text-end', render: (d, t, row) => row.amount !== null ? Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' },
@@ -433,7 +430,7 @@ function renderOvertime() {
             { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openOvertimeModal(${row.id})`, `askDeleteMe('overtime', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.ot_date))}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openOvertimeModal(${row.id})`, `askDeleteMe('overtime', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.ot_date))}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_overtime_yet'] || 'No overtime records have been added yet.' },
@@ -675,11 +672,11 @@ function renderImportHistory() {
         columns: [
             { data: 'performed_at', render: { display: (v) => v ? String(v).replace('T', ' ').substring(0, 16) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
             { data: 'event_type', className: 'text-center', render: (d) => importEventTypeBadge(d) },
-            { data: null, render: (d, t, row) => escapeHtmlMe(importEntityLabel(row.entity_type)) },
-            { data: null, render: (d, t, row) => escapeHtmlMe(importHistoryByLabel(row)) },
-            { data: null, render: (d, t, row) => escapeHtmlMe(importHistoryDeviceLabel(row)) },
-            { data: null, render: (d, t, row) => escapeHtmlMe(importHistoryBrowserLabel(row)) },
-            { data: 'ip_address', render: (v) => escapeHtmlMe(v || '-') },
+            { data: null, render: (d, t, row) => escapeHtml(importEntityLabel(row.entity_type)) },
+            { data: null, render: (d, t, row) => escapeHtml(importHistoryByLabel(row)) },
+            { data: null, render: (d, t, row) => escapeHtml(importHistoryDeviceLabel(row)) },
+            { data: null, render: (d, t, row) => escapeHtml(importHistoryBrowserLabel(row)) },
+            { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
             { data: null, className: 'text-center', render: (d, t, row) => importHistoryStatusBadge(row) },
             // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
             // ".btn-circle-action" section) replace the old adjacent .btn-group.
@@ -689,7 +686,7 @@ function renderImportHistory() {
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => row.event_type === 'import'
                 ? `<div class="d-flex gap-1 justify-content-end">
                     <button class="btn btn-link btn-circle-action text-primary" onclick="openImportBatchDetail(${row.id}, '${row.entity_type}')"><i class="fa-solid fa-eye"></i></button>
-                    ${row.original_file_name ? `<a href="${BASE_URL}/api/manual-import.download-original?batch_id=${row.id}" class="btn btn-link btn-circle-action text-secondary" title="${escapeHtmlMe(row.original_file_name)}"><i class="fa-solid fa-download"></i></a>` : ''}
+                    ${row.original_file_name ? `<a href="${BASE_URL}/api/manual-import.download-original?batch_id=${row.id}" class="btn btn-link btn-circle-action text-secondary" title="${escapeHtml(row.original_file_name)}"><i class="fa-solid fa-download"></i></a>` : ''}
                    </div>`
                 : '' },
         ],
@@ -736,7 +733,7 @@ const IMPORT_BATCH_DETAIL_COLUMNS = {
         { data: null, title: langData['work_date'] || 'Work Date', render: (d, t, row) => toDisplayDateMe(row.work_date) },
         { data: 'status', title: langData['status'] || 'Status', className: 'text-center', render: (d) => attendanceStatusBadge(d) },
         { data: 'data_source', title: langData['source'] || 'Source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-        { data: null, title: '', orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openAttendanceModal(${row.id})`, `askDeleteMe('attendance', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.work_date))}')`) },
+        { data: null, title: '', orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openAttendanceModal(${row.id})`, `askDeleteMe('attendance', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.work_date))}')`) },
     ],
     leave: [
         { data: null, title: langData['employee'] || 'Employee', render: (d, t, row) => employeeCellMe(row) },
@@ -744,7 +741,7 @@ const IMPORT_BATCH_DETAIL_COLUMNS = {
         { data: null, title: langData['end_date'] || 'End Date', render: (d, t, row) => toDisplayDateMe(row.end_date) },
         { data: 'status', title: langData['status'] || 'Status', className: 'text-center', render: (d) => leaveStatusBadge(d) },
         { data: 'data_source', title: langData['source'] || 'Source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-        { data: null, title: '', orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openLeaveModal(${row.id})`, `askDeleteMe('leave', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.start_date))}')`) },
+        { data: null, title: '', orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openLeaveModal(${row.id})`, `askDeleteMe('leave', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.start_date))}')`) },
     ],
     overtime: [
         { data: null, title: langData['employee'] || 'Employee', render: (d, t, row) => employeeCellMe(row) },
@@ -752,7 +749,7 @@ const IMPORT_BATCH_DETAIL_COLUMNS = {
         { data: 'hours', title: langData['hours'] || 'Hours', className: 'text-end' },
         { data: 'status', title: langData['status'] || 'Status', className: 'text-center', render: (d) => overtimeStatusBadge(d) },
         { data: 'data_source', title: langData['source'] || 'Source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-        { data: null, title: '', orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openOvertimeModal(${row.id})`, `askDeleteMe('overtime', ${row.id}, '${escapeHtmlMe(employeeNameMe(row))} - ${escapeHtmlMe(toDisplayDateMe(row.ot_date))}')`) },
+        { data: null, title: '', orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openOvertimeModal(${row.id})`, `askDeleteMe('overtime', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.ot_date))}')`) },
     ],
 };
 

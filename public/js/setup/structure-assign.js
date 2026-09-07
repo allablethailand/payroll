@@ -32,9 +32,6 @@ let saCurrentRowId = null;
 let saCurrentLabel = '';
 let saMode = 'assign';
 
-function escapeHtmlSa(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 function saRoutePrefix() {
     return SA_ROUTE_PREFIX[saCurrentType] || 'structure';
 }
@@ -71,12 +68,12 @@ function saRenderList($container, rows, emptyKey, listPrefix) {
     }
     $container.html(rows.map(row => {
         const badge = row.current_row_name
-            ? `<span class="badge bg-secondary-subtle text-secondary ms-1">${escapeHtmlSa(row.current_row_name)}</span>`
+            ? `<span class="badge bg-secondary-subtle text-secondary ms-1">${escapeHtml(row.current_row_name)}</span>`
             : (row.current_row_id === null || row.current_row_id === undefined ? `<span class="badge bg-light text-muted ms-1">${langData['sa_unassigned'] || 'Unassigned'}</span>` : '');
         const cbId = `saEmpChk_${listPrefix}_${row.id}`;
         return `<div class="form-check border-bottom py-1">
             <input class="form-check-input sa-emp-checkbox" type="checkbox" value="${row.id}" id="${cbId}">
-            <label class="form-check-label small w-100" for="${cbId}">${escapeHtmlSa(row.employee_no)} - ${escapeHtmlSa(saEmployeeDisplayName(row))}${badge}</label>
+            <label class="form-check-label small w-100" for="${cbId}">${escapeHtml(row.employee_no)} - ${escapeHtml(saEmployeeDisplayName(row))}${badge}</label>
         </div>`;
     }).join(''));
 }

@@ -75,8 +75,10 @@ try {
     $fieldOptions = $model->fieldTypeOptions();
     // 20 original + static_text (new, added for the canvas designer's free-text/paragraph element,
     // mirrors Employment Certificate Template's own field of the same name/purpose) + 2026-08-26's
-    // new company_signature ("เพิ่มให้แนบลายเซ็นต์...และเพิ่มใน Item ในการจัดการ Template").
-    check('22 field types seeded (20 original + static_text + company_signature)', count($fieldOptions), 22);
+    // new company_signature ("เพิ่มให้แนบลายเซ็นต์...และเพิ่มใน Item ในการจัดการ Template") +
+    // 2026-09-04's new payslip_number (Backlog Phase 11, T061 -- DocumentNumberingModel wired to
+    // PaySlipReport, selectable on the canvas as {{payslip_number}}).
+    check('23 field types seeded (20 original + static_text + company_signature + payslip_number)', count($fieldOptions), 23);
     checkTrue('static_text field type is present', in_array('static_text', array_column($fieldOptions, 'code'), true));
     checkTrue('company_logo/company_signature are element_type=image, everything else is text', (function () use ($fieldOptions) {
         $imageCodes = ['company_logo', 'company_signature'];

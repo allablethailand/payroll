@@ -83,4 +83,47 @@ class PermissionController extends Controller {
         }
         $this->json($this->model->saveEmployeeOverrides((int)$compId, $employeeId, $overrides, $this->userId()));
     }
+
+    /**
+     * 2026-09-04, Backlog Phase 10, T059 -- gated by the SAME `rbac.edit` permission as the
+     * override actions above, for the same reason (already trusted to manage every permission in
+     * the system). See PermissionModel::suspendEmployee()'s own docblock for why this is the real
+     * enforcement boundary for "admin accounts can never be suspended" -- there is no persistent
+     * admin flag to check against an arbitrary target employee.
+     */
+    public function suspensionStatus() {
+        if (!$this->requirePermission('rbac.view')) return;
+        $compId = getCompId();
+        $employeeId = (int)($_GET['employee_id'] ?? 0);
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing employee_id.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->model->suspensionStatus((int)$compId, $employeeId)]);
+    }
+
+    public function suspend() {
+        if (!$this->requirePermission('rbac.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $employeeId = (int)($data['employee_id'] ?? 0);
+        $reason = (string)($data['reason'] ?? '');
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing employee_id.']);
+            return;
+        }
+        $this->json($this->model->suspendEmployee((int)$compId, $employeeId, $this->userId(), $reason));
+    }
+
+    public function unsuspend() {
+        if (!$this->requirePermission('rbac.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $employeeId = (int)($data['employee_id'] ?? 0);
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing employee_id.']);
+            return;
+        }
+        $this->json($this->model->unsuspendEmployee((int)$compId, $employeeId, $this->userId()));
+    }
 }

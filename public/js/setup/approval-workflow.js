@@ -79,13 +79,6 @@ function approverAjaxOptions(type) {
         : { mode: 'ajax', api: '/api/employee.report_to.get', allowClear: true };
 }
 
-function escapeHtmlAw(str) {
-    // .text()/.html() round-trip escapes <, >, & but NOT quote characters (browsers don't
-    // escape quotes inside text-node serialization) — and this value is interpolated into a
-    // double-quoted HTML attribute below, so an unescaped " would break out of the attribute.
-    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
-}
-
 function buildApproverRowHtml(step, approver) {
     return `
         <div class="awf-approver-chip" data-approver-key="${approver.key}">
@@ -101,7 +94,7 @@ function buildApproverChipViewHtml(a) {
     return `
         <span class="awf-approver-chip awf-approver-chip-view">
             <span class="awf-approver-chip-icon"><i class="fa-solid ${a.approver_type === 'role' ? 'fa-user-group' : 'fa-user'}"></i></span>
-            ${escapeHtmlAw(a.approver_label || '')}
+            ${escapeAttr(a.approver_label || '')}
         </span>
     `;
 }
@@ -127,7 +120,7 @@ function buildStepViewHtml(step, index) {
     const groupMeta = GROUP_TYPE_META[step.group_type] || GROUP_TYPE_META.and;
     const groupLabel = langData[groupMeta.key] || groupMeta.fallback;
     const reqLabel = step.requires_previous_step ? (langData['requires_previous_step'] || 'Wait for earlier sequenced steps') : (langData['always_open'] || 'Always open for approval');
-    const stepLabel = step.step_name ? escapeHtmlAw(step.step_name) : `${langData['step_name_default'] || 'Step'} ${index + 1}`;
+    const stepLabel = step.step_name ? escapeAttr(step.step_name) : `${langData['step_name_default'] || 'Step'} ${index + 1}`;
     return `
         <div class="awf-step-card awf-step-view" data-key="${step.key}">
             <div class="awf-step-marker">
@@ -161,7 +154,7 @@ function buildStepEditHtml(step, index) {
                 <div class="awf-step-connector"></div>
             </div>
             <div class="awf-step-body">
-                <input type="text" class="form-control form-control-sm awf-step-name-input step-name-input mb-2" name="step_name" value="${escapeHtmlAw(step.step_name)}" placeholder="${langData['step_name_placeholder'] || 'Step name (optional)'}">
+                <input type="text" class="form-control form-control-sm awf-step-name-input step-name-input mb-2" name="step_name" value="${escapeAttr(step.step_name)}" placeholder="${langData['step_name_placeholder'] || 'Step name (optional)'}">
 
                 <div class="step-approvers-list">${approversHtml}</div>
                 <button type="button" class="btn btn-link btn-sm p-0 mb-1 awf-add-approver-btn btn-add-approver"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_approver">${langData['add_approver'] || 'Approver'}</span></button>

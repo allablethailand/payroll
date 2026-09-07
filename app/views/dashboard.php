@@ -13,6 +13,39 @@
             <h5 class="page-header-card-title" id="dashGreetingTitle">Welcome</h5>
             <p class="page-header-card-desc small" id="dashGreetingDesc">Here is an overview of your payroll workspace.</p>
         </div>
+        <!-- 2026-09-06, explicit request: "อยากให้แทรก Origami Payroll Logo เข้าไปแต่ดูความเหมาะสมให้อีกที" --
+             a quiet attribution mark, not a 2nd brand competing with this page's own header icon/
+             title -- small, muted (never full-opacity color), tucked in the header card's own
+             corner where it reads as "powered by" rather than a competing focal point. Reuses the
+             existing public/images/origami_logo.png asset (previously only used as the Hub
+             app-switcher's own fallback icon, layout/header.php) -- no new asset needed. -->
+        <div class="page-header-card-brandmark" title="Origami Payroll">
+            <img src="<?=BASE_URL?>/public/images/origami_logo.png" alt="Origami Payroll">
+        </div>
+    </div>
+
+    <!-- 2026-09-06, explicit request: "ในหน้า Dashboard สามารถเลือกเดือน ปีย้อนหลังได้ด้วย โดยถ้าเลือกแล้ว
+         ข้อมูลในหน้า Dashboard จะปรับตามที่เลือก" -- confirmed via AskUserQuestion: "everything possible"
+         follows the selection, including headcount (see DashboardController::summary()'s own
+         docblock for exactly which few widgets deliberately never historicize, e.g. Pending My
+         Approval/Upcoming Pay/online users/notifications -- all "right now" concepts with no
+         historical meaning). Omitted entirely (the default) reproduces today's exact live view --
+         see loadDashboardSummary()'s own docblock in dashboard.js. -->
+    <div class="dash-period-bar mb-4">
+        <div class="dash-period-bar-controls">
+            <i class="fa-solid fa-calendar-days text-warning"></i>
+            <span class="small text-muted" data-i18n="dash_viewing_period">Viewing:</span>
+            <select class="form-select form-select-sm select2-static" id="dashPeriodMonth"
+                    data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12"
+                    data-option-values="1,2,3,4,5,6,7,8,9,10,11,12" style="width:150px"></select>
+            <select class="form-select form-select-sm select2-native" id="dashPeriodYear" style="width:110px"></select>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="dashPeriodResetBtn">
+                <i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="dash_back_to_current">Back to Current</span>
+            </button>
+        </div>
+        <div class="dash-historical-badge bg-warning-subtle text-warning-emphasis d-none" id="dashHistoricalBadge">
+            <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="dash_viewing_historical">Viewing historical data</span>
+        </div>
     </div>
 
     <div class="row g-3 mb-4" id="dashStatRow">
@@ -70,7 +103,7 @@
         <div class="col-lg-8">
             <div class="dash-section-card mb-4" id="dashPipelineSection">
                 <div class="dash-section-card-header">
-                    <h6 class="mb-0"><i class="fa-solid fa-diagram-project me-2 text-warning"></i><span data-i18n="dash_payroll_pipeline">Payroll Pipeline</span></h6>
+                    <h6 class="mb-0"><i class="fa-solid fa-diagram-project me-2 text-warning"></i><span data-i18n="dash_payroll_pipeline">Payroll Pipeline</span><span class="dash-period-suffix text-muted fw-normal"></span></h6>
                     <a href="<?=BASE_URL?>/payroll-process" class="dash-section-link" data-i18n="dash_view_all">View All</a>
                 </div>
                 <!-- 2026-09-02, explicit request: "หน้า Dashboard อยากให้เพิ่มกราฟ และอะไรให้ดูมีความเป็น
@@ -121,7 +154,7 @@
                  there's nothing honest to show at all in that case, not just something to mask). -->
             <div class="dash-section-card mb-4 d-none" id="dashCostTrendSection">
                 <div class="dash-section-card-header">
-                    <h6 class="mb-0"><i class="fa-solid fa-chart-column me-2 text-warning"></i><span data-i18n="dash_cost_trend">Payroll Cost Trend</span></h6>
+                    <h6 class="mb-0"><i class="fa-solid fa-chart-column me-2 text-warning"></i><span data-i18n="dash_cost_trend">Payroll Cost Trend</span><span class="dash-period-suffix text-muted fw-normal"></span></h6>
                     <!-- 2026-09-02, explicit request: "ถ้าเพิ่มอะไรได้ก็อยากให้เพิ่ม" -- the sum of the same
                          6 bars already rendered below, computed client-side from the exact same
                          payroll.cost_trend array (no new backend field) -- see dashboard.js's own
@@ -135,7 +168,7 @@
 
             <div class="dash-section-card" id="dashRecentRunsSection">
                 <div class="dash-section-card-header">
-                    <h6 class="mb-0"><i class="fa-solid fa-clock-rotate-left me-2 text-warning"></i><span data-i18n="dash_recent_payroll_runs">Recent Payroll Runs</span></h6>
+                    <h6 class="mb-0"><i class="fa-solid fa-clock-rotate-left me-2 text-warning"></i><span data-i18n="dash_recent_payroll_runs">Recent Payroll Runs</span><span class="dash-period-suffix text-muted fw-normal"></span></h6>
                     <a href="<?=BASE_URL?>/payroll-process" class="dash-section-link" data-i18n="dash_view_all">View All</a>
                 </div>
                 <div id="dashRecentRunsList"></div>
@@ -143,6 +176,45 @@
         </div>
 
         <div class="col-lg-4">
+            <!-- 2026-09-06, explicit request: "อยากให้มี Calendar โชว์ด้วย" -- confirmed via
+                 AskUserQuestion: holidays + payroll cutoff/payment dates + probation/internship end
+                 dates combined (see DashboardModel::calendarEvents()'s own docblock). Driven by the
+                 SAME month/year picker as the rest of the page (#dashPeriodMonth/#dashPeriodYear),
+                 not its own independent prev/next control, so it can never disagree with every
+                 other widget about which month is being reviewed. Placed at the TOP of the sidebar
+                 column -- per explicit request "เข้ามาในหน้า Dashboard แล้วเห็นภาพรวมของระบบทันที", this
+                 is the one genuinely NEW at-a-glance visual on the page, so it earns the most
+                 visible slot rather than being buried below Notifications/Quick Links. -->
+            <div class="dash-section-card mb-4" id="dashCalendarSection">
+                <div class="dash-section-card-header">
+                    <h6 class="mb-0"><i class="fa-solid fa-calendar-days me-2 text-warning"></i><span data-i18n="dash_calendar">Calendar</span></h6>
+                </div>
+                <div class="dash-calendar-wrap">
+                    <div class="dash-calendar-grid" id="dashCalendarGrid"></div>
+                    <div class="dash-calendar-legend">
+                        <span class="dash-cal-legend-item"><span class="dash-cal-dot dash-cal-dot-holiday"></span><span data-i18n="dash_cal_holiday">Holiday</span></span>
+                        <span class="dash-cal-legend-item"><span class="dash-cal-dot dash-cal-dot-cutoff"></span><span data-i18n="dash_cal_cutoff">Payroll Cutoff</span></span>
+                        <span class="dash-cal-legend-item"><span class="dash-cal-dot dash-cal-dot-payment"></span><span data-i18n="dash_cal_payment">Payment Date</span></span>
+                        <span class="dash-cal-legend-item"><span class="dash-cal-dot dash-cal-dot-probation"></span><span data-i18n="dash_cal_probation">Probation/Internship End</span></span>
+                    </div>
+                    <div class="dash-calendar-day-detail d-none" id="dashCalendarDayDetail"></div>
+                </div>
+            </div>
+
+            <!-- 2026-09-06, explicit request: "กราฟที่สามารถเพิ่มได้ แต่ไม่ดูยัดเยียดเกินไป" -- one
+                 additional, restrained chart (headcount by department), same live-vs-historical
+                 duality as the stat cards above (see DashboardModel::departmentHeadcount()'s own
+                 docblock). Starts d-none, same "hide the whole card when there's nothing real to
+                 show" precedent as every other conditional Dashboard widget. -->
+            <div class="dash-section-card mb-4 d-none" id="dashDeptChartSection">
+                <div class="dash-section-card-header">
+                    <h6 class="mb-0"><i class="fa-solid fa-sitemap me-2 text-warning"></i><span data-i18n="dash_headcount_by_dept">Headcount by Department</span></h6>
+                </div>
+                <div class="dash-chart-wrap dash-chart-wrap-sm">
+                    <canvas id="dashDeptChart"></canvas>
+                </div>
+            </div>
+
             <!-- 2026-08-29, explicit request: "และตรงการใส่ Comments...และสามารถเพิ่มอะไรได้อีกในหน้า
                  Dashboard ไหมครับ" -> "สนใจครับ" (confirmed the notification-summary-card suggestion) --
                  latest few notifications right on the dashboard, not just reachable via the header
@@ -157,6 +229,35 @@
                     <div class="nav-notif-empty d-none" id="dashNotifEmpty" data-i18n="notif_empty">No notifications yet.</div>
                 </div>
             </div>
+            <!-- 2026-09-04, Backlog Phase 10, T058: "Dashboard shows currently-online users."
+                 Presence, not money -- always visible, no can_view_payroll-style gate (see
+                 DashboardController::summary()'s own comment). Starts d-none, same
+                 hide-when-empty precedent as #dashProbationInternExpiringSection above (in
+                 practice the acting employee's own session always counts once this AJAX call
+                 itself has run, but a company with everyone else already timed out is still a
+                 real, valid empty state to design for). -->
+            <div class="dash-section-card mb-4 d-none" id="dashOnlineUsersSection">
+                <div class="dash-section-card-header">
+                    <h6 class="mb-0"><i class="fa-solid fa-circle-user me-2 text-warning"></i><span data-i18n="dash_online_now">Online Now</span></h6>
+                    <span class="badge bg-success-subtle text-success" id="dashOnlineUsersCount">0</span>
+                </div>
+                <div class="dash-online-users-list" id="dashOnlineUsersList"></div>
+            </div>
+
+            <!-- 2026-09-04, Backlog Phase 10, T057: the ONE admin-picked featured announcement. Starts
+                 d-none (hidden when the company has never featured one, same precedent as the other
+                 conditional widgets on this page). -->
+            <div class="dash-section-card mb-4 d-none" id="dashAnnouncementSection">
+                <div class="dash-section-card-header">
+                    <h6 class="mb-0"><i class="fa-solid fa-bullhorn me-2 text-warning"></i><span data-i18n="announcement_menu">Announcements</span></h6>
+                    <a href="<?=BASE_URL?>/announcements" class="small" data-i18n="view_all">View All</a>
+                </div>
+                <div class="p-3">
+                    <div class="fw-bold mb-1" id="dashAnnouncementTitle"></div>
+                    <div class="text-muted small" id="dashAnnouncementBody"></div>
+                </div>
+            </div>
+
             <div class="dash-section-card">
                 <div class="dash-section-card-header">
                     <h6 class="mb-0"><i class="fa-solid fa-bolt me-2 text-warning"></i><span data-i18n="dash_quick_links">Quick Links</span></h6>
@@ -195,6 +296,30 @@
         </div>
     </div>
 </div>
+
+<!-- 2026-09-04, Backlog Phase 10, T057: first-login-after-publish click-through modal. Queue/remaining
+     -count/accept-vs-dismiss logic all lives in dashboard.js (dashCheckPendingAnnouncements() and
+     friends) -- this markup is just the shell it drives. data-bs-backdrop/keyboard are NOT set here;
+     dashShowAnnouncementModalStep() sets them per-item (accept_required=1 = genuinely blocking, no
+     backdrop/Esc close). -->
+<div class="modal fade" id="dashAnnouncementModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary"><i class="fa-solid fa-bullhorn me-2 text-warning"></i><span data-i18n="announcement_menu">Announcement</span></h5>
+                <span class="badge bg-secondary-subtle text-secondary" id="dashAnnModalCount"></span>
+            </div>
+            <div class="modal-body">
+                <h6 id="dashAnnModalTitle" class="fw-bold"></h6>
+                <p id="dashAnnModalBody" class="mb-0"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="dashAnnModalAcceptBtn"></button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 2026-09-02, explicit request: "หน้า Dashboard อยากให้เพิ่มกราฟ และอะไรให้ดูมีความเป็น Payroll" --
      Chart.js is used ONLY on this page (no other view needs charts) -- loaded here, not in the
      global footer, same "don't pollute every unrelated page" precedent this app's own footer.php

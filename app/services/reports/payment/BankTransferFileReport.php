@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../../../models/BankFileFormatModel.php';
 require_once __DIR__ . '/../../../models/PayrollRunEmployeeBankAccountModel.php';
 require_once __DIR__ . '/../../../models/EmployeePaymentMethodModel.php';
+require_once __DIR__ . '/../../../models/DocumentNumberingModel.php';
 require_once __DIR__ . '/../../export/FixedWidthHelperTrait.php';
 require_once __DIR__ . '/../LocalizedException.php';
 
@@ -106,6 +107,10 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             throw new LocalizedException('Payroll run not found.', 'run_not_found');
         }
         $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
+        // 2026-09-04, Backlog Phase 11, T061 -- resolved once, stored back onto $run so
+        // renderConfigured() (which already receives the whole $run array) picks it up for free;
+        // renderGenericFallback() gets it passed explicitly below since it never took $run at all.
+        $run['bank_transfer_file_code'] = $this->resolveBankTransferFileCode($compId, $runId, $run['bank_transfer_file_code'] ?? null);
         $details = $dataModel->getRunDetails($runId);
         if (empty($details)) {
             throw new LocalizedException('This payroll run has no calculated employees yet. Recalculate it first.', 'run_no_calculated_employees');
@@ -214,7 +219,7 @@ class BankTransferFileReport implements ReportGeneratorInterface {
                 if ($isConfigured) {
                     $files[] = $this->renderConfigured($group['details'], $fields, $config, $run, $company, $runId, $compId, $language, $companyBankAccount);
                 } else {
-                    $files[] = $this->renderGenericFallback($group['details'], $runId, $companyBankAccount['label'], $mixedReconciliationWarnings);
+                    $files[] = $this->renderGenericFallback($group['details'], $runId, $companyBankAccount['label'], $mixedReconciliationWarnings, $run['bank_transfer_file_code']);
                 }
             } catch (LocalizedException $e) {
                 // 2026-09-02: a group where every employee happens to be missing bank details
@@ -326,7 +331,7 @@ class BankTransferFileReport implements ReportGeneratorInterface {
      *  This method now trusts its caller completely for inclusion; it only decides
      *  SKIP-for-missing-bank-details among rows
      *  it was already given. */
-    private function renderGenericFallback(array $details, int $runId, string $fileSuffix = '', array $extraWarnings = []): array {
+    private function renderGenericFallback(array $details, int $runId, string $fileSuffix = '', array $extraWarnings = [], ?string $fileCode = null): array {
         $lines = ['เลขที่บัญชี,ชื่อบัญชี,ธนาคาร,รหัสธนาคาร,จำนวนเงิน,หมายเหตุ'];
         $skipped = $extraWarnings;
         $total = 0.0;
@@ -360,6 +365,14 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         if (!empty($skipped)) {
             array_unshift($lines, '# คำเตือน: พนักงานต่อไปนี้ไม่มีเลขบัญชี/ธนาคารในระบบ ถูกข้ามจากไฟล์นี้: ' . implode(', ', $skipped));
         }
+        // 2026-09-04, Backlog Phase 11, T061 -- DocumentNumberingModel-generated code (see
+        // resolveBankTransferFileCode()), same leading "# comment row" convention the skipped-
+        // employee warning just above already established -- unshifted LAST so it ends up as the
+        // very first line (above any warning too). Only added when a code was actually assigned (a
+        // numbering failure must never block the real file, see that method's own docblock).
+        if (!empty($fileCode)) {
+            array_unshift($lines, '# เลขที่ไฟล์: ' . $fileCode);
+        }
         if ($total <= 0) {
             throw new LocalizedException('No employees with a valid bank account were found to include in the transfer file.', 'bank_transfer_no_valid_accounts');
         }
@@ -385,6 +398,36 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             return '"' . str_replace('"', '""', $value) . '"';
         }
         return $value;
+    }
+
+    /**
+     * 2026-09-04, Backlog Phase 11, T061 -- this report is generated ON DEMAND (every time someone
+     * downloads it), one file per RUN (not per employee -- see generate()'s own {comp_id, run_id}
+     * context), not at a one-time "create" event. Calling DocumentNumberingModel::generateNext()
+     * unconditionally on every generate() call would silently assign a NEW code each time the SAME
+     * real transfer batch is re-downloaded, which is wrong. Stamps the code ONCE, on the first real
+     * generation for this run, persisted to payroll_runs.bank_transfer_file_code so every later
+     * re-download reuses the identical value -- same pattern/posture as
+     * PaySlipReport::resolvePayslipNumber() (best-effort/non-blocking: a numbering failure must
+     * never block the real file from being generated).
+     */
+    private function resolveBankTransferFileCode(int $compId, int $runId, ?string $existing): ?string {
+        if (!empty($existing)) {
+            return $existing;
+        }
+        $code = (new DocumentNumberingModel())->generateNext($compId, 'BANK_TRANSFER');
+        if ($code === null) {
+            return null;
+        }
+        try {
+            Database::getInstance()->pdo->prepare(
+                "UPDATE `payroll_runs` SET bank_transfer_file_code = :code WHERE id = :id"
+            )->execute([':code' => $code, ':id' => $runId]);
+        } catch (Throwable $e) {
+            // Persistence failed but the code itself was validly generated -- still return it for
+            // THIS render, even though it won't be reused on the next download.
+        }
+        return $code;
     }
 
     /* ---------- Configured (company-defined) rendering ---------- */
@@ -450,6 +493,14 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             'company_service_code' => $companyBankAccount['company_code'],
             'total_amount' => $total,
             'total_count' => count($included),
+            // 2026-09-04, Backlog Phase 11, T061 -- DocumentNumberingModel-generated code (see
+            // resolveBankTransferFileCode(), already resolved onto $run by generate() before this
+            // method is ever called). Available for a company-configured format's own field
+            // mapping to reference (see 'batch_reference' case in rawValueForField() below) -- not
+            // rendered anywhere unless a company's own configured layout actually maps a field to
+            // it, same "no field forced on anyone" posture every other aggregate context value here
+            // already has.
+            'batch_reference' => (string)($run['bank_transfer_file_code'] ?? ''),
         ];
 
         // 2026-08-29, explicit report: "มันมีตรงชื่อที่ติดกันกับตัวเลขในลำดับต่อไปครับ" -- a name (or any
@@ -631,6 +682,7 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             case 'payment_date': return (string)($context['payment_date'] ?? '');
             case 'company_account_no': return (string)($context['company_account_no'] ?? '');
             case 'company_service_code': return (string)($context['company_service_code'] ?? '');
+            case 'batch_reference': return (string)($context['batch_reference'] ?? '');
             default: return '';
         }
     }

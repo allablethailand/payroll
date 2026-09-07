@@ -13,11 +13,14 @@ declare(strict_types=1);
  * date-range mechanism). See that class's own docblock for the full design rationale -- not
  * re-explained here.
  */
+require_once __DIR__ . '/AuditLogModel.php';
 class EmployeeRecurringDeductionModel {
     private PDO $db;
+    private AuditLogModel $auditLog;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     private function employeeCompId(int $employeeId): ?int {
@@ -66,7 +69,7 @@ class EmployeeRecurringDeductionModel {
         return $row ?: null;
     }
 
-    public function save(int $employeeId, int $compId, array $data, int $userId): array {
+    public function save(int $employeeId, int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         if ($this->employeeCompId($employeeId) !== $compId) {
             return ['status' => false, 'message' => 'Invalid employee.'];
         }
@@ -182,9 +185,10 @@ class EmployeeRecurringDeductionModel {
                 $this->db->beginTransaction();
             }
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `employee_recurring_deductions` WHERE id = :id AND employee_id = :employee_id AND deleted_at IS NULL");
+                $stmtCheck = $this->db->prepare("SELECT * FROM `employee_recurring_deductions` WHERE id = :id AND employee_id = :employee_id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':employee_id' => $employeeId]);
-                if (!$stmtCheck->fetch()) {
+                $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existing) {
                     if ($own) {
                         $this->db->rollBack();
                     }
@@ -202,6 +206,10 @@ class EmployeeRecurringDeductionModel {
                     ':payee_type' => $payeeType, ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId,
                     ':updated_by' => $userId, ':id' => $id,
                 ]);
+                $stmtNewRow = $this->db->prepare("SELECT * FROM `employee_recurring_deductions` WHERE id = :id");
+                $stmtNewRow->execute([':id' => $id]);
+                $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'employee_recurring_deductions', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
             } else {
                 $stmt = $this->db->prepare("INSERT INTO `employee_recurring_deductions`
                         (employee_id, ped_type_id, amount, fee_percent, fee_base, effective_date, suspended_from, suspended_to, notes, payee_type, payee_employee_id, destination_id, status, created_by)
@@ -225,18 +233,22 @@ class EmployeeRecurringDeductionModel {
         }
     }
 
-    public function delete(int $id, int $compId, int $employeeId, int $userId): array {
-        $stmtCheck = $this->db->prepare("SELECT erd.id FROM `employee_recurring_deductions` erd
+    public function delete(int $id, int $compId, int $employeeId, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        $stmtCheck = $this->db->prepare("SELECT erd.* FROM `employee_recurring_deductions` erd
             JOIN `employees` e ON e.id = erd.employee_id
             WHERE erd.id = :id AND erd.employee_id = :employee_id AND e.comp_id = :comp_id AND erd.deleted_at IS NULL");
         $stmtCheck->execute([':id' => $id, ':employee_id' => $employeeId, ':comp_id' => $compId]);
-        if (!$stmtCheck->fetch()) {
+        $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $this->db->prepare("UPDATE `employee_recurring_deductions` SET status = 'deleted', deleted_by = :deleted_by, deleted_at = CURRENT_TIMESTAMP WHERE id = :id")
             ->execute([':deleted_by' => $userId, ':id' => $id]);
+        $this->auditLog->record($compId, 'employee_recurring_deductions', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
+
+    private const SETTLED_STATES = ['approved', 'paid', 'locked'];
 
     /**
      * Rows to include in a payroll run whose pay period is [$periodStart, $periodEnd] -- excludes
@@ -247,8 +259,17 @@ class EmployeeRecurringDeductionModel {
      * place that actually computes fee_percent% of the employee's CURRENT base_salary_amount and
      * adds it to `amount`, fresh every run (not baked into a stored value here), since base salary
      * can change over time and this is an indefinitely-recurring item, not a one-time snapshot.
+     *
+     * 2026-09-04, Backlog Phase 10, T060 Step C follow-up -- $compId param + monthly-duplicate
+     * exclusion, direct mirror of EmployeeRecurringEarningModel::activeForPeriod()'s own T060 Step
+     * C fix (same real bug: a monthly-cadence recurring deduction, e.g. a flat insurance-premium
+     * withholding, was being applied in FULL on EVERY run whose period fell in that calendar month
+     * for a non-monthly payroll_frequency company -- a weekly company would deduct a "monthly" fee
+     * 4-5x over). $compId is optional/defaults null to preserve the exact pre-fix return shape for
+     * any caller that hasn't been updated to pass it -- every real payroll-calculation call site in
+     * PayrollRunModel::recalculate() does pass it after this change.
      */
-    public function activeForPeriod(int $employeeId, string $periodStart, string $periodEnd): array {
+    public function activeForPeriod(int $employeeId, string $periodStart, string $periodEnd, ?int $compId = null): array {
         $stmt = $this->db->prepare("SELECT erd.id AS recurring_id, erd.amount, erd.fee_percent, erd.fee_base,
                 erd.payee_type, erd.payee_employee_id, erd.destination_id, pt.item_code, pt.item_name_th, pt.item_name_en
             FROM `employee_recurring_deductions` erd
@@ -262,6 +283,51 @@ class EmployeeRecurringDeductionModel {
             ':employee_id' => $employeeId, ':period_end' => $periodEnd,
             ':period_end2' => $periodEnd, ':period_start' => $periodStart,
         ]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows) || $compId === null) {
+            return $rows;
+        }
+        $alreadyPaid = $this->alreadyPaidThisMonth($compId, $employeeId, $periodStart);
+        if (empty($alreadyPaid)) {
+            return $rows;
+        }
+        return array_values(array_filter($rows, static fn(array $r): bool => !in_array((int)$r['recurring_id'], $alreadyPaid, true)));
+    }
+
+    /**
+     * recurring_id values already present in a SETTLED run's own persisted deduction_breakdown
+     * (source='recurring_deduction') for this employee, whose period_start_date falls in the SAME
+     * CALENDAR MONTH as $periodStartDate, strictly BEFORE it. Direct structural mirror of
+     * EmployeeRecurringEarningModel::alreadyPaidThisMonth() (itself mirroring
+     * StatutoryCalculationEngine::monthlyUsagePriorToThisPeriod(), T060 Step A) -- for a genuine
+     * MONTHLY payroll_frequency company this always returns an empty set (never a 2nd settled run
+     * for the same employee in the same calendar month by construction), so activeForPeriod() needs
+     * no explicit payroll_frequency branch anywhere.
+     *
+     * @return int[] recurring_id values to exclude from the CURRENT period
+     */
+    private function alreadyPaidThisMonth(int $compId, int $employeeId, string $periodStartDate): array {
+        $year = (int)substr($periodStartDate, 0, 4);
+        $month = (int)substr($periodStartDate, 5, 2);
+        $placeholders = implode(',', array_fill(0, count(self::SETTLED_STATES), '?'));
+        $stmt = $this->db->prepare("SELECT d.deduction_breakdown FROM `payroll_run_details` d
+            JOIN `payroll_runs` r ON r.id = d.run_id
+            WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
+                AND YEAR(r.period_start_date) = ? AND MONTH(r.period_start_date) = ?
+                AND r.period_start_date < ? AND d.employee_id = ?");
+        $stmt->execute(array_merge([$compId], self::SETTLED_STATES, [$year, $month, $periodStartDate, $employeeId]));
+        $ids = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $json) {
+            $lines = json_decode((string)$json, true);
+            if (!is_array($lines)) {
+                continue;
+            }
+            foreach ($lines as $line) {
+                if (($line['source'] ?? null) === 'recurring_deduction' && isset($line['recurring_id'])) {
+                    $ids[] = (int)$line['recurring_id'];
+                }
+            }
+        }
+        return array_values(array_unique($ids));
     }
 }

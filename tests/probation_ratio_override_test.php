@@ -53,6 +53,11 @@ try {
     // Same isolation precedent as tests/intern_pay_policy_test.php's own top-of-file comment.
     $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL AND id != :keep")
         ->execute([':comp_id' => $compId, ':keep' => $adminUserId]);
+    // 2026-09-04, Backlog Phase 10, T056: same isolation precedent -- clear any pre-existing active
+    // probation_policy_sets for comp_id=1 so this test's own Default Set is guaranteed to actually BE
+    // the resolved default (see tests/probation_pay_policy_test.php's own matching fix/comment).
+    $pdo->prepare("UPDATE `probation_policy_sets` SET status = 'inactive' WHERE comp_id = :comp_id AND status = 'active'")
+        ->execute([':comp_id' => $compId]);
 
     $policyModel = new PayrollPolicyModel($pdo);
     $runModel = new PayrollRunModel($pdo);
@@ -107,8 +112,26 @@ try {
         return $runModel->getDetails($res['id'], $compId);
     };
 
+    // 2026-09-04, Backlog Phase 10, T056: probation_* is resolved through probation_policy_sets now,
+    // not PayrollPolicyModel::save()'s own company_payroll_policies row (still writable, just dead
+    // for calculation) -- every scenario below goes through probationSetSave() targeting the SAME
+    // Set by id, so it stays this company's single Default Set across all scenarios (same pattern
+    // as tests/probation_pay_policy_test.php's own matching fix).
+    $probationSetId = null;
+    $saveProbationDefault = function (array $fields) use ($policyModel, $compId, $adminUserId, &$probationSetId) {
+        $payload = array_merge(['set_name_th' => 'ค่าเริ่มต้น', 'set_name_en' => 'Default', 'is_default' => true], $fields);
+        if ($probationSetId !== null) {
+            $payload['id'] = $probationSetId;
+        }
+        $res = $policyModel->probationSetSave($compId, $payload, $adminUserId);
+        if (empty($res['status'])) {
+            throw new RuntimeException('probationSetSave() failed: ' . ($res['message'] ?? ''));
+        }
+        $probationSetId = (int)$res['id'];
+    };
+
     echo "=== probation_base_salary_ratio_override: employee's OWN ratio wins over company default ===\n";
-    $policyModel->save($compId, ['probation_defer_pvd' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => 80], $adminUserId);
+    $saveProbationDefault(['probation_defer_pvd' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => 80]);
     $details = $createRun();
     $rowA = current(array_filter($details, fn($d) => (int)$d['employee_id'] === $empAId));
     $rowB = current(array_filter($details, fn($d) => (int)$d['employee_id'] === $empBId));
@@ -125,10 +148,10 @@ try {
     $pdo->prepare("UPDATE `employees` SET employment_type = 'full_time', intern_base_salary_ratio_override = NULL WHERE id = :id")->execute([':id' => $empBId]);
 
     echo "=== OT-eligible-default-on-transition: soft default only, checkbox always wins afterward ===\n";
-    $policyModel->save($compId, [
+    $saveProbationDefault([
         'probation_defer_pvd' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => 80,
         'probation_ot_eligible_default' => 0,
-    ], $adminUserId);
+    ]);
 
     // Case 1: brand-new employee created directly WITH employment_status=probation, ot_eligible not
     // explicitly checked (submitted as false, the common "left it unchecked" create-time state) --
@@ -272,7 +295,7 @@ try {
     };
 
     echo "=== defer_pvd_override / defer_sso_override: per-employee override wins over company default in EITHER direction ===\n";
-    $policyModel->save($compId, ['probation_defer_pvd' => false, 'probation_defer_sso' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null], $adminUserId);
+    $saveProbationDefault(['probation_defer_pvd' => false, 'probation_defer_sso' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null]);
     $detailsOffCompany = $createRun2();
     $rowG1 = current(array_filter($detailsOffCompany, fn($d) => (int)$d['employee_id'] === $empGId));
     $pvdLineG1 = current(array_filter($rowG1['statutory_breakdown'], fn($l) => $l['code'] === 'TH_PVD'));
@@ -288,7 +311,7 @@ try {
         check('G: company defer_sso=OFF, but G\'s own override=ON -- SSO is 0 for G', round((float)($ssoLineG1['employee_amount'] ?? -1), 2), 0.0);
     }
 
-    $policyModel->save($compId, ['probation_defer_pvd' => true, 'probation_defer_sso' => true, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null], $adminUserId);
+    $saveProbationDefault(['probation_defer_pvd' => true, 'probation_defer_sso' => true, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null]);
     $detailsOnCompany = $createRun2();
     $rowH1 = current(array_filter($detailsOnCompany, fn($d) => (int)$d['employee_id'] === $empHId));
     $pvdLineH1 = current(array_filter($rowH1['statutory_breakdown'], fn($l) => $l['code'] === 'TH_PVD'));
@@ -312,7 +335,7 @@ try {
     checkTrue('I: recurring allowance line ABSENT -- I\'s own override defers it even though company policy does not', $recurringLineI === false);
 
     echo "=== tax_exempt_default: same CREATE-TIME-ONLY soft-default contract as ot_eligible_default ===\n";
-    $policyModel->save($compId, ['probation_tax_exempt_default' => 1], $adminUserId);
+    $saveProbationDefault(['probation_tax_exempt_default' => 1]);
     $saveJ = $employeeModel->save($compId, [
         'employee_no' => 'TEST_PROB_J_' . uniqid(), 'employee_type' => 'domestic', 'employee_status' => 'active',
         'title' => 'mr', 'gender' => 'male', 'name_th' => 'ทดสอบ', 'name_en' => 'Test', 'date_of_birth' => '1998-01-01',

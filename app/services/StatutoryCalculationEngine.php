@@ -27,6 +27,11 @@ class StatutoryCalculationEngine {
     /** Item codes that a tax-exempt employee should skip entirely. */
     private const TAX_EXEMPT_ITEMS = ['TH_PIT'];
 
+    /** Run states whose statutory_breakdown counts as a settled "fact" for monthly-ceiling
+     *  accumulation -- same list ThPitCalculator::YTD_STATES already uses for its own YTD
+     *  accumulation, naturally excludes the still-editable DRAFT run currently being calculated. */
+    private const MONTHLY_USAGE_STATES = ['approved', 'paid', 'locked'];
+
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
         $this->companySettingModel = new CompanyStatutorySettingModel($this->db);
@@ -51,15 +56,31 @@ class StatutoryCalculationEngine {
      *        (which itself already wins over the master rate) -- precedence is
      *        employee override > company override > master rate. A null/absent value for either
      *        key leaves that side's existing (company-or-master) rate untouched.
+     * @param ?int $employeeId 2026-09-04, Backlog Phase 10, T060 -- when given together with
+     *        $periodStartDate, enables TRUE cumulative-monthly ceiling tracking for a flat_rate
+     *        item's max_base_amount/max_employee_contribution/max_employer_contribution (the real
+     *        Thai SSO/PVD monthly caps -- 15,000 THB wage base / 750 THB contribution) across
+     *        MULTIPLE settled runs within the same calendar month (e.g. 4-5 weekly runs), instead
+     *        of each run independently re-applying the FULL monthly ceiling (a real bug: 4-5x
+     *        over-withholding the moment a non-monthly payroll_frequency is used with SSO/PVD on
+     *        -- see monthlyUsagePriorToThisPeriod()'s own docblock). Both null (the default) skips
+     *        this entirely -- byte-identical to pre-T060 behavior -- which is exactly correct for
+     *        every existing caller that doesn't have a real employee/period context (the Calc
+     *        Preview feature, every test file calling calculateItem() directly) AND for a genuine
+     *        monthly payroll_frequency company (there is never a PRIOR settled run this same
+     *        calendar month by construction, so the accumulation query naturally returns zero
+     *        usage and this is a no-op -- no explicit payroll_frequency check needed anywhere).
+     * @param ?string $periodStartDate 'YYYY-MM-DD', the CURRENT run's own period_start_date --
+     *        required together with $employeeId to enable the monthly-ceiling tracking above.
      * @return array{calc_date:string, items:array, total_employee_deduction:float, total_employer_contribution:float}
      */
-    public function calculate(int $compId, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = []): array {
+    public function calculate(int $compId, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = [], ?int $employeeId = null, ?string $periodStartDate = null): array {
         $items = $this->companySettingModel->list($compId);
         $lines = [];
         $totalEmployee = 0.0;
         $totalEmployer = 0.0;
         foreach ($items as $item) {
-            $line = $this->calculateLine($item, $salaryContext, $calcDate, $employeeFlags, $employeeRateOverrides);
+            $line = $this->calculateLine($item, $salaryContext, $calcDate, $employeeFlags, $employeeRateOverrides, $compId, $employeeId, $periodStartDate);
             $lines[] = $line;
             $totalEmployee += $line['employee_amount'];
             $totalEmployer += $line['employer_amount'];
@@ -72,17 +93,18 @@ class StatutoryCalculationEngine {
         ];
     }
 
-    /** Calculate a single item by its master code (e.g. 'TH_SSO'), useful for targeted lookups/tests. */
-    public function calculateItem(int $compId, string $itemCode, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = []): ?array {
+    /** Calculate a single item by its master code (e.g. 'TH_SSO'), useful for targeted lookups/tests.
+     *  See calculate()'s own docblock for $employeeId/$periodStartDate (T060 monthly-ceiling tracking). */
+    public function calculateItem(int $compId, string $itemCode, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = [], ?int $employeeId = null, ?string $periodStartDate = null): ?array {
         foreach ($this->companySettingModel->list($compId) as $item) {
             if ($item['code'] === $itemCode) {
-                return $this->calculateLine($item, $salaryContext, $calcDate, $employeeFlags, $employeeRateOverrides);
+                return $this->calculateLine($item, $salaryContext, $calcDate, $employeeFlags, $employeeRateOverrides, $compId, $employeeId, $periodStartDate);
             }
         }
         return null;
     }
 
-    private function calculateLine(array $item, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = []): array {
+    private function calculateLine(array $item, array $salaryContext, string $calcDate, array $employeeFlags = [], array $employeeRateOverrides = [], ?int $compId = null, ?int $employeeId = null, ?string $periodStartDate = null): array {
         $baseKey = $item['calc_base'];
         $base = array_key_exists($baseKey, $salaryContext) ? (float)$salaryContext[$baseKey] : 0.0;
 
@@ -107,6 +129,23 @@ class StatutoryCalculationEngine {
             'note' => null,
             'formula' => null,
         ];
+
+        // 2026-09-04, Backlog Phase 9, T047 -- companion safety fix to calc_base becoming a master
+        // table (master_statutory_calc_bases): before this, an item whose calc_base didn't match
+        // any $salaryContext key (e.g. a NEW calc_base value added to the master table with no
+        // matching PayrollRunModel::recalculate() wiring behind it yet -- adding a row there no
+        // longer needs a code deploy, but making the engine actually COMPUTE that new context key
+        // still does) silently fell through to `$base = 0.0` with NO note at all -- a real deduction
+        // that should have applied would just compute 0.0 every run, forever, with nothing in the
+        // breakdown to explain why. Set here as the array's own default value (not inside an if),
+        // so every explicit `$line['note'] = ...` assignment below (disabled/not_enrolled/
+        // tax_exempt/no_rate_configured/etc.) naturally OVERWRITES it with a more specific, more
+        // actionable reason when one applies -- this note only ever SURVIVES to the final returned
+        // line when the item would otherwise have computed a real (but base-less, wrongly-zero)
+        // amount, which is exactly the dangerous case worth flagging.
+        if (!array_key_exists($baseKey, $salaryContext)) {
+            $line['note'] = 'unrecognized_calc_base';
+        }
 
         if ($item['effective_status'] !== 'active') {
             $line['note'] = 'disabled';
@@ -147,7 +186,16 @@ class StatutoryCalculationEngine {
                     $item['employer_rate_override'] = $employeeOverride['employer_rate_override'];
                     $isEmployeeOverride = true;
                 }
-                [$line['employee_amount'], $line['employer_amount'], $line['base_amount'], $line['formula']] = self::computeFlatRate($item, $rateRow, $base);
+                // 2026-09-04, Backlog Phase 10, T060 -- see calculate()'s own docblock. Only
+                // queried when a real employee/period context was actually passed in (both null =
+                // legacy callers, e.g. Calc Preview / tests calling calculateItem() directly --
+                // no monthly context to accumulate against, so this stays a no-op for them exactly
+                // like before this change).
+                $priorMonthUsage = [];
+                if ($compId !== null && $employeeId !== null && $periodStartDate !== null) {
+                    $priorMonthUsage = $this->monthlyUsagePriorToThisPeriod($compId, $employeeId, $item['code'], $periodStartDate);
+                }
+                [$line['employee_amount'], $line['employer_amount'], $line['base_amount'], $line['formula']] = self::computeFlatRate($item, $rateRow, $base, $priorMonthUsage);
                 $line['rate_source'] = $isEmployeeOverride ? 'employee_override' : ($isCompanyOverride ? 'company_override' : 'master');
                 return $line;
 
@@ -239,6 +287,56 @@ class StatutoryCalculationEngine {
         return (int)$stmt->fetchColumn() > 0;
     }
 
+    /**
+     * 2026-09-04, Backlog Phase 10, T060 -- sums a flat_rate item's (e.g. TH_SSO/TH_PVD)
+     * base_amount/employee_amount/employer_amount, as they were ACTUALLY recorded (i.e. already
+     * capped by whatever ceiling applied on that earlier run), across every SETTLED run
+     * (approved/paid/locked -- same MONTHLY_USAGE_STATES list as ThPitCalculator::YTD_STATES,
+     * naturally excludes the still-DRAFT run currently being calculated) for this employee whose
+     * period_start_date falls in the SAME CALENDAR MONTH as $periodStartDate, strictly BEFORE it
+     * (never including the current period itself -- same "prior to this period" boundary
+     * ThPitCalculator::ytdGrossPriorToThisPeriod() already uses for its own YEAR-scoped
+     * accumulation, this is the identical pattern scoped to a MONTH instead). Reads
+     * statutory_breakdown (JSON, decoded PHP-side -- same convention as
+     * ThPitCalculator::ytdPitWithheldPriorToThisPeriod(), not a fragile in-SQL JSON function).
+     *
+     * For a genuine MONTHLY payroll_frequency company this always returns all-zeros (there is
+     * never a second settled run for the same employee in the same calendar month by
+     * construction), which is exactly why calculate()/calculateItem() need no explicit
+     * payroll_frequency branch anywhere -- this query's own natural result already makes the
+     * monthly-ceiling logic a no-op for the existing monthly case.
+     *
+     * @return array{base:float, employee_contribution:float, employer_contribution:float}
+     */
+    private function monthlyUsagePriorToThisPeriod(int $compId, int $employeeId, string $itemCode, string $periodStartDate): array {
+        $year = (int)substr($periodStartDate, 0, 4);
+        $month = (int)substr($periodStartDate, 5, 2);
+        $placeholders = implode(',', array_fill(0, count(self::MONTHLY_USAGE_STATES), '?'));
+        $stmt = $this->db->prepare("SELECT d.statutory_breakdown FROM `payroll_run_details` d
+            JOIN `payroll_runs` r ON r.id = d.run_id
+            WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
+                AND YEAR(r.period_start_date) = ? AND MONTH(r.period_start_date) = ?
+                AND r.period_start_date < ? AND d.employee_id = ?");
+        $stmt->execute(array_merge([$compId], self::MONTHLY_USAGE_STATES, [$year, $month, $periodStartDate, $employeeId]));
+        $base = 0.0;
+        $employeeContribution = 0.0;
+        $employerContribution = 0.0;
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $json) {
+            $items = json_decode((string)$json, true);
+            if (!is_array($items)) {
+                continue;
+            }
+            foreach ($items as $sItem) {
+                if (($sItem['code'] ?? null) === $itemCode) {
+                    $base += (float)($sItem['base_amount'] ?? 0);
+                    $employeeContribution += (float)($sItem['employee_amount'] ?? 0);
+                    $employerContribution += (float)($sItem['employer_amount'] ?? 0);
+                }
+            }
+        }
+        return ['base' => $base, 'employee_contribution' => $employeeContribution, 'employer_contribution' => $employerContribution];
+    }
+
     private function fetchBrackets(int $rateHistoryId): array {
         $stmt = $this->db->prepare("SELECT min_amount, max_amount, rate FROM `statutory_item_brackets`
             WHERE statutory_item_rate_history_id = :id ORDER BY bracket_order ASC");
@@ -247,6 +345,14 @@ class StatutoryCalculationEngine {
     }
 
     /**
+     * @param array{base?:float, employee_contribution?:float, employer_contribution?:float} $priorMonthUsage
+     *        2026-09-04, Backlog Phase 10, T060 -- how much of THIS calendar month's ceiling has
+     *        already been consumed by earlier settled runs for this same employee (see
+     *        StatutoryCalculationEngine::monthlyUsagePriorToThisPeriod()). Defaults to empty (=
+     *        zero prior usage, i.e. the FULL ceiling is still available) -- byte-identical to
+     *        pre-T060 behavior, exactly correct for the Calc Preview caller below (no real
+     *        employee/period timeline to accumulate against) and for a genuine monthly
+     *        payroll_frequency company (there is never any prior usage to report).
      * @return array{0:float,1:float,2:float,3:array} [employee_amount, employer_amount, effective_base, formula]
      * Public+static (like every other computeXxx() below) so the Tax & Statutory settings
      * page's Calculation Preview feature (previewRateVersion() on TaxStatutoryModel) can run
@@ -254,16 +360,25 @@ class StatutoryCalculationEngine {
      * calculation uses -- same rationale as SyncPayResolver's computeOtAmountFromConfig()/
      * computeAttendanceDeductionFromConfig() (2026-08-29/30 calc-preview rollout).
      */
-    public static function computeFlatRate(array $item, array $rateRow, float $base): array {
+    public static function computeFlatRate(array $item, array $rateRow, float $base, array $priorMonthUsage = []): array {
         $employeeRate = $item['employee_rate_override'] ?? $rateRow['employee_rate'];
         $employerRate = $item['employer_rate_override'] ?? $rateRow['employer_rate'];
+        $priorBase = (float)($priorMonthUsage['base'] ?? 0.0);
+        $priorEmployeeContribution = (float)($priorMonthUsage['employee_contribution'] ?? 0.0);
+        $priorEmployerContribution = (float)($priorMonthUsage['employer_contribution'] ?? 0.0);
 
         $effBase = $base;
         if ($rateRow['min_base_amount'] !== null) {
             $effBase = max($effBase, (float)$rateRow['min_base_amount']);
         }
         if ($rateRow['max_base_amount'] !== null) {
-            $effBase = min($effBase, (float)$rateRow['max_base_amount']);
+            // T060: the ceiling itself is unchanged (still the real monthly max_base_amount), but
+            // what's LEFT of it this period is reduced by whatever earlier settled runs this same
+            // calendar month already consumed -- once a prior run already used up the full
+            // monthly base, this period correctly contributes zero more, instead of every period
+            // independently re-applying the whole ceiling from scratch.
+            $remainingBase = max(0.0, (float)$rateRow['max_base_amount'] - $priorBase);
+            $effBase = min($effBase, $remainingBase);
         }
 
         $employeeAmount = 0.0;
@@ -274,14 +389,19 @@ class StatutoryCalculationEngine {
             $employeeRawAmount = self::applyRounding($effBase * (float)$employeeRate / 100, $item);
             $employeeAmount = $employeeRawAmount;
             if ($rateRow['max_employee_contribution'] !== null) {
-                $employeeAmount = min($employeeAmount, (float)$rateRow['max_employee_contribution']);
+                // T060: same "remaining allowance this month" treatment as the base cap above,
+                // applied to the explicit contribution ceiling (a separate real-world figure, e.g.
+                // 750 THB for SSO -- not assumed to always equal max_base_amount * rate% exactly).
+                $remainingEmployeeCap = max(0.0, (float)$rateRow['max_employee_contribution'] - $priorEmployeeContribution);
+                $employeeAmount = min($employeeAmount, $remainingEmployeeCap);
                 $employeeCapped = $employeeAmount < $employeeRawAmount;
             }
         }
         if ($item['is_employer_applicable'] && $employerRate !== null) {
             $employerAmount = self::applyRounding($effBase * (float)$employerRate / 100, $item);
             if ($rateRow['max_employer_contribution'] !== null) {
-                $employerAmount = min($employerAmount, (float)$rateRow['max_employer_contribution']);
+                $remainingEmployerCap = max(0.0, (float)$rateRow['max_employer_contribution'] - $priorEmployerContribution);
+                $employerAmount = min($employerAmount, $remainingEmployerCap);
             }
         }
         // 2026-08-29, explicit request: "ประกันสังคม อยากให้เห็นสูตรคำนวณด้วยครับ...ให้เป็น Format นี้ทุก
@@ -293,6 +413,10 @@ class StatutoryCalculationEngine {
             'type' => 'flat_rate',
             'raw_base' => $base, 'min_base' => $rateRow['min_base_amount'] !== null ? (float)$rateRow['min_base_amount'] : null,
             'max_base' => $rateRow['max_base_amount'] !== null ? (float)$rateRow['max_base_amount'] : null,
+            // T060: how much of this month's base/contribution ceiling earlier settled runs
+            // already consumed -- 0.0 for a monthly-frequency run or a legacy caller with no
+            // employee/period context (see this method's own $priorMonthUsage docblock).
+            'prior_month_base' => $priorBase, 'prior_month_employee_contribution' => $priorEmployeeContribution,
             'effective_base' => $effBase, 'employee_rate' => $employeeRate !== null ? (float)$employeeRate : null,
             'employee_raw_amount' => $employeeRawAmount, 'max_employee_contribution' => $rateRow['max_employee_contribution'] !== null ? (float)$rateRow['max_employee_contribution'] : null,
             'employee_capped' => $employeeCapped, 'result' => $employeeAmount,

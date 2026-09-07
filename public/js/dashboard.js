@@ -107,14 +107,24 @@ function dashGreetingKey() {
     return 'dashboard_greeting_evening';
 }
 
-function loadDashboardSummary() {
+// 2026-09-06, Dashboard redesign: month/year historical picker -- $year/$month both omitted (the
+// default, called from $(document).ready() below with no args) reproduces the exact live/current
+// view this endpoint always returned before this feature existed. Passing both switches the whole
+// page into the historical lens DashboardController::summary()'s own docblock describes.
+function loadDashboardSummary(year, month) {
     // 2026-09-03, Platform UX review Phase 2 (revised): the Dashboard's own main content IS this one
     // fetch -- the clearest "page-level" case for the full-page loader (see app.js's own
     // showPageLoader()/hidePageLoader() docblock).
     if (typeof showPageLoader === 'function') showPageLoader();
+    const params = {};
+    if (year && month) {
+        params.year = year;
+        params.month = month;
+    }
     $.ajax({
         url: `${BASE_URL}/api/dashboard.summary`,
         method: 'GET',
+        data: params,
         dataType: 'json',
         success: function (res) {
             if (!res || !res.status) return;
@@ -144,6 +154,21 @@ function renderDashboard(data) {
     const descTpl = langData['dashboard_greeting_description'] || 'Today is {date}. Here is an overview of your payroll workspace.';
     $('#dashGreetingDesc').text(descTpl.replace('{date}', dateStr));
 
+    // 2026-09-06, Dashboard redesign: syncs the month/year picker itself to whatever the backend
+    // says is authoritative (matters both on first load -- defaults to today -- and after "Back to
+    // Current" resets it) -- 'change.select2' only (NOT plain 'change'), same established
+    // convention as e.g. index.js's own matched-cycle preselect, so this never re-triggers the
+    // user-driven fetch handler bound below and cause an infinite loop.
+    $('#dashPeriodYear').val(data.selected_year).trigger('change.select2');
+    $('#dashPeriodMonth').val(data.selected_month).trigger('change.select2');
+    $('#dashHistoricalBadge').toggleClass('d-none', !data.is_historical);
+    $('#dashPeriodResetBtn').toggleClass('d-none', !data.is_historical);
+    const periodTpl = langData['dash_period_suffix'] || ' ({month} {year})';
+    const periodLabel = data.is_historical ? periodTpl.replace('{month}', langData['month_' + data.selected_month] || data.selected_month).replace('{year}', data.selected_year) : '';
+    $('.dash-period-suffix').text(periodLabel);
+    loadDashboardCalendar(data.selected_year, data.selected_month);
+    renderDepartmentChart(data.department_headcount || []);
+
     const stats = data.employee_stats || {};
     $('#dashActiveEmployees').text((stats.active_count || 0).toLocaleString());
     $('#dashNewHires').text((stats.new_this_month || 0).toLocaleString());
@@ -162,6 +187,120 @@ function renderDashboard(data) {
     // the acting employee lacks can_process_payroll or there's genuinely nothing to show, per
     // DashboardController::summary()'s own comment -- `|| []` here treats both cases identically.
     renderProbationInternExpiring(data.probation_intern_expiring || []);
+
+    // 2026-09-04, Backlog Phase 10, T058: "Dashboard shows currently-online users."
+    renderOnlineUsers(data.online_users || [], data.online_users_total || 0);
+
+    // 2026-09-04, Backlog Phase 10, T057: the ONE admin-picked featured announcement.
+    renderFeaturedAnnouncement(data.featured_announcement || null);
+}
+
+function renderFeaturedAnnouncement(row) {
+    const $section = $('#dashAnnouncementSection');
+    if (!row) {
+        $section.addClass('d-none');
+        return;
+    }
+    $section.removeClass('d-none');
+    $('#dashAnnouncementTitle').text(currentLang === 'en' ? row.title_en : row.title_th);
+    const body = (currentLang === 'en' ? row.body_en : row.body_th) || '';
+    $('#dashAnnouncementBody').text(body.length > 160 ? body.slice(0, 160) + '...' : body);
+}
+
+/* ==================== First-login-after-publish click-through modal (T057) ====================
+ * Checked once per Dashboard load (not from ensure_login() -- that's a security choke point, not a
+ * UI trigger, see T058's own established caution about that function). Queue click-through: each
+ * accept/dismiss click calls api/announcement.acknowledge then advances to the next pending one, only
+ * closing once the queue is empty. accept_required=1 items are a genuine BLOCKING step (no backdrop/
+ * Esc dismiss) -- a merely-dismissible one still goes through the SAME click-through queue (so the
+ * remaining-count stays accurate and predictable either way) but its own backdrop/keyboard IS allowed
+ * to close the modal without acknowledging (skipped, not force-acknowledged) -- re-appears next load. */
+let dashAnnouncementQueue = [];
+let dashAnnouncementQueueIndex = 0;
+function dashCheckPendingAnnouncements() {
+    $.ajax({
+        url: `${BASE_URL}/api/announcement.pending-list`, method: 'GET', dataType: 'json',
+        success: function (res) {
+            if (res.status && res.data && res.data.length) {
+                dashAnnouncementQueue = res.data;
+                dashAnnouncementQueueIndex = 0;
+                dashShowAnnouncementModalStep();
+            }
+        }
+    });
+}
+function dashShowAnnouncementModalStep() {
+    if (dashAnnouncementQueueIndex >= dashAnnouncementQueue.length) {
+        bootstrap.Modal.getInstance(document.getElementById('dashAnnouncementModal'))?.hide();
+        return;
+    }
+    const item = dashAnnouncementQueue[dashAnnouncementQueueIndex];
+    const remaining = dashAnnouncementQueue.length - dashAnnouncementQueueIndex;
+    $('#dashAnnModalCount').text(`${dashAnnouncementQueueIndex + 1} / ${dashAnnouncementQueue.length}`);
+    $('#dashAnnModalTitle').text(currentLang === 'en' ? item.title_en : item.title_th);
+    $('#dashAnnModalBody').text(currentLang === 'en' ? item.body_en : item.body_th);
+    $('#dashAnnModalAcceptBtn').text(item.accept_required ? (langData['announcement_accept'] || 'Accept') : (langData['announcement_dismiss'] || 'Dismiss'));
+    const modalEl = document.getElementById('dashAnnouncementModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl, {
+        backdrop: item.accept_required ? 'static' : true,
+        keyboard: !item.accept_required,
+    });
+    modal.show();
+}
+$(document).on('click', '#dashAnnModalAcceptBtn', function () {
+    const item = dashAnnouncementQueue[dashAnnouncementQueueIndex];
+    if (!item) return;
+    $.ajax({
+        url: `${BASE_URL}/api/announcement.acknowledge`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({ id: item.id, via: 'modal' }),
+        complete: function () {
+            dashAnnouncementQueueIndex++;
+            dashShowAnnouncementModalStep();
+        }
+    });
+});
+
+// See dashboard.php's own #dashOnlineUsersSection comment. `last_seen_at` (not login_at) is what
+// this renders as "since" -- it's the presence timestamp this whole feature is built around (see
+// EmployeeLoginLogModel::touchLastSeen()'s own docblock), not when the session originally started.
+function dashOnlineDisplayName(row) {
+    const first = currentLang === 'en' ? (row.name_en || row.name_th) : (row.name_th || row.name_en);
+    const last = currentLang === 'en' ? (row.surname_en || row.surname_th) : (row.surname_th || row.surname_en);
+    return [first, last].filter(Boolean).join(' ') || row.employee_no || '-';
+}
+function dashRelativeMinutesAgo(isoDateTime) {
+    if (!isoDateTime) return '';
+    const then = new Date(String(isoDateTime).replace(' ', 'T'));
+    if (isNaN(then.getTime())) return '';
+    const minutes = Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
+    if (minutes < 1) return langData['dash_online_just_now'] || 'Just now';
+    return (langData['dash_online_minutes_ago'] || '{n}m ago').replace('{n}', minutes);
+}
+function dashOnlineUserAvatarHtml(row) {
+    const photo = row.profile_photo_thumbnail_path || row.profile_photo_path;
+    const inner = photo
+        ? `<img src="${BASE_URL}/${dashEscapeHtml(photo)}" alt="">`
+        : `<span class="apv-person-avatar" style="width:30px;height:30px;min-width:30px;font-size:0.95rem;">${dashEscapeHtml((dashOnlineDisplayName(row) || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
+    return `<div class="dash-online-avatar-wrap">${inner}<span class="dash-online-dot"></span></div>`;
+}
+function renderOnlineUsers(rows, total) {
+    const $section = $('#dashOnlineUsersSection');
+    const $list = $('#dashOnlineUsersList').empty();
+    if (!rows || !rows.length) {
+        $section.addClass('d-none');
+        return;
+    }
+    $section.removeClass('d-none');
+    $('#dashOnlineUsersCount').text((total || rows.length).toLocaleString());
+    rows.forEach(function (row) {
+        $list.append(`
+            <div class="dash-online-user-row">
+                ${dashOnlineUserAvatarHtml(row)}
+                <span class="dash-online-user-name">${dashEscapeHtml(dashOnlineDisplayName(row))}</span>
+                <span class="dash-online-user-since">${dashEscapeHtml(dashRelativeMinutesAgo(row.last_seen_at))}</span>
+            </div>
+        `);
+    });
 }
 
 // See dashboard.php's own #dashProbationInternExpiringSection comment for the "why a card, why
@@ -361,6 +500,156 @@ function renderRecentRuns(rows, canViewAmounts) {
     });
 }
 
+// ==================== Month/Year historical picker (2026-09-06) ====================
+// A plain client-side range (current year back 5) rather than an "only years with real data"
+// endpoint like the Reports page's own #reportsPeriodYear -- this picker's own purpose is broader
+// than statutory reports (headcount/holidays/calendar events can all predate any payroll run ever
+// existing), so restricting it to years with run data would hide genuinely useful history.
+function dashPopulateYearOptions() {
+    const $sel = $('#dashPeriodYear').empty();
+    const nowYear = new Date().getFullYear();
+    for (let y = nowYear; y >= nowYear - 5; y--) {
+        $sel.append(`<option value="${y}">${y}</option>`);
+    }
+}
+$(document).on('change', '#dashPeriodMonth, #dashPeriodYear', function () {
+    const year = $('#dashPeriodYear').val();
+    const month = $('#dashPeriodMonth').val();
+    if (!year || !month) return;
+    loadDashboardSummary(year, month);
+});
+$(document).on('click', '#dashPeriodResetBtn', function () {
+    loadDashboardSummary();
+});
+
+// ==================== Calendar widget (2026-09-06) ====================
+// Confirmed via AskUserQuestion: holidays + payroll cutoff/payment dates + probation/internship end
+// dates, combined -- see DashboardModel::calendarEvents()'s own docblock. Driven by the SAME
+// month/year picker as the rest of the page (single source of truth) rather than its own
+// independent prev/next navigation, so the Calendar can never show a different month than every
+// other widget on the page.
+const DASH_CAL_TYPE_CLASS = {
+    holiday: 'dash-cal-dot-holiday',
+    payroll_cutoff: 'dash-cal-dot-cutoff',
+    payroll_payment: 'dash-cal-dot-payment',
+    probation_end: 'dash-cal-dot-probation',
+    internship_end: 'dash-cal-dot-probation',
+};
+const DASH_CAL_TYPE_LABEL_KEYS = {
+    holiday: 'dash_cal_holiday',
+    payroll_cutoff: 'dash_cal_cutoff',
+    payroll_payment: 'dash_cal_payment',
+    probation_end: 'dash_cal_probation',
+    internship_end: 'dash_cal_probation',
+};
+let dashCalendarEventsByDate = {};
+function loadDashboardCalendar(year, month) {
+    if (!year || !month) return;
+    $.ajax({
+        url: `${BASE_URL}/api/dashboard.calendar`, method: 'GET', data: { year: year, month: month }, dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            dashCalendarEventsByDate = {};
+            (res.data.events || []).forEach(function (ev) {
+                (dashCalendarEventsByDate[ev.date] = dashCalendarEventsByDate[ev.date] || []).push(ev);
+            });
+            $('#dashCalendarDayDetail').addClass('d-none').empty();
+            renderDashboardCalendarGrid(Number(year), Number(month));
+        }
+    });
+}
+function renderDashboardCalendarGrid(year, month) {
+    const $grid = $('#dashCalendarGrid').empty();
+    const weekdayKeys = ['weekday_short_sun', 'weekday_short_mon', 'weekday_short_tue', 'weekday_short_wed', 'weekday_short_thu', 'weekday_short_fri', 'weekday_short_sat'];
+    const weekdayFallbacks = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    let headerHtml = '<div class="dash-calendar-row dash-calendar-header-row">';
+    weekdayKeys.forEach((k, i) => headerHtml += `<div class="dash-calendar-cell dash-calendar-weekday">${dashEscapeHtml(langData[k] || weekdayFallbacks[i])}</div>`);
+    headerHtml += '</div>';
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const startWeekday = new Date(year, month - 1, 1).getDay(); // 0=Sun
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const cells = [];
+    for (let i = 0; i < startWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    let bodyHtml = '';
+    for (let i = 0; i < cells.length; i++) {
+        if (i % 7 === 0) bodyHtml += '<div class="dash-calendar-row">';
+        const d = cells[i];
+        if (d === null) {
+            bodyHtml += '<div class="dash-calendar-cell dash-calendar-cell-empty"></div>';
+        } else {
+            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const events = dashCalendarEventsByDate[dateStr] || [];
+            const distinctTypes = [...new Set(events.map(e => e.type))];
+            const dotsHtml = distinctTypes.length
+                ? `<div class="dash-cal-dots">${distinctTypes.map(t => `<span class="dash-cal-dot ${DASH_CAL_TYPE_CLASS[t] || ''}"></span>`).join('')}</div>`
+                : '';
+            const isToday = dateStr === todayStr;
+            bodyHtml += `<div class="dash-calendar-cell dash-calendar-day${isToday ? ' dash-calendar-today' : ''}${events.length ? ' dash-calendar-has-events' : ''}" data-date="${dateStr}">
+                <span class="dash-calendar-day-num">${d}</span>${dotsHtml}
+            </div>`;
+        }
+        if (i % 7 === 6) bodyHtml += '</div>';
+    }
+    $grid.html(headerHtml + bodyHtml);
+}
+$(document).on('click', '.dash-calendar-day.dash-calendar-has-events', function () {
+    const date = $(this).data('date');
+    const events = dashCalendarEventsByDate[date] || [];
+    const $detail = $('#dashCalendarDayDetail');
+    $('.dash-calendar-day').removeClass('dash-calendar-day-selected');
+    if (!events.length) {
+        $detail.addClass('d-none').empty();
+        return;
+    }
+    $(this).addClass('dash-calendar-day-selected');
+    const labelField = currentLang === 'th' ? 'label_th' : 'label_en';
+    const rowsHtml = events.map(e => `<div class="small"><span class="dash-cal-dot ${DASH_CAL_TYPE_CLASS[e.type] || ''}"></span> ${dashEscapeHtml(langData[DASH_CAL_TYPE_LABEL_KEYS[e.type]] || e.type)}: ${dashEscapeHtml(e[labelField] || e.label_en || '')}</div>`).join('');
+    $detail.removeClass('d-none').html(`<div class="fw-semibold small mb-1">${dashToDisplayDate(date)}</div>${rowsHtml}`);
+});
+
+// ==================== Headcount by Department chart (2026-09-06) ====================
+// One additional, deliberately restrained chart -- per explicit request "เพิ่มกราฟที่สามารถเพิ่มได้ แต่
+// ไม่ดูยัดเยียดเกินไป" -- a compact horizontal bar in the sidebar column, capped at the top 6
+// departments so a company with many departments doesn't get a chart taller than the page itself.
+let dashDeptChartInstance = null;
+function renderDepartmentChart(rows) {
+    const $section = $('#dashDeptChartSection');
+    const $canvas = $('#dashDeptChart');
+    if (!$canvas.length || typeof Chart === 'undefined') return;
+    const filtered = (rows || []).filter(r => Number(r.count) > 0);
+    if (!filtered.length) {
+        $section.addClass('d-none');
+        if (dashDeptChartInstance) { dashDeptChartInstance.destroy(); dashDeptChartInstance = null; }
+        return;
+    }
+    $section.removeClass('d-none');
+    const top = filtered.slice(0, 6);
+    const labels = top.map(r => currentLang === 'th' ? r.department_name_th : r.department_name_en);
+    const data = top.map(r => Number(r.count) || 0);
+    if (dashDeptChartInstance) {
+        dashDeptChartInstance.data.labels = labels;
+        dashDeptChartInstance.data.datasets[0].data = data;
+        dashDeptChartInstance.update();
+        return;
+    }
+    dashDeptChartInstance = new Chart($canvas[0].getContext('2d'), {
+        type: 'bar',
+        data: { labels: labels, datasets: [{ data: data, backgroundColor: '#FF9900', borderRadius: 4, maxBarThickness: 22 }] },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+    });
+}
+
 // 2026-08-29, explicit request: notification summary card, see this file's own dashNotifSection
 // comment in dashboard.php. notifItemHtml()/BASE_URL are defined in notifications.js, loaded
 // globally on every page (layout/header.php) before this file's own <script> tag at the bottom of
@@ -375,6 +664,21 @@ function loadDashboardNotifications() {
     });
 }
 $(document).ready(function () {
+    // 2026-09-06, Dashboard redesign: month/year picker init -- see this file's own
+    // dashPopulateYearOptions()/#dashPeriodMonth,#dashPeriodYear change handler docblocks. Set to
+    // today's own year/month before the first fetch even returns, so the picker never shows blank
+    // while loadDashboardSummary()'s own default (live) view is loading -- renderDashboard() will
+    // reconcile these to data.selected_year/_month once the real response lands regardless.
+    dashPopulateYearOptions();
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#dashPeriodMonth', { mode: 'static' });
+        initSelect2('#dashPeriodYear', { mode: 'native' });
+    }
+    const now = new Date();
+    $('#dashPeriodYear').val(now.getFullYear()).trigger('change.select2');
+    $('#dashPeriodMonth').val(now.getMonth() + 1).trigger('change.select2');
+
     loadDashboardSummary();
     loadDashboardNotifications();
+    dashCheckPendingAnnouncements();
 });

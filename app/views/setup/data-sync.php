@@ -65,7 +65,7 @@
            filters (entity_type/status, already existing before this redesign) stay on the table
            header itself -- this row is for the date range they can't express. -->
       <div class="station-filter mb-2" id="dsHistoryStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="dsHistoryStationFilterToggle" title="Toggle filter">
           <i class="fas fa-chevron-up"></i>
         </button>

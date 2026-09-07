@@ -455,6 +455,7 @@ $(document).ready(function () {
         }
         if (tabId === 'policies-tab') {
             loadPayrollPolicies();
+            loadProbationSets();
         }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
     });
@@ -488,11 +489,10 @@ function loadPayrollPolicies() {
         if (res && res.status && res.data) {
             const d = res.data;
             $('#policyReopenWindowDays').val(d.reopen_window_days !== null && d.reopen_window_days !== undefined ? d.reopen_window_days : '');
-            $('#policyProbationPeriodDays').val(d.probation_period_days !== null && d.probation_period_days !== undefined ? d.probation_period_days : '');
-            $('#policyProbationBaseSalaryRatio').val(d.probation_base_salary_ratio !== null && d.probation_base_salary_ratio !== undefined ? d.probation_base_salary_ratio : '');
-            $('#policyProbationDeferPvd').prop('checked', !!d.probation_defer_pvd);
-            $('#policyProbationDeferRecurringEarning').prop('checked', !!d.probation_defer_recurring_earning);
-            // 2026-08-31, direct mirror of the probation_* fields immediately above.
+            // 2026-09-04, Backlog Phase 10, T056: probation_* fields moved off this singleton form
+            // entirely, into probation_policy_sets (multiple named/cloneable/assignable Sets) -- see
+            // loadProbationSets()/the view's own header comment on #probationSetsCard. Intern_* fields
+            // immediately below are UNRELATED, own separate field set, untouched by this task.
             $('#policyInternBaseSalaryRatio').val(d.intern_base_salary_ratio !== null && d.intern_base_salary_ratio !== undefined ? d.intern_base_salary_ratio : '');
             $('#policyInternDeferPvd').prop('checked', !!d.intern_defer_pvd);
             $('#policyInternDeferRecurringEarning').prop('checked', !!d.intern_defer_recurring_earning);
@@ -501,17 +501,13 @@ function loadPayrollPolicies() {
             // OT-eligible-default selects are TRI-STATE (null/0/1), populated via select2's own
             // '' /1/0 values (data-option-values on the view's own markup) so 'not set' round-trips
             // as a genuinely empty selection, not a false-y 0.
-            $('#policyProbationLeaveDaysLimit').val(d.probation_leave_days_limit !== null && d.probation_leave_days_limit !== undefined ? d.probation_leave_days_limit : '');
-            $('#policyAllowLeaveDuringProbation').prop('checked', d.allow_leave_during_probation !== false);
-            $('#policyProbationOtEligibleDefault').val(d.probation_ot_eligible_default === null || d.probation_ot_eligible_default === undefined ? '' : (d.probation_ot_eligible_default ? '1' : '0')).trigger('change');
             $('#policyInternLeaveDaysLimit').val(d.intern_leave_days_limit !== null && d.intern_leave_days_limit !== undefined ? d.intern_leave_days_limit : '');
             $('#policyAllowLeaveDuringIntern').prop('checked', d.allow_leave_during_intern !== false);
             $('#policyInternOtEligibleDefault').val(d.intern_ot_eligible_default === null || d.intern_ot_eligible_default === undefined ? '' : (d.intern_ot_eligible_default ? '1' : '0')).trigger('change');
             // 2026-09-02, follow-up to close a review-flagged gap: SSO deferral (same mechanism as
             // defer_pvd) + a tri-state tax-exempt default (same round-trip pattern as
-            // *_ot_eligible_default immediately above).
-            $('#policyProbationDeferSso').prop('checked', !!d.probation_defer_sso);
-            $('#policyProbationTaxExemptDefault').val(d.probation_tax_exempt_default === null || d.probation_tax_exempt_default === undefined ? '' : (d.probation_tax_exempt_default ? '1' : '0')).trigger('change');
+            // *_ot_eligible_default immediately above). Probation's own equivalents moved to
+            // probation_policy_sets (T056) -- intern_* is unaffected/untouched.
             $('#policyInternDeferSso').prop('checked', !!d.intern_defer_sso);
             $('#policyInternTaxExemptDefault').val(d.intern_tax_exempt_default === null || d.intern_tax_exempt_default === undefined ? '' : (d.intern_tax_exempt_default ? '1' : '0')).trigger('change');
             const payBasis = d.pay_basis || 'full_month';
@@ -541,16 +537,11 @@ $(document).on('click', '#btnCancelPayrollPolicies', function () {
 $(document).on('click', '#btnSavePayrollPolicies', function () {
     const $btn = $(this);
     const reopenDaysRaw = $('#policyReopenWindowDays').val();
-    const probationDaysRaw = $('#policyProbationPeriodDays').val();
-    const probationRatioRaw = $('#policyProbationBaseSalaryRatio').val();
     const internRatioRaw = $('#policyInternBaseSalaryRatio').val();
     const flatTaxRateRaw = $('#policySupplementalFlatTaxRate').val();
     const internPeriodDaysRaw = $('#policyInternPeriodDays').val();
-    const probationLeaveDaysLimitRaw = $('#policyProbationLeaveDaysLimit').val();
-    const probationOtDefaultRaw = $('#policyProbationOtEligibleDefault').val();
     const internLeaveDaysLimitRaw = $('#policyInternLeaveDaysLimit').val();
     const internOtDefaultRaw = $('#policyInternOtEligibleDefault').val();
-    const probationTaxExemptDefaultRaw = $('#policyProbationTaxExemptDefault').val();
     const internTaxExemptDefaultRaw = $('#policyInternTaxExemptDefault').val();
     if (typeof setButtonLoading === 'function') setButtonLoading($btn, true);
     else $btn.prop('disabled', true);
@@ -560,11 +551,9 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
         contentType: 'application/json',
         data: JSON.stringify({
             reopen_window_days: reopenDaysRaw === '' ? null : reopenDaysRaw,
-            probation_period_days: probationDaysRaw === '' ? null : probationDaysRaw,
-            probation_base_salary_ratio: probationRatioRaw === '' ? null : probationRatioRaw,
-            probation_defer_pvd: $('#policyProbationDeferPvd').is(':checked'),
-            probation_defer_recurring_earning: $('#policyProbationDeferRecurringEarning').is(':checked'),
-            // 2026-08-31, direct mirror of the probation_* fields immediately above.
+            // 2026-09-04, Backlog Phase 10, T056: probation_* keys removed from this payload entirely
+            // -- probation policy is saved per-Set now, via #btnSaveProbationSet -> api/probation-
+            // policy-set.save, never through this shared singleton endpoint any more.
             intern_base_salary_ratio: internRatioRaw === '' ? null : internRatioRaw,
             intern_defer_pvd: $('#policyInternDeferPvd').is(':checked'),
             intern_defer_recurring_earning: $('#policyInternDeferRecurringEarning').is(':checked'),
@@ -577,17 +566,13 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
             intern_pay_basis_deduct_leave: $('#policyInternPayBasisDeductLeave').is(':checked'),
             // 2026-08-31, direct mirror of the fields above (Origami `attribution` plan's item 3).
             supplemental_flat_tax_rate_percent: flatTaxRateRaw === '' ? null : flatTaxRateRaw,
-            // 2026-09-02, explicit request: leave/OT rights during probation/internship.
+            // 2026-09-02, explicit request: leave/OT rights during probation/internship. Probation's
+            // own equivalents moved to probation_policy_sets (T056) -- intern_* untouched here.
             intern_period_days: internPeriodDaysRaw === '' ? null : internPeriodDaysRaw,
-            probation_leave_days_limit: probationLeaveDaysLimitRaw === '' ? null : probationLeaveDaysLimitRaw,
-            allow_leave_during_probation: $('#policyAllowLeaveDuringProbation').is(':checked'),
-            probation_ot_eligible_default: probationOtDefaultRaw === '' ? null : probationOtDefaultRaw,
             intern_leave_days_limit: internLeaveDaysLimitRaw === '' ? null : internLeaveDaysLimitRaw,
             allow_leave_during_intern: $('#policyAllowLeaveDuringIntern').is(':checked'),
             intern_ot_eligible_default: internOtDefaultRaw === '' ? null : internOtDefaultRaw,
             // 2026-09-02, follow-up to close a review-flagged gap.
-            probation_defer_sso: $('#policyProbationDeferSso').is(':checked'),
-            probation_tax_exempt_default: probationTaxExemptDefaultRaw === '' ? null : probationTaxExemptDefaultRaw,
             intern_defer_sso: $('#policyInternDeferSso').is(':checked'),
             intern_tax_exempt_default: internTaxExemptDefaultRaw === '' ? null : internTaxExemptDefaultRaw,
         }),
@@ -608,6 +593,230 @@ $(document).on('click', '#btnSavePayrollPolicies', function () {
         },
     });
 });
+
+/* ==================== Probation Policy Sets (2026-09-04, Backlog Phase 10, T056) ====================
+ * "Probation setting gains Clone + Assign, using T055's template" -- probation_* policy is no longer
+ * a single company-wide singleton, it's now multiple named/cloneable Sets, exactly one mandatory
+ * Default, each optionally scoped via T055's assign-widget.js (department/position/team/employee).
+ * Mirrors OtRateSetModel's own Set-card UI pattern (the closest existing precedent in this app). */
+let currentProbationSets = [];
+function findProbationSet(id) {
+    return currentProbationSets.find(s => s.id === id) || null;
+}
+function probationSetSummaryHtml(s) {
+    const parts = [];
+    if (s.probation_base_salary_ratio !== null && s.probation_base_salary_ratio !== undefined) {
+        parts.push(`${langData['policy_probation_base_salary_ratio_label'] || 'Base Salary Ratio'}: ${parseFloat(s.probation_base_salary_ratio).toFixed(2)}%`);
+    }
+    if (s.probation_defer_pvd) parts.push(langData['probation_summary_defer_pvd'] || 'Defer PVD');
+    if (s.probation_defer_sso) parts.push(langData['probation_summary_defer_sso'] || 'Defer SSO');
+    if (s.probation_defer_recurring_earning) parts.push(langData['probation_summary_defer_recurring'] || 'Defer Recurring Allowances');
+    return parts.length ? parts.map(p => `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtml(p)}</span>`).join('') : `<span class="text-muted small">${langData['policy_probation_base_salary_ratio_placeholder'] || '100 (no reduction)'}</span>`;
+}
+function probationSetCardHtml(s) {
+    const defaultBadge = s.is_default ? `<span class="badge bg-primary-subtle text-primary border me-2">${langData['default'] || 'Default'}</span>` : '';
+    const assignBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-secondary" onclick="openProbationSetAssignModal(${s.id})" title="${langData['assign'] || 'Assign'}"><i class="fa-solid fa-user-shield"></i></button>`;
+    const setDefaultBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-primary" onclick="setDefaultProbationSet(${s.id})" title="${langData['probation_set_as_default'] || 'Set as Default'}"><i class="fa-solid fa-star"></i></button>`;
+    const deleteBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteProbationSet(${s.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+    return `<div class="adr-variant-row mb-2" data-set-id="${s.id}">
+        <div class="adr-variant-main">
+            ${defaultBadge}
+            <span class="adr-variant-label fw-bold me-2">${escapeHtml(currentLang === 'th' ? s.set_name_th : (s.set_name_en || s.set_name_th))}</span>
+            ${probationSetSummaryHtml(s)}
+        </div>
+        <div class="adr-variant-exemptions">${s.is_default ? '' : assignSummaryBadgeHtml(s.assignments)}</div>
+        <div class="adr-variant-actions">
+            <div class="d-flex gap-1 justify-content-center flex-wrap">
+                <button type="button" class="btn btn-link btn-circle-action text-warning" onclick="openProbationSetModal(${s.id})" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
+                <button type="button" class="btn btn-link btn-circle-action text-info" onclick="cloneProbationSet(${s.id})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
+                ${assignBtn}
+                ${setDefaultBtn}
+                ${deleteBtn}
+            </div>
+        </div>
+    </div>`;
+}
+function loadProbationSets() {
+    $.get(`${BASE_URL}/api/probation-policy-set.list`, function (res) {
+        if (res && res.status) {
+            currentProbationSets = res.data || [];
+            $('#probationSetsContainer').html(currentProbationSets.map(probationSetCardHtml).join(''));
+            if (typeof updateText === 'function') updateText(document.getElementById('probationSetsContainer'));
+        }
+    });
+}
+function resetProbationSetForm() {
+    $('#pps_id').val('');
+    $('#pps_set_name_th, #pps_set_name_en, #pps_probation_period_days, #pps_probation_base_salary_ratio, #pps_probation_leave_days_limit').val('');
+    $('#pps_probation_defer_pvd, #pps_probation_defer_sso, #pps_probation_defer_recurring_earning').prop('checked', false);
+    $('#pps_allow_leave_during_probation').prop('checked', true);
+    $('#pps_probation_ot_eligible_default, #pps_probation_tax_exempt_default').val('').trigger('change');
+}
+function populateProbationSetForm(s) {
+    $('#pps_id').val(s.id);
+    $('#pps_set_name_th').val(s.set_name_th);
+    $('#pps_set_name_en').val(s.set_name_en);
+    $('#pps_probation_period_days').val(s.probation_period_days ?? '');
+    $('#pps_probation_base_salary_ratio').val(s.probation_base_salary_ratio ?? '');
+    $('#pps_probation_leave_days_limit').val(s.probation_leave_days_limit ?? '');
+    $('#pps_probation_defer_pvd').prop('checked', !!s.probation_defer_pvd);
+    $('#pps_probation_defer_sso').prop('checked', !!s.probation_defer_sso);
+    $('#pps_probation_defer_recurring_earning').prop('checked', !!s.probation_defer_recurring_earning);
+    $('#pps_allow_leave_during_probation').prop('checked', s.allow_leave_during_probation !== false);
+    $('#pps_probation_ot_eligible_default').val(s.probation_ot_eligible_default === null || s.probation_ot_eligible_default === undefined ? '' : (s.probation_ot_eligible_default ? '1' : '0')).trigger('change');
+    $('#pps_probation_tax_exempt_default').val(s.probation_tax_exempt_default === null || s.probation_tax_exempt_default === undefined ? '' : (s.probation_tax_exempt_default ? '1' : '0')).trigger('change');
+}
+function openProbationSetModal(id) {
+    const s = findProbationSet(id);
+    if (s) {
+        populateProbationSetForm(s);
+        $('#probationSetModalTitle').text(currentLang === 'th' ? s.set_name_th : (s.set_name_en || s.set_name_th));
+    } else {
+        resetProbationSetForm();
+        $('#probationSetModalTitle text, #probationSetModalTitle').text(langData['probation_add_set'] || 'Add Set');
+    }
+    new bootstrap.Modal(document.getElementById('probationSetModal')).show();
+}
+$(document).on('click', '#btnAddProbationSet', function () {
+    openProbationSetModal(null);
+});
+$(document).on('click', '#btnSaveProbationSet', function () {
+    const $btn = $(this);
+    const id = $('#pps_id').val();
+    const periodDaysRaw = $('#pps_probation_period_days').val();
+    const ratioRaw = $('#pps_probation_base_salary_ratio').val();
+    const leaveLimitRaw = $('#pps_probation_leave_days_limit').val();
+    const otDefaultRaw = $('#pps_probation_ot_eligible_default').val();
+    const taxExemptDefaultRaw = $('#pps_probation_tax_exempt_default').val();
+    const nameTh = $('#pps_set_name_th').val().trim();
+    if (!nameTh) {
+        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+        return;
+    }
+    const existing = id ? findProbationSet(parseInt(id, 10)) : null;
+    const payload = {
+        set_name_th: nameTh, set_name_en: $('#pps_set_name_en').val().trim(),
+        probation_period_days: periodDaysRaw === '' ? null : periodDaysRaw,
+        probation_base_salary_ratio: ratioRaw === '' ? null : ratioRaw,
+        probation_leave_days_limit: leaveLimitRaw === '' ? null : leaveLimitRaw,
+        probation_defer_pvd: $('#pps_probation_defer_pvd').is(':checked'),
+        probation_defer_sso: $('#pps_probation_defer_sso').is(':checked'),
+        probation_defer_recurring_earning: $('#pps_probation_defer_recurring_earning').is(':checked'),
+        allow_leave_during_probation: $('#pps_allow_leave_during_probation').is(':checked'),
+        probation_ot_eligible_default: otDefaultRaw === '' ? null : otDefaultRaw,
+        probation_tax_exempt_default: taxExemptDefaultRaw === '' ? null : taxExemptDefaultRaw,
+        // Assignments are edited via the SEPARATE Assign modal (openProbationSetAssignModal), not
+        // this form -- re-submit whatever this Set already has so a plain Edit+Save never wipes them.
+        assignments: (existing && existing.assignments) ? existing.assignments.map(a => ({ scope_type: a.scope_type, scope_id: a.scope_id })) : [],
+    };
+    if (id) payload.id = parseInt(id, 10);
+    if (typeof setButtonLoading === 'function') setButtonLoading($btn, true);
+    else $btn.prop('disabled', true);
+    $.ajax({
+        url: `${BASE_URL}/api/probation-policy-set.save`, method: 'POST', contentType: 'application/json',
+        data: JSON.stringify(payload),
+        success: function (res) {
+            if (typeof setButtonLoading === 'function') setButtonLoading($btn, false);
+            else $btn.prop('disabled', false);
+            if (res && res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                bootstrap.Modal.getInstance(document.getElementById('probationSetModal'))?.hide();
+                loadProbationSets();
+            } else {
+                showWarning((res && res.message) || (langData['save_failed'] || 'Save failed'));
+            }
+        },
+        error: function () {
+            if (typeof setButtonLoading === 'function') setButtonLoading($btn, false);
+            else $btn.prop('disabled', false);
+            showError(langData['save_failed'] || 'Save failed');
+        },
+    });
+});
+function cloneProbationSet(id) {
+    $.ajax({
+        url: `${BASE_URL}/api/probation-policy-set.duplicate`, method: 'POST', contentType: 'application/json',
+        data: JSON.stringify({ id: id }),
+        success: function (res) {
+            if (res && res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Cloned successfully.');
+                loadProbationSets();
+            } else {
+                showWarning((res && res.message) || (langData['save_failed'] || 'Clone failed'));
+            }
+        },
+    });
+}
+function deleteProbationSet(id) {
+    showConfirm(langData['confirm_delete_title'] || 'Delete?', langData['confirm_delete_message'] || 'This cannot be undone.', function () {
+        $.ajax({
+            url: `${BASE_URL}/api/probation-policy-set.delete`, method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ id: id }),
+            success: function (res) {
+                if (res && res.status) {
+                    showSuccess(res.message || langData['delete_success'] || 'Deleted successfully.');
+                    loadProbationSets();
+                } else {
+                    showWarning((res && res.message) || (langData['delete_failed'] || 'Delete failed'));
+                }
+            },
+        });
+    });
+}
+function setDefaultProbationSet(id) {
+    $.ajax({
+        url: `${BASE_URL}/api/probation-policy-set.set-default`, method: 'POST', contentType: 'application/json',
+        data: JSON.stringify({ id: id }),
+        success: function (res) {
+            if (res && res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Updated successfully.');
+                loadProbationSets();
+            } else {
+                showWarning((res && res.message) || (langData['save_failed'] || 'Update failed'));
+            }
+        },
+    });
+}
+function openProbationSetAssignModal(id) {
+    const s = findProbationSet(id);
+    if (!s) return;
+    $.get(`${BASE_URL}/api/probation-policy-set.assignable-options`, function (optRes) {
+        if (!optRes || !optRes.status) {
+            showError(langData['save_failed'] || 'An error occurred while loading the data.');
+            return;
+        }
+        const label = (langData['assign'] || 'Assign') + ': ' + (currentLang === 'th' ? s.set_name_th : (s.set_name_en || s.set_name_th));
+        openAssignModal({
+            entityLabel: label,
+            assignableOptions: optRes.data,
+            currentAssignments: s.assignments || [],
+            onSave: function (newAssignments) {
+                $.ajax({
+                    url: `${BASE_URL}/api/probation-policy-set.save`, method: 'POST', contentType: 'application/json',
+                    data: JSON.stringify({
+                        id: s.id, set_name_th: s.set_name_th, set_name_en: s.set_name_en,
+                        probation_period_days: s.probation_period_days, probation_base_salary_ratio: s.probation_base_salary_ratio,
+                        probation_leave_days_limit: s.probation_leave_days_limit, probation_defer_pvd: !!s.probation_defer_pvd,
+                        probation_defer_sso: !!s.probation_defer_sso, probation_defer_recurring_earning: !!s.probation_defer_recurring_earning,
+                        allow_leave_during_probation: s.allow_leave_during_probation !== false,
+                        probation_ot_eligible_default: s.probation_ot_eligible_default,
+                        probation_tax_exempt_default: s.probation_tax_exempt_default,
+                        assignments: newAssignments,
+                    }),
+                    success: function (res) {
+                        if (res && res.status) {
+                            showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                            loadProbationSets();
+                        } else {
+                            showWarning((res && res.message) || (langData['save_failed'] || 'Save failed'));
+                        }
+                    },
+                });
+            },
+        });
+    });
+}
+
 // 2026-08-30 (Phase 2, T013b) -- replaces the old direct #calculation_method change handler
 // (that element is now a plain hidden input, never user-driven -- see collectPedTypeFormData()'s
 // own comment). #calculation_method is kept in sync here too (not just at submit time in
@@ -761,9 +970,6 @@ function cycleFrequencyBadge(freq) {
     const cls = freq === 'weekly' ? 'bg-info-subtle text-info' : 'bg-primary-subtle text-primary';
     return `<span class="badge ${cls} px-2 py-1">${langData[key] || freq}</span>`;
 }
-function escapeHtmlPc(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
 // ".btn-circle-action" section) replace the old adjacent .btn-group.
 function cycleActionButtons(row) {
@@ -790,14 +996,14 @@ function initPayrollCycleTable() {
             // table already converted. The old read-only cycleStatusBadge() renderer is gone
             // (unused after this change, deleted rather than left dead).
             { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/payroll-cycle.toggle-status') },
-            { data: 'cycle_name', render: d => `<strong class="text-dark">${escapeHtmlPc(d)}</strong>` },
+            { data: 'cycle_name', render: d => `<strong class="text-dark">${escapeHtml(d)}</strong>` },
             { data: 'payroll_frequency', render: d => cycleFrequencyBadge(d) },
             // 2026-09-02, reply from Origami's own team re: payroll schedule mapping -- see
             // modals.php's own comment on #external_cycle_code for the full context.
-            { data: 'external_cycle_code', render: d => d ? `<code>${escapeHtmlPc(d)}</code>` : `<span class="text-muted">-</span>` },
+            { data: 'external_cycle_code', render: d => d ? `<code>${escapeHtml(d)}</code>` : `<span class="text-muted">-</span>` },
             { data: null, render: (d, t, row) => cycleCutoffCell(row) },
             { data: null, render: (d, t, row) => cyclePaymentCell(row) },
-            { data: null, render: (d, t, row) => escapeHtmlPc((currentLang === 'th' ? row.bank_file_format_name_th : row.bank_file_format_name_en) || row.bank_file_format_name_th || row.bank_file_format_name_en || '') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.bank_file_format_name_th : row.bank_file_format_name_en) || row.bank_file_format_name_th || row.bank_file_format_name_en || '') },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => cycleActionButtons(row) }
@@ -841,15 +1047,26 @@ function initPayrollCycleTable() {
 // same pattern as every other converted table's own identical listener.
 $(document).on('statusToggle:success', '#tb_payroll_cycle', function () { tb_payroll_cycle.ajax.reload(null, false); });
 function applyFrequencyFields(freq) {
-    const isWeekly = freq === 'weekly';
-    $('#cutoff_dom_wrapper').toggleClass('d-none', isWeekly);
-    $('#cutoff_dow_wrapper').toggleClass('d-none', !isWeekly);
-    $('#payment_dom_wrapper').toggleClass('d-none', isWeekly);
-    $('#payment_dow_wrapper').toggleClass('d-none', !isWeekly);
-    $('#cutoff_day_of_month').toggleClass('required', !isWeekly);
-    $('#payment_day_of_month').toggleClass('required', !isWeekly);
-    $('#cutoff_day_of_week').toggleClass('required', isWeekly);
-    $('#payment_day_of_week').toggleClass('required', isWeekly);
+    // 2026-09-04, Backlog Phase 10, T060 Step B -- real, pre-existing, unrelated bug found and
+    // fixed in the same edit: this only ever checked `freq === 'weekly'`, so a 'bi_weekly' cycle
+    // NEVER showed the day-of-week fields (it silently fell into the day-of-month branch instead,
+    // matching PayrollCycleModel::save()'s own identical bug on the backend side -- both fixed
+    // together here, see that method's own comment for the full story). Confirmed real via
+    // PayrollCycleModel::suggestNextPeriod(), which has always treated 'bi_weekly' the same as
+    // 'weekly' (both go through nextWeekBasedPeriod()/cutoff_day_of_week) -- this UI/save()
+    // mismatch meant a bi_weekly cycle could never actually be configured correctly through this
+    // form before now. 'daily' is new this round -- neither day-of-month NOR day-of-week applies
+    // to a period that's always exactly today, so both field groups hide for it.
+    const isWeekBased = freq === 'weekly' || freq === 'bi_weekly';
+    const isDaily = freq === 'daily';
+    $('#cutoff_dom_wrapper').toggleClass('d-none', isWeekBased || isDaily);
+    $('#cutoff_dow_wrapper').toggleClass('d-none', !isWeekBased);
+    $('#payment_dom_wrapper').toggleClass('d-none', isWeekBased || isDaily);
+    $('#payment_dow_wrapper').toggleClass('d-none', !isWeekBased);
+    $('#cutoff_day_of_month').toggleClass('required', !isWeekBased && !isDaily);
+    $('#payment_day_of_month').toggleClass('required', !isWeekBased && !isDaily);
+    $('#cutoff_day_of_week').toggleClass('required', isWeekBased);
+    $('#payment_day_of_week').toggleClass('required', isWeekBased);
 }
 function applyOtCutoffFields(type) {
     $('#ot_custom_wrapper').toggleClass('d-none', type !== 'custom');
@@ -1221,7 +1438,7 @@ function attendanceScopeBadgeHtml(row) {
         return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_scope_default'] || 'Company-wide Default'}</span>`;
     }
     const scopeLabel = row.scope_type === 'team' ? (langData['team'] || 'Team') : (langData['department'] || 'Department');
-    return `<span class="badge bg-info-subtle text-info">${scopeLabel}: ${escapeHtmlPc(row.scope_label || '?')}</span>`;
+    return `<span class="badge bg-info-subtle text-info">${scopeLabel}: ${escapeHtml(row.scope_label || '?')}</span>`;
 }
 
 const ATTENDANCE_DEFAULT_RATE_UNIT = { late: 'minute', early_leave: 'minute', absent: 'day', unpaid_leave: 'day', leave_pending: 'day' };
@@ -1383,7 +1600,7 @@ function attendanceScopeBadgeParts(row) {
 }
 function attendanceScopeBadgeHtml(row) {
     const parts = attendanceScopeBadgeParts(row);
-    return `<span class="${parts.cls}">${escapeHtmlPc(parts.text)}</span>`;
+    return `<span class="${parts.cls}">${escapeHtml(parts.text)}</span>`;
 }
 
 /**
@@ -1684,7 +1901,7 @@ function attendanceDeductionExemptionsSummary(r) {
     if (!exemptions.length) {
         return `<span class="text-muted small">${langData['attendance_deduction_no_exemptions'] || 'None'}</span>`;
     }
-    const labels = exemptions.slice(0, 3).map(ex => `<span class="badge bg-light text-secondary border me-1 mb-1">${escapeHtmlPc(ex.label || '?')}</span>`).join('');
+    const labels = exemptions.slice(0, 3).map(ex => `<span class="badge bg-light text-secondary border me-1 mb-1">${escapeHtml(ex.label || '?')}</span>`).join('');
     const more = exemptions.length > 3 ? `<span class="text-muted small">+${exemptions.length - 3}</span>` : '';
     return labels + more;
 }
@@ -1703,9 +1920,25 @@ function attendanceDeductionVariantRowHtml(eventCode, r) {
     // works. When off, there is nothing left to configure (no rate/method at all for 'no_deduction'
     // -- see AttendanceDeductionRuleModel's own docblock), so the Edit button is dropped entirely
     // rather than opening a modal with nothing meaningful in it.
+    // 2026-09-04, Backlog Phase 10, T054: the 2026-09-02 round above only ever dropped Edit -- Assign
+    // (exemptions) stayed visible even when method_code='no_deduction', even though an exemption list
+    // is meaningless once nothing is being deducted in the first place (there's nothing to exempt
+    // anyone FROM). T054's own literal wording ("checked = card shows only a Clone button, no Assign/
+    // Edit") is what this fixes -- Assign now shares the exact same isDeduct gate Edit already had.
+    // Exemption semantics themselves are UNCHANGED (still "deduct everyone except the listed scopes",
+    // not converted to T055's new inclusion-based entity_assignments -- confirmed via AskUserQuestion
+    // this round: reuse the EXISTING working mechanism, don't replace it). The exemption badge list
+    // (attendanceDeductionExemptionsSummary() below) already doubles as T054's "card must show a tag
+    // saying so" requirement -- it renders the actual exempted department/team/employee names as
+    // badges directly on the row whenever any exist, not just a generic "Scoped" flag -- and is left
+    // untouched (still visible even when no_deduction is on, so stale exemption data isn't hidden if
+    // deduction is ever turned back on).
     const isDeduct = r.method_code !== 'no_deduction';
     const editBtn = isDeduct
         ? `<button type="button" class="btn btn-link btn-circle-action text-warning" onclick="openAttendanceDeductionRuleModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>`
+        : '';
+    const assignBtn = isDeduct
+        ? `<button type="button" class="btn btn-link btn-circle-action text-secondary" onclick="openAttendanceDeductionAssignModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['attendance_deduction_assign_title'] || 'Exempt Departments / Teams / Employees'}"><i class="fa-solid fa-user-shield"></i></button>`
         : '';
     return `<div class="adr-variant-row" data-event="${eventCode}" data-id="${idAttr}">
         <div class="adr-variant-toggles">
@@ -1720,7 +1953,7 @@ function attendanceDeductionVariantRowHtml(eventCode, r) {
         </div>
         <div class="adr-variant-main">
             ${attendanceScopeBadgeHtml(r)}
-            ${r.label ? `<span class="adr-variant-label">${escapeHtmlPc(r.label)}</span>` : ''}
+            ${r.label ? `<span class="adr-variant-label">${escapeHtml(r.label)}</span>` : ''}
             ${attendanceDeductionMethodSummary(r)}
         </div>
         <div class="adr-variant-exemptions">${attendanceDeductionExemptionsSummary(r)}</div>
@@ -1732,7 +1965,7 @@ function attendanceDeductionVariantRowHtml(eventCode, r) {
             <div class="d-flex gap-1 justify-content-center flex-wrap">
                 ${editBtn}
                 <button type="button" class="btn btn-link btn-circle-action text-primary" onclick="cloneAttendanceDeductionRule('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
-                <button type="button" class="btn btn-link btn-circle-action text-secondary" onclick="openAttendanceDeductionAssignModal('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['attendance_deduction_assign_title'] || 'Exempt Departments / Teams / Employees'}"><i class="fa-solid fa-user-shield"></i></button>
+                ${assignBtn}
                 ${canDelete ? `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteAttendanceDeductionVariant(${r.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
             </div>
         </div>
@@ -1803,9 +2036,6 @@ function deleteAttendanceDeductionVariant(id) {
             error: function () { showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.'); }
         });
     });
-}
-function escapeHtmlPc(s) {
-    return $('<div>').text(s == null ? '' : String(s)).html();
 }
 
 /* is_active quick toggle -- preserves the rule's existing method/rate/scope/exemptions, only flips
@@ -1896,7 +2126,7 @@ let attendanceDeductionAssignableOptions = null;
 function adaScopeItemHtml(scopeType, item, checked) {
     return `<div class="form-check ada-assign-item">
         <input class="form-check-input ada-assign-checkbox" type="checkbox" data-scope="${scopeType}" value="${item.id}" id="ada_${scopeType}_${item.id}" ${checked ? 'checked' : ''}>
-        <label class="form-check-label small" for="ada_${scopeType}_${item.id}">${escapeHtmlPc(item.label)}</label>
+        <label class="form-check-label small" for="ada_${scopeType}_${item.id}">${escapeHtml(item.label)}</label>
     </div>`;
 }
 function renderAttendanceDeductionAssignLists(checkedByScope) {

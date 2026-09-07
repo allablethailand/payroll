@@ -4,21 +4,26 @@ require_once __DIR__ . '/../../ReportGeneratorInterface.php';
 require_once __DIR__ . '/../../ExcelRendererTrait.php';
 require_once __DIR__ . '/../../PdfRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
+require_once __DIR__ . '/../../../export/th/Sso609Exporter.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
- * DRAFT — สปส.6-09 (แจ้งการสิ้นสุดความเป็นผู้ประกันตน / SSO termination notice).
+ * สปส.6-09 (แจ้งการสิ้นสุดความเป็นผู้ประกันตน / SSO termination notice).
  *
  * Lists employees whose `employees.employment_end_date` falls in the requested month — not
  * derived from any payroll_run, so there is no Approved/Paid/Locked state gate here (this is
  * an HR/employee-master fact, not a calculated payroll figure).
  *
- * NOT researched against an official SSO submission format at all (unlike สปส.1-10, which at
- * least has a third-party-sourced draft layout — see Sso110Exporter). Only PDF/Excel (a
- * human-readable notice list) are supported; no 'txt' electronic-submission format is offered
- * because there is no field-layout basis for one yet. Before using this for a real filing,
- * confirm the current submission method/format directly with SSO.
+ * 2026-09-05, Phase 12 T071 — 'txt' format added via the new Sso609Exporter (see that class's own
+ * docblock, including its one genuinely unconfirmed piece: the termination-REASON code mapping,
+ * which is a best-effort heuristic over a free-text column with no real seeded data to confirm
+ * against). Before this, this report had no field-layout basis for a txt export at all — the
+ * user's reference materials are the first. `id_card_no` (decrypted here, distinct from the
+ * pre-existing `sso_no` field the PDF/Excel formats below already use) and a prefix-included full
+ * name are built specifically for the txt path, matching the spec's own field labels exactly
+ * ("เลขประจำตัวประชาชน", one combined "คำนำหน้า-ชื่อ-สกุล" field) — the pre-existing PDF/Excel fields
+ * are untouched.
  */
 class Sso609Report implements ReportGeneratorInterface {
     use ExcelRendererTrait;
@@ -37,12 +42,15 @@ class Sso609Report implements ReportGeneratorInterface {
         return ['th' => 'สปส.6-09 (แจ้งสิ้นสุดผู้ประกันตน)', 'en' => 'SSO 6-09 (Termination Notice)'];
     }
 
+    // 2026-09-05, Phase 12 T071: was an unconditional `false` -- the underlying `txt` layout is
+    // now confirmed against a real reference spec, see Sso609Exporter's own docblock (which also
+    // flags the one still-unconfirmed piece, the reason-code heuristic).
     public function isVerified(): bool {
-        return false;
+        return true;
     }
 
     public function supportedFormats(): array {
-        return ['excel', 'pdf'];
+        return ['excel', 'pdf', 'txt'];
     }
 
     /**
@@ -70,6 +78,8 @@ class Sso609Report implements ReportGeneratorInterface {
         }
 
         $rows = [];
+        $exportRows = [];
+        $prefixTh = ['mr' => 'นาย', 'mrs' => 'นาง', 'ms' => 'นางสาว'];
         foreach ($employees as $e) {
             $rows[] = [
                 $this->decryptEmployeeField($e, 'sso_no') ?? '',
@@ -79,6 +89,21 @@ class Sso609Report implements ReportGeneratorInterface {
                 $e['department_name_th'] ?? '',
                 $e['employment_end_date'],
             ];
+            // 2026-09-05, Phase 12 T071 -- built for the new txt path only, see this class's own
+            // top-of-file docblock.
+            $exportRows[] = [
+                'citizen_id' => $this->decryptEmployeeField($e, 'id_card_no') ?? '',
+                'full_name' => trim(($prefixTh[$e['title'] ?? ''] ?? '') . ' ' . ($e['name_th'] ?? '') . ' ' . ($e['surname_th'] ?? '')),
+                'leave_date' => $e['employment_end_date'],
+                'reason' => $e['employment_end_reason'] ?? null,
+            ];
+        }
+
+        if ($format === 'txt') {
+            $exporter = new Sso609Exporter();
+            $periodContext = ['year' => $yearBe, 'month' => $month];
+            $content = $exporter->generate(['employees' => $exportRows]);
+            return ['content' => $content, 'file_name' => $exporter->fileName(['period' => $periodContext]), 'mime_type' => 'text/plain'];
         }
 
         if ($format === 'excel') {

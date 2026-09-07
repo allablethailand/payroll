@@ -133,4 +133,22 @@ class EmployeeLoginLogController extends Controller {
         $ok = $this->model->recordTimezone($loginLogId, $compId, $employeeId, $timezone);
         $this->json(['status' => $ok]);
     }
+
+    /** 2026-09-05, Backlog Phase 13 -- Profile > "System Access History", a self-service view of
+     *  MY OWN login history. Deliberately NOT the same code path as list() above (that trusts a
+     *  client-supplied employee_id and is gated by the admin-facing employee_login_log.view
+     *  permission, for viewing ANY employee's history from Employee Detail) -- this one forces
+     *  employee_id from the session, same "always my own, no permission gate needed" convention
+     *  recordTimezone() already established just above. A plain recent-history list, not a full
+     *  DataTable -- self-service is meant to be a quick glance, not a filterable admin report. */
+    public function myHistory() {
+        $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $compId = (int)($_SESSION['user']['company_id'] ?? 0);
+        if (!$employeeId || !$compId) {
+            $this->json(['status' => false, 'message' => 'Not logged in.']);
+            return;
+        }
+        $res = $this->model->list($employeeId, $compId, 0, 50, [], '', 0, 'desc');
+        $this->json(['status' => true, 'data' => $res['data']]);
+    }
 }

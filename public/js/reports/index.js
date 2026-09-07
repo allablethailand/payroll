@@ -23,10 +23,29 @@ let cycleRuns = [];
  * .btn-annual-report-download click handler further down still read `frequency`/`extra` from
  * here -- 2026-08-30: that section was itself rebuilt from cards to a table, see its own header
  * comment, but still keys off this same map).
+ *
+ * 2026-09-04, Backlog Phase 10, T060 Step D: TH_PND1/TH_SSO110 are the ONE deliberate exception to
+ * "cycle entries mirror CYCLE_REPORT_CODES exactly" above -- they're `frequency:'annual'` HERE
+ * (so they also gain the Annual tab's year+month picker, for a non-monthly-frequency company's
+ * real monthly filing) while STILL remaining in `CYCLE_REPORT_CODES` server-side (so the existing
+ * per-run entry point on the Per-Cycle tab, and the Process Detail page's own RUN_REPORT_SHORTCUTS,
+ * both keep working exactly as before -- confirmed neither of those reads this map's `frequency`
+ * field at all). Both generation modes are real and intentionally coexist for these 2 codes only.
  */
 const REPORT_META = {
-    TH_PND1: { frequency: 'cycle', extra: [] },
-    TH_SSO110: { frequency: 'cycle', extra: [] },
+    // 2026-09-04, Backlog Phase 10, T060 Step D: TH_PND1/TH_SSO110 are real monthly government
+    // filings -- for a company on a non-monthly payroll_frequency (weekly/bi_weekly/semi_monthly/
+    // daily), the correct submission must aggregate EVERY settled run in that calendar month, not
+    // just one. `frequency:'cycle'` here is ALREADY dead for driving Per-Cycle tab membership (see
+    // this const's own top-of-file comment -- that tab reads ReportsController::CYCLE_REPORT_CODES
+    // instead, a separate PHP list, UNCHANGED by this edit, so the existing per-run generation
+    // entry point on that tab keeps working exactly as before for every monthly-frequency company).
+    // Adding `frequency:'annual', extra:['month']` here is therefore purely ADDITIVE -- it makes
+    // annualReportRows() ALSO include these two, giving them the SAME year+month picker TH_SSO609
+    // already uses, without removing anything. PndOneReport::generate()/Sso110Report::generate()
+    // both now accept EITHER run_id (existing path, byte-identical) or year+month (this new path).
+    TH_PND1: { frequency: 'annual', extra: ['month'] },
+    TH_SSO110: { frequency: 'annual', extra: ['month'] },
     TH_SLF: { frequency: 'cycle', extra: [] },
     PAY_SLIP: { frequency: 'cycle', extra: ['employee'] },
     BANK_TRANSFER_FILE: { frequency: 'cycle', extra: [] },
@@ -116,7 +135,7 @@ function renderAnnualReportsTable() {
             // reuses the SAME .reports-row-report-type-icon/.rt-* classes (this file's own <style>
             // block in reports/index.php) and REPORT_TYPE_ICONS map Per-Cycle Reports' own rows
             // already use, keyed off the same report_type value every row already carries.
-            { data: null, render: (d, t, report) => `<span class="reports-row-report-type-icon rt-${report.report_type}"><i class="fa-solid ${REPORT_TYPE_ICONS[report.report_type] || 'fa-file-lines'}"></i></span><span class="reports-row-report-name">${escapeHtmlReports(reportLabel(report))}</span>` },
+            { data: null, render: (d, t, report) => `<span class="reports-row-report-type-icon rt-${report.report_type}"><i class="fa-solid ${REPORT_TYPE_ICONS[report.report_type] || 'fa-file-lines'}"></i></span><span class="reports-row-report-name">${escapeHtml(reportLabel(report))}</span>` },
             { data: null, className: 'text-center', render: (d, t, report) => (annualReportCounts[report.code] || {}).download_count || 0 },
             { data: null, render: (d, t, report) => {
                 const c = annualReportCounts[report.code];
@@ -283,9 +302,6 @@ $(document).on('click', '.reports-preview-download-btn', function () {
    this tab's own markup comment in reports/index.php for the full "ใช้หลักการเดียวกับหน้า Process"
    rationale. */
 
-function escapeHtmlReports(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 
 const REPORT_TYPE_ICONS = { statutory: 'fa-landmark', payment: 'fa-money-check-dollar', internal: 'fa-building' };
 
@@ -309,7 +325,7 @@ function loadCycleRuns() {
             cycleRuns = res.data || [];
             const $select = $('#cycleReportRunSelect').empty();
             cycleRuns.forEach(function (run) {
-                $select.append(`<option value="${run.id}">${escapeHtmlReports(runOptionLabel(run))}</option>`);
+                $select.append(`<option value="${run.id}">${escapeHtml(runOptionLabel(run))}</option>`);
             });
             $('#cycleReportsNoRunBanner').toggleClass('d-none', cycleRuns.length > 0);
             $('#cycleReportBody').toggleClass('d-none', cycleRuns.length === 0);
@@ -421,7 +437,7 @@ function renderCycleReportTable(type) {
             // object-form render: sort-safety (this app's own audited convention, see CLAUDE.md) --
             // sort/filter key off the plain report label / raw ISO timestamp, not the icon-prefixed
             // HTML or the dd/mm/yyyy display string.
-            { data: null, render: { display: (d, t, row) => `<span class="reports-row-report-type-icon rt-${type}"><i class="fa-solid ${REPORT_TYPE_ICONS[type]}"></i></span><span class="reports-row-report-name">${escapeHtmlReports(reportLabel(row))}</span>`, sort: (d, t, row) => reportLabel(row), filter: (d, t, row) => reportLabel(row) } },
+            { data: null, render: { display: (d, t, row) => `<span class="reports-row-report-type-icon rt-${type}"><i class="fa-solid ${REPORT_TYPE_ICONS[type]}"></i></span><span class="reports-row-report-name">${escapeHtml(reportLabel(row))}</span>`, sort: (d, t, row) => reportLabel(row), filter: (d, t, row) => reportLabel(row) } },
             { data: 'download_count', className: 'text-center' },
             { data: 'last_downloaded_at', render: { display: (v) => v ? formatDisplayDateTime(v) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`, sort: (v) => v || '', filter: (v) => v || '' } },
             { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => cycleReportActionsHtml(row) },
@@ -490,10 +506,10 @@ function openPayslipRoster(row, runId) {
         },
         columns: [
             { data: 'employee_no' },
-            { data: null, render: (d, t, r) => escapeHtmlReports(employeeNameReports(r)) },
-            { data: null, render: (d, t, r) => escapeHtmlReports((currentLang === 'th' ? r.department_name_th : r.department_name_en) || r.department_name_th || '-') },
-            { data: null, render: (d, t, r) => escapeHtmlReports((currentLang === 'th' ? r.position_name_th : r.position_name_en) || r.position_name_th || '-') },
-            { data: null, render: (d, t, r) => escapeHtmlReports((currentLang === 'th' ? r.team_name_th : r.team_name_en) || r.team_name_th || '-') },
+            { data: null, render: (d, t, r) => escapeHtml(employeeNameReports(r)) },
+            { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.department_name_th : r.department_name_en) || r.department_name_th || '-') },
+            { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.position_name_th : r.position_name_en) || r.position_name_th || '-') },
+            { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.team_name_th : r.team_name_en) || r.team_name_th || '-') },
             { data: 'download_count', className: 'text-center' },
             {
                 data: null, className: 'text-center all', orderable: false,
@@ -593,12 +609,12 @@ function openReportHistoryModal(reportCode, label, scopeParams) {
         },
         columns: [
             { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
-            { data: null, render: (l) => escapeHtmlReports(rdReportByLabelReports(l)) },
-            { data: null, render: (l) => escapeHtmlReports(rdReportLanguageLabelReports(l)) },
-            { data: null, render: (l) => escapeHtmlReports(rdReportDeviceLabelReports(l)) },
-            { data: null, render: (l) => escapeHtmlReports(rdReportBrowserLabelReports(l)) },
-            { data: 'ip_address', render: (v) => escapeHtmlReports(v || '-') },
-            { data: 'source', render: (v) => escapeHtmlReports(v || '-') },
+            { data: null, render: (l) => escapeHtml(rdReportByLabelReports(l)) },
+            { data: null, render: (l) => escapeHtml(rdReportLanguageLabelReports(l)) },
+            { data: null, render: (l) => escapeHtml(rdReportDeviceLabelReports(l)) },
+            { data: null, render: (l) => escapeHtml(rdReportBrowserLabelReports(l)) },
+            { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
+            { data: 'source', render: (v) => escapeHtml(v || '-') },
         ],
         // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
         // entirely, silently falling back to DataTables' own built-in default of 10. Same shape as

@@ -21,6 +21,15 @@ class TaxStatutoryController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    /** Platform Hardening Phase 6 (batch 2): same capture pattern BankAccountController::
+     *  requestFingerprint() already established, for AuditLogModel::record(). */
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     private function requirePermission(string $permissionKey): bool {
         $compId = (int)getCompId();
         $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
@@ -48,6 +57,49 @@ class TaxStatutoryController extends Controller {
         return ($country === false || $country === null || $country === '') ? null : (string)$country;
     }
 
+    /**
+     * 2026-09-03, Backlog Phase 9, T045 -- resolves a `statutory_item_id`'s own Master/Clone
+     * ownership (`comp_id` -- NULL for a master item, a company id for a custom item) so the shared
+     * rate-history endpoints below (rateHistoryList/Get/Save/Delete) can branch their permission
+     * check correctly: a MASTER item's rate history needs `tax_statutory.promote_master` (it's
+     * platform-wide data), a company's OWN custom item's rate history needs only the ordinary
+     * `tax_statutory.add`/`.edit`/`.delete` that company already has, and neither should let a
+     * caller touch another company's custom item at all. Returns null if the item doesn't exist.
+     */
+    private function itemOwnerCompId(int $itemId): ?array {
+        $stmt = Database::getInstance()->pdo->prepare("SELECT comp_id FROM `statutory_items` WHERE id = :id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $itemId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+        return ['comp_id' => $row['comp_id'] !== null ? (int)$row['comp_id'] : null];
+    }
+
+    /**
+     * Permission gate for an action that ultimately touches `statutory_item_id`'s own rate history
+     * (or the item itself) -- `$masterPermission` when the item is master-scoped (comp_id IS NULL,
+     * platform-wide impact), `$ownPermission` when it's this company's own custom item, and always
+     * refused for another company's custom item (never confirms whether that item exists at all,
+     * same "not found" framing as every other cross-tenant ownership check in this app).
+     */
+    private function requireItemScopedPermission(int $itemId, string $masterPermission, string $ownPermission): bool {
+        $owner = $this->itemOwnerCompId($itemId);
+        if ($owner === null) {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+            return false;
+        }
+        $compId = (int)getCompId();
+        if ($owner['comp_id'] === null) {
+            return $this->requirePermission($masterPermission);
+        }
+        if ($owner['comp_id'] !== $compId) {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+            return false;
+        }
+        return $this->requirePermission($ownPermission);
+    }
+
     public function index() {
         $this->view('setup/tax-statutory');
     }
@@ -63,21 +115,36 @@ class TaxStatutoryController extends Controller {
         $this->json(['status' => true, 'data' => $this->model->list($countryCode)]);
     }
 
+    // 2026-09-03, Backlog Phase 9, T045 -- gated by `tax_statutory.promote_master` now (was
+    // `tax_statutory.view`, same as every other action on this MASTER-scoped endpoint before this
+    // permission existed) -- master item definitions are platform-wide data, same reasoning as
+    // itemSave()/itemDelete()/itemToggleStatus() below. Also now filters `comp_id IS NULL`
+    // explicitly so this can never accidentally return/leak another company's custom item's
+    // definition through a guessed id. See customItemGet() below for the company-owned equivalent.
     public function itemGet() {
-        if (!$this->requirePermission('tax_statutory.view')) return;
+        if (!$this->requirePermission('tax_statutory.promote_master')) return;
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if ($id <= 0) {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
         $row = $this->model->get($id);
-        if ($row) {
+        if ($row && $row['comp_id'] === null) {
             $this->json(['status' => true, 'data' => $row]);
         } else {
             $this->json(['status' => false, 'message' => 'Record not found.']);
         }
     }
 
+    // 2026-09-03, Backlog Phase 9, T045 -- gated by `tax_statutory.promote_master` now, NOT the
+    // ordinary `tax_statutory.edit`/`.add` every company admin already has -- this is exactly the
+    // gap T044 removed the whole "Master Rates" tab to close (any company admin could otherwise
+    // directly mutate `statutory_items`, a GLOBAL table with no comp_id scoping at all, silently
+    // changing what EVERY OTHER company on the platform sees). No UI calls this anymore since T044;
+    // it remains reachable only for whatever eventual superadmin master-management screen T045's
+    // own design note calls for -- see this app's own permission matrix, `tax_statutory.promote_
+    // master` is granted to nobody by default. See customItemSave() below for the company-scoped
+    // equivalent every ordinary company admin actually uses now.
     public function itemSave() {
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -85,10 +152,7 @@ class TaxStatutoryController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
-        // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
-        // TaxStatutoryModel::save() uses (id present = update).
-        $isEdit = !empty($data['id']) && is_numeric($data['id']);
-        if (!$this->requirePermission($isEdit ? 'tax_statutory.edit' : 'tax_statutory.add')) return;
+        if (!$this->requirePermission('tax_statutory.promote_master')) return;
         // Country is never taken from the request -- always the acting company's own, so a new/
         // edited item can never end up under a different country than the one this whole page is
         // now locked to (see companyCountry()'s own docblock).
@@ -100,11 +164,95 @@ class TaxStatutoryController extends Controller {
         }
         $data['country_code'] = $countryCode;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->save($data, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->save($data, $userId, null, $ip, $ua);
         $this->json($result);
     }
 
+    // 2026-09-03, Backlog Phase 9, T045 -- see itemSave()'s own comment on why this is now
+    // `tax_statutory.promote_master`-gated.
     public function itemDelete() {
+        if (!$this->requirePermission('tax_statutory.promote_master')) return;
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->delete($id, $userId, null, $ip, $ua);
+        $this->json($result);
+    }
+
+    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
+    // itemDelete() just above.
+    // 2026-09-03, Backlog Phase 9, T045 -- see itemSave()'s own comment on why this is now
+    // `tax_statutory.promote_master`-gated.
+    public function itemToggleStatus() {
+        if (!$this->requirePermission('tax_statutory.promote_master')) return;
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->toggleStatus($id, $userId, null, $ip, $ua);
+        $this->json($result);
+    }
+
+    /**
+     * 2026-09-03, Backlog Phase 9, T045 -- company-scoped equivalent of itemGet()/itemSave()/
+     * itemDelete()/itemToggleStatus() above, for a company's own CUSTOM statutory item (comp_id =
+     * the caller's own). Uses the SAME ordinary `tax_statutory.view`/`.add`/`.edit`/`.delete`
+     * permissions every company admin already has -- safe, because TaxStatutoryModel::save()/
+     * delete()/toggleStatus() all enforce the comp_id ownership scope themselves now (see each
+     * method's own docblock), so this can never reach a master item or another company's item no
+     * matter what id is passed.
+     */
+    public function customItemGet() {
+        if (!$this->requirePermission('tax_statutory.view')) return;
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        $compId = (int)getCompId();
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $row = $this->model->get($id);
+        if ($row && $row['comp_id'] !== null && (int)$row['comp_id'] === $compId) {
+            $this->json(['status' => true, 'data' => $row]);
+        } else {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+        }
+    }
+
+    public function customItemSave() {
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $isEdit = !empty($data['id']) && is_numeric($data['id']);
+        if (!$this->requirePermission($isEdit ? 'tax_statutory.edit' : 'tax_statutory.add')) return;
+        $compId = (int)getCompId();
+        $countryCode = $this->companyCountry($compId);
+        if ($countryCode === null) {
+            $this->json(['status' => false, 'message' => 'This company has no registered country set yet. Set it in Company Profile first.']);
+            return;
+        }
+        $data['country_code'] = $countryCode;
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->save($data, $userId, $compId, $ip, $ua);
+        $this->json($result);
+    }
+
+    public function customItemDelete() {
         if (!$this->requirePermission('tax_statutory.delete')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -113,15 +261,22 @@ class TaxStatutoryController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
+        $compId = (int)getCompId();
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->delete($id, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->delete($id, $userId, $compId, $ip, $ua);
         $this->json($result);
     }
 
-    // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
-    // itemDelete() just above.
-    public function itemToggleStatus() {
-        if (!$this->requirePermission('tax_statutory.edit')) return;
+    /**
+     * 2026-09-03, Backlog Phase 9, T045 -- "Update as system default" for a company's own CUSTOM
+     * item -- see TaxStatutoryModel::promoteToMaster()'s own docblock. `tax_statutory.promote_
+     * master`-gated deliberately, NOT the ordinary `tax_statutory.add`/`.edit` this same company
+     * already has for its own custom items -- this specific action stops being company-local the
+     * instant it succeeds (the item becomes visible to every other company in the same country).
+     */
+    public function customItemPromote() {
+        if (!$this->requirePermission('tax_statutory.promote_master')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -129,36 +284,47 @@ class TaxStatutoryController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
+        $compId = (int)getCompId();
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->toggleStatus($id, $userId);
+        $result = $this->model->promoteToMaster($id, $compId, $userId);
         $this->json($result);
     }
 
     public function rateHistoryList() {
-        if (!$this->requirePermission('tax_statutory.view')) return;
         $itemId = isset($_GET['item_id']) ? (int)$_GET['item_id'] : 0;
         if ($itemId <= 0) {
+            if (!$this->requirePermission('tax_statutory.view')) return;
             $this->json(['status' => true, 'data' => []]);
             return;
         }
+        if (!$this->requireItemScopedPermission($itemId, 'tax_statutory.promote_master', 'tax_statutory.view')) return;
         $this->json(['status' => true, 'data' => $this->model->rateHistoryList($itemId)]);
     }
 
     public function rateHistoryGet() {
-        if (!$this->requirePermission('tax_statutory.view')) return;
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
         if ($id <= 0) {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
         $row = $this->model->rateHistoryGet($id);
-        if ($row) {
-            $this->json(['status' => true, 'data' => $row]);
-        } else {
+        if (!$row) {
             $this->json(['status' => false, 'message' => 'Record not found.']);
+            return;
         }
+        if (!$this->requireItemScopedPermission((int)$row['statutory_item_id'], 'tax_statutory.promote_master', 'tax_statutory.view')) return;
+        $this->json(['status' => true, 'data' => $row]);
     }
 
+    /**
+     * 2026-09-03, Backlog Phase 9, T045 -- gated per-item now via requireItemScopedPermission()
+     * instead of a blanket `tax_statutory.edit`/`.add` -- a rate-history row's own
+     * `statutory_item_id` could belong to a MASTER item (needs `tax_statutory.promote_master`,
+     * platform-wide impact) or this company's OWN custom item (needs only the ordinary `tax_
+     * statutory.add`/`.edit` every company admin already has) -- see that helper's own docblock.
+     * This is what actually lets a company set/maintain rate history for its own custom items
+     * (T045's whole point) without reopening the master-mutation hole T044 closed.
+     */
     public function rateHistorySave() {
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
@@ -166,12 +332,18 @@ class TaxStatutoryController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid request payload.']);
             return;
         }
+        $itemId = isset($data['statutory_item_id']) ? (int)$data['statutory_item_id'] : 0;
+        if ($itemId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing required field: statutory_item_id']);
+            return;
+        }
         // 2026-09-03, Platform Hardening Phase 3 Stage 3: same add-vs-edit branch
         // TaxStatutoryModel::rateHistorySave() uses (id present = update).
         $isEdit = !empty($data['id']) && is_numeric($data['id']);
-        if (!$this->requirePermission($isEdit ? 'tax_statutory.edit' : 'tax_statutory.add')) return;
+        if (!$this->requireItemScopedPermission($itemId, 'tax_statutory.promote_master', $isEdit ? 'tax_statutory.edit' : 'tax_statutory.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->rateHistorySave($data, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->rateHistorySave($data, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -187,8 +359,10 @@ class TaxStatutoryController extends Controller {
         $this->json($this->model->previewRateVersion($data, $sampleBase));
     }
 
+    // 2026-09-03, Backlog Phase 9, T045 -- see rateHistorySave()'s own comment on why this is
+    // per-item scoped now via requireItemScopedPermission() instead of a blanket
+    // `tax_statutory.delete`.
     public function rateHistoryDelete() {
-        if (!$this->requirePermission('tax_statutory.delete')) return;
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
@@ -196,8 +370,15 @@ class TaxStatutoryController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
+        $rateRow = $this->model->rateHistoryGet($id);
+        if (!$rateRow) {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+            return;
+        }
+        if (!$this->requireItemScopedPermission((int)$rateRow['statutory_item_id'], 'tax_statutory.promote_master', 'tax_statutory.delete')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->model->rateHistoryDelete($id, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->model->rateHistoryDelete($id, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -241,7 +422,8 @@ class TaxStatutoryController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->companySettingModel->save((int)$compId, $data, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->companySettingModel->save((int)$compId, $data, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -260,7 +442,8 @@ class TaxStatutoryController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->companySettingModel->reset((int)$compId, $itemId, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->companySettingModel->reset((int)$compId, $itemId, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -286,7 +469,35 @@ class TaxStatutoryController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->companySettingModel->toggleStatus((int)$compId, $itemId, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->companySettingModel->toggleStatus((int)$compId, $itemId, $userId, $ip, $ua);
+        $this->json($result);
+    }
+
+    /**
+     * 2026-09-03, Backlog Phase 9, T045 -- "Update as system default" for this company's own RATE
+     * OVERRIDE on an existing master item -- see CompanyStatutorySettingModel::
+     * promoteOverrideToMaster()'s own docblock. `tax_statutory.promote_master`-gated, same reasoning
+     * as customItemPromote() above: this affects every company on the platform at once, not just
+     * the caller's own data.
+     */
+    public function companySettingPromote() {
+        if (!$this->requirePermission('tax_statutory.promote_master')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $itemId = (is_array($data) && isset($data['statutory_item_id'])) ? (int)$data['statutory_item_id'] : 0;
+        $effectiveDate = (is_array($data) && !empty($data['effective_date'])) ? (string)$data['effective_date'] : '';
+        if ($itemId <= 0 || $effectiveDate === '') {
+            $this->json(['status' => false, 'message' => 'Missing statutory_item_id or effective_date.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $result = $this->companySettingModel->promoteOverrideToMaster((int)$compId, $itemId, $effectiveDate, $userId);
         $this->json($result);
     }
 }

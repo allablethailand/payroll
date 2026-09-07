@@ -20,4 +20,8 @@
 </div>
 
 <?php include __DIR__ . '/_modals_partial.php'; ?>
+<!-- 2026-09-04, Backlog Phase 11, T064 -- shared canvas-designer utilities, must load first (see
+     that file's own docblock). This page loads employment-certificate-template.js standalone
+     (outside app/views/payslip/settings.php), so it needs its own copy of this script tag too. -->
+<script src="<?=asset('public/js/setup/canvas-designer-core.js')?>"></script>
 <script src="<?=asset('public/js/setup/employment-certificate-template.js')?>"></script>

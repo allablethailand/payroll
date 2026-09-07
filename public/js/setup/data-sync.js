@@ -31,9 +31,6 @@
  * itself also got a re-entrancy guard in app.js as defense-in-depth, so this exact bug class can't
  * silently recur on some future page that makes the same drawCallback mistake.
  */
-function escapeHtmlDs(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : String(str)).html();
-}
 
 const DS_ENTITY_META = {
     department: { icon: 'fa-sitemap', labelKey: 'department' },
@@ -80,8 +77,8 @@ function dsRenderCards(statusData) {
                     <div class="settings-info-card-header">
                         <i class="fa-solid ${meta.icon}"></i>
                         <div>
-                            <p class="settings-info-card-title mb-0">${escapeHtmlDs(dsEntityLabel(type))}</p>
-                            <p class="settings-info-card-desc mb-0" data-ds-last-sync="${type}">${escapeHtmlDs(dsLastSyncLine(lastSyncAt[type]))}</p>
+                            <p class="settings-info-card-title mb-0">${escapeHtml(dsEntityLabel(type))}</p>
+                            <p class="settings-info-card-desc mb-0" data-ds-last-sync="${type}">${escapeHtml(dsLastSyncLine(lastSyncAt[type]))}</p>
                         </div>
                     </div>
                     <div class="settings-info-card-body">
@@ -126,16 +123,16 @@ function dsLoadStatus() {
 
 function dsResultSummaryHtml(result) {
     if (!result.status) {
-        return `<div class="text-danger">${escapeHtmlDs(dsEntityLabel(result.entity_type))}: ${escapeHtmlDs(result.message || 'Failed.')}</div>`;
+        return `<div class="text-danger">${escapeHtml(dsEntityLabel(result.entity_type))}: ${escapeHtml(result.message || 'Failed.')}</div>`;
     }
     const total = result.total ?? 0;
     const success = result.success ?? 0;
     const error = result.error ?? 0;
-    let html = `<div>${escapeHtmlDs(dsEntityLabel(result.entity_type))}: ${success}/${total} ${langData['data_sync_success'] || 'Success'}${error > 0 ? `, ${error} ${langData['data_sync_error'] || 'Error'}` : ''}</div>`;
+    let html = `<div>${escapeHtml(dsEntityLabel(result.entity_type))}: ${success}/${total} ${langData['data_sync_success'] || 'Success'}${error > 0 ? `, ${error} ${langData['data_sync_error'] || 'Error'}` : ''}</div>`;
     if (error > 0 && Array.isArray(result.errors)) {
         html += '<ul class="text-start small text-danger mb-0 mt-1">';
         result.errors.slice(0, 5).forEach(function (e) {
-            html += `<li>${escapeHtmlDs(e.message || JSON.stringify(e))}</li>`;
+            html += `<li>${escapeHtml(e.message || JSON.stringify(e))}</li>`;
         });
         if (result.errors.length > 5) {
             html += `<li>... (${result.errors.length - 5} more)</li>`;
@@ -267,7 +264,7 @@ function dsStatusBadge(status) {
     };
     const [cls, key, fallback] = map[status] || ['bg-secondary-subtle text-secondary', '', status];
     const label = (key && langData[key]) || fallback;
-    return `<span class="badge ${cls}">${escapeHtmlDs(label)}</span>`;
+    return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
 }
 
 function dsSyncedByCell(row) {
@@ -275,7 +272,7 @@ function dsSyncedByCell(row) {
         return `<span class="text-muted">${langData['data_sync_system'] || 'System'}</span>`;
     }
     const name = (currentLang === 'th' ? `${row.triggered_by_name_th || ''} ${row.triggered_by_surname_th || ''}` : `${row.triggered_by_name_en || ''} ${row.triggered_by_surname_en || ''}`).trim();
-    return escapeHtmlDs(name || row.triggered_by_employee_no || `#${row.triggered_by}`);
+    return escapeHtml(name || row.triggered_by_employee_no || `#${row.triggered_by}`);
 }
 
 function dsShowErrorDetail(errorDetailJson) {
@@ -288,7 +285,7 @@ function dsShowErrorDetail(errorDetailJson) {
     }
     let html = '<ul class="text-start small mb-0">';
     items.forEach(function (item) {
-        html += `<li>${escapeHtmlDs(item.message || JSON.stringify(item))}${item.ref_id !== undefined ? ` (ref_id: ${escapeHtmlDs(item.ref_id)})` : ''}</li>`;
+        html += `<li>${escapeHtml(item.message || JSON.stringify(item))}${item.ref_id !== undefined ? ` (ref_id: ${escapeHtml(item.ref_id)})` : ''}</li>`;
     });
     html += '</ul>';
     if (typeof Swal !== 'undefined') {
@@ -341,7 +338,7 @@ function dsInitHistoryTable() {
             dataSrc: 'data',
         },
         columns: [
-            { data: 'entity_type', render: { display: (d) => escapeHtmlDs(dsEntityLabel(d)), sort: (d) => d, filter: (d) => d } },
+            { data: 'entity_type', render: { display: (d) => escapeHtml(dsEntityLabel(d)), sort: (d) => d, filter: (d) => d } },
             { data: 'status', render: { display: (d) => dsStatusBadge(d), sort: (d) => d, filter: (d) => d } },
             { data: 'total_count', defaultContent: '0' },
             { data: 'success_count', defaultContent: '0' },
@@ -367,7 +364,7 @@ function dsInitHistoryTable() {
                 data: null, orderable: false,
                 render: function (row) {
                     if (!row.error_detail) return '';
-                    const encoded = escapeHtmlDs(row.error_detail).replace(/"/g, '&quot;');
+                    const encoded = escapeHtml(row.error_detail).replace(/"/g, '&quot;');
                     return `<button type="button" class="btn btn-link btn-sm ds-view-error-btn" data-error-detail="${encoded}"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="data_sync_view_errors">View Errors</span></button>`;
                 }
             },

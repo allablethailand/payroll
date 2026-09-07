@@ -8,6 +8,21 @@
             <span class="bc-current" id="bcRunName">-</span>
         </h5>
     </nav>
+    <!-- .page-header-card rollout (2026-08-21 origin, see payroll/index.php's own comment) --
+         payroll/detail.php was a real, previously-missed gap (T063 design audit, 2026-09-04):
+         one of the highest-traffic pages in the app had no standard page header at all. This is
+         the STATIC identity header (icon + generic title/description, matching every other
+         top-level page) -- the .card-surface block right below it is UNCHANGED, still the
+         dynamic run-specific content (run name/status badge/action buttons), not replaced by
+         this. #runDetailTabs further down the page is a separate, deliberately-exempted
+         component (its own bespoke polish CSS, unrelated to this page header) -- not touched. -->
+    <div class="page-header-card mb-4">
+        <div class="page-header-card-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+        <div class="page-header-card-body">
+            <h5 class="page-header-card-title" data-i18n="payroll_run_detail_title">Payroll Run Detail</h5>
+            <p class="page-header-card-desc" data-i18n="payroll_run_detail_description">Review, calculate, and manage this payroll run from draft through approval, payment, and closing.</p>
+        </div>
+    </div>
 
     <div class="card-surface mb-4">
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
@@ -67,6 +82,12 @@
     <div class="alert alert-info small d-none d-flex justify-content-between align-items-center flex-wrap gap-2" id="mergeTargetBanner">
         <span id="mergeTargetBannerText"></span>
         <button type="button" class="btn btn-sm btn-primary" id="btnMergeIntoTarget"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">Merge into Target</span></button>
+    </div>
+    <!-- 2026-09-06: the "future cycle" merge-target form -- no button here at all (there is
+         nothing to merge into yet), just a status line; see renderMergeTargetBanner()'s own
+         docblock for how this and #mergeTargetBanner above stay mutually exclusive. -->
+    <div class="alert alert-warning small d-none" id="mergeTargetWaitingBanner">
+        <i class="fa-solid fa-hourglass-half me-1"></i><span id="mergeTargetWaitingBannerText"></span>
     </div>
 
     <ul class="nav nav-tabs" id="runDetailTabs" role="tablist">
@@ -286,7 +307,7 @@
                              (wraps to multiple on narrow widths), meaning conveyed through
                              icon/label COLOR alone rather than a filled pill background. -->
                         <div class="col-md-6">
-                            <label class="form-label small fw-semibold mb-1" data-i18n="run_exemption_tax">Tax Calculation</label>
+                            <label class="form-label fw-semibold small mb-1" data-i18n="run_exemption_tax">Tax Calculation</label>
                             <div class="d-flex flex-wrap gap-3" id="runCalcTaxGroup">
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcTax" id="runCalcTaxInherit" value="use_employee_setting" checked>
@@ -303,7 +324,7 @@
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small fw-semibold mb-1" data-i18n="run_exemption_sso">SSO Contribution</label>
+                            <label class="form-label fw-semibold small mb-1" data-i18n="run_exemption_sso">SSO Contribution</label>
                             <div class="d-flex flex-wrap gap-3" id="runCalcSsoGroup">
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcSso" id="runCalcSsoInherit" value="use_employee_setting" checked>
@@ -321,7 +342,7 @@
                         </div>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label small fw-semibold mb-1" data-i18n="run_settings_excluded_items">Exclude from Calculation</label>
+                        <label class="form-label fw-semibold small mb-1" data-i18n="run_settings_excluded_items">Exclude from Calculation</label>
                         <div class="text-muted small mb-2" data-i18n="run_settings_excluded_items_hint">Ticked items are left out of every employee's calculation for this run (base salary and/or any earning/deduction item).</div>
                         <!-- 2026-08-29, same-day follow-up: "รายรับให้เป็นสีเขียว รายจ่ายให้เป็นสีแดง และ
                              แยกกรอบกันอยู่ครับ" -- built by itemChecklistBoxesHtml() in detail.js into 2
@@ -480,7 +501,7 @@
             <div class="modal-dialog modal-dialog-scrollable">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title"><i class="fa-solid fa-comments me-2 text-brand"></i><span data-i18n="employee_comment_timeline_title">Comments</span> - <span id="employeeCommentModalEmployeeName"></span></h5>
+                        <h5 class="modal-title text-secondary"><i class="fa-solid fa-comments me-2 text-brand"></i><span data-i18n="employee_comment_timeline_title">Comments</span> - <span id="employeeCommentModalEmployeeName"></span></h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
@@ -749,16 +770,16 @@
                             <div class="fw-bold" id="bankAccountAssignEmployeeName">-</div>
                         </div>
                         <div class="mb-2">
-                            <label class="form-label" data-i18n="bank_account">Bank Account</label>
+                            <label class="form-label mb-1" data-i18n="bank_account">Bank Account</label>
                             <select class="form-select select2-remote" id="bankAccountAssignSelect" data-api="/api/payroll-cycle.bank-account.options" allow-clear="true"></select>
                         </div>
                         <div class="mb-2">
-                            <label class="form-label" data-i18n="note">Note</label>
+                            <label class="form-label mb-1" data-i18n="note">Note</label>
                             <textarea class="form-control" id="bankAccountAssignNote" rows="2" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-primary" id="btnSaveBankAccountAssign" data-i18n="save">Save</button>
                     </div>
                 </div>
@@ -788,7 +809,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     </div>
                 </div>
             </div>
@@ -805,11 +826,11 @@
                     </div>
                     <div class="modal-body">
                         <input type="hidden" id="remittanceMarkTransferredId">
-                        <label class="form-label" data-i18n="remittance_evidence_file" for="remittanceEvidenceFile">Transfer Evidence (image or PDF)</label>
+                        <label class="form-label mb-1" data-i18n="remittance_evidence_file" for="remittanceEvidenceFile">Transfer Evidence (image or PDF)</label>
                         <input type="file" class="form-control" id="remittanceEvidenceFile" accept=".jpg,.jpeg,.png,.pdf">
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-primary" id="btnConfirmMarkTransferred" data-i18n="confirm">Confirm</button>
                     </div>
                 </div>
@@ -826,11 +847,11 @@
                     </div>
                     <div class="modal-body">
                         <input type="hidden" id="remittanceMarkFailedId">
-                        <label class="form-label" data-i18n="remittance_failed_reason" for="remittanceFailedNote">Reason</label>
+                        <label class="form-label mb-1" data-i18n="remittance_failed_reason" for="remittanceFailedNote">Reason</label>
                         <textarea class="form-control" id="remittanceFailedNote" rows="3" data-i18n="remittance_failed_note_placeholder" placeholder="e.g., Bank rejected — incorrect account number"></textarea>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-danger" id="btnConfirmMarkFailed" data-i18n="confirm">Confirm</button>
                     </div>
                 </div>
@@ -870,7 +891,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-light me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
                         <button type="button" class="btn btn-outline-secondary btn-report-download" data-language="th"><img src="<?=BASE_URL?>/public/flags/th.png" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
                         <button type="button" class="btn btn-primary btn-report-download" data-language="en"><img src="<?=BASE_URL?>/public/flags/gb.png" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
                     </div>
@@ -901,7 +922,7 @@
                              additionally get the system's per-column Excel-style filter
                              (initExcelColumnFilters(), see detail.js) instead of duplicating them here. -->
                         <div class="station-filter mb-2" id="reportHistoryStationFilter">
-                            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                             <button type="button" class="station-filter-toggle" id="reportHistoryStationFilterToggle" title="Toggle filter">
                                 <i class="fas fa-chevron-up"></i>
                             </button>
@@ -947,7 +968,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     </div>
                 </div>
             </div>
@@ -1039,7 +1060,7 @@
                         </div>
                         <div class="row mb-3" id="edit_run_cycle_row">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
+                                <label class="form-label mb-1"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
                             </div>
                             <div class="col-sm-9">
                                 <select class="form-select select2-remote" id="edit_run_cycle_id" name="cycle_id" data-api="/api/payroll-cycle.options"></select>
@@ -1066,7 +1087,7 @@
                             <div class="run-offcycle-panel-title"><i class="fa-solid fa-sliders"></i> <span data-i18n="run_offcycle_panel_title">Off-schedule round options</span></div>
                             <div class="row mb-3" id="edit_run_merge_choice_row">
                                 <div class="col-sm-3 align-self-center">
-                                    <label class="form-label mb-0" data-i18n="run_merge_choice_label">Create this round as</label>
+                                    <label class="form-label mb-1" data-i18n="run_merge_choice_label">Create this round as</label>
                                 </div>
                                 <div class="col-sm-9">
                                     <div class="run-subchoice-toggle">
@@ -1085,18 +1106,51 @@
                             </div>
                             <div class="row mb-3 d-none" id="edit_run_merge_target_row">
                                 <div class="col-sm-3 align-self-center">
-                                    <label class="form-label mb-0" data-i18n="run_merge_target_label">Target Round</label>
+                                    <label class="form-label mb-1" data-i18n="run_merge_target_label">Target Round</label>
                                 </div>
                                 <div class="col-sm-9">
-                                    <select class="form-select select2-remote" id="edit_run_merge_target_id" name="merge_target_run_id"
-                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked" data-exclude-id=""></select>
-                                    <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" above to fold it into the round selected here.</div>
+                                    <!-- 2026-09-06, same sub-toggle as the Create form's own
+                                         #run_merge_target_mode_row -- see this file's own comment
+                                         there and PayrollRunModel::resolveMergeTargetSpec()'s
+                                         docblock for the full mechanism. -->
+                                    <div class="run-subchoice-toggle mb-2" id="edit_run_merge_target_mode_row">
+                                        <label class="run-subchoice-btn active" for="edit_run_merge_target_mode_existing">
+                                            <input type="radio" name="editRunMergeTargetMode" id="edit_run_merge_target_mode_existing" value="existing" checked>
+                                            <i class="fa-solid fa-list-check"></i>
+                                            <span data-i18n="run_merge_target_mode_existing">Existing round</span>
+                                        </label>
+                                        <label class="run-subchoice-btn" for="edit_run_merge_target_mode_future_cycle">
+                                            <input type="radio" name="editRunMergeTargetMode" id="edit_run_merge_target_mode_future_cycle" value="future_cycle">
+                                            <i class="fa-solid fa-hourglass-half"></i>
+                                            <span data-i18n="run_merge_target_mode_future_cycle">Future round (not created yet)</span>
+                                        </label>
+                                    </div>
+                                    <div id="edit_run_merge_target_existing_wrap">
+                                        <select class="form-select select2-remote" id="edit_run_merge_target_id" name="merge_target_run_id"
+                                                data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked" data-exclude-id=""></select>
+                                        <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" above to fold it into the round selected here.</div>
+                                    </div>
+                                    <div class="d-none" id="edit_run_merge_target_future_cycle_wrap">
+                                        <select class="form-select select2-remote mb-2" id="edit_run_merge_target_cycle_id" name="merge_target_cycle_id"
+                                                data-api="/api/payroll-cycle.options"></select>
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <label class="form-label mb-1 small" data-i18n="run_merge_target_period_start">Target Period Start</label>
+                                                <input type="text" class="form-control" id="edit_run_merge_target_period_start" name="merge_target_period_start_date" readonly>
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label mb-1 small" data-i18n="run_merge_target_period_end">Target Period End</label>
+                                                <input type="text" class="form-control" id="edit_run_merge_target_period_end" name="merge_target_period_end_date" readonly>
+                                            </div>
+                                        </div>
+                                        <div class="form-text small" data-i18n="run_merge_target_future_cycle_hint">The system will wait for the next round of this Payroll Cycle to be created, then automatically prompt you to merge into it.</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_run_name">Run Name</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-1"><span data-i18n="modal_run_name">Run Name</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
                                 <input type="text" class="form-control required" id="edit_run_name" name="run_name" data-i18n="run_name_placeholder" placeholder="e.g., Payroll July 2026">
@@ -1104,7 +1158,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-1"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-4">
                                 <div class="input-group">
@@ -1122,7 +1176,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_payment_date">Payment Date</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-1"><span data-i18n="modal_payment_date">Payment Date</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-4">
                                 <div class="input-group">
@@ -1139,7 +1193,7 @@
                         <div class="d-none" id="edit_run_type_section">
                             <div class="row mb-3" id="edit_run_purpose_row">
                                 <div class="col-sm-3 align-self-center">
-                                    <label class="form-label mb-0" data-i18n="modal_run_purpose">Run Purpose</label>
+                                    <label class="form-label mb-1" data-i18n="modal_run_purpose">Run Purpose</label>
                                 </div>
                                 <div class="col-sm-9">
                                     <select class="form-select select2-static" id="edit_run_purpose" name="run_purpose"
@@ -1181,7 +1235,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_notes">Notes</span></label>
+                                <label class="form-label mb-1"><span data-i18n="modal_notes">Notes</span></label>
                             </div>
                             <div class="col-sm-9">
                                 <textarea class="form-control" id="edit_notes" name="notes" rows="2" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
@@ -1189,7 +1243,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
                     </div>
                 </form>
@@ -1300,27 +1354,27 @@
                                 </div>
                                 <div class="row g-2 align-items-end" id="manualLineCatalogFields">
                                     <div class="col-12">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="select_item_placeholder">Select an income/deduction item</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="select_item_placeholder">Select an income/deduction item</label>
                                         <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options"></select>
                                     </div>
                                 </div>
                                 <div class="row g-2 align-items-end d-none" id="manualLineCustomFields">
                                     <div class="col-sm-8">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="modal_custom_item_name">Item Name</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="modal_custom_item_name">Item Name</label>
                                         <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
                                     </div>
                                     <div class="col-sm-4">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="modal_item_type">Type</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="modal_item_type">Type</label>
                                         <select class="form-select select2-static" id="manualLineCustomType" data-option-keys="breakdown_earnings,table_deduction_amount" data-option-values="earning,deduction"></select>
                                     </div>
                                 </div>
                                 <div class="row g-2 align-items-end mt-1">
                                     <div class="col-sm-6">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="modal_amount">Amount</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="modal_amount">Amount</label>
                                         <input type="number" class="form-control" id="manualLineAmount" min="0.01" step="0.01" placeholder="0.00">
                                     </div>
                                     <div class="col-sm-6">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="modal_comment">Comment</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="modal_comment">Comment</label>
                                         <input type="text" class="form-control" id="manualLineComment" maxlength="255" data-i18n="modal_comment_placeholder" placeholder="e.g. August OT shortfall top-up">
                                     </div>
                                 </div>
@@ -1338,7 +1392,7 @@
                                      managing) rather than a new endpoint. -->
                                 <div class="row g-2 align-items-end mt-1 d-none" id="manualLinePayeeTypeWrapper">
                                     <div class="col-12">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="payee_type_label">Deducted Money Goes To</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="payee_type_label">Deducted Money Goes To</label>
                                         <div class="btn-group btn-group-sm flex-wrap" role="group" id="manualLinePayeeTypeToggle">
                                             <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
                                             <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
@@ -1351,7 +1405,7 @@
                                 </div>
                                 <div class="row g-2 align-items-end mt-1 d-none" id="manualLinePayeeWrapper">
                                     <div class="col-12">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                                         <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
                                     </div>
                                 </div>
@@ -1364,25 +1418,25 @@
                                      "Calculation vs Disbursement layer" design note). -->
                                 <div class="row g-2 align-items-end mt-1 d-none" id="manualLineDestinationWrapper">
                                     <div class="col-12">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
                                         <select class="form-select select2-remote" id="manualLineDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
                                     </div>
                                     <div class="col-12 mt-2" id="manualLineDestinationNewFields">
                                         <div class="row g-2">
                                             <div class="col-sm-6">
-                                                <label class="form-label mb-1 small text-muted" data-i18n="destination_account_name">Account Name</label>
+                                                <label class="form-label small text-muted mb-1" data-i18n="destination_account_name">Account Name</label>
                                                 <input type="text" class="form-control form-control-sm" id="manualLineDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
                                             </div>
                                             <div class="col-sm-6">
-                                                <label class="form-label mb-1 small text-muted" data-i18n="destination_account_no">Account No.</label>
+                                                <label class="form-label small text-muted mb-1" data-i18n="destination_account_no">Account No.</label>
                                                 <input type="text" class="form-control form-control-sm" id="manualLineDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
                                             </div>
                                             <div class="col-sm-6">
-                                                <label class="form-label mb-1 small text-muted" data-i18n="destination_bank">Bank</label>
+                                                <label class="form-label small text-muted mb-1" data-i18n="destination_bank">Bank</label>
                                                 <select class="form-select select2-remote" id="manualLineDestBank" data-api="/api/bank.get" data-type="bank"></select>
                                             </div>
                                             <div class="col-sm-6">
-                                                <label class="form-label mb-1 small text-muted" data-i18n="destination_bank_branch">Branch</label>
+                                                <label class="form-label small text-muted mb-1" data-i18n="destination_bank_branch">Branch</label>
                                                 <input type="text" class="form-control form-control-sm" id="manualLineDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
                                             </div>
                                             <div class="col-12">
@@ -1506,21 +1560,21 @@
                                 </div>
                                 <div class="row g-2 align-items-end d-none" id="recurringDestEmployeeWrapper">
                                     <div class="col-12">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                                         <select class="form-select select2-remote" id="recurringDestPayeeEmployeeSelect" data-api="/api/employee.report_to.get" data-type="employee"></select>
                                     </div>
                                 </div>
                                 <div class="row g-2 align-items-end d-none" id="recurringDestDestinationWrapper">
                                     <div class="col-12">
-                                        <label class="form-label mb-1 small text-muted" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                                        <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
                                         <select class="form-select select2-remote" id="recurringDestDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
                                     </div>
                                     <div class="col-12 mt-2" id="recurringDestDestinationNewFields">
                                         <div class="row g-2">
-                                            <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="recurringDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
-                                            <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="recurringDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
-                                            <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="recurringDestBank" data-api="/api/bank.get" data-type="bank"></select></div>
-                                            <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="recurringDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
+                                            <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="recurringDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
+                                            <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="recurringDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
+                                            <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="recurringDestBank" data-api="/api/bank.get" data-type="bank"></select></div>
+                                            <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="recurringDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
                                             <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="recurringDestSaveForReuse"><label class="form-check-label small" for="recurringDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
                                         </div>
                                     </div>
@@ -1538,7 +1592,7 @@
                         <div class="tab-pane fade" id="manageLinesCalcPane" role="tabpanel">
                             <p class="text-muted small mb-3" data-i18n="employee_calc_override_hint">Set whether tax/SSO is calculated for this employee, for this run only -- overrides this run's own default (Run Settings panel) for this one person.</p>
                             <div class="mb-3">
-                                <label class="form-label small fw-semibold mb-1" data-i18n="run_exemption_tax">Tax Calculation</label>
+                                <label class="form-label fw-semibold small mb-1" data-i18n="run_exemption_tax">Tax Calculation</label>
                                 <div class="d-flex flex-wrap gap-3" id="empCalcTaxGroup">
                                     <div class="form-check form-check-inline m-0">
                                         <input class="form-check-input" type="radio" name="empCalcTax" id="empCalcTaxInherit" value="inherit" checked>
@@ -1555,7 +1609,7 @@
                                 </div>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label small fw-semibold mb-1" data-i18n="run_exemption_sso">SSO Contribution</label>
+                                <label class="form-label fw-semibold small mb-1" data-i18n="run_exemption_sso">SSO Contribution</label>
                                 <div class="d-flex flex-wrap gap-3" id="empCalcSsoGroup">
                                     <div class="form-check form-check-inline m-0">
                                         <input class="form-check-input" type="radio" name="empCalcSso" id="empCalcSsoInherit" value="inherit" checked>
@@ -1578,7 +1632,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -1596,6 +1650,12 @@
                             <i class="fa-solid fa-list-check me-1"></i><span data-i18n="breakdown_title">Calculation Breakdown</span>
                         </h5>
                         <div class="text-muted small" id="breakdownEmployeeName"></div>
+                        <!-- 2026-09-06, explicit request: display Origami's opt-in TOTAL_DAYS
+                             item_values entry (calendar-based day count) when present -- hidden
+                             entirely for a run/employee with no data (cycle-based/off-cycle run, or
+                             a sync run whose admin never ticked this Report Item on), see
+                             PayrollRunModel::getDetails()'s own docblock. -->
+                        <div class="text-muted small d-none" id="breakdownTotalDays"></div>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -1640,7 +1700,7 @@
                     <div id="rawSyncDataModalBody"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -1727,7 +1787,7 @@
                         <button type="button" class="btn btn-primary" id="btnJoinSelected" disabled>
                             <i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">Join Employees</span>
                         </button>
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>
             </div>
@@ -1749,11 +1809,11 @@
                 </div>
                 <form id="runApproveForm" novalidate>
                     <div class="modal-body">
-                        <label class="form-label" data-i18n="approve_note_label">Note (optional)</label>
+                        <label class="form-label mb-1" data-i18n="approve_note_label">Note (optional)</label>
                         <textarea class="form-control" id="run_approve_note" rows="3" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
                     </div>
                 </form>
@@ -1771,11 +1831,11 @@
                 </div>
                 <form id="runRejectForm" novalidate>
                     <div class="modal-body">
-                        <label class="form-label"><span data-i18n="reject_reason_label">Reject Reason</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="reject_reason_label">Reject Reason</span> <span class="text-danger">*</span></label>
                         <textarea class="form-control required" id="run_reject_reason" rows="3" data-i18n="reject_reason_placeholder" placeholder="Explain what needs to be fixed before resubmitting..."></textarea>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
                     </div>
                 </form>
@@ -1793,11 +1853,11 @@
                 </div>
                 <form id="runRequestInfoForm" novalidate>
                     <div class="modal-body">
-                        <label class="form-label"><span data-i18n="request_info_reason_label">What information is needed?</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="request_info_reason_label">What information is needed?</span> <span class="text-danger">*</span></label>
                         <textarea class="form-control required" id="run_request_info_reason" rows="3" data-i18n="request_info_reason_placeholder" placeholder="Explain what additional information is needed before this can be decided..."></textarea>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-primary"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
                     </div>
                 </form>
@@ -1825,20 +1885,20 @@
                 <form id="runMarkPaidForm" novalidate>
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label class="form-label"><span data-i18n="payment_method_label">Payment Method</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="payment_method_label">Payment Method</span> <span class="text-danger">*</span></label>
                             <select class="form-select select2-static required" id="run_mark_paid_method" data-option-keys="payment_method_bank_transfer,payment_method_cash,payment_method_cheque" data-option-values="bank_transfer,cash,cheque"></select>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label" data-i18n="payment_reference_label">Payment Reference</label>
+                            <label class="form-label mb-1" data-i18n="payment_reference_label">Payment Reference</label>
                             <input type="text" class="form-control" id="run_mark_paid_reference" autocomplete="off" data-i18n="run_mark_paid_reference_placeholder" placeholder="e.g., Bank transfer batch no.">
                         </div>
                         <div class="mb-1">
-                            <label class="form-label" data-i18n="modal_payment_date">Payment Date</label>
+                            <label class="form-label mb-1" data-i18n="modal_payment_date">Payment Date</label>
                             <input type="text" class="form-control datepicker" id="run_mark_paid_date" autocomplete="off">
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-primary"><span data-i18n="action_mark_paid">Mark as Paid</span></button>
                     </div>
                 </form>
@@ -1865,7 +1925,7 @@
                 <div class="modal-body" id="runTimelineModalBody"></div>
                 <div class="modal-footer justify-content-between">
                     <div id="runTimelineModalActions" class="d-flex flex-wrap gap-2"></div>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
