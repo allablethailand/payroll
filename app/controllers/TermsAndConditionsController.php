@@ -47,4 +47,21 @@ class TermsAndConditionsController extends Controller {
     public function history() {
         $this->json(['status' => true, 'data' => $this->model->acceptanceHistory($this->employeeId())]);
     }
+
+    /** 2026-09-07 -- one row of that history table, clicked into: the FULL text of a specific past
+     *  version this employee actually accepted (see getVersionForEmployee()'s own docblock for the
+     *  authorization scoping). */
+    public function version() {
+        $termsId = (int)($_GET['id'] ?? 0);
+        if ($termsId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $row = $this->model->getVersionForEmployee($termsId, $this->employeeId());
+        if ($row === null) {
+            $this->json(['status' => false, 'message' => 'Version not found.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $row]);
+    }
 }

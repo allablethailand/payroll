@@ -109,18 +109,63 @@
 #eedModal .modal-body {
     overflow-y: auto !important;
 }
-/* Responsive tab scroll (2026-08-21, explicit request: "ตอนนี้จอเล็กมันตกบรรทัดลงมา") -- Bootstrap's
-   .nav-tabs wraps onto a second line by default once it can't fit (flex-wrap:wrap), which with 8
-   tabs pushes tab-pane content down awkwardly on narrow screens. flex-nowrap + horizontal
-   overflow scroll keeps it one line, scrollable, on any width instead. */
+/* 2026-09-07, explicit follow-up request: "อยากให้เป็น tab เหมือนเดิมครับรูปแบบและสี แต่เพิ่มเติมคือ more
+   แทนการ slide" -- reverts an earlier same-day chip/gradient redesign attempt entirely; the ORIGINAL
+   plain Bootstrap `.nav-tabs` look (text-secondary, underline-active) is untouched here, same as it
+   always was. The only real, kept change from the original 2026-08-21 horizontal-scroll version is
+   swapping that scroll fallback for a measured "More (N)" dropdown instead -- see employee/
+   detail.js's own layoutEmployeeTabs() for the measure-then-hide-from-the-end algorithm (same
+   scrollWidth-vs-clientWidth technique as the header's own Quick Links overflow, public/js/quick-
+   links.js). Every tab button keeps its exact original id/DOM position (just visually hidden, never
+   moved), so every existing shown.bs.tab listener/completeness-badge selector on this page keeps
+   working completely unchanged. */
+/* 2026-09-07, real bug found and fixed (explicit report: "กดปุ่ม more แล้วไม่มีอะไรเกิดขึ้น") --
+   `overflow:hidden` here was clipping the "More" dropdown-menu itself, since it's a literal DOM
+   descendant of this element (Bootstrap's dropdown-menu isn't portaled/moved elsewhere -- it opens
+   as a normal absolutely-positioned child right where it sits in the markup) -- the menu WAS
+   actually opening every time (Bootstrap's own internal state toggled correctly), it just rendered
+   invisible/clipped, reading as "clicking it does nothing" from the outside. Not actually needed for
+   the overflow mechanism anyway: `.edt-tab-overflow-hidden`'s `display:none` already removes a
+   hidden tab from the flex row's content width entirely (contributes 0px), so nothing needs to be
+   VISUALLY clipped for the row to fit -- `overflow:hidden` was added defensively and turned out to
+   be actively harmful once this page grew a real dropdown menu inside the tab bar. */
 #employeeTabs {
     flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
 }
 #employeeTabs .nav-item {
     flex: 0 0 auto;
+}
+/* A tab hidden by the overflow algorithm (still fully real/functional -- see detail.js's own
+   layoutEmployeeTabs()), distinct from `.employee-secondary-tab`/etc.'s own `d-none` (which means
+   "not applicable to this employee yet", a completely different reason to be hidden). Kept as a
+   separate class specifically so the layout function can tell its OWN hides apart from every other
+   reason a tab might already be d-none, without fighting over the same class. */
+#employeeTabs .edt-tab-overflow-hidden {
+    display: none !important;
+}
+#employeeTabsMoreItem .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.edt-tab-more-count {
+    background: rgba(0, 0, 0, .12);
+    color: inherit;
+    font-size: .72rem;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: .05em .5em;
+}
+.edt-tab-more-menu {
+    min-width: 230px;
+    padding: 6px;
+}
+.edt-tab-more-menu .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 6px;
+    padding: .5rem .7rem;
 }
 </style>
 <div class="container container-body">
@@ -267,6 +312,17 @@
             <button class="nav-link text-secondary" id="permission-overrides-tab" data-bs-toggle="tab" data-bs-target="#permission-overrides-pane" type="button" role="tab" aria-controls="permission-overrides-pane" aria-selected="false"><i class="fa-solid fa-user-shield me-1"></i><span data-i18n="permission_overrides">Permission Overrides</span></button>
         </li>
         <?php endif; ?>
+        <!-- 2026-09-07, explicit request: "ถ้าเลยจอการแสดงผลให้ขึ้น more กับตัวเลข กดแล้วเป็น dropdown ลงมา"
+             -- starts d-none/empty; employee/detail.js's own layoutEmployeeTabs() shows it and fills
+             #employeeTabsMoreMenu ONLY when at least one tab above genuinely doesn't fit. Every menu
+             item it creates is a synthetic button that just calls .show() on the REAL (still fully
+             present, merely visually hidden) tab button above -- nothing here duplicates tab state. -->
+        <li class="nav-item dropdown d-none" role="presentation" id="employeeTabsMoreItem">
+            <a class="nav-link text-secondary dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" id="employeeTabsMoreBtn">
+                <span data-i18n="tab_more_label">More</span><span class="edt-tab-more-count" id="employeeTabsMoreCount">0</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end edt-tab-more-menu" id="employeeTabsMoreMenu" aria-labelledby="employeeTabsMoreBtn"></ul>
+        </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-5" id="employeeTabsContent">
         <div class="tab-pane fade show active" id="info-pane" role="tabpanel" aria-labelledby="info-tab" tabindex="0">

@@ -79,7 +79,7 @@ class ReportsController extends Controller {
      * CompanyStatutorySettingModel::list() already implements -- not reimplemented here). A non-TH
      * company (no TH_SSO row in its own country's statutory_items at all) is treated the same as
      * "inactive" -- never shows SSO reports. Cached per-request since this is checked from multiple
-     * methods below (list()/runReportsSummary()/runCycleReportsSummary()) that can all be hit in
+     * methods below (list()/runReportsSummary()/cycleRunsMatrix()) that can all be hit in
      * the same page load.
      */
     private function companySsoActive(int $compId): bool {
@@ -183,7 +183,10 @@ class ReportsController extends Controller {
         // PayrollRunModel::list() already accepts, so the export reflects whatever the admin is
         // currently looking at, same "unused key is simply ignored" tolerance as every other
         // report not reading a given context key.
-        foreach (['year', 'month', 'run_id', 'employee_id', 'language', 'state', 'date_from', 'date_to'] as $key) {
+        // 2026-09-07: 'deduction_codes' whitelisted for DeductionBreakdownReport (the only consumer)
+        // -- a comma-string of codes to include, empty/absent meaning "every deduction code found in
+        // the run" (see that class's own docblock for why: "โดย Default คือเลือกทั้งหมด").
+        foreach (['year', 'month', 'run_id', 'employee_id', 'language', 'state', 'date_from', 'date_to', 'deduction_codes'] as $key) {
             if (isset($_GET[$key]) && $_GET[$key] !== '') {
                 $context[$key] = $_GET[$key];
             }
@@ -304,55 +307,36 @@ class ReportsController extends Controller {
     }
 
     /**
-     * 2026-08-29, explicit request: "ใน /payroll/reports...ใช้หลักการ Download แบบเดียวกับหน้า Process"
-     * -- the Reports page's own "Per-Cycle Reports" tab needs EVERY cycle-frequency report (not just
-     * the 3 shortcuts runReportsSummary() above serves the Process Detail page's own Reports tab),
-     * one row per report with the same download_count/last_downloaded_at/supports_preview shape so
-     * the SAME preview-first Download UI can be reused verbatim. This list mirrors
-     * public/js/reports/index.js's own REPORT_META `frequency:'cycle'` set exactly -- keep both in
-     * sync if a report's frequency ever changes (no server-side frequency() method on
-     * ReportGeneratorInterface exists to derive this from; adding one would mean touching every
-     * report class for a purely display-layer concern, not worth it for a 6-entry list).
+     * The fixed catalog of "cycle-frequency" reports (every report scoped to ONE payroll run, as
+     * opposed to the Annual Reports tab's once-a-year ones) -- backs cycleRunsMatrix() below, the
+     * Per-Cycle Reports tab's own data source. Mirrors public/js/reports/index.js's own REPORT_META
+     * `frequency:'cycle'` set exactly -- keep both in sync if a report's frequency ever changes (no
+     * server-side frequency() method on ReportGeneratorInterface exists to derive this from; adding
+     * one would mean touching every report class for a purely display-layer concern, not worth it
+     * for a 6-entry list).
+     *
+     * 2026-09-07: the per-RUN version of this endpoint (runCycleReportsSummary(), which used to back
+     * a single-run-picker + row-list UI here) was removed outright once the Per-Cycle Reports tab
+     * went back to a run x report-type MATRIX (confirmed via grep that nothing else called it) --
+     * cycleRunsMatrix() below computes the exact same per-run applicability inline, once per run,
+     * instead of requiring a separate round trip per row.
      */
-    private const CYCLE_REPORT_CODES = ['TH_PND1', 'TH_SSO110', 'TH_SLF', 'PAY_SLIP', 'BANK_TRANSFER_FILE', 'PAYROLL_REGISTER'];
-    public function runCycleReportsSummary() {
-        if (!$this->requireViewAccess()) return;
-        $compId = getCompId();
-        $runId = isset($_GET['run_id']) ? (int)$_GET['run_id'] : 0;
-        if (!$compId || $runId <= 0) {
-            $this->json(['status' => false, 'message' => 'Missing run_id.']);
-            return;
-        }
-        $applicability = $this->payrollRunModel->calcApplicabilitySummary($runId, (int)$compId);
-        $downloadSummary = $this->logModel->summaryForRun((int)$compId, $runId);
-        $rows = [];
-        $ssoActive = $this->companySsoActive((int)$compId);
-        foreach (self::CYCLE_REPORT_CODES as $code) {
-            if ($code === 'TH_PND1' && !$applicability['any_tax']) continue;
-            // 2026-08-31: company-wide gate (companySsoActive()) alongside the existing per-run
-            // `any_sso` -- either one being false hides the row.
-            if ($code === 'TH_SSO110' && (!$applicability['any_sso'] || !$ssoActive)) continue;
-            $report = ReportRegistry::get($code);
-            if (!$report) continue;
-            $formats = $report->supportedFormats();
-            $format = in_array('pdf', $formats, true) ? 'pdf' : ($formats[0] ?? 'pdf');
-            $summary = $downloadSummary[$code] ?? ['download_count' => 0, 'last_downloaded_at' => null];
-            $rows[] = [
-                'code' => $code,
-                'report_type' => $report->reportType(),
-                'format' => $format,
-                'supports_preview' => $format === 'pdf',
-                // 2026-08-29: signals the frontend to open the employee-roster picker (see
-                // payslipRoster() below) instead of previewing/downloading directly -- PAY_SLIP is
-                // the only cycle report scoped to one employee at a time, not the whole run.
-                'per_employee' => $code === 'PAY_SLIP',
-                'label' => $report->label(),
-                'download_count' => $summary['download_count'],
-                'last_downloaded_at' => $summary['last_downloaded_at'],
-            ];
-        }
-        $this->json(['status' => true, 'data' => $rows]);
-    }
+    // 2026-09-07, real gap found and fixed (explicit report: "รายการส่วนของการจ่ายเงินสด สำหรับ
+    // ประเภทการจ่ายเงิน" -- the cash-payment list/report is missing) -- CASH_PAYMENT_SUMMARY
+    // (app/services/reports/payment/CashPaymentSummaryReport.php) has existed and been registered
+    // in ReportRegistry since the Cash Payments tab shipped, but was never added to THIS list, so
+    // it never appeared on the Reports page at all (confirmed via grep -- Payroll Process Detail's
+    // own Reports tab, a separate RUN_REPORT_SHORTCUTS list, is the only place it was ever
+    // reachable from). Excel-only (no PDF) -- the existing preview modal already degrades
+    // gracefully for a non-PDF format (its own `supports_preview` check), no special-casing needed.
+    private const CYCLE_REPORT_CODES = ['TH_PND1', 'TH_SSO110', 'TH_SLF', 'PAY_SLIP', 'BANK_TRANSFER_FILE', 'PAYROLL_REGISTER', 'CASH_PAYMENT_SUMMARY', 'DEDUCTION_BREAKDOWN'];
+
+    // 2026-09-07: codes in this map get a config step (a picker of some kind) on the matrix's own
+    // click handler instead of jumping straight to #reportsPreviewModal -- see
+    // DeductionBreakdownReport's own docblock for why this one needs a checkbox picker
+    // (report.deduction-types-for-run backs it) rather than the plain preview-modal flow every other
+    // cycle report uses.
+    private const CYCLE_REPORT_NEEDS_CONFIG = ['DEDUCTION_BREAKDOWN' => 'deduction_codes'];
 
     /**
      * 2026-08-29, explicit request: "ตรงที่ปริ้น Slip ของพนักงาน ปรับให้ขึ้นเป็นรายชื่อพนักงานมาเลย และ emp
@@ -398,9 +382,115 @@ class ReportsController extends Controller {
     }
 
     /**
+     * 2026-09-07, explicit request: "Menu สร้างรายงาน ถ้าเปลี่ยนเป็น ตารางแสดงรอบที่สามารถพิมพ์ได้ แล้วให้มี
+     * column พิมพ์ตามแบบที่พิมพ์ได้ น่าจะใช้งานง่ายกว่าครับ" -- backs the Per-Cycle Reports tab's own
+     * matrix table (one ROW per completed run, one COLUMN per applicable report -- this is the SAME
+     * shape the tab briefly had 2026-08-27 before being retired to a single-run picker 2026-08-29,
+     * see PayrollReportDataModel::getCompletedRuns()'s own docblock; this endpoint is new, computing
+     * the SAME per-run applicability the old per-run runCycleReportsSummary() used to, just looped
+     * across every returned run in one request instead of needing one round trip per row).
+     *
+     * Deliberately does NOT return per-cell download_count/last_downloaded_at (the old per-run
+     * endpoint did) -- a matrix cell is a single print-button, not a mini per-report dashboard; that
+     * history is still fully available via the Export History tab's own filterable table, unchanged.
+     * `report_columns` collects the UNION of every code that's applicable to AT LEAST ONE returned
+     * run (not a hardcoded fixed list) so a report gated by per-run applicability (TH_PND1 needs
+     * `any_tax`, TH_SSO110 needs `any_sso` AND the company-wide SSO toggle) only appears as a column
+     * when it's genuinely relevant to what's on screen -- a run where it doesn't apply simply has no
+     * cell/button for that column (`applicable_codes` on that row won't list it), not a disabled one.
+     */
+    public function cycleRunsMatrix() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => ['runs' => [], 'report_columns' => []]]);
+            return;
+        }
+        $dateFrom = trim((string)($_GET['date_from'] ?? ''));
+        $dateTo = trim((string)($_GET['date_to'] ?? ''));
+        $runs = $this->reportDataModel->getCompletedRuns((int)$compId, self::CYCLE_REPORT_STATES, $dateFrom ?: null, $dateTo ?: null);
+        $ssoActive = $this->companySsoActive((int)$compId);
+        $columnsSeen = [];
+        $rows = [];
+        foreach ($runs as $run) {
+            $applicability = $this->payrollRunModel->calcApplicabilitySummary((int)$run['id'], (int)$compId);
+            $codes = [];
+            foreach (self::CYCLE_REPORT_CODES as $code) {
+                if ($code === 'TH_PND1' && !$applicability['any_tax']) continue;
+                if ($code === 'TH_SSO110' && (!$applicability['any_sso'] || !$ssoActive)) continue;
+                $report = ReportRegistry::get($code);
+                if (!$report) continue;
+                $codes[] = $code;
+                if (!isset($columnsSeen[$code])) {
+                    $formats = $report->supportedFormats();
+                    $columnsSeen[$code] = [
+                        'code' => $code,
+                        'report_type' => $report->reportType(),
+                        'format' => in_array('pdf', $formats, true) ? 'pdf' : ($formats[0] ?? 'pdf'),
+                        'per_employee' => $code === 'PAY_SLIP',
+                        'needs_config' => self::CYCLE_REPORT_NEEDS_CONFIG[$code] ?? null,
+                        'label' => $report->label(),
+                    ];
+                }
+            }
+            $rows[] = [
+                'id' => (int)$run['id'],
+                'run_name' => $run['run_name'],
+                'cycle_name' => $run['cycle_name'],
+                'period_start_date' => $run['period_start_date'],
+                'period_end_date' => $run['period_end_date'],
+                'payment_date' => $run['payment_date'],
+                'state' => $run['state'],
+                'applicable_codes' => $codes,
+            ];
+        }
+        $columns = [];
+        foreach (self::CYCLE_REPORT_CODES as $code) {
+            if (isset($columnsSeen[$code])) $columns[] = $columnsSeen[$code];
+        }
+        $this->json(['status' => true, 'data' => ['runs' => $rows, 'report_columns' => $columns]]);
+    }
+
+    /**
+     * 2026-09-07: backs DeductionBreakdownReport's own config-picker (see
+     * CYCLE_REPORT_NEEDS_CONFIG/DeductionBreakdownReport's own docblock) -- the distinct set of
+     * deduction codes that actually occurred (non-zero amount) anywhere in this run, so the
+     * checkbox list can start "all checked" per the explicit "Default คือเลือกทั้งหมดจากที่มีการหักใน
+     * รอบนั้นๆ" requirement. Returns an empty list (not an error) for a bad/foreign run_id -- the
+     * frontend picker just renders nothing to check, same tolerance every other lookup-style
+     * endpoint in this app has for a not-found id.
+     */
+    public function deductionTypesForRun() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = (int)($_GET['run_id'] ?? 0);
+        if (!$compId || $runId <= 0) {
+            $this->json(['status' => true, 'data' => []]);
+            return;
+        }
+        $run = $this->reportDataModel->getRun($runId, (int)$compId);
+        if (!$run) {
+            $this->json(['status' => true, 'data' => []]);
+            return;
+        }
+        $details = $this->reportDataModel->getRunDetails($runId);
+        $seen = [];
+        foreach ($details as $d) {
+            foreach (($d['deduction_breakdown'] ?? []) as $line) {
+                $code = $line['code'] ?? null;
+                if ($code === null || (float)($line['amount'] ?? 0) == 0.0) continue;
+                if (!isset($seen[$code])) {
+                    $seen[$code] = ['code' => $code, 'name_th' => $line['name_th'] ?? $code, 'name_en' => $line['name_en'] ?? $code];
+                }
+            }
+        }
+        $this->json(['status' => true, 'data' => array_values($seen)]);
+    }
+
+    /**
      * 2026-08-30, explicit request: "filter ปีให้เลือกจากปีที่มีข้อมูลจริง" -- backs the Annual Reports
      * tab's year dropdown (was a free-typed number input). Same CYCLE_REPORT_STATES gate as
-     * cycleRuns()/runCycleReportsSummary() above -- a year is only offered if it has at least one
+     * cycleRuns()/cycleRunsMatrix() above -- a year is only offered if it has at least one
      * run in a state annual reports are actually allowed to read from.
      */
     /**

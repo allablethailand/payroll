@@ -115,6 +115,42 @@
   </div>
 </div>
 
+<!-- 2026-09-07, explicit request: "สามารถคลิกดู modal ประวัติการ Sync ของแต่ละ Card ได้" -- one shared
+     modal, re-populated per entity type each time a card's "History" button is clicked (same
+     re-init-on-open pattern as this app's own #payslipRosterModal/#cycleReportHistoryModal) rather
+     than 6 near-identical modals. Reuses api/master-data-sync.history filtered to one entity_type --
+     same endpoint/columns the Sync History tab's own table already uses, minus the Entity Type
+     column itself since the modal title already says which type this is. -->
+<div class="modal fade" id="dsCardHistoryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title text-secondary" id="dsCardHistoryModalTitle">-</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="table-responsive">
+          <table id="tb_ds_card_history" class="table table-hover align-middle w-100">
+            <thead>
+              <tr>
+                <th data-i18n="status">Status</th>
+                <th data-i18n="data_sync_total">Total</th>
+                <th data-i18n="data_sync_success">Success</th>
+                <th data-i18n="data_sync_error">Error</th>
+                <th data-i18n="data_sync_synced_by">Synced By</th>
+                <th data-i18n="data_sync_started_at">Started</th>
+                <th data-i18n="data_sync_completed_at">Completed</th>
+                <th data-i18n="actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="<?=asset('public/js/setup/data-sync.js')?>"></script>
 <script>
 $(document).ready(function () {

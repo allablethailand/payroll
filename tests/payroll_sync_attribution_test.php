@@ -625,9 +625,19 @@ try {
     // ---------- 2026-09-06, explicit request: "ปรับ Process ที่มีการสร้างรอบเองในฝั่ง Payroll ให้เป็นไปใน
     // แนวทางเดียวกัน" (with the Origami-attribution "waiting for a round that doesn't exist yet" fix
     // just shipped) -- extends the manual "อ้างอิงถึงรอบ" merge target to accept a round of a
-    // recurring Payroll Cycle that doesn't exist YET, keyed on cycle_id+period exactly like
-    // isDuplicatePeriod() already keys "is this the same round". See
-    // PayrollRunModel::resolveMergeTargetSpec()'s own docblock. ----------
+    // recurring Payroll Cycle that doesn't exist YET, keyed on cycle_id+period. See
+    // PayrollRunModel::resolveMergeTargetSpec()'s own docblock.
+    // 2026-09-07, real behavior change, explicit request: "รอบอนาคต...น่าจะเปลี่ยนเป็นรอบเดือนของวันที่จ่าย
+    // เพราะเราจะดึงข้อมูลของรอบเดือนที่จ่าย เช่น จ่าย 15 กย ก็จะนำไปรวมกับที่จ่าย 30 กย" -- the exact
+    // cycle_id+period match above was NARROWER than the real need: a company whose same recurring
+    // cycle produces more than one round within a single calendar month (e.g. paid on the 15th AND
+    // the 30th) wants a future target to resolve against WHICHEVER of that cycle's own occurrences
+    // lands in the target month, not one hand-predicted exact period. Matching is now cycle_id +
+    // SAME PAYMENT MONTH as the stored reference period (see
+    // PayrollRunModel::findActiveRunForCyclePaymentMonth()'s own docblock) -- every assertion in the
+    // "immediate resolution"/"genuinely waiting" sections below still passes unchanged since their
+    // own fixtures already have period+payment date in the same month (the common case); the NEW
+    // "different period, same payment month" capability gets its own dedicated section further down. ----------
     echo "=== Future-cycle merge target: immediate resolution when a matching run ALREADY exists ===\n";
     $fcExistingRes = $runModel->create($compId, [
         'cycle_id' => $cycleId, 'run_name' => 'FC_EXISTING_' . uniqid(),
@@ -703,6 +713,70 @@ try {
 
     $fcUnrelatedRowAfter = $runModel->get($fcUnrelatedRes['id'], $compId);
     checkTrue('the unrelated waiting run is untouched -- still waiting on its OWN (2028-03) period', $fcUnrelatedRowAfter['merge_target_run_id'] === null && (int)$fcUnrelatedRowAfter['merge_target_cycle_id'] === $cycleId);
+
+    // 2026-09-07: the actual NEW capability -- a waiting target's reference period is the FIRST half
+    // of the month (1st-15th), but the real round that eventually shows up is the SECOND half
+    // (16th-30th), paid on the 30th. Under the old exact-period match this would have stayed waiting
+    // forever; it must now resolve because both fall in the same payment month (September 2028).
+    echo "=== Future-cycle merge target: NEW capability -- same payment month, DIFFERENT exact period (e.g. paid 15th vs. paid 30th) ===\n";
+    $fcMonthWaitRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_MONTH_WAIT_SOURCE_' . uniqid(),
+        'period_start_date' => '2028-09-10', 'period_end_date' => '2028-09-10', 'payment_date' => '2028-09-10',
+        'merge_target_cycle_id' => $cycleId,
+        // Reference period is the 1st-15th half -- deliberately NOT the same dates the real target
+        // run below will actually have (16th-30th), to prove the match is by payment MONTH only.
+        'merge_target_period_start_date' => '2028-09-01', 'merge_target_period_end_date' => '2028-09-15',
+    ], $userId, true);
+    checkTrue('fixture: off-cycle run targeting a same-month-but-different-period cycle round creates fine' . (empty($fcMonthWaitRes['status']) ? " ({$fcMonthWaitRes['message']})" : ''), $fcMonthWaitRes['status']);
+    $fcMonthWaitSourceId = $fcMonthWaitRes['id'];
+
+    // A run of the SAME cycle paid in a DIFFERENT month (October) must NOT match -- proves month
+    // scoping is still real, not "any occurrence of this cycle ever again matches".
+    $fcMonthOtherMonthRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'FC_MONTH_OTHER_MONTH_' . uniqid(),
+        'period_start_date' => '2028-10-01', 'period_end_date' => '2028-10-15', 'payment_date' => '2028-10-15',
+    ], $userId, true);
+    checkTrue('fixture: an October round of the SAME cycle creates fine (must not match a September target)', $fcMonthOtherMonthRes['status']);
+    $fcMonthWaitRowUnaffected = $runModel->get($fcMonthWaitSourceId, $compId);
+    checkTrue('a same-cycle round in a DIFFERENT payment month does not resolve the waiting target', $fcMonthWaitRowUnaffected['merge_target_run_id'] === null);
+
+    // Now the real second-half-of-September round is created -- different exact period
+    // (2028-09-16/2028-09-30) from the target's own reference period (2028-09-01/2028-09-15), same
+    // payment month (both September 2028).
+    $fcMonthRealTargetRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'FC_MONTH_REAL_TARGET_' . uniqid(),
+        'period_start_date' => '2028-09-16', 'period_end_date' => '2028-09-30', 'payment_date' => '2028-09-30',
+    ], $userId, true);
+    checkTrue('the real September (2nd half) cycle run creates fine' . (empty($fcMonthRealTargetRes['status']) ? " ({$fcMonthRealTargetRes['message']})" : ''), $fcMonthRealTargetRes['status']);
+    $fcMonthRealTargetId = $fcMonthRealTargetRes['id'];
+
+    check('create() surfaces the same-payment-month waiting run as pending_merges_ready despite the different exact period', count($fcMonthRealTargetRes['pending_merges_ready'] ?? []), 1);
+    $fcMonthPendingItem = $fcMonthRealTargetRes['pending_merges_ready'][0] ?? [];
+    check('the surfaced item is the correct waiting source run', (int)($fcMonthPendingItem['id'] ?? 0), $fcMonthWaitSourceId);
+    check('the surfaced item names the correct newly-created target run', (int)($fcMonthPendingItem['target_run_id'] ?? 0), $fcMonthRealTargetId);
+
+    $fcMonthWaitRowAfter = $runModel->get($fcMonthWaitSourceId, $compId);
+    check('merge_target_run_id auto-resolved to the DIFFERENT-period-but-same-month target run', (int)$fcMonthWaitRowAfter['merge_target_run_id'], $fcMonthRealTargetId);
+    checkTrue('merge_target_cycle_id cleared once resolved', $fcMonthWaitRowAfter['merge_target_cycle_id'] === null);
+
+    // "Immediate resolution at save time" (resolveMergeTargetSpec(), not the create()-time auto-
+    // detect above) must ALSO honor payment-month matching -- both real September rounds already
+    // exist by this point, so a NEW off-cycle run targeting cycle+September should resolve
+    // immediately to whichever one findActiveRunForCyclePaymentMonth() picks (earliest period first,
+    // per its own ORDER BY -- the 1st-half round, even though it doesn't literally exist as a run
+    // here; only the 2nd-half one does, so that's the one it must pick).
+    $fcMonthImmediateRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_MONTH_IMMEDIATE_' . uniqid(),
+        'period_start_date' => '2028-09-20', 'period_end_date' => '2028-09-20', 'payment_date' => '2028-09-20',
+        'merge_target_cycle_id' => $cycleId,
+        'merge_target_period_start_date' => '2028-09-01', 'merge_target_period_end_date' => '2028-09-15',
+    ], $userId, true);
+    checkTrue('fixture: a 2nd off-cycle run targeting the SAME September month resolves immediately' . (empty($fcMonthImmediateRes['status']) ? " ({$fcMonthImmediateRes['message']})" : ''), $fcMonthImmediateRes['status']);
+    $fcMonthImmediateRow = $runModel->get($fcMonthImmediateRes['id'], $compId);
+    check('resolves immediately to the real September round already on file (payment-month match, not exact period)', (int)$fcMonthImmediateRow['merge_target_run_id'], $fcMonthRealTargetId);
+    checkTrue('merge_target_cycle_id stays null once immediately resolved', $fcMonthImmediateRow['merge_target_cycle_id'] === null);
 
     echo "=== Future-cycle merge target: actually merging is byte-identical to the pre-existing mergeIntoExistingRun() path, verified against a REAL generated report ===\n";
     // No joinEmployees() call needed here -- $employeeId (employment_date 2020-01-01, see this

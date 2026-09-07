@@ -36,6 +36,14 @@ class PayslipTemplateController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    // Platform Hardening Phase 6 (batch 5) -- same shape as every other controller's own copy.
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     private function requirePermission(string $permissionKey): bool {
         $compId = (int)getCompId();
         $check = $this->permissionModel->checkPermission($this->userId(), $permissionKey, $this->isAdmin(), $compId);
@@ -147,7 +155,8 @@ class PayslipTemplateController extends Controller {
         // PayslipTemplateModel::save() uses (id present = update).
         $isEdit = !empty($data['id']) && is_numeric($data['id']);
         if (!$this->requirePermission($isEdit ? 'payslip_template.edit' : 'payslip_template.add')) return;
-        $this->json($this->model->save((int)$compId, $data, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->save((int)$compId, $data, $this->userId(), $ip, $ua));
     }
 
     public function createFromPreset() {
@@ -205,7 +214,8 @@ class PayslipTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->delete((int)$compId, $id, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->delete((int)$compId, $id, $this->userId(), $ip, $ua));
     }
 
     public function toggleStatus() {
@@ -216,7 +226,8 @@ class PayslipTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->toggleStatus((int)$compId, $id, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->toggleStatus((int)$compId, $id, $this->userId(), $ip, $ua));
     }
 
     public function setDefault() {
@@ -227,7 +238,8 @@ class PayslipTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->setDefault((int)$compId, $id, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->setDefault((int)$compId, $id, $this->userId(), $ip, $ua));
     }
 
     /** 2026-08-26, explicit request: "ในหน้า List สามารถเปิด Draft หรือ Public ได้จากหน้านั้นเลย" --
@@ -241,7 +253,8 @@ class PayslipTemplateController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->setPublishStatus((int)$compId, $id, $status, $this->userId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->setPublishStatus((int)$compId, $id, $status, $this->userId(), $ip, $ua));
     }
 
     /** Plain-JSON wrapper around presetPreviewElements() for "Change Layout" -- re-applies a

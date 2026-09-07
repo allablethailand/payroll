@@ -1254,10 +1254,13 @@ $(function () {
 // นั้น" -- same URL-hash + history.replaceState mechanism already built for Payroll Process
 // Detail/List (payroll/detail.js's own activateTabFromHash()/shown.bs.tab handler) -- persist
 // whichever tab is active across a refresh instead of always resetting to Employee Info.
+// 2026-09-07: also re-runs the tab-bar overflow layout below on every tab switch (whichever tab just
+// became active must never be one of the ones tucked into "More").
 $(document).on('shown.bs.tab', '#employeeTabs button[data-bs-toggle="tab"]', function (e) {
     if (history.replaceState) {
         history.replaceState(null, '', '#' + e.target.id);
     }
+    layoutEmployeeTabs();
 });
 function activateEmployeeTabFromHash() {
     const hash = (location.hash || '').replace('#', '');
@@ -1267,6 +1270,112 @@ function activateEmployeeTabFromHash() {
         bootstrap.Tab.getOrCreateInstance($btn[0]).show();
     }
 }
+
+/* ==================== Employee Detail tab-bar overflow ("More" dropdown) ====================
+ * 2026-09-07, explicit request: "อยากให้ปรับส่วนของ tab ให้ดูสวยขึ้น และถ้าเลยจอการแสดงผลให้ขึ้น more กับ
+ * ตัวเลข กดแล้วเป็น dropdown ลงมา" -- up to 10 real top-level tabs on this page (the most any tab bar
+ * in this app has). Measures #employeeTabs the same way the header's own Quick Links overflow does
+ * (public/js/quick-links.js's own layoutQuickLinks(): compare `scrollWidth` vs `clientWidth` on a
+ * flex row) and hides whichever tabs don't fit, starting from the END and always skipping the
+ * CURRENTLY ACTIVE tab (never hide the one thing already on screen). Every hidden tab's real
+ * `<button>` stays exactly where it was in the DOM the whole time (just `display:none` via
+ * `.edt-tab-overflow-hidden`, see detail.php's own CSS) -- nothing is moved, cloned, or removed, so
+ * every OTHER shown.bs.tab listener/completeness-badge selector already scattered across this file
+ * keeps working completely unchanged no matter how many tabs are currently tucked into the dropdown.
+ *
+ * `edtTabsObserver` exists to catch this page's OWN later reveals of previously-`d-none` tabs
+ * (`.employee-secondary-tab` en masse once the first save creates a real employee_no,
+ * `#loginHistoryTabItem`/`#permissionOverridesTabItem` individually) WITHOUT needing to sprinkle an
+ * explicit layoutEmployeeTabs() call after each of those several, scattered reveal points -- it just
+ * re-runs this function whenever any child's `class` attribute changes. That includes changes THIS
+ * SAME FUNCTION makes to `.edt-tab-overflow-hidden` -- disconnecting the observer before doing any
+ * of its own DOM writes and reconnecting only once it's done (not a simple in-progress boolean flag,
+ * which would NOT work here: MutationObserver callbacks are delivered as a microtask AFTER the
+ * function that caused them has already returned and reset any such flag, so a plain flag can't
+ * actually prevent the observer from re-triggering on the function's own writes) is what keeps this
+ * from re-triggering itself forever. */
+let edtTabsObserver = null;
+function layoutEmployeeTabs() {
+    const tabsEl = document.getElementById('employeeTabs');
+    if (!tabsEl) return;
+    if (edtTabsObserver) edtTabsObserver.disconnect();
+    try {
+        const $tabs = $(tabsEl);
+        const $moreItem = $('#employeeTabsMoreItem');
+        const $allItems = $tabs.children('.nav-item').not($moreItem);
+        // Reset to whatever this page's OWN business logic (new-employee progressive reveal,
+        // permission gates) currently allows, before deciding what genuinely doesn't fit.
+        $allItems.removeClass('edt-tab-overflow-hidden');
+        $moreItem.addClass('d-none');
+
+        const $candidates = $allItems.filter(function () { return !$(this).hasClass('d-none'); });
+        if ($candidates.length < 2) return;
+
+        const hidden = [];
+        // +2px tolerance against sub-pixel rounding falsely tripping the loop forever.
+        while (tabsEl.scrollWidth > tabsEl.clientWidth + 2) {
+            const $stillVisible = $candidates.filter(function () {
+                return !$(this).hasClass('edt-tab-overflow-hidden') && !$(this).find('.nav-link').hasClass('active');
+            });
+            if (!$stillVisible.length) break;
+            const $last = $stillVisible.last();
+            $last.addClass('edt-tab-overflow-hidden');
+            hidden.unshift($last);
+            $moreItem.removeClass('d-none');
+        }
+        renderEmployeeTabsMoreMenu(hidden);
+    } finally {
+        if (edtTabsObserver) {
+            edtTabsObserver.observe(tabsEl, { attributes: true, attributeFilter: ['class'], subtree: true });
+        }
+    }
+}
+function renderEmployeeTabsMoreMenu(hiddenItems) {
+    const $menu = $('#employeeTabsMoreMenu').empty();
+    $('#employeeTabsMoreCount').text(hiddenItems.length);
+    hiddenItems.forEach(function ($li) {
+        const $btn = $li.find('.nav-link');
+        const isActive = $btn.hasClass('active');
+        const $clone = $btn.clone();
+        $clone.find('.completeness-tab-badge').remove();
+        const label = $clone.text().trim();
+        const $icon = $btn.find('> i').first();
+        const iconHtml = $icon.length ? $icon[0].outerHTML : '';
+        const targetId = $btn.attr('id');
+        const $item = $(`<button type="button" class="dropdown-item${isActive ? ' active' : ''}"></button>`)
+            .html(`${iconHtml}<span>${escapeHtml(label)}</span>`)
+            .on('click', function () {
+                const el = document.getElementById(targetId);
+                if (el) bootstrap.Tab.getOrCreateInstance(el).show();
+            });
+        $menu.append($('<li></li>').append($item));
+    });
+}
+$(window).on('resize', typeof debounce === 'function' ? debounce(layoutEmployeeTabs, 150) : layoutEmployeeTabs);
+$(document).ready(function () {
+    layoutEmployeeTabs();
+    const tabsEl = document.getElementById('employeeTabs');
+    if (tabsEl && typeof MutationObserver !== 'undefined') {
+        // 2026-09-07, real bug found and fixed (explicit report: "more กดไม่ได้ครับ") -- Bootstrap's
+        // own Dropdown component (node_modules/bootstrap/js/src/dropdown.js's show()) adds a `.show`
+        // class to BOTH the toggle <a> and the .dropdown-menu when opened -- both live inside
+        // #employeeTabsMoreItem, itself inside #employeeTabs, so clicking "More" was ALSO a `class`
+        // mutation this observer watches. That immediately re-ran layoutEmployeeTabs(), whose own
+        // reset step (`$moreItem.addClass('d-none')`) re-hid the More <li> -- and the just-opened
+        // dropdown-menu along with it, since it's one of that <li>'s own children -- a fraction of a
+        // second after Bootstrap opened it, so it never stayed open long enough to use. Fixed by
+        // ignoring any mutation whose target is inside #employeeTabsMoreItem entirely -- that
+        // element's own class changes are always Bootstrap's dropdown open/close state, never a
+        // reason to recompute which tabs fit.
+        edtTabsObserver = new MutationObserver(function (mutations) {
+            const relevant = mutations.some(function (m) {
+                return !$(m.target).closest('#employeeTabsMoreItem').length;
+            });
+            if (relevant) layoutEmployeeTabs();
+        });
+        edtTabsObserver.observe(tabsEl, { attributes: true, attributeFilter: ['class'], subtree: true });
+    }
+});
 
 const DOCUMENT_INPUT_MAP = {
     doc_id_card_copy: 'id_card_copy',

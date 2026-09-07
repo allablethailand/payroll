@@ -63,10 +63,12 @@ class TermsAndConditionsModel {
         return ['status' => true, 'message' => 'Accepted.'];
     }
 
-    /** Self-service "view my acceptance history" -- Profile > Terms and Conditions. */
+    /** Self-service "view my acceptance history" -- Profile > Terms and Conditions. `terms_id`
+     *  included (2026-09-07) so the frontend's own version-history table can link each row to
+     *  getVersionForEmployee() below and show that EXACT version's actual text, not just its label. */
     public function acceptanceHistory(int $employeeId): array {
         $stmt = $this->db->prepare(
-            "SELECT t.version_label, t.effective_date, a.accepted_at
+            "SELECT a.terms_id, t.version_label, t.effective_date, a.accepted_at
              FROM `terms_and_conditions_acceptances` a
              JOIN `terms_and_conditions` t ON t.id = a.terms_id
              WHERE a.employee_id = :employee_id
@@ -74,5 +76,29 @@ class TermsAndConditionsModel {
         );
         $stmt->execute([':employee_id' => $employeeId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * 2026-09-07, explicit design question answered: "ถ้ามีหลาย Version จะแสดงยังไง...เป็นตารางก่อน
+     * แล้วค่อยกดดูข้อความ" -- Profile > Terms and Conditions' version-history table lets an
+     * employee click back into any PAST version's own full text, not just its label/date. Scoped
+     * to versions THIS employee has actually accepted (an `acceptances` row must exist for
+     * (terms_id, employeeId)) -- never exposes a version they were never prompted with (e.g. one
+     * published and superseded before they ever logged in), same "always MY OWN" access
+     * convention as every other method on this model/controller.
+     *
+     * @return ?array{version_label:string, effective_date:?string, content_th:string, content_en:string}
+     */
+    public function getVersionForEmployee(int $termsId, int $employeeId): ?array {
+        $stmt = $this->db->prepare(
+            "SELECT t.version_label, t.effective_date, t.content_th, t.content_en
+             FROM `terms_and_conditions_acceptances` a
+             JOIN `terms_and_conditions` t ON t.id = a.terms_id
+             WHERE a.terms_id = :terms_id AND a.employee_id = :employee_id
+             LIMIT 1"
+        );
+        $stmt->execute([':terms_id' => $termsId, ':employee_id' => $employeeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
     }
 }

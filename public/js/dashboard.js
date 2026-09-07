@@ -111,6 +111,24 @@ function dashGreetingKey() {
 // default, called from $(document).ready() below with no args) reproduces the exact live/current
 // view this endpoint always returned before this feature existed. Passing both switches the whole
 // page into the historical lens DashboardController::summary()'s own docblock describes.
+// 2026-09-07, real bug found and fixed: this used to be reachable a 2nd time per page load through
+// a completely unrelated path -- app.js's own applyLanguage() (run once loadLang()'s async fetch
+// resolves, which lands AFTER this file's own $(document).ready() has already fired the first,
+// unconditional call below) re-inits every `.select2-native.select2-hidden-accessible` element and,
+// when it already has a value, fires a genuinely PLAIN `.trigger('change')` (no namespace) on it --
+// unlike `.select2-static`'s own re-init, which only ever fires the namespaced `change.select2`.
+// #dashPeriodYear used to be exactly such a `.select2-native` select, so language loading alone
+// (every page load, not a user action) refired this via the old `$(document).on('change',
+// '#dashPeriodMonth, #dashPeriodYear', ...)` handler, showing/hiding the full-page loader TWICE in a
+// row (explicit report: "ขึ้น loading 2 รอบก่อนโหลดหน้า เหมือนระบบกระตุก") -- confirmed by tracing
+// $(document).ready() registration order (app.js loads first and `await`s loadLang() inside its own
+// ready handler, which yields control back to jQuery so THIS file's later-registered ready handler
+// still runs first) then applyLanguage()'s own native-select branch. Fixed at the root by dropping
+// the plain <select>x2 entirely in favor of the plain-button month/year picker below (no select2
+// anywhere in it, so applyLanguage() has nothing to re-init/re-trigger here at all) -- kept as a
+// code comment, not just a git message, since the failure mode (an unrelated shared function firing
+// a plain, unnamespaced `change` on an element this file also delegates a handler to) is exactly the
+// kind of thing worth checking first if a similar "fires twice" report ever comes up again elsewhere.
 function loadDashboardSummary(year, month) {
     // 2026-09-03, Platform UX review Phase 2 (revised): the Dashboard's own main content IS this one
     // fetch -- the clearest "page-level" case for the full-page loader (see app.js's own
@@ -154,15 +172,18 @@ function renderDashboard(data) {
     const descTpl = langData['dashboard_greeting_description'] || 'Today is {date}. Here is an overview of your payroll workspace.';
     $('#dashGreetingDesc').text(descTpl.replace('{date}', dateStr));
 
-    // 2026-09-06, Dashboard redesign: syncs the month/year picker itself to whatever the backend
+    // 2026-09-07, Dashboard redesign: syncs the month/year picker itself to whatever the backend
     // says is authoritative (matters both on first load -- defaults to today -- and after "Back to
-    // Current" resets it) -- 'change.select2' only (NOT plain 'change'), same established
-    // convention as e.g. index.js's own matched-cycle preselect, so this never re-triggers the
-    // user-driven fetch handler bound below and cause an infinite loop.
-    $('#dashPeriodYear').val(data.selected_year).trigger('change.select2');
-    $('#dashPeriodMonth').val(data.selected_month).trigger('change.select2');
-    $('#dashHistoricalBadge').toggleClass('d-none', !data.is_historical);
-    $('#dashPeriodResetBtn').toggleClass('d-none', !data.is_historical);
+    // Current" resets it).
+    dashSelectedYear = Number(data.selected_year);
+    dashSelectedMonth = Number(data.selected_month);
+    dashPickerViewYear = dashSelectedYear;
+    dashUpdatePeriodPickerLabel();
+    $('#dashPeriodLiveDot')
+        .toggleClass('dash-period-picker-live-dot-historical', !!data.is_historical)
+        .attr('title', data.is_historical ? (langData['dash_viewing_historical'] || 'Viewing historical data') : (langData['dash_viewing_period'] || 'Viewing:'));
+    $('#dashPeriodBackToCurrentBtn').toggleClass('d-none', !data.is_historical);
+    $('#dashCalendarTodayBtn').toggleClass('d-none', !data.is_historical);
     const periodTpl = langData['dash_period_suffix'] || ' ({month} {year})';
     const periodLabel = data.is_historical ? periodTpl.replace('{month}', langData['month_' + data.selected_month] || data.selected_month).replace('{year}', data.selected_year) : '';
     $('.dash-period-suffix').text(periodLabel);
@@ -268,13 +289,23 @@ function dashOnlineDisplayName(row) {
     const last = currentLang === 'en' ? (row.surname_en || row.surname_th) : (row.surname_th || row.surname_en);
     return [first, last].filter(Boolean).join(' ') || row.employee_no || '-';
 }
+// 2026-09-07, explicit request: "ผู้ใช้งานออนไลน์ตอนนี้ 420 นาทีที่แล้ว แสดงแสดงเป็นชั่วโมง นาที ดีกว่าครับ"
+// -- a stale "since" this far out (7 hours) is realistically a session that never got a clean
+// logout (tab closed without hitting Switch App/Logout), so anything in this range genuinely can
+// run into the hundreds of minutes -- past 60 it's shown as hours(+minutes) instead.
 function dashRelativeMinutesAgo(isoDateTime) {
     if (!isoDateTime) return '';
     const then = new Date(String(isoDateTime).replace(' ', 'T'));
     if (isNaN(then.getTime())) return '';
     const minutes = Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
     if (minutes < 1) return langData['dash_online_just_now'] || 'Just now';
-    return (langData['dash_online_minutes_ago'] || '{n}m ago').replace('{n}', minutes);
+    if (minutes < 60) return (langData['dash_online_minutes_ago'] || '{n}m ago').replace('{n}', minutes);
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (remainingMinutes === 0) {
+        return (langData['dash_online_hours_ago_no_minutes'] || '{h}h ago').replace('{h}', hours);
+    }
+    return (langData['dash_online_hours_ago'] || '{h}h {m}m ago').replace('{h}', hours).replace('{m}', remainingMinutes);
 }
 function dashOnlineUserAvatarHtml(row) {
     const photo = row.profile_photo_thumbnail_path || row.profile_photo_path;
@@ -359,68 +390,11 @@ function renderPayrollWidgets(payroll, canViewAmounts) {
 
     const counts = payroll.counts || {};
     ['draft', 'pending_approval', 'approved', 'paid', 'locked'].forEach(function (state) {
-        $(`#dashStationRow .station-card[data-state="${state}"] .station-count`).text(counts[state] || 0);
+        $(`#dashPipelineFlow .dash-pipeline-step[data-state="${state}"] .dash-pipeline-step-count`).text(counts[state] || 0);
     });
 
-    renderPipelineDonut(counts);
     renderCostTrendChart(canViewAmounts ? (payroll.cost_trend || []) : null);
     renderRecentRuns(payroll.recent_runs || [], canViewAmounts);
-}
-
-// 2026-09-02, explicit request: "หน้า Dashboard อยากให้เพิ่มกราฟ และอะไรให้ดูมีความเป็น Payroll" -- Chart.js
-// (node_modules, loaded by dashboard.php itself right before this file -- see that view's own
-// comment on why it's not in the global footer). Same solid state colors this app's own
-// `.station-card-sm.active[data-state="..."]` rules already use elsewhere (Process List's filter
-// chevrons), so the donut reads as "the same states, just a different shape" rather than
-// introducing a new color language.
-const DASH_STATE_COLORS = {
-    draft: '#64748b',
-    pending_approval: '#f59e0b',
-    approved: '#0ea5e9',
-    paid: '#16a34a',
-    locked: '#4f46e5',
-};
-const DASH_STATE_LABEL_KEYS = {
-    draft: 'state_draft',
-    pending_approval: 'state_pending_approval',
-    approved: 'state_approved',
-    paid: 'state_paid',
-    locked: 'state_locked',
-};
-let dashPipelineDonutChart = null;
-function renderPipelineDonut(counts) {
-    const $wrap = $('#dashPipelineDonutWrap');
-    const $canvas = $('#dashPipelineDonut');
-    if (!$canvas.length || typeof Chart === 'undefined') return;
-    const states = Object.keys(DASH_STATE_COLORS);
-    const total = states.reduce((sum, s) => sum + (Number(counts[s]) || 0), 0);
-    if (!total) {
-        $wrap.addClass('d-none');
-        if (dashPipelineDonutChart) { dashPipelineDonutChart.destroy(); dashPipelineDonutChart = null; }
-        return;
-    }
-    $wrap.removeClass('d-none');
-    const labels = states.map(s => langData[DASH_STATE_LABEL_KEYS[s]] || s);
-    const data = states.map(s => Number(counts[s]) || 0);
-    const colors = states.map(s => DASH_STATE_COLORS[s]);
-    if (dashPipelineDonutChart) {
-        dashPipelineDonutChart.data.labels = labels;
-        dashPipelineDonutChart.data.datasets[0].data = data;
-        dashPipelineDonutChart.data.datasets[0].backgroundColor = colors;
-        dashPipelineDonutChart.update();
-        return;
-    }
-    dashPipelineDonutChart = new Chart($canvas[0].getContext('2d'), {
-        type: 'doughnut',
-        data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            aspectRatio: 1,
-            cutout: '65%',
-            plugins: { legend: { display: false }, tooltip: { enabled: true } },
-        },
-    });
 }
 
 let dashCostTrendChartInstance = null;
@@ -500,27 +474,86 @@ function renderRecentRuns(rows, canViewAmounts) {
     });
 }
 
-// ==================== Month/Year historical picker (2026-09-06) ====================
-// A plain client-side range (current year back 5) rather than an "only years with real data"
-// endpoint like the Reports page's own #reportsPeriodYear -- this picker's own purpose is broader
-// than statutory reports (headcount/holidays/calendar events can all predate any payroll run ever
-// existing), so restricting it to years with run data would hide genuinely useful history.
-function dashPopulateYearOptions() {
-    const $sel = $('#dashPeriodYear').empty();
-    const nowYear = new Date().getFullYear();
-    for (let y = nowYear; y >= nowYear - 5; y--) {
-        $sel.append(`<option value="${y}">${y}</option>`);
+// ==================== Month/Year period picker (2026-09-07 redesign) ====================
+// Replaces the old 2-plain-<select> bar (month + year, both select2) with a single button that
+// opens a small calendar-style popover: year navigation on top, a 12-month grid below -- reads as
+// "pick a period" the way a real calendar control does, instead of two bare dropdowns. Also removes
+// the only `.select2-native` element this page had (see loadDashboardSummary()'s own docblock for
+// why that was the actual root cause of the "loads twice" bug this same redesign fixes).
+// `dashSelectedYear`/`dashSelectedMonth` are the CURRENTLY LOADED period (kept in sync from
+// renderDashboard(), the authoritative source); `dashPickerViewYear` is only which year the popover
+// is currently showing (lets you browse other years without changing what's loaded until you
+// actually click a month).
+let dashSelectedYear = null;
+let dashSelectedMonth = null;
+let dashPickerViewYear = new Date().getFullYear();
+
+function dashUpdatePeriodPickerLabel() {
+    if (!dashSelectedYear || !dashSelectedMonth) return;
+    const monthLabel = langData['month_' + dashSelectedMonth] || dashSelectedMonth;
+    $('#dashPeriodPickerLabel').text(`${monthLabel} ${dashSelectedYear}`);
+}
+function dashRenderPeriodPickerMonths() {
+    $('#dashPeriodPickerYearLabel').text(dashPickerViewYear);
+    const $grid = $('#dashPeriodPickerMonths').empty();
+    for (let m = 1; m <= 12; m++) {
+        const isSelected = dashSelectedYear === dashPickerViewYear && dashSelectedMonth === m;
+        const label = langData['month_' + m] || m;
+        $grid.append(`<button type="button" class="dash-period-picker-month-btn${isSelected ? ' active' : ''}" data-month="${m}">${dashEscapeHtml(label)}</button>`);
     }
 }
-$(document).on('change', '#dashPeriodMonth, #dashPeriodYear', function () {
-    const year = $('#dashPeriodYear').val();
-    const month = $('#dashPeriodMonth').val();
-    if (!year || !month) return;
-    loadDashboardSummary(year, month);
+$(document).on('click', '#dashPeriodPickerBtn', function (e) {
+    e.stopPropagation();
+    const $pop = $('#dashPeriodPickerPop');
+    if (!$pop.hasClass('d-none')) {
+        $pop.addClass('d-none');
+        return;
+    }
+    dashPickerViewYear = dashSelectedYear || new Date().getFullYear();
+    dashRenderPeriodPickerMonths();
+    $pop.removeClass('d-none');
 });
-$(document).on('click', '#dashPeriodResetBtn', function () {
+$(document).on('click', '#dashPeriodPickerPop', function (e) { e.stopPropagation(); });
+$(document).on('click', function () {
+    $('#dashPeriodPickerPop').addClass('d-none');
+});
+$(document).on('click', '#dashPeriodYearPrevBtn', function () {
+    dashPickerViewYear--;
+    dashRenderPeriodPickerMonths();
+});
+$(document).on('click', '#dashPeriodYearNextBtn', function () {
+    dashPickerViewYear++;
+    dashRenderPeriodPickerMonths();
+});
+$(document).on('click', '.dash-period-picker-month-btn', function () {
+    const month = Number($(this).data('month'));
+    $('#dashPeriodPickerPop').addClass('d-none');
+    if (month === dashSelectedMonth && dashPickerViewYear === dashSelectedYear) return;
+    loadDashboardSummary(dashPickerViewYear, month);
+});
+$(document).on('click', '#dashPeriodBackToCurrentBtn', function () {
+    $('#dashPeriodPickerPop').addClass('d-none');
     loadDashboardSummary();
 });
+$(document).on('click', '#dashCalendarTodayBtn', function () {
+    $('#dashPeriodPickerPop').addClass('d-none');
+    loadDashboardSummary();
+});
+
+// 2026-09-07, explicit request: "กด < > ไปดูได้" -- one-month-at-a-time step buttons flanking the
+// picker inside the Calendar card's own nav row (see dashboard.php's own .dash-calendar-nav). Same
+// loadDashboardSummary(year, month) entry point the popover's own month grid already uses -- this
+// is just a quicker way to reach an ADJACENT month without opening it.
+function dashStepPeriod(delta) {
+    if (!dashSelectedYear || !dashSelectedMonth) return;
+    let year = dashSelectedYear;
+    let month = dashSelectedMonth + delta;
+    if (month < 1) { month = 12; year -= 1; }
+    else if (month > 12) { month = 1; year += 1; }
+    loadDashboardSummary(year, month);
+}
+$(document).on('click', '#dashPeriodPrevBtn', function () { dashStepPeriod(-1); });
+$(document).on('click', '#dashPeriodNextBtn', function () { dashStepPeriod(1); });
 
 // ==================== Calendar widget (2026-09-06) ====================
 // Confirmed via AskUserQuestion: holidays + payroll cutoff/payment dates + probation/internship end
@@ -650,35 +683,7 @@ function renderDepartmentChart(rows) {
     });
 }
 
-// 2026-08-29, explicit request: notification summary card, see this file's own dashNotifSection
-// comment in dashboard.php. notifItemHtml()/BASE_URL are defined in notifications.js, loaded
-// globally on every page (layout/header.php) before this file's own <script> tag at the bottom of
-// dashboard.php, so both are already available here with no extra require.
-function loadDashboardNotifications() {
-    $.getJSON(`${BASE_URL}/api/notification.list`, { offset: 0, limit: 5 }, function (res) {
-        if (!res.status) return;
-        const rows = res.data || [];
-        $('#dashNotifEmpty').toggleClass('d-none', rows.length > 0);
-        $('#dashNotifList').find('.nav-notif-item').remove();
-        rows.forEach(item => $('#dashNotifList').append(typeof notifItemHtml === 'function' ? notifItemHtml(item) : ''));
-    });
-}
 $(document).ready(function () {
-    // 2026-09-06, Dashboard redesign: month/year picker init -- see this file's own
-    // dashPopulateYearOptions()/#dashPeriodMonth,#dashPeriodYear change handler docblocks. Set to
-    // today's own year/month before the first fetch even returns, so the picker never shows blank
-    // while loadDashboardSummary()'s own default (live) view is loading -- renderDashboard() will
-    // reconcile these to data.selected_year/_month once the real response lands regardless.
-    dashPopulateYearOptions();
-    if (typeof initSelect2 === 'function') {
-        initSelect2('#dashPeriodMonth', { mode: 'static' });
-        initSelect2('#dashPeriodYear', { mode: 'native' });
-    }
-    const now = new Date();
-    $('#dashPeriodYear').val(now.getFullYear()).trigger('change.select2');
-    $('#dashPeriodMonth').val(now.getMonth() + 1).trigger('change.select2');
-
     loadDashboardSummary();
-    loadDashboardNotifications();
     dashCheckPendingAnnouncements();
 });

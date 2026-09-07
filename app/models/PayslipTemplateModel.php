@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/TemplateDesignerModelTrait.php';
+require_once __DIR__ . '/AuditLogModel.php';
 
 /**
  * Payslip Template designer backend -- rebuilt as a free-form canvas designer (2026-08-25, explicit
@@ -43,9 +44,11 @@ class PayslipTemplateModel {
     use TemplateDesignerModelTrait;
 
     private PDO $db;
+    private AuditLogModel $auditLog;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /* ==================== TemplateDesignerModelTrait's own abstract table-name hooks ==================== */
@@ -400,7 +403,7 @@ class PayslipTemplateModel {
      *   header_text_th?/en?/footer_text_th?/en?:string, is_default?:bool, status?:string,
      *   page_size?:string, orientation?:string, margin_mm?:float, logo_path?:?string, elements:array}
      */
-    public function save(int $compId, array $data, int $userId): array {
+    public function save(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $language = (string)($data['language'] ?? '');
         if (!in_array($language, self::LANGUAGES, true)) {
             return ['status' => false, 'message' => 'Invalid language.'];
@@ -477,7 +480,15 @@ class PayslipTemplateModel {
             }
             $rowLanguage = $language;
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id, language FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                // Platform Hardening Phase 6 (batch 5): SELECT * (was `id, language` -- just enough
+                // for this method's own pre-existing logic) so the full row is available to
+                // AuditLogModel::record() as the "old" side of the header-row diff below. Only the
+                // HEADER row's own scalar columns are diffed here, same "don't diff child-table
+                // replace-semantics" precedent this pilot already established for
+                // AttendanceDeductionRuleModel's brackets/ApprovalWorkflowModel's steps -- the
+                // elements/assignments arrays (payslip_template_elements/_assignments, both
+                // DELETE+INSERT every save a few lines down) are NOT diffed.
+                $stmtCheck = $this->db->prepare("SELECT * FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
                 $existingRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
                 if (!$existingRow) {
@@ -508,6 +519,10 @@ class PayslipTemplateModel {
                 }
                 $stmt->execute($params);
                 $templateId = $id;
+                $stmtNewHeaderRow = $this->db->prepare("SELECT * FROM `payslip_templates` WHERE id = :id");
+                $stmtNewHeaderRow->execute([':id' => $templateId]);
+                $newHeaderRow = $stmtNewHeaderRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'payslip_templates', $templateId, 'update', $existingRow, $newHeaderRow, $userId, 'web', $ip, $userAgent);
             } else {
                 // 2026-08-25 follow-up, "รูปแบบการทำเหมือนกัน" -- every template gets a pair_key from
                 // creation onward, either the caller's own (generateOtherLanguage()/duplicatePair()
@@ -668,24 +683,28 @@ class PayslipTemplateModel {
         }
     }
 
-    public function delete(int $compId, int $id, int $userId): array {
-        $stmtCheck = $this->db->prepare("SELECT id FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+    public function delete(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        $stmtCheck = $this->db->prepare("SELECT * FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-        if (!$stmtCheck->fetch()) {
+        $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $stmt = $this->db->prepare("UPDATE `payslip_templates` SET status = 'deleted', is_default = 0, deleted_by = :deleted_by, deleted_at = CURRENT_TIMESTAMP WHERE id = :id");
         $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+        // Same soft-delete-is-a-status-change convention as every other model in this audit log.
+        $this->auditLog->record($compId, 'payslip_templates', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted', 'is_default' => 0]), $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 
-    public function toggleStatus(int $compId, int $id, int $userId): array {
-        $stmt = $this->db->prepare("SELECT status FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+    public function toggleStatus(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        $stmt = $this->db->prepare("SELECT * FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
-        $current = $stmt->fetchColumn();
-        if ($current === false) {
+        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
+        $current = $existing['status'];
         $newStatus = $current === 'active' ? 'inactive' : 'active';
         $sql = "UPDATE `payslip_templates` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP";
         $params = [':status' => $newStatus, ':updated_by' => $userId, ':id' => $id];
@@ -695,6 +714,11 @@ class PayslipTemplateModel {
         }
         $sql .= " WHERE id = :id";
         $this->db->prepare($sql)->execute($params);
+        $newRow = array_merge($existing, ['status' => $newStatus]);
+        if ($newStatus === 'inactive') {
+            $newRow['is_default'] = 0;
+        }
+        $this->auditLog->record($compId, 'payslip_templates', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Updated successfully.', 'new_status' => $newStatus];
     }
 
@@ -703,7 +727,7 @@ class PayslipTemplateModel {
      *  EmploymentCertificateTemplateModel::setDefault()). Still genuinely used, unlike Employment
      *  Certificate Template's own version (kept only as a config-only precedent) -- is_default really
      *  does control PaySlipReport::generate()'s fallback via getDefault(). */
-    public function setDefault(int $compId, int $id, int $userId): array {
+    public function setDefault(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $template = $this->get($compId, $id);
         if (!$template) {
             return ['status' => false, 'message' => 'Record not found.'];
@@ -715,6 +739,11 @@ class PayslipTemplateModel {
                 ->execute([':comp_id' => $compId, ':language' => $template['language']]);
             $this->db->prepare("UPDATE `payslip_templates` SET is_default = 1, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
                 ->execute([':updated_by' => $userId, ':id' => $id]);
+            // Only THIS row's own is_default flip is logged (0->1) -- the other templates that just
+            // lost default status via the sibling-clearing UPDATE above are not separately logged,
+            // same "log the record the admin acted on, not every side effect" precedent every other
+            // "single-default-per-scope" toggle in this app already follows implicitly.
+            $this->auditLog->record($compId, 'payslip_templates', $id, 'update', ['is_default' => (int)$template['is_default']], ['is_default' => 1], $userId, 'web', $ip, $userAgent);
             if ($own) { $this->db->commit(); }
             return ['status' => true, 'message' => 'Default template updated.'];
         } catch (PDOException $e) {
@@ -729,17 +758,19 @@ class PayslipTemplateModel {
      * `publish_status` is ever changed (save()/autosave never touch it, see that method's own
      * comment), callable both from the List page's own toggle and from a switch inside the editor.
      */
-    public function setPublishStatus(int $compId, int $id, string $status, int $userId): array {
+    public function setPublishStatus(int $compId, int $id, string $status, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         if (!in_array($status, ['draft', 'public'], true)) {
             return ['status' => false, 'message' => 'Invalid publish status.'];
         }
-        $stmt = $this->db->prepare("SELECT id FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt = $this->db->prepare("SELECT id, publish_status FROM `payslip_templates` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
-        if (!$stmt->fetch()) {
+        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $this->db->prepare("UPDATE `payslip_templates` SET publish_status = :publish_status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
             ->execute([':publish_status' => $status, ':updated_by' => $userId, ':id' => $id]);
+        $this->auditLog->record($compId, 'payslip_templates', $id, 'update', ['publish_status' => $existing['publish_status']], ['publish_status' => $status], $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Updated successfully.', 'publish_status' => $status];
     }
 
