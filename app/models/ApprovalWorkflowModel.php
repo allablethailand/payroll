@@ -15,11 +15,14 @@ declare(strict_types=1);
  * resolution unioned together), not just a single role's holders. See ApprovalRequestModel for how
  * that pool gets snapshotted into `approval_request_step_approvers` once a request reaches a step.
  */
+require_once __DIR__ . '/AuditLogModel.php';
 class ApprovalWorkflowModel {
     private PDO $db;
+    private AuditLogModel $auditLog;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     public function documentTypeOptions(string $search, int $page, int $limit): array {
@@ -265,7 +268,7 @@ class ApprovalWorkflowModel {
         return $row ?: null;
     }
 
-    public function save(int $compId, array $data, int $userId): array {
+    public function save(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
         $workflowName = trim((string)($data['workflow_name'] ?? ''));
@@ -304,9 +307,10 @@ class ApprovalWorkflowModel {
             }
 
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `approval_workflows` WHERE id = :id AND comp_id = :comp_id AND status != 'deleted'");
+                $stmtCheck = $this->db->prepare("SELECT * FROM `approval_workflows` WHERE id = :id AND comp_id = :comp_id AND status != 'deleted'");
                 $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-                if (!$stmtCheck->fetch()) {
+                $existingWorkflow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existingWorkflow) {
                     if ($own) { $this->db->rollBack(); }
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
@@ -314,6 +318,10 @@ class ApprovalWorkflowModel {
                     status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
                 $stmt->execute([':name' => $workflowName, ':description' => $description, ':status' => $status, ':updated_by' => $userId, ':id' => $id]);
                 $workflowId = $id;
+                $stmtNewRow = $this->db->prepare("SELECT * FROM `approval_workflows` WHERE id = :id");
+                $stmtNewRow->execute([':id' => $workflowId]);
+                $newWorkflowRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'approval_workflows', $workflowId, 'update', $existingWorkflow, $newWorkflowRow, $userId, 'web', $ip, $userAgent);
             } else {
                 $stmt = $this->db->prepare("INSERT INTO `approval_workflows` (comp_id, workflow_name, description, status, created_by)
                     VALUES (:comp_id, :name, :description, :status, :created_by)");
@@ -378,10 +386,11 @@ class ApprovalWorkflowModel {
         }
     }
 
-    public function delete(int $compId, int $id, int $userId): array {
-        $stmtCheck = $this->db->prepare("SELECT id FROM `approval_workflows` WHERE id = :id AND comp_id = :comp_id AND status != 'deleted'");
+    public function delete(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        $stmtCheck = $this->db->prepare("SELECT * FROM `approval_workflows` WHERE id = :id AND comp_id = :comp_id AND status != 'deleted'");
         $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-        if (!$stmtCheck->fetch()) {
+        $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $stmtPending = $this->db->prepare("SELECT COUNT(*) FROM `approval_requests` WHERE workflow_id = :id AND status = 'pending'");
@@ -391,10 +400,11 @@ class ApprovalWorkflowModel {
         }
         $stmt = $this->db->prepare("UPDATE `approval_workflows` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
         $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+        $this->auditLog->record($compId, 'approval_workflows', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 
-    public function toggleStatus(int $compId, int $id, int $userId, string $newStatus): array {
+    public function toggleStatus(int $compId, int $id, int $userId, string $newStatus, ?string $ip = null, ?string $userAgent = null): array {
         if (!in_array($newStatus, ['active', 'inactive'], true)) {
             return ['status' => false, 'message' => 'Invalid status.'];
         }
@@ -410,6 +420,7 @@ class ApprovalWorkflowModel {
         }
         $stmt = $this->db->prepare("UPDATE `approval_workflows` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id AND comp_id = :comp_id");
         $stmt->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id, ':comp_id' => $compId]);
+        $this->auditLog->record($compId, 'approval_workflows', $id, 'update', ['status' => $workflow['status']], ['status' => $newStatus], $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Status updated successfully.'];
     }
 
@@ -508,7 +519,7 @@ class ApprovalWorkflowModel {
      *   group_type:string, requires_previous_step?:bool} $data
      * @return array{status:bool, message:string, workflow_id?:int, step_id?:int}
      */
-    public function stepSave(int $compId, array $data, int $userId): array {
+    public function stepSave(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $documentTypeCode = (string)($data['document_type_code'] ?? '');
         if ($documentTypeCode === '') {
             return ['status' => false, 'message' => 'Missing document_type_code.'];
@@ -557,9 +568,10 @@ class ApprovalWorkflowModel {
                     if ($own) { $this->db->rollBack(); }
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
-                $stmtCheck = $this->db->prepare("SELECT id FROM `approval_workflow_steps` WHERE id = :id AND workflow_id = :wf AND status = 'active'");
+                $stmtCheck = $this->db->prepare("SELECT * FROM `approval_workflow_steps` WHERE id = :id AND workflow_id = :wf AND status = 'active'");
                 $stmtCheck->execute([':id' => $stepId, ':wf' => $workflow['id']]);
-                if (!$stmtCheck->fetch()) {
+                $existingStep = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existingStep) {
                     if ($own) { $this->db->rollBack(); }
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
@@ -593,6 +605,13 @@ class ApprovalWorkflowModel {
                 $insApprover->execute([':step_id' => $stepId, ':approver_type' => $a['approver_type'], ':approver_id' => $a['approver_id']]);
             }
 
+            if (isset($existingStep) && $existingStep !== null) {
+                $stmtNewStep = $this->db->prepare("SELECT * FROM `approval_workflow_steps` WHERE id = :id");
+                $stmtNewStep->execute([':id' => $stepId]);
+                $newStep = $stmtNewStep->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'approval_workflow_steps', $stepId, 'update', $existingStep, $newStep, $userId, 'web', $ip, $userAgent);
+            }
+
             if ($own) {
                 $this->db->commit();
             }
@@ -609,8 +628,8 @@ class ApprovalWorkflowModel {
      *  remaining active steps to a contiguous 1..N sequence in their existing order -- same
      *  end-state a full save() would produce, keeps `requires_previous_step` gating comparisons
      *  (`step_order < :step_order` in ApprovalRequestModel) sane after removing one from the middle. */
-    public function stepDelete(int $compId, int $stepId, int $userId): array {
-        $stmt = $this->db->prepare("SELECT s.id, s.workflow_id FROM `approval_workflow_steps` s
+    public function stepDelete(int $compId, int $stepId, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        $stmt = $this->db->prepare("SELECT s.* FROM `approval_workflow_steps` s
             JOIN `approval_workflows` w ON w.id = s.workflow_id
             WHERE s.id = :id AND w.comp_id = :comp_id AND s.status = 'active'");
         $stmt->execute([':id' => $stepId, ':comp_id' => $compId]);
@@ -625,6 +644,7 @@ class ApprovalWorkflowModel {
             }
             $this->db->prepare("UPDATE `approval_workflow_steps` SET status = 'deleted', deleted_by = :deleted_by, deleted_at = CURRENT_TIMESTAMP WHERE id = :id")
                 ->execute([':deleted_by' => $userId, ':id' => $stepId]);
+            $this->auditLog->record($compId, 'approval_workflow_steps', $stepId, 'update', $row, array_merge($row, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
             $stmtRemaining = $this->db->prepare("SELECT id FROM `approval_workflow_steps` WHERE workflow_id = :wf AND status = 'active' ORDER BY step_order ASC");
             $stmtRemaining->execute([':wf' => $row['workflow_id']]);
             $upd = $this->db->prepare("UPDATE `approval_workflow_steps` SET step_order = :order WHERE id = :id");
@@ -648,14 +668,19 @@ class ApprovalWorkflowModel {
      *  mirrors). Sets step_order = array position (1-indexed) for every id in `$stepIds`. The
      *  given id set must EXACTLY match this document type's current active step ids (no partial
      *  reorder, no smuggling in a step from a different workflow/company). */
-    public function stepsSort(int $compId, string $documentTypeCode, array $stepIds): array {
+    public function stepsSort(int $compId, string $documentTypeCode, array $stepIds, int $userId = 0, ?string $ip = null, ?string $userAgent = null): array {
         $workflow = $this->getByDocumentType($compId, $documentTypeCode);
         if (!$workflow) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
-        $stmt = $this->db->prepare("SELECT id FROM `approval_workflow_steps` WHERE workflow_id = :wf AND status = 'active'");
+        $stmt = $this->db->prepare("SELECT id, step_order FROM `approval_workflow_steps` WHERE workflow_id = :wf AND status = 'active'");
         $stmt->execute([':wf' => $workflow['id']]);
-        $currentIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        $currentRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $currentOrderById = [];
+        foreach ($currentRows as $r) {
+            $currentOrderById[(int)$r['id']] = (int)$r['step_order'];
+        }
+        $currentIds = array_map('intval', array_keys($currentOrderById));
         $stepIds = array_map('intval', $stepIds);
         $sortedCurrent = $currentIds;
         sort($sortedCurrent);
@@ -671,7 +696,12 @@ class ApprovalWorkflowModel {
             }
             $upd = $this->db->prepare("UPDATE `approval_workflow_steps` SET step_order = :order WHERE id = :id AND workflow_id = :wf");
             foreach ($stepIds as $i => $id) {
-                $upd->execute([':order' => $i + 1, ':id' => $id, ':wf' => $workflow['id']]);
+                $newOrder = $i + 1;
+                $upd->execute([':order' => $newOrder, ':id' => $id, ':wf' => $workflow['id']]);
+                $oldOrder = $currentOrderById[$id] ?? null;
+                if ($oldOrder !== null && $oldOrder !== $newOrder) {
+                    $this->auditLog->record($compId, 'approval_workflow_steps', $id, 'update', ['step_order' => $oldOrder], ['step_order' => $newOrder], $userId ?: null, 'web', $ip, $userAgent);
+                }
             }
             if ($own) {
                 $this->db->commit();

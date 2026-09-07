@@ -90,24 +90,24 @@
     </div>
 
     <!-- RUNNING NUMBER (2026-08-23, explicit request: "ยังไม่สามารถตั้งค่าได้จริง" -- was a static
-         mockup table with no backend at all; now a real per-company settings grid (fixed 4 rows,
+         mockup table with no backend at all; a real per-company settings grid (fixed 4 rows,
          no add/delete -- document_type_code is code-tied, see DocumentNumberingModel's own
-         docblock), matching the Permission Matrix's "fixed grid, not a DataTable" precedent. -->
+         docblock) followed.
+         2026-09-04, Backlog Phase 11, T061 ("redesigned as cards with example settings shown;
+         simplify the form; wire into real document generation; support comp_code") -- the plain
+         table + hidden-in-a-modal preview replaced by one .settings-info-card per document type
+         (same markup convention the Data Sync page's own per-entity cards already established --
+         see data-sync.php), each showing the current format AND a live "next number" preview
+         directly on the card (previously only visible after opening the Edit modal) -- this is
+         the "example settings shown" simplification: seeing what a document type's numbering
+         actually produces no longer requires opening anything. PAYSLIP/BANK_TRANSFER are now real
+         wired consumers (PaySlipReport/BankTransferFileReport); WHT_CERT stays config-only (no
+         real withholding-certificate generator exists anywhere in this codebase to wire it to --
+         confirmed via AskUserQuestion, same "built ahead of its consumer" precedent this app
+         already has elsewhere) and its own card says so. -->
     <div class="tab-pane fade" id="tab-run">
       <h6 class="fw-bold mb-3" data-i18n="document_running_number_format">Document Number Format</h6>
-      <table class="table pl-table mb-0">
-        <thead>
-          <tr>
-            <th data-i18n="doc_numbering_type">Document Type</th>
-            <th data-i18n="doc_numbering_prefix">Format (Prefix)</th>
-            <th class="text-end" data-i18n="doc_numbering_digits">Digits</th>
-            <th class="text-end" data-i18n="doc_numbering_current">Current Number</th>
-            <th data-i18n="doc_numbering_reset">Reset</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="documentNumberingBody"></tbody>
-      </table>
+      <div class="row g-3" id="documentNumberingCards"></div>
     </div>
 
     <!-- EMAIL LOG (2026-08-31, explicit request: "สร้าง Cronjob สำหรับการส่งอีเมล และเพิ่มหน้าให้ดู Log
@@ -149,7 +149,7 @@
         </div>
       </div>
       <div class="station-filter" id="emailQueueStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="emailQueueStationFilterToggle" title="Toggle filter">
           <i class="fas fa-chevron-up"></i>
         </button>

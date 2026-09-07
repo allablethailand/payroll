@@ -220,6 +220,31 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     height: 75px;
     width: auto;
 }
+/* 2026-09-04, Backlog Phase 11, T068 -- the logged-in company's own logo, shown alongside (never
+   replacing) the Origami Payroll branding above. Fixed max-height/max-width box + object-fit:contain
+   (same sizing discipline Company Profile's own .cp-logo-preview-box already applies to this same
+   logo_path elsewhere) keeps an oddly-shaped/oversized uploaded image from ever breaking the navbar's
+   own fixed height or crowding .nav-right's icons, regardless of the source image's real dimensions. */
+.nav-logo-divider {
+    width: 1px;
+    align-self: stretch;
+    margin: 14px 4px;
+    background: #e5e5e5;
+}
+.nav-company-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    max-width: 140px;
+}
+.nav-company-logo img {
+    max-height: 48px;
+    max-width: 140px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
 .nav-right {
     display: flex;
     align-items: center;
@@ -627,6 +652,44 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: #2d3748;
     text-align: center;
 }
+/* 2026-09-04, Backlog Phase 11, T069 Step 1 -- theme toggle, same section as Font Size just above.
+   Deliberately kept hardcoded/light-only colors here, matching .user-settings-font-preview's own
+   precedent immediately above -- this whole modal's custom (non-Bootstrap-native) components are
+   out of scope for THIS step (per-page/per-component dark conversion is a later, separate T069
+   step) so it stays visually consistent with its own sibling section rather than half-converting
+   just this one new piece ahead of the rest. */
+.user-settings-theme-options {
+    display: flex;
+    gap: 8px;
+}
+.user-settings-theme-option {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background-color: #f8fafc;
+    color: #718096;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color .15s ease, color .15s ease, background-color .15s ease;
+}
+.user-settings-theme-option i {
+    font-size: 1.1rem;
+}
+.user-settings-theme-option:hover {
+    border-color: #FF9900;
+    color: #FF9900;
+}
+.user-settings-theme-option.active {
+    border-color: #FF9900;
+    background-color: #fff4e0;
+    color: #FF9900;
+    font-weight: 600;
+}
 /* .user-settings-lang-* rules removed 2026-08-29 (same-day follow-up: "ตัวเปลี่ยนภาษาตัดออกจากใน
    modal setting ครับ เพราะมีใน header อยู่แล้ว") -- the language picker markup that used these
    classes was removed from #userSettingsModal in header.php; the top-right nav-lang-dropdown is
@@ -897,6 +960,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     .nav-logo img {
         height: 30px;
     }
+    .nav-company-logo {
+        height: 28px;
+        max-width: 80px;
+    }
+    .nav-company-logo img {
+        max-height: 28px;
+        max-width: 80px;
+    }
     .nav-right {
         gap: 8px;
     }
@@ -1048,8 +1119,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    ระเบียบ"). Reuse this anywhere a settings page needs a titled section that's visually distinct from
    a plain .card-surface, rather than inventing a new one-off card class per page. */
 .settings-info-card {
-    background: #fff;
-    border: 1px solid #eef0f2;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
     border-radius: 14px;
     box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
     overflow: hidden;
@@ -1060,7 +1131,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     gap: .75rem;
     padding: .9rem 1.25rem;
     background: linear-gradient(135deg, rgba(255, 153, 0, .1), rgba(255, 153, 0, .03));
-    border-bottom: 1px solid rgba(0, 0, 0, .06);
+    border-bottom: 1px solid var(--app-border);
 }
 .settings-info-card-header i {
     color: #FF9900;
@@ -1081,12 +1152,12 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .settings-info-card-title {
     font-weight: 700;
-    color: #333;
+    color: var(--app-heading);
     font-size: .95rem;
     margin: 0;
 }
 .settings-info-card-desc {
-    color: #8a939e;
+    color: var(--app-text-muted);
     font-size: .8rem;
     margin: .15rem 0 0;
 }
@@ -1104,8 +1175,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    card) so they read as one cohesive unit instead of loose stacked rows -- reuses the same
    bg-light+rounded-3 language .structure-tabs-wrap already established elsewhere in this app. */
 .settings-subgroup {
-    background: #fafbfc;
-    border: 1px solid #eef0f2;
+    background: var(--app-bg);
+    border: 1px solid var(--app-border);
     border-radius: 10px;
     padding: 1rem 1.1rem;
 }
@@ -1114,7 +1185,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     font-weight: 700;
     letter-spacing: .04em;
     text-transform: uppercase;
-    color: #98a2b3;
+    color: var(--app-text-muted);
     margin-bottom: .75rem;
 }
 
@@ -1184,7 +1255,10 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     padding: 0.25rem 0.4rem;
 }
 .bulk-entry-grid tbody tr:nth-child(even) {
-    background-color: #fafafa;
+    /* T069 Step 3 -- was a hardcoded #fafafa; --app-hover-bg is this file's own "slightly lifted
+       neutral surface" token, the correct semantic fit for a zebra-stripe tint. Same swap applied
+       below to .sync-detail-table's and .permission-matrix-table's own even-row rules. */
+    background-color: var(--app-hover-bg);
 }
 .bulk-entry-grid .select2-container {
     width: 100% !important;
@@ -1195,8 +1269,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     width: 36px;
     min-width: 36px !important;
     text-align: center;
-    background-color: #f3f3f3;
-    color: #6c757d;
+    background-color: var(--app-hover-bg);
+    color: var(--app-text-muted);
     font-family: 'Courier New', monospace;
     font-size: 0.8125rem;
     user-select: none;
@@ -1395,7 +1469,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     flex: 0 0 auto;
 }
 .structure-tabs-wrap .structure-tabs .nav-link {
-    color: #6c757d;
+    color: var(--app-text-muted);
     font-size: 0.9rem;
     padding: 0.4rem 1rem;
 }
@@ -1416,12 +1490,61 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-results__option--highlighted {
     background-color: rgba(255, 153, 0, .12);
-    color: #212529;
+    /* was a hardcoded #212529 -- on a translucent-orange tint sitting over --app-surface-bg this
+       needs to flip to a light color in dark mode too, same fix as the datepicker "today" cell
+       below. --app-heading (not --app-text) since a highlighted option is the more prominent state. */
+    color: var(--app-heading);
 }
 .select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-results__option--selected,
 .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option[aria-selected="true"]:not(.select2-results__option--highlighted) {
     background-color: #FF9900;
     color: #fff;
+}
+/* 2026-09-05, T069 Step 3 -- select2-bootstrap-5-theme has ZERO Bootstrap-variable usage and ZERO
+   dark-mode awareness of its own (confirmed by reading its source directly, unlike datatables.net-
+   bs5 below) -- the library's own default chrome (closed selection box, dropdown panel, search
+   field, base/placeholder text, multi-select choice chips) was never overridden by this app before
+   at all, so these are genuinely new rules, not dark-mode-specific duplicates of anything existing.
+   Written as plain (non-theme-gated) rules using this file's own --app-* tokens directly -- the
+   token itself already carries the correct light/dark value, so one rule here works in both themes
+   automatically, same pattern Step 2 used everywhere else in this file. In light mode this is a
+   deliberately tiny, essentially invisible change from the library's own bare defaults (e.g. base
+   text #212529 -> --app-text #555555, --app-surface-bg #ffffff is byte-identical to the library's
+   own #fff) -- trading a hairline light-mode difference for using the SAME text/surface color the
+   rest of this app already uses everywhere, not a regression. */
+.select2-container--bootstrap-5 .select2-selection {
+    background-color: var(--app-surface-bg);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+.select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+    color: var(--app-text);
+}
+.select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered .select2-selection__placeholder,
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__clear {
+    color: var(--app-text-muted);
+}
+.select2-container--bootstrap-5 .select2-dropdown {
+    background-color: var(--app-surface-bg);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+.select2-container--bootstrap-5 .select2-dropdown .select2-search .select2-search__field {
+    background-color: var(--app-bg);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+.select2-container--bootstrap-5 .select2-results__options .select2-results__option {
+    color: var(--app-text);
+}
+/* Multi-select "choice" chips (e.g. the checkbox-driven Assign-To pickers) -- the library gives
+   these only a border color of their own, no background, so they'd otherwise sit flush against the
+   (now dark) selection box with nothing visually separating one chip from the next. --app-hover-bg
+   is this file's own "slightly lifted neutral surface" token, the correct semantic fit here. */
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered .select2-selection__choice {
+    background-color: var(--app-hover-bg);
+    border-color: var(--app-border);
+    color: var(--app-text);
 }
 
 /* Bootstrap-datepicker — brand orange theme (applies app-wide, all .datepicker inputs share this design system) */
@@ -1430,6 +1553,26 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, .15);
     border: 1px solid rgba(255, 153, 0, .25);
     padding: 0.5rem;
+    /* 2026-09-05, T069 Step 3 -- the library's own base CSS has no dark-mode awareness at all and
+       this app never gave the dropdown panel an explicit background/text color before (it only ever
+       overrode border/shadow/padding above) -- CSS-only addition, no JS init/update logic touched,
+       per this file's own documented .datepicker('update') desync-bug history. One plain rule using
+       --app-* tokens directly works in both themes, same pattern as the Select2 block above. */
+    background-color: var(--app-surface-bg);
+    color: var(--app-text);
+}
+/* Day-name header row, week/day cells, and the month/year "switch" + prev/next <th> nav all share
+   this one selector (bootstrap-datepicker renders the switch/prev/next as plain <th> too) -- the
+   library's own base CSS hardcodes a light-only text color here with no theme awareness. */
+.datepicker table tr td,
+.datepicker table tr th {
+    color: var(--app-text);
+}
+/* Previous/next-month "faded" days (bootstrap-datepicker's own .old/.new classes) -- deliberately
+   dimmer than a same-month day, using --app-text-muted instead of the plain --app-text above. */
+.datepicker table tr td.old,
+.datepicker table tr td.new {
+    color: var(--app-text-muted);
 }
 .datepicker table tr td.active.active,
 .datepicker table tr td.active:hover.active,
@@ -1444,7 +1587,9 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .datepicker table tr td.today:hover {
     background-color: rgba(255, 153, 0, .18) !important;
     background-image: none;
-    color: #212529;
+    /* was a hardcoded #212529 -- same fix as Select2's highlighted-option rule above, same reason:
+       illegible on a translucent-orange-over-dark-surface tint without it. */
+    color: var(--app-heading);
 }
 .datepicker table tr td:hover,
 .datepicker table tr th:hover {
@@ -1475,12 +1620,12 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    ========================================================================== */
 .station-filter {
     position: relative;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--app-border);
     border-radius: 10px;
     padding: 22px 44px 16px 16px;
     margin-bottom: 16px;
     margin-top: 11px;
-    background: #ffffff;
+    background: var(--app-surface-bg);
 }
 /* Collapse/expand only clips this inner wrapper -- .station-filter itself must stay
    overflow:visible or the corner label (positioned above the border) and the toggle icon get
@@ -1497,12 +1642,12 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     position: absolute;
     top: -11px;
     left: 14px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
     border-radius: 5px;
     padding: 1px 10px;
     font-size: 1rem;
-    color: #94a3b8;
+    color: var(--app-text-muted);
     z-index: 1;
 }
 .station-filter-toggle {
@@ -1519,7 +1664,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     transition: color 0.15s ease, transform 0.2s ease;
 }
 .station-filter.collapsed .station-filter-toggle {
-    color: #94a3b8;
+    color: var(--app-text-muted);
 }
 /* 2026-09-02, Platform Hardening Phase 1.6, explicit request: "ปุ่ม Clear Filter ปัจจุบันแยกลอยออกมา
    ต่างหาก...ให้เป็นส่วนหนึ่งของกรอบ/การ์ด Filter เอง" -- confirmed via audit: this WAS the standing,
@@ -1539,11 +1684,11 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .station-filter-clear-row {
     margin-top: -1px;
     padding: 8px 16px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--app-border);
     border-top: none;
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
-    background: #fff;
+    background: var(--app-surface-bg);
     display: flex;
     justify-content: flex-end;
 }
@@ -1776,10 +1921,10 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .sync-detail-table th:not(:last-child),
 .sync-detail-table td:not(:last-child) {
-    border-right: 1px solid #f2f2f2;
+    border-right: 1px solid var(--app-border);
 }
 .sync-detail-table tbody tr:nth-child(even) {
-    background-color: #fbfbfc;
+    background-color: var(--app-hover-bg);
 }
 
 /* 2026-09-02, explicit request: "หน้าจัดการสิทธิ์การใช้งาน ช่วยดูเรื่อง Design ให้อีกครั้ง" -- was a bare
@@ -1790,7 +1935,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    run wide enough to need horizontal scroll, and losing sight of which permission a checkbox belongs
    to while scrolling sideways would defeat the point of the table. */
 .permission-matrix-table {
-    border: 1px solid #eee;
+    border: 1px solid var(--app-border);
     border-radius: 10px;
 }
 .permission-matrix-table thead th {
@@ -1800,7 +1945,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     font-size: 0.9583rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    color: #6c757d;
+    color: var(--app-text-muted);
     white-space: nowrap;
 }
 .permission-matrix-table tbody td {
@@ -1808,21 +1953,21 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     vertical-align: middle;
 }
 .permission-matrix-table tbody tr:nth-child(even) {
-    background-color: #fbfbfc;
+    background-color: var(--app-hover-bg);
 }
 .permission-matrix-table th:first-child,
 .permission-matrix-table td:first-child {
     position: sticky;
     left: 0;
     background: inherit;
-    background-color: #fff;
+    background-color: var(--app-surface-bg);
     z-index: 1;
 }
 .permission-matrix-table thead th:first-child {
-    background-color: #f8f9fa;
+    background-color: var(--app-hover-bg);
 }
 .permission-matrix-table tbody tr:nth-child(even) td:first-child {
-    background-color: #fbfbfc;
+    background-color: var(--app-hover-bg);
 }
 .permission-matrix-table .perm-role-select-all {
     display: block;
@@ -1947,6 +2092,70 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 
 /* ==========================================================================
+   2026-09-05, T069 Step 3 -- SweetAlert2. Per this app's own hard convention this is the ONLY
+   alert/confirm mechanism used anywhere (native alert()/confirm() and Bootstrap modals are
+   forbidden for this purpose) -- despite that, `public/js/alert.js` has no `customClass` config and
+   there was not one single existing CSS rule targeting any `.swal2-*` selector anywhere in this file
+   before this block -- confirmed by grepping both files directly. Genuinely net-new, not a
+   "companion" to something already present, unlike the Select2/datepicker sections above.
+
+   SweetAlert2 v11's own CSS is built entirely on ~40 `--swal2-*` custom properties declared once on
+   `:root` (confirmed by reading its own source directly) -- rather than chasing down and overriding
+   every individual `.swal2-popup`/`.swal2-title`/`.swal2-html-container`/etc. selector by hand, this
+   just redefines the handful of those variables that actually carry a color, reusing this file's own
+   --app-* tokens. One plain (non-theme-gated) block works in both themes automatically, same pattern
+   as the Select2 base-chrome rules above -- and since --app-surface-bg's light value (#ffffff) is
+   byte-identical to the library's own default (--swal2-background: white) and --app-text (#555555)
+   is a hairline off the library's own default (--swal2-color: #545454), this is an essentially
+   invisible light-mode change, same "trade a hairline light-mode difference for one shared token
+   system" reasoning as the Select2 section above.
+
+   The popup itself is appended to <body> by SweetAlert2's own JS, in a separate DOM subtree from
+   whatever button/page triggered it -- not a problem here, since data-bs-theme sits on <html> and
+   every --app-* token is a plain inherited CSS custom property, not a proximity-based selector match.
+
+   The library itself ALSO ships its own complete built-in dark palette gated behind a DIFFERENT
+   attribute this app does not use (`[data-swal2-theme="dark"]`, plus its own prefers-color-scheme
+   fallback) -- deliberately NOT used here. Wiring that up would need new JS to mirror data-bs-theme
+   onto that separate attribute, and would pull in the library's own dark palette (#19191a bg) instead
+   of this app's own (--app-surface-bg #1e232c) -- overriding the underlying CSS variables directly,
+   as done below, is CSS-only (matches this whole step's own scope) and keeps a SweetAlert2 dialog
+   visually consistent with the rest of this app's own cards/modals in dark mode, not merely "also
+   dark" on its own slightly different palette.
+
+   Confirm/deny/cancel button colors (library defaults: purple/red/gray, all solid-fill + white text)
+   are deliberately left UNCHANGED in both themes -- solid, saturated, white-on-color already has
+   strong contrast against either a light or a dark popup background, same "semantic/action colors
+   stay vivid, don't get flattened into neutral gray" principle T069 Step 2 already established for
+   this file's own status/brand colors. There is also no existing brand-orange override for these
+   buttons anywhere in this app to preserve -- confirmed by grep -- so this is not a regression
+   against anything that used to be there. */
+:root {
+    --swal2-background: var(--app-surface-bg);
+    --swal2-color: var(--app-text);
+    --swal2-footer-border-color: var(--app-border);
+    --swal2-footer-color: var(--app-text);
+    --swal2-input-border: 1px solid var(--app-border);
+    --swal2-input-background: var(--app-bg);
+    --swal2-validation-message-background: var(--app-hover-bg);
+    --swal2-validation-message-color: var(--app-text);
+    --swal2-close-button-color: var(--app-text-muted);
+}
+[data-bs-theme="dark"] {
+    /* The timer progress bar (SweetAlert2's own `timer:` option) defaults to a translucent BLACK
+       overlay, tuned for a light popup -- needs to flip to a translucent WHITE overlay to stay
+       visible against a dark one. This is the one --swal2-* value that must be theme-gated rather
+       than a single token-driven rule, since it is a raw rgba() overlay tint, not a surface/text
+       role this file already has a token for. */
+    --swal2-timer-progress-bar-background: rgba(255, 255, 255, .25);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-bs-theme="light"]) {
+        --swal2-timer-progress-bar-background: rgba(255, 255, 255, .25);
+    }
+}
+
+/* ==========================================================================
    Bootstrap "primary" recolor -- brand orange (#FF9900), not Bootstrap's stock blue.
    The project convention (CLAUDE.md) has always required primary buttons to be brand
    orange, but nothing in this file was actually overriding Bootstrap's own --bs-primary
@@ -1984,6 +2193,115 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     --bs-btn-focus-shadow-rgb: 255, 153, 0;
 }
 /* ==========================================================================
+   2026-09-04, Backlog Phase 11, T069 (dark mode), Step 1 of 3 -- foundation only. Scope
+   deliberately Tier B minus the 2 canvas designers (Payslip Template/Employment Certificate
+   Template stay light-only for now, documented as a real, deliberate deferral -- their own
+   bespoke ribbon/palette/layers-panel CSS needs its own dedicated pass, not attempted here).
+
+   This block defines the token VOCABULARY every later T069 step (per-page component conversion,
+   then third-party library overrides) must consume -- --app-bg/--app-surface-bg/--app-text/
+   --app-border are the 4 fundamental colors nearly every custom component in this app's own CSS
+   ultimately reduces to. Deliberately did NOT add a dark redefinition of the --bs-primary/
+   --bs-btn-* brand-orange block directly above -- the brand accent color is intentionally the
+   SAME in both themes (a deliberate design choice, not a gap: #FF9900 already has enough contrast
+   against both a light and a dark surface to stay legible/on-brand either way).
+
+   3-state model, 2 real CSS selectors (not 3) -- [data-bs-theme="dark"] fires for an employee who
+   explicitly chose Dark (attribute stamped server-side); the @media query's own
+   :root:not([data-bs-theme="light"]) guard fires ONLY for an employee who explicitly chose System
+   (header.php stamps nothing at all for that one case, so this is the only rule left to catch it)
+   -- the :not() is what stops the media query from ALSO firing for someone who explicitly chose
+   Dark and would otherwise get this block's own values fighting the [data-bs-theme="dark"] block
+   below at identical specificity (a real, easy-to-miss tie-break bug this guard exists specifically
+   to prevent). Every OTHER case -- an explicit Light choice, AND (2026-09-05 fix, see
+   database/migrations/2026-09-05_1_ui_theme_add_system_value.sql) an employee who has never opened
+   Settings at all -- gets data-bs-theme="light" stamped, matching neither selector below --
+   correctly always light, even on a dark-OS browser, until the employee explicitly picks Dark or
+   System themselves. (Before that fix, "never configured" and "explicitly chose System" were the
+   same NULL value server-side, so a never-configured employee on a dark-OS browser silently landed
+   in dark mode too -- not just someone who had actually chosen it.) */
+:root {
+    /* --app-bg light value is #ffffff, NOT some off-white -- html/body had NO explicit
+       background-color at all before this step (pure browser default = white), and the task's own
+       "zero visual regression for untouched users" requirement means this new rule must render
+       byte-identical to that today, not just "close." A softer off-white here would have been a
+       real, if subtle, regression for the ~100% of users who never touch the theme toggle. */
+    --app-bg: #ffffff;
+    --app-surface-bg: #ffffff;
+    --app-text: #555555;
+    --app-border: #f0f0f0;
+    /* T069 Step 2 additions -- --app-heading for strong/title text (card titles, headings; darker
+       than plain body text in light mode, e.g. .settings-info-card-title's own #333), --app-text-
+       muted for secondary/description/caption text (e.g. .settings-info-card-desc's own #8a939e,
+       .settings-subgroup-label's own #98a2b3) -- both real, distinct roles from the Step-1 base
+       --app-text, not a duplicate of it. */
+    --app-heading: #333333;
+    --app-text-muted: #8a939e;
+    /* .page-header-card-icon's own soft-orange-tint treatment (light peachy bg + dark-orange text)
+       -- reused wherever this exact "tinted brand-accent icon box" pattern repeats. The brand hue
+       itself (#FF9900, used directly elsewhere e.g. .page-header-card's own left border) stays
+       fixed across themes per this file's own T069 Step 1 note; only ITS tint/on-tint pairing needs
+       a dark-safe alternative, since the light version's own peachy bg would look washed-out/wrong
+       floating on a near-black surface. */
+    --app-accent-soft-bg: #fff2df;
+    --app-accent-soft-text: #b45f00;
+    /* Generic "subtle hover tint on a neutral surface" -- e.g. .btn-circle-action:hover's own
+       #f9fafb -- reused wherever a plain (non-brand-colored) hover state needs to read as
+       "slightly lifted" against --app-surface-bg without introducing yet another one-off shade. */
+    --app-hover-bg: #f9fafb;
+}
+[data-bs-theme="dark"] {
+    --app-bg: #14181f;
+    --app-surface-bg: #1e232c;
+    --app-text: #d5d8dd;
+    --app-border: #2c313b;
+    --app-heading: #f0f2f5;
+    --app-text-muted: #8a94a3;
+    --app-accent-soft-bg: #3d2c14;
+    --app-accent-soft-text: #ffb84d;
+    --app-hover-bg: #262c37;
+    /* T069 Step 3 -- datatables.net-bs5's own bundled CSS ALREADY redefines its native row-hover/
+       stripe/sort-ordering overlay variables under this exact [data-bs-theme=dark] selector for free
+       (confirmed by reading its own source directly) -- the ONE gap is --dt-html-background, which
+       that package guards behind a DIFFERENT, unrelated selector (`:root.dark`, a plain class this
+       app never sets) instead of the attribute this app actually uses. Bridging it here, reusing
+       --app-bg rather than duplicating its literal value, is the only DataTables-native variable
+       this step needs to touch at all -- everything else below is this app's OWN chrome layered on
+       top (the .tcf-* filter widget, zebra-striping, one status-color pair), not the library itself. */
+    --dt-html-background: var(--app-bg);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-bs-theme="light"]) {
+        --app-bg: #14181f;
+        --app-surface-bg: #1e232c;
+        --app-text: #d5d8dd;
+        --app-border: #2c313b;
+        --app-heading: #f0f2f5;
+        --app-text-muted: #8a94a3;
+        --app-accent-soft-bg: #3d2c14;
+        --app-accent-soft-text: #ffb84d;
+        --app-hover-bg: #262c37;
+        --dt-html-background: var(--app-bg);
+    }
+}
+/* Base page-shell only in this step -- body background/text, navbar, sidebar. Every OTHER custom
+   component (.page-header-card/.settings-info-card/.station-filter/etc.) still hardcodes its own
+   light-only colors today and will keep rendering in its current light appearance regardless of
+   theme until a later T069 step converts it too -- a real, visible, KNOWN limitation of this step
+   alone (not the finished feature), not a bug -- see this file's own T069 Step 1 memory entry. */
+html, body {
+    background-color: var(--app-bg);
+    color: var(--app-text);
+}
+.origami-navbar {
+    background-color: var(--app-surface-bg);
+    border-bottom-color: var(--app-border);
+}
+.origami-sidebar {
+    background-color: var(--app-surface-bg);
+    border-right-color: var(--app-border);
+}
+/* ==========================================================================
    2026-09-02, Platform Hardening Phase 1.2, explicit request: "ลำดับปุ่ม: Save (ซ้าย) → Cancel
    (ขวา)" -- an app-wide audit (Agent research, ~102 modals across 9 files) found the OPPOSITE was
    the dominant pattern: Cancel/Close (data-bs-dismiss="modal") written first in markup, Save
@@ -2011,14 +2329,6 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .modal-footer > .btn-danger:not([data-bs-dismiss]),
 .modal-footer > .btn-success:not([data-bs-dismiss]) {
     order: 1;
-}
-/* 2026-09-02, Platform Hardening Phase 1.2 follow-up -- rateVersionModal's "Back" button is a
-   step-back-within-the-modal action, not a dismiss (no data-bs-dismiss, would be wrong to add one
-   since it doesn't close the modal) -- with no order rule of its own it defaults to order:0, which
-   sorts BEFORE the Save button's order:1 in flex layout regardless of DOM position, so a plain
-   markup reorder alone can't fix it. Explicit order:2 puts it to the right of Save. */
-#btnBackToRateHistory {
-    order: 2;
 }
 /* ==========================================================================
    Payroll Run Detail — process timeline (per-record step tracker) + next-step banner.
@@ -2765,8 +3075,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     gap: 14px;
     height: 100%;
     padding: 16px 18px;
-    background: #fff;
-    border: 1px solid #eef0f2;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
     border-left: 4px solid transparent;
     border-radius: 12px;
     box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
@@ -2791,12 +3101,12 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .stat-card-label {
     font-size: 0.78rem;
-    color: #6c757d;
+    color: var(--app-text-muted);
 }
 .stat-card-value {
     font-size: 1.2rem;
     font-weight: 700;
-    color: #212529;
+    color: var(--app-heading);
 }
 /* 2026-09-01: compact 2nd line inside a stat-card (e.g. Process Detail's "Employees" card, a
    Bank/Cash breakdown right under the total count) -- smaller/muted than .stat-card-value on
@@ -2804,7 +3114,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    fixed height reserved) so cards that never populate it don't show a blank gap. */
 .stat-card-sub {
     font-size: 0.72rem;
-    color: #8a92a0;
+    color: var(--app-text-muted);
     margin-top: 2px;
 }
 .stat-card-info { border-left-color: #0dcaf0; }
@@ -2847,8 +3157,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    utilities by hand now get sensible default padding instead of none.
    ========================================================================== */
 .card-surface {
-    background: #ffffff;
-    border: 1px solid #eef0f2;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
     border-radius: 14px;
     padding: 1rem;
     box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
@@ -2968,8 +3278,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     display: flex;
     align-items: center;
     gap: 1rem;
-    background: #ffffff;
-    border: 1px solid #eef0f2;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
     border-left: 4px solid #FF9900;
     border-radius: 8px;
     padding: 1rem 1.3rem;
@@ -2979,8 +3289,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     height: 44px;
     min-width: 44px;
     border-radius: 8px;
-    background: #fff2df;
-    color: #b45f00;
+    background: var(--app-accent-soft-bg);
+    color: var(--app-accent-soft-text);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2990,14 +3300,71 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     min-width: 0;
 }
 .page-header-card-title {
-    color: #1f2430;
+    color: var(--app-heading);
     font-weight: 700;
     margin: 0;
     letter-spacing: -.005em;
 }
 .page-header-card-desc {
-    color: #667085;
+    color: var(--app-text-muted);
     margin: .2rem 0 0;
+}
+/* 2026-09-06, Dashboard redesign: a quiet "powered by Origami" attribution mark, NOT a competing
+   brand focal point -- margin-left:auto pushes it to the header card's own far right regardless of
+   how wide .page-header-card-body's own text happens to be (a flex item never grows to fill space
+   by default, so this can't rely on the body "using up" the row on its own). Muted via opacity
+   (not a color/filter swap) so it reads as a faint watermark in both themes without a separate
+   dark-mode override -- kept small (28px tall) and never full-strength so it visually stays
+   secondary to the page's own icon/title. Hidden below md (Dashboard's own header card already
+   wraps to 2 lines on narrow screens -- a 3rd flex item there would just add clutter, not context). */
+.page-header-card-brandmark {
+    margin-left: auto;
+    flex-shrink: 0;
+    opacity: .45;
+    display: none;
+}
+.page-header-card-brandmark img {
+    height: 28px;
+    width: auto;
+    display: block;
+}
+@media (min-width: 768px) {
+    .page-header-card-brandmark { display: block; }
+}
+
+/* 2026-09-06, Dashboard redesign: month/year historical picker bar -- sits between the page header
+   and the stat cards, since selecting a past month changes almost everything below it (see
+   DashboardController::summary()'s own docblock for the few "right now" widgets that deliberately
+   never historicize). Deliberately its own thin bar, not folded into .page-header-card itself --
+   this is an interactive control row, not descriptive text, and treating it as one would make the
+   header card's own click-through/hover affordances ambiguous. */
+.dash-period-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .75rem;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    padding: .6rem 1rem;
+}
+.dash-period-bar-controls {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+/* Colored via Bootstrap's own bg-warning-subtle/text-warning-emphasis utility classes in the markup
+   (already dark-mode-aware in this app's Bootstrap 5.3 build, same as e.g. the Probation/Internship
+   card's own expiry badges) -- this class only owns layout, not color, so no separate dark-mode
+   override is needed here. */
+.dash-historical-badge {
+    font-size: .8rem;
+    font-weight: 600;
+    padding: .3rem .7rem;
+    border-radius: 20px;
+    white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -5468,8 +5835,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     height: 32px;
     padding: 0;
     border-radius: 50%;
-    border: 1px solid #e5e7eb;
-    background: #fff;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-bg);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -5478,7 +5845,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .btn-circle-action:hover {
     transform: translateY(-1px);
     box-shadow: 0 3px 8px rgba(16, 24, 40, .15);
-    background-color: #f9fafb;
+    background-color: var(--app-hover-bg);
 }
 .btn-circle-action i {
     font-size: .85rem;
@@ -5555,13 +5922,22 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    AskUserQuestion: keep it always visible (not hover-reveal). Round 3 moved the actual divider line
    off this button and onto `.tcf-header-right::after` instead (see that rule's own comment) -- this
    button itself just needs its own hover/active highlight box now. */
+/* 2026-09-05, T069 Step 3 -- this whole .tcf-* block (table-column-filter.js's own Excel-style
+   per-column filter widget, injected into every DataTable that calls initExcelColumnFilters() per
+   this file's own hard "every sortable/filterable <th> needs this" convention) is THIS APP's own
+   custom chrome, not the DataTables library's own -- confirmed the underlying datatables.net-bs5
+   package already re-themes its own native row-hover/stripe/sort-ordering under [data-bs-theme=dark]
+   for free (see the --dt-html-background bridge in the main token block above), so this widget is
+   the one real piece of "DataTables" that actually needed hand conversion. Every hardcoded hex below
+   is swapped in place for the matching --app-* token -- one rule works in both themes, same pattern
+   used throughout this file since Step 2 -- rather than a second dark-only duplicate block. */
 .tcf-filter-btn {
     position: relative;
     background: none;
     border: none;
     padding: 2px 4px;
     margin: 0;
-    color: #adb5bd;
+    color: var(--app-text-muted);
     font-size: 0.9167rem;
     line-height: 1;
     cursor: pointer;
@@ -5580,8 +5956,8 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     position: absolute;
     z-index: 2000;
     width: 260px;
-    background: #fff;
-    border: 1px solid rgba(0, 0, 0, .08);
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
     border-radius: 10px;
     box-shadow: 0 10px 30px rgba(16, 24, 40, .18);
     padding: .6rem;
@@ -5594,11 +5970,11 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     gap: .5rem;
     margin-bottom: .5rem;
     padding-bottom: .35rem;
-    border-bottom: 1px solid #f0f0f1;
+    border-bottom: 1px solid var(--app-border);
 }
 .tcf-panel-title {
     font-weight: 600;
-    color: #1f2937;
+    color: var(--app-heading);
     font-size: 1.0417rem;
 }
 .tcf-panel-close {
@@ -5609,7 +5985,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     height: 22px;
     border: none;
     background: transparent;
-    color: #9ca3af;
+    color: var(--app-text-muted);
     border-radius: 6px;
     font-size: 1rem;
     line-height: 1;
@@ -5617,8 +5993,8 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     flex: none;
 }
 .tcf-panel-close:hover {
-    color: #374151;
-    background: #f3f4f6;
+    color: var(--app-heading);
+    background: var(--app-hover-bg);
 }
 .tcf-search-wrap {
     position: relative;
@@ -5629,15 +6005,21 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     left: 9px;
     top: 50%;
     transform: translateY(-50%);
-    color: #9ca3af;
+    color: var(--app-text-muted);
     font-size: 0.9167rem;
 }
 .tcf-search-wrap input {
     width: 100%;
     padding: .3rem .5rem .3rem 1.75rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--app-border);
     border-radius: 6px;
     font-size: 1.0417rem;
+    /* Real gap, not just a dark-mode fix -- this rule never set an explicit background/text color
+       at all before (relying on the browser's plain default white/black), which would have stayed
+       wrong-looking even in light mode against this file's own design system; explicit now in both
+       themes via the token. */
+    background-color: var(--app-bg);
+    color: var(--app-text);
 }
 .tcf-search-wrap input:focus {
     outline: none;
@@ -5645,7 +6027,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     box-shadow: 0 0 0 2px rgba(255, 153, 0, .15);
 }
 .tcf-select-all-row {
-    border-bottom: 1px solid #f0f0f1;
+    border-bottom: 1px solid var(--app-border);
     padding-bottom: .35rem;
     margin-bottom: .35rem;
 }
@@ -5658,10 +6040,10 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     border-radius: 5px;
     cursor: pointer;
     font-weight: 400;
-    color: #374151;
+    color: var(--app-text);
 }
 .tcf-item:hover {
-    background: #f9fafb;
+    background: var(--app-hover-bg);
 }
 .tcf-item span {
     overflow: hidden;
@@ -5681,7 +6063,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     align-items: center;
     margin-top: .5rem;
     padding-top: .5rem;
-    border-top: 1px solid #f0f0f1;
+    border-top: 1px solid var(--app-border);
 }
 
 /* ==========================================================================
@@ -5797,8 +6179,15 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     padding: 4px 2px;
 }
 .dash-section-card {
-    background: #fff;
-    border: 1px solid #eef0f2;
+    /* 2026-09-06, Dashboard redesign: swapped from hardcoded #fff/#eef0f2 (this page predates the
+       2026-09-05 dark-mode rollout, T069) to the same tokens .page-header-card already uses -- the
+       one high-leverage fix that makes every card on this page (including the new Calendar/
+       Department chart cards this same redesign adds) dark-mode-correct, without auditing every
+       other hardcoded color on this page (quick-link tiles, section-link colors, etc. -- a larger,
+       separate effort out of this task's own scope, same "known gap" precedent T069 itself
+       documented for its own excluded Tier-B surfaces). */
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
     border-radius: 12px;
     box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
     padding: 16px 18px;
@@ -5809,10 +6198,10 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     justify-content: space-between;
     margin-bottom: 14px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #f5f5f6;
+    border-bottom: 1px solid var(--app-border);
 }
 .dash-section-card-header h6 {
-    color: #344054;
+    color: var(--app-heading);
     font-weight: 700;
 }
 /* 2026-08-29, explicit request: "ปรับให้หน้า Dashboard ดูสวยขึ้นครับ" -- the bare fa-icon + me-2 next
@@ -5926,6 +6315,56 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .dash-run-row-meta {
     text-align: right;
     flex: 0 0 auto;
+}
+/* 2026-09-04, Backlog Phase 10, T058: "Dashboard shows currently-online users" -- compact list row,
+   same padding/border/hover language as .dash-run-row above (this widget's own closest sibling),
+   just a plain <div> instead of an <a> (no click-through target -- unlike Recent Runs/Notifications,
+   there's nowhere meaningful to link a presence row to). */
+.dash-online-user-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 4px;
+    border-bottom: 1px solid #f2f2f2;
+}
+.dash-online-user-row:last-child {
+    border-bottom: none;
+}
+.dash-online-avatar-wrap {
+    position: relative;
+    flex: none;
+    width: 30px;
+    height: 30px;
+}
+.dash-online-avatar-wrap img {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid #e5e7eb;
+}
+/* Small green presence dot, same "online" green this app's own success-subtle badges already use
+   elsewhere -- a plain absolute-positioned circle, no new color introduced. */
+.dash-online-dot {
+    position: absolute;
+    bottom: -1px;
+    right: -1px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #16a34a;
+    border: 2px solid #fff;
+}
+.dash-online-user-name {
+    font-weight: 600;
+    color: #212529;
+    font-size: .85rem;
+}
+.dash-online-user-since {
+    font-size: .73rem;
+    color: #6c757d;
+    margin-left: auto;
+    flex: none;
 }
 /* 2026-08-29, explicit request: "ในหน้า Dashboard Recent Payroll Runs Timeline ไม่ต้องเต็มจอก็ได้ครับ ความ
    กว้างพอสวยพอ" -- .mini-timeline's own .mt-line flex-grows to fill whatever width its container
@@ -6218,6 +6657,112 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     margin-bottom: 2px;
 }
 
+/* ==================== Dashboard Calendar widget (2026-09-06) ====================
+   Explicit request: "อยากให้มี Calendar โชว์ด้วย" -- a compact month grid (own hand-rolled markup/CSS,
+   no calendar library added -- Chart.js is the only 3rd-party dependency this page needs, and a full
+   calendar library would be disproportionate for "show colored dots on the days that have events").
+   Uses the same --app-* theme tokens as .dash-section-card above (both light and dark palettes
+   already defined at :root, see this file's own theme-token block near the top) so it's correct in
+   both themes from day one, unlike most of the rest of this pre-existing page's own hardcoded colors
+   (a known, separate gap -- see .dash-section-card's own 2026-09-06 comment for why only that ONE
+   shared wrapper was fixed as part of this same change, not an audit of every color on this page). */
+.dash-calendar-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.dash-calendar-row {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+.dash-calendar-cell {
+    aspect-ratio: 1 / 1;
+    min-height: 34px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: .75rem;
+    color: var(--app-text);
+}
+.dash-calendar-weekday {
+    font-weight: 700;
+    font-size: .68rem;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    aspect-ratio: auto;
+    min-height: auto;
+    padding: 2px 0 6px;
+}
+.dash-calendar-cell-empty {
+    background: transparent;
+}
+.dash-calendar-day-num {
+    line-height: 1.1;
+}
+.dash-calendar-today {
+    background: var(--app-accent-soft-bg);
+    color: var(--app-accent-soft-text) !important;
+    font-weight: 700;
+}
+.dash-calendar-has-events {
+    cursor: pointer;
+}
+.dash-calendar-has-events:hover {
+    background: rgba(255, 153, 0, .1);
+}
+.dash-calendar-day-selected {
+    outline: 2px solid #FF9900;
+    outline-offset: -2px;
+}
+.dash-cal-dots {
+    display: flex;
+    gap: 2px;
+    margin-top: 2px;
+}
+.dash-cal-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+.dash-cal-dot-holiday { background: #dc2626; }
+.dash-cal-dot-cutoff { background: #f59e0b; }
+.dash-cal-dot-payment { background: #16a34a; }
+.dash-cal-dot-probation { background: #6366f1; }
+.dash-calendar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--app-border);
+}
+.dash-cal-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: .72rem;
+    color: var(--app-text-muted);
+}
+.dash-calendar-day-detail {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--app-accent-soft-bg);
+}
+/* Headcount-by-Department chart card -- shorter than the main Cost Trend chart (.dash-chart-wrap),
+   since it lives in the narrower sidebar column alongside Calendar/Notifications, not the main
+   content column. */
+.dash-chart-wrap-sm {
+    position: relative;
+    height: 170px;
+    padding: 4px 2px;
+}
+
 /* ==================== Annual Income Summary (2026-08-29) ====================
    Explicit request: "อยากให้ Column ที่เป็นพนักงาน Fixed อยู่กับที่ แล้วลากดู Column ฝั่งขวา และขวาสุดที่
    เป็นสรุป ให้ fiexd ขวาสุด...และตารางให้เป็น datatable" -- a real DataTable (public/js/reports/
@@ -6318,6 +6863,24 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     --bs-table-hover-bg: #e3faea;
     background-color: #f0fdf4;
     border-left: 3px solid #16a34a;
+}
+/* T069 Step 3 -- a genuine one-off semantic color (this app's own "verified" row tint), not part of
+   the shared neutral --app-* palette, so unlike the zebra-stripe/panel rules above this can't just be
+   swapped for an existing token -- it needs its own theme-gated override. Kept recognizably GREEN
+   (not flattened to a neutral dark surface), per T069 Step 2's own "status/semantic colors stay
+   vivid across both themes" principle -- just a translucent green wash over --app-surface-bg instead
+   of the light mode's near-white green tint, which would otherwise look like a plain washed-out gray
+   smear on a dark surface. border-left/.rd-net-pill's solid #16a34a/#FF9900 are already vivid,
+   saturated colors with enough contrast against a dark surface on their own -- left unchanged. */
+[data-bs-theme="dark"] #tb_run_detail tbody tr.rd-row-verified {
+    --bs-table-hover-bg: rgba(22, 163, 74, .22);
+    background-color: rgba(22, 163, 74, .15);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-bs-theme="light"]) #tb_run_detail tbody tr.rd-row-verified {
+        --bs-table-hover-bg: rgba(22, 163, 74, .22);
+        background-color: rgba(22, 163, 74, .15);
+    }
 }
 .rd-net-pill {
     display: inline-block;
@@ -6670,4 +7233,94 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .mode-select-btn:disabled {
     opacity: .55;
     cursor: not-allowed;
+}
+
+/* ==========================================================================
+   2026-09-05, Backlog Phase 13 (Help/Terms/Version) -- Setup Guide checklist rows, Version
+   changelog entries, and the Help Drawer's own floating button + slide-in panel. Uses the
+   existing --app-* token vocabulary (T069) throughout, so all of this is dark-mode-correct for
+   free with no separate [data-bs-theme="dark"] block needed. */
+.sg-progress-card {
+    background: var(--app-surface-bg);
+}
+.sg-item {
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
+    padding: .9rem 1.1rem;
+}
+.sg-item-done {
+    opacity: .75;
+}
+.version-entry {
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
+}
+.terms-modal-content {
+    white-space: normal;
+    line-height: 1.7;
+}
+.terms-modal-history {
+    border-top: 1px solid var(--app-border);
+    padding-top: .75rem;
+}
+
+.help-drawer-toggle-btn {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #FF9900;
+    color: #fff;
+    border: none;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
+    font-size: 22px;
+    z-index: 1045;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform .15s ease;
+}
+.help-drawer-toggle-btn:hover {
+    transform: scale(1.06);
+    background: #e68a00;
+}
+.help-drawer-panel {
+    position: fixed;
+    top: 0;
+    right: -380px;
+    width: 360px;
+    height: 100%;
+    background: var(--app-surface-bg);
+    border-left: 1px solid var(--app-border);
+    box-shadow: -4px 0 16px rgba(0, 0, 0, .15);
+    z-index: 1050;
+    transition: right .25s ease;
+    display: flex;
+    flex-direction: column;
+}
+.help-drawer-panel.help-drawer-panel-open {
+    right: 0;
+}
+.help-drawer-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--app-border);
+    color: var(--app-heading);
+}
+.help-drawer-panel-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+    color: var(--app-text);
+    line-height: 1.7;
+}
+@media (max-width: 480px) {
+    .help-drawer-panel {
+        width: 100%;
+        right: -100%;
+    }
 }

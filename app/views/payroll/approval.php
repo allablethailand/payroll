@@ -23,7 +23,7 @@
          (app/views/payroll/index.php), trimmed to only the 3 states relevant to an approver. Wired
          the same way in approval.js: registerApprovalStationFilter()/updateApprovalStationCounts(). -->
     <div class="station-filter" id="approvalStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="approvalStationFilterToggle" title="Toggle filter">
             <i class="fas fa-chevron-up"></i>
         </button>

@@ -55,7 +55,7 @@
                  component every other page's own filter uses (see Employee List's Login History
                  tab for the canonical shape this was copied from). -->
             <div class="station-filter" id="attendanceStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="attendanceStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -108,7 +108,7 @@
         </div>
         <div class="tab-pane fade" id="leave-pane" role="tabpanel" aria-labelledby="leave-tab" tabindex="0">
             <div class="station-filter" id="leaveStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="leaveStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -160,7 +160,7 @@
         </div>
         <div class="tab-pane fade" id="overtime-pane" role="tabpanel" aria-labelledby="overtime-tab" tabindex="0">
             <div class="station-filter" id="overtimeStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="overtimeStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -220,7 +220,7 @@
              established for Reports' own Download History. -->
         <div class="tab-pane fade" id="import-history-pane" role="tabpanel" aria-labelledby="import-history-tab" tabindex="0">
             <div class="station-filter" id="importHistoryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="importHistoryStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>

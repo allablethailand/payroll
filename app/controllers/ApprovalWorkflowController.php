@@ -25,6 +25,15 @@ class ApprovalWorkflowController extends Controller {
         return ($_SESSION['user']['role'] ?? '') === 'admin';
     }
 
+    /** Platform Hardening Phase 6 (batch 2): same capture pattern BankAccountController::
+     *  requestFingerprint() already established, for AuditLogModel::record(). */
+    private function requestFingerprint(): array {
+        return [
+            (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
+            (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
+        ];
+    }
+
     /**
      * Coarse RBAC gate (approval_workflow.view/manage, approval_request.act). requestCreate() is
      * deliberately left ungated -- it's meant to be called by other modules' flows on behalf of
@@ -95,7 +104,8 @@ class ApprovalWorkflowController extends Controller {
         // BEFORE calling the model, same branch ApprovalWorkflowModel::save() uses (id present = update).
         $isEdit = !empty($data['id']) && is_numeric($data['id']);
         if (!$this->requirePermission($isEdit ? 'approval_workflow.edit' : 'approval_workflow.add')) return;
-        $this->json($this->model->save((int)$compId, $data, $this->actingUserId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->save((int)$compId, $data, $this->actingUserId(), $ip, $ua));
     }
 
     public function workflowDelete() {
@@ -106,7 +116,8 @@ class ApprovalWorkflowController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->delete((int)$compId, $id, $this->actingUserId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->delete((int)$compId, $id, $this->actingUserId(), $ip, $ua));
     }
 
     public function workflowDuplicate() {
@@ -129,7 +140,8 @@ class ApprovalWorkflowController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing id.']);
             return;
         }
-        $this->json($this->model->toggleStatus((int)$compId, $id, $this->actingUserId(), $status));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->toggleStatus((int)$compId, $id, $this->actingUserId(), $status, $ip, $ua));
     }
 
     /** The simplified Settings UI's per-tab flow load (2026-08-24 -- see ApprovalWorkflowModel's
@@ -162,7 +174,8 @@ class ApprovalWorkflowController extends Controller {
         // ApprovalWorkflowModel::stepSave() uses (step_id present = update).
         $isEdit = !empty($data['step_id']);
         if (!$this->requirePermission($isEdit ? 'approval_workflow.edit' : 'approval_workflow.add')) return;
-        $this->json($this->model->stepSave((int)$compId, $data, $this->actingUserId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->stepSave((int)$compId, $data, $this->actingUserId(), $ip, $ua));
     }
 
     public function stepDelete() {
@@ -173,7 +186,8 @@ class ApprovalWorkflowController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing step_id.']);
             return;
         }
-        $this->json($this->model->stepDelete((int)$compId, $id, $this->actingUserId()));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->stepDelete((int)$compId, $id, $this->actingUserId(), $ip, $ua));
     }
 
     public function stepsSort() {
@@ -190,7 +204,8 @@ class ApprovalWorkflowController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing document_type_code.']);
             return;
         }
-        $this->json($this->model->stepsSort((int)$compId, $documentTypeCode, $stepIds));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->model->stepsSort((int)$compId, $documentTypeCode, $stepIds, $this->actingUserId(), $ip, $ua));
     }
 
     public function requestCreate() {

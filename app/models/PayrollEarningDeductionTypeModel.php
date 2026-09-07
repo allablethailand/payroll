@@ -438,6 +438,48 @@ class PayrollEarningDeductionTypeModel {
             ['item_code' => 'LOAN_REPAY', 'item_name_th' => 'หักเงินกู้ยืมพนักงาน', 'item_name_en' => 'Loan Repayment', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'after_tax'],
             ['item_code' => 'STUDENT_LOAN', 'item_name_th' => 'หักเงินกู้ยืม กยศ.', 'item_name_en' => 'Student Loan (SLF)', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'before_tax', 'statutory_report_code' => 'TH_SLF'],
             ['item_code' => 'UNIFORM_DEDUCT', 'item_name_th' => 'หักค่าเครื่องแบบ', 'item_name_en' => 'Uniform Deduction', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'after_tax'],
+
+            // 2026-09-04 (Backlog Phase 10, T052) -- 2 government/legally-linked additions, per
+            // explicit request. Both are `manual_entry` ON PURPOSE: this system does NOT attempt to
+            // auto-calculate either figure. Thai statutory severance pay (ค่าชดเชย) and pay-in-lieu-
+            // of-notice (ค่าตกใจ) have real, legally-mandated tenure-based formulas (Labor Protection
+            // Act B.E. 2541, as amended) -- but this project has no way to verify current bracket
+            // thresholds/day-counts against the actual law text in this environment (same standing
+            // limitation already documented for `PndOneKorExporter`/`Sso110Exporter`'s own DRAFT/
+            // `isVerified()=false` status) -- so HR enters the amount themselves, computed from their
+            // own labor-law reference, exactly like every other `manual_entry` item here. NOT subject
+            // to SSO/PF (calc_sso/calc_pf both omitted, default 0) -- these are termination payments,
+            // not regular ongoing wages, so they never form part of the SSO/PF contribution base.
+            ['item_code' => 'SEVERANCE_PAY', 'item_name_th' => 'ค่าชดเชยตามกฎหมายแรงงาน', 'item_name_en' => 'Statutory Severance Pay', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable'],
+            ['item_code' => 'NOTICE_PAY', 'item_name_th' => 'ค่าตกใจ (ค่าบอกกล่าวล่วงหน้า)', 'item_name_en' => 'Pay in Lieu of Advance Notice', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable'],
+            // Court-ordered wage garnishment -- uses the SAME installment-based `employee_earning_
+            // deductions` mechanism as STUDENT_LOAN/LOAN_REPAY (case/order number goes in that
+            // table's own existing `external_reference_no` field, no new column needed). Deliberately
+            // no specific garnishable-percentage cap implied anywhere -- the real amount/schedule
+            // always comes from the actual court order, this is just the catalog entry.
+            ['item_code' => 'COURT_GARNISH', 'item_name_th' => 'เงินอายัดเงินเดือนตามคำสั่งศาล', 'item_name_en' => 'Court-Ordered Wage Garnishment', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'after_tax'],
+
+            // 2026-09-04 (Backlog Phase 10, T053) -- 7 more starter items filling real gaps found by
+            // auditing the existing 14-item default set against common Thai payroll practice.
+            // Allowances: SSO/PF applicability decided per item on the same "regular/guaranteed wage
+            // component vs. variable/occasional one" basis POSITION_ALLOW vs. MEAL_ALLOW/PHONE_ALLOW
+            // already established above -- Housing/Fuel-Car are typically fixed monthly amounts a
+            // company commits to (closer to POSITION_ALLOW's treatment), Night Shift and the special
+            // attendance bonus are variable/occasional (closer to MEAL_ALLOW/BONUS's treatment, no
+            // calc_sso/calc_pf).
+            ['item_code' => 'HOUSING_ALLOW', 'item_name_th' => 'ค่าที่พัก', 'item_name_en' => 'Housing Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1],
+            ['item_code' => 'FUEL_ALLOW', 'item_name_th' => 'ค่าน้ำมันรถ/ค่ารถ', 'item_name_en' => 'Fuel/Car Allowance', 'item_type' => 'earning', 'calculation_method' => 'fixed_amount', 'fixed_amount' => 0, 'tax_treatment' => 'taxable', 'calc_sso' => 1, 'calc_pf' => 1],
+            ['item_code' => 'NIGHT_SHIFT_ALLOW', 'item_name_th' => 'ค่ากะดึก', 'item_name_en' => 'Night Shift Allowance', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable'],
+            // Deliberately separate from DILIGENCE (the Origami-sync-linked per-period allowance,
+            // source_event_code='diligence') -- this is a manually-awarded periodic bonus (e.g.
+            // quarterly/annual perfect-attendance bonus), no source_event_code at all.
+            ['item_code' => 'ATTEND_BONUS', 'item_name_th' => 'เบี้ยขยันพิเศษ', 'item_name_en' => 'Special Attendance Bonus', 'item_type' => 'earning', 'calculation_method' => 'manual_entry', 'tax_treatment' => 'taxable'],
+            // Deductions: private insurance/cooperative/advance -- all after_tax, employee's own net-
+            // pay deductions, none are a statutory pre-tax contribution scheme (SSO/PVD already cover
+            // those separately as real statutory_items, not this catalog).
+            ['item_code' => 'INSURANCE_DEDUCT', 'item_name_th' => 'หักเบี้ยประกันสุขภาพ/ชีวิต', 'item_name_en' => 'Health & Life Insurance Premium Deduction', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'after_tax'],
+            ['item_code' => 'COOP_DEDUCT', 'item_name_th' => 'หักเงินสหกรณ์ออมทรัพย์', 'item_name_en' => 'Cooperative Society Savings Deduction', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'after_tax'],
+            ['item_code' => 'ADVANCE_DEDUCT', 'item_name_th' => 'หักเบิกเงินเดือนล่วงหน้า', 'item_name_en' => 'Salary Advance Deduction', 'item_type' => 'deduction', 'calculation_method' => 'manual_entry', 'tax_deduction_impact' => 'after_tax'],
         ];
 
         $existingStmt = $this->db->prepare("SELECT item_code FROM `payroll_earning_deduction_types` WHERE comp_id = :comp_id");

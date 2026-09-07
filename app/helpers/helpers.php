@@ -110,6 +110,65 @@
             if (!$isHeartbeatRoute) {
                 $_SESSION['last_activity'] = $now;
             }
+
+            // 2026-09-04, Backlog Phase 10, T058 ("Dashboard shows currently-online users") --
+            // a SEPARATE presence signal from last_activity just above. Deliberately does NOT
+            // reuse/share $_SESSION['last_activity'] (T038's own idle-timeout clock, which
+            // intentionally EXCLUDES the heartbeat route so a forgotten-but-open tab can't defeat
+            // the idle timeout) -- for THIS feature, a heartbeat DOES count as real presence (a
+            // user with the tab genuinely open and polling is meaningfully "online"), so this
+            // touch runs on every authenticated request including $isHeartbeatRoute, with its own
+            // separate throttle key ($_SESSION['last_seen_touch']) so it never has to fight over
+            // meaning with last_activity. Throttled to once per 60s per session to avoid a DB write
+            // on every single request -- see EmployeeLoginLogModel::touchLastSeen()'s own docblock
+            // for why it only ever touches a still-active row.
+            if ($loginLogId > 0) {
+                $lastSeenTouch = (int)($_SESSION['last_seen_touch'] ?? 0);
+                if (($now - $lastSeenTouch) > 60) {
+                    require_once __DIR__ . '/../models/EmployeeLoginLogModel.php';
+                    (new EmployeeLoginLogModel())->touchLastSeen($loginLogId);
+                    $_SESSION['last_seen_touch'] = $now;
+                }
+            }
+
+            // 2026-09-04, Backlog Phase 10, T059 ("RBAC -- suspend a user's system access") -- a
+            // live, per-request check (same "as immediate as stateless HTTP allows" posture as
+            // T037's own superseded-session check above, not a lazier login-time-only gate).
+            // Deliberately does NOT destroy the session the way session_kill_response() does for
+            // T037/T038 -- app/views/permission.php (the existing "No Permission" page, reused
+            // as-is here rather than building a parallel one) is designed to render inside the
+            // NORMAL header/footer layout (sidebar, greeting, language switcher all read
+            // $_SESSION['user']), and a suspended employee seeing their own name while being told
+            // access is denied is the correct, intentional UX here -- not a forced logout. The
+            // suspension marker itself (PermissionModel::isSuspended()) is a single indexed lookup,
+            // cheap enough to check on every request the same way T037/T038 already do.
+            // Skipped entirely for a live admin session ($_SESSION['user']['role'] === 'admin',
+            // same check DashboardController::isAdmin() already uses) -- confirmed with the user:
+            // workshop decision #2 ("admin can never be suspended") is a hard guarantee against an
+            // admin ever being locked out, not just a preventive gate at suspend-time (which can't
+            // be enforced anyway -- see the migration's own header comment). Mirrors the same
+            // ordering fix just made in PermissionModel::checkPermission().
+            $isAdminSession = (($_SESSION['user']['role'] ?? '') === 'admin');
+            require_once __DIR__ . '/../models/PermissionModel.php';
+            if (!$isAdminSession && (new PermissionModel())->isSuspended($employeeId, $compId)) {
+                $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+                $isApiRoute = (strpos($requestUri, '/api/') !== false);
+                if ($isAjax || $isApiRoute) {
+                    http_response_code(403);
+                    header('Content-Type: application/json');
+                    echo json_encode(['status' => false, 'reason' => 'suspended', 'message' => 'Your account access has been suspended. Please contact your administrator.']);
+                    exit;
+                }
+                // Same 3-include sequence Controller::view() uses (app/core/Controller.php) --
+                // ensure_login() is a bare function, not a Controller instance, so it can't call
+                // $this->view(), but the method itself is trivial enough to replicate inline rather
+                // than restructuring this whole function around a Controller dependency for one
+                // call site.
+                include __DIR__ . '/../views/layout/header.php';
+                include __DIR__ . '/../views/permission.php';
+                include __DIR__ . '/../views/layout/footer.php';
+                exit;
+            }
         }
 
         if (!$isLoggedIn && !$isExcluded) {

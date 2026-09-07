@@ -18,15 +18,32 @@
         </div>
     </div>
 
+    <!-- 2026-09-03, Backlog Phase 9, T044, explicit request: "ให้ยุบ 2 Tab แรกเข้าด้วยกันเลย ไม่ต้องมี
+         Master เพราะ Master ให้เป็นตัวกลางไป ให้เหลือแค่ Rate ที่ตั้งค่าได้ โดย Default ดึงมาจาก Master" --
+         the old "Master Rates" tab (#master-rate-tab/#tb_statutory_item, gone entirely) let ANY
+         company admin with `tax_statutory.edit`/`.add`/`.delete` directly CREATE/EDIT/DELETE rows in
+         `statutory_items`/`statutory_item_rate_history` -- GLOBAL tables with NO comp_id column at
+         all (confirmed by reading the schema + TaxStatutoryController::companyCountry()'s own
+         docblock), so editing there silently changed what EVERY OTHER company on this platform sees.
+         This is the exact problem Phase 9's T045 (Master/Clone architecture) exists to solve
+         properly -- for now, this tab (id="company-setting-tab" UNCHANGED, just made the sole/first
+         tab) is the ONLY rate-related tab: it already showed the master's own current rate as a
+         read-only default (`master_employee_rate`/etc., see CompanyStatutorySettingModel::list()'s
+         own LEFT JOIN) with an optional per-company override on top -- i.e. it was ALREADY "the Rate
+         that can be configured, defaulting from Master" the request asked for, just previously
+         shadowed by a 2nd tab that (dangerously) let master ITSELF be edited directly.
+         KNOWN GAP, deliberately not solved here (T045's job): nothing in this app's UI can add a new
+         dated `statutory_item_rate_history` version anymore (e.g. when SSO's annual ceiling changes)
+         -- the backend endpoints (TaxStatutoryController::itemSave()/rateHistorySave()/etc.) are
+         UNCHANGED and still fully working, just unreachable from any UI now that this tab and its
+         modals (statutoryItemModal/rateHistoryModal/rateVersionModal, all removed from modals.php)
+         are gone -- until T045 designs where/how "update the shared master" properly belongs (almost
+         certainly NOT this company-facing page), maintaining new master rate versions is a
+         direct-DB-only operation. -->
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="taxStatutoryTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu active" id="master-rate-tab" data-bs-toggle="tab" data-bs-target="#master-rate-pane" type="button" role="tab" aria-controls="master-rate-pane" aria-selected="true">
-                <i class="fa-solid fa-globe me-2"></i><span data-i18n="tab_master_rate">Master Rates</span>
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="false">
-                <i class="fa-solid fa-building me-2"></i><span data-i18n="tab_company_setting">Company Settings</span>
+            <button class="nav-link setup-menu active" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="true">
+                <i class="fa-solid fa-scale-balanced me-2"></i><span data-i18n="tab_company_setting">Statutory Rates</span>
             </button>
         </li>
         <!-- 2026-08-29, follow-up to Bank File Format: "ส่วน Format เอกสารของการนำส่งสรรพากร และ
@@ -50,38 +67,16 @@
         </li>
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
-    <div class="tab-pane fade show active" id="master-rate-pane" role="tabpanel" aria-labelledby="master-rate-tab" tabindex="0">
-        <!-- 2026-08-28, explicit request: "แสดงผลเฉพาะตามประเทศที่ตัวเองตั้งค่า...ให้รองรับเฉพาะ
-             ประเทศไทยก่อน" -- the interactive country filter (which defaulted to blank, showing
-             every country's items mixed together -- a real gap, see TaxStatutoryController's own
-             companyCountry() docblock) is replaced by a plain label: this whole page is now always
-             scoped server-side to the company's own registered country, so a filter that could only
-             ever show ONE value would just be confusing UI. #masterRateCountryLabel is filled in
-             from the list response itself (countries_name_th/en, already joined) -- no separate
-             lookup call needed. -->
+    <div class="tab-pane fade show active" id="company-setting-pane" role="tabpanel" aria-labelledby="company-setting-tab" tabindex="0">
+        <p class="text-muted small mb-2" data-i18n="company_setting_description">Enable/disable statutory items for your company and adjust rates where the law permits, based on your company's registered country.</p>
+        <!-- 2026-09-03, Backlog Phase 9, T044 -- relocated here from the removed Master Rates tab
+             (see this tab's own header comment above); #masterRateCountryLabel is filled in from
+             THIS table's own list response now (CompanyStatutorySettingModel::list()'s new
+             countries_name_th/en join), not a separate lookup call. -->
         <div class="mb-3">
             <span class="text-muted small" data-i18n="master_rate_country_scope_label">Showing statutory items for your company's registered country:</span>
             <span class="fw-bold" id="masterRateCountryLabel">-</span>
         </div>
-        <table class="table table-hover table-border align-middle w-100" id="tb_statutory_item">
-            <thead class="table-light text-secondary">
-                <tr>
-                    <th scope="col" style="width: 8%;" data-i18n="col_status">Status</th>
-                    <th scope="col" style="width: 8%;" data-i18n="table_country">Country</th>
-                    <th scope="col" style="width: 11%;" data-i18n="table_code">Code</th>
-                    <th scope="col" style="width: 16%;" data-i18n="table_name">Name</th>
-                    <th scope="col" style="width: 10%;" data-i18n="table_category">Category</th>
-                    <th scope="col" style="width: 12%;" data-i18n="table_calc_method">Calculation Method</th>
-                    <th scope="col" style="width: 11%;" data-i18n="table_current_rate">Current Rate</th>
-                    <th scope="col" style="width: 13%;" data-i18n="table_last_updated">Last Updated</th>
-                    <th scope="col" style="width: 11%; text-align: center;"></th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </div>
-    <div class="tab-pane fade" id="company-setting-pane" role="tabpanel" aria-labelledby="company-setting-tab" tabindex="0">
-        <p class="text-muted small" data-i18n="company_setting_description">Enable/disable statutory items for your company and adjust rates where the law permits, based on your company's registered country.</p>
         <table class="table table-hover table-border align-middle w-100" id="tb_company_setting">
             <thead class="table-light text-secondary">
                 <tr>
@@ -99,8 +94,16 @@
         </table>
     </div>
     <div class="tab-pane fade" id="document-format-pane" role="tabpanel" aria-labelledby="document-format-tab" tabindex="0">
-        <p class="text-muted small" data-i18n="document_format_description">Choose which known submission format version to use for each statutory document. Adding a new version in the future needs no code change here -- it's picked from this list.</p>
-        <div id="statutoryFormatCards" class="row g-3"></div>
+        <p class="text-muted small mb-2" data-i18n="document_format_description">The full list of statutory documents your company must file, based on your registered country -- pick a format version where a choice exists.</p>
+        <!-- 2026-09-04, Backlog Phase 9, T049 -- same country-scope label pattern as the Statutory
+             Rates tab (#masterRateCountryLabel), now here too since this tab's own list is filtered
+             by the company's registered country for the first time (see
+             StatutoryFormatVersionModel::settingsForCompany()'s own docblock). -->
+        <div class="mb-3">
+            <span class="text-muted small" data-i18n="master_rate_country_scope_label">Showing statutory items for your company's registered country:</span>
+            <span class="fw-bold" id="documentFormatCountryLabel">-</span>
+        </div>
+        <div id="statutoryFormatCards"></div>
     </div>
     <div class="tab-pane fade" id="nonresident-tax-pane" role="tabpanel" aria-labelledby="nonresident-tax-tab" tabindex="0">
         <p class="text-muted small" data-i18n="nonresident_tax_description">Optional: withhold a flat percentage instead of the normal progressive calculation for employees flagged as tax non-residents (foreign workers). Off by default -- turn this on only if your own accountant/tax advisor has confirmed a specific rate to use, this app does not assume one.</p>
@@ -111,11 +114,11 @@
             </div>
             <div id="nonresidentTaxFieldsWrap">
                 <div class="mb-3">
-                    <label class="form-label" data-i18n="nonresident_tax_flat_rate">Flat Withholding Rate (%)</label>
+                    <label class="form-label mb-1" data-i18n="nonresident_tax_flat_rate">Flat Withholding Rate (%)</label>
                     <input type="number" class="form-control" id="nonresidentTaxFlatRate" min="0" max="100" step="0.01" data-i18n="percent_rate_placeholder" placeholder="e.g., 1.5">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label" data-i18n="nonresident_tax_reference_note">Reference Note (optional)</label>
+                    <label class="form-label mb-1" data-i18n="nonresident_tax_reference_note">Reference Note (optional)</label>
                     <textarea class="form-control" id="nonresidentTaxReferenceNote" rows="2" maxlength="500" data-i18n="nonresident_tax_reference_note_placeholder" placeholder="e.g. Revenue Department ruling no., or your accountant's advice"></textarea>
                 </div>
             </div>

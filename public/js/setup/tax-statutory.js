@@ -1,16 +1,24 @@
-let tb_statutory_item;
-let tb_rate_history;
-let tb_company_setting;
-let currentItemCtx = null;
-let currentCsItem = null;
-
-function toIsoDateTs(displayVal) {
-    if (!displayVal) return '';
-    const parts = String(displayVal).split('/');
-    if (parts.length !== 3) return displayVal;
-    const [dd, mm, yyyy] = parts;
-    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
-}
+// 2026-09-03, Backlog Phase 9, T044 -- tb_statutory_item/tb_rate_history/currentItemCtx removed
+// along with the "Master Rates" tab itself -- see tax-statutory.php's own header comment on this
+// tab for the full reasoning/known-gap note. tb_company_setting is now the ONLY table on this
+// page's rate-related tab.
+//
+// 2026-09-06, real bug found and fixed (explicit report + browser console error: "Uncaught
+// ReferenceError: toDisplayDateTs is not defined" at showSrHistoryEditView) -- the comment above
+// ALSO claimed toIsoDateTs()/toDisplayDateTs() were dead code and removed them here at T044, but
+// that was wrong: the LATER T046 rework (statutoryRateModal's own Rate History tab,
+// showSrHistoryEditView()/collectSrRateVersionFormData()) reused these exact function names
+// assuming they still existed, without ever redefining them -- a genuine oversight across 2
+// separate refactors, not a guess. This is why "Add Rate Version" (showSrHistoryEditView(null),
+// which never calls toDisplayDateTs()) always worked while editing an EXISTING rate row (which
+// does) threw a ReferenceError mid-function, aborting BEFORE reaching applySrCalcMethodFields() at
+// the end -- leaving the form in its default markup state (flat-rate fields visible, since
+// `#sr_rate_flat_fields` has no `d-none` in the base HTML) regardless of the item's real
+// calc_method. Restored as local functions here, same dd/mm/yyyy <-> yyyy-mm-dd shape every other
+// page's own toDisplayDateXX()/toIsoDateXX() pair uses (see e.g. payroll/approval.js's
+// toDisplayDateAp()/toIsoDateAp()) -- this project's own convention is one local pair per file,
+// never a shared global, precisely to avoid the cross-file name-collision class of bug already
+// documented elsewhere in this codebase.
 function toDisplayDateTs(isoVal) {
     if (!isoVal) return '';
     const parts = String(isoVal).split('-');
@@ -18,43 +26,22 @@ function toDisplayDateTs(isoVal) {
     const [yyyy, mm, dd] = parts;
     return `${dd}/${mm}/${yyyy}`;
 }
-function escapeHtmlTs(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
+function toIsoDateTs(displayVal) {
+    if (!displayVal) return '';
+    const parts = String(displayVal).split('/');
+    if (parts.length !== 3) return displayVal;
+    const [dd, mm, yyyy] = parts;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
+let tb_company_setting;
+let currentCsItem = null;
+
 function itemNameTs(row) {
     return (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '';
 }
 function categoryBadgeTs(cat) {
     const key = 'category_' + cat;
     return `<span class="badge bg-light text-dark border">${langData[key] || cat}</span>`;
-}
-function calcMethodLabelTs(method) {
-    const key = 'calc_method_' + method;
-    return langData[key] || method;
-}
-function fmtNumTs(n) {
-    return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function currentRateCellTs(row) {
-    if (!row.current_rate_id) {
-        return `<span class="text-muted small">${langData['no_rate_configured'] || 'No rate configured yet'}</span>`;
-    }
-    if (row.calc_method === 'flat_rate') {
-        const parts = [];
-        if (row.is_employee_applicable == 1 && row.employee_rate !== null) parts.push(`${langData['modal_employee_rate'] ? '' : ''}${Number(row.employee_rate)}%`);
-        if (row.is_employer_applicable == 1 && row.employer_rate !== null) parts.push(`${Number(row.employer_rate)}%`);
-        return parts.join(' / ');
-    }
-    if (row.calc_method === 'fixed_amount') {
-        const parts = [];
-        if (row.is_employee_applicable == 1 && row.employee_amount !== null) parts.push(fmtNumTs(row.employee_amount));
-        if (row.is_employer_applicable == 1 && row.employer_amount !== null) parts.push(fmtNumTs(row.employer_amount));
-        return parts.join(' / ');
-    }
-    if (row.calc_method === 'progressive_bracket') {
-        return `<span class="text-muted small"><i class="fa-solid fa-layer-group me-1"></i>${langData['tax_brackets'] || 'Tax Brackets'}</span>`;
-    }
-    return `<span class="text-muted small">${langData['calc_method_formula'] || 'Formula-based'}</span>`;
 }
 // 2026-08-28, explicit request: "เก็บ Log ดำเนินการว่าแก้ไขล่าสุดเมื่อไหร่" -- updated_at/updated_by
 // (falling back to created_at/created_by, see TaxStatutoryModel/CompanyStatutorySettingModel's own
@@ -79,678 +66,7 @@ function lastEditedCellTs(row, dateField) {
     // as every other fix in this pass: a raw UTC date extracted before conversion can be off by a
     // full calendar day for a viewer far from UTC.
     const dateStr = typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(raw).split(' ')[0] : raw;
-    return `<div class="small">${escapeHtmlTs(dateStr)}</div>${name ? `<div class="text-muted small">${escapeHtmlTs(name)}</div>` : ''}`;
-}
-// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-// ".btn-circle-action" section) replace the old adjacent .btn-group.
-function actionButtonsTs(row) {
-    return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-item" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-rate" data-id="${row.id}" title="${langData['manage_rate'] || 'Manage Rate'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-item" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
-    </div>`;
-}
-
-function initStatutoryItemTable() {
-    if ($.fn.DataTable.isDataTable('#tb_statutory_item')) {
-        $('#tb_statutory_item').DataTable().ajax.reload(null, false);
-        return;
-    }
-    tb_statutory_item = $('#tb_statutory_item').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/statutory-item.list`,
-            // 2026-08-28, explicit request: the page is now always scoped server-side to the
-            // company's own registered country (see TaxStatutoryController::companyCountry()) --
-            // no country_code param is sent anymore, the server ignores/overrides it either way.
-            // dataSrc as a function (not just 'data') so the response can also fill in
-            // #masterRateCountryLabel from the first row's own countries_name_th/en -- no separate
-            // lookup call needed for that label.
-            dataSrc: function (json) {
-                const rows = json.data || [];
-                const first = rows[0];
-                const label = first
-                    ? ((currentLang === 'en' ? first.countries_name_en : first.countries_name_th) || first.country_code)
-                    : (langData['no_statutory_country_configured'] || '-');
-                $('#masterRateCountryLabel').text(label);
-                return rows;
-            }
-        },
-        columns: [
-            // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- status switch is the first
-            // column now (client-side table, safe to reorder), same shared mechanism as every other
-            // table already converted.
-            { data: 'status', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/statutory-item.toggle-status') },
-            { data: 'country_code', render: d => `<span class="badge bg-primary-subtle text-primary">${d}</span>` },
-            { data: 'code', render: d => `<code class="fw-bold text-dark">${escapeHtmlTs(d)}</code>` },
-            { data: null, render: (d, t, row) => escapeHtmlTs(itemNameTs(row)) },
-            { data: 'category', render: d => categoryBadgeTs(d) },
-            { data: 'calc_method', render: d => calcMethodLabelTs(d) },
-            { data: null, className: 'text-end', render: (d, t, row) => currentRateCellTs(row) },
-            { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
-            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
-            // Responsive expand row.
-            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtonsTs(row) }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $searchDiv = $wrapper.find('.dt-search');
-            if ($searchDiv.find('.btn-add-item').length === 0) {
-                $searchDiv.append(`
-                    <button type="button" class="btn btn-primary ms-1 btn-add-item">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="statutory_item">${langData['statutory_item'] || 'Statutory Item'}</span>
-                    </button>
-                `);
-            }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the interactive status SWITCH (0), Last Updated (7,
-            // 2026-08-28 addition -- a compound date+name cell, orderable:false, same treatment as
-            // any actions column), and actions (8).
-            // 2026-09-02, real bug found and fixed: indices shifted +1 now that the status switch
-            // was inserted at column 0, and `status` itself dropped from the filter list (interactive
-            // widget, not a plain display value, same exemption already applied elsewhere).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'country_code' },
-                    { index: 2, key: 'code' },
-                    { index: 3, key: 'item_name' },
-                    { index: 4, key: 'category' },
-                    { index: 5, key: 'calc_method' },
-                    { index: 6, key: 'current_rate' },
-                ]
-            });
-        },
-        drawCallback: function () { getTableLang(); }
-    });
-}
-// 2026-09-02, Platform Hardening Phase 1.1 follow-up -- reload after a successful status toggle,
-// same pattern as every other converted table's own identical listener.
-$(document).on('statusToggle:success', '#tb_statutory_item', function () { tb_statutory_item.ajax.reload(null, false); });
-
-function resetItemForm() {
-    $('#statutoryItemForm')[0].reset();
-    $('#item_id').val('');
-    $('.is-invalid').removeClass('is-invalid');
-    $('#item_category').val('').trigger('change');
-    $('#item_calc_method').val('').trigger('change');
-    $('#item_calc_base').val('').trigger('change');
-    $('#item_is_employee_applicable, #item_is_employer_applicable, #item_default_is_active').prop('checked', true);
-    $('#item_is_company_rate_editable').prop('checked', false);
-    $('#item_sort_order').val(0);
-    $('#item_rounding_mode').val('round').trigger('change');
-    $('#item_decimal_places').val(2);
-}
-function populateItemForm(row) {
-    $('#item_id').val(row.id);
-    $('#si_item_code').val(row.code);
-    $('#si_item_name_th').val(row.name_th);
-    $('#si_item_name_en').val(row.name_en);
-    $('#item_category').val(row.category).trigger('change');
-    $('#item_calc_method').val(row.calc_method).trigger('change');
-    $('#item_calc_base').val(row.calc_base).trigger('change');
-    $('#item_is_employee_applicable').prop('checked', Number(row.is_employee_applicable) === 1);
-    $('#item_is_employer_applicable').prop('checked', Number(row.is_employer_applicable) === 1);
-    $('#item_default_is_active').prop('checked', Number(row.default_is_active) === 1);
-    $('#item_is_company_rate_editable').prop('checked', Number(row.is_company_rate_editable) === 1);
-    $('#item_sort_order').val(row.sort_order || 0);
-    $('#item_rounding_mode').val(row.rounding_mode || 'round').trigger('change');
-    $('#item_decimal_places').val(row.decimal_places !== undefined && row.decimal_places !== null ? row.decimal_places : 2);
-}
-function validateItemForm() {
-    let firstInvalid = null;
-    $('#statutoryItemModal .required').each(function () {
-        const $el = $(this);
-        const value = ($el.val() || '').toString().trim();
-        if (!value) {
-            $el.addClass('is-invalid');
-            if (!firstInvalid) firstInvalid = $el;
-        } else {
-            $el.removeClass('is-invalid');
-        }
-    });
-    return firstInvalid;
-}
-function collectItemFormData() {
-    return {
-        id: $('#item_id').val() || undefined,
-        // country_code deliberately not sent -- TaxStatutoryController::itemSave() always forces it
-        // to the acting company's own registered country server-side, ignoring the payload entirely.
-        code: $('#si_item_code').val().trim(),
-        name_th: $('#si_item_name_th').val().trim(),
-        name_en: $('#si_item_name_en').val().trim(),
-        category: $('#item_category').val(),
-        calc_method: $('#item_calc_method').val(),
-        calc_base: $('#item_calc_base').val(),
-        is_employee_applicable: $('#item_is_employee_applicable').is(':checked'),
-        is_employer_applicable: $('#item_is_employer_applicable').is(':checked'),
-        default_is_active: $('#item_default_is_active').is(':checked'),
-        is_company_rate_editable: $('#item_is_company_rate_editable').is(':checked'),
-        sort_order: $('#item_sort_order').val() || 0,
-        rounding_mode: $('#item_rounding_mode').val() || 'round',
-        decimal_places: $('#item_decimal_places').val() || 0
-    };
-}
-
-/* ---------- Rate History (list) ---------- */
-// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-// ".btn-circle-action" section) replace the old adjacent .btn-group.
-function rateHistoryActionButtonsTs(row) {
-    return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
-    </div>`;
-}
-function rateSummaryTs(row) {
-    if (!currentItemCtx) return '';
-    if (currentItemCtx.calc_method === 'flat_rate') {
-        const parts = [];
-        if (row.employee_rate !== null) parts.push(`${langData['modal_employee_rate'] || 'Employee'}: ${Number(row.employee_rate)}%`);
-        if (row.employer_rate !== null) parts.push(`${langData['modal_employer_rate'] || 'Employer'}: ${Number(row.employer_rate)}%`);
-        return parts.join(' / ');
-    }
-    if (currentItemCtx.calc_method === 'fixed_amount') {
-        const parts = [];
-        if (row.employee_amount !== null) parts.push(`${langData['modal_employee_amount'] || 'Employee'}: ${fmtNumTs(row.employee_amount)}`);
-        if (row.employer_amount !== null) parts.push(`${langData['modal_employer_amount'] || 'Employer'}: ${fmtNumTs(row.employer_amount)}`);
-        return parts.join(' / ');
-    }
-    if (currentItemCtx.calc_method === 'progressive_bracket') {
-        return `${row.bracket_count || 0} ${langData['tax_brackets'] || 'Tax Brackets'}`;
-    }
-    return langData['calc_method_formula'] || 'Formula-based';
-}
-function initRateHistoryTable() {
-    if ($.fn.DataTable.isDataTable('#tb_rate_history')) {
-        $('#tb_rate_history').DataTable().ajax.reload(null, false);
-        return;
-    }
-    tb_rate_history = $('#tb_rate_history').DataTable({
-        responsive: true,
-        paging: false,
-        info: false,
-        ajax: {
-            url: `${BASE_URL}/api/statutory-item.rate-history.list`,
-            dataSrc: 'data',
-            data: function (d) { d.item_id = currentItemCtx ? currentItemCtx.id : 0; }
-        },
-        columns: [
-            // object-form render (display only) -- client-side table with no explicit `order` set,
-            // so DataTables defaults to sorting by column 0 (this one) ascending; 'sort'/'filter'
-            // must stay on the raw ISO string, see reports/index.js's own comment for why.
-            { data: 'effective_date', render: { display: d => formatDisplayDate(d), sort: d => d, filter: d => d } },
-            { data: 'end_date', render: { display: d => d ? formatDisplayDate(d) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`, sort: d => d || '', filter: d => d || '' } },
-            { data: null, className: 'text-end', render: (d, t, row) => rateSummaryTs(row) },
-            { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
-            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
-            // Responsive expand row.
-            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => rateHistoryActionButtonsTs(row) }
-        ],
-        language: getTableLang(),
-        drawCallback: function () { getTableLang(); },
-        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-        // rollout. Real gotcha found while wiring this up: `searching:false` (this table's own
-        // original setting, kept the native search box out of this small modal table on purpose)
-        // doesn't just hide the search INPUT -- per DataTables' own core (_fnReDraw()), it skips
-        // `_fnFilterComplete()` ENTIRELY when the filter FEATURE is off, which is also what invokes
-        // every `$.fn.dataTable.ext.search` predicate (what this filter component itself uses) --
-        // so the checkbox UI would have looked like it worked while silently filtering nothing.
-        // Flipped to `searching:true` to keep the underlying feature/pipeline alive, then the
-        // rendered search box itself is hidden right below (same net visual result as before, still
-        // functionally filterable via the header icons now).
-        searching: true,
-        initComplete: function () {
-            const self = this.api();
-            $(self.table().container()).find('.dt-search').hide();
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'effective_date' },
-                    { index: 1, key: 'end_date' },
-                ]
-            });
-        }
-    });
-}
-function openRateHistoryModal(row) {
-    currentItemCtx = {
-        id: row.id,
-        calc_method: row.calc_method,
-        is_employee_applicable: Number(row.is_employee_applicable) === 1,
-        is_employer_applicable: Number(row.is_employer_applicable) === 1
-    };
-    $('#rateHistoryItemName').text(`(${row.code} - ${itemNameTs(row)})`);
-    initRateHistoryTable();
-    new bootstrap.Modal(document.getElementById('rateHistoryModal')).show();
-}
-
-/* ---------- Rate Version (form) ---------- */
-function applyCalcMethodFieldsTs(calcMethod) {
-    $('#rate_flat_fields').toggleClass('d-none', calcMethod !== 'flat_rate');
-    $('#rate_amount_fields').toggleClass('d-none', calcMethod !== 'fixed_amount');
-    $('#rate_bracket_fields').toggleClass('d-none', calcMethod !== 'progressive_bracket');
-    $('#rate_formula_fields').toggleClass('d-none', calcMethod !== 'formula');
-
-    const showEmployee = currentItemCtx ? currentItemCtx.is_employee_applicable : true;
-    const showEmployer = currentItemCtx ? currentItemCtx.is_employer_applicable : true;
-    $('#rate_employee_rate_wrapper, #rate_employee_amount_wrapper').toggleClass('d-none', !showEmployee);
-    $('#rate_employer_rate_wrapper, #rate_employer_amount_wrapper').toggleClass('d-none', !showEmployer);
-    $('#rate_employee_rate').toggleClass('required', calcMethod === 'flat_rate' && showEmployee);
-    $('#rate_employer_rate').toggleClass('required', calcMethod === 'flat_rate' && showEmployer);
-    $('#rate_employee_amount').toggleClass('required', calcMethod === 'fixed_amount' && showEmployee);
-    $('#rate_employer_amount').toggleClass('required', calcMethod === 'fixed_amount' && showEmployer);
-    $('#rate_formula_config').toggleClass('required', calcMethod === 'formula');
-}
-function recalcBracketRowsTs() {
-    $('#bracketBody tr').each(function (idx) {
-        if (idx === 0) return;
-        const prevMax = $('#bracketBody tr').eq(idx - 1).find('.bracket-max').val();
-        const min = prevMax !== '' ? (parseFloat(prevMax) + 0.01).toFixed(2) : '';
-        $(this).find('.bracket-min').val(min);
-    });
-}
-function addBracketRow(min, max, rate) {
-    const idx = $('#bracketBody tr').length;
-    const $row = $(`<tr>
-        <td><input type="number" step="0.01" class="form-control form-control-sm bracket-min" value="${min !== undefined ? min : ''}" ${idx > 0 ? 'readonly' : ''}></td>
-        <td><input type="number" step="0.01" class="form-control form-control-sm bracket-max" value="${max !== undefined && max !== null ? max : ''}" placeholder="${langData['no_upper_limit'] || 'No upper limit'}"></td>
-        <td><input type="number" step="0.0001" min="0" max="100" class="form-control form-control-sm bracket-rate" value="${rate !== undefined ? rate : ''}"></td>
-        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-remove-bracket"><i class="fa-solid fa-trash"></i></button></td>
-    </tr>`);
-    $('#bracketBody').append($row);
-    if (idx === 0 && min === undefined) {
-        $row.find('.bracket-min').val(0);
-    }
-}
-function collectBrackets() {
-    const brackets = [];
-    $('#bracketBody tr').each(function () {
-        const min = $(this).find('.bracket-min').val();
-        const max = $(this).find('.bracket-max').val();
-        const rate = $(this).find('.bracket-rate').val();
-        brackets.push({
-            min_amount: min,
-            max_amount: max === '' ? null : max,
-            rate: rate
-        });
-    });
-    return brackets;
-}
-function resetRateVersionForm() {
-    $('#rateVersionForm')[0].reset();
-    $('#rate_id').val('');
-    $('.is-invalid').removeClass('is-invalid');
-    $('#bracketBody').empty();
-    if (currentItemCtx) {
-        $('#rate_statutory_item_id').val(currentItemCtx.id);
-        applyCalcMethodFieldsTs(currentItemCtx.calc_method);
-        if (currentItemCtx.calc_method === 'progressive_bracket') {
-            addBracketRow(0, '', '');
-        }
-    }
-}
-function populateRateVersionForm(row) {
-    $('#rate_id').val(row.id);
-    $('#rate_statutory_item_id').val(row.statutory_item_id);
-    $('#rate_effective_date').val(toDisplayDateTs(row.effective_date)).datepicker('update');
-    $('#rate_end_date').val(toDisplayDateTs(row.end_date)).datepicker('update');
-    $('#rate_employee_rate').val(row.employee_rate !== null ? row.employee_rate : '');
-    $('#rate_employer_rate').val(row.employer_rate !== null ? row.employer_rate : '');
-    $('#rate_employee_amount').val(row.employee_amount !== null ? row.employee_amount : '');
-    $('#rate_employer_amount').val(row.employer_amount !== null ? row.employer_amount : '');
-    $('#rate_min_base_amount').val(row.min_base_amount !== null ? row.min_base_amount : '');
-    $('#rate_max_base_amount').val(row.max_base_amount !== null ? row.max_base_amount : '');
-    $('#rate_max_employee_contribution').val(row.max_employee_contribution !== null ? row.max_employee_contribution : '');
-    $('#rate_max_employer_contribution').val(row.max_employer_contribution !== null ? row.max_employer_contribution : '');
-    $('#rate_remark').val(row.remark || '');
-    $('#rate_formula_config').val(row.formula_config ? JSON.stringify(JSON.parse(row.formula_config), null, 2) : '');
-    $('#bracketBody').empty();
-    if (currentItemCtx && currentItemCtx.calc_method === 'progressive_bracket') {
-        (row.brackets || []).forEach(b => addBracketRow(b.min_amount, b.max_amount, b.rate));
-        if (!row.brackets || row.brackets.length === 0) addBracketRow(0, '', '');
-    }
-    applyCalcMethodFieldsTs(currentItemCtx ? currentItemCtx.calc_method : '');
-}
-function validateRateVersionForm() {
-    let firstInvalid = null;
-    $('#rateVersionModal .required').each(function () {
-        const $el = $(this);
-        if ($el.closest('.d-none').length > 0) return;
-        const value = ($el.val() || '').toString().trim();
-        if (!value) {
-            $el.addClass('is-invalid');
-            if (!firstInvalid) firstInvalid = $el;
-        } else {
-            $el.removeClass('is-invalid');
-        }
-    });
-    return firstInvalid;
-}
-function collectRateVersionFormData() {
-    const data = {
-        id: $('#rate_id').val() || undefined,
-        statutory_item_id: $('#rate_statutory_item_id').val(),
-        effective_date: toIsoDateTs($('#rate_effective_date').val()),
-        end_date: $('#rate_end_date').val() ? toIsoDateTs($('#rate_end_date').val()) : null,
-        min_base_amount: $('#rate_min_base_amount').val(),
-        max_base_amount: $('#rate_max_base_amount').val(),
-        max_employee_contribution: $('#rate_max_employee_contribution').val(),
-        max_employer_contribution: $('#rate_max_employer_contribution').val(),
-        remark: $('#rate_remark').val().trim()
-    };
-    if (currentItemCtx && currentItemCtx.calc_method === 'flat_rate') {
-        data.employee_rate = $('#rate_employee_rate').val();
-        data.employer_rate = $('#rate_employer_rate').val();
-    } else if (currentItemCtx && currentItemCtx.calc_method === 'fixed_amount') {
-        data.employee_amount = $('#rate_employee_amount').val();
-        data.employer_amount = $('#rate_employer_amount').val();
-    } else if (currentItemCtx && currentItemCtx.calc_method === 'progressive_bracket') {
-        data.brackets = collectBrackets();
-    } else if (currentItemCtx && currentItemCtx.calc_method === 'formula') {
-        data.formula_config = $('#rate_formula_config').val();
-    }
-    return data;
-}
-
-/* ---------- Rate Version Calculation Preview ---------- */
-function rateVersionCalcPreviewStepLine(labelKey, value) {
-    return `<div class="calc-preview-step"><span>${langData[labelKey] || labelKey}</span>: <code>${value}</code></div>`;
-}
-function rateVersionCalcPreviewFormulaStepsHtml(formula) {
-    if (!formula) return '';
-    let html = '';
-    if (formula.type === 'flat_rate') {
-        html += rateVersionCalcPreviewStepLine('calc_preview_step_raw_base', fmtNumTs(formula.raw_base));
-        if (formula.min_base !== null) html += rateVersionCalcPreviewStepLine('calc_preview_step_min_base', fmtNumTs(formula.min_base));
-        if (formula.max_base !== null) html += rateVersionCalcPreviewStepLine('calc_preview_step_max_base', fmtNumTs(formula.max_base));
-        html += rateVersionCalcPreviewStepLine('calc_preview_step_effective_base', fmtNumTs(formula.effective_base));
-        if (formula.employee_rate !== null) {
-            html += rateVersionCalcPreviewStepLine('calc_preview_step_employee_rate', formula.employee_rate + '%');
-            html += rateVersionCalcPreviewStepLine('calc_preview_step_employee_raw_amount', fmtNumTs(formula.employee_raw_amount));
-        }
-        if (formula.max_employee_contribution !== null) {
-            html += rateVersionCalcPreviewStepLine('calc_preview_step_max_employee_contribution', fmtNumTs(formula.max_employee_contribution));
-            html += rateVersionCalcPreviewStepLine('calc_preview_step_capped', formula.employee_capped ? (langData['calc_preview_yes'] || 'Yes') : (langData['calc_preview_no'] || 'No'));
-        }
-    } else if (formula.type === 'fixed_amount') {
-        html += rateVersionCalcPreviewStepLine('calc_preview_step_employee_amount', formula.is_employee_applicable ? fmtNumTs(formula.employee_amount) : (langData['calc_preview_step_not_applicable'] || 'Not applicable'));
-        html += rateVersionCalcPreviewStepLine('calc_preview_step_employer_amount', formula.is_employer_applicable ? fmtNumTs(formula.employer_amount) : (langData['calc_preview_step_not_applicable'] || 'Not applicable'));
-    } else if (formula.type === 'progressive_bracket') {
-        html += rateVersionCalcPreviewStepLine('calc_preview_step_base', fmtNumTs(formula.base));
-        (formula.steps || []).forEach(function (s) {
-            const maxLabel = s.max !== null ? fmtNumTs(s.max) : (langData['no_upper_limit'] || 'No upper limit');
-            const label = (langData['calc_preview_step_bracket_row'] || 'Bracket {min} - {max} @ {rate}%')
-                .replace('{min}', fmtNumTs(s.min)).replace('{max}', maxLabel).replace('{rate}', s.rate);
-            html += `<div class="calc-preview-step"><span>${label}</span>: <code>${fmtNumTs(s.taxable)} × ${s.rate}% = ${fmtNumTs(s.tax)}</code></div>`;
-        });
-    } else if (formula.type === 'formula') {
-        html += rateVersionCalcPreviewStepLine('calc_preview_step_base', fmtNumTs(formula.base));
-        html += rateVersionCalcPreviewStepLine('calc_preview_step_employee_amount', fmtNumTs(formula.employee_amount));
-        html += rateVersionCalcPreviewStepLine('calc_preview_step_employer_amount', fmtNumTs(formula.employer_amount));
-    }
-    return html;
-}
-function resetRateVersionCalcPreview() {
-    $('#rateVersionCalcPreviewBase').val(30000);
-    $('#rateVersionCalcPreviewResult').addClass('d-none').empty();
-}
-function invalidateRateVersionCalcPreview() {
-    $('#rateVersionCalcPreviewResult').addClass('d-none');
-}
-
-/* ---------- UI bindings ---------- */
-function initStatutoryItemUI() {
-    $(document).on('click', '.btn-add-item', function () {
-        resetItemForm();
-        new bootstrap.Modal(document.getElementById('statutoryItemModal')).show();
-    });
-    $(document).on('click', '.btn-edit-item', function () {
-        const id = $(this).data('id');
-        $.ajax({
-            url: `${BASE_URL}/api/statutory-item.get`,
-            method: 'GET',
-            data: { id: id },
-            dataType: 'json',
-            success: function (res) {
-                if (res.status) {
-                    resetItemForm();
-                    populateItemForm(res.data);
-                    new bootstrap.Modal(document.getElementById('statutoryItemModal')).show();
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
-                }
-            },
-            error: function () {
-                showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
-            }
-        });
-    });
-    $(document).on('click', '.btn-manage-rate', function () {
-        const id = $(this).data('id');
-        const rowData = tb_statutory_item.rows().data().toArray().find(r => Number(r.id) === Number(id));
-        if (rowData) openRateHistoryModal(rowData);
-    });
-    $(document).on('submit', '#statutoryItemForm', function (e) {
-        e.preventDefault();
-        const invalidEl = validateItemForm();
-        if (invalidEl) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
-        }
-        const payload = collectItemFormData();
-        const $btn = $('#statutoryItemForm button[type="submit"]');
-        const originalHtml = $btn.html();
-        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
-        $.ajax({
-            url: `${BASE_URL}/api/statutory-item.save`,
-            method: 'POST',
-            contentType: 'application/json',
-            dataType: 'json',
-            data: JSON.stringify(payload),
-            success: function (res) {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                if (res.status) {
-                    showSuccess(langData['save_success'] || 'Saved successfully.');
-                    bootstrap.Modal.getInstance(document.getElementById('statutoryItemModal')).hide();
-                    if (tb_statutory_item) tb_statutory_item.ajax.reload(null, false);
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-                }
-            },
-            error: function () {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-            }
-        });
-    });
-    $(document).on('click', '.btn-delete-item', function () {
-        const id = $(this).data('id');
-        const title = langData['confirm_delete_title'] || 'Confirm Delete';
-        const message = langData['confirm_delete_message'] || 'Are you sure you want to delete this item?';
-        showConfirm(title, message, function () {
-            $.ajax({
-                url: `${BASE_URL}/api/statutory-item.delete`,
-                method: 'POST',
-                contentType: 'application/json',
-                dataType: 'json',
-                data: JSON.stringify({ id: id }),
-                success: function (res) {
-                    if (res.status) {
-                        showSuccess(langData['delete_success'] || 'Deleted successfully.');
-                        if (tb_statutory_item) tb_statutory_item.ajax.reload(null, false);
-                    } else {
-                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
-                    }
-                },
-                error: function () {
-                    showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
-                }
-            });
-        });
-    });
-
-    /* Rate history + version */
-    $(document).on('click', '#btnAddRateVersion', function () {
-        resetRateVersionForm();
-        resetRateVersionCalcPreview();
-        bootstrap.Modal.getInstance(document.getElementById('rateHistoryModal')).hide();
-        new bootstrap.Modal(document.getElementById('rateVersionModal')).show();
-    });
-    $(document).on('click', '.btn-edit-rate', function () {
-        const id = $(this).data('id');
-        $.ajax({
-            url: `${BASE_URL}/api/statutory-item.rate-history.get`,
-            method: 'GET',
-            data: { id: id },
-            dataType: 'json',
-            success: function (res) {
-                if (res.status) {
-                    resetRateVersionForm();
-                    resetRateVersionCalcPreview();
-                    populateRateVersionForm(res.data);
-                    bootstrap.Modal.getInstance(document.getElementById('rateHistoryModal')).hide();
-                    new bootstrap.Modal(document.getElementById('rateVersionModal')).show();
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
-                }
-            },
-            error: function () {
-                showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
-            }
-        });
-    });
-    $(document).on('click', '.btn-delete-rate', function () {
-        const id = $(this).data('id');
-        const title = langData['confirm_delete_title'] || 'Confirm Delete';
-        const message = langData['confirm_delete_message'] || 'Are you sure you want to delete this item?';
-        showConfirm(title, message, function () {
-            $.ajax({
-                url: `${BASE_URL}/api/statutory-item.rate-history.delete`,
-                method: 'POST',
-                contentType: 'application/json',
-                dataType: 'json',
-                data: JSON.stringify({ id: id }),
-                success: function (res) {
-                    if (res.status) {
-                        showSuccess(langData['delete_success'] || 'Deleted successfully.');
-                        if (tb_rate_history) tb_rate_history.ajax.reload(null, false);
-                        if (tb_statutory_item) tb_statutory_item.ajax.reload(null, false);
-                    } else {
-                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
-                    }
-                },
-                error: function () {
-                    showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.');
-                }
-            });
-        });
-    });
-    $(document).on('click', '#btnBackToRateHistory', function () {
-        bootstrap.Modal.getInstance(document.getElementById('rateVersionModal')).hide();
-        new bootstrap.Modal(document.getElementById('rateHistoryModal')).show();
-    });
-    $(document).on('click', '#btnAddBracketRow', function () {
-        const lastMax = $('#bracketBody tr:last .bracket-max').val();
-        addBracketRow(lastMax !== '' && lastMax !== undefined ? (parseFloat(lastMax) + 0.01).toFixed(2) : '', '', '');
-        invalidateRateVersionCalcPreview();
-    });
-    $(document).on('click', '.btn-remove-bracket', function () {
-        $(this).closest('tr').remove();
-        recalcBracketRowsTs();
-        invalidateRateVersionCalcPreview();
-    });
-    $(document).on('change', '.bracket-max', function () {
-        recalcBracketRowsTs();
-        invalidateRateVersionCalcPreview();
-    });
-    $(document).on('change input', '.bracket-min, .bracket-rate', function () {
-        invalidateRateVersionCalcPreview();
-    });
-    $(document).on('change input', '#rate_employee_rate, #rate_employer_rate, #rate_employee_amount, #rate_employer_amount, #rate_min_base_amount, #rate_max_base_amount, #rate_max_employee_contribution, #rate_max_employer_contribution, #rate_formula_config', function () {
-        invalidateRateVersionCalcPreview();
-    });
-    $(document).on('click', '#btnRateVersionCalcPreview', function () {
-        const $btn = $(this);
-        const sampleBase = parseFloat($('#rateVersionCalcPreviewBase').val());
-        if (isNaN(sampleBase) || sampleBase < 0) {
-            showWarning(langData['invalid_input'] || 'Please enter a valid value.');
-            return;
-        }
-        const payload = collectRateVersionFormData();
-        payload.sample_base_amount = sampleBase;
-        const originalHtml = $btn.html();
-        $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i>');
-        $.ajax({
-            url: `${BASE_URL}/api/statutory-item.rate-version.preview`,
-            method: 'POST',
-            contentType: 'application/json',
-            dataType: 'json',
-            data: JSON.stringify(payload),
-            success: function (res) {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                if (res.status) {
-                    const stepsHtml = rateVersionCalcPreviewFormulaStepsHtml(res.formula);
-                    const empLabel = langData['calc_preview_step_employee_amount'] || 'Employee Amount';
-                    const erLabel = langData['calc_preview_step_employer_amount'] || 'Employer Amount';
-                    $('#rateVersionCalcPreviewResult').removeClass('d-none').html(`
-                        <div class="calc-preview-amount mb-1">${empLabel}: ${fmtNumTs(res.employee_amount)} &nbsp;|&nbsp; ${erLabel}: ${fmtNumTs(res.employer_amount)}</div>
-                        ${stepsHtml}
-                    `);
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Unable to compute preview.');
-                }
-            },
-            error: function () {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                showWarning(langData['save_failed'] || 'An error occurred while computing the preview.');
-            }
-        });
-    });
-    $(document).on('submit', '#rateVersionForm', function (e) {
-        e.preventDefault();
-        const invalidEl = validateRateVersionForm();
-        if (invalidEl) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
-        }
-        const payload = collectRateVersionFormData();
-        const $btn = $('#rateVersionForm button[type="submit"]');
-        const originalHtml = $btn.html();
-        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
-        $.ajax({
-            url: `${BASE_URL}/api/statutory-item.rate-history.save`,
-            method: 'POST',
-            contentType: 'application/json',
-            dataType: 'json',
-            data: JSON.stringify(payload),
-            success: function (res) {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                if (res.status) {
-                    showSuccess(langData['save_success'] || 'Saved successfully.');
-                    bootstrap.Modal.getInstance(document.getElementById('rateVersionModal')).hide();
-                    new bootstrap.Modal(document.getElementById('rateHistoryModal')).show();
-                    if (tb_rate_history) tb_rate_history.ajax.reload(null, false);
-                    if (tb_statutory_item) tb_statutory_item.ajax.reload(null, false);
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-                }
-            },
-            error: function () {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-            }
-        });
-    });
+    return `<div class="small">${escapeHtml(dateStr)}</div>${name ? `<div class="text-muted small">${escapeHtml(name)}</div>` : ''}`;
 }
 
 /* ---------- Company Statutory Settings (Part 2) ---------- */
@@ -775,8 +91,8 @@ function csRateInUseCellTs(row) {
         const empAmt = hasOverride ? row.employee_amount_override : row.master_employee_amount;
         const erAmt = hasOverride ? row.employer_amount_override : row.master_employer_amount;
         const parts = [];
-        if (row.is_employee_applicable == 1 && empAmt !== null) parts.push(fmtNumTs(empAmt));
-        if (row.is_employer_applicable == 1 && erAmt !== null) parts.push(fmtNumTs(erAmt));
+        if (row.is_employee_applicable == 1 && empAmt !== null) parts.push(fmtNum(empAmt));
+        if (row.is_employer_applicable == 1 && erAmt !== null) parts.push(fmtNum(erAmt));
         valueText = parts.join(' / ');
     } else if (row.calc_method === 'progressive_bracket') {
         valueText = langData['tax_brackets'] || 'Tax Brackets';
@@ -789,11 +105,18 @@ function csAdjustableCellTs(row) {
     const adjustable = Number(row.is_company_rate_editable) === 1 && ['flat_rate', 'fixed_amount'].includes(row.calc_method);
     return adjustable ? (langData['yes'] || 'Yes') : `<span class="text-muted">${langData['no'] || 'No'}</span>`;
 }
-// 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-// ".btn-circle-action" section) replace the old adjacent .btn-group.
+// 2026-09-03, Backlog Phase 9, T046, explicit request: "merge Edit and Manage Rates into ONE
+// button... icon must clearly communicate what the button does" -- fa-sliders (not a plain pencil)
+// opens the single statutoryRateModal, tabs adapted per row.item_scope inside it (see
+// openStatutoryRateModal()). Delete only ever shown for a company's own custom item (item_scope=
+// 'custom') -- a master item has no delete action on this page at all, same as before T046.
 function csActionButtonsTs(row) {
+    const deleteBtn = row.item_scope === 'custom'
+        ? `<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-custom-item" data-id="${row.statutory_item_id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>`
+        : '';
     return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-cs" data-id="${row.statutory_item_id}"><i class="fas fa-edit"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-sr" data-id="${row.statutory_item_id}" title="${langData['manage'] || 'Manage'}"><i class="fa-solid fa-sliders"></i></button>
+        ${deleteBtn}
     </div>`;
 }
 function initCompanySettingTable() {
@@ -807,7 +130,19 @@ function initCompanySettingTable() {
         info: false,
         ajax: {
             url: `${BASE_URL}/api/company-statutory-setting.list`,
-            dataSrc: 'data'
+            // 2026-09-03, Backlog Phase 9, T044 -- fills #masterRateCountryLabel from THIS response
+            // now (CompanyStatutorySettingModel::list()'s new countries_name_th/en join), same "read
+            // the country name off the first row" pattern the removed Master Rates tab used, since
+            // this table is now the only country-scoped list on the page.
+            dataSrc: function (json) {
+                const rows = json.data || [];
+                const first = rows[0];
+                const label = first
+                    ? ((currentLang === 'en' ? first.countries_name_en : first.countries_name_th) || first.country_code)
+                    : (langData['no_statutory_country_configured'] || '-');
+                $('#masterRateCountryLabel').text(label);
+                return rows;
+            }
         },
         columns: [
             // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- status switch is the first
@@ -817,8 +152,8 @@ function initCompanySettingTable() {
             // toggleStatus()'s own docblock and TaxStatutoryController::companySettingToggleStatus()'s
             // own comment on why the endpoint reads `id` for what is semantically an item id.
             { data: 'effective_status', render: (d, t, row) => renderStatusToggleHtml(row.statutory_item_id, d === 'active', '/api/company-statutory-setting.toggle-status') },
-            { data: 'code', render: d => `<code class="fw-bold text-dark">${escapeHtmlTs(d)}</code>` },
-            { data: null, render: (d, t, row) => escapeHtmlTs(itemNameTs(row)) },
+            { data: 'code', render: d => `<code class="fw-bold text-dark">${escapeHtml(d)}</code>` },
+            { data: null, render: (d, t, row) => escapeHtml(itemNameTs(row)) },
             { data: 'category', render: d => categoryBadgeTs(d) },
             { data: null, className: 'text-end', render: (d, t, row) => csRateInUseCellTs(row) },
             { data: null, render: (d, t, row) => csAdjustableCellTs(row) },
@@ -841,7 +176,22 @@ function initCompanySettingTable() {
         searching: true,
         initComplete: function () {
             const self = this.api();
-            $(self.table().container()).find('.dt-search').hide();
+            const $wrapper = $(self.table().container());
+            const $searchDiv = $wrapper.find('.dt-search');
+            // 2026-09-03, Backlog Phase 9, T046 -- "Add" for a company's own CUSTOM statutory item
+            // (T045's whole point -- there was no UI to create one at all until now), injected the
+            // same ".dt-search" convention every other Add button in this app uses. Hides only the
+            // native search INPUT/LABEL inside .dt-search (not the whole container -- that would
+            // also hide this button, since it's this container's own child) so the original
+            // "no redundant search box" look is preserved while still hosting a toolbar button here.
+            $searchDiv.find('input, label').not('.btn-add-custom-item, .btn-add-custom-item *').hide();
+            if ($searchDiv.find('.btn-add-custom-item').length === 0) {
+                $searchDiv.append(`
+                    <button type="button" class="btn btn-primary ms-1 btn-add-custom-item">
+                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="sr_add_custom_item">${langData['sr_add_custom_item'] || 'Add Custom Item'}</span>
+                    </button>
+                `);
+            }
             initExcelColumnFilters(self, {
                 mode: 'client',
                 columns: [
@@ -867,13 +217,22 @@ function masterRateDisplayTs(row) {
     }
     if (row.calc_method === 'fixed_amount') {
         const parts = [];
-        if (row.is_employee_applicable == 1 && row.master_employee_amount !== null) parts.push(`${langData['modal_employee_amount'] || 'Employee'}: ${fmtNumTs(row.master_employee_amount)}`);
-        if (row.is_employer_applicable == 1 && row.master_employer_amount !== null) parts.push(`${langData['modal_employer_amount'] || 'Employer'}: ${fmtNumTs(row.master_employer_amount)}`);
+        if (row.is_employee_applicable == 1 && row.master_employee_amount !== null) parts.push(`${langData['modal_employee_amount'] || 'Employee'}: ${fmtNum(row.master_employee_amount)}`);
+        if (row.is_employer_applicable == 1 && row.master_employer_amount !== null) parts.push(`${langData['modal_employer_amount'] || 'Employer'}: ${fmtNum(row.master_employer_amount)}`);
         return parts.join(', ');
     }
     return '';
 }
-function openCompanySettingModal(row) {
+// 2026-09-03, Backlog Phase 9, T046 -- state for whichever item statutoryRateModal currently has
+// open, shared by every tab's own handlers below (Setting/Details/Rate History all act on the SAME
+// item). `id: null` means "not yet saved" (a brand-new custom item mid-creation) -- Rate History
+// stays unreachable until the item itself has a real id (see openStatutoryRateModal()).
+let currentSrItem = null;
+let tb_sr_rate_history;
+
+/** Setting tab content (master items only) -- was openCompanySettingModal()'s own modal-opening
+ *  version before T046 folded it into one tab of statutoryRateModal; content/fields UNCHANGED. */
+function openCompanySettingTabContent(row) {
     const adjustable = Number(row.is_company_rate_editable) === 1 && ['flat_rate', 'fixed_amount'].includes(row.calc_method);
     currentCsItem = {
         id: row.statutory_item_id,
@@ -881,9 +240,7 @@ function openCompanySettingModal(row) {
         adjustable: adjustable
     };
     $('#companySettingForm')[0].reset();
-    $('.is-invalid').removeClass('is-invalid');
-    $('#cs_statutory_item_id').val(row.statutory_item_id);
-    $('#companySettingItemName').text(`(${row.code} - ${itemNameTs(row)})`);
+    $('#companySettingForm .is-invalid').removeClass('is-invalid');
     $('#cs_is_active').prop('checked', row.effective_status === 'active');
     $('#cs_rate_fields').toggleClass('d-none', !adjustable || row.calc_method !== 'flat_rate');
     $('#cs_amount_fields').toggleClass('d-none', !adjustable || row.calc_method !== 'fixed_amount');
@@ -898,11 +255,17 @@ function openCompanySettingModal(row) {
     } else {
         $('#cs_master_default_hint').text(langData['not_adjustable_hint'] || "This item's rate is fixed by law and cannot be adjusted per company. You may only enable or disable it.");
     }
-    new bootstrap.Modal(document.getElementById('companySettingModal')).show();
+    // 2026-09-03, T046 -- "Update as system default" for THIS company's own rate override (see
+    // CompanyStatutorySettingModel::promoteOverrideToMaster()'s own docblock). Shown only when
+    // there's actually an override configured to promote -- the backend would refuse otherwise
+    // anyway, but hiding it here avoids a guaranteed-to-fail click for the common "still on
+    // default" case. Always rendered regardless of the viewer's own tax_statutory.promote_master
+    // permission though (see statutoryRateModal's own markup comment on why).
+    $('#srPromoteOverrideBtn').toggleClass('d-none', !csHasOverrideTs(row));
 }
 function collectCompanySettingFormData() {
     return {
-        statutory_item_id: $('#cs_statutory_item_id').val(),
+        statutory_item_id: currentSrItem ? currentSrItem.id : null,
         is_active: $('#cs_is_active').is(':checked'),
         employee_rate_override: $('#cs_employee_rate_override').val(),
         employer_rate_override: $('#cs_employer_rate_override').val(),
@@ -911,12 +274,443 @@ function collectCompanySettingFormData() {
         remark: $('#cs_remark').val().trim()
     };
 }
-function initCompanySettingUI() {
-    $(document).on('click', '.btn-edit-cs', function () {
+
+/* ---------- Item Details tab (custom items only, T046) ---------- */
+function resetSrDetailsForm() {
+    $('#srDetailsForm')[0].reset();
+    $('#srDetailsForm .is-invalid').removeClass('is-invalid');
+    // 2026-09-04, T047 -- select2-remote fields (master_statutory_categories/_calc_bases) are
+    // cleared via .empty() (removes any leftover <option> from a previously-open item), NOT a plain
+    // .val('') -- an ajax-mode select2 has no option elements to select from at all until the user
+    // actually searches, so .val('') alone would leave a stale option/label showing.
+    $('#sr_item_category').empty().trigger('change');
+    $('#sr_item_calc_method').val('flat_rate').trigger('change');
+    $('#sr_item_calc_base').empty().trigger('change');
+    $('#sr_item_rounding_mode').val('round').trigger('change');
+    $('#sr_item_decimal_places').val(2);
+    $('#sr_item_is_employee_applicable, #sr_item_is_employer_applicable').prop('checked', true);
+    // A brand-new custom item's calc_method is freely choosable; an EXISTING one is locked (see
+    // populateSrDetailsForm()) -- changing calc_method on a saved item would orphan its own rate
+    // history (built around the OLD method's fields), same reasoning TaxStatutoryModel::save()'s
+    // own docblock never had to state before because the old Master Rates form never let a
+    // non-superadmin reach an item with real rate history attached in the first place.
+    $('#sr_item_calc_method').prop('disabled', false);
+    $('#sr_calc_method_lock_hint').text('');
+    $('#srPromoteItemBtn').addClass('d-none');
+}
+function populateSrDetailsForm(row) {
+    $('#sr_item_code').val(row.code);
+    $('#sr_item_name_th').val(row.name_th);
+    $('#sr_item_name_en').val(row.name_en);
+    // 2026-09-04, T047 -- build the Option directly instead of a plain .val() -- these 2 fields are
+    // select2-remote (ajax) now, with no <option> preloaded for an existing value, so a bare .val()
+    // would silently fail to select/display anything (the same select2-remote-empty-preload bug
+    // documented elsewhere in this app, e.g. employee/detail.js's own team_id/work_location_id
+    // preload). Text comes straight from the SAME i18n keys the row's own badge rendering already
+    // uses (categoryBadgeTs()) -- no extra lookup call needed since these are still a small, known
+    // set locally.
+    const categoryText = langData['category_' + row.category] || row.category;
+    $('#sr_item_category').empty().append(new Option(categoryText, row.category, true, true)).trigger('change');
+    $('#sr_item_calc_method').val(row.calc_method).trigger('change').prop('disabled', true);
+    $('#sr_calc_method_lock_hint').text(langData['sr_calc_method_locked_hint'] || "Can't be changed after the item has rate history -- delete and recreate if genuinely needed.");
+    const calcBaseText = langData['calc_base_' + row.calc_base] || row.calc_base;
+    $('#sr_item_calc_base').empty().append(new Option(calcBaseText, row.calc_base, true, true)).trigger('change');
+    $('#sr_item_rounding_mode').val(row.rounding_mode || 'round').trigger('change');
+    $('#sr_item_decimal_places').val(row.decimal_places !== undefined && row.decimal_places !== null ? row.decimal_places : 2);
+    $('#sr_item_is_employee_applicable').prop('checked', Number(row.is_employee_applicable) === 1);
+    $('#sr_item_is_employer_applicable').prop('checked', Number(row.is_employer_applicable) === 1);
+    // Always rendered regardless of the viewer's own tax_statutory.promote_master permission -- see
+    // statutoryRateModal's own markup comment.
+    $('#srPromoteItemBtn').removeClass('d-none');
+}
+function validateSrDetailsForm() {
+    let firstInvalid = null;
+    $('#srDetailsForm .required').each(function () {
+        const $el = $(this);
+        const value = ($el.val() || '').toString().trim();
+        if (!value) {
+            $el.addClass('is-invalid');
+            if (!firstInvalid) firstInvalid = $el;
+        } else {
+            $el.removeClass('is-invalid');
+        }
+    });
+    return firstInvalid;
+}
+function collectSrDetailsFormData() {
+    return {
+        id: currentSrItem && currentSrItem.id ? currentSrItem.id : undefined,
+        code: $('#sr_item_code').val().trim(),
+        name_th: $('#sr_item_name_th').val().trim(),
+        name_en: $('#sr_item_name_en').val().trim(),
+        category: $('#sr_item_category').val(),
+        calc_method: $('#sr_item_calc_method').val(),
+        calc_base: $('#sr_item_calc_base').val(),
+        rounding_mode: $('#sr_item_rounding_mode').val() || 'round',
+        decimal_places: $('#sr_item_decimal_places').val() || 0,
+        is_employee_applicable: $('#sr_item_is_employee_applicable').is(':checked'),
+        is_employer_applicable: $('#sr_item_is_employer_applicable').is(':checked'),
+        // A custom item is always enabled-by-default for its OWNING company (the only company that
+        // will ever see it) -- default_is_active/is_company_rate_editable have no meaning for an
+        // item the company owns outright, left at their column defaults server-side.
+        default_is_active: true,
+    };
+}
+
+/* ---------- Rate History tab (both scopes, T046) ---------- */
+function srRateSummaryTs(row) {
+    if (!currentSrItem) return '';
+    if (currentSrItem.calc_method === 'flat_rate') {
+        const parts = [];
+        if (row.employee_rate !== null) parts.push(`${langData['modal_employee_rate'] || 'Employee'}: ${Number(row.employee_rate)}%`);
+        if (row.employer_rate !== null) parts.push(`${langData['modal_employer_rate'] || 'Employer'}: ${Number(row.employer_rate)}%`);
+        return parts.join(' / ');
+    }
+    if (currentSrItem.calc_method === 'fixed_amount') {
+        const parts = [];
+        if (row.employee_amount !== null) parts.push(`${langData['modal_employee_amount'] || 'Employee'}: ${fmtNum(row.employee_amount)}`);
+        if (row.employer_amount !== null) parts.push(`${langData['modal_employer_amount'] || 'Employer'}: ${fmtNum(row.employer_amount)}`);
+        return parts.join(' / ');
+    }
+    if (currentSrItem.calc_method === 'progressive_bracket') {
+        return `${row.bracket_count || 0} ${langData['tax_brackets'] || 'Tax Brackets'}`;
+    }
+    return langData['calc_method_formula'] || 'Formula-based';
+}
+// 2026-09-03, T046 -- a real DataTable (client-side, small per-item list), NOT hand-rendered rows --
+// same "every list uses DataTables" rule + same paging:false/info:false/searching:true-with-hidden-
+// box/Excel-column-filter shape the old (T044-removed) tb_rate_history already established for this
+// exact "rate versions for one item" use case. Initialized ONCE (guarded, same pattern as
+// initCompanySettingTable()); re-opening the modal for a DIFFERENT item just calls ajax.reload() --
+// the `data` callback below reads currentSrItem.id fresh on every reload, so it always targets
+// whichever item the modal currently has open.
+function initSrRateHistoryTable() {
+    if ($.fn.DataTable.isDataTable('#tb_sr_rate_history')) {
+        $('#tb_sr_rate_history').DataTable().ajax.reload(null, false);
+        return;
+    }
+    tb_sr_rate_history = $('#tb_sr_rate_history').DataTable({
+        responsive: true,
+        paging: false,
+        info: false,
+        ajax: {
+            url: `${BASE_URL}/api/statutory-item.rate-history.list`,
+            dataSrc: 'data',
+            data: function (d) { d.item_id = currentSrItem ? currentSrItem.id : 0; }
+        },
+        columns: [
+            { data: 'effective_date', render: { display: d => formatDisplayDate(d), sort: d => d, filter: d => d } },
+            { data: 'end_date', render: { display: d => d ? formatDisplayDate(d) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`, sort: d => d || '', filter: d => d || '' } },
+            { data: null, className: 'text-end', render: (d, t, row) => srRateSummaryTs(row) },
+            { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
+            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => `
+                <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-sr-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
+                <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-sr-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
+            ` }
+        ],
+        language: getTableLang(),
+        drawCallback: function () { getTableLang(); },
+        searching: true,
+        initComplete: function () {
+            const self = this.api();
+            $(self.table().container()).find('.dt-search').hide();
+            initExcelColumnFilters(self, {
+                mode: 'client',
+                columns: [
+                    { index: 0, key: 'effective_date' },
+                    { index: 1, key: 'end_date' },
+                ]
+            });
+        }
+    });
+}
+function applySrCalcMethodFields(calcMethod) {
+    $('#sr_rate_flat_fields').toggleClass('d-none', calcMethod !== 'flat_rate');
+    $('#sr_rate_amount_fields').toggleClass('d-none', calcMethod !== 'fixed_amount');
+    $('#sr_rate_bracket_fields').toggleClass('d-none', calcMethod !== 'progressive_bracket');
+    $('#sr_rate_formula_fields').toggleClass('d-none', calcMethod !== 'formula');
+    const showEmployee = currentSrItem ? currentSrItem.is_employee_applicable : true;
+    const showEmployer = currentSrItem ? currentSrItem.is_employer_applicable : true;
+    $('#sr_rate_employee_rate_wrapper, #sr_rate_employee_amount_wrapper').toggleClass('d-none', !showEmployee);
+    $('#sr_rate_employer_rate_wrapper, #sr_rate_employer_amount_wrapper').toggleClass('d-none', !showEmployer);
+    $('#sr_rate_employee_rate').toggleClass('required', calcMethod === 'flat_rate' && showEmployee);
+    $('#sr_rate_employer_rate').toggleClass('required', calcMethod === 'flat_rate' && showEmployer);
+    $('#sr_rate_employee_amount').toggleClass('required', calcMethod === 'fixed_amount' && showEmployee);
+    $('#sr_rate_employer_amount').toggleClass('required', calcMethod === 'fixed_amount' && showEmployer);
+    $('#sr_rate_formula_config').toggleClass('required', calcMethod === 'formula');
+}
+function srRecalcBracketRows() {
+    $('#srBracketBody tr').each(function (idx) {
+        if (idx === 0) return;
+        const prevMax = $('#srBracketBody tr').eq(idx - 1).find('.sr-bracket-max').val();
+        const min = prevMax !== '' ? (parseFloat(prevMax) + 0.01).toFixed(2) : '';
+        $(this).find('.sr-bracket-min').val(min);
+    });
+}
+function addSrBracketRow(min, max, rate) {
+    const idx = $('#srBracketBody tr').length;
+    const $row = $(`<tr>
+        <td><input type="number" step="0.01" class="form-control form-control-sm sr-bracket-min" value="${min !== undefined ? min : ''}" ${idx > 0 ? 'readonly' : ''}></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm sr-bracket-max" value="${max !== undefined && max !== null ? max : ''}" placeholder="${langData['no_upper_limit'] || 'No upper limit'}"></td>
+        <td><input type="number" step="0.0001" min="0" max="100" class="form-control form-control-sm sr-bracket-rate" value="${rate !== undefined ? rate : ''}"></td>
+        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-remove-sr-bracket"><i class="fa-solid fa-trash"></i></button></td>
+    </tr>`);
+    $('#srBracketBody').append($row);
+    if (idx === 0 && min === undefined) {
+        $row.find('.sr-bracket-min').val(0);
+    }
+}
+function collectSrBrackets() {
+    const brackets = [];
+    $('#srBracketBody tr').each(function () {
+        brackets.push({
+            min_amount: $(this).find('.sr-bracket-min').val(),
+            max_amount: $(this).find('.sr-bracket-max').val() === '' ? null : $(this).find('.sr-bracket-max').val(),
+            rate: $(this).find('.sr-bracket-rate').val(),
+        });
+    });
+    return brackets;
+}
+function showSrHistoryEditView(row) {
+    $('#srHistoryListView').addClass('d-none');
+    $('#srHistoryEditView').removeClass('d-none');
+    $('#srRateVersionForm')[0].reset();
+    $('#srRateVersionForm .is-invalid').removeClass('is-invalid');
+    $('#sr_rate_id').val('');
+    $('#srBracketBody').empty();
+    $('#srRateCalcPreviewBase').val(30000);
+    $('#srRateCalcPreviewResult').addClass('d-none').empty();
+    const calcMethod = currentSrItem ? currentSrItem.calc_method : 'flat_rate';
+    if (row) {
+        $('#sr_rate_id').val(row.id);
+        $('#sr_rate_effective_date').val(toDisplayDateTs(row.effective_date)).datepicker('update');
+        $('#sr_rate_end_date').val(toDisplayDateTs(row.end_date)).datepicker('update');
+        $('#sr_rate_employee_rate').val(row.employee_rate !== null ? row.employee_rate : '');
+        $('#sr_rate_employer_rate').val(row.employer_rate !== null ? row.employer_rate : '');
+        $('#sr_rate_employee_amount').val(row.employee_amount !== null ? row.employee_amount : '');
+        $('#sr_rate_employer_amount').val(row.employer_amount !== null ? row.employer_amount : '');
+        $('#sr_rate_min_base_amount').val(row.min_base_amount !== null ? row.min_base_amount : '');
+        $('#sr_rate_max_base_amount').val(row.max_base_amount !== null ? row.max_base_amount : '');
+        $('#sr_rate_remark').val(row.remark || '');
+        $('#sr_rate_formula_config').val(row.formula_config ? JSON.stringify(JSON.parse(row.formula_config), null, 2) : '');
+        if (calcMethod === 'progressive_bracket') {
+            (row.brackets || []).forEach(b => addSrBracketRow(b.min_amount, b.max_amount, b.rate));
+            if (!row.brackets || row.brackets.length === 0) addSrBracketRow(0, '', '');
+        }
+    } else {
+        $('#sr_rate_effective_date').val('').datepicker('update');
+        $('#sr_rate_end_date').val('').datepicker('update');
+        if (calcMethod === 'progressive_bracket') addSrBracketRow(0, '', '');
+    }
+    applySrCalcMethodFields(calcMethod);
+}
+function hideSrHistoryEditView() {
+    $('#srHistoryEditView').addClass('d-none');
+    $('#srHistoryListView').removeClass('d-none');
+}
+function collectSrRateVersionFormData() {
+    const data = {
+        id: $('#sr_rate_id').val() || undefined,
+        statutory_item_id: currentSrItem ? currentSrItem.id : null,
+        effective_date: toIsoDateTs($('#sr_rate_effective_date').val()),
+        end_date: $('#sr_rate_end_date').val() ? toIsoDateTs($('#sr_rate_end_date').val()) : null,
+        min_base_amount: $('#sr_rate_min_base_amount').val(),
+        max_base_amount: $('#sr_rate_max_base_amount').val(),
+        remark: $('#sr_rate_remark').val().trim(),
+    };
+    const calcMethod = currentSrItem ? currentSrItem.calc_method : '';
+    if (calcMethod === 'flat_rate') {
+        data.employee_rate = $('#sr_rate_employee_rate').val();
+        data.employer_rate = $('#sr_rate_employer_rate').val();
+    } else if (calcMethod === 'fixed_amount') {
+        data.employee_amount = $('#sr_rate_employee_amount').val();
+        data.employer_amount = $('#sr_rate_employer_amount').val();
+    } else if (calcMethod === 'progressive_bracket') {
+        data.brackets = collectSrBrackets();
+    } else if (calcMethod === 'formula') {
+        data.formula_config = $('#sr_rate_formula_config').val();
+    }
+    return data;
+}
+function srRateVersionCalcPreviewFormulaStepsHtml(formula) {
+    if (!formula) return '';
+    let html = '';
+    if (formula.type === 'flat_rate') {
+        if (formula.employee_rate !== null) {
+            html += `<div class="calc-preview-step"><span>${langData['calc_preview_step_employee_rate'] || 'Employee Rate'}</span>: <code>${formula.employee_rate}%</code></div>`;
+            html += `<div class="calc-preview-step"><span>${langData['calc_preview_step_employee_raw_amount'] || 'Amount'}</span>: <code>${fmtNum(formula.employee_raw_amount)}</code></div>`;
+        }
+    } else if (formula.type === 'progressive_bracket') {
+        (formula.steps || []).forEach(function (s) {
+            const maxLabel = s.max !== null ? fmtNum(s.max) : (langData['no_upper_limit'] || 'No upper limit');
+            html += `<div class="calc-preview-step"><span>${fmtNum(s.min)} - ${maxLabel} @ ${s.rate}%</span>: <code>${fmtNum(s.taxable)} × ${s.rate}% = ${fmtNum(s.tax)}</code></div>`;
+        });
+    }
+    return html;
+}
+
+/**
+ * 2026-09-03, Backlog Phase 9, T046 -- main entry point for the merged modal (replaces
+ * openCompanySettingModal()'s old "one modal, one purpose" shape). `row` is null for "Add Custom
+ * Item"; otherwise a row from tb_company_setting's own list() response (already carries
+ * item_scope). Which of the 3 tabs are even visible is decided HERE, once, based on scope + whether
+ * the item has a real id yet -- every tab's own populate function assumes it's only ever called
+ * when relevant.
+ */
+function openStatutoryRateModal(row) {
+    const isNew = !row;
+    const scope = isNew ? 'custom' : row.item_scope;
+    currentSrItem = {
+        id: isNew ? null : row.statutory_item_id,
+        scope: scope,
+        calc_method: isNew ? 'flat_rate' : row.calc_method,
+        is_employee_applicable: isNew ? true : Number(row.is_employee_applicable) === 1,
+        is_employer_applicable: isNew ? true : Number(row.is_employer_applicable) === 1,
+    };
+    $('#sr_statutory_item_id').val(currentSrItem.id || '');
+    $('#sr_item_scope').val(scope);
+    $('#srModalItemName').text(isNew ? (langData['sr_new_custom_item'] || 'New Custom Item') : `(${row.code} - ${itemNameTs(row)})`);
+    $('#srModalScopeBadgeMaster').toggleClass('d-none', scope !== 'master');
+    $('#srModalScopeBadgeCustom').toggleClass('d-none', scope !== 'custom');
+
+    $('#srDetailsTabItem').toggleClass('d-none', scope !== 'custom');
+    $('#srSettingTabItem').toggleClass('d-none', scope !== 'master');
+    // Rate History needs a real item id to fetch against -- unreachable until the Details tab has
+    // been saved at least once for a brand-new custom item.
+    $('#srHistoryTabItem').toggleClass('d-none', isNew);
+
+    hideSrHistoryEditView();
+    if (scope === 'custom') {
+        resetSrDetailsForm();
+        if (!isNew) populateSrDetailsForm(row);
+        bootstrap.Tab.getOrCreateInstance(document.getElementById('sr-details-tab')).show();
+    } else {
+        openCompanySettingTabContent(row);
+        // 2026-09-05, real bug found and fixed (explicit report: "ตรงภาษีเงินได้ กดเข้าไปแก้ไขไม่ขึ้น
+        // Form 8 อัตราครับ ขึ้นแบบเดียวกับประกันสังคม" -- Personal Income Tax's edit click doesn't show
+        // the 8-bracket form, it shows the same [default tab] as Social Security) -- a MASTER item
+        // ALWAYS defaulted to the Setting tab regardless of whether that tab has anything useful to
+        // show. Setting tab is only ever meaningful for an ADJUSTABLE item (flat_rate/fixed_amount
+        // AND is_company_rate_editable=1, e.g. TH_SSO) -- it lets a company override the master
+        // rate. A progressive_bracket item like TH_PIT (or any item with is_company_rate_editable=0)
+        // can NEVER be overridden at all (see openCompanySettingTabContent()'s own `adjustable`
+        // check just above), so its Setting tab only ever shows a static "not adjustable" hint --
+        // the actual 8 PIT tax brackets live in the Rate History tab, one extra click away, which
+        // read to the user as "nothing happened / looks the same as SSO's [equally tab-first, but
+        // actually useful there] edit screen." Fixed by defaulting straight to the Rate History tab
+        // for a non-adjustable master item instead, since that's the only tab with real content to
+        // manage for one -- an adjustable item (SSO/PVD-style) is unaffected, still opens on Setting.
+        const adjustable = Number(row.is_company_rate_editable) === 1 && ['flat_rate', 'fixed_amount'].includes(row.calc_method);
+        const defaultTabId = adjustable ? 'sr-setting-tab' : 'sr-history-tab';
+        bootstrap.Tab.getOrCreateInstance(document.getElementById(defaultTabId)).show();
+    }
+    // Rate History tab is hidden entirely for a brand-new item (srHistoryTabItem's own d-none
+    // above) -- nothing to load yet, and manually touching #tb_sr_rate_history's DOM here (rather
+    // than through the DataTables API) would desync its internal state for whenever a REAL item
+    // does get opened later in the same page session.
+    if (!isNew) {
+        initSrRateHistoryTable();
+    }
+    new bootstrap.Modal(document.getElementById('statutoryRateModal')).show();
+}
+
+function initStatutoryRateModalUI() {
+    $(document).on('click', '.btn-add-custom-item', function () {
+        openStatutoryRateModal(null);
+    });
+    $(document).on('click', '.btn-manage-sr', function () {
         const itemId = $(this).data('id');
         const rowData = tb_company_setting.rows().data().toArray().find(r => Number(r.statutory_item_id) === Number(itemId));
-        if (rowData) openCompanySettingModal(rowData);
+        if (rowData) openStatutoryRateModal(rowData);
     });
+    $(document).on('click', '.btn-delete-custom-item', function () {
+        const id = $(this).data('id');
+        showConfirm(langData['confirm_delete_title'] || 'Confirm Delete', langData['confirm_delete_message'] || 'Are you sure you want to delete this item?', function () {
+            $.ajax({
+                url: `${BASE_URL}/api/statutory-item.custom.delete`,
+                method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify({ id: id }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(langData['delete_success'] || 'Deleted successfully.');
+                        if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                    } else {
+                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
+                    }
+                },
+                error: function () { showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.'); }
+            });
+        });
+    });
+
+    /* ---- Item Details tab (custom items) ---- */
+    $(document).on('submit', '#srDetailsForm', function (e) {
+        e.preventDefault();
+        const invalidEl = validateSrDetailsForm();
+        if (invalidEl) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        const payload = collectSrDetailsFormData();
+        const $btn = $('#srDetailsForm button[type="submit"]');
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
+        $.ajax({
+            url: `${BASE_URL}/api/statutory-item.custom.save`,
+            method: 'POST', contentType: 'application/json', dataType: 'json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                    // Newly-created item now has a real id -- unlock Rate History + lock calc_method,
+                    // same as if the modal had been reopened on an already-saved row.
+                    currentSrItem.id = res.id || currentSrItem.id;
+                    $('#sr_statutory_item_id').val(currentSrItem.id);
+                    $('#srHistoryTabItem').removeClass('d-none');
+                    $('#sr_item_calc_method').prop('disabled', true);
+                    $('#sr_calc_method_lock_hint').text(langData['sr_calc_method_locked_hint'] || "Can't be changed after the item has rate history -- delete and recreate if genuinely needed.");
+                    $('#srPromoteItemBtn').removeClass('d-none');
+                    initSrRateHistoryTable();
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+            }
+        });
+    });
+    $(document).on('click', '#srPromoteItemBtn', function () {
+        if (!currentSrItem || !currentSrItem.id) return;
+        showConfirm(
+            langData['sr_promote_item_confirm_title'] || 'Promote this item to system default?',
+            langData['sr_promote_item_confirm_message'] || 'This item becomes visible to EVERY company in this country from now on. This cannot be undone.',
+            function () {
+                $.ajax({
+                    url: `${BASE_URL}/api/statutory-item.custom.promote`,
+                    method: 'POST', contentType: 'application/json', dataType: 'json',
+                    data: JSON.stringify({ id: currentSrItem.id }),
+                    success: function (res) {
+                        if (res.status) {
+                            showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                            bootstrap.Modal.getInstance(document.getElementById('statutoryRateModal')).hide();
+                            if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                        } else {
+                            showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                        }
+                    },
+                    error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
+                });
+            }
+        );
+    });
+
+    /* ---- Company Setting tab (master items) ---- */
     $(document).on('submit', '#companySettingForm', function (e) {
         e.preventDefault();
         const payload = collectCompanySettingFormData();
@@ -925,16 +719,14 @@ function initCompanySettingUI() {
         $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
         $.ajax({
             url: `${BASE_URL}/api/company-statutory-setting.save`,
-            method: 'POST',
-            contentType: 'application/json',
-            dataType: 'json',
+            method: 'POST', contentType: 'application/json', dataType: 'json',
             data: JSON.stringify(payload),
             success: function (res) {
                 $btn.prop('disabled', false).html(originalHtml);
                 if (typeof updateText === 'function') updateText($btn[0]);
                 if (res.status) {
                     showSuccess(langData['save_success'] || 'Saved successfully.');
-                    bootstrap.Modal.getInstance(document.getElementById('companySettingModal')).hide();
+                    bootstrap.Modal.getInstance(document.getElementById('statutoryRateModal')).hide();
                     if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
@@ -954,41 +746,216 @@ function initCompanySettingUI() {
         showConfirm(title, message, function () {
             $.ajax({
                 url: `${BASE_URL}/api/company-statutory-setting.reset`,
-                method: 'POST',
-                contentType: 'application/json',
-                dataType: 'json',
+                method: 'POST', contentType: 'application/json', dataType: 'json',
                 data: JSON.stringify({ statutory_item_id: currentCsItem.id }),
                 success: function (res) {
                     if (res.status) {
                         showSuccess(langData['reset_success'] || 'Reset to system default successfully.');
-                        bootstrap.Modal.getInstance(document.getElementById('companySettingModal')).hide();
+                        bootstrap.Modal.getInstance(document.getElementById('statutoryRateModal')).hide();
                         if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
                     } else {
                         showWarning(res.message || langData['save_failed'] || 'Failed to reset data.');
                     }
                 },
-                error: function () {
-                    showWarning(langData['save_failed'] || 'An error occurred.');
-                }
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred.'); }
             });
+        });
+    });
+    // 2026-09-03, T046 -- "Update as system default" for this company's own rate OVERRIDE (the
+    // other promote case -- see srPromoteItemBtn above for promoting a whole custom item). Needs an
+    // effective_date the backend doesn't have a sensible default for (it's a real, dated master rate
+    // version) -- a plain SweetAlert2 input prompt rather than a new shared alert.js helper, since
+    // this is the one place in the app that needs a date INPUT inside a confirm, not just yes/no.
+    $(document).on('click', '#srPromoteOverrideBtn', function () {
+        if (!currentCsItem) return;
+        const today = new Date().toISOString().slice(0, 10);
+        Swal.fire({
+            icon: 'info',
+            title: langData['sr_promote_override_confirm_title'] || 'Promote your override to system default?',
+            html: `<p>${langData['sr_promote_override_confirm_message'] || 'Your own rate override becomes the new master default for EVERY company in this country from this date onward. This cannot be undone.'}</p>
+                   <label class="form-label small mb-1 d-block text-start">${langData['modal_effective_date'] || 'Effective Date'}</label>
+                   <input type="date" id="swalSrPromoteDate" class="swal2-input" value="${today}">`,
+            showCancelButton: true,
+            confirmButtonText: langData.yes || 'Yes',
+            cancelButtonText: langData.no || 'No',
+            preConfirm: () => {
+                const val = document.getElementById('swalSrPromoteDate').value;
+                if (!val) { Swal.showValidationMessage(langData['required_star_message'] || 'Please fill all fields marked with *'); }
+                return val;
+            }
+        }).then(r => {
+            if (!r.isConfirmed || !r.value) return;
+            $.ajax({
+                url: `${BASE_URL}/api/company-statutory-setting.promote`,
+                method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify({ statutory_item_id: currentCsItem.id, effective_date: r.value }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                        bootstrap.Modal.getInstance(document.getElementById('statutoryRateModal')).hide();
+                        if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                    } else {
+                        showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                    }
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
+            });
+        });
+    });
+
+    /* ---- Rate History tab (both scopes) ---- */
+    $(document).on('click', '#srAddRateVersionBtn', function () { showSrHistoryEditView(null); });
+    $(document).on('click', '#srCancelRateVersionBtn', function () { hideSrHistoryEditView(); });
+    $(document).on('click', '.btn-edit-sr-rate', function () {
+        const id = $(this).data('id');
+        $.ajax({
+            url: `${BASE_URL}/api/statutory-item.rate-history.get`,
+            method: 'GET', data: { id: id }, dataType: 'json',
+            success: function (res) {
+                if (res.status) showSrHistoryEditView(res.data);
+                else showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+        });
+    });
+    $(document).on('click', '.btn-delete-sr-rate', function () {
+        const id = $(this).data('id');
+        showConfirm(langData['confirm_delete_title'] || 'Confirm Delete', langData['confirm_delete_message'] || 'Are you sure you want to delete this item?', function () {
+            $.ajax({
+                url: `${BASE_URL}/api/statutory-item.rate-history.delete`,
+                method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify({ id: id }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(langData['delete_success'] || 'Deleted successfully.');
+                        initSrRateHistoryTable();
+                        if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                    } else {
+                        showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
+                    }
+                },
+                error: function () { showWarning(langData['delete_failed'] || 'An error occurred while deleting the data.'); }
+            });
+        });
+    });
+    $(document).on('click', '#srBtnAddBracketRow', function () {
+        const lastMax = $('#srBracketBody tr:last .sr-bracket-max').val();
+        addSrBracketRow(lastMax !== '' && lastMax !== undefined ? (parseFloat(lastMax) + 0.01).toFixed(2) : '', '', '');
+    });
+    $(document).on('click', '.btn-remove-sr-bracket', function () {
+        $(this).closest('tr').remove();
+        srRecalcBracketRows();
+    });
+    $(document).on('change', '.sr-bracket-max', function () { srRecalcBracketRows(); });
+    $(document).on('click', '#srBtnRateCalcPreview', function () {
+        const $btn = $(this);
+        const sampleBase = parseFloat($('#srRateCalcPreviewBase').val());
+        if (isNaN(sampleBase) || sampleBase < 0) {
+            showWarning(langData['invalid_input'] || 'Please enter a valid value.');
+            return;
+        }
+        const payload = collectSrRateVersionFormData();
+        payload.sample_base_amount = sampleBase;
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i>');
+        $.ajax({
+            url: `${BASE_URL}/api/statutory-item.rate-version.preview`,
+            method: 'POST', contentType: 'application/json', dataType: 'json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                if (res.status) {
+                    const stepsHtml = srRateVersionCalcPreviewFormulaStepsHtml(res.formula);
+                    const empLabel = langData['calc_preview_step_employee_amount'] || 'Employee Amount';
+                    const erLabel = langData['calc_preview_step_employer_amount'] || 'Employer Amount';
+                    $('#srRateCalcPreviewResult').removeClass('d-none').html(`
+                        <div class="calc-preview-amount mb-1">${empLabel}: ${fmtNum(res.employee_amount)} &nbsp;|&nbsp; ${erLabel}: ${fmtNum(res.employer_amount)}</div>
+                        ${stepsHtml}
+                    `);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Unable to compute preview.');
+                }
+            },
+            error: function () {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                showWarning(langData['save_failed'] || 'An error occurred while computing the preview.');
+            }
+        });
+    });
+    $(document).on('submit', '#srRateVersionForm', function (e) {
+        e.preventDefault();
+        const payload = collectSrRateVersionFormData();
+        const $btn = $('#srRateVersionForm button[type="submit"]');
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
+        $.ajax({
+            url: `${BASE_URL}/api/statutory-item.rate-history.save`,
+            method: 'POST', contentType: 'application/json', dataType: 'json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                if (res.status) {
+                    showSuccess(langData['save_success'] || 'Saved successfully.');
+                    hideSrHistoryEditView();
+                    initSrRateHistoryTable();
+                    if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () {
+                $btn.prop('disabled', false).html(originalHtml);
+                if (typeof updateText === 'function') updateText($btn[0]);
+                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+            }
         });
     });
 }
 
 $(document).ready(function () {
-    initStatutoryItemTable();
-    initStatutoryItemUI();
-    initCompanySettingUI();
+    // 2026-09-03, Backlog Phase 9, T044 -- Company Settings ("Statutory Rates") is now the sole/
+    // FIRST tab (was 2nd, gated behind a shown.bs.tab click before this), so it's initialized
+    // directly here instead of waiting for a tab-click event that never fires for an
+    // already-active tab on initial page load. The shown.bs.tab branch below is kept (harmless,
+    // initCompanySettingTable() itself guards against double-init and just reloads) so returning to
+    // this tab after visiting another one still refreshes it.
+    initCompanySettingTable();
+    initStatutoryRateModalUI();
     if (typeof initSelect2 === 'function') {
-        initSelect2('#item_category', { mode: 'static' });
-        initSelect2('#item_calc_method', { mode: 'static' });
-        initSelect2('#item_calc_base', { mode: 'static' });
-        initSelect2('#item_rounding_mode', { mode: 'static' });
+        // 2026-09-04, T047 -- category/calc_base are now master_statutory_categories/_calc_bases
+        // (select2-remote); calc_method/rounding_mode deliberately stay static/hardcoded (tied to
+        // real calculation-engine code, see the migration's own docblock).
+        initSelect2Remote('#sr_item_category');
+        initSelect2Remote('#sr_item_calc_base');
+        initSelect2('#sr_item_calc_method', { mode: 'static' });
+        initSelect2('#sr_item_rounding_mode', { mode: 'static' });
     }
     if (typeof initDatepicker === 'function') {
-        initDatepicker('#rate_effective_date');
-        initDatepicker('#rate_end_date');
+        initDatepicker('#sr_rate_effective_date');
+        initDatepicker('#sr_rate_end_date');
     }
+    // 2026-09-05, real bug found and fixed (explicit report + screenshots: editing an EXISTING
+    // rate-history row for a progressive_bracket MASTER item like TH_PIT showed the flat-rate form
+    // instead of the 8-bracket table, even though the SAME item's Rate History LIST correctly showed
+    // "8 ขั้นบันไดภาษี" moments earlier -- proving currentSrItem.calc_method WAS 'progressive_bracket'
+    // right up until the Edit click, then wasn't by the time the edit form rendered). Root cause:
+    // this handler unconditionally overwrites currentSrItem.calc_method from `#sr_item_calc_method`
+    // (the Item Details tab's OWN calc_method picker, used only when creating/editing a CUSTOM
+    // item's catalog definition) -- but that field is COMPLETELY IRRELEVANT to a MASTER item's Rate
+    // History tab (`srDetailsTabItem` is hidden entirely for scope='master', see
+    // openStatutoryRateModal()) and is left holding whatever value it was last set to by some
+    // EARLIER, unrelated custom-item interaction in the same page session (default 'flat_rate' if
+    // never touched at all). Any 'change' event on it -- however it fires -- was silently clobbering
+    // the currently-open MASTER item's real calc_method with that leftover value. Guarded to only
+    // ever apply while a CUSTOM item is genuinely open (the only scope where this select's value is
+    // meant to represent currentSrItem.calc_method at all) -- a master item's calc_method, once set
+    // from its own row data in openStatutoryRateModal(), is now never touched by this field again.
+    $(document).on('change', '#sr_item_calc_method', function () {
+        if (currentSrItem && currentSrItem.scope === 'custom') currentSrItem.calc_method = $(this).val();
+    });
     $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function (e) {
         const tabId = $(e.target).attr('id');
         if (tabId === 'company-setting-tab') {
@@ -1071,19 +1038,35 @@ $(document).on('click', '#nonresidentTaxCancelBtn', function () {
     confirmIfDirtyThen($('#nonresident-tax-pane'), nonresidentTaxBaselineSnapshot, loadNonResidentTaxSettings);
 });
 
-/* ---------- Document Format (statutory format version selector, 2026-08-29) ----------
+/* ---------- Document Format (statutory format version selector, 2026-08-29; redesigned as the full
+ * "what must be filed" checklist for T049, 2026-09-04) ----------
  * See StatutoryFormatVersionModel's own docblock: a version PICKER (which known layout to file),
  * not a field editor -- ภ.ง.ด./สปส. byte layouts are government-mandated, not something a company
- * should freely edit the way Bank File Format lets them edit a bank's bulk-transfer layout. */
-function statutoryFormLabel(formCode) {
-    const key = 'statutory_form_' + formCode.toLowerCase();
-    return langData[key] || formCode;
+ * should freely edit the way Bank File Format lets them edit a bank's bulk-transfer layout.
+ * 2026-09-04, T049: the backend now returns `{country_code, country_name_th, country_name_en,
+ * items: [...]}` (was a bare array) -- each item's own `label` (bilingual, from
+ * ReportGeneratorInterface::label()) is the label SOURCE OF TRUTH now, not a `statutory_form_<code>`
+ * i18n key that would need a manual addition for every future country/form -- statutoryFormLabel()
+ * below still falls back to the old i18n-key/raw-code path only for the rare case a row has no
+ * `label` at all (should not happen in practice, defensive only). Items with
+ * `has_version_picker=false` are informational-only rows (no `<select>`/Save -- there is exactly ONE
+ * implementation, nothing to choose between) that complete the checklist alongside the 2 real
+ * pickers, grouped under the SAME category section headers (`category_tax`/`category_social_
+ * insurance`/`category_provident_fund`/`category_other`) T047's Statutory Rates tab already uses,
+ * for visual consistency across this page. */
+function statutoryFormLabel(item) {
+    if (item.label && (item.label.th || item.label.en)) {
+        return (currentLang === 'th' ? item.label.th : item.label.en) || item.label.th || item.label.en;
+    }
+    const key = 'statutory_form_' + item.form_code.toLowerCase();
+    return langData[key] || item.form_code;
 }
 function statutoryVersionLabel(v) {
     return (currentLang === 'th' ? v.name_th : v.name_en) || v.name_th || v.name_en || v.version_code;
 }
 function loadStatutoryFormatSettings() {
     const $container = $('#statutoryFormatCards').html(`<div class="text-center text-secondary py-3"><i class="fa-solid fa-spinner fa-spin"></i></div>`);
+    $('#documentFormatCountryLabel').text('-');
     $.ajax({
         url: `${BASE_URL}/api/statutory-format-version.settings`,
         method: 'GET',
@@ -1093,57 +1076,95 @@ function loadStatutoryFormatSettings() {
                 $container.html(`<div class="text-danger small">${res.message || langData['save_failed'] || 'An error occurred while loading the data.'}</div>`);
                 return;
             }
-            renderStatutoryFormatCards(res.data || []);
+            const data = res.data || {};
+            const countryLabel = currentLang === 'th' ? data.country_name_th : data.country_name_en;
+            $('#documentFormatCountryLabel').text(countryLabel || data.country_name_th || data.country_name_en || data.country_code || '-');
+            renderStatutoryFormatCards(data.items || []);
         },
         error: function () {
             $container.html(`<div class="text-danger small">${langData['save_failed'] || 'An error occurred while loading the data.'}</div>`);
         }
     });
 }
-function renderStatutoryFormatCards(forms) {
+const STATUTORY_FORMAT_CATEGORY_ORDER = ['tax', 'social_insurance', 'provident_fund', 'other'];
+function renderStatutoryFormatCards(items) {
     const $container = $('#statutoryFormatCards').empty();
-    if (!forms.length) {
+    if (!items.length) {
         $container.html(`<div class="text-secondary small">${langData['no_statutory_formats'] || 'No document formats are available yet.'}</div>`);
         return;
     }
     window.__statutoryFormVersionsCache = {};
-    forms.forEach(function (form) {
-        window.__statutoryFormVersionsCache[form.form_code] = form.versions;
-        // 2026-08-29, real bug found and fixed (spotted from a live screenshot): the seed
-        // name_th/name_en for a DRAFT version already spell out "ยังไม่ยืนยัน..." in the label
-        // itself, and this used to ALSO append "(DRAFT — not verified)" after it -- redundant,
-        // cluttered text ("...ยังไม่ยืนยันกับกรมสรรพากรอย่างเป็นทางการ) (ฉบับร่าง — ยังไม่ยืนยัน)"). The
-        // colored badge below the dropdown already conveys verified/draft status clearly on its
-        // own -- the option text now shows just the plain name.
-        const options = form.versions.map(function (v) {
-            const selected = v.id === form.selected_version_id ? 'selected' : '';
-            return `<option value="${v.id}" ${selected}>${escapeHtmlTaxStatutory(statutoryVersionLabel(v))}</option>`;
-        }).join('');
-        const selectedVersion = form.versions.find(v => v.id === form.selected_version_id);
-        const verifiedBadge = selectedVersion && !selectedVersion.is_verified
-            ? `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`
-            : (selectedVersion ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>` : '');
-        const $card = $(`
-            <div class="col-md-6">
-                <div class="card-surface p-3 h-100 d-flex flex-column">
-                    <h6 class="fw-bold mb-2">${escapeHtmlTaxStatutory(statutoryFormLabel(form.form_code))}</h6>
-                    <select class="form-select statutory-format-version-select mb-2" data-form-code="${form.form_code}"></select>
-                    <div class="statutory-format-badge-wrap">${verifiedBadge}</div>
-                    <div class="text-end mt-auto pt-2">
-                        <button type="button" class="btn btn-primary btn-sm statutory-format-save-btn" data-form-code="${form.form_code}">
-                            <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">${langData['save'] || 'Save'}</span>
-                        </button>
-                    </div>
-                </div>
+    const grouped = {};
+    items.forEach(function (item) {
+        const cat = STATUTORY_FORMAT_CATEGORY_ORDER.includes(item.category) ? item.category : 'other';
+        (grouped[cat] = grouped[cat] || []).push(item);
+    });
+    STATUTORY_FORMAT_CATEGORY_ORDER.forEach(function (cat) {
+        const catItems = grouped[cat];
+        if (!catItems || !catItems.length) return;
+        const $section = $(`
+            <div class="statutory-format-category-section mb-4">
+                <h6 class="text-uppercase text-secondary small fw-bold mb-2" data-i18n="category_${cat}">${langData['category_' + cat] || cat}</h6>
+                <div class="row g-3"></div>
             </div>
         `);
-        $card.find('.statutory-format-version-select').html(options);
-        $container.append($card);
+        const $row = $section.find('.row');
+        catItems.forEach(function (item) {
+            $row.append(renderStatutoryFormatCard(item));
+        });
+        $container.append($section);
     });
     updateText($container[0]);
 }
-function escapeHtmlTaxStatutory(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
+function renderStatutoryFormatCard(item) {
+    if (!item.has_version_picker) {
+        // T049: informational-only row -- exactly ONE implementation exists, so a version picker
+        // (implying a real choice) would be worse UX than none. Still shown so the checklist is
+        // complete, not just the 2 forms that happen to have a picker.
+        const verifiedBadge = item.is_verified
+            ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>`
+            : `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`;
+        return $(`
+            <div class="col-md-6">
+                <div class="card-surface p-3 h-100 d-flex flex-column bg-light bg-opacity-50">
+                    <h6 class="fw-bold mb-2">${escapeHtml(statutoryFormLabel(item))}</h6>
+                    <p class="text-muted small mb-0" data-i18n="statutory_format_no_version_choice">${langData['statutory_format_no_version_choice'] || 'Single implementation -- no format version to choose.'}</p>
+                    <div class="mt-auto pt-2">${verifiedBadge}</div>
+                </div>
+            </div>
+        `);
+    }
+    window.__statutoryFormVersionsCache[item.form_code] = item.versions;
+    // 2026-08-29, real bug found and fixed (spotted from a live screenshot): the seed
+    // name_th/name_en for a DRAFT version already spell out "ยังไม่ยืนยัน..." in the label
+    // itself, and this used to ALSO append "(DRAFT — not verified)" after it -- redundant,
+    // cluttered text ("...ยังไม่ยืนยันกับกรมสรรพากรอย่างเป็นทางการ) (ฉบับร่าง — ยังไม่ยืนยัน)"). The
+    // colored badge below the dropdown already conveys verified/draft status clearly on its
+    // own -- the option text now shows just the plain name.
+    const options = item.versions.map(function (v) {
+        const selected = v.id === item.selected_version_id ? 'selected' : '';
+        return `<option value="${v.id}" ${selected}>${escapeHtml(statutoryVersionLabel(v))}</option>`;
+    }).join('');
+    const selectedVersion = item.versions.find(v => v.id === item.selected_version_id);
+    const verifiedBadge = selectedVersion && !selectedVersion.is_verified
+        ? `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`
+        : (selectedVersion ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>` : '');
+    const $card = $(`
+        <div class="col-md-6">
+            <div class="card-surface p-3 h-100 d-flex flex-column">
+                <h6 class="fw-bold mb-2">${escapeHtml(statutoryFormLabel(item))}</h6>
+                <select class="form-select statutory-format-version-select mb-2" data-form-code="${item.form_code}"></select>
+                <div class="statutory-format-badge-wrap">${verifiedBadge}</div>
+                <div class="text-end mt-auto pt-2">
+                    <button type="button" class="btn btn-primary btn-sm statutory-format-save-btn" data-form-code="${item.form_code}">
+                        <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">${langData['save'] || 'Save'}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `);
+    $card.find('.statutory-format-version-select').html(options);
+    return $card;
 }
 $(document).on('change', '.statutory-format-version-select', function () {
     const $card = $(this).closest('.card-surface');

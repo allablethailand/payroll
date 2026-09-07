@@ -54,17 +54,27 @@ try {
     $pnd1Versions = $model->listVersions('TH_PND1');
     check('TH_PND1 has exactly 1 seeded version', count($pnd1Versions), 1);
     checkTrue('the seeded TH_PND1 version is flagged default', $pnd1Versions[0]['is_default']);
-    checkFalse('the seeded TH_PND1 version is flagged NOT verified (matches PndOneExporter::isVerified())', $pnd1Versions[0]['is_verified']);
+    // 2026-09-05, Phase 12 T071: PndOneExporter's field layout is now confirmed against a real
+    // reference spec (see that class's own docblock) -- the seed row's own is_verified flag was
+    // flipped to match (database/migrations/2026-09-05_2_statutory_format_versions_confirmed.sql).
+    checkTrue('the seeded TH_PND1 version is now flagged verified (matches PndOneExporter::isVerified())', $pnd1Versions[0]['is_verified']);
     $pnd1VersionId = (int)$pnd1Versions[0]['id'];
 
     echo "=== resolveVersionCode() falls back to the default before any company selection exists ===\n";
     check('resolveVersionCode() falls back to default for a company that never chose one', $model->resolveVersionCode($compId, 'TH_PND1'), 'v1_current');
 
     echo "=== settingsForCompany() ===\n";
+    // 2026-09-04, T049: settingsForCompany() now returns an envelope
+    // {country_code, country_name_th, country_name_en, items} (was a bare array) -- and 'items' now
+    // includes every statutory document this country must file, not just the 2 that happen to have
+    // a real version picker (see tests/statutory_format_version_country_test.php for the dedicated,
+    // country-scoping-focused coverage of this whole feature; this file keeps only what's still
+    // this model's OWN original scope -- the picker/save/exporter-wiring behavior).
     $settings = $model->settingsForCompany($compId);
-    check('settingsForCompany() returns exactly 2 forms', count($settings), 2);
+    check('settingsForCompany() country_code', $settings['country_code'], 'TH');
+    check('settingsForCompany() returns 6 statutory documents (2 real pickers + 4 informational-only, T049)', count($settings['items']), 6);
     $pnd1Setting = null;
-    foreach ($settings as $s) { if ($s['form_code'] === 'TH_PND1') $pnd1Setting = $s; }
+    foreach ($settings['items'] as $s) { if ($s['form_code'] === 'TH_PND1') $pnd1Setting = $s; }
     checkTrue('TH_PND1 entry found in settingsForCompany()', $pnd1Setting !== null);
     check('TH_PND1 selected_version_id falls back to the default version id', $pnd1Setting['selected_version_id'], $pnd1VersionId);
 
@@ -87,8 +97,10 @@ try {
     check('resolveVersionCode() now reflects the saved selection', $model->resolveVersionCode($compId, 'TH_PND1'), 'v1_current');
 
     echo "=== Exporter version validation (real wiring, not just the model) ===\n";
+    // 2026-09-05, Phase 12 T071: field key is id_card_no now (11-field reference-spec layout),
+    // not the old 20-field version's tax_id -- see PndOneExporter's own docblock.
     $pndExporter = new PndOneExporter();
-    $pndOutput = $pndExporter->generate(['period' => ['tax_year' => 2569, 'tax_month' => 1], 'employees' => [['tax_id' => '1234567890123', 'prefix' => 'mr', 'first_name' => 'Test', 'last_name' => 'Employee', 'total_income' => 30000, 'tax_withheld' => 500]], 'version_code' => 'v1_current']);
+    $pndOutput = $pndExporter->generate(['period' => ['tax_year' => 2569, 'tax_month' => 1], 'employees' => [['id_card_no' => '1234567890123', 'prefix' => 'นาย', 'first_name' => 'Test', 'last_name' => 'Employee', 'total_income' => 30000, 'tax_withheld' => 500]], 'version_code' => 'v1_current']);
     checkTrue('PndOneExporter accepts its own supported version_code and produces output', strlen($pndOutput) > 0);
 
     $threwForBadVersion = false;
@@ -99,7 +111,7 @@ try {
     }
     checkTrue('PndOneExporter throws for an unsupported version_code', $threwForBadVersion);
 
-    $noVersionOutput = $pndExporter->generate(['period' => ['tax_year' => 2569, 'tax_month' => 1], 'employees' => [['tax_id' => '1234567890123', 'prefix' => 'mr', 'first_name' => 'Test', 'last_name' => 'Employee', 'total_income' => 30000, 'tax_withheld' => 500]]]);
+    $noVersionOutput = $pndExporter->generate(['period' => ['tax_year' => 2569, 'tax_month' => 1], 'employees' => [['id_card_no' => '1234567890123', 'prefix' => 'นาย', 'first_name' => 'Test', 'last_name' => 'Employee', 'total_income' => 30000, 'tax_withheld' => 500]]]);
     checkTrue('PndOneExporter still works with NO version_code at all (backward compatible)', strlen($noVersionOutput) > 0);
 
     $ssoExporter = new Sso110Exporter();

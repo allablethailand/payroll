@@ -20,6 +20,7 @@ require_once __DIR__ . '/../app/models/PayrollSyncModel.php';
 require_once __DIR__ . '/../app/models/PayrollCycleModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunModel.php';
 require_once __DIR__ . '/../app/models/PayrollPolicyModel.php';
+require_once __DIR__ . '/../app/services/reports/ReportRegistry.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -178,6 +179,79 @@ try {
     checkTrue('fixture: no-target supplemental ingests', $noTargetResult['status']);
     $noTargetMerge = $runModel->mergeSupplementalIntoRun($noTargetResult['process_row_id'], $compId, $userId, true);
     checkFalse('merge refused when the target cycle was never even pulled into a run', $noTargetMerge['status']);
+
+    // ---------- 2026-09-06, real gap found and fixed after confirming with Origami: no send-order
+    // guarantee between a regular process's own payload and a supplemental attributed to merge
+    // into it -- PayrollSyncModel::attributionTargetStatus()/pendingList() now tell apart "target
+    // never received at all" from "target received but not pulled" from "ready", and
+    // PayrollRunModel::create() surfaces any waiting supplemental(s) the moment the admin pulls
+    // the (now-known) target into a run, so it's never left silently stuck requiring the admin to
+    // remember to come back. Reuses the "no-target" fixture just above -- $noTargetOrigamiId has
+    // never been ingested as its own process until this section. ----------
+    echo "=== 2026-09-06: waiting-target status (pendingList) + auto-detect on pull (create) ===\n";
+    $pendingBeforeTarget = $syncModel->pendingList($compId);
+    $noTargetRowBefore = current(array_filter($pendingBeforeTarget, fn($p) => (int)$p['id'] === $noTargetResult['process_row_id']));
+    check('attribution_target_status is waiting_unknown when the target process was never received at all', $noTargetRowBefore['attribution_target_status'] ?? null, 'waiting_unknown');
+
+    // Origami now sends the target regular process's own payload -- still not pulled into a run.
+    $waitTargetPayload = $regularPayload;
+    $waitTargetPayload['process_id'] = $noTargetOrigamiId;
+    $waitTargetPayload['process_no'] = 'ORIGAMI-2026-ATTR-WAITTARGET';
+    $waitTargetResult = $syncModel->ingest($waitTargetPayload);
+    checkTrue('fixture: the previously-unknown target process now arrives', $waitTargetResult['status']);
+
+    $pendingAfterTargetKnown = $syncModel->pendingList($compId);
+    $noTargetRowKnown = current(array_filter($pendingAfterTargetKnown, fn($p) => (int)$p['id'] === $noTargetResult['process_row_id']));
+    check('attribution_target_status becomes waiting_known once the target process is received but not yet pulled', $noTargetRowKnown['attribution_target_status'] ?? null, 'waiting_known');
+    checkFalse('mergeSupplementalIntoRun() still refuses at waiting_known (no run to merge into yet)', $runModel->mergeSupplementalIntoRun($noTargetResult['process_row_id'], $compId, $userId, true)['status']);
+
+    // Pull the (now-known) target process into a run -- this is the moment auto-detect fires.
+    $waitTargetCreate = $runModel->create($compId, [
+        'sync_process_id' => $waitTargetResult['process_row_id'], 'cycle_id' => $cycleId, 'run_name' => 'Attribution Wait-Target Run',
+        'period_start_date' => '2027-11-21', 'period_end_date' => '2027-12-20', 'payment_date' => '2027-11-25',
+    ], $userId, true);
+    checkTrue('fixture: the wait-target run is created' . (empty($waitTargetCreate['status']) ? " ({$waitTargetCreate['message']})" : ''), $waitTargetCreate['status']);
+    check('create() surfaces exactly the one waiting supplemental as pending_merges_ready', count($waitTargetCreate['pending_merges_ready'] ?? []), 1);
+    check('the surfaced pending merge is the correct supplemental process', (int)($waitTargetCreate['pending_merges_ready'][0]['id'] ?? 0), (int)$noTargetResult['process_row_id']);
+
+    $pendingAfterPull = $syncModel->pendingList($compId);
+    $noTargetRowReady = current(array_filter($pendingAfterPull, fn($p) => (int)$p['id'] === $noTargetResult['process_row_id']));
+    check('attribution_target_status becomes ready once the target run actually exists', $noTargetRowReady['attribution_target_status'] ?? null, 'ready');
+
+    $waitTargetMerge = $runModel->mergeSupplementalIntoRun($noTargetResult['process_row_id'], $compId, $userId, true);
+    checkTrue('the merge now succeeds once the target became ready' . (empty($waitTargetMerge['status']) ? " ({$waitTargetMerge['message']})" : ''), $waitTargetMerge['status']);
+
+    // 2026-09-06, real gap found while verifying this fix: a target regular process that was
+    // received but then REJECTED (Pending Pull's own "Reject" action) before ever being pulled is a
+    // genuine dead end -- there is no un-reject action anywhere in this class, so a supplemental
+    // attributed to merge into it will NEVER resolve on its own. attribution_target_status must say
+    // so distinctly, not "waiting_known" (which implies it'll become ready eventually).
+    echo "=== 2026-09-06: attribution_target_status when the target process is REJECTED, not just pending ===\n";
+    $rejTargetOrigamiId = random_int(900000, 999999);
+    $rejTargetPayload = $regularPayload;
+    $rejTargetPayload['process_id'] = $rejTargetOrigamiId;
+    $rejTargetPayload['process_no'] = 'ORIGAMI-2026-ATTR-REJTARGET';
+    $rejTargetResult = $syncModel->ingest($rejTargetPayload);
+    checkTrue('fixture: the soon-to-be-rejected target process ingests', $rejTargetResult['status']);
+
+    $rejSuppPayload = $mergePayload;
+    $rejSuppPayload['process_id'] = random_int(1000000, 1099999);
+    $rejSuppPayload['process_no'] = 'ORIGAMI-2026-ATTR-REJSUPP';
+    $rejSuppPayload['attribution']['target_process_id'] = $rejTargetOrigamiId;
+    $rejSuppResult = $syncModel->ingest($rejSuppPayload);
+    checkTrue('fixture: the supplemental attributed to it ingests', $rejSuppResult['status']);
+
+    $pendingBeforeReject = $syncModel->pendingList($compId);
+    $rejSuppRowBefore = current(array_filter($pendingBeforeReject, fn($p) => (int)$p['id'] === $rejSuppResult['process_row_id']));
+    check('attribution_target_status is waiting_known before the target is rejected', $rejSuppRowBefore['attribution_target_status'] ?? null, 'waiting_known');
+
+    $rejectRes = $syncModel->rejectProcess((int)$rejTargetResult['process_row_id'], $compId, 'Test: wrong period, rejecting on purpose', $userId);
+    checkTrue('fixture: the target process is rejected' . (empty($rejectRes['status']) ? " ({$rejectRes['message']})" : ''), $rejectRes['status']);
+
+    $pendingAfterReject = $syncModel->pendingList($compId);
+    $rejSuppRowAfter = current(array_filter($pendingAfterReject, fn($p) => (int)$p['id'] === $rejSuppResult['process_row_id']));
+    check('attribution_target_status becomes target_rejected once the target is rejected (never "ready" on its own)', $rejSuppRowAfter['attribution_target_status'] ?? null, 'target_rejected');
+    checkFalse('mergeSupplementalIntoRun() still correctly refuses (no run exists to merge into)', $runModel->mergeSupplementalIntoRun($rejSuppResult['process_row_id'], $compId, $userId, true)['status']);
 
     // Target exists but is NOT draft (pending_approval).
     $target2OrigamiId = random_int(600000, 699999);
@@ -338,6 +412,19 @@ try {
     $separateSuppResult = $syncModel->ingest($separateSuppPayload);
     checkTrue('fixture: separate-attributed supplemental ingests', $separateSuppResult['status']);
     checkFalse('merge refused on a process attributed tax_treatment=separate', $runModel->mergeSupplementalIntoRun($separateSuppResult['process_row_id'], $compId, $userId, true)['status']);
+
+    // 2026-09-06: create()'s own pending_merges_ready auto-detect must NEVER fire when pulling a
+    // SUPPLEMENTAL process itself (only a regular process pull can be the "target just became
+    // available" moment -- a supplemental is always a merge SOURCE, never a target).
+    $separatePullResult = $runModel->create($compId, [
+        'sync_process_id' => $separateSuppResult['process_row_id'],
+        'run_purpose' => 'incentive', 'compute_statutory' => 0, 'include_base_salary' => 0,
+        'include_standing_items' => 0, 'include_attendance_pay' => 1,
+        'run_name' => 'Separate Supplemental Standalone Pull',
+        'period_start_date' => '2026-11-21', 'period_end_date' => '2026-12-20', 'payment_date' => '2026-11-25',
+    ], $userId, true);
+    checkTrue('fixture: the separate-attributed supplemental pulls standalone fine' . (empty($separatePullResult['status']) ? " ({$separatePullResult['message']})" : ''), $separatePullResult['status']);
+    checkFalse('pulling a SUPPLEMENTAL process itself never surfaces pending_merges_ready', array_key_exists('pending_merges_ready', $separatePullResult));
 
     // A REGULAR process is never mergeable at all.
     checkFalse('merge refused on a run_kind=regular process', $runModel->mergeSupplementalIntoRun($regularProcessRowId, $compId, $userId, true)['status']);
@@ -534,6 +621,261 @@ try {
     checkTrue('fixture: cycle-linked run created', $umtCycleLinkedRes['status']);
     $cycleLinkedMergeRes = $runModel->update($umtCycleLinkedRes['id'], $compId, ['merge_target_run_id' => $umtTargetId], $userId, true);
     check('a cycle-linked run is refused a merge_target_run_id (same OR-condition update() shares with create())', $cycleLinkedMergeRes['status'], false);
+
+    // ---------- 2026-09-06, explicit request: "ปรับ Process ที่มีการสร้างรอบเองในฝั่ง Payroll ให้เป็นไปใน
+    // แนวทางเดียวกัน" (with the Origami-attribution "waiting for a round that doesn't exist yet" fix
+    // just shipped) -- extends the manual "อ้างอิงถึงรอบ" merge target to accept a round of a
+    // recurring Payroll Cycle that doesn't exist YET, keyed on cycle_id+period exactly like
+    // isDuplicatePeriod() already keys "is this the same round". See
+    // PayrollRunModel::resolveMergeTargetSpec()'s own docblock. ----------
+    echo "=== Future-cycle merge target: immediate resolution when a matching run ALREADY exists ===\n";
+    $fcExistingRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'FC_EXISTING_' . uniqid(),
+        'period_start_date' => '2028-01-01', 'period_end_date' => '2028-01-31', 'payment_date' => '2028-01-31',
+    ], $userId, true);
+    checkTrue('fixture: an existing cycle-based run for 2028-01 already exists' . (empty($fcExistingRes['status']) ? " ({$fcExistingRes['message']})" : ''), $fcExistingRes['status']);
+    $fcExistingRunId = $fcExistingRes['id'];
+
+    $fcImmediateRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_IMMEDIATE_SOURCE_' . uniqid(),
+        'period_start_date' => '2028-01-15', 'period_end_date' => '2028-01-15', 'payment_date' => '2028-01-15',
+        'merge_target_cycle_id' => $cycleId,
+        'merge_target_period_start_date' => '2028-01-01', 'merge_target_period_end_date' => '2028-01-31',
+    ], $userId, true);
+    checkTrue('fixture: off-cycle run targeting an ALREADY-existing cycle period creates fine' . (empty($fcImmediateRes['status']) ? " ({$fcImmediateRes['message']})" : ''), $fcImmediateRes['status']);
+    $fcImmediateRow = $runModel->get($fcImmediateRes['id'], $compId);
+    check('merge_target_run_id resolves IMMEDIATELY to the already-existing run (no waiting needed)', (int)$fcImmediateRow['merge_target_run_id'], $fcExistingRunId);
+    checkTrue('merge_target_cycle_id stays null once resolved (not stored as a still-waiting spec)', $fcImmediateRow['merge_target_cycle_id'] === null);
+
+    echo "=== Future-cycle merge target: genuinely waiting, then auto-resolved once the real round is created ===\n";
+    $fcWaitRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_WAIT_SOURCE_' . uniqid(),
+        'period_start_date' => '2028-02-15', 'period_end_date' => '2028-02-15', 'payment_date' => '2028-02-15',
+        'merge_target_cycle_id' => $cycleId,
+        'merge_target_period_start_date' => '2028-02-01', 'merge_target_period_end_date' => '2028-02-28',
+    ], $userId, true);
+    checkTrue('fixture: off-cycle run targeting a NOT-YET-EXISTING cycle period creates fine' . (empty($fcWaitRes['status']) ? " ({$fcWaitRes['message']})" : ''), $fcWaitRes['status']);
+    $fcWaitSourceId = $fcWaitRes['id'];
+    $fcWaitRowBefore = $runModel->get($fcWaitSourceId, $compId);
+    check('merge_target_run_id stays null while genuinely waiting', $fcWaitRowBefore['merge_target_run_id'], null);
+    check('merge_target_cycle_id persisted', (int)$fcWaitRowBefore['merge_target_cycle_id'], $cycleId);
+    check('merge_target_period_start_date persisted', $fcWaitRowBefore['merge_target_period_start_date'], '2028-02-01');
+    check('merge_target_period_end_date persisted', $fcWaitRowBefore['merge_target_period_end_date'], '2028-02-28');
+    checkTrue('merge_target_cycle_name resolves via get()\'s own LEFT JOIN', !empty($fcWaitRowBefore['merge_target_cycle_name']));
+
+    checkTrue('fixture: employee joined into the waiting source run', $runModel->joinEmployees($fcWaitSourceId, $compId, [$employeeId], $userId, true)['status']);
+    $fcManualAmount = 950.00;
+    $fcAddLineRes = $runModel->addManualLine($fcWaitSourceId, $compId, $employeeId, null, $fcManualAmount, $userId, true, null, 'FC Wait Allowance', 'earning');
+    checkTrue('fixture: manual line added to the waiting source run' . (empty($fcAddLineRes['status']) ? " ({$fcAddLineRes['message']})" : ''), $fcAddLineRes['status']);
+
+    // A SECOND run targeting an unrelated, still-different cycle period must NOT be disturbed by the
+    // auto-detect below (proves the match is exact on cycle_id+period, not "any waiting off-cycle run").
+    $fcUnrelatedRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_UNRELATED_SOURCE_' . uniqid(),
+        'period_start_date' => '2028-03-15', 'period_end_date' => '2028-03-15', 'payment_date' => '2028-03-15',
+        'merge_target_cycle_id' => $cycleId,
+        'merge_target_period_start_date' => '2028-03-01', 'merge_target_period_end_date' => '2028-03-31',
+    ], $userId, true);
+    checkTrue('fixture: an unrelated waiting run (different target period) also created fine', $fcUnrelatedRes['status']);
+
+    // Now the REAL cycle-based run for 2028-02 gets created (e.g. via Pull-to-Run, or a plain Add --
+    // this auto-detect is unconditional on how the cycle-based run itself was created).
+    $fcRealTargetRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'FC_REAL_TARGET_' . uniqid(),
+        'period_start_date' => '2028-02-01', 'period_end_date' => '2028-02-28', 'payment_date' => '2028-02-28',
+    ], $userId, true);
+    checkTrue('the real 2028-02 cycle run creates fine' . (empty($fcRealTargetRes['status']) ? " ({$fcRealTargetRes['message']})" : ''), $fcRealTargetRes['status']);
+    $fcRealTargetId = $fcRealTargetRes['id'];
+
+    check('create() surfaces exactly the ONE genuinely-waiting run as pending_merges_ready (not the unrelated one)', count($fcRealTargetRes['pending_merges_ready'] ?? []), 1);
+    $fcPendingItem = $fcRealTargetRes['pending_merges_ready'][0] ?? [];
+    check('the surfaced item is the correct waiting source run', (int)($fcPendingItem['id'] ?? 0), $fcWaitSourceId);
+    check('the surfaced item is typed "manual" (not "sync")', $fcPendingItem['type'] ?? null, 'manual');
+    check('the surfaced item names the correct newly-created target run', (int)($fcPendingItem['target_run_id'] ?? 0), $fcRealTargetId);
+
+    $fcWaitRowAfterAutoDetect = $runModel->get($fcWaitSourceId, $compId);
+    check('merge_target_run_id auto-resolved to the newly-created real target run', (int)$fcWaitRowAfterAutoDetect['merge_target_run_id'], $fcRealTargetId);
+    checkTrue('merge_target_cycle_id cleared once resolved', $fcWaitRowAfterAutoDetect['merge_target_cycle_id'] === null);
+    checkTrue('merge_target_period_start_date cleared once resolved', $fcWaitRowAfterAutoDetect['merge_target_period_start_date'] === null);
+
+    $fcUnrelatedRowAfter = $runModel->get($fcUnrelatedRes['id'], $compId);
+    checkTrue('the unrelated waiting run is untouched -- still waiting on its OWN (2028-03) period', $fcUnrelatedRowAfter['merge_target_run_id'] === null && (int)$fcUnrelatedRowAfter['merge_target_cycle_id'] === $cycleId);
+
+    echo "=== Future-cycle merge target: actually merging is byte-identical to the pre-existing mergeIntoExistingRun() path, verified against a REAL generated report ===\n";
+    // No joinEmployees() call needed here -- $employeeId (employment_date 2020-01-01, see this
+    // file's own top fixture) is already auto-eligible for this real cycle-based run by date range;
+    // joinEmployees() is only for MANUALLY adding someone who wouldn't otherwise be auto-included
+    // (an off-cycle run's own membership model), and correctly refuses a no-op add here.
+    checkTrue('fixture: real target run recalculated', $runModel->recalculate($fcRealTargetId, $compId, $userId, true)['status']);
+    $fcTargetBefore = current(array_filter($runModel->getDetails($fcRealTargetId, $compId), fn($d) => (int)$d['employee_id'] === $employeeId));
+    $fcTargetGrossBefore = (float)$fcTargetBefore['gross_amount'];
+
+    $fcMergeRes = $runModel->mergeIntoExistingRun($fcWaitSourceId, $fcRealTargetId, $compId, $userId, true);
+    checkTrue('mergeIntoExistingRun() succeeds using the auto-resolved target' . (empty($fcMergeRes['status']) ? " ({$fcMergeRes['message']})" : ''), $fcMergeRes['status']);
+
+    $fcTargetAfter = current(array_filter($runModel->getDetails($fcRealTargetId, $compId), fn($d) => (int)$d['employee_id'] === $employeeId));
+    // gross_amount (not net_amount) is the right figure to assert an EXACT delta against here --
+    // unlike the earlier "mergeIntoExistingRun(): manual merge" section above (whose target run had
+    // compute_statutory=false, so net==gross for the merged line), THIS target is a real cycle-based
+    // run with statutory withholding genuinely ON -- merging 950 of extra taxable income also
+    // changes the computed PIT withholding by a non-trivial, non-linear amount, so net_amount does
+    // NOT simply go up by 950. gross_amount is a straight sum of earning lines and is unaffected by
+    // that nonlinearity, making it the correct "did the merge add exactly the right amount" check.
+    check('target run\'s gross_amount increased by EXACTLY the merged allowance (950), verified at the DB layer', round((float)$fcTargetAfter['gross_amount'] - $fcTargetGrossBefore, 2), $fcManualAmount);
+    $fcExpectedNetAfter = round((float)$fcTargetAfter['net_amount'], 2);
+
+    // Directly verifies the user's own stated concern ("ต้องมั่นใจว่าคำนวณต้องถูก และไปออกรายงานได้ถูกต้อง") --
+    // generates a REAL report off this run and cross-checks its own Net Pay figure against the
+    // DB-layer net_amount just computed above (real PIT withholding included on both sides).
+    $fcRegisterReport = ReportRegistry::get('PAYROLL_REGISTER');
+    $fcRegisterResult = $fcRegisterReport->generate(['comp_id' => $compId, 'run_id' => $fcRealTargetId], 'excel');
+    checkTrue('PAYROLL_REGISTER report generates real, non-empty Excel content for the merged run', strlen($fcRegisterResult['content']) > 0);
+    $fcTmpXlsx = sys_get_temp_dir() . '/attr_test_fc_' . uniqid() . '.xlsx';
+    file_put_contents($fcTmpXlsx, $fcRegisterResult['content']);
+    $fcReader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+    $fcWorkbook = $fcReader->load($fcTmpXlsx);
+    $fcSheet = $fcWorkbook->getActiveSheet();
+    unlink($fcTmpXlsx);
+    // Header row is row 5 (PayrollRegisterReport's own fixed layout) -- find the "ยอดจ่ายสุทธิ" (Net
+    // Pay) column and this employee's own data row by SCANNING rather than assuming a fixed column
+    // index, since the column set is dynamic (one per distinct PED item this run has).
+    $fcNetColLetter = null;
+    foreach (range('A', $fcSheet->getHighestColumn()) as $colLetter) {
+        if ($fcSheet->getCell("{$colLetter}5")->getValue() === 'ยอดจ่ายสุทธิ') {
+            $fcNetColLetter = $colLetter;
+            break;
+        }
+    }
+    checkTrue('found the Net Pay column in the report\'s own header row', $fcNetColLetter !== null);
+    $fcEmployeeRow = null;
+    foreach (range(6, $fcSheet->getHighestRow()) as $rowIdx) {
+        if ((string)$fcSheet->getCell("A{$rowIdx}")->getValue() === $empNo) {
+            $fcEmployeeRow = $rowIdx;
+            break;
+        }
+    }
+    checkTrue('found this test employee\'s own data row in the report', $fcEmployeeRow !== null);
+    if ($fcNetColLetter !== null && $fcEmployeeRow !== null) {
+        check('the report\'s own Net Pay cell for this employee matches the DB-layer net_amount exactly (real PIT withholding included on both sides)', round((float)$fcSheet->getCell("{$fcNetColLetter}{$fcEmployeeRow}")->getValue(), 2), $fcExpectedNetAfter);
+    }
+
+    echo "=== Future-cycle merge target: validation ===\n";
+    $bothSpecsRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_BOTH_SPECS_' . uniqid(),
+        'period_start_date' => '2028-04-15', 'period_end_date' => '2028-04-15', 'payment_date' => '2028-04-15',
+        'merge_target_run_id' => $fcRealTargetId,
+        'merge_target_cycle_id' => $cycleId,
+        'merge_target_period_start_date' => '2028-04-01', 'merge_target_period_end_date' => '2028-04-30',
+    ], $userId, true);
+    check('create() refuses when BOTH merge_target_run_id AND merge_target_cycle_id are sent together', $bothSpecsRes['status'], false);
+
+    $missingPeriodRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_MISSING_PERIOD_' . uniqid(),
+        'period_start_date' => '2028-04-15', 'period_end_date' => '2028-04-15', 'payment_date' => '2028-04-15',
+        'merge_target_cycle_id' => $cycleId,
+    ], $userId, true);
+    check('create() refuses merge_target_cycle_id with no period dates', $missingPeriodRes['status'], false);
+
+    $invalidCycleRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_INVALID_CYCLE_' . uniqid(),
+        'period_start_date' => '2028-04-15', 'period_end_date' => '2028-04-15', 'payment_date' => '2028-04-15',
+        'merge_target_cycle_id' => 999999999,
+        'merge_target_period_start_date' => '2028-04-01', 'merge_target_period_end_date' => '2028-04-30',
+    ], $userId, true);
+    check('create() refuses an invalid/nonexistent target cycle', $invalidCycleRes['status'], false);
+
+    $cycleLinkedFcRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'FC_ONCYCLE_REJECT_' . uniqid(),
+        'period_start_date' => '2028-05-01', 'period_end_date' => '2028-05-31', 'payment_date' => '2028-05-31',
+        'merge_target_cycle_id' => $cycleId,
+        'merge_target_period_start_date' => '2028-06-01', 'merge_target_period_end_date' => '2028-06-30',
+    ], $userId, true);
+    check('a merge target (future-cycle form) only applies to a genuine off-schedule run, same as the existing-run form', $cycleLinkedFcRes['status'], false);
+
+    echo "=== Future-cycle merge target: editable via update(), and mode-switch requires sending both keys explicitly ===\n";
+    $fcUpdSourceRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_UPD_SOURCE_' . uniqid(),
+        'period_start_date' => '2028-07-15', 'period_end_date' => '2028-07-15', 'payment_date' => '2028-07-15',
+    ], $userId, true);
+    checkTrue('fixture: plain off-cycle run (no merge target yet) created', $fcUpdSourceRes['status']);
+    $fcUpdSourceId = $fcUpdSourceRes['id'];
+
+    $fcUpdSetRes = $runModel->update($fcUpdSourceId, $compId, [
+        'merge_target_cycle_id' => $cycleId,
+        'merge_target_period_start_date' => '2028-07-01', 'merge_target_period_end_date' => '2028-07-31',
+    ], $userId, true);
+    checkTrue('update() sets a future-cycle merge target' . (empty($fcUpdSetRes['status']) ? " ({$fcUpdSetRes['message']})" : ''), $fcUpdSetRes['status']);
+    $fcUpdRowAfterSet = $runModel->get($fcUpdSourceId, $compId);
+    check('merge_target_cycle_id persisted via update()', (int)$fcUpdRowAfterSet['merge_target_cycle_id'], $cycleId);
+
+    // Switching to "existing round" mode WITHOUT explicitly clearing merge_target_cycle_id is
+    // refused -- see resolveMergeTargetSpec()'s own docblock for why this is required, not a bug.
+    $fcUpdAmbiguousRes = $runModel->update($fcUpdSourceId, $compId, ['merge_target_run_id' => $fcRealTargetId], $userId, true);
+    check('update() refuses switching to "existing round" mode without also explicitly clearing merge_target_cycle_id', $fcUpdAmbiguousRes['status'], false);
+
+    $fcUpdSwitchRes = $runModel->update($fcUpdSourceId, $compId, [
+        'merge_target_run_id' => $fcRealTargetId,
+        'merge_target_cycle_id' => null,
+    ], $userId, true);
+    checkTrue('update() switches cleanly to "existing round" mode when both keys are sent together' . (empty($fcUpdSwitchRes['status']) ? " ({$fcUpdSwitchRes['message']})" : ''), $fcUpdSwitchRes['status']);
+    $fcUpdRowAfterSwitch = $runModel->get($fcUpdSourceId, $compId);
+    check('merge_target_run_id set after the mode switch', (int)$fcUpdRowAfterSwitch['merge_target_run_id'], $fcRealTargetId);
+    checkTrue('merge_target_cycle_id cleared after the mode switch', $fcUpdRowAfterSwitch['merge_target_cycle_id'] === null);
+
+    $fcUpdClearRes = $runModel->update($fcUpdSourceId, $compId, ['merge_target_run_id' => null], $userId, true);
+    checkTrue('update() clears back to "new" mode' . (empty($fcUpdClearRes['status']) ? " ({$fcUpdClearRes['message']})" : ''), $fcUpdClearRes['status']);
+    $fcUpdRowAfterClear = $runModel->get($fcUpdSourceId, $compId);
+    checkTrue('both merge_target_run_id and merge_target_cycle_id are null after clearing', $fcUpdRowAfterClear['merge_target_run_id'] === null && $fcUpdRowAfterClear['merge_target_cycle_id'] === null);
+
+    // ---------- 2026-09-06, real gap found and fixed while reviewing this same feature: neither
+    // PayrollCycleModel::toggleStatus() (deactivate) nor ::delete() checks for a waiting
+    // merge_target_cycle_id pointing at the cycle -- since create() requires the target cycle to be
+    // status='active' to ever create a new run against it, a waiting spec whose cycle gets
+    // deactivated/deleted afterward is a genuine dead end (same category as the Origami-attribution
+    // target_rejected status). merge_target_cycle_status now exposed via get()/list() so the UI can
+    // warn distinctly instead of showing "waiting" forever. ----------
+    echo "=== Future-cycle merge target: dead end surfaced when the target cycle is later deactivated ===\n";
+    $fcDeadCycleRes = $cycleModel->save($compId, [
+        'cycle_name' => 'FC_DEAD_CYCLE_' . uniqid(), 'payroll_frequency' => 'monthly',
+        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5, 'ot_cutoff_type' => 'same_as_attendance',
+        'bank_file_format_id' => 1, 'status' => 'active',
+    ], $userId);
+    checkTrue('fixture: a second, disposable cycle created' . (empty($fcDeadCycleRes['status']) ? " ({$fcDeadCycleRes['message']})" : ''), $fcDeadCycleRes['status']);
+    $fcDeadCycleId = $fcDeadCycleRes['id'];
+
+    $fcDeadSourceRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => false,
+        'run_name' => 'FC_DEAD_SOURCE_' . uniqid(),
+        'period_start_date' => '2028-08-15', 'period_end_date' => '2028-08-15', 'payment_date' => '2028-08-15',
+        'merge_target_cycle_id' => $fcDeadCycleId,
+        'merge_target_period_start_date' => '2028-08-01', 'merge_target_period_end_date' => '2028-08-31',
+    ], $userId, true);
+    checkTrue('fixture: off-cycle run targeting the disposable cycle creates fine' . (empty($fcDeadSourceRes['status']) ? " ({$fcDeadSourceRes['message']})" : ''), $fcDeadSourceRes['status']);
+    $fcDeadRowBefore = $runModel->get($fcDeadSourceRes['id'], $compId);
+    check('merge_target_cycle_status is active while the cycle is still active', $fcDeadRowBefore['merge_target_cycle_status'], 'active');
+
+    $fcToggleRes = $cycleModel->toggleStatus($compId, $fcDeadCycleId, $userId);
+    checkTrue('fixture: the disposable cycle is deactivated' . (empty($fcToggleRes['status']) ? " ({$fcToggleRes['message']})" : ''), $fcToggleRes['status']);
+
+    $fcDeadRowAfter = $runModel->get($fcDeadSourceRes['id'], $compId);
+    check('merge_target_cycle_status reflects the now-inactive cycle (dead end, surfaced distinctly)', $fcDeadRowAfter['merge_target_cycle_status'], 'inactive');
+    checkTrue('merge_target_cycle_id/period themselves are UNTOUCHED (this is a status flag for the UI, not a silent auto-clear)', (int)$fcDeadRowAfter['merge_target_cycle_id'] === $fcDeadCycleId);
+
+    // The escape hatch: editing the run to switch to a different (real, active) target still works
+    // fine -- confirms this dead end is recoverable, not a true dead end for the ADMIN, just for the
+    // "wait for it automatically" mechanism.
+    $fcDeadRecoverRes = $runModel->update($fcDeadSourceRes['id'], $compId, [
+        'merge_target_run_id' => $fcRealTargetId,
+        'merge_target_cycle_id' => null,
+    ], $userId, true);
+    checkTrue('the admin can still recover by switching to a different, real target run' . (empty($fcDeadRecoverRes['status']) ? " ({$fcDeadRecoverRes['message']})" : ''), $fcDeadRecoverRes['status']);
 
 } finally {
     $pdo->rollBack();

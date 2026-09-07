@@ -4,9 +4,16 @@
  * Not PHPUnit — see tests/statutory_engine_test.php for why. Pure PHP, no DB needed.
  * Run with: php tests/statutory_export_test.php
  *
- * These checks only prove the SHAPE (delimiter, row length, encoding) is self-consistent —
- * they do NOT prove the field layout matches the real government spec, because that spec
- * could not be confirmed (see the DRAFT disclaimers in each exporter class).
+ * 2026-09-05, REWRITTEN (Phase 12, T071) — every exporter here was rebuilt against a real
+ * reference spec the user supplied (Payroll_Government_Export_Specs.pdf/.xlsx,
+ * GovernmentExporters.php, and 2 byte-exact .txt samples), adopted wholesale per explicit
+ * confirmation (AskUserQuestion, "ยึด spec ใหม่ทั้งหมด (แนะนำ)"). Every expected value below that
+ * comes from the reference sample itself was cross-checked by decoding that sample's own raw
+ * TIS-620 bytes via `iconv('TIS-620','UTF-8', ...)` and reading the real Thai names back out
+ * (confirmed "นาย สมชาย ใจดี" etc.), not assumed. All 5 registered exporters now return
+ * isVerified()=true for their field LAYOUT (StatutoryExportInterface's own docblock: this flag is
+ * about the layout, not any one call's data) — this file's own checks now also assert
+ * isVerified()===true, replacing the pre-2026-09-05 "both TH drafts are flagged unverified" check.
  */
 declare(strict_types=1);
 
@@ -24,97 +31,113 @@ function check(string $label, $actual, $expected): void {
         echo "  FAIL  {$label} => got " . var_export($actual, true) . ", expected " . var_export($expected, true) . "\n";
     }
 }
+function checkTrue(string $label, bool $actual): void { check($label, $actual, true); }
+function checkFalse(string $label, bool $actual): void { check($label, $actual, false); }
 
 echo "=== Registry ===\n";
 $thExporters = StatutoryExportRegistry::forCountry('TH');
-check('TH has 3 registered export formats', count($thExporters), 3);
+check('TH has 5 registered export formats', count($thExporters), 5);
 check('unknown code returns null', StatutoryExportRegistry::get('XX_NOPE'), null);
-check('both TH drafts are flagged unverified', array_reduce($thExporters, fn($carry, $e) => $carry && !$e->isVerified(), true), true);
+checkTrue('every TH exporter now reports isVerified()=true (field layout confirmed)', array_reduce($thExporters, fn($carry, $e) => $carry && $e->isVerified(), true));
 
-echo "\n=== PndOneKorExporter (ภ.ง.ด.1ก, draft) ===\n";
-$pnd1k = StatutoryExportRegistry::get('TH_PND1K');
-$content = $pnd1k->generate([
-    'period' => ['tax_year' => 2569],
+echo "\n=== PndOneExporter (ภ.ง.ด.1, 11-field pipe format) ===\n";
+$pnd1 = StatutoryExportRegistry::get('TH_PND1');
+$content = $pnd1->generate([
+    'period' => ['tax_year' => 2567, 'tax_month' => 1, 'payment_date' => '2024-01-31'],
     'employees' => [
-        ['tax_id' => '1-2345-67890-12-3', 'prefix' => 'นาย', 'first_name' => 'สมชาย', 'last_name' => 'ใจดี', 'total_income' => 360000, 'tax_withheld' => 5000.5],
-        ['tax_id' => '9876543210987', 'prefix' => 'นาง', 'first_name' => 'สมหญิง', 'last_name' => 'รักงาน', 'total_income' => 480000.25, 'tax_withheld' => 12000],
+        ['id_card_no' => '1100200300405', 'prefix' => 'นาย', 'first_name' => 'สมชาย', 'last_name' => 'ใจดี', 'total_income' => 35000, 'tax_withheld' => 1250.5],
+        ['id_card_no' => '3100500600708', 'prefix' => 'นางสาว', 'first_name' => 'วิภา', 'last_name' => 'มีสุข', 'total_income' => 28000, 'tax_withheld' => 650],
     ],
 ]);
 $lines = explode("\r\n", rtrim($content, "\r\n"));
 check('generates one line per employee', count($lines), 2);
-$fields = explode('|', $lines[0]);
-check('7 pipe-delimited fields per row', count($fields), 7);
-check('tax_id strips dashes and stays 13 digits', $fields[0], '1234567890123');
-check('amount formatted with 2 decimals, no thousands separator', $fields[4], '360000.00');
-check('tax withheld rounds to 2 decimals', $fields[5], '5000.50');
-check('filename uses tax_year', $pnd1k->fileName(['period' => ['tax_year' => 2569]]), 'PND1K_2569.txt');
+$decoded = iconv('TIS-620', 'UTF-8', $lines[0]);
+check('11 pipe-delimited fields per row', count(explode('|', $decoded)), 11);
+check('matches the reference sample byte-for-byte (row 1)', $decoded, '1|1100200300405|นาย|สมชาย|ใจดี|31012567|1|0.00|35000.00|1250.50|1');
+check('matches the reference sample byte-for-byte (row 2)', iconv('TIS-620', 'UTF-8', $lines[1]), '2|3100500600708|นางสาว|วิภา|มีสุข|31012567|1|0.00|28000.00|650.00|1');
+check('filename uses tax_year+tax_month', $pnd1->fileName(['period' => ['tax_year' => 2567, 'tax_month' => 1]]), 'PND1_256701.txt');
+checkTrue('isVerified() is true (layout confirmed)', $pnd1->isVerified());
+try {
+    $pnd1->generate(['period' => [], 'employees' => [['id_card_no' => '123', 'prefix' => 'นาย', 'first_name' => 'x', 'last_name' => 'y', 'total_income' => 1, 'tax_withheld' => 1]]]);
+    check('a malformed (non-13-digit) id_card_no throws', 'no exception thrown', 'exception');
+} catch (RuntimeException $e) {
+    checkTrue('a malformed (non-13-digit) id_card_no throws', true);
+}
 
-echo "\n=== Sso110Exporter (สปส.1-10, rewritten against a real user-supplied sample 2026-08-29) ===\n";
-// 2026-08-29 -- field widths/positions below are derived from the real sample the user pasted
-// directly (see Sso110Exporter's own docblock for the byte-offset derivation, and its one
-// unresolved discrepancy on the header's "total wage to be calculated" field). Header=135 bytes,
-// detail=108 bytes (genuinely DIFFERENT row lengths, correcting the prior draft's assumption
-// both were 135).
+echo "\n=== PndOneKorExporter (ภ.ง.ด.1ก, same 11-field layout, annual) ===\n";
+$pnd1k = StatutoryExportRegistry::get('TH_PND1K');
+$content = $pnd1k->generate([
+    'period' => ['tax_year' => 2569],
+    'employees' => [
+        ['id_card_no' => '1234567890123', 'prefix' => 'นาย', 'first_name' => 'สมชาย', 'last_name' => 'ใจดี', 'total_income' => 360000, 'tax_withheld' => 5000.5],
+        ['id_card_no' => '9876543210987', 'prefix' => 'นาง', 'first_name' => 'สมหญิง', 'last_name' => 'รักงาน', 'total_income' => 480000.25, 'tax_withheld' => 12000],
+    ],
+]);
+$lines = explode("\r\n", rtrim($content, "\r\n"));
+check('generates one line per employee', count($lines), 2);
+$fields = explode('|', iconv('TIS-620', 'UTF-8', $lines[0]));
+check('11 pipe-delimited fields per row (same layout as PndOneExporter)', count($fields), 11);
+check('id_card_no stays 13 digits', $fields[1], '1234567890123');
+check('representative pay_date is 31 Dec of the tax year (BE)', $fields[5], '31122569');
+check('amount formatted with 2 decimals, no thousands separator', $fields[8], '360000.00');
+check('tax withheld rounds to 2 decimals', $fields[9], '5000.50');
+check('filename uses tax_year', $pnd1k->fileName(['period' => ['tax_year' => 2569]]), 'PND1K_2569.txt');
+checkTrue('isVerified() is true (layout confirmed)', $pnd1k->isVerified());
+
+echo "\n=== Sso110Exporter (สปส.1-10, 7-field pipe format, no header row) ===\n";
 $sso = StatutoryExportRegistry::get('TH_SSO110');
 $content = $sso->generate([
-    'company' => ['employer_account' => '0007730000', 'branch_seq' => '0001', 'sso_agency_code' => '0769', 'name_th' => 'บริษัท ทดสอบ จำกัด', 'name_en' => 'Test Co., Ltd.'],
     'period' => ['year' => 2026, 'month' => 8],
     'employees' => [
-        ['insured_id' => '1012990570210', 'prefix_code' => '03', 'first_name_th' => 'ทิ', 'last_name_th' => 'แซ่โง้ว', 'first_name_en' => 'Thi', 'last_name_en' => 'Saengow', 'wage' => 20800, 'contribution' => 875],
-        ['insured_id' => '9876543210987', 'prefix_code' => '05', 'first_name_th' => 'สมหญิง', 'last_name_th' => 'รักงาน', 'first_name_en' => 'Somying', 'last_name_en' => 'Rakngan', 'wage' => 25000, 'contribution' => 625],
+        ['insured_id' => '1100200300405', 'prefix' => 'นาย', 'first_name' => 'สมชาย', 'last_name' => 'ใจดี', 'wage' => 15000, 'contribution' => 750],
+        ['insured_id' => '3100500600708', 'prefix' => 'นางสาว', 'first_name' => 'วิภา', 'last_name' => 'มีสุข', 'wage' => 12000, 'contribution' => 600],
     ],
 ]);
 $rows = explode("\r\n", rtrim($content, "\r\n"));
-check('1 header + 2 detail rows', count($rows), 3);
-check('header row is exactly 135 bytes', strlen($rows[0]), 135);
-check('detail row 1 is exactly 108 bytes (genuinely different from the header\'s own 135)', strlen($rows[1]), 108);
-check('detail row 2 is exactly 108 bytes', strlen($rows[2]), 108);
-check('header starts with record type 11001 (bytes 1-5)', substr($rows[0], 0, 5), '11001');
-check('detail starts with record type 25 (bytes 1-2)', substr($rows[1], 0, 2), '25');
-check('header employer_account field (bytes 6-15)', substr($rows[0], 5, 10), '0007730000');
-check('header branch_seq field (bytes 16-19)', substr($rows[0], 15, 4), '0001');
-check('header period MMYY field (bytes 20-23) = 0826 (Aug 2026)', substr($rows[0], 19, 4), '0826');
-check('header sso_agency_code field (bytes 24-27)', substr($rows[0], 23, 4), '0769');
-check('header insured count field (bytes 73-74) = 02', substr($rows[0], 72, 2), '02');
-check('header record count field (bytes 75-82) = 00000002', substr($rows[0], 74, 8), '00000002');
-check('header total employee contribution (bytes 111-123, implied 2dp) = 875+625=1500.00', substr($rows[0], 110, 13), '0000000150000');
-check('header total employer contribution (bytes 124-135, implied 2dp) = 1500.00', substr($rows[0], 123, 12), '000000150000');
-check('detail 1 id_card_no field (bytes 3-15)', substr($rows[1], 2, 13), '1012990570210');
-check('detail 1 prefix_code field (bytes 16-17)', substr($rows[1], 15, 2), '03');
-check('detail 1 wage field (bytes 83-94, WHOLE integer, no decimal) = 20800', substr($rows[1], 82, 12), '000000020800');
-check('detail 1 contribution field (bytes 95-108, implied 2dp) = 875.00', substr($rows[1], 94, 14), '00000000087500');
+check('2 detail rows, no header row', count($rows), 2);
+$decoded1 = iconv('TIS-620', 'UTF-8', $rows[0]);
+check('matches the reference sample byte-for-byte (row 1)', $decoded1, '00001|1100200300405|นาย|สมชาย|ใจดี|15000.00|750.00');
+check('matches the reference sample byte-for-byte (row 2)', iconv('TIS-620', 'UTF-8', $rows[1]), '00002|3100500600708|นางสาว|วิภา|มีสุข|12000.00|600.00');
 check('filename uses year+month', $sso->fileName(['period' => ['year' => 2026, 'month' => 8]]), 'SSO110_202608.txt');
+checkTrue('isVerified() is true (layout confirmed)', $sso->isVerified());
+try {
+    $sso->generate(['employees' => [['insured_id' => '1100200300405', 'prefix' => 'นาย', 'first_name' => 'x', 'last_name' => 'y', 'wage' => 20000, 'contribution' => 750]]]);
+    check('a wage above the 15,000 SSO ceiling throws', 'no exception thrown', 'exception');
+} catch (RuntimeException $e) {
+    checkTrue('a wage above the 15,000 SSO ceiling throws', true);
+}
 
-// 2026-08-29, explicit request: "รองรับ 2 ภาษาเหมือนกัน" -- employer name + employee first/last
-// name follow the requested language; every other field (id_card_no/prefix/amounts/codes) stays
-// byte-identical regardless of language.
-$contentEn = $sso->generate([
-    'company' => ['employer_account' => '0007730000', 'branch_seq' => '0001', 'sso_agency_code' => '0769', 'name_th' => 'บริษัท ทดสอบ จำกัด', 'name_en' => 'Test Co., Ltd.'],
-    'period' => ['year' => 2026, 'month' => 8],
+echo "\n=== Sso609Exporter (สปส.6-09, NEW -- termination notice) ===\n";
+$sso609 = StatutoryExportRegistry::get('TH_SSO609');
+$content = $sso609->generate([
     'employees' => [
-        ['insured_id' => '1012990570210', 'prefix_code' => '03', 'first_name_th' => 'ทิ', 'last_name_th' => 'แซ่โง้ว', 'first_name_en' => 'Thi', 'last_name_en' => 'Saengow', 'wage' => 20800, 'contribution' => 875],
-        ['insured_id' => '9876543210987', 'prefix_code' => '05', 'first_name_th' => 'สมหญิง', 'last_name_th' => 'รักงาน', 'first_name_en' => 'Somying', 'last_name_en' => 'Rakngan', 'wage' => 25000, 'contribution' => 625],
+        ['citizen_id' => '1100200300405', 'full_name' => 'นาย สมชาย ใจดี', 'leave_date' => '2024-01-15', 'reason' => 'ลาออกเอง'],
+        ['citizen_id' => '3100500600708', 'full_name' => 'นางสาว วิภา มีสุข', 'leave_date' => '2024-01-31', 'reason' => 'เลิกจ้างตามผลประกอบการ'],
     ],
-    'language' => 'en',
 ]);
-$rowsEn = explode("\r\n", rtrim($contentEn, "\r\n"));
-check('en language produces a DIFFERENT header row (company name changes)', $rows[0] !== $rowsEn[0], true);
-check('en language produces a DIFFERENT detail row (employee name changes)', $rows[1] !== $rowsEn[1], true);
-check('en detail id_card_no/prefix/amount fields identical regardless of language', [substr($rows[1], 2, 13), substr($rows[1], 82, 26)], [substr($rowsEn[1], 2, 13), substr($rowsEn[1], 82, 26)]);
-check('en company name field decodes to the English name', trim((string)iconv('TIS-620', 'UTF-8', substr($rowsEn[0], 27, 45))), 'Test Co., Ltd.');
+$rows = explode("\r\n", rtrim($content, "\r\n"));
+check('2 rows', count($rows), 2);
+check('row 1 matches the reference sample shape', iconv('TIS-620', 'UTF-8', $rows[0]), '1|1100200300405|นาย สมชาย ใจดี|15012567|01');
+$fields2 = explode('|', iconv('TIS-620', 'UTF-8', $rows[1]));
+check('row 2 leave_date converts to Buddhist-year DDMMYYYY', $fields2[3], '31012567');
+check('reason "เลิกจ้าง..." maps to code 02', $fields2[4], '02');
+checkTrue('isVerified() is true (layout confirmed)', $sso609->isVerified());
 
-// Force a truncation edge case: an over-long company name must not throw, and must not
-// break row length — padText() truncates rather than assertLength() ever firing here.
-$longName = str_repeat('ก', 100); // 100 Thai chars, well over the 45-byte column width
-$edge = $sso->generate([
-    'company' => ['employer_account' => '1', 'name_th' => $longName],
-    'period' => ['year' => 2026, 'month' => 1],
-    'employees' => [],
+echo "\n=== StudentLoanExporter (กยศ., NEW -- deduction remittance) ===\n";
+$slf = StatutoryExportRegistry::get('TH_SLF');
+$content = $slf->generate([
+    'employees' => [
+        ['citizen_id' => '1100200300405', 'full_name' => 'นาย สมชาย ใจดี', 'amount' => 1500],
+        ['citizen_id' => '3100500600708', 'full_name' => 'นางสาว วิภา มีสุข', 'amount' => 800],
+    ],
 ]);
-$edgeRows = explode("\r\n", rtrim($edge, "\r\n"));
-check('over-long company name still produces a 135-byte header (truncated, not thrown)', strlen($edgeRows[0]), 135);
+$rows = explode("\r\n", rtrim($content, "\r\n"));
+check('2 rows', count($rows), 2);
+check('row 1 matches the reference sample byte-for-byte', iconv('TIS-620', 'UTF-8', $rows[0]), '1|1100200300405|นาย สมชาย ใจดี|1500.00');
+check('row 2 matches the reference sample byte-for-byte', iconv('TIS-620', 'UTF-8', $rows[1]), '2|3100500600708|นางสาว วิภา มีสุข|800.00');
+check('filename uses run_id', $slf->fileName(['run_id' => 42]), 'SLF_Run42.txt');
+checkTrue('isVerified() is true (layout confirmed)', $slf->isVerified());
 
 echo "\n" . str_repeat('-', 50) . "\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";
-echo $failures === 0 ? "ALL SHAPE CHECKS PASSED (field content still needs official verification — see class docblocks)\n" : "SOME CHECKS FAILED\n";
 exit($failures === 0 ? 0 : 1);

@@ -1,11 +1,14 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/AuditLogModel.php';
 class PayrollCycleModel {
     private $db;
+    private AuditLogModel $auditLog;
     private const DAYS_OF_WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     // 2026-08-29, explicit follow-up request: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยกบัญชีในการจ่าย" -- ba.*
@@ -309,6 +312,16 @@ class PayrollCycleModel {
                 $lengthDays = $frequency === 'weekly' ? 7 : 14;
                 [$start, $end] = $this->nextWeekBasedPeriod($lastEnd, $today, (string)($cycle['cutoff_day_of_week'] ?? ''), $lengthDays);
                 $payment = $this->nextOccurrenceOfWeekday((clone $end)->modify('+1 day'), (string)($cycle['payment_day_of_week'] ?? ''));
+            } elseif ($frequency === 'daily') {
+                [$start, $end] = $this->nextDailyPeriod($lastEnd, $today);
+                // 2026-09-04, Backlog Phase 10, T060 Step B -- no payment_day_of_month/_of_week
+                // config field exists for 'daily' (see save()'s own comment on why none applies),
+                // so there is no configured value to derive a payment date FROM the way every
+                // other frequency has. Defaults to same-day payment (worked today, paid today) --
+                // the simplest, most defensible default for a daily-wage cycle with no configured
+                // offset -- and stays fully editable in the Create Payroll Run form afterward, same
+                // as every other frequency's own auto-filled suggestion.
+                $payment = clone $end;
             } else {
                 return ['status' => false, 'message' => 'Unsupported payroll_frequency.'];
             }
@@ -549,6 +562,21 @@ class PayrollCycleModel {
         return [$start, $end];
     }
 
+    /**
+     * 2026-09-04, Backlog Phase 10, T060 Step B -- the simplest period-boundary case in this whole
+     * model: a daily period is always exactly 1 day, period_start === period_end. Same "continue
+     * from the last run's own period_end" anchoring convention every other frequency above already
+     * uses (nextMonthlyPeriod()/nextSemiMonthlyPeriod()/nextWeekBasedPeriod() all advance from
+     * $lastEnd when one exists) -- the day immediately after $lastEnd, or today when there is no
+     * prior run yet for this cycle.
+     *
+     * @return array{0: DateTime, 1: DateTime} [periodStart, periodEnd] (always the same DateTime value)
+     */
+    private function nextDailyPeriod(?DateTime $lastEnd, DateTime $today): array {
+        $day = $lastEnd !== null ? (clone $lastEnd)->modify('+1 day') : clone $today;
+        return [clone $day, $day];
+    }
+
     /** Next occurrence of $dayOfWeek on/after $from (or strictly after, if $inclusive is false). */
     private function nextOccurrenceOfWeekday(DateTime $from, string $dayOfWeek, bool $inclusive = false): DateTime {
         if (!in_array($dayOfWeek, self::DAYS_OF_WEEK, true)) {
@@ -608,7 +636,7 @@ class PayrollCycleModel {
         return [$day, 0];
     }
 
-    public function save(int $compId, array $data, int $userId): array {
+    public function save(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
         foreach (['cycle_name', 'payroll_frequency', 'ot_cutoff_type', 'bank_file_format_id'] as $field) {
@@ -637,7 +665,7 @@ class PayrollCycleModel {
         }
 
         $frequency = (string)$data['payroll_frequency'];
-        if (!in_array($frequency, ['monthly', 'semi_monthly', 'weekly', 'bi_weekly'], true)) {
+        if (!in_array($frequency, ['monthly', 'semi_monthly', 'weekly', 'bi_weekly', 'daily'], true)) {
             return ['status' => false, 'message' => 'Invalid payroll_frequency.'];
         }
 
@@ -669,7 +697,7 @@ class PayrollCycleModel {
         $paymentUseLastDay = 0;
         $paymentDayOfWeek = null;
 
-        if ($frequency === 'weekly') {
+        if ($frequency === 'weekly' || $frequency === 'bi_weekly') {
             $cutoffDayOfWeek = (string)($data['cutoff_day_of_week'] ?? '');
             $paymentDayOfWeek = (string)($data['payment_day_of_week'] ?? '');
             if (!in_array($cutoffDayOfWeek, self::DAYS_OF_WEEK, true)) {
@@ -678,6 +706,11 @@ class PayrollCycleModel {
             if (!in_array($paymentDayOfWeek, self::DAYS_OF_WEEK, true)) {
                 return ['status' => false, 'message' => 'Missing or invalid field: payment_day_of_week'];
             }
+        } elseif ($frequency === 'daily') {
+            // 2026-09-04, Backlog Phase 10, T060 Step B -- a daily period is always exactly 1 day
+            // (period_start === period_end), so neither a day-of-month nor a day-of-week cutoff
+            // concept applies at all. Every cutoff_*/payment_* column stays at its own already-
+            // declared NULL/0 default above -- nothing to validate or collect here.
         } else {
             $cutoffResolved = $this->resolveDayOfMonth($data, 'cutoff_day_of_month', 'cutoff_use_last_day');
             if ($cutoffResolved === null) {
@@ -744,9 +777,12 @@ class PayrollCycleModel {
 
         try {
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                // Platform Hardening Phase 6 (batch 2): SELECT * so the full row is available to
+                // AuditLogModel::record() as the "old" side of the diff below.
+                $stmtCheck = $this->db->prepare("SELECT * FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-                if (!$stmtCheck->fetch()) {
+                $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existing) {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 $sql = "UPDATE `payroll_cycles` SET
@@ -761,6 +797,10 @@ class PayrollCycleModel {
                 $params[':id'] = $id;
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute($params);
+                $stmtNewRow = $this->db->prepare("SELECT * FROM `payroll_cycles` WHERE id = :id");
+                $stmtNewRow->execute([':id' => $id]);
+                $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'payroll_cycles', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
                 return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
             }
 
@@ -785,7 +825,7 @@ class PayrollCycleModel {
     // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch (row-level, no confirm
     // needed on the model side, the shared frontend handler in app.js already confirms before
     // deactivating). Same shape as CompanyProfileModel::toggleStructureStatus().
-    public function toggleStatus(int $compId, int $id, int $userId): array {
+    public function toggleStatus(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $stmt = $this->db->prepare("SELECT status FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $current = $stmt->fetchColumn();
@@ -796,21 +836,24 @@ class PayrollCycleModel {
         try {
             $stmtUpdate = $this->db->prepare("UPDATE `payroll_cycles` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
             $stmtUpdate->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+            $this->auditLog->record($compId, 'payroll_cycles', $id, 'update', ['status' => $current], ['status' => $newStatus], $userId, 'web', $ip, $userAgent);
             return ['status' => true, 'new_status' => $newStatus, 'message' => 'Updated successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
     }
 
-    public function delete(int $compId, int $id, int $userId): array {
+    public function delete(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         try {
-            $stmtCheck = $this->db->prepare("SELECT id FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtCheck = $this->db->prepare("SELECT * FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
             $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-            if (!$stmtCheck->fetch()) {
+            $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+            if (!$existing) {
                 return ['status' => false, 'message' => 'Record not found.'];
             }
             $stmt = $this->db->prepare("UPDATE `payroll_cycles` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
             $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+            $this->auditLog->record($compId, 'payroll_cycles', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
             return ['status' => true, 'message' => 'Deleted successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];

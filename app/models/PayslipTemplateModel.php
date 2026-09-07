@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/TemplateDesignerModelTrait.php';
+
 /**
  * Payslip Template designer backend -- rebuilt as a free-form canvas designer (2026-08-25, explicit
  * request: "ปรับให้การตั้งค่า Slip เงินเดือน Template เป็นเหมือนกับใบรับรอง", confirmed via
@@ -38,11 +40,18 @@ declare(strict_types=1);
  * (is_default/status/header-footer) require a genuine difference.
  */
 class PayslipTemplateModel {
+    use TemplateDesignerModelTrait;
+
     private PDO $db;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
+
+    /* ==================== TemplateDesignerModelTrait's own abstract table-name hooks ==================== */
+    protected function elementsTableName(): string { return 'payslip_template_elements'; }
+    protected function assignmentsTableName(): string { return 'payslip_template_assignments'; }
+    protected function imagesTableName(): string { return 'payslip_images'; }
 
     private const ELEMENT_TYPES = ['text', 'image', 'shape', 'table'];
     private const SHAPE_TYPES = ['rectangle', 'ellipse', 'line'];
@@ -91,15 +100,8 @@ class PayslipTemplateModel {
     }
 
     /* ==================== Templates ==================== */
-
-    private function getElements(int $templateId): array {
-        $stmt = $this->db->prepare("SELECT id, element_type, field_key, image_asset_id, content,
-                pos_x_pct, pos_y_pct, width_pct, height_pct, font_size, font_family, font_color,
-                text_align, font_weight, font_style, text_decoration, sort_order, group_key, page_number, is_visible
-            FROM `payslip_template_elements` WHERE template_id = :id ORDER BY sort_order ASC, id ASC");
-        $stmt->execute([':id' => $templateId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
+    // getElements() moved to TemplateDesignerModelTrait (T064) -- table name supplied by
+    // elementsTableName() above.
 
     /** @return array<int,array> every non-deleted template for this company+language, most recent first. */
     public function list(int $compId, string $language): array {
@@ -248,79 +250,9 @@ class PayslipTemplateModel {
        with ANY assignment rows only applies to the union of those department/team/employee scopes
        -- see resolveTemplateForEmployee() below for the actual priority resolution. */
 
-    /** Polymorphic scope_id validation -- mirrors SetupRulesModel::validateScopeRef() exactly
-     *  (same 3-table switch, minus 'shift'/'position' which don't apply here). */
-    private function validateScopeRef(string $scopeType, int $scopeId, int $compId): bool {
-        $table = match ($scopeType) {
-            'department' => 'structure_departments',
-            'team' => 'structure_teams',
-            'employee' => 'employees',
-            default => null,
-        };
-        if ($table === null) {
-            return false;
-        }
-        $stmt = $this->db->prepare("SELECT id FROM `{$table}` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
-        $stmt->execute([':id' => $scopeId, ':comp_id' => $compId]);
-        return (bool)$stmt->fetch();
-    }
-
-    /** Raw scope rows plus resolved display names (department/team name, employee no+name) for the
-     *  editor's own "Assign To" picker to pre-fill with human-readable chips, not just bare ids. */
-    public function getAssignments(int $templateId): array {
-        $stmt = $this->db->prepare("SELECT id, scope_type, scope_id FROM `payslip_template_assignments` WHERE template_id = :id ORDER BY scope_type ASC, id ASC");
-        $stmt->execute([':id' => $templateId]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($rows as &$row) {
-            $row['label'] = $this->scopeLabel($row['scope_type'], (int)$row['scope_id']);
-        }
-        unset($row);
-        return $rows;
-    }
-
-    /**
-     * All active departments/teams/employees for this company, for the "Assign To" tab's checkbox
-     * lists (2026-08-25, explicit request: "เป็น checkbox ให้เลือก ว่าจะ Assign ไปที่ไหนบ้าง และสามารถ
-     * เลือกใช้ได้กับทุกคน ทุกแผนก ทุกทีม" -- replaces the earlier select2-remote-search version,
-     * which only ever showed a handful of matches at a time; a checkbox list needs every option up
-     * front, not a paginated search). Employees can genuinely number in the hundreds/thousands for a
-     * staffing company (this app's own domain, see the Team feature's own docblock) -- returned in
-     * one shot regardless, with client-side search filtering the DOM afterward, same tradeoff this
-     * project already accepted for Organizational Structure's own generic list tables at this scale.
-     */
-    public function assignableOptions(int $compId): array {
-        $stmtD = $this->db->prepare("SELECT id, department_name_th AS text_th, department_name_en AS text_en
-            FROM `structure_departments` WHERE comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL ORDER BY department_name_th ASC");
-        $stmtD->execute([':comp_id' => $compId]);
-        $stmtT = $this->db->prepare("SELECT id, team_name_th AS text_th, team_name_en AS text_en
-            FROM `structure_teams` WHERE comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL ORDER BY team_name_th ASC");
-        $stmtT->execute([':comp_id' => $compId]);
-        $stmtE = $this->db->prepare("SELECT id, CONCAT(employee_no, ' - ', name_th, ' ', surname_th) AS text_th,
-                CONCAT(employee_no, ' - ', name_en, ' ', surname_en) AS text_en
-            FROM `employees` WHERE comp_id = :comp_id AND deleted_at IS NULL ORDER BY name_th ASC");
-        $stmtE->execute([':comp_id' => $compId]);
-        return [
-            'departments' => $stmtD->fetchAll(PDO::FETCH_ASSOC),
-            'teams' => $stmtT->fetchAll(PDO::FETCH_ASSOC),
-            'employees' => $stmtE->fetchAll(PDO::FETCH_ASSOC),
-        ];
-    }
-
-    private function scopeLabel(string $scopeType, int $scopeId): string {
-        if ($scopeType === 'department') {
-            $stmt = $this->db->prepare("SELECT department_name_th AS th, department_name_en AS en FROM `structure_departments` WHERE id = :id");
-        } elseif ($scopeType === 'team') {
-            $stmt = $this->db->prepare("SELECT team_name_th AS th, team_name_en AS en FROM `structure_teams` WHERE id = :id");
-        } else {
-            $stmt = $this->db->prepare("SELECT CONCAT(employee_no, ' - ', name_th, ' ', surname_th) AS th, CONCAT(employee_no, ' - ', name_en, ' ', surname_en) AS en FROM `employees` WHERE id = :id");
-        }
-        $stmt->execute([':id' => $scopeId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$row) {
-            return "(#{$scopeId})";
-        }
-        return trim((string)$row['th']) !== '' ? $row['th'] : (string)$row['en'];
-    }
+    // validateScopeRef()/getAssignments()/assignableOptions()/scopeLabel() moved to
+    // TemplateDesignerModelTrait (T064) -- zero template-specific table reference, genuinely
+    // identical to Employment Certificate Template's own versions from the start.
 
     /** Finds another ACTIVE template of the SAME LANGUAGE (excluding $excludeTemplateId, e.g. the one
      *  currently being saved) that already claims this exact scope -- used to reject genuinely
@@ -458,125 +390,9 @@ class PayslipTemplateModel {
         return $id !== false ? $this->get($compId, (int)$id) : null;
     }
 
-    /** @return array{elements?: array, error?: string} */
-    private function validateElements(array $rawElements): array {
-        $fieldTypes = [];
-        foreach ($this->fieldTypeOptions() as $ft) {
-            $fieldTypes[$ft['code']] = $ft;
-        }
-        $cleaned = [];
-        foreach ($rawElements as $i => $raw) {
-            $n = $i + 1;
-            $elementType = (string)($raw['element_type'] ?? 'text');
-            if (!in_array($elementType, self::ELEMENT_TYPES, true)) {
-                return ['error' => "Element {$n}: invalid element_type."];
-            }
-            $fieldKey = !empty($raw['field_key']) ? (string)$raw['field_key'] : null;
-            $imageAssetId = !empty($raw['image_asset_id']) && is_numeric($raw['image_asset_id']) ? (int)$raw['image_asset_id'] : null;
-            if ($elementType === 'image') {
-                if ($fieldKey !== null) {
-                    if (!isset($fieldTypes[$fieldKey]) || $fieldTypes[$fieldKey]['element_type'] !== 'image') {
-                        return ['error' => "Element {$n}: invalid image field_key."];
-                    }
-                    $imageAssetId = null;
-                } elseif ($imageAssetId === null) {
-                    return ['error' => "Element {$n}: an image element needs either field_key or image_asset_id."];
-                }
-                $content = null;
-            } elseif ($elementType === 'shape') {
-                if (!in_array($fieldKey, self::SHAPE_TYPES, true)) {
-                    return ['error' => "Element {$n}: invalid shape type."];
-                }
-                $imageAssetId = null;
-                $content = null;
-            } elseif ($elementType === 'table') {
-                $tableData = json_decode((string)($raw['content'] ?? ''), true);
-                if (!is_array($tableData)) {
-                    return ['error' => "Element {$n}: invalid table data."];
-                }
-                $rows = (int)($tableData['rows'] ?? 0);
-                $cols = (int)($tableData['cols'] ?? 0);
-                if ($rows < 1 || $rows > 20 || $cols < 1 || $cols > 10) {
-                    return ['error' => "Element {$n}: table rows/cols out of range (1-20 rows, 1-10 cols)."];
-                }
-                $borderColor = (string)($tableData['border_color'] ?? '#000000');
-                if (!preg_match('/^#[0-9a-fA-F]{6}$/', $borderColor)) {
-                    return ['error' => "Element {$n}: table border_color must be a #rrggbb hex value."];
-                }
-                $borderWidth = (int)($tableData['border_width'] ?? 1);
-                $borderWidth = max(0, min(10, $borderWidth));
-                $rawCells = is_array($tableData['cells'] ?? null) ? $tableData['cells'] : [];
-                $cells = [];
-                for ($r = 0; $r < $rows; $r++) {
-                    $rowCells = [];
-                    for ($c = 0; $c < $cols; $c++) {
-                        $rowCells[] = trim((string)($rawCells[$r][$c] ?? ''));
-                    }
-                    $cells[] = $rowCells;
-                }
-                $content = json_encode(['rows' => $rows, 'cols' => $cols, 'border_color' => $borderColor, 'border_width' => $borderWidth, 'cells' => $cells]);
-                $fieldKey = null;
-                $imageAssetId = null;
-            } else {
-                $content = trim((string)($raw['content'] ?? ''));
-                if ($content === '') {
-                    return ['error' => "Element {$n}: text content is required."];
-                }
-                $fieldKey = null;
-                $imageAssetId = null;
-            }
-            $posX = is_numeric($raw['pos_x_pct'] ?? null) ? (float)$raw['pos_x_pct'] : null;
-            $posY = is_numeric($raw['pos_y_pct'] ?? null) ? (float)$raw['pos_y_pct'] : null;
-            $width = is_numeric($raw['width_pct'] ?? null) ? (float)$raw['width_pct'] : null;
-            $height = is_numeric($raw['height_pct'] ?? null) ? (float)$raw['height_pct'] : null;
-            if ($posX === null || $posY === null || $width === null || $height === null
-                || $posX < 0 || $posX > 100 || $posY < 0 || $posY > 100 || $width <= 0 || $width > 100 || $height <= 0 || $height > 100) {
-                return ['error' => "Element {$n}: position/size must be within the page (0-100%)."];
-            }
-            $fontSize = is_numeric($raw['font_size'] ?? null) ? (int)$raw['font_size'] : 14;
-            if ($fontSize < 6 || $fontSize > 96) {
-                return ['error' => "Element {$n}: font_size out of range."];
-            }
-            $textAlign = (string)($raw['text_align'] ?? 'left');
-            if (!in_array($textAlign, self::TEXT_ALIGNS, true)) {
-                return ['error' => "Element {$n}: invalid text_align."];
-            }
-            $fontWeight = (string)($raw['font_weight'] ?? 'normal');
-            if (!in_array($fontWeight, self::FONT_WEIGHTS, true)) {
-                return ['error' => "Element {$n}: invalid font_weight."];
-            }
-            $fontStyle = (string)($raw['font_style'] ?? 'normal');
-            if (!in_array($fontStyle, self::FONT_STYLES, true)) {
-                return ['error' => "Element {$n}: invalid font_style."];
-            }
-            $textDecoration = (string)($raw['text_decoration'] ?? 'none');
-            if (!in_array($textDecoration, self::TEXT_DECORATIONS, true)) {
-                return ['error' => "Element {$n}: invalid text_decoration."];
-            }
-            $fontFamily = (string)($raw['font_family'] ?? 'th_sarabun_new');
-            if (!in_array($fontFamily, self::FONT_FAMILIES, true)) {
-                return ['error' => "Element {$n}: invalid font_family."];
-            }
-            $fontColor = (string)($raw['font_color'] ?? '#000000');
-            if (!preg_match('/^#[0-9a-fA-F]{6}$/', $fontColor)) {
-                return ['error' => "Element {$n}: font_color must be a #rrggbb hex value."];
-            }
-            $groupKey = !empty($raw['group_key']) ? substr((string)$raw['group_key'], 0, 64) : null;
-            $pageNumber = is_numeric($raw['page_number'] ?? null) ? (int)$raw['page_number'] : 1;
-            $pageNumber = max(1, min(self::MAX_PAGE_NUMBER, $pageNumber));
-            // 2026-08-26, explicit request: "ตรง Layer ให้มี function เปิด/ปิดตาได้ แทนการที่ต้องลบอย่างเดียว"
-            // -- same as EmploymentCertificateTemplateModel's own, defaults to visible=true when absent.
-            $isVisible = !array_key_exists('is_visible', $raw) || !empty($raw['is_visible']) ? 1 : 0;
-            $cleaned[] = [
-                'element_type' => $elementType, 'field_key' => $fieldKey, 'image_asset_id' => $imageAssetId, 'content' => $content,
-                'pos_x_pct' => $posX, 'pos_y_pct' => $posY, 'width_pct' => $width, 'height_pct' => $height,
-                'font_size' => $fontSize, 'font_family' => $fontFamily, 'font_color' => $fontColor,
-                'text_align' => $textAlign, 'font_weight' => $fontWeight, 'font_style' => $fontStyle, 'text_decoration' => $textDecoration,
-                'sort_order' => $n, 'group_key' => $groupKey, 'page_number' => $pageNumber, 'is_visible' => $isVisible,
-            ];
-        }
-        return ['elements' => $cleaned];
-    }
+    // validateElements() moved to TemplateDesignerModelTrait (T064) -- byte-identical logic,
+    // correctly delegates to $this->fieldTypeOptions() (kept per-class below, queries this class's
+    // own master_payslip_field_types table).
 
     /**
      * Creates a NEW template (id omitted) or replaces an EXISTING one's whole element set in place
@@ -1030,41 +846,6 @@ class PayslipTemplateModel {
         return $this->presetElements($preset, $language);
     }
 
-    /* ==================== Reusable uploaded-image library -- company-wide, not tied to one
-       template, mirrors EmploymentCertificateTemplateModel's own image-library methods exactly. ==================== */
-
-    public function listImages(int $compId): array {
-        $stmt = $this->db->prepare("SELECT id, file_path, file_size, thumbnail_path, original_filename, uploaded_at
-            FROM `payslip_images` WHERE comp_id = :comp_id ORDER BY uploaded_at DESC");
-        $stmt->execute([':comp_id' => $compId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    public function addImage(int $compId, string $filePath, ?string $originalFilename, int $userId, ?int $fileSize = null, ?string $thumbnailPath = null): array {
-        if (!self::isValidImageAssetPath($filePath, $compId)) {
-            return ['status' => false, 'message' => 'Invalid file path.'];
-        }
-        $stmt = $this->db->prepare("INSERT INTO `payslip_images` (comp_id, file_path, file_size, thumbnail_path, original_filename, uploaded_by)
-            VALUES (:comp_id, :file_path, :file_size, :thumbnail_path, :original_filename, :uploaded_by)");
-        $stmt->execute([':comp_id' => $compId, ':file_path' => $filePath, ':file_size' => $fileSize, ':thumbnail_path' => $thumbnailPath, ':original_filename' => $originalFilename, ':uploaded_by' => $userId]);
-        return ['status' => true, 'message' => 'Uploaded successfully.', 'id' => (int)$this->db->lastInsertId()];
-    }
-
-    /** Hard delete (the file itself is removed too, by the controller) -- blocked while any template
-     *  element still references it. Same reasoning as EmploymentCertificateTemplateModel::deleteImage(). */
-    public function deleteImage(int $compId, int $id): array {
-        $stmt = $this->db->prepare("SELECT file_path FROM `payslip_images` WHERE id = :id AND comp_id = :comp_id");
-        $stmt->execute([':id' => $id, ':comp_id' => $compId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$row) {
-            return ['status' => false, 'message' => 'Record not found.'];
-        }
-        $stmtUsage = $this->db->prepare("SELECT COUNT(*) FROM `payslip_template_elements` WHERE image_asset_id = :id");
-        $stmtUsage->execute([':id' => $id]);
-        if ((int)$stmtUsage->fetchColumn() > 0) {
-            return ['status' => false, 'message' => 'This image is still used by at least one template and cannot be deleted.'];
-        }
-        $this->db->prepare("DELETE FROM `payslip_images` WHERE id = :id")->execute([':id' => $id]);
-        return ['status' => true, 'message' => 'Deleted successfully.', 'file_path' => $row['file_path']];
-    }
+    // listImages()/addImage()/deleteImage() moved to TemplateDesignerModelTrait (T064) -- table
+    // names supplied by imagesTableName()/elementsTableName() above.
 }

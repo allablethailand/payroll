@@ -217,6 +217,42 @@ class EmployeeLoginLogModel {
     }
 
     /**
+     * 2026-09-04, Backlog Phase 10, T058 ("Dashboard shows currently-online users"). A SEPARATE
+     * presence signal from `is_active`/`$_SESSION['last_activity']` -- see this table's own
+     * `last_seen_at` migration comment for why. Called from helpers.php's ensure_login() on every
+     * authenticated request (throttled there, not here -- this method itself is a cheap plain
+     * UPDATE, no transaction wrapping needed for a single statement). Only touches a row that is
+     * STILL `is_active = 1` -- a session already superseded/ended must never have its last_seen_at
+     * revived, or a stale/kicked session could keep showing up in listOnlineForCompany() below.
+     */
+    public function touchLastSeen(int $id): void {
+        $this->db->prepare("UPDATE `employee_login_logs` SET last_seen_at = CURRENT_TIMESTAMP WHERE id = :id AND is_active = 1")
+            ->execute([':id' => $id]);
+    }
+
+    /**
+     * Currently-online employees for the Dashboard widget: a session must be BOTH `is_active = 1`
+     * (not superseded/ended) AND have a `last_seen_at` within the last `$windowMinutes` (real,
+     * recent presence -- see the `last_seen_at` migration comment for why `is_active` alone isn't
+     * enough). `is_active = 1` also guarantees at most one row per employee (create() deactivates
+     * every other row for that employee first), so this can never double-list the same person.
+     */
+    public function listOnlineForCompany(int $compId, int $windowMinutes = 5): array {
+        $stmt = $this->db->prepare(
+            "SELECT ell.employee_id, ell.last_seen_at, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.profile_photo_path, e.profile_photo_thumbnail_path
+             FROM `employee_login_logs` ell
+             JOIN `employees` e ON e.id = ell.employee_id
+             WHERE ell.comp_id = :comp_id AND ell.is_active = 1 AND ell.last_seen_at IS NOT NULL
+               AND ell.last_seen_at >= (NOW() - INTERVAL :window_minutes MINUTE)
+             ORDER BY ell.last_seen_at DESC"
+        );
+        $stmt->bindValue(':comp_id', $compId, PDO::PARAM_INT);
+        $stmt->bindValue(':window_minutes', $windowMinutes, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
      * Server-side DataTable list, scoped to one employee (this is a tab ON that employee's own
      * Detail page, never a company-wide log viewer). Filters: date range (login_at), device_type,
      * browser_name, and a free-text search across ip_address/location_city/location_country --

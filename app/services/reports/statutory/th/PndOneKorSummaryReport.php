@@ -12,8 +12,20 @@ require_once __DIR__ . '/../../LocalizedException.php';
  * ภ.ง.ด.1ก annual summary — aggregates TH_PIT withheld per employee across every payroll run
  * in a calendar year. PDF/Excel formats are a human-readable summary of this system's own
  * data (fully our own layout, not an official form reproduction). The 'txt' format delegates
- * to the DRAFT/unverified PndOneKorExporter from the Tax & Statutory export module — see that
- * class's docblock for why it's not verified against the official RD spec.
+ * to PndOneKorExporter (2026-09-05, Phase 12 T071, rewritten against a real reference spec — see
+ * that class's own docblock).
+ *
+ * 2026-09-05, Phase 12 T071 — 2 real correctness fixes made alongside the exporter rewrite (not
+ * just a mechanical field-name update):
+ *   1. `prefix` used to be the raw `employees.title` CODE ('mr'/'mrs'/'ms') passed straight
+ *      through with no text mapping — meaning this Thai-language report's own PDF/Excel/txt
+ *      outputs were ALL silently rendering literal English codes ("mr สมชาย ใจดี") instead of
+ *      "นาย สมชาย ใจดี". Now mapped to Thai prefix text, same $prefixMap PndOneReport's own
+ *      2026-08-29 build already established for the sibling monthly form — this report was the
+ *      one holdout that never got that same fix.
+ *   2. `tax_id` switched from `employees.tax_id_no` to `id_card_no` — the spec's own field 2 is
+ *      explicitly "เลขประจำตัวประชาชน" (national ID card no.), the SAME column PndOneExporter/
+ *      Sso110Exporter both use for this same phrase, not a separate taxpayer-ID concept.
  *
  * The PDF/Excel output IS the "ใบแนบ ภ.ง.ด.1ก" content: ภ.ง.ด.1ก itself is just a totals cover
  * page filed with the Revenue Department; the per-employee schedule (tax_id, name, total
@@ -43,8 +55,10 @@ class PndOneKorSummaryReport implements ReportGeneratorInterface {
         return ['th' => 'ภ.ง.ด.1ก สรุปประจำปี (พร้อมใบแนบรายบุคคล)', 'en' => 'PND.1K Annual Summary (incl. per-employee attachment)'];
     }
 
+    // 2026-09-05, Phase 12 T071: was an unconditional `false` -- the underlying `txt` layout is
+    // now confirmed against a real reference spec, see PndOneKorExporter's own docblock.
     public function isVerified(): bool {
-        return false; // txt format delegates to the DRAFT/unverified PndOneKorExporter
+        return true;
     }
 
     public function supportedFormats(): array {
@@ -81,14 +95,17 @@ class PndOneKorSummaryReport implements ReportGeneratorInterface {
             throw new LocalizedException("No payroll runs in state {$allowedLabel} were found for B.E. {$yearBe}.", 'no_runs_in_state_for_year', ['states' => self::ALLOWED_STATES, 'year' => $yearBe]);
         }
 
+        // 2026-09-05, Phase 12 T071: Thai prefix TEXT, not the raw title code -- see this class's
+        // own top-of-file docblock for the real display bug this fixes.
+        $prefixMap = ['mr' => 'นาย', 'mrs' => 'นาง', 'ms' => 'นางสาว'];
         $employees = []; // keyed by employee_id, accumulated across runs
         foreach ($runs as $run) {
             foreach ($dataModel->getRunDetails((int)$run['id']) as $detail) {
                 $empId = (int)$detail['employee_id'];
                 if (!isset($employees[$empId])) {
                     $employees[$empId] = [
-                        'tax_id' => $this->decryptEmployeeField($detail, 'tax_id_no') ?? '',
-                        'prefix' => $detail['title'] ?? '',
+                        'tax_id' => $this->decryptEmployeeField($detail, 'id_card_no') ?? '',
+                        'prefix' => $prefixMap[$detail['title'] ?? ''] ?? '',
                         'first_name' => $detail['name_th'] ?? '',
                         'last_name' => $detail['surname_th'] ?? '',
                         'total_income' => 0.0,

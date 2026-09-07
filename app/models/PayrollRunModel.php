@@ -148,13 +148,16 @@ class PayrollRunModel {
                     -- way, once payroll_runs itself gained a run_code column -- shown alongside the name so
                     -- the List page's own Code column can display which round's CODE a reference points at,
                     -- not just its free-text name.
-                    mt.run_name AS merge_target_run_name, mt.run_code AS merge_target_run_code
+                    mt.run_name AS merge_target_run_name, mt.run_code AS merge_target_run_code,
+                    -- 2026-09-06, same reasoning as get()'s own version just above.
+                    mtc.cycle_name AS merge_target_cycle_name, mtc.status AS merge_target_cycle_status
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `employees` creator ON creator.id = r.created_by
                 LEFT JOIN `employees` submitter ON submitter.id = r.submitted_by
                 LEFT JOIN `employees` updater ON updater.id = r.updated_by
                 LEFT JOIN `payroll_runs` mt ON mt.id = r.merge_target_run_id AND mt.deleted_at IS NULL
+                LEFT JOIN `payroll_cycles` mtc ON mtc.id = r.merge_target_cycle_id
                 {$where}
                 ORDER BY r.period_start_date DESC, r.id DESC";
         $stmt = $this->db->prepare($sql);
@@ -243,13 +246,24 @@ class PayrollRunModel {
                     sp.process_paid AS sync_process_paid,
                     creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
-                    mt.run_name AS merge_target_run_name, mt.state AS merge_target_run_state, mt.run_code AS merge_target_run_code
+                    mt.run_name AS merge_target_run_name, mt.state AS merge_target_run_state, mt.run_code AS merge_target_run_code,
+                    -- 2026-09-06: name for the waiting-on-a-future-cycle-period banner (see
+                    -- resolveMergeTargetSpec()'s own docblock) -- merge_target_run_id/merge_target_cycle_id
+                    -- are mutually exclusive, so at most one of mt.*/mtc.* is ever non-null on a given row.
+                    -- mtc.status (2026-09-06, real gap found and fixed): create() requires a target
+                    -- cycle to be status='active' to create a NEW run against it at all, so a waiting
+                    -- spec whose cycle has since been deactivated/deleted is a genuine dead end --
+                    -- exposed here so the UI can warn distinctly instead of showing waiting forever
+                    -- for a round that will never come (same category as the Origami-attribution
+                    -- target_rejected status, see PayrollSyncModel::attributionTargetStatus()).
+                    mtc.cycle_name AS merge_target_cycle_name, mtc.status AS merge_target_cycle_status
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
                 LEFT JOIN `employees` creator ON creator.id = r.created_by
                 LEFT JOIN `employees` submitter ON submitter.id = r.submitted_by
                 LEFT JOIN `payroll_runs` mt ON mt.id = r.merge_target_run_id AND mt.deleted_at IS NULL
+                LEFT JOIN `payroll_cycles` mtc ON mtc.id = r.merge_target_cycle_id
                 WHERE r.id = :id AND r.comp_id = :comp_id AND r.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
@@ -258,7 +272,8 @@ class PayrollRunModel {
     }
 
     public function getDetails(int $runId, int $compId): array {
-        if (!$this->get($runId, $compId)) {
+        $run = $this->get($runId, $compId);
+        if (!$run) {
             return [];
         }
         // 2026-08-29: is_verified + who/when, LEFT JOINed since most employees have no row in
@@ -305,6 +320,28 @@ class PayrollRunModel {
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':run_id' => $runId, ':base_salary_code' => self::BASE_SALARY_OVERRIDE_CODE, ':base_salary_code2' => self::BASE_SALARY_OVERRIDE_CODE]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // 2026-09-06, explicit request: display Origami's opt-in TOTAL_DAYS item_values entry
+        // (item_type='INFO', calendar-based day count, announced same day) per employee on this
+        // page. Origami only sends it for a sync-based run whose admin ticked it on in Report
+        // Items -- there's no equivalent for a cycle-based/off-cycle run at all, so `total_days`
+        // stays null (not 0 -- SyncPayResolver::extractInfoItemValue()'s own docblock: null means
+        // "no data," never treat as zero) whenever there's nothing to look up. One extra query
+        // (not a JOIN in the main SELECT above) since `payroll_sync_items` is keyed by this run's
+        // OWN sync_process_id + employee_id, a different join shape than every other column in
+        // this method's main query.
+        $totalDaysByEmployee = [];
+        if ($run['sync_process_id'] !== null && !empty($rows)) {
+            $stmtSync = $this->db->prepare("SELECT employee_id, item_values FROM `payroll_sync_items`
+                WHERE process_id = :process_id AND employee_id IS NOT NULL");
+            $stmtSync->execute([':process_id' => $run['sync_process_id']]);
+            foreach ($stmtSync->fetchAll(PDO::FETCH_ASSOC) as $syncRow) {
+                $itemValues = json_decode((string)$syncRow['item_values'], true);
+                $totalDays = SyncPayResolver::extractInfoItemValue(['item_values' => is_array($itemValues) ? $itemValues : []], 'TOTAL_DAYS');
+                if ($totalDays !== null) {
+                    $totalDaysByEmployee[(int)$syncRow['employee_id']] = $totalDays;
+                }
+            }
+        }
         foreach ($rows as &$row) {
             $row['earning_breakdown'] = json_decode((string)$row['earning_breakdown'], true) ?? [];
             $row['deduction_breakdown'] = json_decode((string)$row['deduction_breakdown'], true) ?? [];
@@ -315,6 +352,7 @@ class PayrollRunModel {
             $row['base_salary_excluded'] = $row['base_salary_override_action'] === 'exclude'
                 || ($row['base_salary_override_action'] === null && !empty($row['run_excludes_base_salary']));
             unset($row['base_salary_override_action'], $row['run_excludes_base_salary']);
+            $row['total_days'] = $totalDaysByEmployee[(int)$row['employee_id']] ?? null;
         }
         return $rows;
     }
@@ -1288,6 +1326,139 @@ class PayrollRunModel {
         return (int)$stmt->fetchColumn() > 0;
     }
 
+    /**
+     * 2026-09-06, explicit request: "ปรับ Process ที่มีการสร้างรอบเองในฝั่ง Payroll ให้เป็นไปในแนวทางเดียวกัน"
+     * -- extends the "อ้างอิงถึงรอบ" (reference a round) merge-target mechanism to accept a round that
+     * doesn't exist yet, the SAME real-world gap just closed on the Origami-attribution side
+     * (see PayrollSyncModel::attributionTargetStatus()'s own docblock for that thread). Reuses the
+     * EXACT SAME `isDuplicatePeriod()` uniqueness key (cycle_id+period_start_date+period_end_date) a
+     * real payroll run is already keyed on -- the one and only kind of "future round" this app can
+     * identify in advance, since a recurring Payroll Cycle is the one and only concept with a
+     * predictable next occurrence (an arbitrary future off-cycle/manual run has no schedule at all,
+     * so there is no key to wait on for one of those -- confirmed via AskUserQuestion).
+     * @return array{id:int}|null the matching active (non-cancelled, non-deleted) run, or null
+     */
+    private function findActiveRunForCyclePeriod(int $compId, int $cycleId, string $start, string $end, ?int $excludeId): ?array {
+        $sql = "SELECT id FROM `payroll_runs`
+                WHERE comp_id = :comp_id AND cycle_id = :cycle_id AND period_start_date = :start AND period_end_date = :end
+                AND deleted_at IS NULL AND state != 'cancelled'";
+        $params = [':comp_id' => $compId, ':cycle_id' => $cycleId, ':start' => $start, ':end' => $end];
+        if ($excludeId !== null) {
+            $sql .= " AND id != :exclude_id";
+            $params[':exclude_id'] = $excludeId;
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    /**
+     * Shared by create()/update(): validates a genuine off-cycle run's merge-target spec, which is
+     * now EITHER `merge_target_run_id` (an existing round, any state except cancelled -- unchanged
+     * behavior) OR `merge_target_cycle_id`+period (a round that doesn't exist yet for that recurring
+     * Payroll Cycle's next occurrence) -- never both at once. Whenever the future-cycle spec
+     * ALREADY has a real matching run at save time (e.g. the admin picked a period that, unknown to
+     * them, someone else already created a run for moments ago), it's resolved immediately into a
+     * plain `merge_target_run_id` instead of being stored as a still-waiting spec -- from that point
+     * on the row behaves 100% identically to the "reference an existing round" case that already
+     * existed and is already fully tested (Detail page's own eligibility check/banner/button,
+     * List page's own icon, mergeIntoExistingRun() itself) -- zero new merge-execution code path,
+     * only a new way to name a target that doesn't exist YET.
+     *
+     * Each of `merge_target_run_id`/`merge_target_cycle_id` is resolved INDEPENDENTLY with the exact
+     * same "key absent from $data => keep whatever this run already had, key present (even if
+     * empty/null) => this call sets/clears it" rule create()/update() already established for
+     * `merge_target_run_id` alone, BEFORE this feature existed -- preserves 100% backward
+     * compatibility for a caller that only ever touches `merge_target_run_id` (as every existing
+     * caller still does; the new UI is the only caller that will ever send `merge_target_cycle_id`).
+     * Because of that independence, a caller that switches modes (e.g. was in "future cycle" mode,
+     * now wants "existing round" instead) MUST send BOTH keys in the same request (the new one with
+     * a real value, the old one explicitly null) -- sending only the new key while leaving the old
+     * one untouched is refused below as an ambiguous "both set" conflict, forcing an explicit choice
+     * rather than silently guessing which one wins.
+     * @return array{status:bool, message?:string, merge_target_run_id:?int, merge_target_cycle_id:?int, merge_target_period_start_date:?string, merge_target_period_end_date:?string}
+     */
+    private function resolveMergeTargetSpec(int $compId, ?int $cycleId, ?int $syncProcessId, array $data, ?int $currentMergeTargetRunId, ?int $currentMergeTargetCycleId, ?string $currentMergeTargetPeriodStart, ?string $currentMergeTargetPeriodEnd, ?int $excludeRunId): array {
+        $mergeTargetRunId = $currentMergeTargetRunId;
+        if (array_key_exists('merge_target_run_id', $data)) {
+            $newMergeTargetRunId = !empty($data['merge_target_run_id']) ? (int)$data['merge_target_run_id'] : null;
+            if ($newMergeTargetRunId !== null) {
+                if ($cycleId !== null || $syncProcessId !== null) {
+                    return ['status' => false, 'message' => 'A merge target only applies to a genuine off-schedule run.'];
+                }
+                if ($excludeRunId !== null && $newMergeTargetRunId === $excludeRunId) {
+                    return ['status' => false, 'message' => 'A run cannot be merged into itself.'];
+                }
+                $stmtMergeTarget = $this->db->prepare("SELECT id FROM `payroll_runs` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND state != 'cancelled'");
+                $stmtMergeTarget->execute([':id' => $newMergeTargetRunId, ':comp_id' => $compId]);
+                if (!$stmtMergeTarget->fetch()) {
+                    return ['status' => false, 'message' => 'Invalid merge target run.'];
+                }
+            }
+            $mergeTargetRunId = $newMergeTargetRunId;
+        }
+
+        $mergeTargetCycleId = $currentMergeTargetCycleId;
+        $mergeTargetPeriodStart = $currentMergeTargetPeriodStart;
+        $mergeTargetPeriodEnd = $currentMergeTargetPeriodEnd;
+        if (array_key_exists('merge_target_cycle_id', $data)) {
+            $newCycleId = !empty($data['merge_target_cycle_id']) ? (int)$data['merge_target_cycle_id'] : null;
+            if ($newCycleId === null) {
+                $mergeTargetCycleId = null;
+                $mergeTargetPeriodStart = null;
+                $mergeTargetPeriodEnd = null;
+            } else {
+                if ($cycleId !== null || $syncProcessId !== null) {
+                    return ['status' => false, 'message' => 'A merge target only applies to a genuine off-schedule run.'];
+                }
+                $mtStart = !empty($data['merge_target_period_start_date']) ? (string)$data['merge_target_period_start_date'] : null;
+                $mtEnd = !empty($data['merge_target_period_end_date']) ? (string)$data['merge_target_period_end_date'] : null;
+                if ($mtStart === null || $mtEnd === null) {
+                    return ['status' => false, 'message' => 'merge_target_period_start_date/merge_target_period_end_date are required with merge_target_cycle_id.'];
+                }
+                foreach ([$mtStart, $mtEnd] as $d) {
+                    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) {
+                        return ['status' => false, 'message' => 'Invalid date format, expected YYYY-MM-DD.'];
+                    }
+                }
+                if ($mtEnd < $mtStart) {
+                    return ['status' => false, 'message' => 'merge_target_period_end_date must not be before merge_target_period_start_date.'];
+                }
+                $stmtMtCycle = $this->db->prepare("SELECT id FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL");
+                $stmtMtCycle->execute([':id' => $newCycleId, ':comp_id' => $compId]);
+                if (!$stmtMtCycle->fetch()) {
+                    return ['status' => false, 'message' => 'Invalid or inactive target payroll cycle.'];
+                }
+                // Immediate resolution -- see this method's own docblock: if a real run already
+                // exists for this exact cycle+period, this is no longer a "future" target at all.
+                $existingTargetRun = $this->findActiveRunForCyclePeriod($compId, $newCycleId, $mtStart, $mtEnd, $excludeRunId);
+                if ($existingTargetRun !== null) {
+                    $mergeTargetRunId = (int)$existingTargetRun['id'];
+                    $mergeTargetCycleId = null;
+                    $mergeTargetPeriodStart = null;
+                    $mergeTargetPeriodEnd = null;
+                } else {
+                    $mergeTargetCycleId = $newCycleId;
+                    $mergeTargetPeriodStart = $mtStart;
+                    $mergeTargetPeriodEnd = $mtEnd;
+                }
+            }
+        }
+
+        if ($mergeTargetRunId !== null && $mergeTargetCycleId !== null) {
+            return ['status' => false, 'message' => 'A run is already set to reference an existing round or a future cycle period -- clear the other one explicitly before setting a new one.'];
+        }
+
+        return [
+            'status' => true,
+            'merge_target_run_id' => $mergeTargetRunId,
+            'merge_target_cycle_id' => $mergeTargetCycleId,
+            'merge_target_period_start_date' => $mergeTargetPeriodStart,
+            'merge_target_period_end_date' => $mergeTargetPeriodEnd,
+        ];
+    }
+
     public function create(int $compId, array $data, int $userId, bool $isAdmin): array {
         if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to create a payroll run.'];
@@ -1369,9 +1540,10 @@ class PayrollRunModel {
         // payroll) -- this is purely additive for the supplemental case.
         $syncProcessId = null;
         $syncIsSupplemental = false;
+        $syncOrigamiProcessId = null;
         if (!empty($data['sync_process_id'])) {
             $syncProcessId = (int)$data['sync_process_id'];
-            $stmtSync = $this->db->prepare("SELECT p.id, p.run_kind FROM `payroll_sync_processes` p
+            $stmtSync = $this->db->prepare("SELECT p.id, p.run_kind, p.origami_process_id FROM `payroll_sync_processes` p
                 LEFT JOIN `payroll_runs` r ON r.sync_process_id = p.id
                 WHERE p.id = :id AND p.comp_id = :comp_id AND r.id IS NULL");
             $stmtSync->execute([':id' => $syncProcessId, ':comp_id' => $compId]);
@@ -1380,6 +1552,7 @@ class PayrollRunModel {
                 return ['status' => false, 'message' => 'Invalid or already-pulled sync process.'];
             }
             $syncIsSupplemental = ($syncRow['run_kind'] ?? 'regular') === 'supplemental';
+            $syncOrigamiProcessId = $syncRow['origami_process_id'] !== null ? (int)$syncRow['origami_process_id'] : null;
             if ($cycleId === null && !$syncIsSupplemental) {
                 return ['status' => false, 'message' => 'A payroll cycle is required when pulling from a regular sync process.'];
             }
@@ -1394,18 +1567,19 @@ class PayrollRunModel {
         // rhythm the Pending-Pull table's own Merge-into-Target button already establishes). Only
         // meaningful for a genuinely off-cycle/manual run -- cycle_id/sync_process_id being set
         // already implies automatic-by-date/by-payload membership, not a hand-built extra payment.
-        $mergeTargetRunId = null;
-        if (!empty($data['merge_target_run_id'])) {
-            if ($cycleId !== null || $syncProcessId !== null) {
-                return ['status' => false, 'message' => 'A merge target only applies to a genuine off-schedule run.'];
-            }
-            $mergeTargetRunId = (int)$data['merge_target_run_id'];
-            $stmtMergeTarget = $this->db->prepare("SELECT id FROM `payroll_runs` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND state != 'cancelled'");
-            $stmtMergeTarget->execute([':id' => $mergeTargetRunId, ':comp_id' => $compId]);
-            if (!$stmtMergeTarget->fetch()) {
-                return ['status' => false, 'message' => 'Invalid merge target run.'];
-            }
+        //
+        // 2026-09-06, explicit request: "ปรับ Process ที่มีการสร้างรอบเองในฝั่ง Payroll ให้เป็นไปในแนวทาง
+        // เดียวกัน" (with the Origami-attribution "waiting for a round that doesn't exist yet" fix
+        // just shipped) -- see resolveMergeTargetSpec()'s own docblock for the full mechanism now
+        // shared between create()/update().
+        $mergeTargetSpec = $this->resolveMergeTargetSpec($compId, $cycleId, $syncProcessId, $data, null, null, null, null, null);
+        if (empty($mergeTargetSpec['status'])) {
+            return $mergeTargetSpec;
         }
+        $mergeTargetRunId = $mergeTargetSpec['merge_target_run_id'];
+        $mergeTargetCycleId = $mergeTargetSpec['merge_target_cycle_id'];
+        $mergeTargetPeriodStart = $mergeTargetSpec['merge_target_period_start_date'];
+        $mergeTargetPeriodEnd = $mergeTargetSpec['merge_target_period_end_date'];
 
         // "Incentive/Other Payment" run purpose (per explicit request, 2026-08-19): a special
         // payment (e.g. a one-off incentive) that BY DEFAULT does not involve base salary or the
@@ -1498,11 +1672,14 @@ class PayrollRunModel {
         $runCode = (new DocumentNumberingModel($this->db))->generateNext($compId, 'PAYROLL_RUN');
 
         $stmt = $this->db->prepare("INSERT INTO `payroll_runs`
-            (comp_id, run_code, cycle_id, sync_process_id, merge_target_run_id, run_purpose, compute_statutory, include_base_salary, include_standing_items, include_attendance_pay, use_flat_tax_rate, run_name, period_start_date, period_end_date, payment_date, state, notes, auto_recalculate, created_by)
-            VALUES (:comp_id, :run_code, :cycle_id, :sync_process_id, :merge_target_run_id, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :include_attendance_pay, :use_flat_tax_rate, :run_name, :start, :end, :pay_date, 'draft', :notes, :auto_recalculate, :created_by)");
+            (comp_id, run_code, cycle_id, sync_process_id, merge_target_run_id, merge_target_cycle_id, merge_target_period_start_date, merge_target_period_end_date, run_purpose, compute_statutory, include_base_salary, include_standing_items, include_attendance_pay, use_flat_tax_rate, run_name, period_start_date, period_end_date, payment_date, state, notes, auto_recalculate, created_by)
+            VALUES (:comp_id, :run_code, :cycle_id, :sync_process_id, :merge_target_run_id, :merge_target_cycle_id, :merge_target_period_start_date, :merge_target_period_end_date, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :include_attendance_pay, :use_flat_tax_rate, :run_name, :start, :end, :pay_date, 'draft', :notes, :auto_recalculate, :created_by)");
         $stmt->execute([
             ':comp_id' => $compId, ':run_code' => $runCode, ':cycle_id' => $cycleId, ':sync_process_id' => $syncProcessId,
             ':merge_target_run_id' => $mergeTargetRunId,
+            ':merge_target_cycle_id' => $mergeTargetCycleId,
+            ':merge_target_period_start_date' => $mergeTargetPeriodStart,
+            ':merge_target_period_end_date' => $mergeTargetPeriodEnd,
             ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
             ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
             ':include_attendance_pay' => $includeAttendancePay, ':use_flat_tax_rate' => $useFlatTaxRate,
@@ -1530,6 +1707,52 @@ class PayrollRunModel {
                 $result['employee_count'] = $calcResult['employee_count'];
                 $result['has_validation_errors'] = $calcResult['has_validation_errors'];
             }
+        }
+
+        // 2026-09-06: unified "waiting merge target just became available" detection -- covers BOTH
+        // the pre-existing Origami-attribution case (a supplemental process attributed
+        // tax_treatment='merge' to THIS SAME Origami process, by origami_process_id -- only possible
+        // when THIS run itself was pulled from a regular sync process) AND the new manual/future-
+        // cycle case just added (any OTHER off-cycle run whose merge_target_cycle_id+period exactly
+        // matches THIS run's own cycle_id+period -- true regardless of whether THIS run came from a
+        // normal "Add", a Pull-to-Run, or a Bulk Pull, since all 3 paths go through this one create()
+        // method and all 3 can equally be "the round someone else was waiting for"). Confirmed via
+        // AskUserQuestion: never auto-merged silently either way -- only ever surfaced here for the
+        // admin to confirm, merging changes the target's own gross pay/tax. Each item carries its own
+        // `type` so the caller knows which merge endpoint applies (`mergeSupplementalIntoRun()` for
+        // 'sync', `mergeIntoExistingRun()` for 'manual').
+        $pendingMergesReady = [];
+        // Deliberately excludes a supplemental pull itself (!$syncIsSupplemental) -- a supplemental
+        // process is never a valid merge TARGET, only a source.
+        if ($syncProcessId !== null && !$syncIsSupplemental && $syncOrigamiProcessId !== null) {
+            $stmtPendingMerge = $this->db->prepare("SELECT id, process_no, process_subject FROM `payroll_sync_processes`
+                WHERE comp_id = :comp_id AND run_kind = 'supplemental' AND status = 'pending'
+                  AND merged_into_run_id IS NULL AND attribution_tax_treatment = 'merge'
+                  AND attribution_target_origami_process_id = :target_origami_id");
+            $stmtPendingMerge->execute([':comp_id' => $compId, ':target_origami_id' => $syncOrigamiProcessId]);
+            foreach ($stmtPendingMerge->fetchAll(PDO::FETCH_ASSOC) as $sp) {
+                $pendingMergesReady[] = ['id' => (int)$sp['id'], 'label' => $sp['process_subject'] ?: $sp['process_no'], 'type' => 'sync'];
+            }
+        }
+        if ($cycleId !== null) {
+            $stmtFutureMerge = $this->db->prepare("SELECT id, run_name FROM `payroll_runs`
+                WHERE comp_id = :comp_id AND state = 'draft' AND deleted_at IS NULL
+                  AND merge_target_run_id IS NULL AND merge_target_cycle_id = :cycle_id
+                  AND merge_target_period_start_date = :start AND merge_target_period_end_date = :end");
+            $stmtFutureMerge->execute([':comp_id' => $compId, ':cycle_id' => $cycleId, ':start' => $start, ':end' => $end]);
+            foreach ($stmtFutureMerge->fetchAll(PDO::FETCH_ASSOC) as $fm) {
+                // Resolve immediately into the plain, already-fully-tested merge_target_run_id case
+                // -- see resolveMergeTargetSpec()'s own docblock for why this is the right moment,
+                // and why it means zero new merge-execution code path from here on.
+                $this->db->prepare("UPDATE `payroll_runs` SET merge_target_run_id = :target_id,
+                        merge_target_cycle_id = NULL, merge_target_period_start_date = NULL, merge_target_period_end_date = NULL,
+                        updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :id")->execute([':target_id' => $runId, ':updated_by' => $userId, ':id' => $fm['id']]);
+                $pendingMergesReady[] = ['id' => (int)$fm['id'], 'label' => $fm['run_name'], 'type' => 'manual', 'target_run_id' => $runId];
+            }
+        }
+        if (!empty($pendingMergesReady)) {
+            $result['pending_merges_ready'] = $pendingMergesReady;
         }
         return $result;
     }
@@ -1631,24 +1854,23 @@ class PayrollRunModel {
         // $cycleId -- "cancel the merge plan, keep this run standalone" needs no gate at all, same
         // as switching cycle_id back to null itself needs no special permission beyond what the
         // cycle_id block above already grants.
-        $mergeTargetRunId = $run['merge_target_run_id'] !== null ? (int)$run['merge_target_run_id'] : null;
-        if (array_key_exists('merge_target_run_id', $data)) {
-            $newMergeTargetRunId = !empty($data['merge_target_run_id']) ? (int)$data['merge_target_run_id'] : null;
-            if ($newMergeTargetRunId !== null) {
-                if ($cycleId !== null || $run['sync_process_id'] !== null) {
-                    return ['status' => false, 'message' => 'A merge target only applies to a genuine off-schedule run.'];
-                }
-                if ($newMergeTargetRunId === $id) {
-                    return ['status' => false, 'message' => 'A run cannot be merged into itself.'];
-                }
-                $stmtMergeTarget = $this->db->prepare("SELECT id FROM `payroll_runs` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND state != 'cancelled'");
-                $stmtMergeTarget->execute([':id' => $newMergeTargetRunId, ':comp_id' => $compId]);
-                if (!$stmtMergeTarget->fetch()) {
-                    return ['status' => false, 'message' => 'Invalid merge target run.'];
-                }
-            }
-            $mergeTargetRunId = $newMergeTargetRunId;
+        //
+        // 2026-09-06: shares resolveMergeTargetSpec() with create() now -- same "future cycle period"
+        // capability editable here too, see that method's own docblock.
+        $mergeTargetSpec = $this->resolveMergeTargetSpec(
+            $compId, $cycleId, $run['sync_process_id'] !== null ? (int)$run['sync_process_id'] : null, $data,
+            $run['merge_target_run_id'] !== null ? (int)$run['merge_target_run_id'] : null,
+            $run['merge_target_cycle_id'] !== null ? (int)$run['merge_target_cycle_id'] : null,
+            $run['merge_target_period_start_date'] ?: null, $run['merge_target_period_end_date'] ?: null,
+            $id
+        );
+        if (empty($mergeTargetSpec['status'])) {
+            return $mergeTargetSpec;
         }
+        $mergeTargetRunId = $mergeTargetSpec['merge_target_run_id'];
+        $mergeTargetCycleId = $mergeTargetSpec['merge_target_cycle_id'];
+        $mergeTargetPeriodStart = $mergeTargetSpec['merge_target_period_start_date'];
+        $mergeTargetPeriodEnd = $mergeTargetSpec['merge_target_period_end_date'];
 
         // Run type (compute full payroll vs. an off-cycle/supplemental Incentive/Other Payment
         // pull) is editable on a draft run, same forcing rules as create() -- meaningful for a
@@ -1692,6 +1914,9 @@ class PayrollRunModel {
 
         $stmt = $this->db->prepare("UPDATE `payroll_runs` SET run_name = :run_name, cycle_id = :cycle_id,
             merge_target_run_id = :merge_target_run_id,
+            merge_target_cycle_id = :merge_target_cycle_id,
+            merge_target_period_start_date = :merge_target_period_start_date,
+            merge_target_period_end_date = :merge_target_period_end_date,
             period_start_date = :start, period_end_date = :end, payment_date = :pay_date, notes = :notes,
             run_purpose = :run_purpose, compute_statutory = :compute_statutory,
             include_base_salary = :include_base_salary, include_standing_items = :include_standing_items,
@@ -1700,6 +1925,9 @@ class PayrollRunModel {
             WHERE id = :id");
         $stmt->execute([
             ':run_name' => $runName, ':cycle_id' => $cycleId, ':merge_target_run_id' => $mergeTargetRunId,
+            ':merge_target_cycle_id' => $mergeTargetCycleId,
+            ':merge_target_period_start_date' => $mergeTargetPeriodStart,
+            ':merge_target_period_end_date' => $mergeTargetPeriodEnd,
             ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
             ':notes' => $notes, ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
             ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
@@ -2673,6 +2901,17 @@ class PayrollRunModel {
                 // รายบุคคล") wins over the company-wide intern_base_salary_ratio default when set.
                 $isIntern = ($emp['employment_type'] ?? null) === 'internship';
                 $isProbation = ($emp['employment_status'] ?? null) === 'probation';
+                // 2026-09-04, Backlog Phase 10, T056: probation policy is no longer a single
+                // company-wide singleton -- $probationSettings (fetched once above, before this
+                // loop) is now only the FALLBACK shape for a non-probation employee; a real
+                // probation employee resolves their OWN Probation Set here (department/position/
+                // team/employee-assignable, exactly one mandatory company Default -- see
+                // PayrollPolicyModel::probationSettings()'s own docblock). Only queried when
+                // $isProbation is actually true, same "don't pay for what you don't need" posture
+                // the rest of this method already follows for other per-employee lookups.
+                $employeeProbationSettingsPass1 = $isProbation
+                    ? $this->policyModel->probationSettings($compId, $employeeId)
+                    : $probationSettings;
                 if ($isIntern) {
                     $internRatio = $emp['intern_base_salary_ratio_override'] ?? $internSettings['base_salary_ratio'];
                     if ($internRatio !== null) {
@@ -2683,7 +2922,7 @@ class PayrollRunModel {
                     // override Internship already had -- direct mirror of the intern branch above,
                     // employee's own probation_base_salary_ratio_override wins over the company-wide
                     // probation_base_salary_ratio default when set.
-                    $probationRatio = $emp['probation_base_salary_ratio_override'] ?? $probationSettings['base_salary_ratio'];
+                    $probationRatio = $emp['probation_base_salary_ratio_override'] ?? $employeeProbationSettingsPass1['base_salary_ratio'];
                     if ($probationRatio !== null) {
                         $effectiveBase = round($effectiveBase * ((float)$probationRatio / 100), 2);
                     }
@@ -2698,7 +2937,7 @@ class PayrollRunModel {
                 // convention as the ratio override) -- (bool) cast handles the raw '0'/'1'/int-from-
                 // PDO value uniformly regardless of driver-specific type.
                 $probationDeferRecurringEffective = $emp['probation_defer_recurring_earning_override'] !== null
-                    ? (bool)$emp['probation_defer_recurring_earning_override'] : $probationSettings['defer_recurring_earning'];
+                    ? (bool)$emp['probation_defer_recurring_earning_override'] : $employeeProbationSettingsPass1['defer_recurring_earning'];
                 $internDeferRecurringEffective = $emp['intern_defer_recurring_earning_override'] !== null
                     ? (bool)$emp['intern_defer_recurring_earning_override'] : $internSettings['defer_recurring_earning'];
                 $deferRecurringEarningForThisEmployee = $isIntern
@@ -2767,7 +3006,7 @@ class PayrollRunModel {
                             }
                         }
 
-                        foreach ($deferRecurringEarningForThisEmployee ? [] : $this->recurringEarningModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                        foreach ($deferRecurringEarningForThisEmployee ? [] : $this->recurringEarningModel->activeForPeriod($employeeId, $periodStart, $periodEnd, $compId) as $rec) {
                             $earningLines[] = [
                                 'source' => 'recurring_earning',
                                 'recurring_id' => (int)$rec['recurring_id'],
@@ -2784,7 +3023,7 @@ class PayrollRunModel {
                         // is specifically an EARNING-allowance concept, e.g. defer a car allowance
                         // during probation -- a recurring FEE deduction has no equivalent "defer during
                         // probation" precedent asked for here, so it's unconditionally included).
-                        foreach ($this->recurringDeductionModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                        foreach ($this->recurringDeductionModel->activeForPeriod($employeeId, $periodStart, $periodEnd, $compId) as $rec) {
                             $recPayee = $this->resolveRecurringDeductionPayee($rec, $recurringDeductionDestOverridesByRecurringId);
                             $deductionLines[] = [
                                 'source' => 'recurring_deduction',
@@ -2925,7 +3164,7 @@ class PayrollRunModel {
                     // assignments block above (skipped entirely for an incentive/off-cycle run, which
                     // is manually-picked items only) -- see EmployeeRecurringEarningModel's own
                     // docblock for why this is a separate table/query, not a mode of PED assignments.
-                    foreach ($deferRecurringEarningForThisEmployee ? [] : $this->recurringEarningModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                    foreach ($deferRecurringEarningForThisEmployee ? [] : $this->recurringEarningModel->activeForPeriod($employeeId, $periodStart, $periodEnd, $compId) as $rec) {
                         $earningLines[] = [
                             'source' => 'recurring_earning',
                             'recurring_id' => (int)$rec['recurring_id'],
@@ -2939,7 +3178,7 @@ class PayrollRunModel {
                     // 2026-08-31, explicit request: "หน้า Employee Detail เพิ่มรายหักประจำด้วยครับ" -- see
                     // this same block's own comment further up in this method for the full reasoning
                     // (mirrors Recurring Earnings, unconditionally included -- not probation-deferred).
-                    foreach ($this->recurringDeductionModel->activeForPeriod($employeeId, $periodStart, $periodEnd) as $rec) {
+                    foreach ($this->recurringDeductionModel->activeForPeriod($employeeId, $periodStart, $periodEnd, $compId) as $rec) {
                         $recPayee = $this->resolveRecurringDeductionPayee($rec, $recurringDeductionDestOverridesByRecurringId);
                         $deductionLines[] = [
                             'source' => 'recurring_deduction',
@@ -3272,12 +3511,19 @@ class PayrollRunModel {
                 // from the same $emp row instead of being threaded through.
                 $isInternPass2 = ($emp['employment_type'] ?? null) === 'internship';
                 $isProbationPass2 = ($emp['employment_status'] ?? null) === 'probation';
+                // 2026-09-04, Backlog Phase 10, T056: same per-employee Probation Set resolution as
+                // Pass 1's own $employeeProbationSettingsPass1 above -- recomputed fresh here since
+                // this is a separate loop iteration (Pass 2), same reasoning as
+                // $isInternPass2/$isProbationPass2 themselves not being threaded through from Pass 1.
+                $employeeProbationSettingsPass2 = $isProbationPass2
+                    ? $this->policyModel->probationSettings($compId, $employeeId)
+                    : $probationSettings;
                 // 2026-09-02, follow-up to close a review-flagged gap: per-employee override, same
                 // "NULL = use company default" convention as the ratio/defer_recurring_earning
                 // overrides in Pass 1 above -- recomputed fresh here since this is a separate loop
                 // iteration (Pass 2), same reasoning as $isInternPass2/$isProbationPass2 themselves.
                 $probationDeferPvdEffective = $emp['probation_defer_pvd_override'] !== null
-                    ? (bool)$emp['probation_defer_pvd_override'] : $probationSettings['defer_pvd'];
+                    ? (bool)$emp['probation_defer_pvd_override'] : $employeeProbationSettingsPass2['defer_pvd'];
                 $internDeferPvdEffective = $emp['intern_defer_pvd_override'] !== null
                     ? (bool)$emp['intern_defer_pvd_override'] : $internSettings['defer_pvd'];
                 if ($isInternPass2 ? $internDeferPvdEffective : ($probationDeferPvdEffective && $isProbationPass2)) {
@@ -3288,7 +3534,7 @@ class PayrollRunModel {
                 // "defer contribution until probation/internship passes" mechanism PVD already has
                 // immediately above, just for sso_enrolled instead of pvd_enrolled.
                 $probationDeferSsoEffective = $emp['probation_defer_sso_override'] !== null
-                    ? (bool)$emp['probation_defer_sso_override'] : $probationSettings['defer_sso'];
+                    ? (bool)$emp['probation_defer_sso_override'] : $employeeProbationSettingsPass2['defer_sso'];
                 $internDeferSsoEffective = $emp['intern_defer_sso_override'] !== null
                     ? (bool)$emp['intern_defer_sso_override'] : $internSettings['defer_sso'];
                 if ($isInternPass2 ? $internDeferSsoEffective : ($probationDeferSsoEffective && $isProbationPass2)) {
@@ -3396,7 +3642,23 @@ class PayrollRunModel {
                         'sso_eligible_earnings' => round($ssoEligibleBase, 2),
                         'pf_eligible_earnings' => round($pfEligibleBase, 2),
                     ];
-                    $statutoryResult = $this->engine->calculate($compId, $salaryContext, $paymentDate, $employeeFlags);
+                    // 2026-09-04, Backlog Phase 10, T060: $employeeId/$periodStart threaded
+                    // through so a flat_rate item's monthly base/contribution ceiling (TH_SSO/
+                    // TH_PVD's real 15,000 THB / 750 THB monthly caps) accumulates correctly
+                    // across MULTIPLE settled runs within the same calendar month for a
+                    // non-monthly payroll_frequency -- see StatutoryCalculationEngine::calculate()'s
+                    // own docblock. A no-op for the existing monthly case (never a prior settled
+                    // run this same calendar month by construction).
+                    // Real, PRE-EXISTING, unrelated bug found and fixed in the same edit: this call
+                    // was passing a literal `[]` for $employeeRateOverrides even though
+                    // $employeeRateOverrides (the per-employee TH_SSO rate override, computed just
+                    // above from employees.sso_contribution_rate/sso_employer_contribution_rate)
+                    // was ALREADY computed a few lines up -- it was simply never threaded into this
+                    // call, so the per-employee SSO rate override feature (2026-09-02) has been
+                    // silently dead since it shipped: the value synced/stored correctly onto the
+                    // employees row, but never actually affected a real payroll run's own
+                    // calculation. Fixed by passing the real variable instead of a literal [].
+                    $statutoryResult = $this->engine->calculate($compId, $salaryContext, $paymentDate, $employeeFlags, $employeeRateOverrides, $employeeId, $periodStart);
 
                     // 2026-08-21, real bug fix (explicit report: a 25,000/month employee was
                     // withheld ~7,500 in a single period). The engine's own TH_PIT line above is a
@@ -4937,7 +5199,7 @@ class PayrollRunModel {
         if (!$run) {
             return [];
         }
-        $recRows = $this->recurringDeductionModel->activeForPeriod($employeeId, $run['period_start_date'], $run['period_end_date']);
+        $recRows = $this->recurringDeductionModel->activeForPeriod($employeeId, $run['period_start_date'], $run['period_end_date'], $compId);
         if (empty($recRows)) {
             return [];
         }
@@ -6022,6 +6284,21 @@ class PayrollRunModel {
         }
         $stmt = $this->db->prepare("UPDATE `payroll_runs` SET state = :state, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP{$clearSql}{$setSql} WHERE id = :id");
         $stmt->execute($params);
+        // 2026-09-04, Backlog Phase 9->10, T051 -- reverting AWAY from 'approved' means this run's
+        // sync-transaction-log rows (written once, at approve() time) are no longer a settled fact --
+        // delete them so history never shows stale "approved" data for a run that's back in flux. A
+        // re-approval later writes fresh rows again (PayrollSyncTransactionLogModel::logForRun()'s own
+        // delete-then-reinsert). No-op (nothing to delete) for every other fromState, since rows only
+        // ever exist for a run that reached 'approved' at least once.
+        if ($fromState === 'approved') {
+            require_once __DIR__ . '/PayrollSyncTransactionLogModel.php';
+            try {
+                (new PayrollSyncTransactionLogModel($this->db))->deleteForRun($id);
+            } catch (Throwable $e) {
+                // Best-effort, same posture as approve()'s own write -- a cleanup failure must never
+                // block the revert itself (state already committed via the UPDATE above).
+            }
+        }
         // Re-opens the SAME linked request at step 1 so the engine is ready for a fresh decision
         // through the same configured chain -- only meaningful when the target is actually
         // 'pending_approval' (a genuinely fresh decision is expected next). A direct override to
@@ -6111,6 +6388,19 @@ class PayrollRunModel {
             }
         } catch (Throwable $e) {
             $remittanceWarning = ' (Remittance grouping warning: ' . $e->getMessage() . ')';
+        }
+        // 2026-09-04, Backlog Phase 9->10, T051 -- one-time snapshot of this run's own sync-derived
+        // pay lines (Diligence/Trip Allowance/opted-in Student Loan/etc.) into a durable per-employee
+        // history log, read from the ALREADY-PERSISTED payroll_run_details breakdown (frozen since
+        // recalculate() only runs on a 'draft' run). Best-effort/non-blocking, same posture as the
+        // remittance-grouping call just above -- a logging failure must never undo an already-
+        // successful approval. See PayrollSyncTransactionLogModel's own docblock for the full design
+        // (why this write happens here specifically, and why revert()/reopen() delete it again).
+        require_once __DIR__ . '/PayrollSyncTransactionLogModel.php';
+        try {
+            (new PayrollSyncTransactionLogModel($this->db))->logForRun($compId, $id, (string)$run['period_start_date'], (string)$run['period_end_date']);
+        } catch (Throwable $e) {
+            $remittanceWarning .= ' (Sync transaction log warning: ' . $e->getMessage() . ')';
         }
         // 2026-08-29, explicit request: "อนุมัติแล้วนะ ทำงานต่อเลยไหม" -- notifies whoever can actually
         // act on this next (Mark as Paid), not the approver themselves -- see NotificationModel's
@@ -6582,6 +6872,17 @@ class PayrollRunModel {
                 updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id");
             $stmt->execute([':updated_by' => $userId, ':id' => $id]);
+
+            // 2026-09-04, Backlog Phase 9->10, T051 -- reopen() only ever operates on 'paid'/'locked'
+            // (both downstream of 'approved', checked above), and always clears approved_at/
+            // approved_by along with everything else, so this run's sync-transaction-log rows
+            // (written once, at approve() time) always need clearing here too -- same "no longer a
+            // settled fact once un-approved" reasoning as revert()'s own cleanup. Inside this
+            // method's own transaction (unlike revert()/approve(), which have none) since reopen()
+            // already treats its other side-effect reversals (installment un-consumption) as
+            // real, non-best-effort steps.
+            require_once __DIR__ . '/PayrollSyncTransactionLogModel.php';
+            (new PayrollSyncTransactionLogModel($this->db))->deleteForRun($id);
 
             $this->logAudit($id, $fromState, 'draft', 'reopen', $userId, $note);
 

@@ -26,9 +26,6 @@ function aisMonthLabel(m) {
     const name = langData[monthKey] || m.month;
     return `${name} ${m.year}`;
 }
-function escapeHtmlAis(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 function aisMoneyCellHtml(cell) {
     if (!cell || (!cell.gross && !cell.deduction && !cell.net)) {
         return '<span class="text-muted">-</span>';
@@ -152,7 +149,7 @@ function aisRenderTable(data) {
         + '<th>' + (langData['team'] || 'Team') + '</th>'
         + '<th>' + (langData['position'] || 'Position') + '</th>';
     months.forEach(function (m) {
-        headHtml += `<th class="ais-month-${m.state}">${escapeHtmlAis(aisMonthLabel(m))}</th>`;
+        headHtml += `<th class="ais-month-${m.state}">${escapeHtml(aisMonthLabel(m))}</th>`;
     });
     headHtml += '<th>' + (langData['annual_total'] || 'Annual Total') + '</th></tr>';
     $('#tb_annual_summary thead').html(headHtml);
@@ -183,13 +180,13 @@ function aisRenderTable(data) {
             data: null,
             render: function (row) {
                 const name = currentLang === 'th' ? row.name_th : row.name_en;
-                return `<div class="ais-employee-no">${escapeHtmlAis(row.employee_no)}</div>
-                    <div class="ais-employee-name">${escapeHtmlAis(name || row.name_th || row.name_en || '')}</div>`;
+                return `<div class="ais-employee-no">${escapeHtml(row.employee_no)}</div>
+                    <div class="ais-employee-name">${escapeHtml(name || row.name_th || row.name_en || '')}</div>`;
             }
         },
-        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
-        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
-        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
     ];
     months.forEach(function (m, idx) {
         // Object-form render (display/sort/filter split, same DataTables sort-safety convention
@@ -233,6 +230,28 @@ function aisRenderTable(data) {
         // the Annual Total on the right are unchanged in kind (still scroll / still fixed right).
         fixedColumns: { left: 4, right: 1 },
         language: getTableLang(),
+        // 2026-09-04, Backlog Phase 11, T067 -- Department/Team/Position are genuinely categorical
+        // (a small, real distinct-value set), the confirmed real gap in this table. Employee (name+
+        // no, effectively unique per row) and the 12 month/annual-total money columns are
+        // deliberately NOT included -- they already sort/filter correctly via their own object-form
+        // {display,sort,filter} render (CLAUDE.md's own formatted-column convention, already
+        // correct here), but a discrete Excel-style checkbox list of every distinct MONEY amount
+        // across all employees has no real user value the way it does for a handful of department
+        // names -- same "widget/no-single-filterable-value" exemption spirit CLAUDE.md's own Table
+        // convention already carves out elsewhere (mini-timeline/progress-bar/avatar columns), even
+        // though a money column isn't literally named in that list. Re-applied on every rebuild
+        // (destroy:true + initComplete, not a one-time init) since this table's own column set/data
+        // changes on every filter/year change -- initComplete fires again each time.
+        initComplete: function () {
+            initExcelColumnFilters(this.api(), {
+                mode: 'client',
+                columns: [
+                    { index: 1, key: 'department' },
+                    { index: 2, key: 'team' },
+                    { index: 3, key: 'position' },
+                ],
+            });
+        },
     });
     updateText($('#tb_annual_summary')[0]);
 }
@@ -248,7 +267,7 @@ function aisDetailLineRowsHtml(lines, amountKey) {
         const name = (currentLang === 'th' ? l.name_th : l.name_en) || l.name_th || l.name_en || l.code || '-';
         const amount = l[amountKey] !== undefined ? l[amountKey] : l.amount;
         return `<div class="d-flex justify-content-between small py-1 border-bottom">
-            <span>${escapeHtmlAis(name)}</span>
+            <span>${escapeHtml(name)}</span>
             <span class="fw-semibold">${aisFmt(amount)}</span>
         </div>`;
     }).join('');
@@ -262,8 +281,8 @@ function aisRenderCellDetail(runs) {
         const period = `${formatDisplayDate ? formatDisplayDate(run.period_start_date) : run.period_start_date} - ${formatDisplayDate ? formatDisplayDate(run.period_end_date) : run.period_end_date}`;
         return `<div class="card-surface p-3 mb-3">
             <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="fw-bold">${escapeHtmlAis(run.run_name || '-')}</div>
-                <div class="text-muted small">${escapeHtmlAis(period)}</div>
+                <div class="fw-bold">${escapeHtml(run.run_name || '-')}</div>
+                <div class="text-muted small">${escapeHtml(period)}</div>
             </div>
             <div class="d-flex justify-content-between small py-1 border-bottom">
                 <span>${langData['table_base_salary'] || 'Base Salary'}</span>
@@ -389,7 +408,7 @@ function aisRenderPitTable(data) {
         + '<th>' + (langData['department'] || 'Department') + '</th>'
         + '<th>' + (langData['team'] || 'Team') + '</th>'
         + '<th>' + (langData['position'] || 'Position') + '</th>';
-    months.forEach(m => { headHtml += `<th class="ais-month-${m.state}">${escapeHtmlAis(aisMonthLabel(m))}</th>`; });
+    months.forEach(m => { headHtml += `<th class="ais-month-${m.state}">${escapeHtml(aisMonthLabel(m))}</th>`; });
     headHtml += '<th>' + (langData['annual_total'] || 'Annual Total') + '</th></tr>';
     $('#tb_ais_pit thead').html(headHtml);
 
@@ -399,10 +418,10 @@ function aisRenderPitTable(data) {
     $('#tb_ais_pit tfoot').html(footHtml);
 
     const columns = [
-        { data: null, render: (row) => `<div class="ais-employee-no">${escapeHtmlAis(row.employee_no)}</div><div class="ais-employee-name">${escapeHtmlAis((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '')}</div>` },
-        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
-        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
-        { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
+        { data: null, render: (row) => `<div class="ais-employee-no">${escapeHtml(row.employee_no)}</div><div class="ais-employee-name">${escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '')}</div>` },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
     ];
     months.forEach(function (m, idx) {
         columns.push({
@@ -503,10 +522,10 @@ function aisRenderMonthlyTable(employees) {
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         columns: [
-            { data: null, render: (row) => `<div class="ais-employee-no">${escapeHtmlAis(row.employee_no)}</div><div class="ais-employee-name">${escapeHtmlAis((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '')}</div>` },
-            { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
-            { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
-            { data: null, render: (row) => escapeHtmlAis((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
+            { data: null, render: (row) => `<div class="ais-employee-no">${escapeHtml(row.employee_no)}</div><div class="ais-employee-name">${escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '')}</div>` },
+            { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
+            { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
+            { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
             { data: 'gross_amount', className: 'text-end', render: (v) => aisFmt(v) },
             { data: 'total_deduction_amount', className: 'text-end', render: (v) => aisFmt(v) },
             { data: 'net_amount', className: 'text-end', render: (v) => aisFmt(v) },

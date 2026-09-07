@@ -60,13 +60,10 @@ let redoStack = [];
 const UNDO_LIMIT = 50;
 let clipboardElements = [];
 let zoomPct = 100;
-const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200, 300];
-const MARGIN_PRESETS = [
-    { code: 'narrow', mm: 8, labelKey: 'ect_margin_narrow' },
-    { code: 'normal', mm: 15, labelKey: 'ect_margin_normal' },
-    { code: 'moderate', mm: 20, labelKey: 'ect_margin_moderate' },
-    { code: 'wide', mm: 30, labelKey: 'ect_margin_wide' },
-];
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js, byte-identical to
+// employment-certificate-template.js's own copies before this change.
+const ZOOM_LEVELS = CanvasDesignerCore.ZOOM_LEVELS;
+const MARGIN_PRESETS = CanvasDesignerCore.MARGIN_PRESETS;
 // Company Profile's own logo, fetched once, company-wide -- same fallback priority as Employment
 // Certificate Template's own companyLogoPath (template's own logo_path first, this as fallback).
 let companyLogoPath = null;
@@ -74,30 +71,22 @@ let companyLogoPath = null;
 // จัดการ Template" -- company-wide only (no per-template override), fetched alongside the logo above.
 let companySignaturePath = null;
 
-// 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- MUST stay
-// byte-identical to PayslipTemplateRenderer::PAGE_SIZES_MM (the canvas and the PDF renderer share
-// this exact coordinate space for true WYSIWYG, no unit conversion anywhere).
-const PAGE_SIZES_MM = {
-    A3: [297, 420], A4: [210, 297], A5: [148, 210], B4: [250, 353], B5: [176, 250],
-    Letter: [215.9, 279.4], Legal: [215.9, 355.6], Tabloid: [279.4, 431.8],
-    Executive: [184.15, 266.7], Statement: [139.7, 215.9],
-};
-function pageDimensionsMm(pageSize, orientation) {
-    const dims = PAGE_SIZES_MM[pageSize] || PAGE_SIZES_MM.A4;
-    return orientation === 'landscape' ? [dims[1], dims[0]] : [dims[0], dims[1]];
-}
+// 2026-09-04, Backlog Phase 11, T064 -- PAGE_SIZES_MM/pageDimensionsMm() moved to the shared
+// public/js/setup/canvas-designer-core.js (loaded before this file, see that file's own docblock
+// for why -- this constant in particular had an explicit "must stay byte-identical" comment here
+// before this change, which a shared single source of truth now enforces structurally instead of
+// by hand). Thin local aliases so every existing call site below (PAGE_SIZES_MM[...],
+// pageDimensionsMm(...)) keeps working completely unchanged.
+const PAGE_SIZES_MM = CanvasDesignerCore.PAGE_SIZES_MM;
+const pageDimensionsMm = CanvasDesignerCore.pageDimensionsMm;
 
 function newElementKey() {
     elementKeyCounter += 1;
     return 'el_' + elementKeyCounter + '_' + Date.now();
 }
-function escapeHtmlPst(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
-function clampPst(v, min, max) {
-    if (max < min) max = min;
-    return Math.max(min, Math.min(max, v));
-}
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// employment-certificate-template.js's own clampEct(), just a different local name).
+const clampPst = CanvasDesignerCore.clamp;
 
 function updateSaveHint() {
     // Write-through into pairState -- this is the ONE integration point that keeps the tab dirty-
@@ -135,9 +124,9 @@ function updateLangTabsUI() {
 }
 
 /* ---------- Undo / Redo ---------- */
-function cloneElementsList(arr) {
-    return JSON.parse(JSON.stringify(arr));
-}
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// employment-certificate-template.js's own copy before this change).
+const cloneElementsList = CanvasDesignerCore.cloneElementsList;
 function pushUndo() {
     undoStack.push(cloneElementsList(elements));
     if (undoStack.length > UNDO_LIMIT) undoStack.shift();
@@ -266,15 +255,9 @@ function emptyElementBase() {
         group_key: null, page_number: currentPageNumber, is_visible: true
     };
 }
-const FONT_FAMILY_CSS_STACK = {
-    th_sarabun_new: "'TH Sarabun New', sans-serif",
-    dejavu_sans: "'DejaVu Sans', sans-serif",
-    dejavu_sans_mono: "'DejaVu Sans Mono', monospace",
-    dejavu_serif: "'DejaVu Serif', serif",
-    helvetica: "Helvetica, Arial, sans-serif",
-    times_new_roman: "'Times New Roman', Times, serif",
-    courier: "'Courier New', Courier, monospace"
-};
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js, byte-identical to
+// employment-certificate-template.js's own copy before this change.
+const FONT_FAMILY_CSS_STACK = CanvasDesignerCore.FONT_FAMILY_CSS_STACK;
 
 /* ---------- Field palette (click OR native drag-and-drop onto the canvas), grouped by category --
    master_payslip_field_types.field_group has 7 values (vs Employment Certificate's 3) -- one extra
@@ -307,7 +290,7 @@ function renderPalette() {
         const groupLabel = langData[meta.labelKey] || g;
         const $group = $(`
             <div class="pst-palette-group">
-                <div class="pst-palette-group-title"><i class="fa-solid ${meta.icon} me-1"></i>${escapeHtmlPst(groupLabel)}</div>
+                <div class="pst-palette-group-title"><i class="fa-solid ${meta.icon} me-1"></i>${escapeHtml(groupLabel)}</div>
                 <div class="pst-palette-grid"></div>
             </div>
         `);
@@ -315,9 +298,9 @@ function renderPalette() {
         groups[g].forEach(ft => {
             const label = currentLang === 'th' ? ft.name_th : ft.name_en;
             $grid.append(`
-                <button type="button" draggable="true" class="pst-palette-chip" data-code="${ft.code}" data-element-type="${ft.element_type}" title="${escapeHtmlPst(label)}">
+                <button type="button" draggable="true" class="pst-palette-chip" data-code="${ft.code}" data-element-type="${ft.element_type}" title="${escapeHtml(label)}">
                     <span class="pst-palette-chip-icon"><i class="fa-solid ${paletteIcon(ft)}"></i></span>
-                    <span class="pst-palette-chip-label">${escapeHtmlPst(label)}</span>
+                    <span class="pst-palette-chip-label">${escapeHtml(label)}</span>
                 </button>
             `);
         });
@@ -432,7 +415,7 @@ function tableElementBodyHtml(el) {
     for (let r = 0; r < rows; r++) {
         html += '<tr>';
         for (let c = 0; c < cols; c++) {
-            const text = escapeHtmlPst((cells[r] && cells[r][c]) || '').replace(/\n/g, '<br>');
+            const text = escapeHtml((cells[r] && cells[r][c]) || '').replace(/\n/g, '<br>');
             html += `<td style="border:${borderWidth}px solid ${borderColor};padding:2px 4px;">${text}</td>`;
         }
         html += '</tr>';
@@ -452,7 +435,7 @@ function elementHtml(el) {
     } else if (isTable) {
         body = tableElementBodyHtml(el);
     } else {
-        body = escapeHtmlPst(el.content).replace(/\n/g, '<br>');
+        body = escapeHtml(el.content).replace(/\n/g, '<br>');
     }
     // 2026-08-27, explicit request: the lock badge icon on bound-field elements was unnecessary
     // clutter -- removed. isBoundFieldElement() itself still gates double-click-to-edit (unchanged),
@@ -804,9 +787,9 @@ $(document).on('click', '.pst-quick-delete', function (e) {
 });
 
 /* ---------- Duplicate (Ctrl+D) / Copy+Paste (Ctrl+C/Ctrl+V) / arrow-key nudge ---------- */
-function generateGroupKey() {
-    return 'grp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-}
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// employment-certificate-template.js's own copy before this change).
+const generateGroupKey = CanvasDesignerCore.generateGroupKey;
 function cloneElementsWithNewGroupKeys(sourceElements, offsetPct) {
     const groupMap = {};
     return sourceElements.map(src => {
@@ -947,9 +930,9 @@ function elementLabel(el) {
     if (!text) return '(empty text)';
     return text.length > 28 ? text.slice(0, 28) + '…' : text;
 }
-function layerIcon(el) {
-    return el.element_type === 'image' ? 'fa-image' : 'fa-font';
-}
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// employment-certificate-template.js's own copy before this change).
+const layerIcon = CanvasDesignerCore.layerIcon;
 function layerRowHtml(el) {
     const selected = selectedKeys.includes(el.key);
     const editable = el.element_type === 'text' && !isBoundFieldElement(el);
@@ -966,7 +949,7 @@ function layerRowHtml(el) {
         <div class="pst-layer-row ${selected ? 'pst-layer-selected' : ''} ${visible ? '' : 'pst-layer-hidden'}" data-key="${el.key}">
             ${eyeBtn}
             <i class="fa-solid ${layerIcon(el)} me-1"></i>
-            <span class="pst-layer-label">${escapeHtmlPst(elementLabel(el))}</span>
+            <span class="pst-layer-label">${escapeHtml(elementLabel(el))}</span>
             <div class="pst-layer-actions ms-auto d-flex align-items-center">
                 ${editBtn}
                 <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger pst-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
@@ -999,7 +982,7 @@ function renderLayersPanel() {
                     <div class="pst-layer-row pst-layer-group-row ${groupSelected ? 'pst-layer-selected' : ''}">
                         <button type="button" class="btn btn-link btn-sm p-0 me-1 pst-layer-group-visibility" data-group-key="${el.group_key}" title="${langData[groupVisible ? 'ect_layer_hide' : 'ect_layer_show'] || (groupVisible ? 'Hide' : 'Show')}"><i class="fa-solid ${groupVisible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>
                         <i class="fa-solid fa-folder me-1"></i>
-                        <span class="pst-layer-label">${escapeHtmlPst(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
+                        <span class="pst-layer-label">${escapeHtml(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
                         <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger pst-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="pst-layer-children"></div>
@@ -1186,7 +1169,7 @@ function rebuildTableCellsGrid(existingCells) {
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             const value = existingCells && existingCells[r] && existingCells[r][c] !== undefined ? existingCells[r][c] : '';
-            $grid.append(`<input type="text" class="pst-table-cell-input" data-row="${r}" data-col="${c}" value="${escapeHtmlPst(value)}">`);
+            $grid.append(`<input type="text" class="pst-table-cell-input" data-row="${r}" data-col="${c}" value="${escapeHtml(value)}">`);
         }
     }
 }
@@ -1379,7 +1362,7 @@ function pageSizeLabel(row) {
 function formatEctDateTime(str) {
     if (!str) return '';
     const d = new Date(String(str).replace(' ', 'T'));
-    if (isNaN(d.getTime())) return escapeHtmlPst(str);
+    if (isNaN(d.getTime())) return escapeHtml(str);
     const pad = n => String(n).padStart(2, '0');
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -1541,7 +1524,7 @@ function initPstTemplateTable() {
         },
         columns: [
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => pstPublishSwitchesHtml(row) },
-            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtmlPst(row.template_name)}</strong>` },
+            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtml(row.template_name)}</strong>` },
             { data: null, render: (d, t, row) => pageSizeLabel(row) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => pstLangStatusHtml(row, 'th') },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => pstLangStatusHtml(row, 'en') },
@@ -2098,7 +2081,7 @@ function renderPresetList() {
             <div class="pst-preset-card ${chosenPreset === p.code ? 'active' : ''}" data-code="${p.code}">
                 ${renderPresetMockup(p.code)}
                 <div class="pst-preset-card-footer">
-                    <span class="pst-preset-card-label">${escapeHtmlPst(label)}</span>
+                    <span class="pst-preset-card-label">${escapeHtml(label)}</span>
                     ${previewBtn}
                 </div>
             </div>

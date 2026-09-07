@@ -229,7 +229,11 @@ if (!$company) {
 }
 
 $employeeStmt = $pdo->prepare(
-    "SELECT id FROM employees
+    // 2026-09-04, T069 Step 1 -- ui_theme selected here (not a 2nd query later) purely so
+    // header.php can server-side-stamp data-bs-theme with zero client-side flash-of-wrong-theme
+    // on the VERY FIRST page render after login (every later page load reads this same value back
+    // out of $_SESSION['user'] instead, see below -- this query only ever runs once per login).
+    "SELECT id, ui_theme FROM employees
      WHERE comp_id = :comp_id AND deleted_at IS NULL
        AND ( (origami_ref_id IS NOT NULL AND SHA2(origami_ref_id, 256) = :user_key)
              OR origami_sso_user_key = :user_key )
@@ -292,6 +296,14 @@ $_SESSION['user'] = [
     'employee_id' => (int)$employee['id'],
     'company_id'  => (int)$company['id'],
     'role'        => $role,
+    // 2026-09-04, T069 Step 1 -- null for a brand-new auto-provisioned employee (the INSERT branch
+    // above never selects ui_theme back, and the column's own DEFAULT NULL means that's correct
+    // anyway -- see the migration's own docblock for why null="follow system" is the right default,
+    // not a gap). header.php reads this on every page load; refreshed by
+    // UserPreferenceController::save() re-writing this same session key whenever the employee
+    // actually changes their preference, so a later page in the SAME session reflects it
+    // immediately without requiring a fresh login.
+    'ui_theme'    => $employee['ui_theme'] ?? null,
 ];
 
 // 2026-08-29, explicit request: "ต้องการอีก Tab ใน Employee เพื่อดูประวัติการเข้าใช้งานระบบ...ตอนนี้เก็บ

@@ -80,6 +80,17 @@ class PayslipDeliveryService {
         $tmpPath = sys_get_temp_dir() . '/payslip_' . $runId . '_' . $employeeId . '_' . uniqid('', true) . '.pdf';
         file_put_contents($tmpPath, $slip['content']);
 
+        // 2026-09-04, Backlog Phase 11, T062 -- built ONCE, shared across every channel in the
+        // fallback chain (not special-cased per channel_code in the loop below). Necessary because
+        // LINE's own Messaging API has no file-attachment message type at all (see LineChannel's
+        // own docblock) -- its ONLY way to actually deliver the document is a clickable link back
+        // to this app's own self-service download (PayslipController::myDownload()), so the shared
+        // message text has to carry that link. Including it for email/Telegram too is harmless (a
+        // convenience alongside the real attachment those channels already carry), so one shared
+        // string is simpler than diverging per channel for no real benefit.
+        $downloadLink = rtrim(BASE_URL, '/') . '/api/payslip.my-download?run_id=' . $runId;
+        $message = "Please find your payslip attached. You can also view/download it here: {$downloadLink}";
+
         try {
             $attempt = 0;
             $lastMessage = 'All configured channels failed.';
@@ -103,7 +114,7 @@ class PayslipDeliveryService {
                     continue;
                 }
                 try {
-                    $result = $channel->send($recipient, 'Payslip', 'Please find your payslip attached.', $tmpPath, $slip['file_name']);
+                    $result = $channel->send($recipient, 'Payslip', $message, $tmpPath, $slip['file_name']);
                 } catch (Throwable $e) {
                     $result = ['success' => false, 'message' => $e->getMessage()];
                 }

@@ -28,17 +28,10 @@ function toLocalDateOnlyPr(value) {
     if (typeof formatDisplayDateTime !== 'function') return toDisplayDatePr(String(value).substring(0, 10));
     return formatDisplayDateTime(value).split(' ')[0];
 }
-function escapeHtmlPr(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 // 2026-08-31, explicit request ("สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX"): PayrollController may
 // send the literal string "XXXX" instead of a real number for a masked figure -- passed through
 // as-is rather than formatted (Number('XXXX') is NaN, which .toLocaleString() would otherwise
 // render as the confusing literal text "NaN").
-function fmtNumPr(n) {
-    if (n === 'XXXX') return n;
-    return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function stateBadgePr(state) {
     const map = {
         draft: 'bg-secondary-subtle text-secondary',
@@ -68,12 +61,12 @@ function stateBadgePr(state) {
 // runOriginBadgePr() below.
 function runOriginBadgePr(row) {
     if (row.sync_process_id) {
-        return `<i class="fa-solid fa-cloud-arrow-down text-primary me-1" title="${escapeHtmlPr(langData['run_origin_sync'] || 'Pulled from Origami')}"></i>`;
+        return `<i class="fa-solid fa-cloud-arrow-down text-primary me-1" title="${escapeHtml(langData['run_origin_sync'] || 'Pulled from Origami')}"></i>`;
     }
     if (row.cycle_id) {
-        return `<i class="fa-solid fa-rotate text-info me-1" title="${escapeHtmlPr(langData['run_origin_cycle'] || 'Payroll Schedule (Cycle)')}"></i>`;
+        return `<i class="fa-solid fa-rotate text-info me-1" title="${escapeHtml(langData['run_origin_cycle'] || 'Payroll Schedule (Cycle)')}"></i>`;
     }
-    return `<i class="fa-solid fa-hand-holding-dollar text-secondary me-1" title="${escapeHtmlPr(langData['run_origin_manual'] || 'Off-schedule / Manual')}"></i>`;
+    return `<i class="fa-solid fa-hand-holding-dollar text-secondary me-1" title="${escapeHtml(langData['run_origin_manual'] || 'Off-schedule / Manual')}"></i>`;
 }
 // 2026-09-01: pure classification helper (no markup) -- shared between the badge above and the new
 // Origin filter's own client-side DataTables search function, so the 2 never define "what counts as
@@ -92,7 +85,7 @@ function runTypeIconPr(row) {
     if (Number(row.include_attendance_pay) === 1) parts.push(langData['include_attendance_pay_label'] || 'Include attendance pay');
     const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment';
     const title = parts.length ? `${label}: ${parts.join(', ')}` : label;
-    return `<i class="fa-solid fa-gift text-warning me-1" title="${escapeHtmlPr(title)}"></i>`;
+    return `<i class="fa-solid fa-gift text-warning me-1" title="${escapeHtml(title)}"></i>`;
 }
 // 2026-09-01, explicit request: "หน้า List page ควรมี indicator บอกด้วยว่ารอบนี้ตั้งค่าไว้ให้ไปรวมกับรอบไหน" --
 // this was the 2nd of the 2 known gaps flagged after the Detail-page merge-target-editing feature
@@ -108,15 +101,37 @@ function runTypeIconPr(row) {
 // sentence-form copy (merge_target_banner_text) on the Detail page, which stays as-is.
 function runCodeCellHtmlPr(row) {
     const ownCode = row.run_code
-        ? `<span class="badge bg-light text-dark border font-monospace fw-normal">${escapeHtmlPr(row.run_code)}</span>`
+        ? `<span class="badge bg-light text-dark border font-monospace fw-normal">${escapeHtml(row.run_code)}</span>`
         : '<span class="text-muted">-</span>';
-    if (!row.merge_target_run_id) {
-        return ownCode;
+    if (row.merge_target_run_id) {
+        const targetLabel = row.merge_target_run_code || row.merge_target_run_name || `#${row.merge_target_run_id}`;
+        const tpl = langData['run_merge_reference_inline'] || 'Merges into: {target}';
+        const refLine = `<div class="small text-primary mt-1" title="${escapeHtml(targetLabel)}"><i class="fa-solid fa-code-merge me-1"></i>${escapeHtml(tpl.replace('{target}', targetLabel))}</div>`;
+        return ownCode + refLine;
     }
-    const targetLabel = row.merge_target_run_code || row.merge_target_run_name || `#${row.merge_target_run_id}`;
-    const tpl = langData['run_merge_reference_inline'] || 'Merges into: {target}';
-    const refLine = `<div class="small text-primary mt-1" title="${escapeHtmlPr(targetLabel)}"><i class="fa-solid fa-code-merge me-1"></i>${escapeHtmlPr(tpl.replace('{target}', targetLabel))}</div>`;
-    return ownCode + refLine;
+    // 2026-09-06: the "future cycle" merge-target form -- merge_target_run_id is still null (no
+    // real round to merge into yet), so styled/worded distinctly (amber, hourglass icon) from the
+    // "ready" case above rather than implying a real target already exists.
+    if (row.merge_target_cycle_id) {
+        const cycleLabel = row.merge_target_cycle_name || `#${row.merge_target_cycle_id}`;
+        const periodLabel = (row.merge_target_period_start_date && row.merge_target_period_end_date)
+            ? `${formatDisplayDate(row.merge_target_period_start_date)} - ${formatDisplayDate(row.merge_target_period_end_date)}`
+            : '';
+        // 2026-09-06, real gap found and fixed: PayrollRunModel::create() requires the target cycle
+        // to be status='active' to create a NEW run against it at all -- if it's since been
+        // deactivated/deleted, this spec is a genuine dead end (same category as the
+        // Origami-attribution 'target_rejected' status) -- styled distinctly (danger, not just
+        // amber) so it doesn't read as "still waiting, will resolve eventually".
+        if (row.merge_target_cycle_status && row.merge_target_cycle_status !== 'active') {
+            const deadTpl = langData['run_merge_waiting_cycle_inactive_inline'] || '{cycle} is no longer active -- this will never merge';
+            const deadLine = `<div class="small text-danger mt-1" title="${escapeHtml(langData['run_merge_waiting_cycle_inactive_tooltip'] || 'The target Payroll Cycle was deactivated or deleted -- edit this run to pick a different merge target.')}"><i class="fa-solid fa-triangle-exclamation me-1"></i>${escapeHtml(deadTpl.replace('{cycle}', cycleLabel))}</div>`;
+            return ownCode + deadLine;
+        }
+        const tpl = langData['run_merge_waiting_cycle_inline'] || 'Waiting for: {cycle} {period}';
+        const refLine = `<div class="small text-warning mt-1" title="${escapeHtml(cycleLabel + ' ' + periodLabel)}"><i class="fa-solid fa-hourglass-half me-1"></i>${escapeHtml(tpl.replace('{cycle}', cycleLabel).replace('{period}', periodLabel))}</div>`;
+        return ownCode + refLine;
+    }
+    return ownCode;
 }
 function employeeNamePr(row) {
     return (currentLang === 'th' ? row.created_by_name_th : row.created_by_name_en) || row.created_by_name_th || row.created_by_name_en || '-';
@@ -251,7 +266,7 @@ function renderMiniTimelineDots(row) {
         }
         const dateVal = row[step.dateField];
         const dateText = (cls === 'done' || cls === 'current' || isBranchHere) && dateVal ? toLocalDateOnlyPr(dateVal) : '';
-        const title = escapeHtmlPr(`${label}${dateText ? ` (${dateText})` : ''}`);
+        const title = escapeHtml(`${label}${dateText ? ` (${dateText})` : ''}`);
         dotsHtml += `<li class="mt-step ${cls}"><span class="mt-dot" title="${title}"><i class="fa-solid ${icon}"></i></span></li>`;
         if (i < MINI_TIMELINE_STEPS.length - 1) {
             dotsHtml += `<span class="mt-line ${i <= reachedIdx ? 'done' : ''}"></span>`;
@@ -290,7 +305,7 @@ function runCommentHtml(row) {
     if (!text) {
         return '';
     }
-    return `<div class="stc-comment stc-comment-${tone}" title="${escapeHtmlPr(text)}"><i class="fa-solid fa-comment-dots"></i><span>${escapeHtmlPr(text)}</span></div>`;
+    return `<div class="stc-comment stc-comment-${tone}" title="${escapeHtml(text)}"><i class="fa-solid fa-comment-dots"></i><span>${escapeHtml(text)}</span></div>`;
 }
 // 2026-08-23, explicit request ("ในหน้า Process List ถ้าส่ง Approve ไปแล้ว ควรมีปุ่มให้กดดู Workflow
 // ของการอนุมัติด้วย") -- once a run has actually been submitted (submitted_at set -- same "must be
@@ -337,7 +352,7 @@ const APV_COLORS_PR = {
 };
 function apvBadgeHtmlPr(tone, label) {
     const c = APV_COLORS_PR[tone] || APV_COLORS_PR.muted;
-    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtmlPr(label)}</span>`;
+    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtml(label)}</span>`;
 }
 function apvIconHtmlPr(tone, icon) {
     const c = APV_COLORS_PR[tone] || APV_COLORS_PR.muted;
@@ -346,10 +361,10 @@ function apvIconHtmlPr(tone, icon) {
 function apvAvatarHtmlPr(name, size) {
     size = size || 26;
     const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
-    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtmlPr(initial)}</span>`;
+    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtml(initial)}</span>`;
 }
 function apvPersonLineHtmlPr(name) {
-    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlPr(name, 26)}<span class="apv-person-name">${escapeHtmlPr(name || '-')}</span></div>`;
+    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlPr(name, 26)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
 }
 function apvApproverTonePr(status) {
     return { approved: 'done', rejected: 'rejected', need_info: 'info', pending: 'pending', not_applicable: 'muted' }[status] || 'muted';
@@ -362,11 +377,11 @@ function apvApproverSubstepHtmlPr(a) {
     const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
     return `<div class="apv-substep">
         <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtmlPr(name, 22)}${escapeHtmlPr(name)}</span>
+            <span class="apv-substep-label">${apvAvatarHtmlPr(name, 22)}${escapeHtml(name)}</span>
             ${apvBadgeHtmlPr(apvApproverTonePr(a.status), apvApproverLabelPr(a.status))}
         </div>
-        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtmlPr(a.acted_at)}</div>` : ''}
-        ${a.note ? `<div class="apv-substep-remark">${escapeHtmlPr(a.note)}</div>` : ''}
+        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
+        ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
     </div>`;
 }
 function apvApprovalStageInfoPr(state) {
@@ -395,7 +410,7 @@ function apvStepDotsHtmlPr(steps) {
         const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
         const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
         const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
-        return `<div class="apv-step-dot-wrap" title="${escapeHtmlPr(s.step_name || '')}">
+        return `<div class="apv-step-dot-wrap" title="${escapeHtml(s.step_name || '')}">
             <div class="apv-step-dot ${apvStepDotTonePr(s)}">${icon}</div>
             ${lockIcon}
         </div>${connector}`;
@@ -411,7 +426,7 @@ function apvStepGroupHtmlPr(step) {
         : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
     return `<div class="apv-step-group">
         <div class="apv-step-group-head">
-            <span class="apv-step-group-title">${escapeHtmlPr(stepLabel)}${step.step_name ? ': ' + escapeHtmlPr(step.step_name) : ''}</span>
+            <span class="apv-step-group-title">${escapeHtml(stepLabel)}${step.step_name ? ': ' + escapeHtml(step.step_name) : ''}</span>
             ${badgeHtml}
         </div>
         <div class="apv-step-group-body">${approversHtml}</div>
@@ -451,7 +466,7 @@ function apvPaidStageHtmlPr(run) {
                     <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
                     ${apvBadgeHtmlPr(tone, label)}
                 </div>
-                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtmlPr(run.paid_at)}</div>` : ''}
+                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtml(run.paid_at)}</div>` : ''}
                 <div class="apv-stage-body">
                     <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
                 </div>
@@ -469,7 +484,7 @@ function apvCreatedStageHtmlPr(run) {
                     <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
                     ${apvBadgeHtmlPr('done', langData['stage_created'] || 'Created')}
                 </div>
-                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtmlPr(run.created_at)) : ''}</div>
+                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtml(run.created_at)) : ''}</div>
                 <div class="apv-stage-body">${apvPersonLineHtmlPr(creator)}</div>
             </div>
         </div>
@@ -496,13 +511,13 @@ function renderAuditTimelinePr(logs) {
     return ordered.map(l => {
         const actor = (currentLang === 'th' ? l.performed_by_name_th : l.performed_by_name_en) || l.performed_by_name_th || l.performed_by_name_en || '-';
         const metaParts = [];
-        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtmlPr(l.ip_address)}`);
-        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtmlPr(l.user_agent)}`);
+        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtml(l.ip_address)}`);
+        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtml(l.user_agent)}`);
         return `<div class="apv-log-entry">
-            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtmlPr(l.performed_at)}</div>
-            <div class="apv-log-action">${escapeHtmlPr(auditActionLabelPr(l.action))} <span class="text-secondary fw-normal">(${escapeHtmlPr(actor)})</span></div>
+            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtml(l.performed_at)}</div>
+            <div class="apv-log-action">${escapeHtml(auditActionLabelPr(l.action))} <span class="text-secondary fw-normal">(${escapeHtml(actor)})</span></div>
             ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
-            ${l.note ? `<div class="apv-log-note">${escapeHtmlPr(l.note)}</div>` : ''}
+            ${l.note ? `<div class="apv-log-note">${escapeHtml(l.note)}</div>` : ''}
         </div>`;
     }).join('');
 }
@@ -547,14 +562,14 @@ function renderRunErrorEmployeesModal(rows) {
     }
     const items = rows.map(r => {
         const name = currentLang === 'th'
-            ? escapeHtmlPr(`${r.name_th || ''} ${r.surname_th || ''}`.trim())
-            : escapeHtmlPr(`${r.name_en || r.name_th || ''} ${r.surname_en || r.surname_th || ''}`.trim());
+            ? escapeHtml(`${r.name_th || ''} ${r.surname_th || ''}`.trim())
+            : escapeHtml(`${r.name_en || r.name_th || ''} ${r.surname_en || r.surname_th || ''}`.trim());
         const errors = (r.calc_errors || '').split(',').map(s => s.trim()).filter(Boolean);
         const errorList = errors.length
-            ? `<ul class="mb-0 ps-3 small text-danger">${errors.map(e => `<li>${escapeHtmlPr(e)}</li>`).join('')}</ul>`
+            ? `<ul class="mb-0 ps-3 small text-danger">${errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>`
             : `<span class="small text-muted">${langData['no_details'] || 'No further details.'}</span>`;
         return `<div class="border rounded-3 p-2 mb-2">
-            <div class="fw-semibold">${escapeHtmlPr(r.employee_no)} - ${name}</div>
+            <div class="fw-semibold">${escapeHtml(r.employee_no)} - ${name}</div>
             ${errorList}
         </div>`;
     }).join('');
@@ -744,7 +759,7 @@ function initPayrollRunTable() {
             // the raw run_name string, not the display HTML with the conditional icon prefixed --
             // same DataTables sort-safety rule CLAUDE.md documents for formatted-date columns.
             { data: 'run_name', render: {
-                display: (d, t, row) => `${runOriginBadgePr(row)}${runTypeIconPr(row)}<strong class="text-dark">${escapeHtmlPr(d)}</strong>`,
+                display: (d, t, row) => `${runOriginBadgePr(row)}${runTypeIconPr(row)}<strong class="text-dark">${escapeHtml(d)}</strong>`,
                 sort: d => d,
                 filter: d => d,
             } },
@@ -775,8 +790,8 @@ function initPayrollRunTable() {
             // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
             // `render: fn` meant client-side sort/filter operated on the formatted string, not the
             // raw numeric amount (same class of bug already documented in CLAUDE.md).
-            { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNumPr(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            { data: null, render: (d, t, row) => escapeHtmlPr(employeeNamePr(row)) },
+            { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNum(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+            { data: null, render: (d, t, row) => escapeHtml(employeeNamePr(row)) },
             // 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใครเป็นคน
             // Update" -- object-form render (sort-safety, same convention as every other formatted-
             // date column in this app) so client-side sort operates on the raw updated_at timestamp,
@@ -787,7 +802,7 @@ function initPayrollRunTable() {
             // orderable:false/no-single-filterable-value widget columns like this one and Actions
             // excluded from initExcelColumnFilters() below all along -- only its position changed).
             { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
-            { data: null, render: (d, t, row) => escapeHtmlPr(updatedByNamePr(row)) },
+            { data: null, render: (d, t, row) => escapeHtml(updatedByNamePr(row)) },
             // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น
             // ตัว expand แทน" -- className:'all' (dtr-all) keeps this last, already-actions column
             // from ever collapsing into the Responsive expand row, same fix as employee/list.js's
@@ -869,14 +884,14 @@ function loadPendingSyncCount() {
 // 2026-08-31, same-day follow-up -- see #blockedSyncUpdatesCard's own comment in index.php. Reused
 // after apply/dismiss the same way loadPendingSyncCount() is reused after reject/pull actions.
 function blockedSyncUpdateRowHtml(row) {
-    const subtitle = row.process_subject ? ` - ${escapeHtmlPr(row.process_subject)}` : '';
-    const runLink = `<a href="${BASE_URL}/payroll-process/${row.public_run_id}" target="_blank">${escapeHtmlPr(row.run_name)}</a>`;
+    const subtitle = row.process_subject ? ` - ${escapeHtml(row.process_subject)}` : '';
+    const runLink = `<a href="${BASE_URL}/payroll-process/${row.public_run_id}" target="_blank">${escapeHtml(row.run_name)}</a>`;
     return `<div class="d-flex justify-content-between align-items-center border rounded-3 p-2 mb-2 flex-wrap gap-2" data-id="${row.id}">
         <div>
-            <div class="fw-semibold">${escapeHtmlPr(row.process_no)}${subtitle}</div>
+            <div class="fw-semibold">${escapeHtml(row.process_no)}${subtitle}</div>
             <div class="small text-muted">
                 <span data-i18n="blocked_update_linked_run">${langData['blocked_update_linked_run'] || 'Linked run'}</span>: ${runLink}
-                (${escapeHtmlPr(row.run_state)}) &middot;
+                (${escapeHtml(row.run_state)}) &middot;
                 <span data-i18n="table_received_at">${langData['table_received_at'] || 'Received'}</span>: ${row.received_at ? formatDisplayDateTime(row.received_at) : '-'}
             </div>
         </div>
@@ -940,18 +955,39 @@ function initPendingSyncTable() {
                     // "→ Merge into ORIGAMI-2026-00024" or "→ Separate" is visible at a glance
                     // instead of only surfacing after the fact. Only ever set on a supplemental row
                     // (see PayrollSyncModel::normalizeAttribution()'s own docblock).
+                    //
+                    // 2026-09-06: confirmed with Origami that a "merge" attribution's own target
+                    // regular process can legitimately not exist on our side YET (no guaranteed send
+                    // order between the two payloads -- e.g. a mid-month trip-allowance batch
+                    // attributed to "next month's regular cycle" arrives before that cycle's own
+                    // payload does). row.attribution_target_status (see PayrollSyncModel::
+                    // attributionTargetStatus()) now distinguishes that from "ready to merge right
+                    // now" so the badge/button reflect reality up front instead of the admin only
+                    // finding out by clicking Merge and getting a refusal.
                     let attrBadge = '';
                     if (isSupplemental && row.attribution_tax_treatment === 'merge') {
-                        const target = escapeHtmlPr(row.attribution_target_process_no || `#${row.attribution_target_origami_process_id}`);
-                        attrBadge = `<span class="badge bg-info-subtle text-info ms-1">${(langData['sync_attribution_merge_into'] || '→ Merge into {target}').replace('{target}', target)}</span>`;
+                        const target = escapeHtml(row.attribution_target_process_no || `#${row.attribution_target_origami_process_id}`);
+                        if (row.attribution_target_status === 'ready') {
+                            attrBadge = `<span class="badge bg-info-subtle text-info ms-1">${(langData['sync_attribution_merge_into'] || '→ Merge into {target}').replace('{target}', target)}</span>`;
+                        } else if (row.attribution_target_status === 'waiting_known') {
+                            attrBadge = `<span class="badge bg-warning-subtle text-warning ms-1" title="${langData['sync_attribution_waiting_known_tooltip'] || 'The target regular cycle has been received from Origami but not pulled into a run yet.'}">${(langData['sync_attribution_waiting_known'] || '→ Waiting: {target} not pulled yet').replace('{target}', target)}</span>`;
+                        } else if (row.attribution_target_status === 'target_rejected') {
+                            // 2026-09-06: the target regular process was received but has since been
+                            // REJECTED at Pending Pull -- a real dead end (no un-reject action exists),
+                            // deliberately styled/worded differently from "waiting" so this doesn't read
+                            // as "will become ready eventually" -- it never will on its own.
+                            attrBadge = `<span class="badge bg-danger-subtle text-danger ms-1" title="${langData['sync_attribution_target_rejected_tooltip'] || 'The target regular cycle was rejected and will never be pulled into a run. Pull this as its own standalone run instead, or ask Origami to re-attribute it.'}">${(langData['sync_attribution_target_rejected'] || '→ {target} was rejected').replace('{target}', target)}</span>`;
+                        } else {
+                            attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${langData['sync_attribution_waiting_unknown_tooltip'] || 'The target regular cycle has not been received from Origami yet.'}">${(langData['sync_attribution_waiting_unknown'] || '→ Waiting for {target}').replace('{target}', target)}</span>`;
+                        }
                     } else if (isSupplemental && row.attribution_tax_treatment === 'separate') {
                         attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1">${langData['sync_attribution_separate'] || '→ Separate'}</span>`;
                     }
-                    return `<strong class="text-dark">${escapeHtmlPr(d)}</strong>${badge}${attrBadge}`;
+                    return `<strong class="text-dark">${escapeHtml(d)}</strong>${badge}${attrBadge}`;
                 }
             },
-            { data: 'period_name', render: d => escapeHtmlPr(d || '-') },
-            { data: 'frequency_type', render: d => escapeHtmlPr(frequencyLabelPr(d)) },
+            { data: 'period_name', render: d => escapeHtml(d || '-') },
+            { data: 'frequency_type', render: d => escapeHtml(frequencyLabelPr(d)) },
             { data: 'item_count', className: 'text-end' },
             { data: 'unmapped_item_count', className: 'text-end', render: d => Number(d) > 0 ? `<span class="text-danger fw-semibold">${d}</span>` : d },
             // 2026-08-29, real bug found and fixed: raw UTC time with no timezone conversion, see
@@ -980,27 +1016,33 @@ function initPendingSyncTable() {
                     // View/Reject buttons in the SAME group were already icon-only, making the group
                     // look inconsistent. Dropped the text (title="" tooltip still carries the label)
                     // so every button in this row-actions group is icon-only, matching its neighbors.
+                    // 2026-09-06: disabled (not hidden) with an explanatory tooltip while
+                    // attribution_target_status isn't 'ready' -- clicking used to just round-trip to
+                    // the server and come back with PayrollRunModel::mergeSupplementalIntoRun()'s own
+                    // refusal message; now the admin sees WHY up front (matches the badge above).
+                    const mergeReady = row.attribution_target_status === 'ready';
                     const mergeBtn = (row.run_kind === 'supplemental' && row.attribution_tax_treatment === 'merge')
                         ? `<button type="button" class="btn btn-info btn-merge-sync" data-id="${row.id}"
-                            data-label="${escapeHtmlPr(row.process_subject || row.process_no)}"
-                            data-target="${escapeHtmlPr(row.attribution_target_process_no || ('#' + row.attribution_target_origami_process_id))}"
-                            title="${langData['btn_merge_sync'] || 'Merge into Target'}"><i class="fa-solid fa-code-merge"></i></button>`
+                            data-label="${escapeHtml(row.process_subject || row.process_no)}"
+                            data-target="${escapeHtml(row.attribution_target_process_no || ('#' + row.attribution_target_origami_process_id))}"
+                            ${mergeReady ? '' : 'disabled'}
+                            title="${mergeReady ? (langData['btn_merge_sync'] || 'Merge into Target') : (langData['btn_merge_sync_not_ready'] || 'The target round is not ready yet -- see the badge above. You can still use "Pull to Run" to pull this as its own standalone round instead.')}"><i class="fa-solid fa-code-merge"></i></button>`
                         : '';
                     return `
                     <div class="btn-group rounded-3 row-actions" role="group">
                         <button type="button" class="btn btn-warning btn-pull-sync" data-id="${row.id}"
-                            data-label="${escapeHtmlPr(row.process_subject || row.process_no)}"
-                            data-subject="${escapeHtmlPr(row.process_subject || '')}"
-                            data-description="${escapeHtmlPr(row.process_description || '')}"
+                            data-label="${escapeHtml(row.process_subject || row.process_no)}"
+                            data-subject="${escapeHtml(row.process_subject || '')}"
+                            data-description="${escapeHtml(row.process_description || '')}"
                             data-start="${row.process_start || ''}" data-end="${row.process_end || ''}" data-paid="${row.process_paid || ''}"
                             data-run-kind="${row.run_kind || 'regular'}"
                             data-tax-treatment="${row.attribution_tax_treatment || ''}"
                             data-matched-cycle-id="${row.matched_cycle_id || ''}"
-                            data-matched-cycle-name="${escapeHtmlPr(row.matched_cycle_name || '')}"
+                            data-matched-cycle-name="${escapeHtml(row.matched_cycle_name || '')}"
                             title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>
                         ${mergeBtn}
                         <button type="button" class="btn btn-outline-info btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
-                        <button type="button" class="btn btn-outline-danger btn-reject-sync" data-id="${row.id}" data-label="${escapeHtmlPr(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-reply"></i></button>
+                        <button type="button" class="btn btn-outline-danger btn-reject-sync" data-id="${row.id}" data-label="${escapeHtml(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-reply"></i></button>
                     </div>
                 `;
                 }
@@ -1085,13 +1127,13 @@ function renderSyncItemCardPr(item) {
     // the actual mapping key), so it's shown here but never used for the "matched" branch, which
     // already has a real, confirmed name from the employees table it resolved to.
     const nameLine = isMapped
-        ? `<span class="fw-semibold">${escapeHtmlPr(item.matched_employee_no)}</span> <span class="text-muted">— ${escapeHtmlPr((currentLang === 'th' ? `${item.matched_name_th} ${item.matched_surname_th}` : `${item.matched_name_en} ${item.matched_surname_en}`).trim())}</span>`
-        : `<span class="text-muted">${escapeHtmlPr(item.payroll_code)}</span>` + (item.emp_name ? ` <span class="text-muted">— ${escapeHtmlPr(item.emp_name)}</span>` : '');
+        ? `<span class="fw-semibold">${escapeHtml(item.matched_employee_no)}</span> <span class="text-muted">— ${escapeHtml((currentLang === 'th' ? `${item.matched_name_th} ${item.matched_surname_th}` : `${item.matched_name_en} ${item.matched_surname_en}`).trim())}</span>`
+        : `<span class="text-muted">${escapeHtml(item.payroll_code)}</span>` + (item.emp_name ? ` <span class="text-muted">— ${escapeHtml(item.emp_name)}</span>` : '');
     const values = (item.item_values || [])
         .filter(v => Number(v.value) !== 0)
         .map(v => {
             const unitLabel = syncUnitLabelPr(v.unit_type);
-            return `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtmlPr(v.item_code)}: ${escapeHtmlPr(v.value)}${unitLabel ? ` ${escapeHtmlPr(unitLabel)}` : ''}</span>`;
+            return `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtml(v.item_code)}: ${escapeHtml(v.value)}${unitLabel ? ` ${escapeHtml(unitLabel)}` : ''}</span>`;
         }).join('');
     const otBreakdown = [
         ['sync_ot_working_day', 'Working Day', item.ot_req_working_day_hrs],
@@ -1099,8 +1141,8 @@ function renderSyncItemCardPr(item) {
         ['sync_ot_holiday', 'Holiday', item.ot_req_holiday_hrs],
     ]
         .filter(([, , hrs]) => Number(hrs || 0) !== 0)
-        .map(([key, fallback, hrs]) => `${langData[key] || fallback} ${escapeHtmlPr(hrs)}h`)
-        .join(' · ') || (item.ot_mins ? `${escapeHtmlPr(item.ot_mins)} ${langData['sync_unit_minutes'] || 'minute(s)'}` : '-');
+        .map(([key, fallback, hrs]) => `${langData[key] || fallback} ${escapeHtml(hrs)}h`)
+        .join(' · ') || (item.ot_mins ? `${escapeHtml(item.ot_mins)} ${langData['sync_unit_minutes'] || 'minute(s)'}` : '-');
     return `
         <div class="sync-emp-card${isMapped ? '' : ' sync-emp-card-unmapped'}">
             <div class="sync-emp-card-header">
@@ -1108,14 +1150,14 @@ function renderSyncItemCardPr(item) {
                     ${mappingStatusBadgePr(isMapped)}
                     <span class="sync-emp-card-name">${nameLine}</span>
                 </div>
-                <div class="sync-emp-card-dept">${escapeHtmlPr(item.dept_description || '-')} <span class="text-muted">/ ${escapeHtmlPr(item.position_name || '-')}</span></div>
+                <div class="sync-emp-card-dept">${escapeHtml(item.dept_description || '-')} <span class="text-muted">/ ${escapeHtml(item.position_name || '-')}</span></div>
             </div>
             <div class="sync-emp-stats">
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_working_days'] || 'Working Days'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.working_days ?? '-')}</span></div>
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_absent_days'] || 'Absent Days'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.absent_days ?? '-')}</span></div>
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_late_mins'] || 'Late (min)'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.late_mins ?? '-')}</span></div>
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_working_days'] || 'Working Days'}</span><span class="sync-emp-stat-value">${escapeHtml(item.working_days ?? '-')}</span></div>
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_absent_days'] || 'Absent Days'}</span><span class="sync-emp-stat-value">${escapeHtml(item.absent_days ?? '-')}</span></div>
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_late_mins'] || 'Late (min)'}</span><span class="sync-emp-stat-value">${escapeHtml(item.late_mins ?? '-')}</span></div>
                 <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_ot_breakdown'] || 'OT (hrs)'}</span><span class="sync-emp-stat-value">${otBreakdown}</span></div>
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_trip_allowance'] || 'Trip Allowance'}</span><span class="sync-emp-stat-value">${escapeHtmlPr(item.trip_allowance ?? '-')}</span></div>
+                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_trip_allowance'] || 'Trip Allowance'}</span><span class="sync-emp-stat-value">${escapeHtml(item.trip_allowance ?? '-')}</span></div>
                 ${syncEmpExtraStatsPr(item)}
             </div>
             <div class="sync-emp-card-footer">
@@ -1153,7 +1195,7 @@ function syncEmpExtraStatsPr(item) {
         ['table_leave_wait_days', 'Leave Pending (days)', item.leave_wait_days],
         ['table_leave_without_pay_days', 'Unpaid Leave (days)', item.leave_without_pay_days],
     ].filter(([, , v]) => v !== null && v !== undefined && Number(v) !== 0);
-    return stats.map(([key, fallback, v]) => `<div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData[key] || fallback}</span><span class="sync-emp-stat-value">${escapeHtmlPr(v)}</span></div>`).join('');
+    return stats.map(([key, fallback, v]) => `<div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData[key] || fallback}</span><span class="sync-emp-stat-value">${escapeHtml(v)}</span></div>`).join('');
 }
 function renderIdCardCellPr(item) {
     if (!item.id_card_no_masked) {
@@ -1162,13 +1204,13 @@ function renderIdCardCellPr(item) {
     const expire = item.id_card_expire_date
         ? ` <span class="text-muted">(${langData['id_card_expire'] || 'ID Card Expire Date'}: ${toDisplayDatePr(item.id_card_expire_date)})</span>`
         : '';
-    return `<span><i class="fa-solid fa-id-card text-muted me-1"></i>${escapeHtmlPr(item.id_card_no_masked)}</span>${expire}`;
+    return `<span><i class="fa-solid fa-id-card text-muted me-1"></i>${escapeHtml(item.id_card_no_masked)}</span>${expire}`;
 }
 function renderPaymentSsoCellPr(item) {
     let payLine;
     if (item.pay_type === 'transfer') {
-        const bankLabel = item.pay_bank_name ? escapeHtmlPr(item.pay_bank_name) : (langData['sync_pay_transfer'] || 'Transfer');
-        const maskedNo = item.pay_bank_no_masked ? ` (${escapeHtmlPr(item.pay_bank_no_masked)})` : '';
+        const bankLabel = item.pay_bank_name ? escapeHtml(item.pay_bank_name) : (langData['sync_pay_transfer'] || 'Transfer');
+        const maskedNo = item.pay_bank_no_masked ? ` (${escapeHtml(item.pay_bank_no_masked)})` : '';
         payLine = `<i class="fa-solid fa-building-columns text-muted me-1"></i>${bankLabel}${maskedNo}`;
     } else if (item.pay_type === 'cash') {
         payLine = `<i class="fa-solid fa-money-bill text-muted me-1"></i>${langData['sync_pay_cash'] || 'Cash'}`;
@@ -1188,14 +1230,14 @@ function renderPaymentSsoCellPr(item) {
 function renderSyncStatusRowPr(row) {
     return `
         <tr>
-            <td>${escapeHtmlPr(row.payroll_code)}</td>
-            <td>${escapeHtmlPr(row.emp_name || '-')}</td>
-            <td>${escapeHtmlPr(row.dept_description || '-')}<br><span class="text-muted small">${escapeHtmlPr(row.position_name || '-')}</span></td>
+            <td>${escapeHtml(row.payroll_code)}</td>
+            <td>${escapeHtml(row.emp_name || '-')}</td>
+            <td>${escapeHtml(row.dept_description || '-')}<br><span class="text-muted small">${escapeHtml(row.position_name || '-')}</span></td>
             <td>${row.emp_start_date ? toDisplayDatePr(row.emp_start_date) : '-'}</td>
             <td>${row.emp_resign_date ? toDisplayDatePr(row.emp_resign_date) : '-'}</td>
             <td class="text-center">${Number(row.is_new_hire) === 1 ? '<i class="fa-solid fa-circle-check text-success"></i>' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${Number(row.is_resigned_this_period) === 1 ? '<i class="fa-solid fa-circle-check text-danger"></i>' : '<span class="text-muted">-</span>'}</td>
-            <td>${escapeHtmlPr(row.status_text || '-')}</td>
+            <td>${escapeHtml(row.status_text || '-')}</td>
         </tr>
     `;
 }
@@ -1221,16 +1263,16 @@ function renderSyncDetail(data) {
     const unmapped = Number(data.unmapped_item_count) || 0;
     const html = `
         <div class="sync-summary-card row g-3 mb-4">
-            ${syncSummaryFieldPr('fa-hashtag', 'table_process_no', 'Process No', escapeHtmlPr(data.process_no))}
-            ${syncSummaryFieldPr('fa-building', 'table_comp_name', 'Company', escapeHtmlPr(data.origami_comp_name))}
-            ${syncSummaryFieldPr('fa-calendar-days', 'table_period', 'Pay Period', escapeHtmlPr(data.period_name || '-'))}
+            ${syncSummaryFieldPr('fa-hashtag', 'table_process_no', 'Process No', escapeHtml(data.process_no))}
+            ${syncSummaryFieldPr('fa-building', 'table_comp_name', 'Company', escapeHtml(data.origami_comp_name))}
+            ${syncSummaryFieldPr('fa-calendar-days', 'table_period', 'Pay Period', escapeHtml(data.period_name || '-'))}
             <!-- 2026-09-02, reply from Origami's own team re: payroll schedule mapping -- shown here
                  (not just used silently by matchForSyncProcess()) so an admin can see/verify exactly
                  what code Origami sent, e.g. when troubleshooting why a document didn't auto-match a
                  Payroll Schedule. -->
-            ${syncSummaryFieldPr('fa-key', 'table_external_cycle_code', 'External Cycle Code', data.external_cycle_code ? `<code>${escapeHtmlPr(data.external_cycle_code)}</code>` : `<span class="text-muted">-</span>`)}
-            ${syncSummaryFieldPr('fa-repeat', 'table_frequency', 'Frequency', escapeHtmlPr(frequencyLabelPr(data.frequency_type)))}
-            ${syncSummaryFieldPr('fa-users', 'table_employee_count', 'Employees', escapeHtmlPr(data.item_count))}
+            ${syncSummaryFieldPr('fa-key', 'table_external_cycle_code', 'External Cycle Code', data.external_cycle_code ? `<code>${escapeHtml(data.external_cycle_code)}</code>` : `<span class="text-muted">-</span>`)}
+            ${syncSummaryFieldPr('fa-repeat', 'table_frequency', 'Frequency', escapeHtml(frequencyLabelPr(data.frequency_type)))}
+            ${syncSummaryFieldPr('fa-users', 'table_employee_count', 'Employees', escapeHtml(data.item_count))}
             ${syncSummaryFieldPr('fa-triangle-exclamation', 'table_unmapped', 'Unmapped', unmapped > 0 ? `<span class="text-danger">${unmapped}</span>` : unmapped)}
             ${syncSummaryFieldPr('fa-clock', 'table_received_at', 'Received', receivedAt)}
         </div>
@@ -1284,7 +1326,13 @@ function resetRunForm() {
     // #run_offcycle_panel now, whose visibility setOffCycleMode(false) below already owns.
     $('#run_merge_choice_new').prop('checked', true);
     $('#run_merge_target_id').val('').trigger('change');
+    // 2026-09-06: the new "existing round / future cycle period" sub-toggle -- see
+    // setMergeTargetMode()'s own comment.
+    $('#run_merge_target_mode_existing').prop('checked', true);
+    $('#run_merge_target_cycle_id').val('').trigger('change');
+    $('#run_merge_target_period_start, #run_merge_target_period_end').val('');
     setMergeChoiceMode('new');
+    setMergeTargetMode('existing');
     setOffCycleMode(false);
 }
 // 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรืออ้างอิงถึง
@@ -1295,10 +1343,14 @@ function resetRunForm() {
 function setMergeChoiceMode(choice) {
     const isReference = choice === 'reference';
     $('#run_merge_target_row').toggleClass('d-none', !isReference);
-    $('#run_merge_target_id').toggleClass('required', isReference);
     if (!isReference) {
         $('#run_merge_target_id').val('').trigger('change').removeClass('is-invalid');
+        $('#run_merge_target_cycle_id').val('').trigger('change').removeClass('is-invalid');
+        $('#run_merge_target_period_start, #run_merge_target_period_end').val('').removeClass('is-invalid');
     }
+    // required class on whichever picker the CURRENT sub-mode actually shows -- see
+    // setMergeTargetMode() below, called right after so it always reflects the current isReference.
+    setMergeTargetMode($('input[name="runMergeTargetMode"]:checked').val() || 'existing');
     // 2026-09-02, 2nd same-day follow-up: .active on the pill <label> itself -- see
     // .run-subchoice-btn in style.css (was .run-choice-card until this round's panel redesign).
     $('#run_merge_choice_row .run-subchoice-btn').removeClass('active');
@@ -1306,6 +1358,51 @@ function setMergeChoiceMode(choice) {
 }
 $(document).on('change', 'input[name="runMergeChoice"]', function () {
     setMergeChoiceMode($(this).val());
+});
+// 2026-09-06, explicit request: "ปรับ Process ที่มีการสร้างรอบเองในฝั่ง Payroll ให้เป็นไปในแนวทางเดียวกัน" --
+// the "อ้างอิงถึงรอบ" (reference a round) choice's own 2nd-level sub-toggle: an existing round
+// (unchanged #run_merge_target_id picker) vs. a FUTURE round of a recurring Payroll Cycle that
+// hasn't been created yet (PayrollRunModel::resolveMergeTargetSpec()'s own docblock) -- only
+// meaningful while #run_merge_target_row itself is showing (isReference true); a no-op call while
+// it's hidden just leaves both wraps hidden, which is already the correct state either way.
+function setMergeTargetMode(mode) {
+    const isFutureCycle = mode === 'future_cycle';
+    const targetRowShowing = !$('#run_merge_target_row').hasClass('d-none');
+    $('#run_merge_target_existing_wrap').toggleClass('d-none', isFutureCycle);
+    $('#run_merge_target_future_cycle_wrap').toggleClass('d-none', !isFutureCycle);
+    $('#run_merge_target_id').toggleClass('required', targetRowShowing && !isFutureCycle);
+    $('#run_merge_target_cycle_id').toggleClass('required', targetRowShowing && isFutureCycle);
+    if (isFutureCycle) {
+        $('#run_merge_target_id').val('').trigger('change').removeClass('is-invalid');
+    } else {
+        $('#run_merge_target_cycle_id').val('').trigger('change').removeClass('is-invalid');
+        $('#run_merge_target_period_start, #run_merge_target_period_end').val('').removeClass('is-invalid');
+    }
+    $('#run_merge_target_mode_row .run-subchoice-btn').removeClass('active');
+    $(isFutureCycle ? '#run_merge_target_mode_future_cycle' : '#run_merge_target_mode_existing').closest('.run-subchoice-btn').addClass('active');
+}
+$(document).on('change', 'input[name="runMergeTargetMode"]', function () {
+    setMergeTargetMode($(this).val());
+});
+// Auto-suggests the target period the same way picking a cycle for the run's OWN period already
+// does (applySuggestedPeriod()) -- reuses the exact same api/payroll-cycle.suggest-period endpoint,
+// since "the next period of this cycle" is exactly the key a future round will be created with.
+// Read-only display fields (dd/mm/yyyy, same convention as every other date field on this form) --
+// collectRunFormData() converts back to ISO on submit via toIsoDatePr().
+$(document).on('change', '#run_merge_target_cycle_id', function () {
+    const cycleId = $(this).val();
+    if (!cycleId) {
+        $('#run_merge_target_period_start, #run_merge_target_period_end').val('');
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-cycle.suggest-period`, method: 'GET', data: { id: cycleId }, dataType: 'json',
+        success: function (res) {
+            if (!res.status) { return; }
+            $('#run_merge_target_period_start').val(toDisplayDatePr(res.period_start_date)).removeClass('is-invalid');
+            $('#run_merge_target_period_end').val(toDisplayDatePr(res.period_end_date)).removeClass('is-invalid');
+        }
+    });
 });
 // Off-cycle runs (e.g. an out-of-cycle payment) skip the Payroll Cycle field entirely -- per
 // explicit request. Only offered on the standalone "Add" flow; Pull-to-run hides the toggle
@@ -1412,6 +1509,8 @@ function validateRunForm() {
 }
 function collectRunFormData() {
     const isOffCycle = $('input[name="runScheduleChoice"]:checked').val() === 'offcycle';
+    const isReferenceMode = !$('#run_merge_target_row').hasClass('d-none');
+    const targetMode = $('input[name="runMergeTargetMode"]:checked').val() || 'existing';
     // 2026-08-29: run_purpose used to be forced to 'payroll' whenever the manual off-cycle
     // checkbox wasn't ticked -- but setSupplementalPullMode() now also shows #run_purpose_row
     // (Payroll/Incentive-Other-Payment) for a supplemental sync pull, which never touches that
@@ -1446,7 +1545,18 @@ function collectRunFormData() {
         // 2026-09-01, explicit request: "เปิดรอบใหม่ / อ้างอิงถึงรอบ" radio -- only sent when the row is
         // actually showing (mirrors the run-type-fields pattern right above: honest about what's
         // actually visible/being set, same as this whole form's other conditional fields).
-        merge_target_run_id: $('#run_merge_target_row').hasClass('d-none') ? null : ($('#run_merge_target_id').val() || null),
+        //
+        // 2026-09-06: both merge_target_run_id AND merge_target_cycle_id are ALWAYS sent together
+        // (one truthy, the other explicitly null depending on runMergeTargetMode) -- never omit
+        // either one here. PayrollRunModel::resolveMergeTargetSpec() resolves each key independently
+        // and refuses if both end up non-null, so sending only one while silently omitting the
+        // other would be ambiguous for an edit later (this function itself is create()-only, so
+        // there's no "current state" to preserve, but detail.js's own collector for update() follows
+        // the exact same always-send-both rule for that same reason).
+        merge_target_run_id: (isReferenceMode && targetMode !== 'future_cycle') ? ($('#run_merge_target_id').val() || null) : null,
+        merge_target_cycle_id: (isReferenceMode && targetMode === 'future_cycle') ? ($('#run_merge_target_cycle_id').val() || null) : null,
+        merge_target_period_start_date: (isReferenceMode && targetMode === 'future_cycle') ? toIsoDatePr($('#run_merge_target_period_start').val()) : null,
+        merge_target_period_end_date: (isReferenceMode && targetMode === 'future_cycle') ? toIsoDatePr($('#run_merge_target_period_end').val()) : null,
     };
 }
 
@@ -1654,7 +1764,7 @@ $(document).on('click', '.btn-view-sync', function () {
             if (res.status) {
                 renderSyncDetail(res.data);
             } else {
-                $('#pendingSyncViewBody').html(`<div class="text-danger">${escapeHtmlPr(res.message || 'Error')}</div>`);
+                $('#pendingSyncViewBody').html(`<div class="text-danger">${escapeHtml(res.message || 'Error')}</div>`);
             }
         })
         .fail(function () {
@@ -1899,7 +2009,7 @@ $(document).on('click', '#btnBulkPull', function () {
         const row = selectedPendingSync[id];
         $rows.append(`
             <div class="border rounded p-3 mb-3 bulk-pull-row" data-process-id="${id}">
-                <div class="fw-bold mb-2">${escapeHtmlPr(row.process_no)} <span class="text-muted small">(${escapeHtmlPr(row.period_name || '-')})</span></div>
+                <div class="fw-bold mb-2">${escapeHtml(row.process_no)} <span class="text-muted small">(${escapeHtml(row.period_name || '-')})</span></div>
                 <div class="row g-2">
                     <div class="col-sm-4">
                         <label class="form-label mb-1">${langData['modal_cycle'] || 'Payroll Schedule'} <span class="text-danger">*</span></label>
@@ -1907,7 +2017,7 @@ $(document).on('click', '#btnBulkPull', function () {
                     </div>
                     <div class="col-sm-8">
                         <label class="form-label mb-1">${langData['modal_run_name'] || 'Run Name'} <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control bulk-run-name required" value="${escapeHtmlPr(row.process_no)}">
+                        <input type="text" class="form-control bulk-run-name required" value="${escapeHtml(row.process_no)}">
                     </div>
                     <div class="col-sm-4">
                         <label class="form-label mb-1">${langData['modal_period_start'] || 'Period Start Date'} <span class="text-danger">*</span></label>
@@ -1950,6 +2060,7 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
     let remappedTotal = 0;
     let placeholdersTotal = 0;
     let pedTypesTotal = 0;
+    let pendingMergesAll = [];
     function processNext(i) {
         if (i >= rowEls.length) {
             $btn.prop('disabled', false);
@@ -1975,6 +2086,13 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
             } else {
                 loadPendingSyncCount();
             }
+            // 2026-09-06: same pending_merges_ready mechanism as the single Pull-to-Run flow --
+            // shown AFTER the bulk summary (not interleaved mid-loop, since several rows in the
+            // same batch could each surface their own waiting supplemental(s)) via the exact same
+            // shared prompt/merge function.
+            if (pendingMergesAll.length > 0) {
+                promptPendingMergesReady(pendingMergesAll);
+            }
             return;
         }
         const $row = $(rowEls[i]);
@@ -1998,10 +2116,13 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
                     remappedTotal += Number(res.sync_summary?.remapped_count) || 0;
                     placeholdersTotal += Number(res.sync_summary?.placeholders_created) || 0;
                     pedTypesTotal += Number(res.sync_summary?.ped_types_created) || 0;
+                    if ((res.pending_merges_ready || []).length > 0) {
+                        pendingMergesAll = pendingMergesAll.concat(res.pending_merges_ready);
+                    }
                     $row.find('.bulk-pull-row-status').html(`<span class="text-success small"><i class="fa-solid fa-check me-1"></i>${langData['bulk_pull_result_success'] || 'created'}</span>`);
                 } else {
                     failCount++;
-                    $row.find('.bulk-pull-row-status').html(`<span class="text-danger small"><i class="fa-solid fa-xmark me-1"></i>${escapeHtmlPr(res.message || 'failed')}</span>`);
+                    $row.find('.bulk-pull-row-status').html(`<span class="text-danger small"><i class="fa-solid fa-xmark me-1"></i>${escapeHtml(res.message || 'failed')}</span>`);
                 }
                 processNext(i + 1);
             },
@@ -2053,6 +2174,18 @@ $(document).on('submit', '#payrollRunForm', function (e) {
                 } else {
                     loadPendingSyncCount();
                 }
+                // 2026-09-06, explicit request: pulling a REGULAR sync process into a run is exactly
+                // the moment a supplemental process attributed to merge into THIS SAME Origami
+                // process can finally go through -- see PayrollRunModel::create()'s own
+                // pending_merges_ready docblock. Confirmed via AskUserQuestion: always prompt for an
+                // explicit confirm here, never auto-merge silently (it changes this run's own gross
+                // pay/tax). Offered one at a time via requestMergeSupplemental()/
+                // handleMergeSyncResult() -- the SAME functions the row-level "Merge into Target"
+                // button already uses -- so a revert/reopen-confirmation escalation on any one of
+                // them behaves identically either way.
+                if ((res.pending_merges_ready || []).length > 0) {
+                    promptPendingMergesReady(res.pending_merges_ready);
+                }
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
@@ -2064,6 +2197,61 @@ $(document).on('submit', '#payrollRunForm', function (e) {
         }
     });
 });
+// 2026-09-06: shared by both the single Pull-to-Run flow and the bulk-pull flow -- lists every
+// waiting supplemental process by name and lets the admin merge them one at a time right here
+// (reusing requestMergeSupplemental()/handleMergeSyncResult()) instead of having to go find them
+// again in the table below by their (now "ready") badge.
+// 2026-09-06: shared by BOTH kinds of "waiting merge target just became available" auto-detect --
+// a supplemental sync process attributed to THIS Origami process (type='sync') AND a manually
+// created off-cycle run whose future-cycle target was just auto-resolved to THIS run (type='manual')
+// -- see PayrollRunModel::create()'s own docblock for the unified `pending_merges_ready` shape.
+function requestMergeIntoExisting(sourceRunId, targetRunId, allowRevert, allowReopen, onDone) {
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.merge-into-existing`, method: 'POST', contentType: 'application/json',
+        data: JSON.stringify({ source_run_id: sourceRunId, target_run_id: targetRunId, allow_revert_non_draft_target: !!allowRevert, allow_reopen_paid_target: !!allowReopen }), dataType: 'json',
+        success: function (res) { onDone(res); },
+        error: function () { onDone({ status: false, message: langData['save_failed'] || 'An error occurred while saving.' }); }
+    });
+}
+function promptPendingMergesReady(items) {
+    const listHtml = items.map(it => `<li>${escapeHtml(it.label)}</li>`).join('');
+    Swal.fire({
+        icon: 'info',
+        title: langData['pending_merges_ready_title'] || 'Waiting Supplemental Item(s) Found',
+        html: `<p>${(langData['pending_merges_ready_message'] || 'The following supplemental item(s) were waiting for this round and can now be merged:').replace('{count}', items.length)}</p><ul class="text-start">${listHtml}</ul>`,
+        showCancelButton: true,
+        confirmButtonText: langData['pending_merges_ready_confirm'] || 'Merge Now',
+        cancelButtonText: langData['pending_merges_ready_later'] || 'Later',
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        let i = 0;
+        function mergeNext() {
+            if (i >= items.length) {
+                if (tb_pending_sync) tb_pending_sync.ajax.reload(null, false);
+                loadPendingSyncCount();
+                if (tb_payroll_run) tb_payroll_run.ajax.reload(null, false);
+                return;
+            }
+            const item = items[i];
+            const onMergeDone = function (res) {
+                if (!res.status) {
+                    showWarning((langData['pending_merges_ready_item_failed'] || 'Could not merge "{label}": {message}').replace('{label}', item.label).replace('{message}', res.message || ''));
+                }
+                i++;
+                mergeNext();
+            };
+            // The target here was ALWAYS just created fresh by the same create() call that surfaced
+            // this prompt (state='draft') -- resolveMergeTargetRun()'s own revert/reopen escalation
+            // can never actually trigger, so no allow_* flags are needed either way.
+            if (item.type === 'manual') {
+                requestMergeIntoExisting(item.id, item.target_run_id, false, false, onMergeDone);
+            } else {
+                requestMergeSupplemental(item.id, false, false, onMergeDone);
+            }
+        }
+        mergeNext();
+    });
+}
 
 /* ---------- Row "Cancel" action ---------- */
 $(document).on('click', '.btn-cancel-run', function (e) {

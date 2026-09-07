@@ -88,16 +88,11 @@ let clipboardElements = [];
 // 100% ได้" -- purely a CSS transform:scale() on #ectPage (see applyZoom()), never touches the
 // underlying percentage-based element data, so it's independent of pairState/undo entirely.
 let zoomPct = 100;
-const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200, 300];
-// 2026-08-25, explicit request: "การเลือกขอบกระดาษให้เป็น dropdown เลือกแบบ word ครับ เลือกจากตัวอย่าง" --
-// named presets matching Word's own Page Layout > Margins picker (mm values chosen to fit this
-// project's own default of 15mm as "Normal", the rest scaled reasonably around it).
-const MARGIN_PRESETS = [
-    { code: 'narrow', mm: 8, labelKey: 'ect_margin_narrow' },
-    { code: 'normal', mm: 15, labelKey: 'ect_margin_normal' },
-    { code: 'moderate', mm: 20, labelKey: 'ect_margin_moderate' },
-    { code: 'wide', mm: 30, labelKey: 'ect_margin_wide' },
-];
+// 2026-09-04, Backlog Phase 11, T064 -- ZOOM_LEVELS/MARGIN_PRESETS moved to the shared
+// public/js/setup/canvas-designer-core.js (loaded before this file), byte-identical to
+// payslip-template.js's own copies before this change.
+const ZOOM_LEVELS = CanvasDesignerCore.ZOOM_LEVELS;
+const MARGIN_PRESETS = CanvasDesignerCore.MARGIN_PRESETS;
 // 2026-08-25, explicit request: "Company Logo ที่ Upload ในหน้า Template ให้ตัดออกเลยครับ เหลือแค่ Form
 // ให้ upload image เพื่อดึงมาใช้งาน" -- the per-template logo upload control is gone from this
 // designer; the "Company Logo" canvas element now always resolves from the Company Profile's own
@@ -108,32 +103,22 @@ let companyLogoPath = null;
 // จัดการ Template" -- company-wide only (no per-template override), fetched alongside the logo above.
 let companySignaturePath = null;
 
-// 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- MUST stay
-// byte-identical to EmploymentCertificateRenderer::PAGE_SIZES_MM (the canvas and the PDF renderer
-// share this exact coordinate space for true WYSIWYG, no unit conversion anywhere).
-const PAGE_SIZES_MM = {
-    A3: [297, 420], A4: [210, 297], A5: [148, 210], B4: [250, 353], B5: [176, 250],
-    Letter: [215.9, 279.4], Legal: [215.9, 355.6], Tabloid: [279.4, 431.8],
-    Executive: [184.15, 266.7], Statement: [139.7, 215.9],
-};
-function pageDimensionsMm(pageSize, orientation) {
-    const dims = PAGE_SIZES_MM[pageSize] || PAGE_SIZES_MM.A4;
-    return orientation === 'landscape' ? [dims[1], dims[0]] : [dims[0], dims[1]];
-}
+// 2026-09-04, Backlog Phase 11, T064 -- PAGE_SIZES_MM/pageDimensionsMm() moved to the shared
+// canvas-designer-core.js (this constant in particular had an explicit "must stay byte-identical"
+// comment here before this change, which a shared single source of truth now enforces
+// structurally instead of by hand).
+const PAGE_SIZES_MM = CanvasDesignerCore.PAGE_SIZES_MM;
+const pageDimensionsMm = CanvasDesignerCore.pageDimensionsMm;
 
 function newElementKey() {
     elementKeyCounter += 1;
     return 'el_' + elementKeyCounter + '_' + Date.now();
 }
 
-function escapeHtmlEct(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 
-function clampEct(v, min, max) {
-    if (max < min) max = min;
-    return Math.max(min, Math.min(max, v));
-}
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// payslip-template.js's own clampPst(), just a different local name).
+const clampEct = CanvasDesignerCore.clamp;
 
 function updateSaveHint() {
     // Write-through into pairState -- this is the ONE integration point that keeps the tab dirty-
@@ -163,9 +148,9 @@ function scheduleAutoSaveIfEnabled() {
    snapshot-based: pushUndo() is called BEFORE a mutation begins (once per discrete action or once per
    drag/resize/continuous-edit gesture, not per mousemove/keystroke tick -- see each call site for how
    that's kept to one push per gesture). ---------- */
-function cloneElementsList(arr) {
-    return JSON.parse(JSON.stringify(arr));
-}
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// payslip-template.js's own copy before this change).
+const cloneElementsList = CanvasDesignerCore.cloneElementsList;
 function pushUndo() {
     undoStack.push(cloneElementsList(elements));
     if (undoStack.length > UNDO_LIMIT) undoStack.shift();
@@ -320,15 +305,9 @@ function emptyElementBase() {
 // the equivalent near-universally-installed SYSTEM font (Arial/Times New Roman/Courier New) since
 // there's no license to bundle those files, same reasoning as EmploymentCertificateRenderer's own
 // comment on FONT_FAMILY_CSS.
-const FONT_FAMILY_CSS_STACK = {
-    th_sarabun_new: "'TH Sarabun New', sans-serif",
-    dejavu_sans: "'DejaVu Sans', sans-serif",
-    dejavu_sans_mono: "'DejaVu Sans Mono', monospace",
-    dejavu_serif: "'DejaVu Serif', serif",
-    helvetica: "Helvetica, Arial, sans-serif",
-    times_new_roman: "'Times New Roman', Times, serif",
-    courier: "'Courier New', Courier, monospace"
-};
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// payslip-template.js's own copy before this change).
+const FONT_FAMILY_CSS_STACK = CanvasDesignerCore.FONT_FAMILY_CSS_STACK;
 
 /* ---------- Field palette (click OR native drag-and-drop onto the canvas), grouped by category ---------- */
 function paletteIcon(ft) {
@@ -358,7 +337,7 @@ function renderPalette() {
         const groupLabel = langData[meta.labelKey] || g;
         const $group = $(`
             <div class="ect-palette-group">
-                <div class="ect-palette-group-title"><i class="fa-solid ${meta.icon} me-1"></i>${escapeHtmlEct(groupLabel)}</div>
+                <div class="ect-palette-group-title"><i class="fa-solid ${meta.icon} me-1"></i>${escapeHtml(groupLabel)}</div>
                 <div class="ect-palette-grid"></div>
             </div>
         `);
@@ -366,9 +345,9 @@ function renderPalette() {
         groups[g].forEach(ft => {
             const label = currentLang === 'th' ? ft.name_th : ft.name_en;
             $grid.append(`
-                <button type="button" draggable="true" class="ect-palette-chip" data-code="${ft.code}" data-element-type="${ft.element_type}" title="${escapeHtmlEct(label)}">
+                <button type="button" draggable="true" class="ect-palette-chip" data-code="${ft.code}" data-element-type="${ft.element_type}" title="${escapeHtml(label)}">
                     <span class="ect-palette-chip-icon"><i class="fa-solid ${paletteIcon(ft)}"></i></span>
-                    <span class="ect-palette-chip-label">${escapeHtmlEct(label)}</span>
+                    <span class="ect-palette-chip-label">${escapeHtml(label)}</span>
                 </button>
             `);
         });
@@ -508,7 +487,7 @@ function tableElementBodyHtml(el) {
     for (let r = 0; r < rows; r++) {
         html += '<tr>';
         for (let c = 0; c < cols; c++) {
-            const text = escapeHtmlEct((cells[r] && cells[r][c]) || '').replace(/\n/g, '<br>');
+            const text = escapeHtml((cells[r] && cells[r][c]) || '').replace(/\n/g, '<br>');
             html += `<td style="border:${borderWidth}px solid ${borderColor};padding:2px 4px;">${text}</td>`;
         }
         html += '</tr>';
@@ -528,7 +507,7 @@ function elementHtml(el) {
     } else if (isTable) {
         body = tableElementBodyHtml(el);
     } else {
-        body = escapeHtmlEct(el.content).replace(/\n/g, '<br>');
+        body = escapeHtml(el.content).replace(/\n/g, '<br>');
     }
     // 2026-08-27, explicit request: the lock badge icon on bound-field elements was unnecessary
     // clutter -- removed. isBoundFieldElement() itself still gates double-click-to-edit (unchanged),
@@ -1029,9 +1008,9 @@ $(document).on('keydown', function (e) {
 
 /* ---------- Group / Ungroup (explicit request: "เลือกหลายรายการ...เพื่อ Group รวม layout ได้ และ
    สามารถ ungroup ได้") ---------- */
-function generateGroupKey() {
-    return 'grp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-}
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// payslip-template.js's own copy before this change).
+const generateGroupKey = CanvasDesignerCore.generateGroupKey;
 function groupSelectedElements() {
     if (selectedKeys.length < 2) return;
     pushUndo();
@@ -1066,9 +1045,9 @@ function elementLabel(el) {
     if (!text) return '(empty text)';
     return text.length > 28 ? text.slice(0, 28) + '…' : text;
 }
-function layerIcon(el) {
-    return el.element_type === 'image' ? 'fa-image' : 'fa-font';
-}
+// 2026-09-04, Backlog Phase 11, T064 -- moved to canvas-designer-core.js (byte-identical to
+// payslip-template.js's own copy before this change).
+const layerIcon = CanvasDesignerCore.layerIcon;
 // 2026-08-25, explicit follow-up: "ในตรง layer ให้สามารถลบจากตรงไหนไห้ด้วย และถ้าตัวไหนแก้ไข text ได้ก็ให้
 // แก้ไขได้จากส่วนนั้นเลย" -- each row gets its own Delete (x), and text rows that AREN'T locked (see
 // isBoundFieldElement()) also get an Edit (pencil) icon that opens the same text modal directly,
@@ -1091,7 +1070,7 @@ function layerRowHtml(el) {
         <div class="ect-layer-row ${selected ? 'ect-layer-selected' : ''} ${visible ? '' : 'ect-layer-hidden'}" data-key="${el.key}">
             ${eyeBtn}
             <i class="fa-solid ${layerIcon(el)} me-1"></i>
-            <span class="ect-layer-label">${escapeHtmlEct(elementLabel(el))}</span>
+            <span class="ect-layer-label">${escapeHtml(elementLabel(el))}</span>
             <div class="ect-layer-actions ms-auto d-flex align-items-center">
                 ${editBtn}
                 <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger ect-layer-delete" data-key="${el.key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
@@ -1129,7 +1108,7 @@ function renderLayersPanel() {
                     <div class="ect-layer-row ect-layer-group-row ${groupSelected ? 'ect-layer-selected' : ''}">
                         <button type="button" class="btn btn-link btn-sm p-0 me-1 ect-layer-group-visibility" data-group-key="${el.group_key}" title="${langData[groupVisible ? 'ect_layer_hide' : 'ect_layer_show'] || (groupVisible ? 'Hide' : 'Show')}"><i class="fa-solid ${groupVisible ? 'fa-eye' : 'fa-eye-slash text-muted'}"></i></button>
                         <i class="fa-solid fa-folder me-1"></i>
-                        <span class="ect-layer-label">${escapeHtmlEct(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
+                        <span class="ect-layer-label">${escapeHtml(langData['ect_layer_group_label'] || 'Group')} (${members.length})</span>
                         <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger ect-layer-group-delete" data-group-key="${el.group_key}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="ect-layer-children"></div>
@@ -1328,7 +1307,7 @@ function rebuildTableCellsGrid(existingCells) {
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             const value = existingCells && existingCells[r] && existingCells[r][c] !== undefined ? existingCells[r][c] : '';
-            $grid.append(`<input type="text" class="ect-table-cell-input" data-row="${r}" data-col="${c}" value="${escapeHtmlEct(value)}">`);
+            $grid.append(`<input type="text" class="ect-table-cell-input" data-row="${r}" data-col="${c}" value="${escapeHtml(value)}">`);
         }
     }
 }
@@ -1653,7 +1632,7 @@ function ectActionsGroupHtml(pairRow) {
 function formatEctDateTime(str) {
     if (!str) return '';
     const d = new Date(String(str).replace(' ', 'T'));
-    if (isNaN(d.getTime())) return escapeHtmlEct(str);
+    if (isNaN(d.getTime())) return escapeHtml(str);
     const pad = n => String(n).padStart(2, '0');
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -1670,7 +1649,7 @@ function initEctTemplateTable() {
         },
         columns: [
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => ectPublishSwitchesHtml(row) },
-            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtmlEct(row.template_name)}</strong>` },
+            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtml(row.template_name)}</strong>` },
             { data: null, render: (d, t, row) => pageSizeLabel(row) },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => ectLangStatusHtml(row, 'th') },
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => ectLangStatusHtml(row, 'en') },
@@ -2261,7 +2240,7 @@ function renderPresetList() {
             <div class="ect-preset-card ${chosenPreset === p.code ? 'active' : ''}" data-code="${p.code}">
                 ${renderPresetMockup(p.code)}
                 <div class="ect-preset-card-footer">
-                    <span class="ect-preset-card-label">${escapeHtmlEct(label)}</span>
+                    <span class="ect-preset-card-label">${escapeHtml(label)}</span>
                     ${previewBtn}
                 </div>
             </div>

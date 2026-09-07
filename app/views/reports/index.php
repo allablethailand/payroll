@@ -79,7 +79,7 @@
                  system's standard filter component); now the same .station-filter every other page's
                  filter uses (collapsible, chevron toggle, label). -->
             <div class="station-filter" id="cycleReportPeriodBar">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="cycleReportPeriodBarToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -172,7 +172,7 @@
                  system standard) with a dropdown populated from ReportsController::availableYears()
                  (only years with a real, usable-state run). -->
             <div class="station-filter" id="annualReportPeriodBar">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="annualReportPeriodBarToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -225,7 +225,7 @@
                  everywhere else in this app (per the same-day "ปรับ Design Filter ให้เป็นรูปแบบที่กำหนดไว้
                  ของระบบ" request) alongside the new date range. -->
             <div class="station-filter mb-2" id="exportHistoryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="exportHistoryStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>

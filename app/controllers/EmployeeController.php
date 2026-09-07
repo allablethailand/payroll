@@ -6,6 +6,8 @@ require_once __DIR__ . '/../models/EmployeeRecurringEarningModel.php';
 require_once __DIR__ . '/../models/EmployeeRecurringDeductionModel.php';
 require_once __DIR__ . '/../models/EmployeeOtRateModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
+require_once __DIR__ . '/../models/PayrollSyncTransactionLogModel.php';
+require_once __DIR__ . '/../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../services/ThumbnailGenerator.php';
 class EmployeeController extends Controller {
     private $model;
@@ -14,6 +16,8 @@ class EmployeeController extends Controller {
     private EmployeeRecurringDeductionModel $recurringDeductionModel;
     private EmployeeOtRateModel $otRateModel;
     private PermissionModel $permissionModel;
+    private PayrollSyncTransactionLogModel $syncTransactionLogModel;
+    private PayrollReportDataModel $reportDataModel;
     public function __construct(){
         $this->model = new EmployeeModel();
         $this->earningDeductionModel = new EmployeeEarningDeductionModel();
@@ -21,6 +25,8 @@ class EmployeeController extends Controller {
         $this->recurringDeductionModel = new EmployeeRecurringDeductionModel();
         $this->otRateModel = new EmployeeOtRateModel();
         $this->permissionModel = new PermissionModel();
+        $this->syncTransactionLogModel = new PayrollSyncTransactionLogModel();
+        $this->reportDataModel = new PayrollReportDataModel();
     }
 
     private function userId(): int {
@@ -686,6 +692,31 @@ class EmployeeController extends Controller {
             $this->json(['status' => false, 'message' => 'Record not found.']);
         }
     }
+    // 2026-09-04, Backlog Phase 9->10, T051 -- read-only Sync History sub-section on the Income &
+    // Deductions tab. Same permission gate/response shape as earningDeductionList() above; both
+    // endpoints only ever read, nothing here is editable from the UI.
+    public function syncTransactionLogList() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'data' => []]);
+            return;
+        }
+        $data = $this->syncTransactionLogModel->listForEmployee((int)$compId, $employeeId);
+        $this->json(['status' => true, 'data' => $data]);
+    }
+    public function scheduledItemOccurrenceList() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeId = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'data' => []]);
+            return;
+        }
+        $data = $this->reportDataModel->scheduledItemOccurrences((int)$compId, null, null, $employeeId);
+        $this->json(['status' => true, 'data' => $data]);
+    }
     /** Pure calculation preview (2026-08-20, explicit request) -- lets the modal show/auto-fill
      *  the per-installment schedule live as principal/installments/interest settings change,
      *  without duplicating the amortization math in JS. Mirrors POST /api/payslip-template.preview's
@@ -734,7 +765,8 @@ class EmployeeController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->earningDeductionModel->save($employeeId, (int)$compId, $data, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->earningDeductionModel->save($employeeId, (int)$compId, $data, $userId, $ip, $ua);
         $this->json($result);
     }
     public function earningDeductionStatus() {
@@ -754,7 +786,8 @@ class EmployeeController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->earningDeductionModel->updateStatus($id, (int)$compId, $employeeId, $newStatus, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->earningDeductionModel->updateStatus($id, (int)$compId, $employeeId, $newStatus, $userId, $ip, $ua);
         $this->json($result);
     }
     public function earningDeductionDelete() {
@@ -773,7 +806,8 @@ class EmployeeController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->earningDeductionModel->delete($id, (int)$compId, $employeeId, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->earningDeductionModel->delete($id, (int)$compId, $employeeId, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -844,7 +878,8 @@ class EmployeeController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $this->json($this->recurringEarningModel->save($employeeId, (int)$compId, $data, $userId));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->recurringEarningModel->save($employeeId, (int)$compId, $data, $userId, $ip, $ua));
     }
     public function recurringEarningDelete() {
         if (!$this->requirePermission('employee.delete')) return;
@@ -861,7 +896,8 @@ class EmployeeController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $this->json($this->recurringEarningModel->delete($id, (int)$compId, $employeeId, $userId));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->recurringEarningModel->delete($id, (int)$compId, $employeeId, $userId, $ip, $ua));
     }
 
     /* ==================== Recurring Deductions (Salary tab, 2026-08-31, explicit request: "หน้า
@@ -927,7 +963,8 @@ class EmployeeController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $this->json($this->recurringDeductionModel->save($employeeId, (int)$compId, $data, $userId));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->recurringDeductionModel->save($employeeId, (int)$compId, $data, $userId, $ip, $ua));
     }
     public function recurringDeductionDelete() {
         if (!$this->requirePermission('employee.delete')) return;
@@ -944,7 +981,8 @@ class EmployeeController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $this->json($this->recurringDeductionModel->delete($id, (int)$compId, $employeeId, $userId));
+        [$ip, $ua] = $this->requestFingerprint();
+        $this->json($this->recurringDeductionModel->delete($id, (int)$compId, $employeeId, $userId, $ip, $ua));
     }
 
     // Explicit request: "OT Rate เพิ่มให้สามารถ Assing รายบุคคลได้ด้วย...ให้ไป Set แยก ใน Employee" -- see

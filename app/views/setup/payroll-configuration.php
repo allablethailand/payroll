@@ -171,7 +171,7 @@
                     <div class="settings-info-card-body">
                         <div class="row">
                             <div class="col-sm-5 col-md-4">
-                                <label class="form-label mb-2" data-i18n="policy_reopen_days_label">Reopen Window (days)</label>
+                                <label class="form-label mb-1" data-i18n="policy_reopen_days_label">Reopen Window (days)</label>
                                 <div class="input-group">
                                     <input type="number" min="0" step="1" class="form-control" id="policyReopenWindowDays" data-i18n="policy_reopen_days_placeholder" placeholder="Unlimited">
                                     <span class="input-group-text" data-i18n="days_suffix">days</span>
@@ -207,29 +207,6 @@
                         </div>
                     </div>
                     <div class="settings-info-card-body">
-                        <!-- 2026-08-30, explicit follow-up: "การจัดวางข้อมูลในแต่ละ Card ช่วยปรับให้หน่อยครับ
-                             ตอนนี้ดูแน่นไปหมด ไม่เป็นระเบียบ" -- 3 logical field groups now get real
-                             breathing room (g-4 gutters, mb-4/mb-5 between groups instead of g-3/mb-3),
-                             and the trailing 2 checkboxes (previously loose, felt like an afterthought)
-                             are now their own labeled .settings-subgroup panel so the card reads as 3
-                             clearly separated sections instead of one dense block. -->
-                        <div class="row g-4 mb-5">
-                            <div class="col-md-6">
-                                <label class="form-label mb-2" data-i18n="policy_probation_period_days_label">Standard Probation Period (days)</label>
-                                <div class="input-group">
-                                    <input type="number" min="0" step="1" class="form-control" id="policyProbationPeriodDays" data-i18n="policy_probation_period_days_placeholder" placeholder="Not set">
-                                    <span class="input-group-text" data-i18n="days_suffix">days</span>
-                                </div>
-                                <div class="form-text mt-2" data-i18n="policy_probation_period_days_hint">Reference only, e.g. 119 -- for display/planning. Does not by itself change any calculation below; those are always driven by the employee's actual Employment Status.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label mb-2" data-i18n="policy_probation_base_salary_ratio_label">Base Salary Ratio During Probation</label>
-                                <div class="input-group">
-                                    <input type="number" min="1" max="100" step="0.01" class="form-control" id="policyProbationBaseSalaryRatio" data-i18n="policy_probation_base_salary_ratio_placeholder" placeholder="100 (no reduction)">
-                                    <span class="input-group-text">%</span>
-                                </div>
-                            </div>
-                        </div>
                         <!-- 2026-08-30 (Phase 2, T016, explicit request: "เปลี่ยนเป็น radio (2 ตัวเลือก)... ถ้าเลือก
                              option ที่ต้องใส่เงื่อนไข ให้แสดงช่องกรอกเงื่อนไขต่ออีกบรรทัดใต้ radio" -- confirmed with
                              user that the field itself (Base Salary Basis) is correct, radio buttons for the real,
@@ -240,7 +217,7 @@
                              beside it. -->
                         <div class="row g-4 mb-3">
                             <div class="col-12">
-                                <label class="form-label mb-2" data-i18n="policy_pay_basis_label">Base Salary Basis</label>
+                                <label class="form-label mb-1" data-i18n="policy_pay_basis_label">Base Salary Basis</label>
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="policyPayBasisRadio" id="policyPayBasisFullMonth" value="full_month">
                                     <label class="form-check-label" for="policyPayBasisFullMonth" data-i18n="policy_pay_basis_full_month">Full Month</label>
@@ -274,67 +251,37 @@
                                 <div class="form-text" data-i18n="policy_pay_basis_hint">Both left off still pays 100% of base salary for a normal period -- these only reduce pay when a holiday/unpaid leave actually falls inside the pay period.</div>
                             </div>
                         </div>
-                        <div class="settings-subgroup">
-                            <div class="settings-subgroup-label" data-i18n="policy_probation_additional_conditions_label">Additional Conditions</div>
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="policyProbationDeferPvd">
-                                <label class="form-check-label" for="policyProbationDeferPvd" data-i18n="policy_probation_defer_pvd_label">Defer Provident Fund (PVD) contribution until probation passes</label>
-                            </div>
-                            <!-- 2026-09-02, follow-up to close a review-flagged gap: "เงื่อนไขการหักภาษี/
-                                 ประกันสังคมที่แตกต่างจากพนักงานปกติ (ถ้ามี)" -- SSO gets the exact same defer
-                                 mechanism PVD already has, right above. -->
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="policyProbationDeferSso">
-                                <label class="form-check-label" for="policyProbationDeferSso" data-i18n="policy_probation_defer_sso_label">Defer Social Security Fund (SSO) contribution until probation passes</label>
-                            </div>
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="policyProbationDeferRecurringEarning">
-                                <label class="form-check-label" for="policyProbationDeferRecurringEarning" data-i18n="policy_probation_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) until probation passes</label>
-                            </div>
+                    </div>
+                </div>
+                <!-- 2026-09-04, Backlog Phase 10, T056 ("Probation setting gains Clone + Assign, using
+                     T055's template"): the 9 probation_* fields that used to live directly on THIS
+                     card's own form (period days/base salary ratio/defer PVD/defer SSO/defer recurring
+                     earning/leave rights/OT-eligible-default/tax-exempt-default) are no longer a single
+                     company-wide singleton -- they're now `probation_policy_sets`, multiple named,
+                     cloneable Sets with exactly one mandatory Default, each optionally ASSIGNED to
+                     specific departments/positions/teams/employees (T055's entity_assignments, via
+                     assign-widget.js) -- same architecture as OtRateSetModel/ot_rate_sets, this
+                     project's own closest precedent for "one setting -> many assignable Sets". See
+                     PayrollPolicyModel::probationSettings()'s own docblock for the full resolution
+                     logic. Base Salary Basis (pay_basis, the radio group above) is a SEPARATE,
+                     unrelated company-wide singleton -- still gated by the same employment_status=
+                     'probation' check at calculation time, but NOT part of this Set architecture, left
+                     untouched on the form above. -->
+                <div class="settings-info-card mb-4" id="probationSetsCard">
+                    <div class="settings-info-card-header">
+                        <i class="fa-solid fa-layer-group"></i>
+                        <div>
+                            <p class="settings-info-card-title" data-i18n="probation_sets_title">Probation Policy Sets</p>
+                            <p class="settings-info-card-desc" data-i18n="probation_sets_description">Multiple named probation policies, each optionally assigned to specific departments/positions/teams/employees. Exactly one Set is always the company-wide Default.</p>
                         </div>
-                        <!-- 2026-09-02, follow-up to close a review-flagged gap: a soft, CREATE-TIME-
-                             ONLY default for the ALREADY-existing employees.tax_exempt checkbox --
-                             not a new tax formula, same tri-state contract as OT Eligible (Default)
-                             below. -->
-                        <div class="settings-subgroup mt-4">
-                            <div class="settings-subgroup-label" data-i18n="policy_tax_default_label">Tax Withholding (Default)</div>
-                            <div class="row g-4">
-                                <div class="col-md-6">
-                                    <label class="form-label mb-2" data-i18n="policy_tax_exempt_default_label">Tax Exempt (Default)</label>
-                                    <select class="form-select select2-static" id="policyProbationTaxExemptDefault" data-option-keys="policy_ot_default_not_set,policy_tax_default_exempt,policy_tax_default_not_exempt" data-option-values=",1,0"></select>
-                                    <div class="form-text mt-2" data-i18n="policy_tax_exempt_default_hint">Only a starting suggestion, applied once when an employee is created directly into this status -- the employee's own Tax Exempt checkbox (Salary tab) can always be changed afterward.</div>
-                                </div>
-                            </div>
+                    </div>
+                    <div class="settings-info-card-body">
+                        <div class="d-flex justify-content-end mb-3">
+                            <button type="button" class="btn btn-primary btn-sm" id="btnAddProbationSet">
+                                <i class="fa-solid fa-plus me-1"></i><span data-i18n="probation_add_set">Add Set</span>
+                            </button>
                         </div>
-                        <!-- 2026-09-02, explicit request: extend Probation pay policy with leave/OT
-                             rights during the period. Leave limit/allow are genuinely informational
-                             for now (no consumer wired yet, same "built, no consumer yet" precedent
-                             this project already uses for e.g. Holiday's own resolveHolidaysForEmployee()
-                             before it had one). OT-eligible-default is a SOFT default only -- applied
-                             once at the moment an employee's own Employment Status transitions INTO
-                             Probation, the employee's own ot_eligible checkbox (Salary tab) can always
-                             be changed afterward and is never overridden again after that one time. -->
-                        <div class="settings-subgroup mt-4">
-                            <div class="settings-subgroup-label" data-i18n="policy_probation_leave_ot_label">Leave &amp; OT Rights During Probation</div>
-                            <div class="row g-4 align-items-start">
-                                <div class="col-md-6">
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="checkbox" id="policyAllowLeaveDuringProbation" checked>
-                                        <label class="form-check-label" for="policyAllowLeaveDuringProbation" data-i18n="policy_allow_leave_label">Allow leave requests during probation</label>
-                                    </div>
-                                    <label class="form-label mb-2" data-i18n="policy_leave_days_limit_label">Leave Days Limit</label>
-                                    <div class="input-group">
-                                        <input type="number" min="0" step="1" class="form-control" id="policyProbationLeaveDaysLimit" data-i18n="policy_leave_days_limit_placeholder" placeholder="No limit">
-                                        <span class="input-group-text" data-i18n="days_suffix">days</span>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label mb-2" data-i18n="policy_ot_eligible_default_label">OT Eligible (Default)</label>
-                                    <select class="form-select select2-static" id="policyProbationOtEligibleDefault" data-option-keys="policy_ot_default_not_set,policy_ot_default_eligible,policy_ot_default_not_eligible" data-option-values=",1,0"></select>
-                                    <div class="form-text mt-2" data-i18n="policy_ot_eligible_default_hint">Only a starting suggestion, applied once when an employee enters this status -- the employee's own OT Eligible checkbox (Salary tab) can always be changed afterward.</div>
-                                </div>
-                            </div>
-                        </div>
+                        <div id="probationSetsContainer"></div>
                     </div>
                 </div>
                 <!-- 2026-08-31, explicit request: "ในหน้านโยบายการทำเงินเดือน ก็มีให้ตั้งค่าสำหรับเด็กฝึกงาน
@@ -359,7 +306,7 @@
                     <div class="settings-info-card-body">
                         <div class="row g-4 mb-5">
                             <div class="col-md-6">
-                                <label class="form-label mb-2" data-i18n="policy_intern_period_days_label">Standard Internship Period (days)</label>
+                                <label class="form-label mb-1" data-i18n="policy_intern_period_days_label">Standard Internship Period (days)</label>
                                 <div class="input-group">
                                     <input type="number" min="0" step="1" class="form-control" id="policyInternPeriodDays" data-i18n="policy_probation_period_days_placeholder" placeholder="Not set">
                                     <span class="input-group-text" data-i18n="days_suffix">days</span>
@@ -367,7 +314,7 @@
                                 <div class="form-text mt-2" data-i18n="policy_intern_period_days_hint">Reference only -- for display/planning. Does not by itself change any calculation below; those are always driven by the employee's actual Employment Type.</div>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label mb-2" data-i18n="policy_intern_base_salary_ratio_label">Base Salary Ratio for Salaried Interns</label>
+                                <label class="form-label mb-1" data-i18n="policy_intern_base_salary_ratio_label">Base Salary Ratio for Salaried Interns</label>
                                 <div class="input-group">
                                     <input type="number" min="1" max="100" step="0.01" class="form-control" id="policyInternBaseSalaryRatio" data-i18n="policy_probation_base_salary_ratio_placeholder" placeholder="100 (no reduction)">
                                     <span class="input-group-text">%</span>
@@ -381,7 +328,7 @@
                              (PayrollPolicyModel::internPayBasisSettings()). -->
                         <div class="row g-4 mb-3">
                             <div class="col-12">
-                                <label class="form-label mb-2" data-i18n="policy_intern_pay_basis_label">Base Salary Basis</label>
+                                <label class="form-label mb-1" data-i18n="policy_intern_pay_basis_label">Base Salary Basis</label>
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="policyInternPayBasisRadio" id="policyInternPayBasisFullMonth" value="full_month">
                                     <label class="form-check-label" for="policyInternPayBasisFullMonth" data-i18n="policy_pay_basis_full_month">Full Month</label>
@@ -437,14 +384,14 @@
                                         <input class="form-check-input" type="checkbox" id="policyAllowLeaveDuringIntern" checked>
                                         <label class="form-check-label" for="policyAllowLeaveDuringIntern" data-i18n="policy_allow_leave_label">Allow leave requests during probation</label>
                                     </div>
-                                    <label class="form-label mb-2" data-i18n="policy_leave_days_limit_label">Leave Days Limit</label>
+                                    <label class="form-label mb-1" data-i18n="policy_leave_days_limit_label">Leave Days Limit</label>
                                     <div class="input-group">
                                         <input type="number" min="0" step="1" class="form-control" id="policyInternLeaveDaysLimit" data-i18n="policy_leave_days_limit_placeholder" placeholder="No limit">
                                         <span class="input-group-text" data-i18n="days_suffix">days</span>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label mb-2" data-i18n="policy_ot_eligible_default_label">OT Eligible (Default)</label>
+                                    <label class="form-label mb-1" data-i18n="policy_ot_eligible_default_label">OT Eligible (Default)</label>
                                     <select class="form-select select2-static" id="policyInternOtEligibleDefault" data-option-keys="policy_ot_default_not_set,policy_ot_default_eligible,policy_ot_default_not_eligible" data-option-values=",1,0"></select>
                                     <div class="form-text mt-2" data-i18n="policy_ot_eligible_default_hint">Only a starting suggestion, applied once when an employee enters this status -- the employee's own OT Eligible checkbox (Salary tab) can always be changed afterward.</div>
                                 </div>
@@ -454,7 +401,7 @@
                             <div class="settings-subgroup-label" data-i18n="policy_tax_default_label">Tax Withholding (Default)</div>
                             <div class="row g-4">
                                 <div class="col-md-6">
-                                    <label class="form-label mb-2" data-i18n="policy_tax_exempt_default_label">Tax Exempt (Default)</label>
+                                    <label class="form-label mb-1" data-i18n="policy_tax_exempt_default_label">Tax Exempt (Default)</label>
                                     <select class="form-select select2-static" id="policyInternTaxExemptDefault" data-option-keys="policy_ot_default_not_set,policy_tax_default_exempt,policy_tax_default_not_exempt" data-option-values=",1,0"></select>
                                     <div class="form-text mt-2" data-i18n="policy_tax_exempt_default_hint">Only a starting suggestion, applied once when an employee is created directly into this status -- the employee's own Tax Exempt checkbox (Salary tab) can always be changed afterward.</div>
                                 </div>
@@ -480,7 +427,7 @@
                     <div class="settings-info-card-body">
                         <div class="row g-4">
                             <div class="col-md-6">
-                                <label class="form-label mb-2" data-i18n="policy_flat_tax_rate_label">Flat Withholding Rate</label>
+                                <label class="form-label mb-1" data-i18n="policy_flat_tax_rate_label">Flat Withholding Rate</label>
                                 <div class="input-group">
                                     <input type="number" min="0" max="100" step="0.01" class="form-control" id="policySupplementalFlatTaxRate" placeholder="0.00">
                                     <span class="input-group-text">%</span>

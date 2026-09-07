@@ -56,7 +56,7 @@
             </div>
             <div class="modal-body" id="aisCellDetailBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -67,14 +67,14 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="userSettingsModalLabel">
+                <h5 class="modal-title text-secondary" id="userSettingsModalLabel">
                     <i class="fa-solid fa-gear me-2"></i><span data-i18n="user_settings_menu">Settings</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-4">
-                    <label class="form-label fw-semibold" data-i18n="user_settings_font_size_label">Font Size</label>
+                    <label class="form-label fw-semibold mb-1" data-i18n="user_settings_font_size_label">Font Size</label>
                     <div class="user-settings-font-slider-wrap">
                         <input type="range" class="form-range" id="userSettingsFontSizeSlider" min="0" max="2" step="1" value="1">
                         <div class="user-settings-font-slider-labels">
@@ -85,14 +85,102 @@
                     </div>
                     <div class="user-settings-font-preview" id="userSettingsFontPreview" data-i18n="user_settings_font_size_preview">The quick brown fox jumps over the lazy dog.</div>
                 </div>
+                <!-- 2026-09-04, Backlog Phase 11, T069 Step 1 -- 3-way theme toggle, same section
+                     styling/markup shape as Font Size just above (label + a segmented row of
+                     options) for visual consistency, not a copy-paste of the slider control itself
+                     (theme is 3 discrete, unordered choices -- a slider implies an ordered scale,
+                     which doesn't fit). "System" is just the null/unset state server-side (see
+                     UserPreferenceModel's own docblock) -- selecting it sends '' to the save
+                     endpoint, same null-means-unset convention userSettingsFontSizeSlider's own
+                     language sibling already uses. -->
+                <div class="mb-4">
+                    <label class="form-label fw-semibold mb-1" data-i18n="user_settings_theme_label">Theme</label>
+                    <div class="user-settings-theme-options" id="userSettingsThemeOptions">
+                        <button type="button" class="user-settings-theme-option" data-theme-option="light">
+                            <i class="fa-solid fa-sun"></i>
+                            <span data-i18n="user_settings_theme_light">Light</span>
+                        </button>
+                        <button type="button" class="user-settings-theme-option" data-theme-option="dark">
+                            <i class="fa-solid fa-moon"></i>
+                            <span data-i18n="user_settings_theme_dark">Dark</span>
+                        </button>
+                        <button type="button" class="user-settings-theme-option" data-theme-option="system">
+                            <i class="fa-solid fa-circle-half-stroke"></i>
+                            <span data-i18n="user_settings_theme_system">System</span>
+                        </button>
+                    </div>
+                </div>
                 <div id="userSettingsNotifPrefsWrap">
-                    <label class="form-label fw-semibold" data-i18n="notification_preferences_label">Notification Preferences</label>
+                    <label class="form-label fw-semibold mb-1" data-i18n="notification_preferences_label">Notification Preferences</label>
                     <div id="userSettingsNotifPrefsList" class="d-flex flex-column gap-2"></div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveUserSettings" data-i18n="save">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-09-05, Backlog Phase 13 -- Terms & Conditions. ONE modal serves 2 modes, distinguished by
+     `data-forced` on the modal element itself (set by terms-and-conditions.js's own
+     openTermsModal(forced) right before showing it): forced=true is the login-gate case (backdrop
+     static, no close button, Accept only enabled after scrolling to the bottom) -- forced=false is
+     the Profile > "Terms and Conditions" (view again) case (normal closable modal, no Accept
+     button shown at all, just the content + this employee's own acceptance history underneath).
+     See that file's own docblock for the full scroll-detection/state-toggle logic. -->
+<div class="modal fade" id="termsModal" tabindex="-1" aria-labelledby="termsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="termsModalLabel">
+                    <i class="fa-solid fa-file-contract me-2"></i><span data-i18n="terms_and_conditions_title">Terms and Conditions</span>
+                </h5>
+                <button type="button" class="btn-close terms-modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="termsModalBody">
+                <div id="termsModalContent" class="terms-modal-content"></div>
+                <div id="termsModalHistory" class="terms-modal-history mt-3"></div>
+            </div>
+            <div class="modal-footer terms-modal-footer-forced">
+                <div class="text-muted small me-auto" id="termsModalScrollHint" data-i18n="terms_and_conditions_scroll_hint">Please scroll to the bottom to continue.</div>
+                <button type="button" class="btn btn-primary" id="btnAcceptTerms" disabled data-i18n="terms_and_conditions_accept_btn">I have read and accept the Terms and Conditions</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-09-05, Backlog Phase 13 -- Profile > "System Access History", self-service. Plain list,
+     not a DataTable -- a quick recent-history glance (last 50 rows), see
+     EmployeeLoginLogController::myHistory()'s own docblock for why this deliberately doesn't reuse
+     the admin-facing paginated/filterable table. -->
+<div class="modal fade" id="systemAccessHistoryModal" tabindex="-1" aria-labelledby="systemAccessHistoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="systemAccessHistoryModalLabel">
+                    <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="system_access_history_title">System Access History</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th data-i18n="audit_log_performed_at">When</th>
+                                <th>IP</th>
+                                <th>Device</th>
+                                <th>Browser</th>
+                            </tr>
+                        </thead>
+                        <tbody id="systemAccessHistoryBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -103,7 +191,7 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title mb-0" id="payslipRosterModalTitle">Pay Slip</h6>
+                <h6 class="modal-title text-secondary mb-0" id="payslipRosterModalTitle">Pay Slip</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -180,7 +268,7 @@
                     </div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="button" class="btn btn-outline-primary reports-preview-download-btn" data-language="th"><img src="<?=asset('public/flags/th.png')?>" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
                     <button type="button" class="btn btn-primary reports-preview-download-btn" data-language="en"><img src="<?=asset('public/flags/gb.png')?>" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
                 </div>
@@ -198,7 +286,7 @@
             </div>
             <div class="modal-body">
                 <div class="station-filter mb-2" id="cycleReportHistoryStationFilter">
-                    <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                    <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                     <button type="button" class="station-filter-toggle" id="cycleReportHistoryStationFilterToggle" title="Toggle filter">
                         <i class="fas fa-chevron-up"></i>
                     </button>
@@ -244,7 +332,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -349,7 +437,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyEmployeeSync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="syncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -369,7 +457,7 @@
                 <div id="syncLogCards"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -388,7 +476,7 @@
     <div class="modal-dialog modal-dialog-centered modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="structureAssignModalLabel">
+                <h5 class="modal-title text-secondary" id="structureAssignModalLabel">
                     <i class="fa-solid fa-users me-2"></i><span id="structureAssignModalTitle"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -439,7 +527,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="documentNumberingModalLabel">
+                <h5 class="modal-title text-secondary" id="documentNumberingModalLabel">
                     <i class="fa-solid fa-hashtag me-2"></i><span id="documentNumberingModalTypeLabel"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -448,22 +536,22 @@
                 <input type="hidden" id="dn_document_type_code">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label"><span data-i18n="doc_numbering_prefix">Format (Prefix)</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="doc_numbering_prefix">Format (Prefix)</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="dn_prefix_format" maxlength="50" data-i18n="document_number_prefix_placeholder" placeholder="e.g., INV-{YYYY}-">
                         <div class="text-secondary small mt-1" data-i18n="doc_numbering_prefix_hint">Placeholders: {YYYY} = year, {MM} = month, {YYYYMMDD} = full date.</div>
                     </div>
                     <div class="row g-3 mb-3">
                         <div class="col-sm-6">
-                            <label class="form-label"><span data-i18n="doc_numbering_digits">Digits</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="doc_numbering_digits">Digits</span> <span class="text-danger">*</span></label>
                             <input type="number" class="form-control required" id="dn_digit_count" min="1" max="10" step="1" data-i18n="document_number_digit_count_placeholder" placeholder="e.g., 5">
                         </div>
                         <div class="col-sm-6">
-                            <label class="form-label"><span data-i18n="doc_numbering_current">Current Number</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="doc_numbering_current">Current Number</span> <span class="text-danger">*</span></label>
                             <input type="number" class="form-control required" id="dn_current_number" min="0" step="1" data-i18n="document_number_current_number_placeholder" placeholder="e.g., 1">
                         </div>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label" data-i18n="doc_numbering_reset">Reset</label>
+                        <label class="form-label mb-1" data-i18n="doc_numbering_reset">Reset</label>
                         <select class="form-select select2-static" id="dn_reset_cycle" data-option-keys="reset_cycle_never,reset_cycle_yearly,reset_cycle_monthly" data-option-values="never,yearly,monthly"></select>
                     </div>
                     <div class="text-secondary small" id="documentNumberingPreview"></div>
@@ -496,7 +584,7 @@
                     </h6>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_cycle_name">Schedule Name</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_cycle_name">Schedule Name</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <input type="text" class="form-control required" id="cycle_name" name="cycle_name" data-i18n="cycle_name_placeholder" placeholder="e.g., Office Staff Schedule / Part-time Weekly">
@@ -504,10 +592,10 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_frequency">Payroll Frequency</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_frequency">Payroll Frequency</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <select class="form-select select2-static required" id="payroll_frequency" name="payroll_frequency" data-option-keys="freq_monthly,freq_semi_monthly,freq_weekly,freq_bi_weekly" data-option-values="monthly,semi_monthly,weekly,bi_weekly"></select>
+                            <select class="form-select select2-static required" id="payroll_frequency" name="payroll_frequency" data-option-keys="freq_monthly,freq_semi_monthly,freq_weekly,freq_bi_weekly,freq_daily" data-option-values="monthly,semi_monthly,weekly,bi_weekly,daily"></select>
                         </div>
                     </div>
                     <!-- 2026-09-02, reply from Origami's own team re: "Map รอบการจ่ายเงินเดือน" -- an
@@ -519,7 +607,7 @@
                          SAME code the company's Origami admin set on their own Setup > Period screen. -->
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="modal_external_cycle_code">External Cycle Code</label>
+                            <label class="form-label mb-1" data-i18n="modal_external_cycle_code">External Cycle Code</label>
                         </div>
                         <div class="col-sm-9">
                             <input type="text" class="form-control" id="external_cycle_code" name="external_cycle_code" maxlength="100" data-i18n="modal_external_cycle_code_placeholder" placeholder="e.g., PR-MTH-20">
@@ -533,7 +621,7 @@
                     </h6>
                     <div class="row mb-3" id="cutoff_dom_wrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
                             <input type="number" min="1" max="28" class="form-control required" id="cutoff_day_of_month" name="cutoff_day_of_month" data-i18n="day_of_month_placeholder" placeholder="1-28">
@@ -544,7 +632,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="cutoff_dow_wrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_attendance_cutoff">Attendance Cut-off Day</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-static" id="cutoff_day_of_week" name="cutoff_day_of_week" data-option-keys="dow_monday,dow_tuesday,dow_wednesday,dow_thursday,dow_friday,dow_saturday,dow_sunday" data-option-values="monday,tuesday,wednesday,thursday,friday,saturday,sunday"></select>
@@ -553,7 +641,7 @@
                     <p class="text-muted small ms-0 mb-3" data-i18n="day_of_month_hint">*Day must be between 1-28 so it exists in every month, or use "last day of the month".</p>
                     <div class="row mb-3" id="payment_dom_wrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
                             <input type="number" min="1" max="28" class="form-control required" id="payment_day_of_month" name="payment_day_of_month" data-i18n="day_of_month_placeholder" placeholder="1-28">
@@ -564,7 +652,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="payment_dow_wrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_payment_day">Payment Day</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-static" id="payment_day_of_week" name="payment_day_of_week" data-option-keys="dow_monday,dow_tuesday,dow_wednesday,dow_thursday,dow_friday,dow_saturday,dow_sunday" data-option-values="monday,tuesday,wednesday,thursday,friday,saturday,sunday"></select>
@@ -572,7 +660,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3">
-                            <label class="form-label pt-1"><span data-i18n="modal_ot_cutoff">OT Cut-off Type</span></label>
+                            <label class="form-label pt-1 mb-1"><span data-i18n="modal_ot_cutoff">OT Cut-off Type</span></label>
                         </div>
                         <div class="col-sm-9">
                             <div class="form-check form-check-inline mt-1">
@@ -587,7 +675,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="ot_custom_wrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_ot_cutoff_day">OT Cut-off Day</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_ot_cutoff_day">OT Cut-off Day</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
                             <input type="number" min="1" max="28" class="form-control" id="ot_cutoff_day_of_month" name="ot_cutoff_day_of_month" data-i18n="day_of_month_placeholder" placeholder="1-28">
@@ -603,7 +691,7 @@
                     </h6>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_bank_format">Bank Text Format</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_bank_format">Bank Text Format</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote required" id="bank_file_format_id" name="bank_file_format_id" data-api="/api/bank-file-format.options"></select>
@@ -618,7 +706,7 @@
                          own default account, same as before this feature existed). -->
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="modal_cycle_bank_account">Bank Accounts</label>
+                            <label class="form-label mb-1" data-i18n="modal_cycle_bank_account">Bank Accounts</label>
                         </div>
                         <div class="col-sm-9">
                             <div id="cycleBankAccountsList" class="border rounded-3 p-2" style="max-height:180px;overflow-y:auto;">
@@ -629,7 +717,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="default_payment_method_label">Default Payment Method</label>
+                            <label class="form-label mb-1" data-i18n="default_payment_method_label">Default Payment Method</label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote" id="cycle_default_payment_method_id" name="default_payment_method_id" data-api="/api/payment-method.options" allow-clear="true"></select>
@@ -661,7 +749,7 @@
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold d-flex align-items-center gap-2" id="pedTypeModalLabel">
+                <h5 class="modal-title text-secondary d-flex align-items-center gap-2" id="pedTypeModalLabel">
                     <i class="fa-solid fa-pen-to-square text-secondary" id="pedTypeModalIcon"></i>
                     <span class="badge fs-6" id="pedTypeModalBadge"></span>
                 </h5>
@@ -677,7 +765,7 @@
                     </h6>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_code">Item Code</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="item_code">Item Code</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
                             <input type="text" class="form-control required" id="item_code" name="item_code" data-i18n="item_code_placeholder" placeholder="E003 / D002">
@@ -685,7 +773,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name_en">Item Name (EN)</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="item_name_en">Item Name (EN)</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <input type="text" class="form-control required" id="item_name_en" name="item_name_en" data-i18n="ped_item_name_en_placeholder" placeholder="e.g., Base Salary">
@@ -693,7 +781,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name_th">Item Name (TH)</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="item_name_th">Item Name (TH)</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <input type="text" class="form-control required" id="item_name_th" name="item_name_th" data-i18n="ped_item_name_th_placeholder" placeholder="e.g., เงินเดือนพื้นฐาน">
@@ -721,7 +809,7 @@
                          calculation_method/source_event_code columns underneath. -->
                     <div class="row mb-2">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="amount_source">How is the amount determined?</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="amount_source">How is the amount determined?</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-static required" id="amount_source" name="amount_source" data-option-keys="amount_source_event_linked,amount_source_fixed_amount,amount_source_percent_of_base_salary,amount_source_manual_entry" data-option-values="event_linked,fixed_amount,percent_of_base_salary,manual_entry"></select>
@@ -736,7 +824,7 @@
                     <input type="hidden" id="calculation_method" name="calculation_method">
                     <div class="row mb-3 d-none" id="source_event_code_wrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="source_event_code">Linked Attendance Event</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="source_event_code">Linked Attendance Event</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote" id="source_event_code" name="source_event_code" data-api="/api/ped-type.source-event-options" data-type="earning"></select>
@@ -744,7 +832,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="fixed_amount_wrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="fixed_amount">Fixed Amount</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="fixed_amount">Fixed Amount</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
                             <input type="number" step="0.01" min="0" class="form-control" id="fixed_amount" name="fixed_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
@@ -752,7 +840,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="percent_rate_wrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="percent_rate">Percent of Base Salary</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="percent_rate">Percent of Base Salary</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
                             <div class="input-group">
@@ -764,7 +852,7 @@
                     <div id="earnings_fields_wrapper">
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="tax_treatment">Tax Treatment</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-1"><span data-i18n="tax_treatment">Tax Treatment</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
                                 <select class="form-select select2-static" id="tax_treatment" name="tax_treatment" data-option-keys="taxable,non_taxable" data-option-values="taxable,non_taxable"></select>
@@ -772,7 +860,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-3">
-                                <label class="form-label pt-1" data-i18n="statutory_calculations">Statutory Calculations</label>
+                                <label class="form-label pt-1 mb-1" data-i18n="statutory_calculations">Statutory Calculations</label>
                             </div>
                             <div class="col-sm-9">
                                 <div class="form-check mb-2">
@@ -789,7 +877,7 @@
                     <div id="deductions_fields_wrapper" class="d-none">
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="tax_deduction_impact">Tax Deduction Impact</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-1"><span data-i18n="tax_deduction_impact">Tax Deduction Impact</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
                                 <select class="form-select select2-static" id="tax_deduction_impact" name="tax_deduction_impact" data-option-keys="impact_before_tax,impact_after_tax" data-option-values="before_tax,after_tax"></select>
@@ -797,7 +885,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="statutory_report_code">Statutory Report Mapping</label>
+                                <label class="form-label mb-1" data-i18n="statutory_report_code">Statutory Report Mapping</label>
                             </div>
                             <div class="col-sm-9">
                                 <select class="form-select select2-static" id="statutory_report_code" name="statutory_report_code" data-option-keys="statutory_report_th_slf" data-option-values="TH_SLF"></select>
@@ -814,7 +902,7 @@
                              apply exactly as they already do today. -->
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="default_interest_type">Default Interest/Fee</label>
+                                <label class="form-label mb-1" data-i18n="default_interest_type">Default Interest/Fee</label>
                             </div>
                             <div class="col-sm-9">
                                 <select class="form-select select2-static" id="default_interest_type" name="default_interest_type" allowClear="true" data-option-keys="interest_none,interest_fixed,interest_reducing_balance,fee_has" data-option-values="none,fixed,reducing_balance,fee"></select>
@@ -822,7 +910,7 @@
                         </div>
                         <div class="row mb-3 d-none" id="default_interest_rate_wrapper">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="default_interest_rate">Default Interest Rate (% per installment)</label>
+                                <label class="form-label mb-1" data-i18n="default_interest_rate">Default Interest Rate (% per installment)</label>
                             </div>
                             <div class="col-sm-3">
                                 <input type="number" step="0.01" min="0" max="100" class="form-control" id="default_interest_rate" name="default_interest_rate" data-i18n="percent_rate_placeholder" placeholder="e.g., 1.5">
@@ -830,7 +918,7 @@
                         </div>
                         <div class="row mb-3 d-none" id="default_fee_wrapper">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="default_fee_percent">Default Fee</label>
+                                <label class="form-label mb-1" data-i18n="default_fee_percent">Default Fee</label>
                             </div>
                             <div class="col-sm-3">
                                 <div class="input-group">
@@ -865,7 +953,7 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title"><i class="fa-solid fa-user-shield me-2 text-brand"></i><span data-i18n="attendance_deduction_assign_title">Exempt Departments / Teams / Employees</span> - <span id="attendanceDeductionAssignEvent" class="text-muted small"></span></h6>
+                <h6 class="modal-title text-secondary"><i class="fa-solid fa-user-shield me-2 text-brand"></i><span data-i18n="attendance_deduction_assign_title">Exempt Departments / Teams / Employees</span> - <span id="attendanceDeductionAssignEvent" class="text-muted small"></span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -873,7 +961,7 @@
                 <div class="row g-3">
                     <div class="col-md-4">
                         <div class="d-flex justify-content-between align-items-center mb-1">
-                            <label class="form-label mb-0 fw-semibold small" data-i18n="department">Department</label>
+                            <label class="form-label fw-semibold small mb-1" data-i18n="department">Department</label>
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="department" id="adaSelectAllDept"><label class="form-check-label small" for="adaSelectAllDept" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="department" data-i18n="search" placeholder="Search...">
@@ -881,7 +969,7 @@
                     </div>
                     <div class="col-md-4">
                         <div class="d-flex justify-content-between align-items-center mb-1">
-                            <label class="form-label mb-0 fw-semibold small" data-i18n="team">Team</label>
+                            <label class="form-label fw-semibold small mb-1" data-i18n="team">Team</label>
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="team" id="adaSelectAllTeam"><label class="form-check-label small" for="adaSelectAllTeam" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="team" data-i18n="search" placeholder="Search...">
@@ -889,7 +977,7 @@
                     </div>
                     <div class="col-md-4">
                         <div class="d-flex justify-content-between align-items-center mb-1">
-                            <label class="form-label mb-0 fw-semibold small" data-i18n="employee">Employee</label>
+                            <label class="form-label fw-semibold small mb-1" data-i18n="employee">Employee</label>
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="employee" id="adaSelectAllEmployee"><label class="form-check-label small" for="adaSelectAllEmployee" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="employee" data-i18n="search" placeholder="Search...">
@@ -898,7 +986,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveAttendanceDeductionAssign"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -909,7 +997,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title"><i class="fa-solid fa-clock-rotate-left"></i> <span id="attendanceDeductionRuleModalEvent"></span> <span class="text-muted small ms-1" data-i18n="attendance_deduction_rule_title">Attendance Deduction Rule</span></h6>
+                <h6 class="modal-title text-secondary"><i class="fa-solid fa-clock-rotate-left"></i> <span id="attendanceDeductionRuleModalEvent"></span> <span class="text-muted small ms-1" data-i18n="attendance_deduction_rule_title">Attendance Deduction Rule</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -927,11 +1015,11 @@
                 </div>
                 <div class="row g-2 mb-3 d-none" id="attendanceRuleScopePickerWrapper">
                     <div class="col-5">
-                        <label class="form-label small" data-i18n="attendance_deduction_scope">Applies To</label>
+                        <label class="form-label small mb-1" data-i18n="attendance_deduction_scope">Applies To</label>
                         <select class="form-select select2-static" id="attendanceRuleScopeType" data-option-keys="attendance_deduction_scope_team,attendance_deduction_scope_department" data-option-values="team,department"></select>
                     </div>
                     <div class="col-7">
-                        <label class="form-label small" id="attendanceRuleScopeTargetLabel"></label>
+                        <label class="form-label small mb-1" id="attendanceRuleScopeTargetLabel"></label>
                         <!-- 2026-08-30, real bug found and fixed (explicit report: "เลือกทีม แต่ select ของ
                              Department ขึ้นมาด้วย") -- select2 renders its own widget as a SEPARATE
                              sibling DOM node, so toggling .d-none on the raw <select> itself (the old
@@ -947,7 +1035,7 @@
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label" data-i18n="attendance_deduction_label">Note (used for what?)</label>
+                    <label class="form-label mb-1" data-i18n="attendance_deduction_label">Note (used for what?)</label>
                     <input type="text" class="form-control" id="attendanceRuleLabel" maxlength="150" placeholder="e.g., Warehouse team - stricter late policy">
                 </div>
                 <!-- 2026-09-01, explicit request: "ให้เลือกก่อนว่าหัก หรือไม่หัก เป็น radio จากนั้นค่อยแสดงหรือ
@@ -958,7 +1046,7 @@
                      -- it still just drives #attendanceDeductionMethod's own value under the hood, so
                      saveAttendanceDeductionRule()/AttendanceDeductionRuleModel needed zero changes. -->
                 <div class="mb-3">
-                    <label class="form-label" data-i18n="attendance_deduction_apply">Apply Deduction?</label>
+                    <label class="form-label mb-1" data-i18n="attendance_deduction_apply">Apply Deduction?</label>
                     <div>
                         <div class="form-check form-check-inline mt-1">
                             <input class="form-check-input" type="radio" name="attendanceRuleDeductChoice" id="attendanceRuleDeductYes" value="deduct" checked>
@@ -972,23 +1060,23 @@
                 </div>
                 <div id="attendanceRuleDeductFieldsWrapper">
                 <div class="mb-3">
-                    <label class="form-label" data-i18n="attendance_deduction_method">Deduction Method</label>
+                    <label class="form-label mb-1" data-i18n="attendance_deduction_method">Deduction Method</label>
                     <select class="form-select select2-remote" id="attendanceDeductionMethod" data-api="/api/attendance-deduction-rule.method-options" data-type="attendance_deduction_method"></select>
                 </div>
                 <div id="attendanceRateUnitWrapper" class="mb-3 d-none">
-                    <label class="form-label" data-i18n="attendance_deduction_rate_unit">Rate Unit</label>
+                    <label class="form-label mb-1" data-i18n="attendance_deduction_rate_unit">Rate Unit</label>
                     <select class="form-select select2-static" id="attendanceRateUnit" data-option-keys="attendance_deduction_rate_unit_minute,attendance_deduction_rate_unit_hour,attendance_deduction_rate_unit_day" data-option-values="minute,hour,day"></select>
                 </div>
                 <div id="attendanceFlatSection" class="mb-3 d-none">
-                    <label class="form-label" id="attendanceFlatLabel">Deduction Amount per Unit</label>
+                    <label class="form-label mb-1" id="attendanceFlatLabel">Deduction Amount per Unit</label>
                     <input type="number" step="0.01" min="0.01" class="form-control" id="attendanceRatePerUnit" placeholder="e.g., 1.00">
                 </div>
                 <div id="attendancePercentSection" class="mb-3 d-none">
-                    <label class="form-label" data-i18n="attendance_deduction_multiplier">Multiplier (x of the salary-derived rate)</label>
+                    <label class="form-label mb-1" data-i18n="attendance_deduction_multiplier">Multiplier (x of the salary-derived rate)</label>
                     <input type="number" step="0.01" min="0.01" class="form-control" id="attendanceMultiplierRate" value="1.00" data-i18n="multiplier_rate_placeholder" placeholder="e.g., 1.50">
                 </div>
                 <div id="attendanceBracketSection" class="mb-3 d-none">
-                    <label class="form-label d-block" data-i18n="attendance_deduction_brackets">Brackets</label>
+                    <label class="form-label d-block mb-1" data-i18n="attendance_deduction_brackets">Brackets</label>
                     <div class="table-responsive">
                         <table class="table table-sm table-border align-middle mb-2">
                             <thead class="table-light text-secondary">
@@ -1044,7 +1132,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="payslipRequestModalLabel">
+                <h5 class="modal-title text-secondary" id="payslipRequestModalLabel">
                     <i class="fa-solid fa-inbox me-2"></i><span data-i18n="request_payslip">Request Payslip</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -1052,11 +1140,11 @@
             <form id="payslipRequestForm">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label"><span data-i18n="pay_period">Pay Period</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="pay_period">Pay Period</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote required" id="pr_run" data-api="/api/payslip-request.run-options"></select>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-native required" id="pr_employee" disabled></select>
                         <div class="text-secondary small mt-1" data-i18n="select_run_first">Select a pay period first.</div>
                     </div>
@@ -1074,7 +1162,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="ecrRequestModalLabel">
+                <h5 class="modal-title text-secondary" id="ecrRequestModalLabel">
                     <i class="fa-solid fa-file-shield me-2"></i><span data-i18n="request_employment_certificate">Request Employment Certificate</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -1082,11 +1170,11 @@
             <form id="ecrRequestForm">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote required" id="ecr_employee" data-api="/api/employee.report_to.get"></select>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label"><span data-i18n="language">Language</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="language">Language</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-static required" id="ecr_language" data-option-keys="template_language_th,template_language_en" data-option-values="th,en"></select>
                     </div>
                 </div>
@@ -1103,7 +1191,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="requestDetailModalLabel">
+                <h5 class="modal-title text-secondary" id="requestDetailModalLabel">
                     <i class="fa-solid fa-list-check me-2"></i><span data-i18n="approval_request_detail">Request Detail</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -1115,7 +1203,7 @@
                 <div id="requestActionArea" class="mt-3 d-none">
                     <hr>
                     <div class="mb-2">
-                        <label class="form-label small" data-i18n="note_optional">Note (optional)</label>
+                        <label class="form-label small mb-1" data-i18n="note_optional">Note (optional)</label>
                         <textarea id="requestActionNote" class="form-control" rows="2" maxlength="500" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                     </div>
                     <div class="d-flex gap-2">
@@ -1130,408 +1218,386 @@
 </div>
 
 <!-- ===== Tax & Statutory (app/views/setup/tax-statutory.php) ===== -->
-<div class="modal fade" id="statutoryItemModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="statutoryItemModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+<!-- 2026-09-03, Backlog Phase 9, T046, explicit request: "merge Edit and Manage Rates into ONE
+     button... split internally into tabs inside one modal... icon must clearly communicate what
+     the button does." Replaces the old plain `companySettingModal` (override-only, one form, no
+     tabs) entirely -- one modal now covers everything a single row (master OR a company's own
+     custom item, see T045's `item_scope`) can do: adjust/enable a MASTER item's company override
+     ("Setting" tab), edit a CUSTOM item's own definition ("Item Details" tab, only ever shown for
+     item_scope='custom'), and browse/manage that item's dated rate history + promote a rate to
+     system default ("Rate History" tab, both scopes). Which tabs are visible is decided entirely by
+     openStatutoryRateModal() in tax-statutory.js based on item_scope -- the markup itself always
+     has all 3, toggled via .d-none on the <li>. Promote buttons (Setting tab + Rate History tab) are
+     always RENDERED regardless of the viewer's own tax_statutory.promote_master permission -- same
+     "backend decides, don't guess client-side" convention this app already uses for Payroll
+     Approval's own action buttons (see CLAUDE.md's own Approval Workflow Monitor-page note) -- a
+     viewer without that permission just gets a clear "You do not have permission" warning if they
+     click it, never a silently-hidden button that would look like the feature doesn't exist. -->
+<div class="modal fade" id="statutoryRateModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="statutoryRateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title text-secondary" id="statutoryItemModalLabel">
-                    <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="statutory_item">Statutory Item</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="statutoryItemForm" novalidate>
-                <input type="hidden" name="id" id="item_id">
-                <div class="modal-body">
-                    <h6 class="text-secondary fw-bold mb-3 mt-2">
-                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
-                        <span data-i18n="modal_sec_item_info">Item Information</span>
-                    </h6>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_code">Code</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="si_item_code" name="code" data-i18n="statutory_item_code_placeholder" placeholder="e.g. TH_SSO">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_name_th">Name (Thai)</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="si_item_name_th" name="name_th" data-i18n="statutory_item_name_th_placeholder" placeholder="e.g., ภาษีเงินได้บุคคลธรรมดา">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_name_en">Name (English)</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <input type="text" class="form-control required" id="si_item_name_en" name="name_en" data-i18n="statutory_item_name_en_placeholder" placeholder="e.g., Personal Income Tax">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_category">Category</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-static required" id="item_category" name="category" data-option-keys="category_tax,category_social_insurance,category_provident_fund,category_other" data-option-values="tax,social_insurance,provident_fund,other"></select>
-                        </div>
-                    </div>
-                    <hr class="my-4 text-muted opacity-25">
-                    <h6 class="text-secondary fw-bold mb-3">
-                        <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
-                        <span data-i18n="modal_sec_calc_config">Calculation Configuration</span>
-                    </h6>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_calc_method">Calculation Method</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-static required" id="item_calc_method" name="calc_method" data-option-keys="calc_method_flat_rate,calc_method_progressive_bracket,calc_method_fixed_amount,calc_method_formula" data-option-values="flat_rate,progressive_bracket,fixed_amount,formula"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_calc_base">Calculation Base</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-static required" id="item_calc_base" name="calc_base" data-option-keys="calc_base_basic_salary,calc_base_gross_salary,calc_base_taxable_income,calc_base_net_income,calc_base_sso_eligible_earnings,calc_base_pf_eligible_earnings,calc_base_custom" data-option-values="basic_salary,gross_salary,taxable_income,net_income,sso_eligible_earnings,pf_eligible_earnings,custom"></select>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_rounding_mode">Rounding</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-static" id="item_rounding_mode" name="rounding_mode" data-option-keys="rounding_mode_round,rounding_mode_up,rounding_mode_down,rounding_mode_none" data-option-values="round,up,down,none"></select>
-                            <div class="form-text" data-i18n="modal_rounding_mode_hint">How to handle decimals left over after calculation.</div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_decimal_places">Decimal Places</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" min="0" max="4" class="form-control" id="item_decimal_places" name="decimal_places" value="2" data-i18n="decimal_places_placeholder" placeholder="0-4">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_sort_order">Sort Order</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" min="0" class="form-control" id="item_sort_order" name="sort_order" value="0" data-i18n="count_placeholder" placeholder="0">
-                        </div>
-                    </div>
-                    <div class="row mb-2">
-                        <div class="col-sm-6">
-                            <input type="checkbox" class="me-2" id="item_is_employee_applicable" name="is_employee_applicable" checked><span data-i18n="modal_employee_applicable">Applies to Employee</span>
-                        </div>
-                        <div class="col-sm-6">
-                            <input type="checkbox" class="me-2" id="item_is_employer_applicable" name="is_employer_applicable" checked><span data-i18n="modal_employer_applicable">Applies to Employer</span>
-                        </div>
-                    </div>
-                    <div class="row mb-2">
-                        <div class="col-sm-6">
-                            <input type="checkbox" class="me-2" id="item_default_is_active" name="default_is_active" checked><span data-i18n="modal_default_active">Active by Default for New Companies</span>
-                        </div>
-                        <div class="col-sm-6">
-                            <input type="checkbox" class="me-2" id="item_is_company_rate_editable" name="is_company_rate_editable"><span data-i18n="modal_company_rate_editable">Company May Adjust Rate</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="rateHistoryModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="rateHistoryModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title text-secondary" id="rateHistoryModalLabel">
-                    <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="rate_history">Rate History</span>
-                    <span class="text-muted small ms-1" id="rateHistoryItemName"></span>
+                <h5 class="modal-title text-secondary" id="statutoryRateModalLabel">
+                    <i class="fa-solid fa-sliders me-1"></i><span id="srModalItemName"></span>
+                    <span class="badge bg-light text-dark border ms-2 d-none" id="srModalScopeBadgeMaster" data-i18n="statutory_scope_master">Master</span>
+                    <span class="badge bg-warning-subtle text-warning border ms-2 d-none" id="srModalScopeBadgeCustom" data-i18n="statutory_scope_custom">Your Company's Item</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small" data-i18n="rate_history_description">Statutory rates change over time. Add a new version instead of editing the current one to preserve history.</p>
-                <div class="d-flex justify-content-end mb-2">
-                    <button type="button" class="btn btn-primary btn-sm" id="btnAddRateVersion">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="rate_version">Rate Version</span>
-                    </button>
+                <input type="hidden" id="sr_statutory_item_id">
+                <input type="hidden" id="sr_item_scope">
+                <ul class="nav nav-tabs setup-tabs mb-3" id="statutoryRateModalTabs" role="tablist">
+                    <li class="nav-item d-none" role="presentation" id="srDetailsTabItem">
+                        <button class="nav-link setup-menu" id="sr-details-tab" data-bs-toggle="tab" data-bs-target="#sr-details-pane" type="button" role="tab">
+                            <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="sr_tab_details">Item Details</span>
+                        </button>
+                    </li>
+                    <li class="nav-item d-none" role="presentation" id="srSettingTabItem">
+                        <button class="nav-link setup-menu" id="sr-setting-tab" data-bs-toggle="tab" data-bs-target="#sr-setting-pane" type="button" role="tab">
+                            <i class="fa-solid fa-scale-balanced me-1"></i><span data-i18n="sr_tab_setting">Company Setting</span>
+                        </button>
+                    </li>
+                    <li class="nav-item d-none" role="presentation" id="srHistoryTabItem">
+                        <button class="nav-link setup-menu" id="sr-history-tab" data-bs-toggle="tab" data-bs-target="#sr-history-pane" type="button" role="tab">
+                            <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="rate_history">Rate History</span>
+                        </button>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <!-- Item Details tab -- custom items only (item_scope='custom'). Reuses the same
+                         field set the old (now-removed) statutoryItemModal had, scoped to this
+                         company's own item via api/statutory-item.custom.* instead of the
+                         master-only api/statutory-item.* endpoints. -->
+                    <div class="tab-pane fade" id="sr-details-pane" role="tabpanel">
+                        <form id="srDetailsForm" novalidate>
+                            <div class="row mb-3">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-1"><span data-i18n="modal_code">Code</span> <span class="text-danger">*</span></label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <input type="text" class="form-control required" id="sr_item_code" data-i18n="statutory_item_code_placeholder" placeholder="e.g. CUSTOM_FUND">
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-1"><span data-i18n="modal_name_th">Name (Thai)</span> <span class="text-danger">*</span></label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <input type="text" class="form-control required" id="sr_item_name_th" data-i18n="statutory_item_name_th_placeholder" placeholder="e.g., ภาษีเงินได้บุคคลธรรมดา">
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-1"><span data-i18n="modal_name_en">Name (English)</span> <span class="text-danger">*</span></label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <input type="text" class="form-control required" id="sr_item_name_en" data-i18n="statutory_item_name_en_placeholder" placeholder="e.g., Personal Income Tax">
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-1"><span data-i18n="modal_category">Category</span> <span class="text-danger">*</span></label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <!-- 2026-09-04, Backlog Phase 9, T047 -- master_statutory_categories,
+                                         not a hardcoded static list anymore (see this table's own
+                                         migration docblock: adding a new category no longer needs a
+                                         code deploy). -->
+                                    <select class="form-select select2-remote required" id="sr_item_category" data-api="/api/statutory-category.get" data-type="statutory_category"></select>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-1"><span data-i18n="modal_calc_method">Calculation Method</span> <span class="text-danger">*</span></label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <select class="form-select select2-static required" id="sr_item_calc_method" data-option-keys="calc_method_flat_rate,calc_method_progressive_bracket,calc_method_fixed_amount,calc_method_formula" data-option-values="flat_rate,progressive_bracket,fixed_amount,formula"></select>
+                                    <div class="form-text" id="sr_calc_method_lock_hint"></div>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-1"><span data-i18n="modal_calc_base">Calculation Base</span> <span class="text-danger">*</span></label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <!-- 2026-09-04, Backlog Phase 9, T047 -- master_statutory_calc_bases,
+                                         same reasoning as sr_item_category above. Picking a value NOT
+                                         yet wired into PayrollRunModel::recalculate()'s own
+                                         $salaryContext still computes 0.0 (unavoidable without also
+                                         building the real payroll-context wiring for it -- see the
+                                         migration's own docblock) but now surfaces an explicit
+                                         'unrecognized_calc_base' note instead of silently doing so. -->
+                                    <select class="form-select select2-remote required" id="sr_item_calc_base" data-api="/api/statutory-calc-base.get" data-type="statutory_calc_base"></select>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-sm-3 align-self-center">
+                                    <label class="form-label mb-1"><span data-i18n="modal_rounding_mode">Rounding</span></label>
+                                </div>
+                                <div class="col-sm-9">
+                                    <select class="form-select select2-static" id="sr_item_rounding_mode" data-option-keys="rounding_mode_round,rounding_mode_up,rounding_mode_down,rounding_mode_none" data-option-values="round,up,down,none"></select>
+                                </div>
+                                <div class="col-sm-3 mt-2 align-self-center">
+                                    <label class="form-label mb-1"><span data-i18n="modal_decimal_places">Decimal Places</span></label>
+                                </div>
+                                <div class="col-sm-3 mt-2">
+                                    <input type="number" min="0" max="4" class="form-control" id="sr_item_decimal_places" value="2">
+                                </div>
+                            </div>
+                            <div class="row mb-2">
+                                <div class="col-sm-6">
+                                    <input type="checkbox" class="me-2" id="sr_item_is_employee_applicable" checked><span data-i18n="modal_employee_applicable">Applies to Employee</span>
+                                </div>
+                                <div class="col-sm-6">
+                                    <input type="checkbox" class="me-2" id="sr_item_is_employer_applicable" checked><span data-i18n="modal_employer_applicable">Applies to Employer</span>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between mt-4">
+                                <button type="button" class="btn btn-outline-brand d-none" id="srPromoteItemBtn">
+                                    <i class="fa-solid fa-arrow-up-from-bracket me-1"></i><span data-i18n="sr_promote_item_btn">Promote to System Default</span>
+                                </button>
+                                <button type="submit" class="btn btn-primary ms-auto"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
+                            </div>
+                        </form>
+                    </div>
+                    <!-- Company Setting tab -- master items only (item_scope='master'). Content
+                         UNCHANGED from the old companySettingModal, just relocated into this tab. -->
+                    <div class="tab-pane fade" id="sr-setting-pane" role="tabpanel">
+                        <form id="companySettingForm" novalidate>
+                            <div class="row mb-3">
+                                <div class="col-sm-12">
+                                    <input type="checkbox" class="me-2" id="cs_is_active" checked>
+                                    <span data-i18n="modal_company_enable_item">Enable this statutory item for our company</span>
+                                </div>
+                            </div>
+                            <div id="cs_override_wrapper">
+                                <hr class="my-3 text-muted opacity-25">
+                                <p class="text-muted small" id="cs_master_default_hint"></p>
+                                <div id="cs_rate_fields" class="d-none">
+                                    <div class="row mb-3">
+                                        <div class="col-sm-4 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_employee_rate">Employee Rate (%)</span></label>
+                                        </div>
+                                        <div class="col-sm-4">
+                                            <input type="number" step="0.0001" min="0" class="form-control" id="cs_employee_rate_override" data-i18n="default" placeholder="Default">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3">
+                                        <div class="col-sm-4 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_employer_rate">Employer Rate (%)</span></label>
+                                        </div>
+                                        <div class="col-sm-4">
+                                            <input type="number" step="0.0001" min="0" class="form-control" id="cs_employer_rate_override" data-i18n="default" placeholder="Default">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="cs_amount_fields" class="d-none">
+                                    <div class="row mb-3">
+                                        <div class="col-sm-4 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_employee_amount">Employee Amount</span></label>
+                                        </div>
+                                        <div class="col-sm-4">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="cs_employee_amount_override" data-i18n="default" placeholder="Default">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3">
+                                        <div class="col-sm-4 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_employer_amount">Employer Amount</span></label>
+                                        </div>
+                                        <div class="col-sm-4">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="cs_employer_amount_override" data-i18n="default" placeholder="Default">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-sm-4 align-self-center">
+                                        <label class="form-label mb-1"><span data-i18n="modal_remark">Remark</span></label>
+                                    </div>
+                                    <div class="col-sm-8">
+                                        <input type="text" class="form-control" id="cs_remark" data-i18n="remark_placeholder" placeholder="Optional notes">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between mt-4">
+                                <button type="button" class="btn btn-outline-danger" id="btnResetCompanySetting"><i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="reset_to_default">Reset to Default</span></button>
+                                <div>
+                                    <button type="button" class="btn btn-outline-brand d-none" id="srPromoteOverrideBtn">
+                                        <i class="fa-solid fa-arrow-up-from-bracket me-1"></i><span data-i18n="sr_promote_override_btn">Promote to System Default</span>
+                                    </button>
+                                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <!-- Rate History tab -- both scopes. List view (default) + an inline edit view
+                         swapped in via .d-none (same "no nested/stacked modal" approach as T046's
+                         own request) for adding/editing one dated rate version. Mirrors the OLD
+                         rateHistoryModal+rateVersionModal's own field set (deleted in T044) --
+                         rebuilt here rather than restored verbatim, since it now needs to work for a
+                         company's own custom item too, not just a master item. -->
+                    <div class="tab-pane fade" id="sr-history-pane" role="tabpanel">
+                        <div id="srHistoryListView">
+                            <div class="d-flex justify-content-end mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-brand" id="srAddRateVersionBtn">
+                                    <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket_version">Add Rate Version</span>
+                                </button>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle mb-0" id="tb_sr_rate_history">
+                                    <thead class="table-light text-secondary">
+                                        <tr>
+                                            <th data-i18n="modal_effective_date">Effective Date</th>
+                                            <th data-i18n="modal_end_date">End Date</th>
+                                            <th class="text-end" data-i18n="table_current_rate">Rate</th>
+                                            <th data-i18n="table_last_updated">Last Updated</th>
+                                            <th style="width:90px;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div id="srHistoryEditView" class="d-none">
+                            <form id="srRateVersionForm" novalidate>
+                                <input type="hidden" id="sr_rate_id">
+                                <div class="row mb-3">
+                                    <div class="col-sm-3 align-self-center">
+                                        <label class="form-label mb-1"><span data-i18n="modal_effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <div class="input-group">
+                                            <input type="text" class="form-control required datepicker" id="sr_rate_effective_date" autocomplete="off">
+                                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-sm-3 align-self-center">
+                                        <label class="form-label mb-1"><span data-i18n="modal_end_date">End Date</span></label>
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <div class="input-group">
+                                            <input type="text" class="form-control datepicker" id="sr_rate_end_date" autocomplete="off">
+                                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-5 pt-2">
+                                        <span class="text-muted small" data-i18n="end_date_optional_hint">Leave blank if this rate is still in effect (open-ended).</span>
+                                    </div>
+                                </div>
+                                <hr class="my-3 text-muted opacity-25">
+                                <div id="sr_rate_flat_fields">
+                                    <div class="row mb-3" id="sr_rate_employee_rate_wrapper">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_employee_rate">Employee Rate (%)</span> <span class="text-danger">*</span></label>
+                                        </div>
+                                        <div class="col-sm-4">
+                                            <input type="number" step="0.0001" min="0" class="form-control" id="sr_rate_employee_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3" id="sr_rate_employer_rate_wrapper">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_employer_rate">Employer Rate (%)</span> <span class="text-danger">*</span></label>
+                                        </div>
+                                        <div class="col-sm-4">
+                                            <input type="number" step="0.0001" min="0" class="form-control" id="sr_rate_employer_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="sr_rate_amount_fields" class="d-none">
+                                    <div class="row mb-3" id="sr_rate_employee_amount_wrapper">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_employee_amount">Employee Amount</span> <span class="text-danger">*</span></label>
+                                        </div>
+                                        <div class="col-sm-4">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_employee_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3" id="sr_rate_employer_amount_wrapper">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_employer_amount">Employer Amount</span> <span class="text-danger">*</span></label>
+                                        </div>
+                                        <div class="col-sm-4">
+                                            <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_employer_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="sr_rate_bracket_fields" class="d-none">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="fw-bold mb-0"><span data-i18n="tax_brackets">Tax Brackets</span></h6>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="srBtnAddBracketRow"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket">Bracket</span></button>
+                                    </div>
+                                    <div class="table-responsive">
+                                        <table class="table pl-table mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th data-i18n="bracket_from">From</th>
+                                                    <th data-i18n="bracket_to">To</th>
+                                                    <th data-i18n="bracket_rate">Rate (%)</th>
+                                                    <th style="width:50px;"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="srBracketBody"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div id="sr_rate_formula_fields" class="d-none">
+                                    <div class="row mb-3">
+                                        <div class="col-sm-3 align-self-center">
+                                            <label class="form-label mb-1"><span data-i18n="modal_formula_config">Formula Config (JSON)</span> <span class="text-danger">*</span></label>
+                                        </div>
+                                        <div class="col-sm-9">
+                                            <textarea class="form-control" id="sr_rate_formula_config" rows="4" data-i18n="formula_config_json_example" placeholder='{"base_rate": 1.45, "additional_rate": 0.9, "additional_threshold": 200000}'></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                                <hr class="my-3 text-muted opacity-25">
+                                <div class="row mb-3">
+                                    <div class="col-sm-3 align-self-center">
+                                        <label class="form-label mb-1"><span data-i18n="modal_min_base">Minimum Base Amount</span></label>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_min_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                    </div>
+                                    <div class="col-sm-3 align-self-center">
+                                        <label class="form-label mb-1"><span data-i18n="modal_max_base">Maximum Base Amount</span></label>
+                                    </div>
+                                    <div class="col-sm-3">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_max_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-sm-3 align-self-center">
+                                        <label class="form-label mb-1"><span data-i18n="modal_remark">Remark</span></label>
+                                    </div>
+                                    <div class="col-sm-9">
+                                        <input type="text" class="form-control" id="sr_rate_remark" data-i18n="remark_placeholder" placeholder="Optional notes">
+                                    </div>
+                                </div>
+                                <hr class="my-3 text-muted opacity-25">
+                                <div class="calc-preview-box" id="srRateCalcPreviewBox">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="fw-bold mb-0 text-secondary"><i class="fa-solid fa-calculator me-2 text-brand"></i><span data-i18n="calc_preview_title">Calculation Preview</span></h6>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="srBtnRateCalcPreview"><i class="fa-solid fa-play me-1"></i><span data-i18n="calc_preview_button">Preview</span></button>
+                                    </div>
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-6">
+                                            <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_amount">Sample Base Amount</label>
+                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="srRateCalcPreviewBase" value="30000" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
+                                        </div>
+                                    </div>
+                                    <div class="calc-preview-result d-none" id="srRateCalcPreviewResult"></div>
+                                </div>
+                                <div class="d-flex justify-content-end gap-2 mt-4">
+                                    <button type="button" class="btn btn-light" id="srCancelRateVersionBtn"><span data-i18n="cancel">Cancel</span></button>
+                                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
-                <table class="table table-hover table-border align-middle w-100" id="tb_rate_history">
-                    <thead class="table-light text-secondary">
-                        <tr>
-                            <th scope="col" data-i18n="table_effective_date">Effective Date</th>
-                            <th scope="col" data-i18n="table_end_date">End Date</th>
-                            <th scope="col" data-i18n="table_rate_summary">Rate</th>
-                            <th scope="col" data-i18n="table_last_updated">Last Updated</th>
-                            <th scope="col" style="text-align: center;"></th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
             </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="rateVersionModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="rateVersionModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title text-secondary" id="rateVersionModalLabel">
-                    <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="rate_version">Rate Version</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="rateVersionForm" novalidate>
-                <input type="hidden" name="id" id="rate_id">
-                <input type="hidden" name="statutory_item_id" id="rate_statutory_item_id">
-                <div class="modal-body">
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_effective_date">Effective Date</span> <span class="text-danger">*</span></label>
-                        </div>
-                        <div class="col-sm-4">
-                            <div class="input-group">
-                                <input type="text" class="form-control required datepicker" id="rate_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_end_date">End Date</span></label>
-                        </div>
-                        <div class="col-sm-4">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="rate_end_date" name="end_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                        <div class="col-sm-5 pt-2">
-                            <span class="text-muted small" data-i18n="end_date_optional_hint">Leave blank if this rate is still in effect (open-ended).</span>
-                        </div>
-                    </div>
-                    <hr class="my-3 text-muted opacity-25">
-
-                    <div id="rate_flat_fields">
-                        <div class="row mb-3" id="rate_employee_rate_wrapper">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_employee_rate">Employee Rate (%)</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-4">
-                                <input type="number" step="0.0001" min="0" class="form-control" id="rate_employee_rate" name="employee_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
-                            </div>
-                        </div>
-                        <div class="row mb-3" id="rate_employer_rate_wrapper">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_employer_rate">Employer Rate (%)</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-4">
-                                <input type="number" step="0.0001" min="0" class="form-control" id="rate_employer_rate" name="employer_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="rate_amount_fields" class="d-none">
-                        <div class="row mb-3" id="rate_employee_amount_wrapper">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_employee_amount">Employee Amount</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-4">
-                                <input type="number" step="0.01" min="0" class="form-control" id="rate_employee_amount" name="employee_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                            </div>
-                        </div>
-                        <div class="row mb-3" id="rate_employer_amount_wrapper">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_employer_amount">Employer Amount</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-4">
-                                <input type="number" step="0.01" min="0" class="form-control" id="rate_employer_amount" name="employer_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="rate_bracket_fields" class="d-none">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="fw-bold mb-0"><span data-i18n="tax_brackets">Tax Brackets</span></h6>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddBracketRow"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket">Bracket</span></button>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table pl-table mb-0">
-                                <thead>
-                                    <tr>
-                                        <th data-i18n="bracket_from">From</th>
-                                        <th data-i18n="bracket_to">To</th>
-                                        <th data-i18n="bracket_rate">Rate (%)</th>
-                                        <th style="width:50px;"></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="bracketBody"></tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div id="rate_formula_fields" class="d-none">
-                        <div class="row mb-3">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_formula_config">Formula Config (JSON)</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-9">
-                                <textarea class="form-control" id="rate_formula_config" name="formula_config" rows="4" data-i18n="formula_config_json_example" placeholder='{"base_rate": 1.45, "additional_rate": 0.9, "additional_threshold": 200000}'></textarea>
-                                <p class="text-muted small mt-1 mb-0" data-i18n="formula_config_hint">Reserved for future formula-based calculations, e.g. threshold-based extra rates. Enter a valid JSON object.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <hr class="my-3 text-muted opacity-25">
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_min_base">Minimum Base Amount</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="rate_min_base_amount" name="min_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                        </div>
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_max_base">Maximum Base Amount</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_base_amount" name="max_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_max_employee_contribution">Max Employee Contribution</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_employee_contribution" name="max_employee_contribution" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                        </div>
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_max_employer_contribution">Max Employer Contribution</span></label>
-                        </div>
-                        <div class="col-sm-3">
-                            <input type="number" step="0.01" min="0" class="form-control" id="rate_max_employer_contribution" name="max_employer_contribution" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_remark">Remark</span></label>
-                        </div>
-                        <div class="col-sm-9">
-                            <input type="text" class="form-control" id="rate_remark" name="remark" data-i18n="remark_placeholder" placeholder="Optional notes">
-                        </div>
-                    </div>
-
-                    <hr class="my-3 text-muted opacity-25">
-                    <div class="calc-preview-box" id="rateVersionCalcPreviewBox">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="fw-bold mb-0 text-secondary"><i class="fa-solid fa-calculator me-2 text-brand"></i><span data-i18n="calc_preview_title">Calculation Preview</span></h6>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnRateVersionCalcPreview"><i class="fa-solid fa-play me-1"></i><span data-i18n="calc_preview_button">Preview</span></button>
-                        </div>
-                        <div class="row g-2 mb-2">
-                            <div class="col-6">
-                                <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_amount">Sample Base Amount</label>
-                                <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="rateVersionCalcPreviewBase" value="30000" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
-                            </div>
-                        </div>
-                        <div class="calc-preview-result d-none" id="rateVersionCalcPreviewResult"></div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
-                    <button type="button" class="btn btn-outline-secondary" id="btnBackToRateHistory" data-i18n="back">Back</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="companySettingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="companySettingModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header">
-                <h5 class="modal-title text-secondary" id="companySettingModalLabel">
-                    <i class="fa-solid fa-building me-1"></i><span data-i18n="tab_company_setting">Company Settings</span>
-                    <span class="text-muted small ms-1" id="companySettingItemName"></span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form id="companySettingForm" novalidate>
-                <input type="hidden" name="statutory_item_id" id="cs_statutory_item_id">
-                <div class="modal-body">
-                    <div class="row mb-3">
-                        <div class="col-sm-12">
-                            <input type="checkbox" class="me-2" id="cs_is_active" name="is_active" checked>
-                            <span data-i18n="modal_company_enable_item">Enable this statutory item for our company</span>
-                        </div>
-                    </div>
-                    <div id="cs_override_wrapper">
-                        <hr class="my-3 text-muted opacity-25">
-                        <p class="text-muted small" id="cs_master_default_hint"></p>
-                        <div id="cs_rate_fields" class="d-none">
-                            <div class="row mb-3">
-                                <div class="col-sm-4 align-self-center">
-                                    <label class="form-label mb-0"><span data-i18n="modal_employee_rate">Employee Rate (%)</span></label>
-                                </div>
-                                <div class="col-sm-4">
-                                    <input type="number" step="0.0001" min="0" class="form-control" id="cs_employee_rate_override" name="employee_rate_override" data-i18n="default" placeholder="Default">
-                                </div>
-                            </div>
-                            <div class="row mb-3">
-                                <div class="col-sm-4 align-self-center">
-                                    <label class="form-label mb-0"><span data-i18n="modal_employer_rate">Employer Rate (%)</span></label>
-                                </div>
-                                <div class="col-sm-4">
-                                    <input type="number" step="0.0001" min="0" class="form-control" id="cs_employer_rate_override" name="employer_rate_override" data-i18n="default" placeholder="Default">
-                                </div>
-                            </div>
-                        </div>
-                        <div id="cs_amount_fields" class="d-none">
-                            <div class="row mb-3">
-                                <div class="col-sm-4 align-self-center">
-                                    <label class="form-label mb-0"><span data-i18n="modal_employee_amount">Employee Amount</span></label>
-                                </div>
-                                <div class="col-sm-4">
-                                    <input type="number" step="0.01" min="0" class="form-control" id="cs_employee_amount_override" name="employee_amount_override" data-i18n="default" placeholder="Default">
-                                </div>
-                            </div>
-                            <div class="row mb-3">
-                                <div class="col-sm-4 align-self-center">
-                                    <label class="form-label mb-0"><span data-i18n="modal_employer_amount">Employer Amount</span></label>
-                                </div>
-                                <div class="col-sm-4">
-                                    <input type="number" step="0.01" min="0" class="form-control" id="cs_employer_amount_override" name="employer_amount_override" data-i18n="default" placeholder="Default">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-sm-4 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="modal_remark">Remark</span></label>
-                            </div>
-                            <div class="col-sm-8">
-                                <input type="text" class="form-control" id="cs_remark" name="remark" data-i18n="remark_placeholder" placeholder="Optional notes">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer justify-content-between">
-                    <button type="button" class="btn btn-outline-danger" id="btnResetCompanySetting"><i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="reset_to_default">Reset to Default</span></button>
-                    <div>
-                        <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    </div>
-                </div>
-            </form>
         </div>
     </div>
 </div>
@@ -1541,45 +1607,45 @@
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="attendanceModalTitle"><i class="fa-solid fa-clock"></i> <span data-i18n="attendance">Attendance</span></h6>
+                <h6 class="modal-title text-secondary" id="attendanceModalTitle"><i class="fa-solid fa-clock"></i> <span data-i18n="attendance">Attendance</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="attendanceId">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote required" id="attendanceEmployee" data-api="/api/employee.report_to.get" data-type=""></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="work_date">Work Date</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="work_date">Work Date</span> <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker required" id="attendanceWorkDate" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="shift">Shift</label>
+                        <label class="form-label mb-1" data-i18n="shift">Shift</label>
                         <select class="form-select select2-remote" id="attendanceShift" data-api="/api/shift.options" data-type="shift"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="status">Status</label>
+                        <label class="form-label mb-1" data-i18n="status">Status</label>
                         <select class="form-select select2-static" id="attendanceStatus" data-option-keys="status_present,status_absent,status_leave,holiday" data-option-values="present,absent,leave,holiday"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="clock_in">Clock In</label>
+                        <label class="form-label mb-1" data-i18n="clock_in">Clock In</label>
                         <input type="time" class="form-control" id="attendanceClockIn">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="clock_out">Clock Out</label>
+                        <label class="form-label mb-1" data-i18n="clock_out">Clock Out</label>
                         <input type="time" class="form-control" id="attendanceClockOut">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="late_minutes">Late (min)</label>
+                        <label class="form-label mb-1" data-i18n="late_minutes">Late (min)</label>
                         <input type="number" min="0" class="form-control" id="attendanceLateMinutes" value="0" data-i18n="minutes_placeholder" placeholder="e.g., 30">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="early_leave_minutes">Early Leave (min)</label>
+                        <label class="form-label mb-1" data-i18n="early_leave_minutes">Early Leave (min)</label>
                         <input type="number" min="0" class="form-control" id="attendanceEarlyMinutes" value="0" data-i18n="minutes_placeholder" placeholder="e.g., 30">
                     </div>
                 </div>
@@ -1596,44 +1662,44 @@
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="leaveModalTitle"><i class="fa-regular fa-calendar-check"></i> <span data-i18n="leave">Leave</span></h6>
+                <h6 class="modal-title text-secondary" id="leaveModalTitle"><i class="fa-regular fa-calendar-check"></i> <span data-i18n="leave">Leave</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="leaveId">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote required" id="leaveEmployee" data-api="/api/employee.report_to.get" data-type=""></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="leave_type">Leave Type</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="leave_type">Leave Type</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote required" id="leaveType" data-api="/api/leave-type.options" data-type="leave_type"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="start_date">Start Date</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="start_date">Start Date</span> <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker required" id="leaveStartDate" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="end_date">End Date</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="end_date">End Date</span> <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker required" id="leaveEndDate" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="total_days">Total Days</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="total_days">Total Days</span> <span class="text-danger">*</span></label>
                         <input type="number" min="0.5" step="0.5" class="form-control required" id="leaveTotalDays" data-i18n="days_placeholder" placeholder="e.g., 1">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="status">Status</label>
+                        <label class="form-label mb-1" data-i18n="status">Status</label>
                         <select class="form-select select2-static" id="leaveStatus" data-option-keys="status_pending,status_approved,status_rejected,cancelled" data-option-values="pending,approved,rejected,cancelled"></select>
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="reason">Reason</label>
+                        <label class="form-label mb-1" data-i18n="reason">Reason</label>
                         <textarea class="form-control" id="leaveReason" rows="2" data-i18n="leave_reason_placeholder" placeholder="e.g., Annual leave for family trip"></textarea>
                     </div>
                 </div>
@@ -1650,37 +1716,37 @@
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="overtimeModalTitle"><i class="fa-solid fa-stopwatch"></i> <span data-i18n="overtime">Overtime</span></h6>
+                <h6 class="modal-title text-secondary" id="overtimeModalTitle"><i class="fa-solid fa-stopwatch"></i> <span data-i18n="overtime">Overtime</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="overtimeId">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="employee">Employee</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote required" id="overtimeEmployee" data-api="/api/employee.report_to.get" data-type=""></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="ot_rate">OT Rate</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="ot_rate">OT Rate</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote required" id="overtimeRate" data-api="/api/ot-rate.options" data-type="ot_rate"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="ot_date">OT Date</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="ot_date">OT Date</span> <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker required" id="overtimeDate" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="hours">Hours</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="hours">Hours</span> <span class="text-danger">*</span></label>
                         <input type="number" min="0.5" step="0.5" class="form-control required" id="overtimeHours" data-i18n="hours_placeholder" placeholder="e.g., 2">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="amount">Amount</label>
+                        <label class="form-label mb-1" data-i18n="amount">Amount</label>
                         <input type="number" min="0" step="0.01" class="form-control" id="overtimeAmount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="status">Status</label>
+                        <label class="form-label mb-1" data-i18n="status">Status</label>
                         <select class="form-select select2-static" id="overtimeStatus" data-option-keys="status_pending,status_approved,status_rejected" data-option-values="pending,approved,rejected"></select>
                     </div>
                 </div>
@@ -1807,7 +1873,7 @@
                             <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="bulk_import_view_history">View Import History</span>
                         </a>
                     </div>
-                    <label class="form-label fw-semibold mb-2" data-i18n="bulk_import_attach_file">Attach File</label>
+                    <label class="form-label fw-semibold mb-1" data-i18n="bulk_import_attach_file">Attach File</label>
                     <!-- 2026-09-02, explicit request: "ปรับหน้าตา Form ให้ดูสวยขึ้นและใช้งานง่ายขึ้น" -- the
                          real `<input type="file">` stays (browsers won't let a custom element trigger
                          a file picker with a real native dialog on its own), just visually hidden and
@@ -1857,7 +1923,7 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title"><i class="fa-solid fa-file-import"></i> <span data-i18n="import_batches">Import History</span></h6>
+                <h6 class="modal-title text-secondary"><i class="fa-solid fa-file-import"></i> <span data-i18n="import_batches">Import History</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -1889,11 +1955,11 @@
                 <input type="hidden" id="approve_run_ids" value="[]">
                 <div class="modal-body">
                     <p class="text-muted small" id="approveRunSummary"></p>
-                    <label class="form-label" data-i18n="approve_note_label">Note (optional)</label>
+                    <label class="form-label mb-1" data-i18n="approve_note_label">Note (optional)</label>
                     <textarea class="form-control" id="approve_note" name="note" rows="3" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
                 </div>
             </form>
@@ -1914,11 +1980,11 @@
                 <input type="hidden" id="reject_run_ids" value="[]">
                 <div class="modal-body">
                     <p class="text-muted small" id="rejectRunSummary"></p>
-                    <label class="form-label"><span data-i18n="reject_reason_label">Reject Reason</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="reject_reason_label">Reject Reason</span> <span class="text-danger">*</span></label>
                     <textarea class="form-control required" id="reject_reason" name="reason" rows="3" data-i18n="reject_reason_placeholder" placeholder="Explain what needs to be fixed before resubmitting..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
                 </div>
             </form>
@@ -1939,11 +2005,11 @@
                 <input type="hidden" id="request_info_run_ids" value="[]">
                 <div class="modal-body">
                     <p class="text-muted small" id="requestInfoRunSummary"></p>
-                    <label class="form-label"><span data-i18n="request_info_reason_label">What information is needed?</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="request_info_reason_label">What information is needed?</span> <span class="text-danger">*</span></label>
                     <textarea class="form-control required" id="request_info_reason" name="reason" rows="3" data-i18n="request_info_reason_placeholder" placeholder="Explain what additional information is needed before this can be decided..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
                 </div>
             </form>
@@ -1968,7 +2034,7 @@
             </div>
             <div class="modal-footer justify-content-between">
                 <div id="approvalTimelineModalActions" class="d-flex flex-wrap gap-2"></div>
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -1979,7 +2045,7 @@
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="eedModalLabel">
+                <h5 class="modal-title text-secondary" id="eedModalLabel">
                     <span data-i18n="add_earning_deduction">Add Income / Deduction</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -2023,7 +2089,7 @@
                     </div>
                     <div class="row mb-3" id="eedCatalogFields">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote" id="eed_ped_type_id" name="ped_type_id" data-api="/api/employee.earning-deduction.options" data-type=""></select>
@@ -2031,7 +2097,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="eedCustomFields">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_custom_item_name">Item Name</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_custom_item_name">Item Name</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <input type="text" class="form-control" id="eed_custom_item_name" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
@@ -2040,7 +2106,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <div class="input-group">
@@ -2056,13 +2122,13 @@
                     </h6>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="total_installments">Total Installments</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="total_installments">Total Installments</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-3">
                             <input type="number" step="1" min="1" class="form-control required" id="eed_total_installments" name="total_installments" value="1" data-i18n="installments_placeholder" placeholder="e.g., 12">
                         </div>
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" id="eed_principal_amount_label">
+                            <label class="form-label mb-1" id="eed_principal_amount_label">
                                 <span data-i18n="total_amount">Total Amount</span>
                                 <span data-i18n="principal_amount_label" class="d-none">Principal Amount</span>
                                 <span class="text-danger">*</span>
@@ -2089,7 +2155,7 @@
                     <div id="eedInterestSection">
                         <div class="row mb-3">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="interest_label">Interest / Fee</label>
+                                <label class="form-label mb-1" data-i18n="interest_label">Interest / Fee</label>
                             </div>
                             <div class="col-sm-9">
                                 <div class="btn-group btn-group-sm" role="group" id="eedInterestToggle">
@@ -2101,7 +2167,7 @@
                         </div>
                         <div class="row mb-3 d-none" id="eedInterestDetailWrapper">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="interest_type">Interest Type</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-1"><span data-i18n="interest_type">Interest Type</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
                                 <div class="d-flex align-items-center flex-wrap gap-2">
@@ -2142,7 +2208,7 @@
                         </div>
                         <div class="row mb-3 d-none" id="eedFeeDetailWrapper">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="fee_percent_label">Fee</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-1"><span data-i18n="fee_percent_label">Fee</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9 d-flex align-items-center flex-wrap gap-2">
                                 <div class="input-group input-group-sm" style="max-width:140px;">
@@ -2174,7 +2240,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3">
-                            <label class="form-label mb-0" data-i18n="installment_amounts">Amount per Installment</label>
+                            <label class="form-label mb-1" data-i18n="installment_amounts">Amount per Installment</label>
                         </div>
                         <div class="col-sm-9">
                             <div class="table-responsive eed-installment-table-wrap">
@@ -2193,7 +2259,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="external_reference_no">Reference / Contract No.</label>
+                            <label class="form-label mb-1" data-i18n="external_reference_no">Reference / Contract No.</label>
                         </div>
                         <div class="col-sm-9">
                             <input type="text" class="form-control" id="eed_external_reference_no" name="external_reference_no" maxlength="100" data-i18n="external_reference_no_placeholder" placeholder="e.g., Loan contract no.">
@@ -2213,7 +2279,7 @@
                          toggle here would be misleading. -->
                     <div class="row mb-3 d-none" id="eedPayeeWrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="payee_type_label">Deducted Money Goes To</label>
+                            <label class="form-label mb-1" data-i18n="payee_type_label">Deducted Money Goes To</label>
                         </div>
                         <div class="col-sm-9">
                             <div class="btn-group btn-group-sm flex-wrap" role="group" id="eedPayeeTypeToggle">
@@ -2233,7 +2299,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="eedPayeeEmployeeWrapper">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                            <label class="form-label mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote" id="eed_payee_employee_id" name="payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
@@ -2242,15 +2308,15 @@
                     <div class="row g-2 align-items-end mb-3 d-none" id="eedDestinationWrapper">
                         <div class="col-sm-3"></div>
                         <div class="col-sm-9">
-                            <label class="form-label mb-1 small text-muted" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                            <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
                             <select class="form-select select2-remote" id="eed_destination_select" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
                         </div>
                         <div class="col-sm-9 offset-sm-3 mt-2" id="eedDestinationNewFields">
                             <div class="row g-2">
-                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
-                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
-                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="eed_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
-                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="eed_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
+                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
+                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
+                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="eed_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
+                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="eed_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
                                 <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="eed_dest_save_for_reuse"><label class="form-check-label small" for="eed_dest_save_for_reuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
                             </div>
                         </div>
@@ -2267,7 +2333,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="notes">Notes</label>
+                            <label class="form-label mb-1" data-i18n="notes">Notes</label>
                         </div>
                         <div class="col-sm-9">
                             <textarea class="form-control" id="eed_notes" name="notes" rows="2" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
@@ -2287,7 +2353,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="recurringEarningModalLabel">
+                <h5 class="modal-title text-secondary" id="recurringEarningModalLabel">
                     <span data-i18n="add_recurring_earning">Add Recurring Allowance</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -2297,7 +2363,7 @@
                 <div class="modal-body">
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
                             <select class="form-select select2-remote required" id="ere_ped_type_id" name="ped_type_id" data-api="/api/employee.recurring-earning.type-options"></select>
@@ -2305,7 +2371,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="amount">Amount</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="amount">Amount</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
@@ -2319,7 +2385,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
@@ -2333,7 +2399,7 @@
                     <p class="text-secondary small mb-3" data-i18n="suspend_period_hint">*Optional. While set, this allowance is skipped in any payroll run whose pay period overlaps this range, then resumes automatically afterward.</p>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="suspend_from">Suspend From</span></label>
+                            <label class="form-label mb-1"><span data-i18n="suspend_from">Suspend From</span></label>
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
@@ -2344,7 +2410,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="suspend_to">Suspend To</span></label>
+                            <label class="form-label mb-1"><span data-i18n="suspend_to">Suspend To</span></label>
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
@@ -2355,7 +2421,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0" data-i18n="notes">Notes</label>
+                            <label class="form-label mb-1" data-i18n="notes">Notes</label>
                         </div>
                         <div class="col-sm-8">
                             <textarea class="form-control" id="ere_notes" rows="2" maxlength="255" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
@@ -2377,7 +2443,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary" id="recurringDeductionModalLabel">
+                <h5 class="modal-title text-secondary" id="recurringDeductionModalLabel">
                     <span data-i18n="add_recurring_deduction">Add Recurring Deduction</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -2387,7 +2453,7 @@
                 <div class="modal-body">
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
                             <select class="form-select select2-remote required" id="erd_ped_type_id" name="ped_type_id" data-api="/api/employee.recurring-deduction.type-options"></select>
@@ -2395,7 +2461,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="amount">Amount</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="amount">Amount</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
@@ -2409,7 +2475,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
@@ -2429,7 +2495,7 @@
                          dropdown like #eedModal's own 2-option one. -->
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0" data-i18n="fee_percent_label">Fee</label>
+                            <label class="form-label mb-1" data-i18n="fee_percent_label">Fee</label>
                         </div>
                         <div class="col-sm-8">
                             <div class="btn-group btn-group-sm" role="group" id="erdFeeToggle">
@@ -2440,7 +2506,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="erdFeeDetailWrapper">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="fee_percent_label">Fee</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="fee_percent_label">Fee</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8 d-flex align-items-center gap-2">
                             <div class="input-group input-group-sm" style="max-width:140px;">
@@ -2476,7 +2542,7 @@
                     </div>
                     <div class="row mb-3 d-none" id="erdPayeeEmployeeWrapper">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                            <label class="form-label mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                         </div>
                         <div class="col-sm-8">
                             <select class="form-select select2-remote" id="erd_payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
@@ -2484,15 +2550,15 @@
                     </div>
                     <div class="row g-2 align-items-end mb-3 d-none" id="erdDestinationWrapper">
                         <div class="col-12">
-                            <label class="form-label mb-1 small text-muted" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                            <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
                             <select class="form-select select2-remote" id="erd_destination_select" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
                         </div>
                         <div class="col-12 mt-2" id="erdDestinationNewFields">
                             <div class="row g-2">
-                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
-                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
-                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="erd_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
-                                <div class="col-sm-6"><label class="form-label mb-1 small" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="erd_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
+                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
+                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
+                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="erd_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
+                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="erd_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
                                 <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="erd_dest_save_for_reuse"><label class="form-check-label small" for="erd_dest_save_for_reuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
                             </div>
                         </div>
@@ -2502,7 +2568,7 @@
                     <p class="text-secondary small mb-3" data-i18n="suspend_period_hint">*Optional. While set, this allowance is skipped in any payroll run whose pay period overlaps this range, then resumes automatically afterward.</p>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="suspend_from">Suspend From</span></label>
+                            <label class="form-label mb-1"><span data-i18n="suspend_from">Suspend From</span></label>
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
@@ -2513,7 +2579,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="suspend_to">Suspend To</span></label>
+                            <label class="form-label mb-1"><span data-i18n="suspend_to">Suspend To</span></label>
                         </div>
                         <div class="col-sm-8">
                             <div class="input-group">
@@ -2524,7 +2590,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-0" data-i18n="notes">Notes</label>
+                            <label class="form-label mb-1" data-i18n="notes">Notes</label>
                         </div>
                         <div class="col-sm-8">
                             <textarea class="form-control" id="erd_notes" rows="2" maxlength="255" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
@@ -2544,7 +2610,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
+                <h5 class="modal-title text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -2564,7 +2630,7 @@
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-map-location-dot me-2"></i><span data-i18n="pin_location_on_map">Pin Location on Map</span></h5>
+                <h5 class="modal-title text-secondary"><i class="fa-solid fa-map-location-dot me-2"></i><span data-i18n="pin_location_on_map">Pin Location on Map</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -2585,22 +2651,22 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" data-i18n="add_field">Add Field</h6>
+                <h6 class="modal-title text-secondary" data-i18n="add_field">Add Field</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="bffFieldId">
                 <div class="row g-3">
                     <div class="col-6">
-                        <label class="form-label" data-i18n="field_label_th">Label (Thai)</label>
+                        <label class="form-label mb-1" data-i18n="field_label_th">Label (Thai)</label>
                         <input type="text" class="form-control required" id="bffFieldLabelTh" data-i18n="bff_field_label_th_placeholder" placeholder="e.g., ชื่อบัญชี">
                     </div>
                     <div class="col-6">
-                        <label class="form-label" data-i18n="field_label_en">Label (English)</label>
+                        <label class="form-label mb-1" data-i18n="field_label_en">Label (English)</label>
                         <input type="text" class="form-control required" id="bffFieldLabelEn" data-i18n="bff_field_label_en_placeholder" placeholder="e.g., Account Name">
                     </div>
                     <div class="col-6">
-                        <label class="form-label" data-i18n="row_type">Row</label>
+                        <label class="form-label mb-1" data-i18n="row_type">Row</label>
                         <select class="form-select" id="bffFieldRowType">
                             <option value="detail" data-i18n="row_type_detail">Detail (per employee)</option>
                             <option value="header" data-i18n="row_type_header">Header</option>
@@ -2608,11 +2674,11 @@
                         </select>
                     </div>
                     <div class="col-6">
-                        <label class="form-label" data-i18n="order">Order</label>
+                        <label class="form-label mb-1" data-i18n="order">Order</label>
                         <input type="number" class="form-control" id="bffFieldSortOrder" min="0" value="0" data-i18n="count_placeholder" placeholder="0">
                     </div>
                     <div class="col-6">
-                        <label class="form-label" data-i18n="source_type">Source Type</label>
+                        <label class="form-label mb-1" data-i18n="source_type">Source Type</label>
                         <select class="form-select" id="bffFieldSourceType">
                             <option value="employee_field" data-i18n="source_type_employee_field">Payroll Field</option>
                             <option value="constant" data-i18n="source_type_constant">Fixed Value</option>
@@ -2620,15 +2686,15 @@
                         </select>
                     </div>
                     <div class="col-6" id="bffFieldSourceFieldWrap">
-                        <label class="form-label" data-i18n="source">Source</label>
+                        <label class="form-label mb-1" data-i18n="source">Source</label>
                         <select class="form-select" id="bffFieldSourceField"></select>
                     </div>
                     <div class="col-6 d-none" id="bffFieldConstantWrap">
-                        <label class="form-label" data-i18n="constant_value">Fixed Value</label>
+                        <label class="form-label mb-1" data-i18n="constant_value">Fixed Value</label>
                         <input type="text" class="form-control" id="bffFieldConstantValue" data-i18n="bff_field_constant_value_placeholder" placeholder="e.g., 01">
                     </div>
                     <div class="col-6">
-                        <label class="form-label" data-i18n="data_type">Data Type</label>
+                        <label class="form-label mb-1" data-i18n="data_type">Data Type</label>
                         <select class="form-select" id="bffFieldDataType">
                             <option value="text" data-i18n="data_type_text">Text</option>
                             <option value="number" data-i18n="data_type_number">Number</option>
@@ -2636,23 +2702,23 @@
                         </select>
                     </div>
                     <div class="col-6" id="bffFieldDecimalWrap">
-                        <label class="form-label" data-i18n="decimal_places">Decimal Places</label>
+                        <label class="form-label mb-1" data-i18n="decimal_places">Decimal Places</label>
                         <input type="number" class="form-control" id="bffFieldDecimalPlaces" min="0" max="6" value="2" data-i18n="decimal_places_placeholder" placeholder="0-4">
                     </div>
                     <div class="col-6 d-none" id="bffFieldDateFormatWrap">
-                        <label class="form-label" data-i18n="date_format">Date Format</label>
+                        <label class="form-label mb-1" data-i18n="date_format">Date Format</label>
                         <input type="text" class="form-control" id="bffFieldDateFormat" value="Ymd" placeholder="Ymd">
                     </div>
                     <div class="col-4">
-                        <label class="form-label" data-i18n="width">Width</label>
+                        <label class="form-label mb-1" data-i18n="width">Width</label>
                         <input type="number" class="form-control" id="bffFieldWidth" min="1" data-i18n="field_width_placeholder" placeholder="e.g., 10">
                     </div>
                     <div class="col-4">
-                        <label class="form-label" data-i18n="pad_char">Pad Char</label>
+                        <label class="form-label mb-1" data-i18n="pad_char">Pad Char</label>
                         <input type="text" class="form-control" id="bffFieldPadChar" maxlength="1" value=" " data-i18n="bff_field_pad_char_placeholder" placeholder="e.g., 0">
                     </div>
                     <div class="col-4">
-                        <label class="form-label" data-i18n="pad_direction">Pad Direction</label>
+                        <label class="form-label mb-1" data-i18n="pad_direction">Pad Direction</label>
                         <select class="form-select" id="bffFieldPadDirection">
                             <option value="right" data-i18n="pad_direction_right">Right</option>
                             <option value="left" data-i18n="pad_direction_left">Left</option>
@@ -2672,7 +2738,7 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" data-i18n="edit_log">Edit Log</h6>
+                <h6 class="modal-title text-secondary" data-i18n="edit_log">Edit Log</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="bffLogModalBody"></div>
@@ -2684,7 +2750,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
+                <h5 class="modal-title text-secondary"><i class="fa-solid fa-pen-nib me-2"></i><span data-i18n="draw_signature">Draw Signature</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -2764,7 +2830,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyOrgStructureSync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="orgSyncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -2796,7 +2862,7 @@
                 </table>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -2816,7 +2882,7 @@
                 <div class="text-center text-muted py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i> <span data-i18n="loading">Loading...</span></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -2836,7 +2902,7 @@
                 <div id="bulkPullRows"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnBulkPullSubmit"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2921,7 +2987,7 @@
                         <div class="run-offcycle-panel-title"><i class="fa-solid fa-sliders"></i> <span data-i18n="run_offcycle_panel_title">Off-schedule round options</span></div>
                         <div class="row mb-3" id="run_merge_choice_row">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0" data-i18n="run_merge_choice_label">Create this round as</label>
+                                <label class="form-label mb-1" data-i18n="run_merge_choice_label">Create this round as</label>
                             </div>
                             <div class="col-sm-9">
                                 <div class="run-subchoice-toggle">
@@ -2940,18 +3006,53 @@
                         </div>
                         <div class="row mb-3 d-none" id="run_merge_target_row">
                             <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-0"><span data-i18n="run_merge_target_label">Target Round</span> <span class="text-danger">*</span></label>
+                                <label class="form-label mb-1"><span data-i18n="run_merge_target_label">Target Round</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
-                                <select class="form-select select2-remote" id="run_merge_target_id" name="merge_target_run_id"
-                                        data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked"></select>
-                                <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" on its own Detail page to fold it into the round selected here.</div>
+                                <!-- 2026-09-06, explicit request: "ปรับ Process ที่มีการสร้างรอบเองในฝั่ง Payroll
+                                     ให้เป็นไปในแนวทางเดียวกัน" (with the Origami-attribution "waiting for a round
+                                     that doesn't exist yet" fix) -- a 2nd-level sub-toggle: reference a round
+                                     that ALREADY exists (unchanged, existing #run_merge_target_id picker below),
+                                     or a FUTURE round of a recurring Payroll Cycle that hasn't been created yet
+                                     (PayrollRunModel::resolveMergeTargetSpec()'s own docblock). -->
+                                <div class="run-subchoice-toggle mb-2" id="run_merge_target_mode_row">
+                                    <label class="run-subchoice-btn active" for="run_merge_target_mode_existing">
+                                        <input type="radio" name="runMergeTargetMode" id="run_merge_target_mode_existing" value="existing" checked>
+                                        <i class="fa-solid fa-list-check"></i>
+                                        <span data-i18n="run_merge_target_mode_existing">Existing round</span>
+                                    </label>
+                                    <label class="run-subchoice-btn" for="run_merge_target_mode_future_cycle">
+                                        <input type="radio" name="runMergeTargetMode" id="run_merge_target_mode_future_cycle" value="future_cycle">
+                                        <i class="fa-solid fa-hourglass-half"></i>
+                                        <span data-i18n="run_merge_target_mode_future_cycle">Future round (not created yet)</span>
+                                    </label>
+                                </div>
+                                <div id="run_merge_target_existing_wrap">
+                                    <select class="form-select select2-remote" id="run_merge_target_id" name="merge_target_run_id"
+                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked"></select>
+                                    <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" on its own Detail page to fold it into the round selected here.</div>
+                                </div>
+                                <div class="d-none" id="run_merge_target_future_cycle_wrap">
+                                    <select class="form-select select2-remote mb-2" id="run_merge_target_cycle_id" name="merge_target_cycle_id"
+                                            data-api="/api/payroll-cycle.options"></select>
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <label class="form-label mb-1 small" data-i18n="run_merge_target_period_start">Target Period Start</label>
+                                            <input type="text" class="form-control" id="run_merge_target_period_start" name="merge_target_period_start_date" readonly>
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="form-label mb-1 small" data-i18n="run_merge_target_period_end">Target Period End</label>
+                                            <input type="text" class="form-control" id="run_merge_target_period_end" name="merge_target_period_end_date" readonly>
+                                        </div>
+                                    </div>
+                                    <div class="form-text small" data-i18n="run_merge_target_future_cycle_hint">The system will wait for the next round of this Payroll Cycle to be created, then automatically prompt you to merge into it.</div>
+                                </div>
                             </div>
                         </div>
                     </div>
                     <div class="row mb-3 d-none" id="run_purpose_row">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0" data-i18n="modal_run_purpose">Run Purpose</label>
+                            <label class="form-label mb-1" data-i18n="modal_run_purpose">Run Purpose</label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-static" id="run_purpose" name="run_purpose"
@@ -3012,7 +3113,7 @@
                     </div>
                     <div class="row mb-3" id="run_cycle_row">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_cycle">Payroll Schedule</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_cycle">Payroll Schedule</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote required" id="run_cycle_id" name="cycle_id" data-api="/api/payroll-cycle.options"></select>
@@ -3020,7 +3121,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_run_name">Run Name</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_run_name">Run Name</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
                             <input type="text" class="form-control required" id="run_name" name="run_name" data-i18n="run_name_placeholder" placeholder="e.g., Payroll July 2026">
@@ -3028,7 +3129,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger" id="run_period_required_mark">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger" id="run_period_required_mark">*</span></label>
                         </div>
                         <div class="col-sm-4">
                             <div class="input-group">
@@ -3046,7 +3147,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_payment_date">Payment Date</span> <span class="text-danger">*</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_payment_date">Payment Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-4">
                             <div class="input-group">
@@ -3057,7 +3158,7 @@
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-0"><span data-i18n="modal_notes">Notes</span></label>
+                            <label class="form-label mb-1"><span data-i18n="modal_notes">Notes</span></label>
                         </div>
                         <div class="col-sm-9">
                             <textarea class="form-control" id="run_notes" name="notes" rows="2" data-i18n="notes_placeholder" placeholder="Optional notes"></textarea>
@@ -3065,7 +3166,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
                 </div>
             </form>
@@ -3085,11 +3186,11 @@
             <form id="cancelRunForm" novalidate>
                 <input type="hidden" id="cancel_run_id" value="">
                 <div class="modal-body">
-                    <label class="form-label"><span data-i18n="cancel_reason_label">Cancel Reason</span> <span class="text-danger">*</span></label>
+                    <label class="form-label mb-1"><span data-i18n="cancel_reason_label">Cancel Reason</span> <span class="text-danger">*</span></label>
                     <textarea class="form-control required" id="cancel_reason" name="reason" rows="3" data-i18n="cancel_reason_placeholder" placeholder="Explain why this payroll run is being cancelled..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-danger"><span data-i18n="confirm_cancel_run">Confirm Cancellation</span></button>
                 </div>
             </form>
@@ -3111,7 +3212,7 @@
             </div>
             <div class="modal-body" id="runWorkflowModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -3128,7 +3229,7 @@
             </div>
             <div class="modal-body" id="runErrorEmployeesModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -3150,7 +3251,7 @@
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold" id="employeeRecheckEditModalLabel" data-i18n="recheck_data">Recheck Data</h5>
+                <h5 class="modal-title text-secondary" id="employeeRecheckEditModalLabel" data-i18n="recheck_data">Recheck Data</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="employeeRecheckEditForm" novalidate>
@@ -3175,7 +3276,7 @@
                     </h6>
                     <div class="row mb-3">
                         <div class="col-sm-3">
-                            <label class="form-label mb-0"><span data-i18n="title">Title</span></label>
+                            <label class="form-label mb-1"><span data-i18n="title">Title</span></label>
                             <select class="form-select select2-native" name="title" id="rc_title">
                                 <option value="" data-i18n="please_choose">Select an option</option>
                                 <option value="mr" data-i18n="title_mr">Mr.</option>
@@ -3184,7 +3285,7 @@
                             </select>
                         </div>
                         <div class="col-sm-3">
-                            <label class="form-label mb-0" data-i18n="gender">Gender</label>
+                            <label class="form-label mb-1" data-i18n="gender">Gender</label>
                             <select class="form-select select2-native" name="gender" id="rc_gender">
                                 <option value="male" data-i18n="male">Male</option>
                                 <option value="female" data-i18n="female">Female</option>
@@ -3192,21 +3293,21 @@
                             </select>
                         </div>
                         <div class="col-sm-3">
-                            <label class="form-label mb-0" data-i18n="date_of_birth">Date of Birth</label>
+                            <label class="form-label mb-1" data-i18n="date_of_birth">Date of Birth</label>
                             <input type="text" class="form-control datepicker" name="date_of_birth" id="rc_date_of_birth" autocomplete="off">
                         </div>
                         <div class="col-sm-3">
-                            <label class="form-label mb-0" data-i18n="nationality">Nationality</label>
+                            <label class="form-label mb-1" data-i18n="nationality">Nationality</label>
                             <select class="form-select select2-remote" name="nationality" id="rc_nationality" data-api="/api/nationality.get" data-type="nationality"></select>
                         </div>
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-6">
-                            <label class="form-label mb-0" data-i18n="name_local">Name (Local)</label>
+                            <label class="form-label mb-1" data-i18n="name_local">Name (Local)</label>
                             <input type="text" class="form-control" name="name_th" id="rc_name_th" data-i18n="name_th_placeholder" placeholder="e.g., สมชาย">
                         </div>
                         <div class="col-sm-6">
-                            <label class="form-label mb-0" data-i18n="name_en">Name (EN)</label>
+                            <label class="form-label mb-1" data-i18n="name_en">Name (EN)</label>
                             <input type="text" class="form-control" name="name_en" id="rc_name_en" data-i18n="name_en_placeholder" placeholder="e.g., Somchai">
                         </div>
                     </div>
@@ -3215,11 +3316,11 @@
                          in T023, see EmployeeModel::requiredColumns()'s own docblock). -->
                     <div class="row mb-4">
                         <div class="col-sm-6">
-                            <label class="form-label mb-0" data-i18n="surname_local">Surname (Local)</label>
+                            <label class="form-label mb-1" data-i18n="surname_local">Surname (Local)</label>
                             <input type="text" class="form-control" name="surname_th" id="rc_surname_th" data-i18n="surname_th_placeholder" placeholder="e.g., ใจดี">
                         </div>
                         <div class="col-sm-6">
-                            <label class="form-label mb-0" data-i18n="surname_en">Surname (EN)</label>
+                            <label class="form-label mb-1" data-i18n="surname_en">Surname (EN)</label>
                             <input type="text" class="form-control" name="surname_en" id="rc_surname_en" data-i18n="surname_en_placeholder" placeholder="e.g., Jaidee">
                         </div>
                     </div>
@@ -3230,21 +3331,21 @@
                     </h6>
                     <div class="row mb-4" id="rcDomesticIdWrap">
                         <div class="col-sm-6">
-                            <label class="form-label mb-0" data-i18n="id_card_no">ID Card No.</label>
+                            <label class="form-label mb-1" data-i18n="id_card_no">ID Card No.</label>
                             <input type="text" class="form-control" name="id_card_no" id="rc_id_card_no" maxlength="13" data-i18n="id_card_no_placeholder" placeholder="13-digit national ID number">
                         </div>
                     </div>
                     <div class="row mb-4 d-none" id="rcForeignerIdWrap">
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="tax_id_no">Tax ID No.</label>
+                            <label class="form-label mb-1" data-i18n="tax_id_no">Tax ID No.</label>
                             <input type="text" class="form-control" name="tax_id_no" id="rc_tax_id_no" data-i18n="tax_id_placeholder" placeholder="e.g., 1234567890123">
                         </div>
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="passport_no">Passport No.</label>
+                            <label class="form-label mb-1" data-i18n="passport_no">Passport No.</label>
                             <input type="text" class="form-control" name="passport_no" id="rc_passport_no" data-i18n="passport_no_placeholder" placeholder="e.g., AA1234567">
                         </div>
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="work_permit_no">Work Permit No.</label>
+                            <label class="form-label mb-1" data-i18n="work_permit_no">Work Permit No.</label>
                             <input type="text" class="form-control" name="work_permit_no" id="rc_work_permit_no" data-i18n="work_permit_no_placeholder" placeholder="e.g., WP-1234567">
                         </div>
                     </div>
@@ -3255,7 +3356,7 @@
                     </h6>
                     <div class="row mb-4">
                         <div class="col-sm-6">
-                            <label class="form-label mb-0" data-i18n="personal_email">Personal Email Address</label>
+                            <label class="form-label mb-1" data-i18n="personal_email">Personal Email Address</label>
                             <input type="email" class="form-control" name="personal_email" id="rc_personal_email" data-i18n="personal_email_placeholder" placeholder="e.g., name@email.com">
                         </div>
                         <!-- 2026-08-31, explicit request: "ใน Form ตรงที่เป็นเบอร์มือถือ อยากให้รูปแบบเดียวกับ
@@ -3269,7 +3370,7 @@
                              cross-page global collision). rc_mobile_country_code mirrors
                              mobile_country_code's own hidden-input shape 1:1. -->
                         <div class="col-sm-6" id="rc_mobile_no_wrap">
-                            <label class="form-label mb-0" data-i18n="mobile_no">Mobile No.</label>
+                            <label class="form-label mb-1" data-i18n="mobile_no">Mobile No.</label>
                             <input type="tel" class="form-control" name="mobile_no" id="rc_mobile_no" maxlength="15" data-i18n="phone_no_placeholder" placeholder="e.g., 0812345678">
                             <input type="hidden" name="mobile_country_code" id="rc_mobile_country_code" value="+66">
                         </div>
@@ -3281,15 +3382,15 @@
                     </h6>
                     <div class="row mb-3">
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="department">Department</label>
+                            <label class="form-label mb-1" data-i18n="department">Department</label>
                             <select class="form-select select2-remote" name="department_id" id="rc_department_id" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="position">Position</label>
+                            <label class="form-label mb-1" data-i18n="position">Position</label>
                             <select class="form-select select2-remote" name="position_id" id="rc_position_id" data-api="/api/position.get" data-type="position"></select>
                         </div>
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="branch">Branch</label>
+                            <label class="form-label mb-1" data-i18n="branch">Branch</label>
                             <select class="form-select select2-remote" name="branch_id" id="rc_branch_id" data-api="/api/branch.get" data-type="branch"></select>
                         </div>
                     </div>
@@ -3302,11 +3403,11 @@
                          (full-time/part-time/daily/internship) was missing, a different field. -->
                     <div class="row mb-4">
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="employment_date">Employment Date</label>
+                            <label class="form-label mb-1" data-i18n="employment_date">Employment Date</label>
                             <input type="text" class="form-control datepicker" name="employment_date" id="rc_employment_date" autocomplete="off">
                         </div>
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="employment_type">Employment Type</label>
+                            <label class="form-label mb-1" data-i18n="employment_type">Employment Type</label>
                             <select class="form-select select2-native" name="employment_type" id="rc_employment_type">
                                 <option value="" data-i18n="please_choose">Select an option</option>
                                 <option value="full_time" data-i18n="full_time">Full-time</option>
@@ -3344,7 +3445,7 @@
                          Information section). -->
                     <div class="row mb-3">
                         <div class="col-sm-6">
-                            <label class="form-label mb-0" data-i18n="payment_type">Payment Type</label>
+                            <label class="form-label mb-1" data-i18n="payment_type">Payment Type</label>
                             <div class="btn-group d-block" role="group" aria-label="Payment type" id="rcPaymentTypeRadioGroup">
                                 <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_bank" value="transfer" checked>
                                 <label class="btn btn-outline-brand" for="rc_payment_bank" data-i18n="bank">Bank</label>
@@ -3360,11 +3461,11 @@
                              bank fields, see rcApplyIdentificationAndBankVisibility()). -->
                         <div class="row mb-4" id="rcBankWrap">
                             <div class="col-sm-6">
-                                <label class="form-label mb-0" data-i18n="bank_name">Bank</label>
+                                <label class="form-label mb-1" data-i18n="bank_name">Bank</label>
                                 <select class="form-select select2-remote" name="bank_id" id="rc_bank_id" data-api="/api/bank.get" data-type="bank"></select>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label mb-0" data-i18n="bank_account_no">Bank Account No.</label>
+                                <label class="form-label mb-1" data-i18n="bank_account_no">Bank Account No.</label>
                                 <input type="text" class="form-control" name="bank_account_no" id="rc_bank_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
                             </div>
                         </div>
@@ -3376,15 +3477,15 @@
                     </h6>
                     <div class="row mb-4">
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="base_salary_amount">Base Salary Amount</label>
+                            <label class="form-label mb-1" data-i18n="base_salary_amount">Base Salary Amount</label>
                             <input type="number" step="0.01" class="form-control text-end" name="base_salary_amount" id="rc_base_salary_amount" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
                         </div>
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="effective_date">Effective Date</label>
+                            <label class="form-label mb-1" data-i18n="effective_date">Effective Date</label>
                             <input type="text" class="form-control datepicker" name="salary_effective_date" id="rc_salary_effective_date" autocomplete="off">
                         </div>
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="tax_calculation_method">Tax Calculation Method</label>
+                            <label class="form-label mb-1" data-i18n="tax_calculation_method">Tax Calculation Method</label>
                             <select class="form-select select2-native" name="tax_calculation_method" id="rc_tax_calculation_method">
                                 <option value="" data-i18n="please_choose">Select an option</option>
                                 <option value="average" data-i18n="average_method">Average</option>
@@ -3407,13 +3508,13 @@
                     </h6>
                     <div class="row mb-3">
                         <div class="col-sm-4">
-                            <label class="form-label mb-0 d-block"><span data-i18n="ot_eligible">OT Eligible</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="ot_eligible">OT Eligible</span></label>
                             <input type="checkbox" class="me-2" name="ot_eligible" id="rc_ot_eligible" value="1"><span data-i18n="eligible_for_overtime">Eligible for overtime pay</span>
                         </div>
                     </div>
                     <div class="row mb-3 d-none" id="rcOtRateSourceWrap">
                         <div class="col-sm-6">
-                            <label class="form-label mb-1 d-block"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
                             <div class="btn-group d-block" role="group">
                                 <input type="radio" class="btn-check" name="rc_ot_rate_source_radio" id="rc_ot_rate_source_default" value="default" checked>
                                 <label class="btn btn-outline-brand" for="rc_ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
@@ -3450,17 +3551,17 @@
                     </h6>
                     <div class="row mb-3">
                         <div class="col-sm-4">
-                            <label class="form-label mb-0 d-block"><span data-i18n="enrolled_in_sso">Enrolled in Social Security Fund</span></label>
+                            <label class="form-label d-block mb-1"><span data-i18n="enrolled_in_sso">Enrolled in Social Security Fund</span></label>
                             <input type="checkbox" class="me-2" name="sso_enrolled" id="rc_sso_enrolled" value="1"><span data-i18n="yes">Yes</span>
                         </div>
                     </div>
                     <div class="row mb-3 d-none" id="rcSsoDetailWrap">
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="sso_no">Social Security No.</label>
+                            <label class="form-label mb-1" data-i18n="sso_no">Social Security No.</label>
                             <input type="text" class="form-control" name="sso_no" id="rc_sso_no" maxlength="13" data-i18n="sso_no_placeholder" placeholder="13-digit social security number">
                         </div>
                         <div class="col-sm-4">
-                            <label class="form-label mb-0" data-i18n="sso_start_date">SSO Start Date</label>
+                            <label class="form-label mb-1" data-i18n="sso_start_date">SSO Start Date</label>
                             <input type="text" class="form-control datepicker" name="sso_start_date" id="rc_sso_start_date" autocomplete="off">
                         </div>
                     </div>
@@ -3480,6 +3581,158 @@
                     </div>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-09-04, Backlog Phase 10, T055 -- shared, generic "Assign to Department/Position/Team/
+     Employee" modal, driven entirely by public/js/setup/assign-widget.js (openAssignModal()). Loaded
+     globally (this whole file is included on every page via footer.php) so any future feature can
+     call openAssignModal() with zero per-page markup of its own -- see EntityAssignmentModel's own
+     docblock for the full architecture/scope-boundary reasoning. No form/save endpoint here on
+     purpose -- the calling feature collects the result via openAssignModal()'s onSave callback and
+     persists it through its OWN already-permission-gated save action. -->
+<div class="modal fade" id="entityAssignModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary"><i class="fa-solid fa-users-gear me-2"></i><span id="eawModalTitle" data-i18n="eaw_modal_title">Assign To</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3" data-i18n="eaw_hint">Leave everything unchecked to apply to everyone. Check specific departments/positions/teams/employees to scope this to only them.</p>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold small mb-1" data-i18n="department">Department</label>
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="department" title="Select All">
+                            <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="department" data-i18n="select_option" placeholder="Search...">
+                        </div>
+                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignDepartments"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold small mb-1" data-i18n="position">Position</label>
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="position" title="Select All">
+                            <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="position" data-i18n="select_option" placeholder="Search...">
+                        </div>
+                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignPositions"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold small mb-1" data-i18n="team">Team</label>
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="team" title="Select All">
+                            <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="team" data-i18n="select_option" placeholder="Search...">
+                        </div>
+                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignTeams"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold small mb-1" data-i18n="table_employee">Employee</label>
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="employee" title="Select All">
+                            <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="employee" data-i18n="select_option" placeholder="Search...">
+                        </div>
+                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignEmployees"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary px-4" id="eawSaveBtn"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-09-04, Backlog Phase 10, T056 -- Probation Policy Set editor (create/edit one Set's own 9
+     probation_* fields, direct port of the fields that used to live on the single Payroll Policies
+     form's own #policyProbationCard before this task -- see that view's own header comment). Assign
+     is handled separately via assign-widget.js's openAssignModal() / the shared #entityAssignModal
+     right above this one, not duplicated here. -->
+<div class="modal fade" id="probationSetModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="probationSetModalTitle" data-i18n="probation_add_set">Add Set</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="pps_id">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label mb-1" data-i18n="table_name_th">Name (TH)</label>
+                        <input type="text" class="form-control" id="pps_set_name_th" maxlength="150">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label mb-1" data-i18n="table_name_en">Name (EN)</label>
+                        <input type="text" class="form-control" id="pps_set_name_en" maxlength="150">
+                    </div>
+                </div>
+                <div class="row g-4 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label mb-1" data-i18n="policy_probation_period_days_label">Standard Probation Period (days)</label>
+                        <div class="input-group">
+                            <input type="number" min="0" step="1" class="form-control" id="pps_probation_period_days" data-i18n="policy_probation_period_days_placeholder" placeholder="Not set">
+                            <span class="input-group-text" data-i18n="days_suffix">days</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label mb-1" data-i18n="policy_probation_base_salary_ratio_label">Base Salary Ratio During Probation</label>
+                        <div class="input-group">
+                            <input type="number" min="1" max="100" step="0.01" class="form-control" id="pps_probation_base_salary_ratio" data-i18n="policy_probation_base_salary_ratio_placeholder" placeholder="100 (no reduction)">
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-subgroup mb-4">
+                    <div class="settings-subgroup-label" data-i18n="policy_probation_additional_conditions_label">Additional Conditions</div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="pps_probation_defer_pvd">
+                        <label class="form-check-label" for="pps_probation_defer_pvd" data-i18n="policy_probation_defer_pvd_label">Defer Provident Fund (PVD) contribution until probation passes</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="pps_probation_defer_sso">
+                        <label class="form-check-label" for="pps_probation_defer_sso" data-i18n="policy_probation_defer_sso_label">Defer Social Security Fund (SSO) contribution until probation passes</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="pps_probation_defer_recurring_earning">
+                        <label class="form-check-label" for="pps_probation_defer_recurring_earning" data-i18n="policy_probation_defer_recurring_label">Withhold Recurring Allowances (position/car/fuel, etc.) until probation passes</label>
+                    </div>
+                </div>
+                <div class="settings-subgroup mb-4">
+                    <div class="settings-subgroup-label" data-i18n="policy_tax_default_label">Tax Withholding (Default)</div>
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <label class="form-label mb-1" data-i18n="policy_tax_exempt_default_label">Tax Exempt (Default)</label>
+                            <select class="form-select select2-static" id="pps_probation_tax_exempt_default" data-option-keys="policy_ot_default_not_set,policy_tax_default_exempt,policy_tax_default_not_exempt" data-option-values=",1,0"></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-subgroup mb-2">
+                    <div class="settings-subgroup-label" data-i18n="policy_probation_leave_ot_label">Leave &amp; OT Rights During Probation</div>
+                    <div class="row g-4 align-items-start">
+                        <div class="col-md-6">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="pps_allow_leave_during_probation" checked>
+                                <label class="form-check-label" for="pps_allow_leave_during_probation" data-i18n="policy_allow_leave_label">Allow leave requests during probation</label>
+                            </div>
+                            <label class="form-label mb-1" data-i18n="policy_leave_days_limit_label">Leave Days Limit</label>
+                            <div class="input-group">
+                                <input type="number" min="0" step="1" class="form-control" id="pps_probation_leave_days_limit" data-i18n="policy_leave_days_limit_placeholder" placeholder="No limit">
+                                <span class="input-group-text" data-i18n="days_suffix">days</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label mb-1" data-i18n="policy_ot_eligible_default_label">OT Eligible (Default)</label>
+                            <select class="form-select select2-static" id="pps_probation_ot_eligible_default" data-option-keys="policy_ot_default_not_set,policy_ot_default_eligible,policy_ot_default_not_eligible" data-option-values=",1,0"></select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary px-4" id="btnSaveProbationSet"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
+            </div>
         </div>
     </div>
 </div>

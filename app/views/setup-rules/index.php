@@ -143,38 +143,38 @@
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="shiftModalTitle"><i class="fa-regular fa-calendar-days"></i> <span data-i18n="shift">Shift</span></h6>
+                <h6 class="modal-title text-secondary" id="shiftModalTitle"><i class="fa-regular fa-calendar-days"></i> <span data-i18n="shift">Shift</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="shiftId">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="shift_name">Shift Name</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="shift_name">Shift Name</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="shiftName" data-i18n="shift_name_placeholder" placeholder="e.g., Morning Shift">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="shift_code">Shift Code</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="shift_code">Shift Code</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="shiftCode" data-i18n="shift_code_placeholder" placeholder="e.g., SH-01">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="time_in">Time In</label>
+                        <label class="form-label mb-1" data-i18n="time_in">Time In</label>
                         <input type="time" class="form-control" id="shiftStart" value="08:00">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="time_out">Time Out</label>
+                        <label class="form-label mb-1" data-i18n="time_out">Time Out</label>
                         <input type="time" class="form-control" id="shiftEnd" value="17:00">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="break_minutes">Break (minutes)</label>
+                        <label class="form-label mb-1" data-i18n="break_minutes">Break (minutes)</label>
                         <input type="number" min="0" class="form-control" id="shiftBreak" value="0" data-i18n="minutes_placeholder" placeholder="e.g., 30">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="work_location">Work Location</label>
+                        <label class="form-label mb-1" data-i18n="work_location">Work Location</label>
                         <select class="form-select select2-remote" id="shiftWorkLocation" data-api="/api/work-location.options" data-type="location"></select>
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="working_days">Working Days</label><br>
+                        <label class="form-label mb-1" data-i18n="working_days">Working Days</label><br>
                         <!-- 2026-08-21, explicit request: weekly working-day pattern per Shift, used by
                              PayrollRunModel::recalculate()'s salary_type='daily' branch (via
                              SetupRulesModel::payableDaysForEmployee()) to know which days are payable.
@@ -192,14 +192,14 @@
                         </div>
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="description">Description</label>
+                        <label class="form-label mb-1" data-i18n="description">Description</label>
                         <textarea class="form-control" id="shiftDesc" rows="2" data-i18n="shift_desc_placeholder" placeholder="Additional details"></textarea>
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2 mt-1">
                         <div class="form-check form-switch m-0">
                             <input class="form-check-input" type="checkbox" id="shiftStatus" checked>
                         </div>
-                        <label class="form-label m-0" for="shiftStatus" data-i18n="enable_this_shift">Enable this shift</label>
+                        <label class="form-label mb-1" for="shiftStatus" data-i18n="enable_this_shift">Enable this shift</label>
                     </div>
                 </div>
             </div>
@@ -217,33 +217,33 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="workLocationModalTitle"><i class="fa-solid fa-location-dot"></i> <span data-i18n="work_location">Work Location</span></h6>
+                <h6 class="modal-title text-secondary" id="workLocationModalTitle"><i class="fa-solid fa-location-dot"></i> <span data-i18n="work_location">Work Location</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="workLocationId">
                 <div class="row g-3">
                     <div class="col-md-7">
-                        <label class="form-label"><span data-i18n="location_name_th">Location Name (Thai)</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="location_name_th">Location Name (Thai)</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="workLocationNameTh" data-i18n="location_name_th_placeholder" placeholder="e.g., สำนักงานใหญ่">
                     </div>
                     <div class="col-md-5">
-                        <label class="form-label"><span data-i18n="code">Code</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="code">Code</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="workLocationCode" data-i18n="location_code_placeholder" placeholder="e.g., HQ">
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="location_name_en">Location Name (English)</label>
+                        <label class="form-label mb-1" data-i18n="location_name_en">Location Name (English)</label>
                         <input type="text" class="form-control" id="workLocationNameEn" data-i18n="location_name_en_placeholder" placeholder="e.g., Head Office">
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="address">Address</label>
+                        <label class="form-label mb-1" data-i18n="address">Address</label>
                         <textarea class="form-control" id="workLocationAddress" rows="2" data-i18n="address_line_1_placeholder" placeholder="House no., building, street"></textarea>
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2 mt-1">
                         <div class="form-check form-switch m-0">
                             <input class="form-check-input" type="checkbox" id="workLocationStatus" checked>
                         </div>
-                        <label class="form-label m-0" for="workLocationStatus" data-i18n="enable_this_location">Enable this location</label>
+                        <label class="form-label mb-1" for="workLocationStatus" data-i18n="enable_this_location">Enable this location</label>
                     </div>
                 </div>
             </div>
@@ -258,60 +258,60 @@
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="holidayModalTitle"><i class="fa-solid fa-calendar-day"></i> <span data-i18n="holiday">Holiday</span></h6>
+                <h6 class="modal-title text-secondary" id="holidayModalTitle"><i class="fa-solid fa-calendar-day"></i> <span data-i18n="holiday">Holiday</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="holidayId">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="holiday_name_th">Holiday Name (Thai)</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="holiday_name_th">Holiday Name (Thai)</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="holidayNameTh" data-i18n="holiday_name_th_placeholder" placeholder="e.g., วันขึ้นปีใหม่">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="holiday_name_en">Holiday Name (English)</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="holiday_name_en">Holiday Name (English)</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="holidayNameEn" data-i18n="holiday_name_en_placeholder" placeholder="e.g., New Year's Day">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="date">Date</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="date">Date</span> <span class="text-danger">*</span></label>
                         <input type="date" class="form-control required" id="holidayDate">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="type">Type</label>
+                        <label class="form-label mb-1" data-i18n="type">Type</label>
                         <select class="form-select select2-static" id="holidayRecurring" data-option-keys="recurring_every_year,one_time_only" data-option-values="1,0">
                         </select>
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="assignment_mode">Assignment Mode</label>
+                        <label class="form-label mb-1" data-i18n="assignment_mode">Assignment Mode</label>
                         <select class="form-select select2-static" id="holidayMode" data-option-keys="include_mode,exclude_mode" data-option-values="include,exclude">
                         </select>
                         <p class="text-muted small mb-0 mt-1" id="holidayModeHint"></p>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="applies_to_shifts">Applies to Shifts</label>
+                        <label class="form-label mb-1" data-i18n="applies_to_shifts">Applies to Shifts</label>
                         <select class="form-select select2-remote" id="holidayScopeShift" multiple data-api="/api/shift.options" data-type="shift"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="applies_to_departments">Applies to Departments</label>
+                        <label class="form-label mb-1" data-i18n="applies_to_departments">Applies to Departments</label>
                         <select class="form-select select2-remote" id="holidayScopeDepartment" multiple data-api="/api/department.get" data-type="department"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="applies_to_positions">Applies to Positions</label>
+                        <label class="form-label mb-1" data-i18n="applies_to_positions">Applies to Positions</label>
                         <select class="form-select select2-remote" id="holidayScopePosition" multiple data-api="/api/position.get" data-type="position"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="applies_to_employees">Applies to Employees</label>
+                        <label class="form-label mb-1" data-i18n="applies_to_employees">Applies to Employees</label>
                         <select class="form-select select2-remote" id="holidayScopeEmployee" multiple data-api="/api/employee.report_to.get" data-type="employee"></select>
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="remark">Remark</label>
+                        <label class="form-label mb-1" data-i18n="remark">Remark</label>
                         <textarea class="form-control" id="holidayRemark" rows="2" data-i18n="remark_placeholder" placeholder="Optional notes"></textarea>
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2 mt-1">
                         <div class="form-check form-switch m-0">
                             <input class="form-check-input" type="checkbox" id="holidayStatus" checked>
                         </div>
-                        <label class="form-label m-0" for="holidayStatus" data-i18n="enable_this_holiday">Enable this holiday</label>
+                        <label class="form-label mb-1" for="holidayStatus" data-i18n="enable_this_holiday">Enable this holiday</label>
                     </div>
                 </div>
             </div>
@@ -333,62 +333,62 @@
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="leaveTypeModalTitle"><i class="fa-regular fa-calendar-check"></i> <span data-i18n="leave_type">Leave Type</span></h6>
+                <h6 class="modal-title text-secondary" id="leaveTypeModalTitle"><i class="fa-regular fa-calendar-check"></i> <span data-i18n="leave_type">Leave Type</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="leaveId">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="leave_type_name">Leave Type Name</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="leave_type_name">Leave Type Name</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="leaveNameTh" data-i18n="holiday_name_th_placeholder" placeholder="e.g., ลาป่วย">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">&nbsp;</label>
+                        <label class="form-label mb-1">&nbsp;</label>
                         <input type="text" class="form-control required" id="leaveNameEn" placeholder="e.g., Sick Leave">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="code">Code</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="code">Code</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="leaveCode" data-i18n="leave_code_placeholder" placeholder="e.g., SICK">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="category">Category</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="category">Category</span> <span class="text-danger">*</span></label>
                         <select class="form-select select2-remote required" id="leaveCategory" data-api="/api/leave-category.options" data-type="leave_category"></select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="quota_type">Quota Type</label>
+                        <label class="form-label mb-1" data-i18n="quota_type">Quota Type</label>
                         <select class="form-select select2-static" id="leaveQuotaType" data-option-keys="quota_type_fixed,quota_type_prorate" data-option-values="fixed,prorate"></select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="quota_amount">Quota Amount</label>
+                        <label class="form-label mb-1" data-i18n="quota_amount">Quota Amount</label>
                         <input type="number" min="0" step="0.5" class="form-control" id="leaveQuota" value="0" data-i18n="days_placeholder" placeholder="e.g., 1">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="unit_type">Unit</label>
+                        <label class="form-label mb-1" data-i18n="unit_type">Unit</label>
                         <select class="form-select select2-static" id="leaveUnitType" data-option-keys="unit_type_day,unit_type_hour,unit_type_half_day" data-option-values="day,hour,half_day"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="pay_type">Pay Type</label>
+                        <label class="form-label mb-1" data-i18n="pay_type">Pay Type</label>
                         <select class="form-select select2-static" id="leavePayType" data-option-keys="leave_pay_paid,leave_pay_unpaid" data-option-values="1,0"></select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" data-i18n="gender_restriction">Gender Restriction</label>
+                        <label class="form-label mb-1" data-i18n="gender_restriction">Gender Restriction</label>
                         <select class="form-select select2-static" id="leaveGenderRestriction" data-option-keys="gender_restriction_all,gender_restriction_male,gender_restriction_female" data-option-values="all,male,female"></select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="min_service_days">Minimum Service (days)</label>
+                        <label class="form-label mb-1" data-i18n="min_service_days">Minimum Service (days)</label>
                         <input type="number" min="0" class="form-control" id="leaveMinServiceDays" placeholder="-">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="advance_notice_days">Advance Notice (days)</label>
+                        <label class="form-label mb-1" data-i18n="advance_notice_days">Advance Notice (days)</label>
                         <input type="number" min="0" class="form-control" id="leaveAdvanceNoticeDays" placeholder="-">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label" data-i18n="max_consecutive_days">Max Consecutive Days</label>
+                        <label class="form-label mb-1" data-i18n="max_consecutive_days">Max Consecutive Days</label>
                         <input type="number" min="0" step="0.5" class="form-control" id="leaveMaxConsecutiveDays" placeholder="-">
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="applicable_employment_statuses">Applicable Employment Status</label>
+                        <label class="form-label mb-1" data-i18n="applicable_employment_statuses">Applicable Employment Status</label>
                         <select class="form-select select2-static" id="leaveApplicableStatuses" multiple
                             data-option-keys="employment_status_probation,employment_status_permanent,employment_status_contract,employment_status_resigned,employment_status_terminated"
                             data-option-values="probation,permanent,contract,resigned,terminated"></select>
@@ -397,25 +397,25 @@
                         <div class="form-check form-switch m-0">
                             <input class="form-check-input" type="checkbox" id="leaveRequiresDocument">
                         </div>
-                        <label class="form-label m-0" for="leaveRequiresDocument" data-i18n="requires_document">Requires supporting document</label>
+                        <label class="form-label mb-1" for="leaveRequiresDocument" data-i18n="requires_document">Requires supporting document</label>
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2">
                         <div class="form-check form-switch m-0">
                             <input class="form-check-input" type="checkbox" id="leaveCountWorkingDaysOnly">
                         </div>
-                        <label class="form-label m-0" for="leaveCountWorkingDaysOnly" data-i18n="count_working_days_only">Count working days only (skip weekends/holidays within the leave span)</label>
+                        <label class="form-label mb-1" for="leaveCountWorkingDaysOnly" data-i18n="count_working_days_only">Count working days only (skip weekends/holidays within the leave span)</label>
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2">
                         <div class="form-check form-switch m-0">
                             <input class="form-check-input" type="checkbox" id="leaveCarryOver">
                         </div>
-                        <label class="form-label m-0" for="leaveCarryOver" data-i18n="allow_carry_over">Allow carrying over unused days to next year</label>
+                        <label class="form-label mb-1" for="leaveCarryOver" data-i18n="allow_carry_over">Allow carrying over unused days to next year</label>
                     </div>
                     <div class="col-12 d-flex align-items-center gap-2 mt-1">
                         <div class="form-check form-switch m-0">
                             <input class="form-check-input" type="checkbox" id="leaveStatus" checked>
                         </div>
-                        <label class="form-label m-0" for="leaveStatus" data-i18n="enable_this_leave_type">Enable this leave type</label>
+                        <label class="form-label mb-1" for="leaveStatus" data-i18n="enable_this_leave_type">Enable this leave type</label>
                     </div>
                 </div>
             </div>
@@ -436,18 +436,18 @@
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="otModalTitle"><i class="fa-solid fa-coins"></i> <span data-i18n="ot_rate">OT Rate</span></h6>
+                <h6 class="modal-title text-secondary" id="otModalTitle"><i class="fa-solid fa-coins"></i> <span data-i18n="ot_rate">OT Rate</span></h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="otId">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label"><span data-i18n="ot_rate_set_name">Set Name</span> <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1"><span data-i18n="ot_rate_set_name">Set Name</span> <span class="text-danger">*</span></label>
                         <input type="text" class="form-control required" id="otNameTh" data-i18n="ot_rate_set_name_placeholder" placeholder="e.g., Standard OT Set">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">&nbsp;</label>
+                        <label class="form-label mb-1">&nbsp;</label>
                         <input type="text" class="form-control" id="otNameEn" placeholder="e.g., Standard OT Set">
                     </div>
                 </div>
@@ -467,7 +467,7 @@
 
                 <hr class="my-3 text-muted opacity-25">
                 <div class="d-flex align-items-center justify-content-between mb-1">
-                    <label class="form-label fw-bold mb-0" for="otIsDefault">
+                    <label class="form-label fw-semibold mb-1" for="otIsDefault">
                         <i class="fa-solid fa-star text-warning me-1"></i><span data-i18n="ot_rate_set_default_badge">Default</span>
                     </label>
                     <div class="form-check form-switch m-0">
@@ -619,7 +619,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyHolidaySync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="holidaySyncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -652,12 +652,16 @@
                 </table>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
 </div>
 
+<!-- 2026-09-04, Backlog Phase 9, T050 -- shared "Sync from Origami" button widget, loaded before
+     setup-rules.js since the Shift/Holiday tables' own initComplete call initOrigamiSyncButton()
+     directly. -->
+<script src="<?=asset('public/js/setup/origami-sync-widget.js')?>"></script>
 <script src="<?=asset('public/js/setup/setup-rules.js')?>"></script>
 <script src="<?=asset('public/js/setup/structure-assign.js')?>"></script>
 <script src="<?=asset('public/js/setup/holiday-sync.js')?>"></script>

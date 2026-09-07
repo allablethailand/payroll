@@ -93,7 +93,7 @@
         <div class="tab-content" id="employeeReportsSubTabsContent">
         <div class="tab-pane fade show active" id="empReportSub-standing-pane" role="tabpanel" aria-labelledby="empReportSub-standing-tab" tabindex="0">
         <div class="station-filter" id="employeeSummaryStationFilter">
-            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="employeeSummaryStationFilterToggle" title="Toggle filter">
                 <i class="fas fa-chevron-up"></i>
             </button>
@@ -236,7 +236,7 @@
              chart per explicit follow-up request: "อยากให้เพิ่มให้ด้วย...ไม่อยากให้เป็นตารางโล้นๆ". -->
         <div class="tab-pane fade" id="empReportSub-headcount-pane" role="tabpanel" aria-labelledby="empReportSub-headcount-tab" tabindex="0">
             <div class="station-filter" id="employeeHeadcountStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeHeadcountStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -338,7 +338,7 @@
         <!-- 2026-09-02, Phase 2 -- Contract/Work Permit/Visa/Passport Expiry Alerts. -->
         <div class="tab-pane fade" id="empReportSub-expiry-pane" role="tabpanel" aria-labelledby="empReportSub-expiry-tab" tabindex="0">
             <div class="station-filter" id="employeeExpiryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeExpiryStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -425,7 +425,7 @@
              EmployeeModel::probationReport()'s own docblock. -->
         <div class="tab-pane fade" id="empReportSub-probation-pane" role="tabpanel" aria-labelledby="empReportSub-probation-tab" tabindex="0">
             <div class="station-filter" id="employeeProbationStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeProbationStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -479,7 +479,7 @@
              statutory SSO 1-10 FORM exports). -->
         <div class="tab-pane fade" id="empReportSub-enrollment-pane" role="tabpanel" aria-labelledby="empReportSub-enrollment-tab" tabindex="0">
             <div class="station-filter" id="employeeEnrollmentStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeEnrollmentStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -582,7 +582,7 @@
              by one dimension at a time. -->
         <div class="tab-pane fade" id="empReportSub-structure-pane" role="tabpanel" aria-labelledby="empReportSub-structure-tab" tabindex="0">
             <div class="station-filter" id="employeeStructureStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeStructureStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -645,7 +645,7 @@
         <!-- 2026-09-02, Phase 3 -- Tenure (อายุงาน), bucketed years-of-service. -->
         <div class="tab-pane fade" id="empReportSub-tenure-pane" role="tabpanel" aria-labelledby="empReportSub-tenure-tab" tabindex="0">
             <div class="station-filter" id="employeeTenureStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeTenureStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -722,7 +722,7 @@
              chart -- adds no decision-making value for this kind of report). -->
         <div class="tab-pane fade" id="empReportSub-birthday-pane" role="tabpanel" aria-labelledby="empReportSub-birthday-tab" tabindex="0">
             <div class="station-filter" id="employeeBirthdayStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeBirthdayStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
@@ -817,7 +817,7 @@
              only (resigned/terminated excluded, same convention as the other Phase 3/4 reports). -->
         <div class="tab-pane fade" id="empReportSub-completeness-pane" role="tabpanel" aria-labelledby="empReportSub-completeness-tab" tabindex="0">
             <div class="station-filter" id="employeeCompletenessStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeCompletenessStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
