@@ -224,8 +224,15 @@ function renderFeaturedAnnouncement(row) {
     }
     $section.removeClass('d-none');
     $('#dashAnnouncementTitle').text(currentLang === 'en' ? row.title_en : row.title_th);
-    const body = (currentLang === 'en' ? row.body_en : row.body_th) || '';
-    $('#dashAnnouncementBody').text(body.length > 160 ? body.slice(0, 160) + '...' : body);
+    // 2026-09-07, Announcement CMS rich-text formatting -- body_th/body_en are now real HTML (Quill),
+    // so the dashboard card's own short preview strips markup down to plain text first (stripHtml(),
+    // format-helpers.js) instead of truncating raw HTML mid-tag; the FULL formatted content still
+    // renders (via .html()) in the click-through modal / "View All" list below.
+    const bodyPlain = stripHtml(currentLang === 'en' ? row.body_en : row.body_th);
+    $('#dashAnnouncementBody').text(bodyPlain.length > 160 ? bodyPlain.slice(0, 160) + '...' : bodyPlain);
+    const $cover = $('#dashAnnouncementCover');
+    if (row.cover_image_path) { $cover.attr('src', `${BASE_URL}/${row.cover_image_path}`).removeClass('d-none'); }
+    else { $cover.addClass('d-none'); }
 }
 
 /* ==================== First-login-after-publish click-through modal (T057) ====================
@@ -259,7 +266,13 @@ function dashShowAnnouncementModalStep() {
     const remaining = dashAnnouncementQueue.length - dashAnnouncementQueueIndex;
     $('#dashAnnModalCount').text(`${dashAnnouncementQueueIndex + 1} / ${dashAnnouncementQueue.length}`);
     $('#dashAnnModalTitle').text(currentLang === 'en' ? item.title_en : item.title_th);
-    $('#dashAnnModalBody').text(currentLang === 'en' ? item.body_en : item.body_th);
+    // .html(), not .text() -- body_th/body_en are sanitized, trusted (announcement.manage-only-
+    // authored) HTML now, see AnnouncementModel::sanitizeRichHtml(). .ann-rich-content resets Quill's
+    // own spacing assumptions for a plain (non-editor) rendering container, see style.css.
+    $('#dashAnnModalBody').addClass('ann-rich-content').html(currentLang === 'en' ? item.body_en : item.body_th);
+    const $cover = $('#dashAnnModalCover');
+    if (item.cover_image_path) { $cover.attr('src', `${BASE_URL}/${item.cover_image_path}`).removeClass('d-none'); }
+    else { $cover.addClass('d-none'); }
     $('#dashAnnModalAcceptBtn').text(item.accept_required ? (langData['announcement_accept'] || 'Accept') : (langData['announcement_dismiss'] || 'Dismiss'));
     const modalEl = document.getElementById('dashAnnouncementModal');
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl, {

@@ -40,6 +40,8 @@
 <script src="<?=BASE_URL?>/node_modules/sortablejs/Sortable.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/intl-tel-input/dist/js/intlTelInputWithUtils.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/leaflet/dist/leaflet.js"></script>
+<!-- 2026-09-07, Announcement CMS rich-text formatting -- Quill's own UMD build (defines window.Quill). -->
+<script src="<?=BASE_URL?>/node_modules/quill/dist/quill.js"></script>
 <?php
 // 2026-08-30, explicit request: "ย้ายทุก modal ไปไว้ที่เดียวกัน" -- every modal's own HTML markup in
 // this app now lives in this one shared partial, included unconditionally here (after every page's

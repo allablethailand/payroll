@@ -2873,5 +2873,10 @@
     "announcement_none": "ยังไม่มีประกาศ",
     "announcement_acknowledged": "รับทราบแล้ว",
     "announcement_pending": "รอดำเนินการ",
+    "announcement_cover_image": "ภาพหน้าปก",
+    "announcement_cover_image_hint": "แสดงที่ด้านบนของประกาศ (การ์ดบนแดชบอร์ด, หน้าต่างแจ้งเตือนตอนล็อกอินครั้งแรก และหน้ารายการ \"ดูทั้งหมด\") ไม่บังคับ",
+    "announcement_no_cover_uploaded": "ยังไม่มีภาพหน้าปก",
+    "upload_image": "อัปโหลดรูปภาพ",
+    "upload_failed": "อัปโหลดไฟล์ไม่สำเร็จ",
     "required_fields_missing": "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน"
 }

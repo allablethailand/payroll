@@ -30,6 +30,18 @@ function escapeHtml(str) {
 function escapeAttr(str) {
     return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+/** 2026-09-07, Announcement CMS rich-text formatting -- body_th/body_en are now real HTML (Quill),
+ *  so a plain-text EXCERPT (dashboard card preview, notification text) needs the markup stripped
+ *  first rather than truncating raw HTML mid-tag. Uses a detached DOM element (not a regex) so
+ *  entity-encoded content decodes correctly (e.g. "&amp;" -> "&") -- the same reasoning escapeHtml()
+ *  above already relies on the DOM for. Never insert the RETURN VALUE back as HTML (it's plain text,
+ *  from an already-trusted-HTML source at that -- see AnnouncementModel::sanitizeRichHtml()). */
+function stripHtml(html) {
+    if (html === null || html === undefined) return '';
+    const el = document.createElement('div');
+    el.innerHTML = String(html);
+    return (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
+}
 function fmtNum(value) {
     if (value === 'XXXX') return 'XXXX';
     if (value === null || value === undefined || value === '') return '-';

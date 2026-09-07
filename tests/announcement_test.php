@@ -169,6 +169,61 @@ try {
     checkTrue('delete() succeeds', $delRes['status']);
     check('deleted announcement is no longer get()-able', $model->get($compA, $draftRes['id']), null);
 
+    echo "\n=== 2026-09-07 CMS follow-up: rich-content sanitization ===\n";
+    $xssRes = $model->save($compA, [
+        'title_th' => 'ทดสอบ XSS', 'title_en' => 'XSS test',
+        'body_th' => '<p>สวัสดี <strong onclick="alert(1)">โลก</strong></p><script>alert(1)</script><img src="x" onerror="alert(1)">',
+        'body_en' => '<p>Hello <a href="javascript:alert(1)">click</a> <a href="https://example.com" target="_blank">safe link</a></p><iframe src="evil"></iframe>',
+    ], $userId);
+    checkTrue('save() with unsafe HTML still succeeds (sanitized, not rejected)', $xssRes['status']);
+    $xssRow = $model->get($compA, $xssRes['id']);
+    checkFalse('body_th: <script> tag stripped', str_contains($xssRow['body_th'], '<script'));
+    checkFalse('body_th: onclick attribute stripped', str_contains($xssRow['body_th'], 'onclick'));
+    checkFalse('body_th: onerror attribute stripped', str_contains($xssRow['body_th'], 'onerror'));
+    checkTrue('body_th: safe <strong> text content survives', str_contains($xssRow['body_th'], 'โลก'));
+    checkFalse('body_en: javascript: href stripped', str_contains($xssRow['body_en'], 'javascript:'));
+    checkFalse('body_en: <iframe> tag stripped', str_contains($xssRow['body_en'], '<iframe'));
+    checkTrue('body_en: safe https:// href survives', str_contains($xssRow['body_en'], 'https://example.com'));
+    checkFalse('body_th: <script> CONTENT (not just the tag) does not leak as visible text', str_contains($xssRow['body_th'], 'alert(1)'));
+
+    $imgRes = $model->save($compA, [
+        'title_th' => 'ทดสอบรูปภาพ', 'title_en' => 'Image test',
+        'body_th' => '<p><img src="data:image/svg+xml;base64,AAAA"> <img src="https://example.com/x.png"></p>', 'body_en' => 'x',
+    ], $userId);
+    $imgRow = $model->get($compA, $imgRes['id']);
+    checkFalse('body_th: data: image src is stripped (forces real upload instead)', str_contains($imgRow['body_th'], 'data:image'));
+    checkTrue('body_th: https:// image src survives', str_contains($imgRow['body_th'], 'https://example.com/x.png'));
+
+    $htmlOnlyRes = $model->save($compA, [
+        'title_th' => 'ว่างเปล่า', 'title_en' => 'Empty body',
+        'body_th' => '<p><br></p>', 'body_en' => '<p></p>',
+    ], $userId);
+    checkFalse('save() refuses a body that is HTML markup with no real text content', $htmlOnlyRes['status']);
+
+    echo "\n=== 2026-09-07 CMS follow-up: cover_image_path ===\n";
+    checkTrue('isValidCoverPath(): null is valid (no cover)', AnnouncementModel::isValidCoverPath(null, $compA));
+    checkTrue('isValidCoverPath(): a correctly-shaped path for this company is valid',
+        AnnouncementModel::isValidCoverPath('public/uploads/announcement_covers/' . $compA . '/' . str_repeat('a', 32) . '.jpg', $compA));
+    checkFalse('isValidCoverPath(): a path for a DIFFERENT company is rejected',
+        AnnouncementModel::isValidCoverPath('public/uploads/announcement_covers/' . ($compA + 1) . '/' . str_repeat('a', 32) . '.jpg', $compA));
+    checkFalse('isValidCoverPath(): a path-traversal attempt is rejected',
+        AnnouncementModel::isValidCoverPath('public/uploads/announcement_covers/' . $compA . '/../../../etc/passwd', $compA));
+
+    $coverPath = 'public/uploads/announcement_covers/' . $compA . '/' . str_repeat('b', 32) . '.png';
+    $coverRes = $model->save($compA, [
+        'title_th' => 'มีปก', 'title_en' => 'Has a cover', 'body_th' => 'x', 'body_en' => 'x',
+        'cover_image_path' => $coverPath,
+    ], $userId);
+    checkTrue('save() with a valid cover_image_path succeeds', $coverRes['status']);
+    $coverRow = $model->get($compA, $coverRes['id']);
+    check('cover_image_path persisted correctly', $coverRow['cover_image_path'], $coverPath);
+
+    $badCoverRes = $model->save($compA, [
+        'title_th' => 'ปกไม่ถูกต้อง', 'title_en' => 'Bad cover', 'body_th' => 'x', 'body_en' => 'x',
+        'cover_image_path' => 'public/uploads/announcement_covers/' . ($compA + 1) . '/' . str_repeat('c', 32) . '.jpg',
+    ], $userId);
+    checkFalse('save() with a cross-company cover_image_path is refused', $badCoverRes['status']);
+
 } finally {
     $pdo->rollBack();
 }

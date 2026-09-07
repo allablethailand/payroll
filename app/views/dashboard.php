@@ -268,6 +268,9 @@
                     <a href="<?=BASE_URL?>/announcements" class="small" data-i18n="view_all">View All</a>
                 </div>
                 <div class="p-3">
+                    <!-- 2026-09-07, "สามารถแนบปกได้" -- optional, hidden (d-none) when the featured
+                         announcement has no cover_image_path. -->
+                    <img src="" alt="" class="ann-cover-banner d-none" id="dashAnnouncementCover">
                     <div class="fw-bold mb-1" id="dashAnnouncementTitle"></div>
                     <div class="text-muted small" id="dashAnnouncementBody"></div>
                 </div>
@@ -295,8 +298,12 @@
                 <span class="badge bg-secondary-subtle text-secondary" id="dashAnnModalCount"></span>
             </div>
             <div class="modal-body">
+                <!-- 2026-09-07, "สามารถแนบปกได้" -->
+                <img src="" alt="" class="ann-cover-banner d-none" id="dashAnnModalCover">
                 <h6 id="dashAnnModalTitle" class="fw-bold"></h6>
-                <p id="dashAnnModalBody" class="mb-0"></p>
+                <!-- was a <p> -- now holds sanitized rich HTML (possibly block-level content like
+                     <p>/<ul>/<h1-6>), which is invalid nested inside a <p>; a <div> renders it correctly. -->
+                <div id="dashAnnModalBody" class="mb-0"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" id="dashAnnModalAcceptBtn"></button>

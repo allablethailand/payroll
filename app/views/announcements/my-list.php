@@ -21,17 +21,23 @@
 function escapeHtmlAnnMy(str) { return $('<div>').text(str === null || str === undefined ? '' : str).html(); }
 function annMyItemHtml(row) {
     const title = currentLang === 'en' ? row.title_en : row.title_th;
+    // 2026-09-07, Announcement CMS rich-text formatting -- body_th/body_en are now real, sanitized
+    // HTML (see AnnouncementModel::sanitizeRichHtml()), authored exclusively by employees holding
+    // announcement.manage -- rendered as-is (not escaped) via .ann-rich-content below, same trust
+    // boundary/rendering approach as the Dashboard's own click-through modal.
     const body = currentLang === 'en' ? row.body_en : row.body_th;
     const statusBadge = row.acknowledged_at
         ? `<span class="badge bg-success-subtle text-success">${langData['announcement_acknowledged'] || 'Acknowledged'}</span>`
         : `<span class="badge bg-warning-subtle text-warning">${langData['announcement_pending'] || 'Pending'}</span>`;
+    const cover = row.cover_image_path ? `<img src="${BASE_URL}/${row.cover_image_path}" alt="" class="ann-cover-banner">` : '';
     return `<div class="card-surface p-3">
+        ${cover}
         <div class="d-flex justify-content-between align-items-start mb-1">
             <h6 class="fw-bold mb-0">${escapeHtmlAnnMy(title)}</h6>
             ${statusBadge}
         </div>
-        <p class="mb-1">${escapeHtmlAnnMy(body)}</p>
-        <span class="text-muted small">${escapeHtmlAnnMy(row.published_at || '')}</span>
+        <div class="mb-1 ann-rich-content">${body || ''}</div>
+        <span class="text-muted small">${escapeHtmlAnnMy(formatDisplayDateTime ? formatDisplayDateTime(row.published_at) : (row.published_at || ''))}</span>
     </div>`;
 }
 $(document).ready(function () {

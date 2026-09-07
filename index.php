@@ -171,6 +171,8 @@
     $router->get('api/announcement.get', 'AnnouncementController@get');
     $router->get('api/announcement.assignable-options', 'AnnouncementController@assignableOptions');
     $router->post('api/announcement.save', 'AnnouncementController@save');
+    $router->post('api/announcement.upload-cover', 'AnnouncementController@uploadCover');
+    $router->post('api/announcement.upload-content-image', 'AnnouncementController@uploadContentImage');
     $router->post('api/announcement.delete', 'AnnouncementController@delete');
     $router->post('api/announcement.publish', 'AnnouncementController@publish');
     $router->post('api/announcement.set-featured', 'AnnouncementController@setFeatured');
