@@ -551,12 +551,28 @@ class PayrollSyncModel {
 
         if ($existingId !== false) {
             $id = (int)$existingId;
+            // 2026-09-06, real gap confirmed by Origami (not a hypothetical): their own
+            // ProcessModel::pullBackFromPayrollRejection() lets an Origami admin pull a process we
+            // rejected back to draft and resend it with the SAME origami_process_id -- "sync_rejected"
+            // (our own Pending-Pull-level rejectProcess(), status='rejected' on THIS table, never
+            // pulled into a run at all) is one of the 3 statuses that unlocks that pull-back on their
+            // side, confirmed as a real, intentionally-designed flow, not an edge case. Before this
+            // fix, status/rejected_reason/rejected_by/rejected_at were never reset on a re-ingest, so
+            // a resent process stayed stuck at status='rejected' forever -- permanently excluded from
+            // pendingList()'s own `AND p.status = 'pending'` filter, meaning fresh, corrected data
+            // could never be pulled into a run at all. Safe to reset unconditionally on every
+            // re-ingest (not just when currently 'rejected'): a no-op for an already-'pending' row,
+            // and harmless even for a process already consumed (pulled into a run, or merged into
+            // one via mergeSupplementalIntoRun()) -- pendingList()'s OTHER conditions
+            // (`r.id IS NULL`, `merged_into_run_id IS NULL`) are untouched by this column and still
+            // correctly keep a consumed process out of Pending Pull regardless of this reset.
             $stmt = $this->db->prepare("UPDATE payroll_sync_processes SET
                     comp_id = :comp_id, process_no = :process_no, process_subject = :process_subject,
                     process_description = :process_description, process_start = :process_start,
                     process_end = :process_end, process_paid = :process_paid, run_kind = :run_kind,
                     attribution_target_origami_process_id = :attr_target_id, attribution_target_process_no = :attr_target_no,
                     attribution_tax_treatment = :attr_tax_treatment,
+                    status = 'pending', rejected_reason = NULL, rejected_by = NULL, rejected_at = NULL,
                     origami_report_id = :report_id,
                     origami_comp_code = :comp_code, origami_comp_name = :comp_name,
                     origami_period_id = :period_id, period_name = :period_name, frequency_type = :frequency_type,
@@ -1876,6 +1892,39 @@ class PayrollSyncModel {
     }
 
     /**
+     * 2026-09-06: classifies a supplemental row's merge readiness for Pending Pull's own badge/
+     * button, using the extra target-lookup columns pendingList()'s own query joins in. Returns
+     * `null` for anything that isn't a "merge" attribution at all (regular rows, `separate`
+     * attribution, no attribution) -- those never show a merge badge to begin with.
+     * - `'ready'`: the target regular cycle has already been pulled into a `payroll_runs` row here
+     *   -- Merge into Target works right now.
+     * - `'waiting_known'`: Origami has already sent us the target regular process's own sync
+     *   payload (it exists in `payroll_sync_processes`, still `status='pending'`), but nobody has
+     *   pulled it into a run yet.
+     * - `'waiting_unknown'`: we have never received that target process from Origami at all --
+     *   confirmed with Origami there is no guaranteed send order, so this is a normal, expected
+     *   transient state, not an error.
+     * - `'target_rejected'`: the target process WAS received but has since been rejected
+     *   (rejectProcess(), a real terminal state -- there is no un-reject action anywhere in this
+     *   class, and re-sending the same origami_process_id later does not reset `status` either,
+     *   see upsertProcess()'s own UPDATE branch) -- unlike `waiting_known`/`waiting_unknown`, this
+     *   attribution will NEVER resolve on its own; genuinely distinct from "still waiting" so the
+     *   UI doesn't imply it'll become ready eventually.
+     */
+    private function attributionTargetStatus(array $row): ?string {
+        if (($row['run_kind'] ?? '') !== 'supplemental' || ($row['attribution_tax_treatment'] ?? '') !== 'merge') {
+            return null;
+        }
+        if (!empty($row['attribution_target_run_id'])) {
+            return 'ready';
+        }
+        if (!empty($row['attribution_target_sync_process_id'])) {
+            return ($row['attribution_target_process_status'] ?? '') === 'rejected' ? 'target_rejected' : 'waiting_known';
+        }
+        return 'waiting_unknown';
+    }
+
+    /**
      * Sync processes not yet pulled into a payroll run -- the Payroll Process page's "Pending
      * Pull" station. date_from/date_to filter on received_at (the only real date this table has --
      * payroll_sync_processes has no period_start/end of its own, just the free-text period_name
@@ -1910,17 +1959,39 @@ class PayrollSyncModel {
         // station can show a supplemental row's routing intent (merge into a named regular cycle,
         // vs. separate) before an admin pulls it, see PayrollSyncModel::normalizeAttribution()'s
         // own docblock.
+        //
+        // 2026-09-06, real gap found and fixed: confirmed with Origami that there is NO send-order
+        // guarantee between a regular process's own sync payload and a supplemental process
+        // attributed to merge into it (e.g. a mid-month trip-allowance batch attributed to "next
+        // month's regular cycle" can arrive here before OR after that regular cycle's own payload
+        // does). `attribution_target_sync_process_id`/`attribution_target_run_id` (two extra LEFT
+        // JOINs, both keyed off the SAME origami_process_id uniqueness `mergeSupplementalIntoRun()`
+        // itself already relies on) let attributionTargetStatus() below tell apart 3 real states
+        // instead of the old binary "ready or reject": target run already pulled here (ready),
+        // target process known to us but not pulled into a run yet (waiting_known), or we haven't
+        // even received that target process from Origami at all yet (waiting_unknown) -- see that
+        // method's own docblock. Previously the UI offered the Merge button regardless and only
+        // found out it couldn't work when the admin actually clicked it and
+        // PayrollRunModel::mergeSupplementalIntoRun() refused.
         $stmt = $this->db->prepare("SELECT p.id, p.origami_process_id, p.process_no, p.process_subject,
                 p.process_start, p.process_end, p.process_paid, p.run_kind,
                 p.attribution_target_origami_process_id, p.attribution_target_process_no, p.attribution_tax_treatment,
                 p.origami_comp_name, p.period_name, p.frequency_type, p.external_cycle_code,
-                p.item_count, p.unmapped_item_count, p.received_at
+                p.item_count, p.unmapped_item_count, p.received_at,
+                tp.id AS attribution_target_sync_process_id, tp.status AS attribution_target_process_status,
+                tr.id AS attribution_target_run_id
             FROM payroll_sync_processes p
             LEFT JOIN payroll_runs r ON r.sync_process_id = p.id
+            LEFT JOIN payroll_sync_processes tp ON tp.origami_process_id = p.attribution_target_origami_process_id AND tp.comp_id = p.comp_id
+            LEFT JOIN payroll_runs tr ON tr.sync_process_id = tp.id AND tr.deleted_at IS NULL
             {$where}
             ORDER BY p.received_at DESC");
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$row) {
+            $row['attribution_target_status'] = $this->attributionTargetStatus($row);
+        }
+        unset($row);
 
         // 2026-09-01, explicit request: "อยากให้กดแล้ว Default ค่าที่ส่งมา Origami เลยโดยที่ไม่ต้องเลือกใหม่" --
         // matched_cycle_id/matched_cycle_name (null when nothing confidently matches) let "Pull to

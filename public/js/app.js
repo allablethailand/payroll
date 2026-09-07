@@ -607,6 +607,17 @@ $(document).ready(async function() {
     // (which wins if different, e.g. on a brand-new device/browser) by loadUserPreferences() below,
     // same "fast local default, then server reconciles" pattern the language switcher already used.
     applyFontSize(localStorage.getItem('preferred_font_size') || 'm');
+    // 2026-09-04, T069 Step 1 -- deliberately NOT mirroring the applyFontSize() line just above with
+    // an equivalent applyTheme(localStorage...) call here, even though it looks like the same
+    // pattern. Theme (unlike font size) is ALREADY correctly stamped server-side on <html> by
+    // header.php before this script ever runs (that's the whole point of doing it server-side --
+    // no flash, no JS needed for a correct FIRST paint). Blindly re-applying a possibly-stale
+    // localStorage value here (e.g. a shared browser last used by a different employee, or
+    // localStorage cleared independently of the session) would OVERWRITE that correct server value
+    // with a wrong one for a moment, which is exactly the flash-of-wrong-theme bug this whole step
+    // exists to prevent. loadUserPreferences() below still reconciles localStorage to match the
+    // server (fixing any staleness for NEXT time) -- it just doesn't need to touch the DOM to do it
+    // in the normal case, since the SSR-stamped attribute is already correct.
     loadUserPreferences();
     recordLoginTimezone();
     // 2026-08-30, explicit request: "Design การเปลี่ยนภาษาใน modal ให้เป็น design เดียวกับ header" -- was
@@ -826,7 +837,7 @@ async function changeLanguage(lang) {
     // handler, or the Settings modal's own language buttons both call this same function), so
     // there's exactly one place this needs to be wired in. Best-effort/fire-and-forget: localStorage
     // above already has it as the fast-path fallback if this request fails.
-    persistUserPreferences(lang, localStorage.getItem('preferred_font_size') || 'm');
+    persistUserPreferences(lang, localStorage.getItem('preferred_font_size') || 'm', localStorage.getItem('preferred_theme') || 'light');
     await loadLang(lang);
     reloadAllTablesForLanguageChange();
     // Dashboard's greeting title/description are JS-templated (employee name + today's date
@@ -851,6 +862,13 @@ async function changeLanguage(lang) {
     // (#pedTypeModalBadge, "Income"/"Deduction") is plain JS-set text with no data-i18n, same shape
     // as the T007 fixes above -- only defined when payroll-configuration.js is loaded.
     if (typeof refreshPedTypeModalBadgeLanguage === 'function') refreshPedTypeModalBadgeLanguage();
+    // 2026-09-05, Backlog Phase 13 -- same "only defined when that page's own script is loaded"
+    // pattern as every hook above. Setup Guide/Version render th/en text server-fetched into plain
+    // divs (no DataTable, so reloadAllTablesForLanguageChange() above doesn't cover them) and the
+    // Help Drawer's own currently-open content needs the same re-fetch.
+    if (typeof sgRefreshChecklistLanguage === 'function') sgRefreshChecklistLanguage();
+    if (typeof changelogRefreshLanguage === 'function') changelogRefreshLanguage();
+    if (typeof helpDrawerRefreshLanguage === 'function') helpDrawerRefreshLanguage();
 }
 // 2026-08-29, explicit request: per-user Font Size (S/M/L) + Language, persisted server-side (see
 // UserPreferenceModel's own docblock) -- FONT_SIZE_STEPS maps the Settings modal's 0-2 slider
@@ -860,24 +878,46 @@ const FONT_SIZE_STEPS = ['s', 'm', 'l'];
 function applyFontSize(size) {
     document.documentElement.setAttribute('data-font-size', FONT_SIZE_STEPS.includes(size) ? size : 'm');
 }
-// Always sends BOTH values together, never just the one that changed -- UserPreferenceModel::save()
-// is a full replace of both columns per call, so persisting only `language` (leaving `ui_font_size`
-// undefined -> the controller's own 'm' default) would silently reset a user's saved font size back
-// to Medium the next time they merely switched language. Every call site above/below reads the
-// OTHER value fresh from localStorage first for exactly this reason.
-async function persistUserPreferences(language, fontSize) {
+// 2026-09-04, Backlog Phase 11, T069 Step 1 -- 'light'/'dark' stamp the SAME data-bs-theme
+// attribute header.php already stamps server-side (see that file's own comment -- this is the
+// CLIENT-SIDE mirror of the exact same 2-selector logic, kept in sync deliberately: whichever one
+// runs last always wins, and both always agree because both read from the same source of truth,
+// just at different points in the page lifecycle -- header.php at initial render from the session,
+// this function at live-preview/save time in the browser). 'system' (or anything else) REMOVES the
+// attribute entirely rather than setting it to some 3rd value -- with no attribute present, the
+// @media(prefers-color-scheme) block in style.css is the only rule left standing, which is exactly
+// "follow the OS" (see style.css's own :root:not([data-bs-theme="light"]) guard for why an absent
+// attribute, not a 'system' value, is what makes that selector fire).
+function applyTheme(theme) {
+    if (theme === 'dark' || theme === 'light') {
+        document.documentElement.setAttribute('data-bs-theme', theme);
+    } else {
+        document.documentElement.removeAttribute('data-bs-theme');
+    }
+}
+// Always sends ALL THREE values together, never just the one that changed -- UserPreferenceModel::save()
+// is a full replace of all 3 columns per call, so persisting only `language` (leaving `ui_font_size`/
+// `ui_theme` undefined -> the controller's own defaults) would silently reset a user's saved font
+// size/theme back to Medium/System the next time they merely switched language. Every call site
+// above/below reads the OTHER values fresh from localStorage first for exactly this reason.
+// `theme` is 'light'/'dark'/'system' on the JS side (matches the 3 buttons in the Settings modal).
+// 2026-09-05 -- 'system' is now sent to the server AS 'system', a real literal value, not collapsed
+// to '' anymore (see UserPreferenceModel's own docblock for why null/'' was overloaded to mean
+// "explicitly follow the OS" too, which was the actual bug: it made that the DEFAULT for anyone who
+// had never touched Settings at all, not just for someone who deliberately picked System).
+async function persistUserPreferences(language, fontSize, theme) {
     try {
         await fetch(`${BASE_URL}/api/user-preference.save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ui_language: language, ui_font_size: fontSize }),
+            body: JSON.stringify({ ui_language: language, ui_font_size: fontSize, ui_theme: theme }),
         });
     } catch (e) { /* best-effort -- localStorage already has both values as a fallback */ }
 }
 // Reconciles this device's local defaults against whatever was last saved server-side -- the
 // server wins when it differs (e.g. a brand-new browser/device with empty localStorage, or the
 // user changed a preference somewhere else since), so switching devices/browsers now actually
-// carries the preference over instead of always falling back to English/Medium.
+// carries the preference over instead of always falling back to English/Medium/System.
 async function loadUserPreferences() {
     try {
         const res = await fetch(`${BASE_URL}/api/user-preference.get`);
@@ -892,6 +932,15 @@ async function loadUserPreferences() {
             localStorage.setItem('preferred_font_size', savedFontSize);
             applyFontSize(savedFontSize);
         }
+        // 2026-09-05 -- server's null (never configured) now maps to 'light', NOT 'system' (real bug
+        // fix: the old mapping made "follow the OS" the default for every never-configured employee,
+        // not just for someone who explicitly picked System -- see UserPreferenceModel's own
+        // docblock). 'system' from the server is now a real explicit choice, passed through as-is.
+        const savedTheme = (pref.ui_theme === 'dark' || pref.ui_theme === 'light' || pref.ui_theme === 'system') ? pref.ui_theme : 'light';
+        if (savedTheme !== (localStorage.getItem('preferred_theme') || 'light')) {
+            localStorage.setItem('preferred_theme', savedTheme);
+            applyTheme(savedTheme);
+        }
     } catch (e) { /* not logged in yet (public page) or a transient network error -- local defaults stand */ }
 }
 // Settings modal (profile icon -> Settings) -- Font Size only (Language was removed from this
@@ -904,6 +953,9 @@ async function loadUserPreferences() {
 // 'hidden.bs.modal' event) -- a slider benefits from this deliberate confirm step so dragging
 // through several ticks doesn't fire a save per tick.
 let userSettingsOriginalFontSize = 'm';
+// 2026-09-04, T069 Step 1 -- same live-preview/revert-on-close-unless-saved discipline as
+// userSettingsOriginalFontSize immediately above, mirrored for theme.
+let userSettingsOriginalTheme = 'system';
 let userSettingsJustSaved = false;
 // Delegated via $(document).on(event, selector, fn) rather than $('#userSettingsModal').on(...) --
 // this script tag loads near the very top of <body>, before the modal markup further down the
@@ -940,34 +992,55 @@ function saveUserSettingsNotifPrefs() {
         data: JSON.stringify({ preferences }), dataType: 'json',
     });
 }
+// 2026-09-04, T069 Step 1 -- reflects which of the 3 theme buttons is "selected" via an .active
+// class (the buttons are plain <button>s, not a radio group, since there's no native HTML control
+// shaped like a labeled icon-button row -- .active is this control's own equivalent of :checked).
+function setActiveThemeOption(theme) {
+    $('.user-settings-theme-option').removeClass('active');
+    $(`.user-settings-theme-option[data-theme-option="${theme}"]`).addClass('active');
+}
 $(document).on('show.bs.modal', '#userSettingsModal', function () {
     userSettingsJustSaved = false;
     const current = localStorage.getItem('preferred_font_size') || 'm';
     userSettingsOriginalFontSize = current;
     const idx = FONT_SIZE_STEPS.indexOf(current);
     $('#userSettingsFontSizeSlider').val(idx >= 0 ? idx : 1);
+    const currentTheme = localStorage.getItem('preferred_theme') || 'light';
+    userSettingsOriginalTheme = currentTheme;
+    setActiveThemeOption(currentTheme);
     loadUserSettingsNotifPrefs();
 });
 $(document).on('hidden.bs.modal', '#userSettingsModal', function () {
     if (!userSettingsJustSaved) {
         applyFontSize(userSettingsOriginalFontSize);
+        applyTheme(userSettingsOriginalTheme);
     }
 });
 $(document).on('input', '#userSettingsFontSizeSlider', function () {
     applyFontSize(FONT_SIZE_STEPS[Number($(this).val())] || 'm');
 });
+$(document).on('click', '.user-settings-theme-option', function () {
+    const theme = $(this).data('theme-option');
+    setActiveThemeOption(theme);
+    applyTheme(theme);
+});
 // 2026-08-29, same-day follow-up: "ตัวเปลี่ยนภาษาตัดออกจากใน modal setting ครับ เพราะมีใน header อยู่
 // แล้ว" -- the language picker that used to live in this modal (.user-settings-lang-option click
 // handler) was removed; the top-right nav-lang-dropdown switcher (.dropdown-lang-item, above) is
-// the only language control now. Save below still sends `currentLang` alongside the font size --
-// UserPreferenceModel::save() persists both columns together on every call (see its own
+// the only language control now. Save below still sends `currentLang` alongside the font size/theme --
+// UserPreferenceModel::save() persists all 3 columns together on every call (see its own
 // docblock), so this Save button still correctly keeps whatever language is currently active,
 // it just never CHANGES it anymore.
 $(document).on('click', '#btnSaveUserSettings', function () {
     const size = FONT_SIZE_STEPS[Number($('#userSettingsFontSizeSlider').val())] || 'm';
     localStorage.setItem('preferred_font_size', size);
     applyFontSize(size);
-    persistUserPreferences(currentLang, size);
+    // 2026-09-04, T069 Step 1 -- reads the .active button rather than a separate tracked variable,
+    // same source-of-truth-is-the-DOM approach the font-size slider's own $(this).val() uses.
+    const theme = $('.user-settings-theme-option.active').data('theme-option') || 'light';
+    localStorage.setItem('preferred_theme', theme);
+    applyTheme(theme);
+    persistUserPreferences(currentLang, size, theme);
     saveUserSettingsNotifPrefs();
     userSettingsJustSaved = true;
     if (typeof bootstrap !== 'undefined') {

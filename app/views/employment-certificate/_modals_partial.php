@@ -32,11 +32,11 @@
   <div class="modal-dialog modal-dialog-centered modal-xl">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title fw-bold text-secondary" id="ectNewTemplateModalTitle" data-i18n="ect_new_template">New Template</h5>
+        <h5 class="modal-title text-secondary" id="ectNewTemplateModalTitle" data-i18n="ect_new_template">New Template</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <label class="form-label" data-i18n="ect_choose_preset">Start from</label>
+        <label class="form-label mb-1" data-i18n="ect_choose_preset">Start from</label>
         <div class="text-secondary small mb-2" data-i18n="ect_preset_preview_hint">Click a card to choose it, or the eye icon to see the real PDF layout first.</div>
         <div id="ectPresetList" class="ect-preset-gallery"></div>
         <hr class="my-3">
@@ -55,18 +55,18 @@
         <div id="ectNewTemplatePairHint" class="alert alert-light border small text-secondary mb-3 d-none"></div>
         <div class="row g-3">
           <div class="col-md-2">
-            <label class="form-label" data-i18n="template_language">Language</label>
+            <label class="form-label mb-1" data-i18n="template_language">Language</label>
             <select class="form-select" id="ectNewTemplateLanguageSelect">
               <option value="th" data-i18n="template_language_th">Thai</option>
               <option value="en" data-i18n="template_language_en">English</option>
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label"><span data-i18n="template_name">Template Name</span> <span class="text-danger">*</span></label>
+            <label class="form-label mb-1"><span data-i18n="template_name">Template Name</span> <span class="text-danger">*</span></label>
             <input type="text" class="form-control" id="ectNewTemplateNameInput" maxlength="150" data-i18n="template_name_placeholder" placeholder="e.g., Standard Employment Certificate">
           </div>
           <div class="col-md-2">
-            <label class="form-label" data-i18n="ect_page_size">Page Size</label>
+            <label class="form-label mb-1" data-i18n="ect_page_size">Page Size</label>
             <!-- 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" --
                  same paper-size set as the editor's own #ectPageSizeSelect. -->
             <select class="form-select" id="ectNewPageSizeSelect">
@@ -83,7 +83,7 @@
             </select>
           </div>
           <div class="col-md-2">
-            <label class="form-label" data-i18n="ect_orientation">Orientation</label>
+            <label class="form-label mb-1" data-i18n="ect_orientation">Orientation</label>
             <select class="form-select" id="ectNewOrientationSelect">
               <option value="portrait" data-i18n="ect_portrait">Portrait</option>
               <option value="landscape" data-i18n="ect_landscape">Landscape</option>
@@ -104,7 +104,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title fw-bold text-secondary" data-i18n="ect_edit_text">Edit Text</h5>
+        <h5 class="modal-title text-secondary" data-i18n="ect_edit_text">Edit Text</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -132,7 +132,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title fw-bold text-secondary" data-i18n="ect_image_library">Image Library</h5>
+        <h5 class="modal-title text-secondary" data-i18n="ect_image_library">Image Library</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -159,7 +159,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title fw-bold text-secondary" data-i18n="ect_table">Table</h5>
+        <h5 class="modal-title text-secondary" data-i18n="ect_table">Table</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">

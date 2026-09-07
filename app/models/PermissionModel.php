@@ -131,8 +131,26 @@ class PermissionModel {
      * unaffected by any override -- an admin is never bindable to a 'deny' override.
      */
     public function checkPermission(int $employeeId, string $permissionKey, bool $isAdmin, int $compId): array {
+        // 2026-09-04, Backlog Phase 10, T059 -- $isAdmin now checked BEFORE the suspension marker,
+        // deliberately (flipped from the first version of this method, which checked suspension
+        // first -- see the migration's own header comment for the "'admin' has zero persistent
+        // representation in this schema" finding that made this ordering question unavoidable in
+        // the first place). Confirmed with the user directly after that finding surfaced: workshop
+        // decision #2 ("admin accounts can never be suspended") is a HARD safety guarantee against
+        // ever locking out an admin, not just a preventive gate at suspend-time -- since
+        // suspendEmployee() genuinely cannot verify a target isn't an admin (no stored flag to
+        // check), the only way to actually HONOR that guarantee is for a live admin session to
+        // never be blocked by whatever suspension state happens to be sitting on that employee_id.
+        // A suspension applied to an employee who is NOT currently in an admin session still fully
+        // takes effect the moment they are not admin (e.g. a former admin demoted by Origami, or
+        // simply not logged in with that role this session) -- this only protects an ACTIVE admin
+        // session, it does not make the suspend action itself refuse an admin target (still can't,
+        // for the same "nothing to check" reason).
         if ($isAdmin) {
             return ['allowed' => true, 'allow_scope' => 'all', 'detail_level' => 'full'];
+        }
+        if ($this->isSuspended($employeeId, $compId)) {
+            return ['allowed' => false, 'allow_scope' => null, 'detail_level' => null];
         }
         $override = $this->getOverride($employeeId, $permissionKey, $compId);
         if ($override !== null) {
@@ -352,6 +370,204 @@ class PermissionModel {
                 $this->db->commit();
             }
             return ['status' => true, 'message' => 'Saved successfully.'];
+        } catch (PDOException $e) {
+            if ($ownTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    /**
+     * 2026-09-04, Backlog Phase 10, T059. Cheap, indexed lookup -- the FAST authoritative signal
+     * both checkPermission() (above) and ensure_login() (app/helpers/helpers.php) use. Belt-and-
+     * suspenders alongside the bulk-deny rows suspendEmployee() also writes: this marker alone is
+     * enough to correctly deny a permission added to the catalog AFTER the employee was suspended,
+     * even though no bulk-deny row exists for it yet.
+     */
+    public function isSuspended(int $employeeId, int $compId): bool {
+        $stmt = $this->db->prepare("SELECT access_suspended_at FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $val = $stmt->fetchColumn();
+        return $val !== false && $val !== null;
+    }
+
+    /** Current suspension state for one employee, for the Employee Detail UI. Null when not suspended. */
+    public function suspensionStatus(int $compId, int $employeeId): ?array {
+        $stmt = $this->db->prepare("SELECT e.access_suspended_at, e.access_suspended_by, e.access_suspended_reason,
+                emp.name_th AS suspended_by_name_th, emp.name_en AS suspended_by_name_en
+            FROM employees e
+            LEFT JOIN employees emp ON emp.id = e.access_suspended_by
+            WHERE e.id = :id AND e.comp_id = :comp_id AND e.deleted_at IS NULL");
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false || $row['access_suspended_at'] === null) {
+            return null;
+        }
+        return [
+            'suspended_at' => $row['access_suspended_at'],
+            'suspended_by' => $row['access_suspended_by'] !== null ? (int)$row['access_suspended_by'] : null,
+            'suspended_by_name_th' => $row['suspended_by_name_th'],
+            'suspended_by_name_en' => $row['suspended_by_name_en'],
+            'reason' => $row['access_suspended_reason'],
+        ];
+    }
+
+    /**
+     * 2026-09-04, Backlog Phase 10, T059 -- "suspend a user's system access." Workshop-confirmed
+     * mechanism: bulk-deny every currently-active permission via `employee_permission_overrides`
+     * (the SAME table/effect enum Platform Hardening Phase 3 already built for one-at-a-time
+     * per-permission overrides), PLUS a fast `employees.access_suspended_at` marker for live
+     * enforcement (checkPermission() above, ensure_login()) without needing to re-derive "does this
+     * employee have every permission denied" from scratch on every request.
+     *
+     * KNOWN, DOCUMENTED LIMITATION (see the migration's own header comment for the full finding):
+     * "admin cannot be suspended" is NOT mechanically verifiable against an arbitrary target employee
+     * here -- there is no persistent admin flag anywhere in this schema, 'admin' only ever exists as
+     * a live Origami SSO session claim. This method does NOT attempt (and cannot reliably attempt) a
+     * "is $targetEmployeeId an admin" check. The real protection is that this whole action is gated
+     * behind `rbac.edit` at the controller layer (same trust tier as the Permission Matrix itself) --
+     * only someone already trusted to manage every permission in the system can invoke this at all.
+     * What IS 100% reliably enforced here: self-suspension (both ids are always real, known values).
+     */
+    public function suspendEmployee(int $compId, int $targetEmployeeId, int $actingEmployeeId, string $reason): array {
+        if ($targetEmployeeId === $actingEmployeeId) {
+            return ['status' => false, 'message' => 'You cannot suspend your own account.'];
+        }
+        $stmtTarget = $this->db->prepare("SELECT access_suspended_at FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtTarget->execute([':id' => $targetEmployeeId, ':comp_id' => $compId]);
+        $existing = $stmtTarget->fetch(PDO::FETCH_ASSOC);
+        if ($existing === false) {
+            return ['status' => false, 'message' => 'Employee not found.'];
+        }
+        if ($existing['access_suspended_at'] !== null) {
+            return ['status' => false, 'message' => 'This employee is already suspended.'];
+        }
+        $reason = trim($reason);
+        if ($reason === '') {
+            return ['status' => false, 'message' => 'A suspension reason is required.'];
+        }
+
+        $permissionIds = array_map(fn($p) => (int)$p['id'], $this->listPermissions());
+
+        $ownTransaction = !$this->db->inTransaction();
+        if ($ownTransaction) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $this->db->prepare("UPDATE employees SET access_suspended_at = CURRENT_TIMESTAMP, access_suspended_by = :by, access_suspended_reason = :reason WHERE id = :id AND comp_id = :comp_id")
+                ->execute([':by' => $actingEmployeeId, ':reason' => $reason, ':id' => $targetEmployeeId, ':comp_id' => $compId]);
+
+            $stmtExistingOverride = $this->db->prepare("SELECT permission_id, effect, allow_scope, detail_level FROM employee_permission_overrides WHERE employee_id = :employee_id AND comp_id = :comp_id");
+            $stmtExistingOverride->execute([':employee_id' => $targetEmployeeId, ':comp_id' => $compId]);
+            $existingOverrides = [];
+            foreach ($stmtExistingOverride->fetchAll(PDO::FETCH_ASSOC) as $o) {
+                $existingOverrides[(int)$o['permission_id']] = $o;
+            }
+
+            $insSnapshot = $this->db->prepare("INSERT INTO employee_suspension_permission_snapshots
+                (comp_id, employee_id, permission_id, had_prior_override, prior_effect, prior_allow_scope, prior_detail_level)
+                VALUES (:comp_id, :employee_id, :permission_id, :had_prior, :prior_effect, :prior_scope, :prior_detail)");
+            $insOverride = $this->db->prepare("INSERT INTO employee_permission_overrides (comp_id, employee_id, permission_id, effect, allow_scope, detail_level, created_by) VALUES (:comp_id, :employee_id, :permission_id, 'deny', NULL, NULL, :created_by)");
+            $updOverride = $this->db->prepare("UPDATE employee_permission_overrides SET effect = 'deny', allow_scope = NULL, detail_level = NULL, updated_by = :updated_by WHERE employee_id = :employee_id AND comp_id = :comp_id AND permission_id = :permission_id");
+
+            foreach ($permissionIds as $permId) {
+                $prior = $existingOverrides[$permId] ?? null;
+                // Snapshot exactly what was here before, so unsuspend can restore it precisely --
+                // see this table's own migration comment. A permission already deny'd independently
+                // still gets snapshotted (had_prior_override=1, prior_effect='deny') so unsuspend
+                // correctly leaves it deny'd rather than deleting an override the employee had for
+                // an unrelated reason before ever being suspended.
+                $insSnapshot->execute([
+                    ':comp_id' => $compId, ':employee_id' => $targetEmployeeId, ':permission_id' => $permId,
+                    ':had_prior' => $prior !== null ? 1 : 0,
+                    ':prior_effect' => $prior['effect'] ?? null,
+                    ':prior_scope' => $prior['allow_scope'] ?? null,
+                    ':prior_detail' => $prior['detail_level'] ?? null,
+                ]);
+                if ($prior !== null) {
+                    if ($prior['effect'] !== 'deny') {
+                        $updOverride->execute([':updated_by' => $actingEmployeeId, ':employee_id' => $targetEmployeeId, ':comp_id' => $compId, ':permission_id' => $permId]);
+                    }
+                    // already 'deny' -- nothing to change.
+                } else {
+                    $insOverride->execute([':comp_id' => $compId, ':employee_id' => $targetEmployeeId, ':permission_id' => $permId, ':created_by' => $actingEmployeeId]);
+                }
+            }
+
+            // Kill the target's currently-active session, if any, for audit-trail accuracy (Login
+            // History correctly shows they were logged out) -- live enforcement itself is via the
+            // marker check in ensure_login()/checkPermission() above, evaluated fresh on every
+            // request, which is what actually makes this "immediate" (there is no way to interrupt
+            // an in-flight request over stateless HTTP; the next request is as immediate as it gets,
+            // same posture as T037's own "superseded session" check).
+            require_once __DIR__ . '/EmployeeLoginLogModel.php';
+            $loginLogModel = new EmployeeLoginLogModel();
+            $stmtActiveSession = $this->db->prepare("SELECT id FROM employee_login_logs WHERE employee_id = :employee_id AND is_active = 1 LIMIT 1");
+            $stmtActiveSession->execute([':employee_id' => $targetEmployeeId]);
+            $activeSessionId = $stmtActiveSession->fetchColumn();
+            if ($activeSessionId !== false) {
+                $loginLogModel->endSession((int)$activeSessionId, $compId, $targetEmployeeId, 'suspended');
+            }
+
+            if ($ownTransaction) {
+                $this->db->commit();
+            }
+            return ['status' => true, 'message' => 'Employee suspended successfully.'];
+        } catch (PDOException $e) {
+            if ($ownTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            return ['status' => false, 'message' => 'Database operation failed.'];
+        }
+    }
+
+    /**
+     * Reverses suspendEmployee() -- restores exactly the prior override state per permission (from
+     * this employee's own snapshot rows), then clears the suspension marker. Does NOT touch any
+     * override that existed independently of the suspension beyond restoring it to what it already
+     * was.
+     */
+    public function unsuspendEmployee(int $compId, int $targetEmployeeId, int $actingEmployeeId): array {
+        $stmtTarget = $this->db->prepare("SELECT access_suspended_at FROM employees WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtTarget->execute([':id' => $targetEmployeeId, ':comp_id' => $compId]);
+        $existing = $stmtTarget->fetch(PDO::FETCH_ASSOC);
+        if ($existing === false) {
+            return ['status' => false, 'message' => 'Employee not found.'];
+        }
+        if ($existing['access_suspended_at'] === null) {
+            return ['status' => false, 'message' => 'This employee is not currently suspended.'];
+        }
+
+        $ownTransaction = !$this->db->inTransaction();
+        if ($ownTransaction) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $stmtSnapshots = $this->db->prepare("SELECT permission_id, had_prior_override, prior_effect, prior_allow_scope, prior_detail_level FROM employee_suspension_permission_snapshots WHERE employee_id = :employee_id AND comp_id = :comp_id");
+            $stmtSnapshots->execute([':employee_id' => $targetEmployeeId, ':comp_id' => $compId]);
+            $delOverride = $this->db->prepare("DELETE FROM employee_permission_overrides WHERE employee_id = :employee_id AND comp_id = :comp_id AND permission_id = :permission_id");
+            $updOverride = $this->db->prepare("UPDATE employee_permission_overrides SET effect = :effect, allow_scope = :scope, detail_level = :detail, updated_by = :updated_by WHERE employee_id = :employee_id AND comp_id = :comp_id AND permission_id = :permission_id");
+            foreach ($stmtSnapshots->fetchAll(PDO::FETCH_ASSOC) as $snap) {
+                $permId = (int)$snap['permission_id'];
+                if ((int)$snap['had_prior_override'] === 1) {
+                    $updOverride->execute([
+                        ':effect' => $snap['prior_effect'], ':scope' => $snap['prior_allow_scope'], ':detail' => $snap['prior_detail_level'],
+                        ':updated_by' => $actingEmployeeId, ':employee_id' => $targetEmployeeId, ':comp_id' => $compId, ':permission_id' => $permId,
+                    ]);
+                } else {
+                    $delOverride->execute([':employee_id' => $targetEmployeeId, ':comp_id' => $compId, ':permission_id' => $permId]);
+                }
+            }
+            $this->db->prepare("DELETE FROM employee_suspension_permission_snapshots WHERE employee_id = :employee_id AND comp_id = :comp_id")
+                ->execute([':employee_id' => $targetEmployeeId, ':comp_id' => $compId]);
+            $this->db->prepare("UPDATE employees SET access_suspended_at = NULL, access_suspended_by = NULL, access_suspended_reason = NULL WHERE id = :id AND comp_id = :comp_id")
+                ->execute([':id' => $targetEmployeeId, ':comp_id' => $compId]);
+
+            if ($ownTransaction) {
+                $this->db->commit();
+            }
+            return ['status' => true, 'message' => 'Employee unsuspended successfully.'];
         } catch (PDOException $e) {
             if ($ownTransaction && $this->db->inTransaction()) {
                 $this->db->rollBack();

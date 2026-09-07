@@ -72,26 +72,26 @@
          schema change to payslip_delivery_logs). -->
     <div class="tab-pane fade p-0" id="tab-dlog">
         <div class="station-filter" id="dlogStationFilter">
-          <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+          <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
           <button type="button" class="station-filter-toggle" id="dlogStationFilterToggle" title="Toggle filter">
             <i class="fas fa-chevron-up"></i>
           </button>
           <div class="station-filter-body">
             <div class="row g-2">
               <div class="col-6 col-md-3">
-                <label class="form-label mb-1 small" data-i18n="document_types">Document Type</label>
+                <label class="form-label small mb-1" data-i18n="document_types">Document Type</label>
                 <select class="form-select select2-static" id="dlog_filter_document_type" data-option-keys="doc_type_payslip,doc_type_employment_certificate" data-option-values="payslip,employment_certificate"></select>
               </div>
               <div class="col-6 col-md-3">
-                <label class="form-label mb-1 small" data-i18n="status">Status</label>
+                <label class="form-label small mb-1" data-i18n="status">Status</label>
                 <select class="form-select select2-static" id="dlog_filter_status" data-option-keys="status_sent,status_send_failed" data-option-values="success,failed"></select>
               </div>
               <div class="col-6 col-md-3">
-                <label class="form-label mb-1 small" data-i18n="channel">Channel</label>
+                <label class="form-label small mb-1" data-i18n="channel">Channel</label>
                 <select class="form-select select2-remote" id="dlog_filter_channel" data-api="/api/payslip-distribution.channel-options"></select>
               </div>
               <div class="col-6 col-md-3">
-                <label class="form-label mb-1 small" data-i18n="source">Source</label>
+                <label class="form-label small mb-1" data-i18n="source">Source</label>
                 <select class="form-select select2-static" id="dlog_filter_source" data-option-keys="source_auto,source_request" data-option-values="auto,request"></select>
               </div>
             </div>

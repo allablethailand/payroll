@@ -56,9 +56,6 @@ $(document).on('click', '#btnCancelPermissionMatrix', function () {
     );
 });
 
-function escapeHtmlPm(str) {
-    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
-}
 
 // 2026-08-28, real bug found and fixed (explicit report: "ในหน้าจัดการสิทธิ์การใช้งาน บางคำยังเป็นคีย์
 // ยังไม่แปล" -- some words on the Permission Matrix page still show as raw keys, not translated).
@@ -140,8 +137,8 @@ function renderPermissionModuleTabs() {
     pmModuleOrder.forEach((code, idx) => {
         const active = code === pmActiveModule ? 'active' : '';
         html += `<li class="nav-item" role="presentation">
-            <button class="nav-link structure-menu ${active}" type="button" role="tab" data-module="${escapeHtmlPm(code)}">
-                ${escapeHtmlPm(permissionModuleLabel(code))}
+            <button class="nav-link structure-menu ${active}" type="button" role="tab" data-module="${escapeAttr(code)}">
+                ${escapeAttr(permissionModuleLabel(code))}
             </button>
         </li>`;
     });
@@ -173,7 +170,7 @@ function renderPermissionMatrixTable(moduleCode) {
         <thead class="table-light"><tr><th style="min-width:220px;">${langData['permission'] || 'Permission'}</th>`;
     roles.forEach(r => {
         html += `<th class="text-center">
-            <div>${escapeHtmlPm(currentLang === 'th' ? r.role_name_th : r.role_name_en)}</div>
+            <div>${escapeAttr(currentLang === 'th' ? r.role_name_th : r.role_name_en)}</div>
             <input type="checkbox" class="form-check-input perm-role-select-all" data-role-id="${r.id}" title="${langData['select_all'] || 'Select All'}">
         </th>`;
     });
@@ -184,7 +181,7 @@ function renderPermissionMatrixTable(moduleCode) {
     // sensible meaning for a salary-visibility grant the way it does for approval routing) PLUS a
     // second detail_level selector neither key had before.
     rows.forEach(p => {
-        html += `<tr><td>${escapeHtmlPm(currentLang === 'th' ? p.name_th : p.name_en)}</td>`;
+        html += `<tr><td>${escapeAttr(currentLang === 'th' ? p.name_th : p.name_en)}</td>`;
         const isApprovalAct = p.permission_key === 'approval_request.act';
         const isSalaryAmount = p.permission_key.indexOf('salary_amount.') === 0;
         roles.forEach(r => {

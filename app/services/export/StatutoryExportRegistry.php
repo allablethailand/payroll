@@ -4,6 +4,8 @@ require_once __DIR__ . '/StatutoryExportInterface.php';
 require_once __DIR__ . '/th/PndOneExporter.php';
 require_once __DIR__ . '/th/PndOneKorExporter.php';
 require_once __DIR__ . '/th/Sso110Exporter.php';
+require_once __DIR__ . '/th/Sso609Exporter.php';
+require_once __DIR__ . '/th/StudentLoanExporter.php';
 
 /**
  * Central lookup for all registered StatutoryExportInterface implementations.
@@ -22,6 +24,8 @@ class StatutoryExportRegistry {
         self::register(new PndOneExporter());
         self::register(new PndOneKorExporter());
         self::register(new Sso110Exporter());
+        self::register(new Sso609Exporter());
+        self::register(new StudentLoanExporter());
         self::$initialized = true;
     }
 

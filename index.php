@@ -43,6 +43,7 @@
     $router->get('/', 'DashboardController@index'); 
     $router->get('dashboard', 'DashboardController@index');
     $router->get('api/dashboard.summary', 'DashboardController@summary');
+    $router->get('api/dashboard.calendar', 'DashboardController@calendar');
     $router->get('api/user-preference.get', 'UserPreferenceController@get');
     $router->post('api/user-preference.save', 'UserPreferenceController@save');
     $router->get('employees', 'EmployeeController@index');
@@ -150,6 +151,28 @@
     $router->post('api/attendance-deduction-rule.preview', 'PayrollConfigurationController@attendanceDeductionRulePreview');
     $router->get('api/payroll-policy.get', 'PayrollConfigurationController@policyGet');
     $router->post('api/payroll-policy.save', 'PayrollConfigurationController@policySave');
+    // 2026-09-04, Backlog Phase 10, T056 -- Probation Sets (Clone + Assign, via T055's EntityAssignmentModel).
+    $router->get('api/probation-policy-set.list', 'PayrollConfigurationController@probationSetList');
+    $router->get('api/probation-policy-set.get', 'PayrollConfigurationController@probationSetGet');
+    $router->post('api/probation-policy-set.save', 'PayrollConfigurationController@probationSetSave');
+    $router->post('api/probation-policy-set.delete', 'PayrollConfigurationController@probationSetDelete');
+    $router->post('api/probation-policy-set.toggle-status', 'PayrollConfigurationController@probationSetToggleStatus');
+    $router->post('api/probation-policy-set.set-default', 'PayrollConfigurationController@probationSetSetDefault');
+    $router->post('api/probation-policy-set.duplicate', 'PayrollConfigurationController@probationSetDuplicate');
+    $router->post('api/probation-policy-set.assignable-options', 'PayrollConfigurationController@probationSetAssignableOptions');
+    // 2026-09-04, Backlog Phase 10, T057: Announcement CMS.
+    $router->get('setup/announcements', 'AnnouncementController@settingsPage');
+    $router->get('announcements', 'AnnouncementController@myListPage');
+    $router->get('api/announcement.list', 'AnnouncementController@list');
+    $router->get('api/announcement.get', 'AnnouncementController@get');
+    $router->get('api/announcement.assignable-options', 'AnnouncementController@assignableOptions');
+    $router->post('api/announcement.save', 'AnnouncementController@save');
+    $router->post('api/announcement.delete', 'AnnouncementController@delete');
+    $router->post('api/announcement.publish', 'AnnouncementController@publish');
+    $router->post('api/announcement.set-featured', 'AnnouncementController@setFeatured');
+    $router->get('api/announcement.pending-list', 'AnnouncementController@pendingList');
+    $router->get('api/announcement.my-list', 'AnnouncementController@myList');
+    $router->post('api/announcement.acknowledge', 'AnnouncementController@acknowledge');
     $router->get('setup/tax-statutory', 'TaxStatutoryController@index');
     $router->get('api/statutory-item.list', 'TaxStatutoryController@itemList');
     $router->get('api/statutory-item.get', 'TaxStatutoryController@itemGet');
@@ -161,6 +184,13 @@
     $router->post('api/statutory-item.rate-history.save', 'TaxStatutoryController@rateHistorySave');
     $router->post('api/statutory-item.rate-history.delete', 'TaxStatutoryController@rateHistoryDelete');
     $router->post('api/statutory-item.rate-version.preview', 'TaxStatutoryController@rateVersionPreview');
+    // 2026-09-03, Backlog Phase 9, T045 -- Master/Clone architecture: a company's own custom
+    // statutory items (comp_id-scoped), and the 2 "Update as system default" promote actions.
+    $router->get('api/statutory-item.custom.get', 'TaxStatutoryController@customItemGet');
+    $router->post('api/statutory-item.custom.save', 'TaxStatutoryController@customItemSave');
+    $router->post('api/statutory-item.custom.delete', 'TaxStatutoryController@customItemDelete');
+    $router->post('api/statutory-item.custom.promote', 'TaxStatutoryController@customItemPromote');
+    $router->post('api/company-statutory-setting.promote', 'TaxStatutoryController@companySettingPromote');
     $router->get('api/company-statutory-setting.list', 'TaxStatutoryController@companySettingList');
     $router->get('api/company-statutory-setting.get', 'TaxStatutoryController@companySettingGet');
     $router->post('api/company-statutory-setting.save', 'TaxStatutoryController@companySettingSave');
@@ -180,6 +210,9 @@
     // (PayslipController, app/views/payslip/*) are internal, not user-facing, so left unrenamed.
     $router->get('payslip-documents/requests', 'PayslipController@requests');
     $router->get('payslip-documents/settings', 'PayslipController@settings');
+    // 2026-09-04, Backlog Phase 11, T062 -- self-service "view MY OWN payslip" link, the target
+    // of LineChannel's push-message text (see PayslipController::myDownload()'s own docblock).
+    $router->get('api/payslip.my-download', 'PayslipController@myDownload');
     $router->post('api/approval-workflow.document-type-options', 'ApprovalWorkflowController@documentTypeOptions');
     $router->get('api/approval-workflow.list', 'ApprovalWorkflowController@workflowList');
     $router->get('api/approval-workflow.get', 'ApprovalWorkflowController@workflowGet');
@@ -232,6 +265,10 @@
     // 2026-09-03, Platform Hardening Phase 3 Stage 5 -- Employee Detail's "Permission Overrides" tab.
     $router->get('api/permission-employee-overrides.get', 'PermissionController@employeeOverridesGet');
     $router->post('api/permission-employee-overrides.save', 'PermissionController@employeeOverridesSave');
+    // 2026-09-04, Backlog Phase 10, T059 -- suspend/unsuspend a user's system access.
+    $router->get('api/permission-employee-suspension.get', 'PermissionController@suspensionStatus');
+    $router->post('api/permission-employee-suspension.suspend', 'PermissionController@suspend');
+    $router->post('api/permission-employee-suspension.unsuspend', 'PermissionController@unsuspend');
     $router->get('payslip-template/edit/{key}', 'PayslipTemplateController@editPage');
     $router->post('api/payslip-template.field-options', 'PayslipTemplateController@fieldTypeOptions');
     $router->post('api/payslip-template.assignable-options', 'PayslipTemplateController@assignableOptions');
@@ -350,6 +387,16 @@
     // Platform Hardening Phase 6 pilot -- field-level audit log viewer.
     $router->get('audit-log', 'AuditLogController@index');
     $router->get('api/audit-log.list', 'AuditLogController@list');
+    // 2026-09-05, Backlog Phase 13 -- Terms & Conditions (login-gate modal + Profile menu),
+    // Help > Setup Guide/Version pages, and the Help Drawer's own content endpoint.
+    $router->get('api/terms.get', 'TermsAndConditionsController@get');
+    $router->post('api/terms.accept', 'TermsAndConditionsController@accept');
+    $router->get('api/terms.history', 'TermsAndConditionsController@history');
+    $router->get('help/setup-guide', 'HelpController@setupGuide');
+    $router->get('help/version', 'HelpController@version');
+    $router->get('api/help.checklist', 'HelpController@checklist');
+    $router->get('api/help.changelog-list', 'HelpController@changelogList');
+    $router->get('api/help.drawer-content', 'HelpController@drawerContent');
     // 2026-08-30, Phase 7 (T037/T038/T039) -- session-guard.js's periodic heartbeat poll.
     $router->get('api/session.heartbeat', 'SessionController@heartbeat');
     $router->post('api/ot-rate.scope-options', 'SetupRulesController@otScopeOptions');
@@ -431,6 +478,8 @@
     $router->post('api/employee-login-log.record-timezone', 'EmployeeLoginLogController@recordTimezone');
     $router->post('api/employee-login-log.list-company-wide', 'EmployeeLoginLogController@listCompanyWide');
     $router->get('api/employee-login-log.filter-options-company-wide', 'EmployeeLoginLogController@filterOptionsCompanyWide');
+    // 2026-09-05, Backlog Phase 13 -- Profile > "System Access History" self-service view.
+    $router->get('api/employee-login-log.my-history', 'EmployeeLoginLogController@myHistory');
     $router->get('api/notification.list', 'NotificationController@list');
     $router->post('api/notification.datatable', 'NotificationController@listDataTable');
     $router->get('api/notification.preferences-get', 'NotificationController@preferencesGet');
@@ -458,6 +507,9 @@
     $router->post('api/master-data-sync.sync-all', 'MasterDataSyncController@syncAll');
     $router->post('api/master-data-sync.history', 'MasterDataSyncController@history');
     $router->post('api/country.get', 'MasterController@getMaster');
+    // 2026-09-04, Backlog Phase 9, T047 -- statutory item category/calc_base master-table dropdowns.
+    $router->post('api/statutory-category.get', 'MasterController@getMaster');
+    $router->post('api/statutory-calc-base.get', 'MasterController@getMaster');
     $router->post('api/nationality.get', 'MasterController@getMaster');
     $router->post('api/religion.get', 'MasterController@getMaster');
     $router->post('api/structure.role', 'CompanyProfileController@role');
@@ -541,6 +593,9 @@
     $router->post('api/employee.earning-deduction.options', 'EmployeeController@earningDeductionOptions');
     $router->get('api/employee.earning-deduction.list', 'EmployeeController@earningDeductionList');
     $router->get('api/employee.earning-deduction.get', 'EmployeeController@earningDeductionGet');
+    // 2026-09-04, Backlog Phase 9->10, T051 -- read-only Sync History sub-section, Income & Deductions tab.
+    $router->get('api/employee.sync-transaction-log.list', 'EmployeeController@syncTransactionLogList');
+    $router->get('api/employee.scheduled-item-occurrence.list', 'EmployeeController@scheduledItemOccurrenceList');
     $router->get('api/employee.earning-deduction.preview-installments', 'EmployeeController@earningDeductionPreviewInstallments');
     $router->post('api/employee.earning-deduction.save', 'EmployeeController@earningDeductionSave');
     $router->post('api/employee.earning-deduction.status', 'EmployeeController@earningDeductionStatus');

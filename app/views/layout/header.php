@@ -1,5 +1,35 @@
 <!doctype html>
-<html lang="th">
+<?php
+// 2026-09-04, Backlog Phase 11, T069 (dark mode), Step 1 of 3 -- stamped server-side, right here,
+// BEFORE any CSS is even linked below, so there is zero client-side flash-of-wrong-theme on load
+// (a purely-client-side toggle-after-page-load approach would show the light theme for one frame
+// first on every single page navigation, every time, for every dark-mode user -- unacceptable for
+// something this visually jarring). Session data is already available at this exact point in the
+// request lifecycle (ensure_login() already ran, before any Controller::view() call reaches this
+// include -- see app/core/Controller.php), so no extra DB query is needed per page load.
+//
+// 2026-09-05, real bug found and fixed -- the ORIGINAL version of this block treated NULL the
+// same as an explicit 'system' choice (both stamped nothing, both fell through to style.css's own
+// `@media (prefers-color-scheme: dark)` rule). That silently put an employee who had NEVER opened
+// Settings into dark mode the instant their OS/browser happened to be set to dark -- explicit
+// follow-up request: "อยากให้ Default เป็น Mode ปกติก่อน แล้วผู้ใช้เปลี่ยนเองทีหลัง" (default must be
+// Light for everyone; only the employee's OWN explicit choice should change it). 'system' is now
+// its own real enum value (see 2026-09-05_1_ui_theme_add_system_value.sql) distinct from NULL, so
+// this is a genuine 3-way branch: 'dark' -> stamp dark; 'system' (an EXPLICIT choice to follow the
+// OS) -> stamp NOTHING, letting the @media rule decide; anything else, including NULL (never
+// configured) AND the explicit 'light' choice -> stamp 'light' outright. `ui_theme` is populated
+// straight from the session, hydrated at login by auth/index.php and kept in sync by
+// UserPreferenceController::save() -- no extra DB query needed per page load.
+$userThemePref = $_SESSION['user']['ui_theme'] ?? null;
+if ($userThemePref === 'dark') {
+    $htmlThemeAttr = ' data-bs-theme="dark"';
+} elseif ($userThemePref === 'system') {
+    $htmlThemeAttr = '';
+} else {
+    $htmlThemeAttr = ' data-bs-theme="light"';
+}
+?>
+<html lang="th"<?=$htmlThemeAttr?>>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -61,6 +91,14 @@
     $compIdForOrigamiFlags = (int)(getCompId() ?? 0);
     $isOrigamiHrLinked = false;
     $isOrigamiPayrollLinked = false;
+    // 2026-09-04, Backlog Phase 11, T068 -- the logged-in company's own logo_path (Company Profile's
+    // own "Company Logo" upload card, see CLAUDE.md's "Logo upload card redesign" section), shown in
+    // the top navbar ALONGSIDE the existing Origami Payroll branding -- reuses this SAME query
+    // (already fetching ref_id/origami_payroll_comp_code/currency_code for this exact compId below)
+    // rather than a second DB round trip, matching this file's own established "fetch once here, not
+    // per-page" convention for company-level display data.
+    $companyLogoPath = null;
+    $companyLogoTitle = '';
     // 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency), Option A -- exposed here
     // (not fetched per-page via AJAX) for the exact same reason IS_ORIGAMI_HR_LINKED/
     // IS_ORIGAMI_PAYROLL_LINKED already are: every page's JS can read a plain global instead of each
@@ -68,12 +106,14 @@
     // `.currency-code-label` span (see that function's own docblock for which fields these are).
     $companyCurrencyCode = 'THB';
     if ($compIdForOrigamiFlags > 0) {
-        $stmtOrigamiFlags = Database::getInstance()->pdo->prepare("SELECT ref_id, origami_payroll_comp_code, currency_code FROM companies WHERE id = :id");
+        $stmtOrigamiFlags = Database::getInstance()->pdo->prepare("SELECT ref_id, origami_payroll_comp_code, currency_code, logo_path, local_name, company_legal_name FROM companies WHERE id = :id");
         $stmtOrigamiFlags->execute([':id' => $compIdForOrigamiFlags]);
         $companyOrigamiFlags = $stmtOrigamiFlags->fetch(PDO::FETCH_ASSOC);
         $isOrigamiHrLinked = !empty($companyOrigamiFlags['ref_id']);
         $isOrigamiPayrollLinked = !empty($companyOrigamiFlags['origami_payroll_comp_code']);
         $companyCurrencyCode = !empty($companyOrigamiFlags['currency_code']) ? $companyOrigamiFlags['currency_code'] : 'THB';
+        $companyLogoPath = !empty($companyOrigamiFlags['logo_path']) ? $companyOrigamiFlags['logo_path'] : null;
+        $companyLogoTitle = (string)($companyOrigamiFlags['local_name'] ?? $companyOrigamiFlags['company_legal_name'] ?? '');
     }
     ?>
     const IS_ORIGAMI_HR_LINKED = <?=$isOrigamiHrLinked ? 'true' : 'false'?>;
@@ -122,6 +162,18 @@ if ($compIdForOrigamiFlags > 0) {
     $canViewAuditLogMenu = (new PermissionModel())->checkPermission($menuUserId, 'audit_log.view', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
 }
 
+// 2026-09-04, Backlog Phase 10, T057 -- same single-purpose-page hide-the-whole-entry pattern as
+// $canViewAuditLogMenu directly above, gated by announcement.manage. This is the CMS management
+// entry only -- every employee (regardless of this permission) can still see their OWN announcements
+// via the Dashboard widget + Notifications + the plain /announcements "my list" page, none of which
+// go through this sidebar item at all.
+$canViewAnnouncementMenu = true;
+if ($compIdForOrigamiFlags > 0) {
+    $menuUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
+    $menuIsAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
+    $canViewAnnouncementMenu = (new PermissionModel())->checkPermission($menuUserId, 'announcement.manage', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
+}
+
 // 2026-09-02, explicit request: "ซ่อนเมนู Report ด้วยเลยครับ" (following up on ReportsController now
 // being gated by payroll_run.view end-to-end, see that controller's own requireViewAccess()) --
 // UNLIKE $canViewApprovalWorkflowMenu/$canViewPermissionsMenu above, the "Reports" menu item is a
@@ -162,12 +214,22 @@ if ($navUserId > 0) {
 <script src="<?=BASE_URL?>/node_modules/jquery/dist/jquery.min.js"></script>
 <script src="<?=asset('public/js/app.js')?>"></script>
 <script src="<?=asset('public/js/alert.js')?>"></script>
+<!-- 2026-09-04, Backlog Phase 11, T065 -- escapeHtml()/escapeAttr()/fmtNum(), replacing ~30
+     near-identical per-file copies (escapeHtmlPc/escapeHtmlDn/escapeHtmlTs/etc.) that had
+     accumulated across this app. Loaded early/globally so every page-specific script below can use
+     these with zero per-page setup, same convention as input.js. -->
+<script src="<?=asset('public/js/format-helpers.js')?>"></script>
 <!-- 2026-08-30, Phase 7 (T037/T038/T039) -- idle-timeout/duplicate-login popup, see the file's own
      top-of-file docblock. Loaded on every logged-in page via this shared layout; auth/index.php and
      auth/switch.php never include this file at all (standalone scripts, no session to guard yet). -->
 <script src="<?=asset('public/js/session-guard.js')?>"></script>
 <script src="<?=asset('public/js/input.js')?>"></script>
 <script src="<?=asset('public/js/table-column-filter.js')?>"></script>
+<!-- 2026-09-04, Backlog Phase 10, T055 -- generic reusable "Assign to Department/Position/Team/
+     Employee" widget driving the shared #entityAssignModal in modals.php. Loaded globally (same as
+     the modal itself) so any future page can call openAssignModal() with zero per-page setup -- see
+     EntityAssignmentModel's own docblock for the full architecture. -->
+<script src="<?=asset('public/js/setup/assign-widget.js')?>"></script>
 <script src="<?=asset('public/js/notifications.js')?>"></script>
 <nav class="origami-navbar">
     <div class="nav-container">
@@ -178,6 +240,21 @@ if ($navUserId > 0) {
             <a class="nav-logo" href="<?=BASE_URL?>/dashboard">
                 <img src="<?=BASE_URL?>/public/images/logo_horizontal.png" alt="Origami Logo">
             </a>
+            <?php if ($companyLogoPath): ?>
+            <!-- 2026-09-04, Backlog Phase 11, T068 -- the logged-in company's own logo, alongside
+                 (not replacing) the Origami Payroll branding above. A divider marks them as two
+                 distinct identities sharing the bar rather than implying the company logo IS the
+                 Origami logo. object-fit:contain + a fixed max-height/max-width box (CSS,
+                 .nav-company-logo) keeps an oddly-shaped/oversized uploaded image from breaking the
+                 navbar's own fixed height or pushing .nav-right's icons around, same sizing
+                 discipline Company Profile's own .cp-logo-preview-box already applies to this same
+                 logo_path elsewhere in the app. Absent entirely (not a broken-image icon or an empty
+                 gap) for the common case of a company that hasn't uploaded one yet. -->
+            <span class="nav-logo-divider" aria-hidden="true"></span>
+            <span class="nav-company-logo" title="<?=htmlspecialchars($companyLogoTitle, ENT_QUOTES, 'UTF-8')?>">
+                <img src="<?=BASE_URL?>/<?=htmlspecialchars($companyLogoPath, ENT_QUOTES, 'UTF-8')?>" alt="Company Logo">
+            </span>
+            <?php endif; ?>
         </div>
         <div class="nav-right">
             <!-- 2026-08-29, explicit request: "บน header มี icon noti อยู่ ช่วยวางระบบการแจ้งเตือนพร้อมทั้ง
@@ -282,6 +359,22 @@ if ($navUserId > 0) {
                         <a href="javascript:void(0);" id="btnOpenUserSettings" data-bs-toggle="modal" data-bs-target="#userSettingsModal">
                             <i class="fa-solid fa-gear"></i>
                             <span data-i18n="user_settings_menu">Settings</span>
+                        </a>
+                    </li>
+                    <!-- 2026-09-05, Backlog Phase 13 -- "view again" (not the forced login-gate
+                         modal, same #termsModal content reused in a non-forced mode, see
+                         terms-and-conditions.js's own openTermsModal(forced) param) and the
+                         self-service login-history view. -->
+                    <li>
+                        <a href="javascript:void(0);" id="btnOpenTermsView" data-bs-toggle="modal" data-bs-target="#termsModal">
+                            <i class="fa-solid fa-file-contract"></i>
+                            <span data-i18n="terms_and_conditions_menu">Terms and Conditions</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="javascript:void(0);" id="btnOpenAccessHistory" data-bs-toggle="modal" data-bs-target="#systemAccessHistoryModal">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                            <span data-i18n="system_access_history_menu">System Access History</span>
                         </a>
                     </li>
                 </ul>
@@ -518,26 +611,6 @@ if ($navUserId > 0) {
                 </li>
             </ul>
         </li>
-        <!-- 2026-08-31, explicit request: "สิทธิ์การใช้งาน...อยากให้แยกออกมาเป็นอีก Menu ไปเลย" -- was
-             pill p6 inside Organizational Structure (Company Profile settings); moved here as its
-             own single-link top-level entry (grouping into module categories happens WITHIN
-             permissions.php itself via pill sub-tabs, not another sidebar submenu level). Reuses
-             APPROVAL.svg (no dedicated shield/lock icon exists in this asset set -- same "reuse an
-             existing icon" precedent Employment Certificate's own menu item already established
-             with REPORT.svg, see CLAUDE.md). Gated by $canViewPermissionsMenu (computed above,
-             same single-purpose-page hide-the-whole-entry pattern as
-             $canViewApprovalWorkflowMenu). Placed directly above Settings per that section's own
-             "any future top-level menu item goes ABOVE this one" comment. -->
-        <?php if ($canViewPermissionsMenu): ?>
-        <li class="menu-item">
-            <a href="<?=BASE_URL?>/setup/permissions" class="menu-link">
-                <span class="menu-icon">
-                    <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Permissions">
-                </span>
-                <span class="menu-text" data-i18n="permissions_menu">Permissions</span>
-            </a>
-        </li>
-        <?php endif; ?>
         <!-- 2026-09-03, Platform Hardening Phase 6 pilot -- own single-link top-level entry, same
              pattern as Permissions directly above. Reuses REPORT.svg (a log/list of entries reads
              closest to that icon among what already exists -- same "reuse an existing icon"
@@ -552,9 +625,23 @@ if ($navUserId > 0) {
             </a>
         </li>
         <?php endif; ?>
-        <!-- 2026-08-30, explicit request: "การจัดเรียง Menu Setting อยู่ท้ายสุดเสมอครับ" -- already the
-             last top-level <li> in $sidebarMenuList (verified, no other file renders this menu) --
-             keep it that way: any future top-level menu item goes ABOVE this one, not below. -->
+        <!-- 2026-09-04, Backlog Phase 10, T057 -- same single-link top-level entry pattern as
+             Permissions/Audit Log directly above, gated by $canViewAnnouncementMenu. -->
+        <?php if ($canViewAnnouncementMenu): ?>
+        <li class="menu-item">
+            <a href="<?=BASE_URL?>/setup/announcements" class="menu-link">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Announcements">
+                </span>
+                <span class="menu-text" data-i18n="announcement_menu">Announcements</span>
+            </a>
+        </li>
+        <?php endif; ?>
+        <!-- 2026-09-06, explicit request: "ย้ายเมนูช่วยเหลือ มาไว้หลังตั้งค่า เมนูสิทธิ์การใช้งานมาไว้ภายใต้
+             เมนูตั้งค่า" -- supersedes the 2026-08-30 "Settings is always last" rule right below (that
+             comment is now historical/inaccurate -- Help moved to AFTER Settings, deliberately).
+             Permissions (previously its own standalone top-level entry, see below) moved to become
+             a submenu item WITHIN Settings instead. -->
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
@@ -606,6 +693,51 @@ if ($navUserId > 0) {
                     </a>
                 </li>
                 <?php endif; ?>
+                <!-- 2026-09-06: moved here from its own standalone top-level entry (originally added
+                     2026-08-31, "สิทธิ์การใช้งาน...อยากให้แยกออกมาเป็นอีก Menu ไปเลย") -- explicit
+                     follow-up request now asks the opposite, folding it back under Settings. Route/
+                     permission gate/icon all unchanged, only its position in the menu tree moved. -->
+                <?php if ($canViewPermissionsMenu): ?>
+                <li>
+                    <a href="<?=BASE_URL?>/setup/permissions" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/APPROVAL.SVG" alt="Permissions">
+                        </span>
+                        <span class="submenu-text" data-i18n="permissions_menu">Permissions</span>
+                    </a>
+                </li>
+                <?php endif; ?>
+            </ul>
+        </li>
+        <!-- 2026-09-06: moved here (was directly above Settings, per that section's own prior
+             "any future top-level menu item goes ABOVE this one" rule) -- explicit request:
+             "ย้ายเมนูช่วยเหลือ มาไว้หลังตั้งค่า" (move Help to AFTER Settings). Now the genuinely LAST
+             top-level item -- any future item goes ABOVE Settings instead, not below Help. -->
+        <li class="menu-item has-submenu">
+            <a href="javascript:void(0);" class="menu-link submenu-toggle">
+                <span class="menu-icon">
+                    <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Help">
+                </span>
+                <span class="menu-text" data-i18n="help_menu">Help</span>
+                <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
+            </a>
+            <ul class="submenu">
+                <li>
+                    <a href="<?=BASE_URL?>/help/setup-guide" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Setup Guide">
+                        </span>
+                        <span class="submenu-text" data-i18n="setup_guide_menu">Setup Guide</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?=BASE_URL?>/help/version" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Version">
+                        </span>
+                        <span class="submenu-text" data-i18n="version_menu">Version</span>
+                    </a>
+                </li>
             </ul>
         </li>
     </ul>

@@ -1,6 +1,3 @@
-function escapeHtmlList(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 // Profile completeness (2026-08-19, explicit request): color follows the same red/orange(brand)/
 // green scale used for the payroll run validation states elsewhere in this app -- red under 50%
 // (needs real attention), brand orange in the middle (getting there), green once genuinely mostly
@@ -298,7 +295,7 @@ function initEmployeeTable() {
                     };
                     const m = meta[data] || meta.manual;
                     const label = langData['source_' + (data || 'manual')] || data || '';
-                    return `<span class="badge rounded-pill ${m.cls}"><i class="fa-solid ${m.icon} me-1"></i>${escapeHtmlList(label)}</span>`;
+                    return `<span class="badge rounded-pill ${m.cls}"><i class="fa-solid ${m.icon} me-1"></i>${escapeHtml(label)}</span>`;
                 }
             },
             { data: "name", responsivePriority: 1 },
@@ -336,8 +333,8 @@ function initEmployeeTable() {
                 render: {
                     display: function (d) {
                         return Number(d) === 1
-                            ? `<span class="badge bg-success-subtle text-success"><i class="fa-solid fa-money-check-dollar me-1"></i>${escapeHtmlList(langData['payroll_participant_yes'] || 'Pays Salary')}</span>`
-                            : `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-ban me-1"></i>${escapeHtmlList(langData['payroll_participant_no'] || 'No Salary')}</span>`;
+                            ? `<span class="badge bg-success-subtle text-success"><i class="fa-solid fa-money-check-dollar me-1"></i>${escapeHtml(langData['payroll_participant_yes'] || 'Pays Salary')}</span>`
+                            : `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-ban me-1"></i>${escapeHtml(langData['payroll_participant_no'] || 'No Salary')}</span>`;
                     },
                     sort: d => Number(d) || 0,
                     filter: d => Number(d) || 0,
@@ -787,7 +784,7 @@ function recheckOtSummaryHtml(otSummary) {
         return `${name}: ${rateText}${overrideMark}`;
     });
     const title = scopeLines.join(' | ') + (otSummary.rate_source === 'custom' ? ` (${langData['ot_rate_source_custom'] || 'Set Individually per OT Type'}, * = ${langData['ot_rate_override_mark'] || 'custom'})` : '');
-    return `<span class="badge bg-success-subtle text-success" title="${escapeHtmlList(title)}">${langData['ot_eligible_short'] || 'Eligible'}</span>`;
+    return `<span class="badge bg-success-subtle text-success" title="${escapeHtml(title)}">${langData['ot_eligible_short'] || 'Eligible'}</span>`;
 }
 function currentEmployeeRecheckFilters() {
     return {
@@ -834,8 +831,8 @@ function initEmployeeRecheckTable() {
             // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
             // one column with employee_no/name stacked as 2 divs, split into 2 real columns (matches
             // the main #tb_employee table's own convention, which already had them separate).
-            { data: 'employee_no', responsivePriority: 1, render: d => escapeHtmlList(d || '-') },
-            { data: 'name', responsivePriority: 1, render: d => escapeHtmlList(d || '-') },
+            { data: 'employee_no', responsivePriority: 1, render: d => escapeHtml(d || '-') },
+            { data: 'name', responsivePriority: 1, render: d => escapeHtml(d || '-') },
             { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.title) },
             { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.gender) },
             { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_th) },
@@ -865,10 +862,10 @@ function initEmployeeRecheckTable() {
                 data: null, className: 'text-center', orderable: false, responsivePriority: 1, render: (d, t, row) => {
                     // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
                     // ".btn-circle-action" section) replace the old adjacent .btn-group.
-                    const editBtn = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-recheck-edit" data-employee-no="${escapeHtmlList(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
+                    const editBtn = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-recheck-edit" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
                     const toggleBtn = currentEmployeeRecheckView === 'excluded'
-                        ? `<button type="button" class="btn btn-link btn-circle-action text-success btn-recheck-add-back" data-id="${row.id}" data-employee-no="${escapeHtmlList(row.employee_no)}" title="${langData['add_back_to_payroll'] || 'Add Back to Payroll'}"><i class="fa-solid fa-user-plus"></i></button>`
-                        : `<button type="button" class="btn btn-link btn-circle-action text-danger btn-recheck-remove" data-id="${row.id}" data-employee-no="${escapeHtmlList(row.employee_no)}" title="${langData['remove_from_payroll'] || 'Remove from Payroll'}"><i class="fa-solid fa-user-slash"></i></button>`;
+                        ? `<button type="button" class="btn btn-link btn-circle-action text-success btn-recheck-add-back" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['add_back_to_payroll'] || 'Add Back to Payroll'}"><i class="fa-solid fa-user-plus"></i></button>`
+                        : `<button type="button" class="btn btn-link btn-circle-action text-danger btn-recheck-remove" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['remove_from_payroll'] || 'Remove from Payroll'}"><i class="fa-solid fa-user-slash"></i></button>`;
                     return `<div class="d-flex gap-1 justify-content-center">${editBtn}${toggleBtn}</div>`;
                 }
             },
@@ -978,7 +975,7 @@ function rcOtRateOverrideRowHtml(scope) {
     const name = currentLang === 'th' ? scope.scope_name_th : scope.scope_name_en;
     const isFlat = scope.calculation_method === 'flat_amount';
     return `<tr data-scope-id="${scope.ot_scope_id}">
-        <td>${escapeHtmlList(name)}</td>
+        <td>${escapeHtml(name)}</td>
         <td>
             <select class="form-select form-select-sm select2-static rc-ot-rate-calc-method"
                     data-option-keys="ot_calc_method_multiplier,ot_calc_method_flat_amount" data-option-values="multiplier,flat_amount"></select>

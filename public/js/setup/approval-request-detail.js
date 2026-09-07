@@ -23,9 +23,6 @@
 let currentDetailRequestId = null;
 let currentDetailReloadFn = null;
 
-function escapeHtmlArd(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 
 /** Generic status for an `approval_requests` row itself (pending/approved/rejected/cancelled only --
  *  NOT payslip_requests' own extra sent/send_failed, or employment_certificate_requests' own extra
@@ -47,12 +44,12 @@ function renderRequestSummary(req) {
     const docTypeName = (currentLang === 'th' ? req.document_type_name_th : req.document_type_name_en) || req.document_type_name_th || req.document_type_name_en || '';
     $('#requestDetailSummary').html(`
         <div class="row g-2 small">
-            <div class="col-sm-6"><strong>${langData['document_types'] || 'Document Type'}:</strong> ${escapeHtmlArd(docTypeName)}</div>
-            <div class="col-sm-6"><strong>${langData['reference'] || 'Reference'}:</strong> ${escapeHtmlArd(req.reference_label || '-')}</div>
-            <div class="col-sm-6"><strong>${langData['workflow_name'] || 'Workflow'}:</strong> ${escapeHtmlArd(req.workflow_name)}</div>
+            <div class="col-sm-6"><strong>${langData['document_types'] || 'Document Type'}:</strong> ${escapeHtml(docTypeName)}</div>
+            <div class="col-sm-6"><strong>${langData['reference'] || 'Reference'}:</strong> ${escapeHtml(req.reference_label || '-')}</div>
+            <div class="col-sm-6"><strong>${langData['workflow_name'] || 'Workflow'}:</strong> ${escapeHtml(req.workflow_name)}</div>
             <div class="col-sm-6"><strong>${langData['status'] || 'Status'}:</strong> ${approvalStatusBadge(req.status)}</div>
-            <div class="col-sm-6"><strong>${langData['requested_by'] || 'Requested By'}:</strong> ${escapeHtmlArd(requesterName)}</div>
-            <div class="col-sm-6"><strong>${langData['requested_at'] || 'Requested At'}:</strong> ${escapeHtmlArd(formatDisplayDateTime(req.requested_at))}</div>
+            <div class="col-sm-6"><strong>${langData['requested_by'] || 'Requested By'}:</strong> ${escapeHtml(requesterName)}</div>
+            <div class="col-sm-6"><strong>${langData['requested_at'] || 'Requested At'}:</strong> ${escapeHtml(formatDisplayDateTime(req.requested_at))}</div>
         </div>
     `);
 }
@@ -82,7 +79,7 @@ function renderRequestTimeline(logs, request) {
     $wrap.append(artStageHtml(
         'requested', 'fa-paper-plane',
         `<span class="art-stage-title">${langData['request_submitted'] || 'Request Submitted'}</span>`,
-        `${escapeHtmlArd(requesterName)} — ${escapeHtmlArd(formatDisplayDateTime(request.requested_at))}`
+        `${escapeHtml(requesterName)} — ${escapeHtml(formatDisplayDateTime(request.requested_at))}`
     ));
 
     const actionMeta = {
@@ -95,8 +92,8 @@ function renderRequestTimeline(logs, request) {
         const meta = actionMeta[l.action] || { variant: 'pending', icon: 'fa-circle', badgeCls: 'art-badge-pending', key: '', fallback: l.action };
         $wrap.append(artStageHtml(
             meta.variant, meta.icon,
-            `<span class="art-stage-title">${escapeHtmlArd(l.step_name_snapshot || '')}</span><span class="art-badge ${meta.badgeCls}">${langData[meta.key] || meta.fallback}</span>`,
-            `${escapeHtmlArd(actorName)} — ${escapeHtmlArd(formatDisplayDateTime(l.acted_at))}` + (l.note ? `<div class="art-stage-note">${escapeHtmlArd(l.note)}</div>` : '')
+            `<span class="art-stage-title">${escapeHtml(l.step_name_snapshot || '')}</span><span class="art-badge ${meta.badgeCls}">${langData[meta.key] || meta.fallback}</span>`,
+            `${escapeHtml(actorName)} — ${escapeHtml(formatDisplayDateTime(l.acted_at))}` + (l.note ? `<div class="art-stage-note">${escapeHtml(l.note)}</div>` : '')
         ));
     });
 

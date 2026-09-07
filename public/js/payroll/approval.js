@@ -24,12 +24,6 @@ function toIsoDateAp(displayVal) {
     const [dd, mm, yyyy] = parts;
     return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
-function escapeHtmlAp(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
-function fmtNumAp(n) {
-    return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function submitterNameAp(row) {
     return (currentLang === 'th' ? row.submitted_by_name_th : row.submitted_by_name_en) || row.submitted_by_name_th || row.submitted_by_name_en || '-';
 }
@@ -159,7 +153,7 @@ const APV_COLORS_AP = {
 };
 function apvBadgeHtmlAp(tone, label) {
     const c = APV_COLORS_AP[tone] || APV_COLORS_AP.muted;
-    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtmlAp(label)}</span>`;
+    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtml(label)}</span>`;
 }
 function apvIconHtmlAp(tone, icon) {
     const c = APV_COLORS_AP[tone] || APV_COLORS_AP.muted;
@@ -168,10 +162,10 @@ function apvIconHtmlAp(tone, icon) {
 function apvAvatarHtmlAp(name, size) {
     size = size || 26;
     const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
-    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtmlAp(initial)}</span>`;
+    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtml(initial)}</span>`;
 }
 function apvPersonLineHtmlAp(name) {
-    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlAp(name, 26)}<span class="apv-person-name">${escapeHtmlAp(name || '-')}</span></div>`;
+    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlAp(name, 26)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
 }
 function apvApproverToneAp(status) {
     return { approved: 'done', rejected: 'rejected', need_info: 'info', pending: 'pending', not_applicable: 'muted' }[status] || 'muted';
@@ -185,11 +179,11 @@ function apvApproverSubstepHtmlAp(a) {
     const tone = apvApproverToneAp(a.status);
     return `<div class="apv-substep">
         <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtmlAp(name, 22)}${escapeHtmlAp(name)}</span>
+            <span class="apv-substep-label">${apvAvatarHtmlAp(name, 22)}${escapeHtml(name)}</span>
             ${apvBadgeHtmlAp(tone, apvApproverLabelAp(a.status))}
         </div>
-        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtmlAp(a.acted_at)}</div>` : ''}
-        ${a.note ? `<div class="apv-substep-remark">${escapeHtmlAp(a.note)}</div>` : ''}
+        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
+        ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
     </div>`;
 }
 function apvApprovalStageInfoAp(state) {
@@ -215,7 +209,7 @@ function apvStepDotsHtmlAp(steps) {
         const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
         const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
         const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
-        return `<div class="apv-step-dot-wrap" title="${escapeHtmlAp(s.step_name || '')}">
+        return `<div class="apv-step-dot-wrap" title="${escapeHtml(s.step_name || '')}">
             <div class="apv-step-dot ${apvStepDotToneAp(s)}">${icon}</div>
             ${lockIcon}
         </div>${connector}`;
@@ -231,7 +225,7 @@ function apvStepGroupHtmlAp(step) {
         : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
     return `<div class="apv-step-group">
         <div class="apv-step-group-head">
-            <span class="apv-step-group-title">${escapeHtmlAp(stepLabel)}${step.step_name ? ': ' + escapeHtmlAp(step.step_name) : ''}</span>
+            <span class="apv-step-group-title">${escapeHtml(stepLabel)}${step.step_name ? ': ' + escapeHtml(step.step_name) : ''}</span>
             ${badgeHtml}
         </div>
         <div class="apv-step-group-body">${approversHtml}</div>
@@ -271,7 +265,7 @@ function apvPaidStageHtmlAp(run) {
                     <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
                     ${apvBadgeHtmlAp(tone, label)}
                 </div>
-                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtmlAp(run.paid_at)}</div>` : ''}
+                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtml(run.paid_at)}</div>` : ''}
                 <div class="apv-stage-body">
                     <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
                 </div>
@@ -289,7 +283,7 @@ function apvCreatedStageHtmlAp(run) {
                     <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
                     ${apvBadgeHtmlAp('done', langData['stage_created'] || 'Created')}
                 </div>
-                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtmlAp(run.created_at)) : ''}</div>
+                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtml(run.created_at)) : ''}</div>
                 <div class="apv-stage-body">${apvPersonLineHtmlAp(creator)}</div>
             </div>
         </div>
@@ -314,13 +308,13 @@ function renderAuditTimelineAp(logs) {
     return ordered.map(l => {
         const actor = (currentLang === 'th' ? l.performed_by_name_th : l.performed_by_name_en) || l.performed_by_name_th || l.performed_by_name_en || '-';
         const metaParts = [];
-        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtmlAp(l.ip_address)}`);
-        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtmlAp(l.user_agent)}`);
+        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtml(l.ip_address)}`);
+        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtml(l.user_agent)}`);
         return `<div class="apv-log-entry">
-            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtmlAp(l.performed_at)}</div>
-            <div class="apv-log-action">${escapeHtmlAp(auditActionLabelAp(l.action))} <span class="text-secondary fw-normal">(${escapeHtmlAp(actor)})</span></div>
+            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtml(l.performed_at)}</div>
+            <div class="apv-log-action">${escapeHtml(auditActionLabelAp(l.action))} <span class="text-secondary fw-normal">(${escapeHtml(actor)})</span></div>
             ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
-            ${l.note ? `<div class="apv-log-note">${escapeHtmlAp(l.note)}</div>` : ''}
+            ${l.note ? `<div class="apv-log-note">${escapeHtml(l.note)}</div>` : ''}
         </div>`;
     }).join('');
 }
@@ -463,15 +457,15 @@ function initPayrollApprovalTable() {
         },
         columns: [
             { data: null, orderable: false, render: (d, t, row) => approvalCheckboxHtml(row) },
-            { data: 'run_name', render: d => `<strong class="text-dark">${escapeHtmlAp(d)}</strong>` },
+            { data: 'run_name', render: d => `<strong class="text-dark">${escapeHtml(d)}</strong>` },
             { data: null, render: (d, t, row) => `${toDisplayDateAp(row.period_start_date)} - ${toDisplayDateAp(row.period_end_date)}` },
             { data: 'state', render: d => stateBadgeAp(d) },
             { data: 'employee_count', className: 'text-end' },
             // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
             // `render: fn` meant client-side sort/filter operated on the formatted "1,234.56"
             // string, not the raw numeric amount (same class of bug already documented in CLAUDE.md).
-            { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNumAp(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            { data: null, render: (d, t, row) => escapeHtmlAp(submitterNameAp(row)) },
+            { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNum(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+            { data: null, render: (d, t, row) => escapeHtml(submitterNameAp(row)) },
             // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น
             // UTC การแสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- was displaying the raw UTC time
             // straight from the DB string with no timezone conversion at all. Reuses

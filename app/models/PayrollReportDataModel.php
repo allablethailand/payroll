@@ -91,6 +91,25 @@ class PayrollReportDataModel {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /**
+     * 2026-09-04, Backlog Phase 10, T060 Step D -- runs whose pay period falls within one calendar
+     * MONTH (not year), usable states only. Direct clone of getRunsInYear() narrowed by month, same
+     * period_start_date anchor/state-filter convention -- backs PndOneReport/Sso110Report's new
+     * month-aggregation path (a real Thai monthly statutory filing spans every settled run whose
+     * period falls in that month, not just one run, for a non-monthly payroll_frequency company).
+     */
+    public function getRunsInMonth(int $compId, int $year, int $month, array $allowedStates): array {
+        $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
+        $sql = "SELECT r.*, c.cycle_name, c.bank_account_id FROM `payroll_runs` r
+                LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
+                AND YEAR(r.period_start_date) = ? AND MONTH(r.period_start_date) = ?
+                ORDER BY r.period_start_date ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge([$compId], $allowedStates, [$year, $month]));
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     /** @return array<int,array> decoded payroll_run_details rows keyed by nothing in particular, joined with employee info. */
     public function getRunDetails(int $runId): array {
         // 2026-08-29, explicit request: PND1's real pipe-delimited e-Filing spec needs the
@@ -270,7 +289,7 @@ class PayrollReportDataModel {
      * up here (employee columns NULL) rather than being silently excluded -- reconciliation is
      * exactly the place an unresolved row needs to be visible, not hidden.
      */
-    public function scheduledItemOccurrences(int $compId, ?string $dateFrom, ?string $dateTo): array {
+    public function scheduledItemOccurrences(int $compId, ?string $dateFrom, ?string $dateTo, ?int $employeeId = null): array {
         $where = "WHERE p.comp_id = :comp_id";
         $params = [':comp_id' => $compId];
         if ($dateFrom !== null && $dateFrom !== '') {
@@ -280,6 +299,14 @@ class PayrollReportDataModel {
         if ($dateTo !== null && $dateTo !== '') {
             $where .= " AND o.applied_at <= :date_to";
             $params[':date_to'] = $dateTo . ' 23:59:59';
+        }
+        // 2026-09-04, Backlog Phase 9->10, T051 -- purely additive: the existing company-wide
+        // reconciliation report call site (ScheduledItemOccurrenceReconciliationReport) never passes
+        // this, so it's completely unaffected. Lets Employee Detail's new read-only sync-history
+        // sub-section reuse this same query scoped to one employee instead of duplicating it.
+        if ($employeeId !== null) {
+            $where .= " AND o.employee_id = :employee_id";
+            $params[':employee_id'] = $employeeId;
         }
         $sql = "SELECT o.item_code, o.item_ref_code, o.occurrence_code, o.installment_no, o.amount, o.applied_at,
                     o.origami_emp_id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,

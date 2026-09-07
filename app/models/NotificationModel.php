@@ -212,6 +212,63 @@ class NotificationModel {
      *     milestone:'expiring_soon'|'expired'}> sorted soonest/most-overdue first
      */
     public function probationInternExpiringEmployees(int $compId): array {
+        $today = new DateTime('today');
+        $results = [];
+        foreach ($this->computeProbationInternExpiryDates($compId) as $e) {
+            $daysRemaining = (int)$today->diff($e['expiry_date_obj'])->format('%r%a');
+            if ($daysRemaining < 0) {
+                $milestone = 'expired';
+            } elseif ($daysRemaining <= self::PROBATION_INTERN_EXPIRY_SOON_DAYS) {
+                $milestone = 'expiring_soon';
+            } else {
+                continue;
+            }
+            $results[] = [
+                'employee_id' => $e['employee_id'], 'employee_no' => $e['employee_no'],
+                'name_th' => $e['name_th'], 'name_en' => $e['name_en'],
+                'kind' => $e['kind'], 'expiry_date' => $e['expiry_date_obj']->format('Y-m-d'),
+                'days_remaining' => $daysRemaining, 'milestone' => $milestone,
+            ];
+        }
+        usort($results, fn($a, $b) => $a['days_remaining'] <=> $b['days_remaining']);
+        return $results;
+    }
+
+    /**
+     * 2026-09-06, Dashboard Calendar widget: every probation/internship employee whose computed
+     * expiry date falls within the given calendar month (regardless of how far that is from
+     * "today" -- unlike probationInternExpiringEmployees() above, which only ever surfaces
+     * expired/expiring-soon relative to today). Shares the exact same expiry-date computation via
+     * computeProbationInternExpiryDates() so the Calendar and the "expiring soon" card can never
+     * disagree about a given employee's own expiry date, just filtered differently.
+     * @return array<int,array{employee_id:int,employee_no:string,name_th:string,name_en:string,kind:'probation'|'internship',expiry_date:string}>
+     */
+    public function probationInternEndingInMonth(int $compId, int $year, int $month): array {
+        $monthStart = sprintf('%04d-%02d-01', $year, $month);
+        $monthEnd = date('Y-m-t', strtotime($monthStart));
+        $results = [];
+        foreach ($this->computeProbationInternExpiryDates($compId) as $e) {
+            $expiryStr = $e['expiry_date_obj']->format('Y-m-d');
+            if ($expiryStr < $monthStart || $expiryStr > $monthEnd) {
+                continue;
+            }
+            $results[] = [
+                'employee_id' => $e['employee_id'], 'employee_no' => $e['employee_no'],
+                'name_th' => $e['name_th'], 'name_en' => $e['name_en'],
+                'kind' => $e['kind'], 'expiry_date' => $expiryStr,
+            ];
+        }
+        return $results;
+    }
+
+    /**
+     * Shared by probationInternExpiringEmployees()/probationInternEndingInMonth() -- every
+     * probation/internship employee with a COMPUTABLE expiry date (no time-window filtering here,
+     * that's each caller's own job). See probationInternExpiringEmployees()'s own docblock for the
+     * period_days precedence rules (unchanged, just extracted).
+     * @return array<int,array{employee_id:int,employee_no:string,name_th:string,name_en:string,kind:'probation'|'internship',expiry_date_obj:DateTime}>
+     */
+    private function computeProbationInternExpiryDates(int $compId): array {
         $policy = (new PayrollPolicyModel($this->db))->get($compId);
         $stmt = $this->db->prepare("SELECT id, employee_no, name_th, name_en, employment_date, employment_status, employment_type,
                 probation_period_days_override, intern_period_days_override
@@ -222,7 +279,6 @@ class NotificationModel {
                 AND employment_date IS NOT NULL");
         $stmt->execute([':comp_id' => $compId]);
 
-        $today = new DateTime('today');
         $results = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $e) {
             $isIntern = ($e['employment_type'] ?? null) === 'internship';
@@ -240,22 +296,12 @@ class NotificationModel {
                 continue; // nothing configured for this company/employee -- nothing to check
             }
             $expiryDate = (new DateTime((string)$e['employment_date']))->modify("+{$periodDays} days");
-            $daysRemaining = (int)$today->diff($expiryDate)->format('%r%a');
-            if ($daysRemaining < 0) {
-                $milestone = 'expired';
-            } elseif ($daysRemaining <= self::PROBATION_INTERN_EXPIRY_SOON_DAYS) {
-                $milestone = 'expiring_soon';
-            } else {
-                continue;
-            }
             $results[] = [
                 'employee_id' => (int)$e['id'], 'employee_no' => (string)$e['employee_no'],
                 'name_th' => (string)$e['name_th'], 'name_en' => (string)$e['name_en'],
-                'kind' => $kind, 'expiry_date' => $expiryDate->format('Y-m-d'),
-                'days_remaining' => $daysRemaining, 'milestone' => $milestone,
+                'kind' => $kind, 'expiry_date_obj' => $expiryDate,
             ];
         }
-        usort($results, fn($a, $b) => $a['days_remaining'] <=> $b['days_remaining']);
         return $results;
     }
 

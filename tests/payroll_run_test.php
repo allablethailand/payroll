@@ -357,6 +357,11 @@ try {
     checkTrue('fixture: OT Rate Set created' . (empty($prtOtSetSave['status']) ? " ({$prtOtSetSave['message']})" : ''), $prtOtSetSave['status']);
     $itemValuesJson = json_encode([
         ['item_id' => 99, 'item_code' => 'CUSTOM_ATTENDANCE_BONUS', 'item_name' => 'Attendance Bonus', 'item_type' => 'INCOME', 'unit_type' => null, 'value' => 500, 'remark' => null],
+        // 2026-09-06, explicit request: Origami's new opt-in TOTAL_DAYS item (item_type='INFO',
+        // calendar-based day count, same "Working Day" group as WORKING_DAYS/WEEKLY_OFF/
+        // PUBLIC_HOLIDAY) -- must produce NO payroll line (INFO items never do) while still
+        // surfacing via PayrollRunModel::getDetails()'s own total_days field.
+        ['item_id' => 100, 'item_code' => 'TOTAL_DAYS', 'item_name' => 'Total Days', 'item_type' => 'INFO', 'unit_type' => 'days', 'value' => 30, 'remark' => null],
     ], JSON_UNESCAPED_UNICODE);
     $pdo->prepare("UPDATE `payroll_sync_items` SET ot_req_working_day_hrs = 2, trip_allowance = 300, late_mins = 15, leave_without_pay_days = 3, item_values = :iv
             WHERE process_id = :process_id AND employee_id = :employee_id")
@@ -381,6 +386,15 @@ try {
     $syncLeaveLine = current(array_filter($syncDeduction, fn($l) => $l['code'] === 'LEAVE_NO_PAY_DEDUCT'));
     checkTrue('sync unpaid leave deduction line present', $syncLeaveLine !== false);
     check('sync unpaid leave deduction amount = dailyRate(1000)*3 = 3000', (float)($syncLeaveLine['amount'] ?? null), 3000.0);
+    // 2026-09-06, explicit request: TOTAL_DAYS (item_type='INFO') surfaces via getDetails()'s own
+    // total_days field, and -- being INFO -- produces NO earning/deduction line of its own.
+    check('total_days extracted from the TOTAL_DAYS item_values entry', (float)($pullDetails2[0]['total_days'] ?? null), 30.0);
+    $allBreakdownLines = array_merge($pullDetails2[0]['earning_breakdown'] ?? [], $pullDetails2[0]['deduction_breakdown'] ?? []);
+    checkTrue('TOTAL_DAYS (INFO type) produced no earning/deduction line of its own', current(array_filter($allBreakdownLines, fn($l) => stripos((string)($l['code'] ?? ''), 'TOTAL_DAYS') !== false)) === false);
+    // ?? can't distinguish "key missing" from "key present but null" (both fall through to the
+    // right-hand side), so existence and value are checked separately here on purpose.
+    checkTrue('total_days key present even with no data', array_key_exists('total_days', $pullDetails[0]));
+    check('total_days is null (not 0) before this employee\'s sync item ever carried a TOTAL_DAYS entry', $pullDetails[0]['total_days'], null);
     // Diff against the pre-sync-data gross (not an absolute figure) -- this employee may also carry
     // other, unrelated standing earning lines (PED assignments/attendance bonus) from earlier
     // fixtures in this same test file that legitimately apply to any run of theirs; isolating the

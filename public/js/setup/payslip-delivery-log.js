@@ -15,9 +15,6 @@
  */
 let tb_payslip_delivery_log;
 
-function escapeHtmlDlog(str) {
-    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
-}
 
 function deliveryStatusBadge(status) {
     if (status === 'success') {
@@ -44,8 +41,8 @@ function formatReferenceDlog(row) {
     if (row.document_type === 'employment_certificate') {
         return `<span class="text-secondary small">${docLanguageLabelDlog(row.language)}</span>`;
     }
-    if (!row.period_start_date || !row.period_end_date) return escapeHtmlDlog(row.reference_label);
-    return `${escapeHtmlDlog(row.reference_label)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
+    if (!row.period_start_date || !row.period_end_date) return escapeAttr(row.reference_label);
+    return `${escapeAttr(row.reference_label)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
 }
 
 function initPayslipDeliveryLogTable() {
@@ -66,19 +63,19 @@ function initPayslipDeliveryLogTable() {
             }
         },
         columns: [
-            { data: null, render: (d, t, row) => `${escapeHtmlDlog(row.employee_no)} - ${escapeHtmlDlog(currentLang === 'th' ? row.employee_name_th : row.employee_name_en)}` },
+            { data: null, render: (d, t, row) => `${escapeAttr(row.employee_no)} - ${escapeAttr(currentLang === 'th' ? row.employee_name_th : row.employee_name_en)}` },
             { data: 'document_type', render: d => docTypeLabelDlog(d) },
             { data: null, render: (d, t, row) => formatReferenceDlog(row) },
             { data: 'source', render: d => sourceLabel(d) },
-            { data: 'channel_code', render: d => d ? escapeHtmlDlog(d.toUpperCase()) : '-' },
-            { data: 'recipient', render: d => escapeHtmlDlog(d || '-') },
+            { data: 'channel_code', render: d => d ? escapeAttr(d.toUpperCase()) : '-' },
+            { data: 'recipient', render: d => escapeAttr(d || '-') },
             { data: 'status', render: d => deliveryStatusBadge(d) },
             // object-form render (display only, see reports/index.js's own comment on why) -- this
             // table has no serverSide:true, and defaults to sorting by this exact column
             // (order: [[7, 'desc']] below), so a plain string-render here would have silently
             // flipped the default view into lexicographic (wrong) order.
             { data: 'sent_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
-            { data: null, render: (d, t, row) => escapeHtmlDlog((currentLang === 'th' ? row.sent_by_name_th : row.sent_by_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeAttr((currentLang === 'th' ? row.sent_by_name_th : row.sent_by_name_en) || '-') },
             {
                 // 2026-08-28: className:'all' keeps this last actions column from collapsing into
                 // the Responsive expand row.

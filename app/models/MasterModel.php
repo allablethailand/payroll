@@ -31,6 +31,49 @@ class MasterModel {
                 $stmt->execute();
                 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 break;
+            // 2026-09-04, Backlog Phase 9, T047 -- same "closed set that may grow, business-addable
+            // without a code deploy" master-table convention as 'country' above; `id` returned is the
+            // CODE (not a numeric row id), matching payroll_earning_deduction_types.source_event_code's
+            // own "store by code string" pattern -- see TaxStatutoryModel::save()'s own validation of
+            // these 2 fields against the same 2 tables.
+            case 'statutory_category':
+                $where = " WHERE is_active = 1 ";
+                $params = [];
+                if (!empty($searchTerm)) {
+                    $where .= " AND (name_th LIKE :search OR name_en LIKE :search) ";
+                    $params[':search'] = '%' . $searchTerm . '%';
+                }
+                $sqlTotal = "SELECT COUNT(*) FROM master_statutory_categories" . $where;
+                $stmtTotal = $pdo->prepare($sqlTotal);
+                $stmtTotal->execute($params);
+                $totalCount = $stmtTotal->fetchColumn();
+                $sql = "SELECT code as id, name_th as text_th, name_en as text_en FROM master_statutory_categories" . $where . " ORDER BY sort_order asc, id asc LIMIT :offset, :limit";
+                $stmt = $pdo->prepare($sql);
+                $stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+                $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+                foreach ($params as $key => $val) $stmt->bindValue($key, $val);
+                $stmt->execute();
+                $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                break;
+            case 'statutory_calc_base':
+                $where = " WHERE is_active = 1 ";
+                $params = [];
+                if (!empty($searchTerm)) {
+                    $where .= " AND (name_th LIKE :search OR name_en LIKE :search) ";
+                    $params[':search'] = '%' . $searchTerm . '%';
+                }
+                $sqlTotal = "SELECT COUNT(*) FROM master_statutory_calc_bases" . $where;
+                $stmtTotal = $pdo->prepare($sqlTotal);
+                $stmtTotal->execute($params);
+                $totalCount = $stmtTotal->fetchColumn();
+                $sql = "SELECT code as id, name_th as text_th, name_en as text_en FROM master_statutory_calc_bases" . $where . " ORDER BY sort_order asc, id asc LIMIT :offset, :limit";
+                $stmt = $pdo->prepare($sql);
+                $stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+                $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+                foreach ($params as $key => $val) $stmt->bindValue($key, $val);
+                $stmt->execute();
+                $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                break;
             case 'nationality':
                 $where = " WHERE is_active = 1 ";
                 $params = [];

@@ -47,6 +47,12 @@ try {
     // only (rolled back at the end).
     $pdo->prepare("UPDATE `employees` SET deleted_at = NOW() WHERE comp_id = :comp_id AND deleted_at IS NULL AND id != :keep")
         ->execute([':comp_id' => $compId, ':keep' => $adminUserId]);
+    // 2026-09-04, Backlog Phase 10, T056: same isolation precedent -- clear any pre-existing active
+    // probation_policy_sets for comp_id=1 so this test's own Default Set (created below) is
+    // guaranteed to actually BE the resolved default, not shadowed by a real one left over from
+    // interactive UI testing on this shared dev DB.
+    $pdo->prepare("UPDATE `probation_policy_sets` SET status = 'inactive' WHERE comp_id = :comp_id AND status = 'active'")
+        ->execute([':comp_id' => $compId]);
 
     $policyModel = new PayrollPolicyModel($pdo);
     $runModel = new PayrollRunModel($pdo);
@@ -122,8 +128,29 @@ try {
         return $runModel->getDetails($res['id'], $compId);
     };
 
+    // 2026-09-04, Backlog Phase 10, T056: probation_* is no longer read from PayrollPolicyModel::
+    // save()'s own company_payroll_policies row (that write still succeeds, it's just dead for
+    // calculation now) -- probationSettings() resolves through probation_policy_sets instead. Every
+    // scenario below now goes through probationSetSave() targeting the SAME Set by id (captured from
+    // the first call) so it stays this company's single Default Set across all 4 scenarios, same
+    // "one company-wide probation policy" shape this test has always exercised -- T056 only adds the
+    // ability to have MORE than one Set, it doesn't change what "the Default" means for a company
+    // that only ever configures one.
+    $probationSetId = null;
+    $saveProbationDefault = function (array $fields) use ($policyModel, $compId, $adminUserId, &$probationSetId) {
+        $payload = array_merge(['set_name_th' => 'ค่าเริ่มต้น', 'set_name_en' => 'Default', 'is_default' => true], $fields);
+        if ($probationSetId !== null) {
+            $payload['id'] = $probationSetId;
+        }
+        $res = $policyModel->probationSetSave($compId, $payload, $adminUserId);
+        if (empty($res['status'])) {
+            throw new RuntimeException('probationSetSave() failed: ' . ($res['message'] ?? ''));
+        }
+        $probationSetId = (int)$res['id'];
+    };
+
     echo "=== Baseline: all probation policies OFF (unchanged default behavior) ===\n";
-    $policyModel->save($compId, ['probation_defer_pvd' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null], $adminUserId);
+    $saveProbationDefault(['probation_defer_pvd' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null]);
     $baselineDetails = $createRun();
     $baselineProbationRow = current(array_filter($baselineDetails, fn($d) => (int)$d['employee_id'] === $probationEmpId));
     check('baseline: probation employee still gets full base salary (no ratio applied)', (float)$baselineProbationRow['base_salary_amount'], 30000.0);
@@ -136,7 +163,7 @@ try {
         : "  (TH_PVD is not active/configured for comp_id=1 in this dev DB -- skipping the PVD-specific defer assertion, base-salary-ratio and recurring-earning-defer are unaffected by this and still verified)\n";
 
     echo "=== probation_base_salary_ratio: 80% applied ONLY to the probation employee ===\n";
-    $policyModel->save($compId, ['probation_defer_pvd' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => 80], $adminUserId);
+    $saveProbationDefault(['probation_defer_pvd' => false, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => 80]);
     $ratioDetails = $createRun();
     $ratioProbationRow = current(array_filter($ratioDetails, fn($d) => (int)$d['employee_id'] === $probationEmpId));
     $ratioPermanentRow = current(array_filter($ratioDetails, fn($d) => (int)$d['employee_id'] === $permanentEmpId));
@@ -144,7 +171,7 @@ try {
     check('permanent employee UNAFFECTED (still full 30000)', (float)$ratioPermanentRow['base_salary_amount'], 30000.0);
 
     echo "=== probation_defer_recurring_earning: recurring allowance withheld ONLY for the probation employee ===\n";
-    $policyModel->save($compId, ['probation_defer_pvd' => false, 'probation_defer_recurring_earning' => true, 'probation_base_salary_ratio' => null], $adminUserId);
+    $saveProbationDefault(['probation_defer_pvd' => false, 'probation_defer_recurring_earning' => true, 'probation_base_salary_ratio' => null]);
     $deferRecurringDetails = $createRun();
     $deferProbationRow = current(array_filter($deferRecurringDetails, fn($d) => (int)$d['employee_id'] === $probationEmpId));
     $deferPermanentRow = current(array_filter($deferRecurringDetails, fn($d) => (int)$d['employee_id'] === $permanentEmpId));
@@ -155,7 +182,7 @@ try {
 
     if ($pvdActiveForThisCompany) {
         echo "=== probation_defer_pvd: PVD contribution withheld ONLY for the probation employee ===\n";
-        $policyModel->save($compId, ['probation_defer_pvd' => true, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null], $adminUserId);
+        $saveProbationDefault(['probation_defer_pvd' => true, 'probation_defer_recurring_earning' => false, 'probation_base_salary_ratio' => null]);
         $deferPvdDetails = $createRun();
         $deferPvdProbationRow = current(array_filter($deferPvdDetails, fn($d) => (int)$d['employee_id'] === $probationEmpId));
         $deferPvdPermanentRow = current(array_filter($deferPvdDetails, fn($d) => (int)$d['employee_id'] === $permanentEmpId));

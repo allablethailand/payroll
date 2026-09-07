@@ -1268,9 +1268,6 @@ function activateEmployeeTabFromHash() {
     }
 }
 
-function escapeHtml(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 const DOCUMENT_INPUT_MAP = {
     doc_id_card_copy: 'id_card_copy',
     doc_house_registration_copy: 'house_registration_copy',
@@ -1378,7 +1375,7 @@ function loginHistoryStatusBadgeRd(row) {
     const reasonKey = { new_login: 'session_reason_new_login', switch_app: 'session_reason_switch_app', timeout: 'session_reason_timeout' }[row.ended_reason];
     const label = (reasonKey && langData[reasonKey]) || langData['session_status_ended'] || 'Ended';
     const tone = row.ended_reason === 'timeout' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary';
-    return `<span class="badge ${tone}">${escapeHtmlRd(label)}</span>`;
+    return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
 }
 function initLoginHistoryTable() {
     if (!currentEmployeeId) return;
@@ -1403,18 +1400,18 @@ function initLoginHistoryTable() {
             }
         },
         columns: [
-            { data: 'login_at', render: d => escapeHtmlRd(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')) },
+            { data: 'login_at', render: d => escapeHtml(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')) },
             // 2026-08-29: logout_at is only ever set by auth/switch.php's own "Switch App away from
             // Payroll" capture (see that file's own docblock) -- null is the normal, expected state
             // for a session that ended any other way (tab closed, browser closed, session expired),
             // not a sign anything is broken.
-            { data: 'logout_at', render: d => escapeHtmlRd(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-') },
-            { data: 'ip_address', render: d => escapeHtmlRd(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlRd([row.location_city, row.location_country].filter(Boolean).join(', ') || '-') },
-            { data: 'timezone', render: d => escapeHtmlRd(d || '-') },
-            { data: 'device_type', render: d => { const m = loginHistoryDeviceIconRd(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${escapeHtmlRd(d || '-')}`; } },
-            { data: null, render: (d, t, row) => escapeHtmlRd([row.os_name, row.os_version].filter(Boolean).join(' ') || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlRd([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-') },
+            { data: 'logout_at', render: d => escapeHtml(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-') },
+            { data: 'ip_address', render: d => escapeHtml(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtml([row.location_city, row.location_country].filter(Boolean).join(', ') || '-') },
+            { data: 'timezone', render: d => escapeHtml(d || '-') },
+            { data: 'device_type', render: d => { const m = loginHistoryDeviceIconRd(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${escapeHtml(d || '-')}`; } },
+            { data: null, render: (d, t, row) => escapeHtml([row.os_name, row.os_version].filter(Boolean).join(' ') || '-') },
+            { data: null, render: (d, t, row) => escapeHtml([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-') },
             { data: null, orderable: false, render: (d, t, row) => loginHistoryStatusBadgeRd(row) },
         ],
         // 2026-08-30, real gap found and fixed (explicit request: "จำนวนแสดงต่อหน้า 50 รายการเป็น
@@ -1512,12 +1509,110 @@ function permissionOverrideModuleLabel(code) {
     return map[code] || code;
 }
 
-function escapeHtmlPo(str) {
-    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
+
+/* ---------- Employee access suspension (2026-09-04, Backlog Phase 10, T059) ---------- */
+function loadSuspensionStatus() {
+    if (!currentEmployeeId) return;
+    // Self-suspend is refused server-side regardless, but there's no reason to show a button that
+    // would always be rejected for the viewer's own record.
+    if (typeof SESSION_EMPLOYEE_ID !== 'undefined' && currentEmployeeId === SESSION_EMPLOYEE_ID) {
+        $('#employeeSuspensionCard').addClass('d-none');
+        return;
+    }
+    $('#employeeSuspensionCard').removeClass('d-none');
+    $.ajax({
+        url: `${BASE_URL}/api/permission-employee-suspension.get`,
+        method: 'GET',
+        data: { employee_id: currentEmployeeId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            renderSuspensionStatus(res.data);
+        }
+    });
 }
+function renderSuspensionStatus(data) {
+    const $text = $('#employeeSuspensionStatusText');
+    const $suspendBtn = $('#btnSuspendEmployee');
+    const $unsuspendBtn = $('#btnUnsuspendEmployee');
+    if (data) {
+        const byName = (currentLang === 'th' ? data.suspended_by_name_th : data.suspended_by_name_en) || '-';
+        const when = typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(data.suspended_at) : data.suspended_at;
+        $text.html(`<span class="text-danger"><i class="fa-solid fa-circle-exclamation me-1"></i>${(langData['suspended_since'] || 'Suspended since')} ${escapeAttr(when)} ${(langData['suspended_by_label'] || 'by')} ${escapeAttr(byName)}${data.reason ? ' — ' + escapeAttr(data.reason) : ''}</span>`);
+        $suspendBtn.addClass('d-none');
+        $unsuspendBtn.removeClass('d-none');
+    } else {
+        $text.html(`<span class="text-success"><i class="fa-solid fa-circle-check me-1"></i>${(langData['access_active'] || 'Access active')}</span>`);
+        $suspendBtn.removeClass('d-none');
+        $unsuspendBtn.addClass('d-none');
+    }
+}
+$(document).on('click', '#btnSuspendEmployee', function () {
+    Swal.fire({
+        title: langData['confirm_suspend_title'] || 'Suspend this employee\'s access?',
+        html: `<p>${langData['confirm_suspend_message'] || 'They will be unable to access the system at all until restored.'}</p>
+               <textarea id="swalSuspendReason" class="form-control mt-2" rows="2" placeholder="${langData['suspend_reason_placeholder'] || 'Reason for suspension (required)'}"></textarea>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: langData['suspend_access'] || 'Suspend Access',
+        confirmButtonColor: '#dc3545',
+        cancelButtonText: langData['cancel'] || 'Cancel',
+        preConfirm: () => {
+            const reason = $('#swalSuspendReason').val().trim();
+            if (!reason) {
+                Swal.showValidationMessage(langData['suspend_reason_required'] || 'A reason is required.');
+                return false;
+            }
+            return reason;
+        }
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        $.ajax({
+            url: `${BASE_URL}/api/permission-employee-suspension.suspend`,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify({ employee_id: currentEmployeeId, reason: result.value }),
+            success: function (res) {
+                if (res.status) {
+                    showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                    loadSuspensionStatus();
+                } else {
+                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                }
+            },
+            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
+        });
+    });
+});
+$(document).on('click', '#btnUnsuspendEmployee', function () {
+    showConfirm(
+        langData['confirm_unsuspend_title'] || 'Restore this employee\'s access?',
+        langData['confirm_unsuspend_message'] || 'They will immediately regain access according to their role/overrides.',
+        function () {
+            $.ajax({
+                url: `${BASE_URL}/api/permission-employee-suspension.unsuspend`,
+                method: 'POST',
+                contentType: 'application/json',
+                dataType: 'json',
+                data: JSON.stringify({ employee_id: currentEmployeeId }),
+                success: function (res) {
+                    if (res.status) {
+                        showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                        loadSuspensionStatus();
+                    } else {
+                        showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                    }
+                },
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
+            });
+        }
+    );
+});
 
 function initPermissionOverridesTab() {
     if (!currentEmployeeId) return;
+    loadSuspensionStatus();
     const $body = $('#permissionOverridesTableBody');
     $body.html(`<tr><td colspan="4" class="text-center text-muted py-4"><i class="fa-solid fa-spinner fa-spin"></i></td></tr>`);
     $.ajax({
@@ -1527,7 +1622,7 @@ function initPermissionOverridesTab() {
         dataType: 'json',
         success: function (res) {
             if (!res.status) {
-                $body.html(`<tr><td colspan="4" class="text-center text-muted py-4">${escapeHtmlPo(res.message || langData['load_employee_failed'] || 'Failed to load.')}</td></tr>`);
+                $body.html(`<tr><td colspan="4" class="text-center text-muted py-4">${escapeAttr(res.message || langData['load_employee_failed'] || 'Failed to load.')}</td></tr>`);
                 return;
             }
             poRows = res.data || [];
@@ -1539,7 +1634,7 @@ function initPermissionOverridesTab() {
             poBaselineSnapshot = JSON.stringify(poState);
         },
         error: function () {
-            $body.html(`<tr><td colspan="4" class="text-center text-muted py-4">${escapeHtmlPo(langData['load_employee_failed'] || 'Failed to load.')}</td></tr>`);
+            $body.html(`<tr><td colspan="4" class="text-center text-muted py-4">${escapeAttr(langData['load_employee_failed'] || 'Failed to load.')}</td></tr>`);
         }
     });
 }
@@ -1555,7 +1650,7 @@ function renderPermissionOverridesTable() {
     poRows.forEach(p => {
         if (p.module_code !== lastModule) {
             lastModule = p.module_code;
-            html += `<tr class="table-light"><td colspan="4"><strong>${escapeHtmlPo(permissionOverrideModuleLabel(p.module_code))}</strong></td></tr>`;
+            html += `<tr class="table-light"><td colspan="4"><strong>${escapeAttr(permissionOverrideModuleLabel(p.module_code))}</strong></td></tr>`;
         }
         const state = poState[p.permission_id] || { effect: null, allow_scope: 'all', detail_level: 'full' };
         const effect = state.effect || 'inherit';
@@ -1563,20 +1658,20 @@ function renderPermissionOverridesTable() {
         const isSalaryAmount = p.permission_key.indexOf('salary_amount.') === 0;
         const showScope = effect === 'grant' && (isApprovalAct || isSalaryAmount);
         html += `<tr data-permission-id="${p.permission_id}">
-            <td>${escapeHtmlPo(currentLang === 'th' ? p.name_th : p.name_en)}</td>
+            <td>${escapeAttr(currentLang === 'th' ? p.name_th : p.name_en)}</td>
             <td class="text-center">
                 ${p.role_granted
-                    ? `<i class="fa-solid fa-check text-success" title="${escapeHtmlPo(langData['inherited'] || 'Inherited')}"></i>`
-                    : `<i class="fa-solid fa-minus text-muted" title="${escapeHtmlPo(langData['inherited'] || 'Inherited')}"></i>`}
+                    ? `<i class="fa-solid fa-check text-success" title="${escapeAttr(langData['inherited'] || 'Inherited')}"></i>`
+                    : `<i class="fa-solid fa-minus text-muted" title="${escapeAttr(langData['inherited'] || 'Inherited')}"></i>`}
             </td>
             <td class="text-center">
                 <div class="btn-group btn-group-sm po-effect-group" role="group">
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-inherit-${p.permission_id}" value="" ${effect === 'inherit' ? 'checked' : ''}>
-                    <label class="btn btn-outline-secondary" for="po-inherit-${p.permission_id}">${escapeHtmlPo(langData['override_inherit'] || 'Inherit')}</label>
+                    <label class="btn btn-outline-secondary" for="po-inherit-${p.permission_id}">${escapeAttr(langData['override_inherit'] || 'Inherit')}</label>
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-grant-${p.permission_id}" value="grant" ${effect === 'grant' ? 'checked' : ''}>
-                    <label class="btn btn-outline-success" for="po-grant-${p.permission_id}">${escapeHtmlPo(langData['override_grant'] || 'Grant')}</label>
+                    <label class="btn btn-outline-success" for="po-grant-${p.permission_id}">${escapeAttr(langData['override_grant'] || 'Grant')}</label>
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-deny-${p.permission_id}" value="deny" ${effect === 'deny' ? 'checked' : ''}>
-                    <label class="btn btn-outline-danger" for="po-deny-${p.permission_id}">${escapeHtmlPo(langData['override_deny'] || 'Deny')}</label>
+                    <label class="btn btn-outline-danger" for="po-deny-${p.permission_id}">${escapeAttr(langData['override_deny'] || 'Deny')}</label>
                 </div>
             </td>
             <td class="text-center">`;
@@ -2297,6 +2392,69 @@ function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangF
 function loadEarningDeductions() {
     if ($.fn.DataTable.isDataTable('#tableEarning')) $('#tableEarning').DataTable().ajax.reload(null, false);
     if ($.fn.DataTable.isDataTable('#tableDeduction')) $('#tableDeduction').DataTable().ajax.reload(null, false);
+    if ($.fn.DataTable.isDataTable('#tableSyncTransactionLog')) $('#tableSyncTransactionLog').DataTable().ajax.reload(null, false);
+    if ($.fn.DataTable.isDataTable('#tableScheduledItemOccurrence')) $('#tableScheduledItemOccurrence').DataTable().ajax.reload(null, false);
+}
+// 2026-09-04, Backlog Phase 9->10, T051 -- 2 read-only client-side DataTables on the new "Sync
+// History" sub-pill (no Add/Edit/Delete affordances at all -- pure reporting). Same
+// deferLoading:0/currentEmployeeId-in-ajax-data pattern as initEedTable() above, and the same
+// hidden-tab-at-init column-width gotcha applies (this sub-pill is never the active one on load).
+function syncTxItemNameCell(row) {
+    const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_name_th || row.item_name_en || row.item_code || '';
+    return escapeHtml(name);
+}
+function syncTxFmtAmount(v) {
+    return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function syncTxTypeBadge(itemType) {
+    if (itemType === 'earning') {
+        return `<span class="badge bg-success-subtle text-success" data-i18n="earning_singular">${langData['earning_singular'] || 'Income'}</span>`;
+    }
+    return `<span class="badge bg-danger-subtle text-danger" data-i18n="deduction_singular">${langData['deduction_singular'] || 'Deduction'}</span>`;
+}
+function initSyncTransactionLogTable() {
+    return $('#tableSyncTransactionLog').DataTable({
+        responsive: true,
+        deferLoading: 0,
+        ordering: false,
+        ajax: {
+            url: `${BASE_URL}/api/employee.sync-transaction-log.list`,
+            data: function (d) { d.employee_id = currentEmployeeId; },
+            dataSrc: 'data'
+        },
+        columns: [
+            { data: null, render: (d, t, row) => `${toDisplayDate(row.pay_period_start)} - ${toDisplayDate(row.pay_period_end)}` },
+            { data: null, render: (d, t, row) => syncTxItemNameCell(row) },
+            { data: 'item_type', className: 'text-center', render: (d, t, row) => syncTxTypeBadge(row.item_type) },
+            { data: null, className: 'text-end', render: (d, t, row) => syncTxFmtAmount(row.amount) },
+            { data: 'remark', render: d => escapeHtml(d || '-') }
+        ],
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang()
+    });
+}
+function initScheduledItemOccurrenceTable() {
+    return $('#tableScheduledItemOccurrence').DataTable({
+        responsive: true,
+        deferLoading: 0,
+        ordering: false,
+        ajax: {
+            url: `${BASE_URL}/api/employee.scheduled-item-occurrence.list`,
+            data: function (d) { d.employee_id = currentEmployeeId; },
+            dataSrc: 'data'
+        },
+        columns: [
+            { data: null, render: (d, t, row) => toDisplayDate(row.applied_at) },
+            { data: null, render: (d, t, row) => escapeHtml(row.item_ref_code || row.item_code || '-') },
+            { data: 'installment_no', className: 'text-center', render: d => d !== null && d !== undefined ? d : '-' },
+            { data: null, className: 'text-end', render: (d, t, row) => syncTxFmtAmount(row.amount) },
+            { data: null, render: (d, t, row) => row.run_name ? escapeHtml(row.run_name) : (row.process_no ? escapeHtml(row.process_no) : '-') }
+        ],
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        language: getTableLang()
+    });
 }
 // Per-installment status badge (2026-08-20, explicit request: "Status ของแต่ละงวดการจ่าย...จ่ายแล้ว
 // หรือรอจ่าย") -- statuses come straight from employee_earning_deduction_installments.status, set by
@@ -2770,21 +2928,31 @@ function collectEedFormData() {
     }
     return data;
 }
+let tbSyncTransactionLog, tbScheduledItemOccurrence;
 function initEedUI() {
     tbEarning = initEedTable('#tableEarning', 'earning', 'btn-add-earning', 'add_earning_item', 'Earning');
     tbDeduction = initEedTable('#tableDeduction', 'deduction', 'btn-add-deduction', 'add_deduction_item', 'Deduction');
-    // Hidden-tab-at-init width gotcha: neither is the active tab/sub-tab on page load, so both
-    // tables above compute their column widths against a zero-width container -- readjust once
-    // actually visible (cheap/idempotent, DataTables no-ops if nothing changed). Two triggers needed
-    // since #tableDeduction sits inside its own nested pill sub-tab (2026-08-19: Earning/Deduction
-    // split out into their own tab with Earning/Deduction sub-tabs) -- becoming visible requires BOTH
-    // the outer tab AND the inner "Deduction" pill to have been shown at least once.
+    // 2026-09-04, T051 -- same deferLoading:0 pattern, read-only, no Add button.
+    tbSyncTransactionLog = initSyncTransactionLogTable();
+    tbScheduledItemOccurrence = initScheduledItemOccurrenceTable();
+    // Hidden-tab-at-init width gotcha: none of these are the active tab/sub-tab on page load, so
+    // every table above computes its column widths against a zero-width container -- readjust once
+    // actually visible (cheap/idempotent, DataTables no-ops if nothing changed). Multiple triggers
+    // needed since #tableDeduction/the Sync History tables each sit inside their own nested pill
+    // sub-tab (2026-08-19: Earning/Deduction split out into their own tab with sub-tabs) --
+    // becoming visible requires BOTH the outer tab AND the relevant inner pill to have been shown.
     document.getElementById('earningDeduction-tab').addEventListener('shown.bs.tab', function () {
         if (tbEarning) tbEarning.columns.adjust();
         if (tbDeduction) tbDeduction.columns.adjust();
+        if (tbSyncTransactionLog) tbSyncTransactionLog.columns.adjust();
+        if (tbScheduledItemOccurrence) tbScheduledItemOccurrence.columns.adjust();
     });
     document.getElementById('eedDeductionSub-tab').addEventListener('shown.bs.tab', function () {
         if (tbDeduction) tbDeduction.columns.adjust();
+    });
+    document.getElementById('eedSyncHistorySub-tab').addEventListener('shown.bs.tab', function () {
+        if (tbSyncTransactionLog) tbSyncTransactionLog.columns.adjust();
+        if (tbScheduledItemOccurrence) tbScheduledItemOccurrence.columns.adjust();
     });
     if (typeof initSelect2 === 'function') {
         initSelect2('#eed_ped_type_id', { mode: 'ajax' });

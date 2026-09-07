@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/AuditLogModel.php';
 class BankAccountModel {
     private $db;
+    private AuditLogModel $auditLog;
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     /** Frontend column KEY -> real SQL expression for the Excel-style column filter (2026-08-27
@@ -145,7 +148,7 @@ class BankAccountModel {
         return (bool)$stmt->fetch();
     }
 
-    public function save(int $compId, array $data, int $userId): array {
+    public function save(int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $id = (!empty($data['id']) && is_numeric($data['id'])) ? (int)$data['id'] : null;
 
         foreach (['bank_id', 'account_no', 'account_name'] as $field) {
@@ -199,9 +202,12 @@ class BankAccountModel {
 
         try {
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+                // Platform Hardening Phase 6 (batch 2): SELECT * (not just id) so the full row is
+                // available to AuditLogModel::record() as the "old" side of the diff below.
+                $stmtCheck = $this->db->prepare("SELECT * FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-                if (!$stmtCheck->fetch()) {
+                $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$existing) {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 $sql = "UPDATE `bank_accounts` SET
@@ -235,6 +241,15 @@ class BankAccountModel {
                     ':updated_by' => $userId,
                     ':id' => $id,
                 ]);
+                $stmtNewRow = $this->db->prepare("SELECT * FROM `bank_accounts` WHERE id = :id");
+                $stmtNewRow->execute([':id' => $id]);
+                $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                // account_no/account_no_hash/key_version excluded -- ciphertext changes on every
+                // save even when the plaintext account number is unchanged (IV differs each time),
+                // same exclusion convention EmployeeModel::save() already established for its own
+                // encrypted columns (see AuditLogModel::record()'s own $excludeFields docblock).
+                $this->auditLog->record($compId, 'bank_accounts', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent,
+                    ['account_no', 'account_no_hash', 'key_version']);
                 return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
             }
 
@@ -266,7 +281,7 @@ class BankAccountModel {
 
     // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch, same shape as
     // CompanyProfileModel::toggleStructureStatus()/PayrollCycleModel::toggleStatus().
-    public function toggleStatus(int $compId, int $id, int $userId): array {
+    public function toggleStatus(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         $stmt = $this->db->prepare("SELECT status FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $current = $stmt->fetchColumn();
@@ -277,21 +292,25 @@ class BankAccountModel {
         try {
             $stmtUpdate = $this->db->prepare("UPDATE `bank_accounts` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
             $stmtUpdate->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+            $this->auditLog->record($compId, 'bank_accounts', $id, 'update', ['status' => $current], ['status' => $newStatus], $userId, 'web', $ip, $userAgent);
             return ['status' => true, 'new_status' => $newStatus, 'message' => 'Updated successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
     }
 
-    public function delete(int $compId, int $id, int $userId): array {
+    public function delete(int $compId, int $id, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         try {
-            $stmtCheck = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmtCheck = $this->db->prepare("SELECT * FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
             $stmtCheck->execute([':id' => $id, ':comp_id' => $compId]);
-            if (!$stmtCheck->fetch()) {
+            $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+            if (!$existing) {
                 return ['status' => false, 'message' => 'Record not found.'];
             }
             $stmt = $this->db->prepare("UPDATE `bank_accounts` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
             $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+            $this->auditLog->record($compId, 'bank_accounts', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent,
+                ['account_no', 'account_no_hash', 'key_version']);
             return ['status' => true, 'message' => 'Deleted successfully.'];
         } catch (PDOException $e) {
             return ['status' => false, 'message' => 'Database operation failed.'];

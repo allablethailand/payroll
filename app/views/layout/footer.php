@@ -49,5 +49,24 @@
 // docblock for the full investigation/rationale.
 include __DIR__ . '/modals.php';
 ?>
+<!-- 2026-09-05, Backlog Phase 13 -- Help Drawer: a persistent trigger button (bottom-right, every
+     page) + a slide-in right-side panel, NOT a Bootstrap modal (deliberately -- a drawer stays
+     alongside the page content rather than blocking it, so an admin can keep the settings page
+     visible while reading the help text next to it). See public/js/setup/help-drawer.js's own
+     docblock for how page_key is determined and why an unwritten page shows a placeholder instead
+     of hiding the button entirely (a company should always be able to tell help EXISTS as a
+     concept, even on a page nobody has written content for yet). -->
+<button type="button" id="helpDrawerToggleBtn" class="help-drawer-toggle-btn" aria-label="Help">
+    <i class="fa-solid fa-circle-question"></i>
+</button>
+<div id="helpDrawerPanel" class="help-drawer-panel" aria-hidden="true">
+    <div class="help-drawer-panel-header">
+        <span class="fw-semibold" data-i18n="help_drawer_title">Help</span>
+        <button type="button" id="helpDrawerCloseBtn" class="btn-close" aria-label="Close"></button>
+    </div>
+    <div class="help-drawer-panel-body" id="helpDrawerPanelBody"></div>
+</div>
+<script src="<?=BASE_URL?>/public/js/setup/terms-and-conditions.js"></script>
+<script src="<?=BASE_URL?>/public/js/setup/help-drawer.js"></script>
 </body>
 </html>

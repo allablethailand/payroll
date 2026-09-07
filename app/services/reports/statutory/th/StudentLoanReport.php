@@ -4,13 +4,14 @@ require_once __DIR__ . '/../../ReportGeneratorInterface.php';
 require_once __DIR__ . '/../../ExcelRendererTrait.php';
 require_once __DIR__ . '/../../PdfRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
+require_once __DIR__ . '/../../../export/th/StudentLoanExporter.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../../../../models/PayrollEarningDeductionTypeModel.php';
 require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
- * DRAFT — กยศ. (กองทุนเงินให้กู้ยืมเพื่อการศึกษา / Student Loan Fund) monthly deduction remittance
- * list for a payroll run.
+ * กยศ. (กองทุนเงินให้กู้ยืมเพื่อการศึกษา / Student Loan Fund) monthly deduction remittance list for
+ * a payroll run.
  *
  * Unlike SSO/PIT/PVD, กยศ. deduction is NOT a system-wide statutory calc item — it's a
  * per-employee, court/fund-notice-driven wage deduction with an amount set by the fund's notice
@@ -21,10 +22,16 @@ require_once __DIR__ . '/../../LocalizedException.php';
  * has a nullable `statutory_report_code` tag column — set it to 'TH_SLF' on the company's กยศ.
  * deduction type(s) and this report will pick up any deduction line using those item_codes.
  *
- * NOT researched against an official กยศ. submission format at all — no field-layout basis
- * exists (same situation as สปส.6-09/กท.20ก.), so only PDF/Excel (human-readable) are offered,
- * no 'txt' electronic-submission format. Before using this for a real remittance, confirm the
- * current reporting method directly with กยศ.
+ * 2026-09-05, Phase 12 T071 — 'txt' format added via the new StudentLoanExporter (see that class's
+ * own docblock), against a real reference spec the user supplied for the first time (this report
+ * had none before, "no field-layout basis exists" per its own pre-2026-09-05 docblock — same
+ * situation สปส.6-09/กท.20ก. were in until this same round, see Sso609Exporter). The spec's own
+ * field 2 is explicitly "เลขประจำตัวประชาชน" (national ID card no.) — `employees.id_card_no`, NOT
+ * the `tax_id_no` the PDF/Excel formats below already display as "เลขประจำตัวผู้เสียภาษี" (a
+ * separate, pre-existing column/purpose, left untouched here) — and field 3 is ONE combined
+ * "ชื่อ-นามสกุล" value including the Thai prefix (นาย/นาง/นางสาว), unlike this report's own existing
+ * `name` field (first+last only, no prefix, via EmployeePiiTrait::employeeDisplayName()) — built
+ * separately for the txt path only, not by changing that shared field's own existing shape.
  */
 class StudentLoanReport implements ReportGeneratorInterface {
     use ExcelRendererTrait;
@@ -46,12 +53,14 @@ class StudentLoanReport implements ReportGeneratorInterface {
         return ['th' => 'กยศ. (รายการหักเงินนำส่ง)', 'en' => 'Student Loan Fund (Deduction Remittance)'];
     }
 
+    // 2026-09-05, Phase 12 T071: was an unconditional `false` -- the underlying `txt` layout is
+    // now confirmed against a real reference spec, see StudentLoanExporter's own docblock.
     public function isVerified(): bool {
-        return false;
+        return true;
     }
 
     public function supportedFormats(): array {
-        return ['excel', 'pdf'];
+        return ['excel', 'pdf', 'txt'];
     }
 
     /**
@@ -99,6 +108,10 @@ class StudentLoanReport implements ReportGeneratorInterface {
             if ($assignmentId !== null) {
                 $assignmentIds[] = (int)$assignmentId;
             }
+            // 2026-09-05, Phase 12 T071: id_card_no + a prefix-included full name, built ONLY for
+            // the new txt path -- see this class's own top-of-file docblock for why these are
+            // separate from the pre-existing tax_id/name fields above.
+            $prefixTh = ['mr' => 'นาย', 'mrs' => 'นาง', 'ms' => 'นางสาว'][$d['title'] ?? ''] ?? '';
             $rows[] = [
                 'employee_no' => $d['employee_no'],
                 'tax_id' => $this->decryptEmployeeField($d, 'tax_id_no') ?? '',
@@ -106,6 +119,8 @@ class StudentLoanReport implements ReportGeneratorInterface {
                 'department' => $d['department_name_th'] ?? '',
                 'assignment_id' => $assignmentId,
                 'amount' => round($amount, 2),
+                'id_card_no' => $this->decryptEmployeeField($d, 'id_card_no') ?? '',
+                'full_name_with_prefix' => trim($prefixTh . ' ' . $this->employeeDisplayName($d, 'th')),
             ];
         }
         if (empty($rows)) {
@@ -119,6 +134,17 @@ class StudentLoanReport implements ReportGeneratorInterface {
         unset($r);
 
         $period = $run['period_start_date'] . ' - ' . $run['period_end_date'];
+
+        if ($format === 'txt') {
+            $exporter = new StudentLoanExporter();
+            $exportRows = array_map(fn($r) => [
+                'citizen_id' => $r['id_card_no'],
+                'full_name' => $r['full_name_with_prefix'],
+                'amount' => $r['amount'],
+            ], $rows);
+            $content = $exporter->generate(['employees' => $exportRows]);
+            return ['content' => $content, 'file_name' => $exporter->fileName(['run_id' => $runId]), 'mime_type' => 'text/plain'];
+        }
 
         if ($format === 'excel') {
             $headers = ['รหัสพนักงาน', 'เลขประจำตัวผู้เสียภาษี', 'ชื่อ-สกุล', 'แผนก', 'เลขที่สัญญากู้ยืม', 'ยอดหักนำส่ง'];

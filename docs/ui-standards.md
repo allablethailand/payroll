@@ -315,6 +315,195 @@ it the same way the 6 examples above were fixed.
 
 ---
 
+## Page header: every top-level page gets `.page-header-card`
+
+**Rule:** every top-level page (reached from the sidebar/breadcrumb, not a sub-tab within one) opens
+with a `.page-header-card` — icon + title + one-sentence description — right after the breadcrumb,
+before any filter/toolbar/content:
+```html
+<div class="page-header-card mb-4">
+    <div class="page-header-card-icon"><i class="fa-solid fa-XXX"></i></div>
+    <div class="page-header-card-body">
+        <h5 class="page-header-card-title" data-i18n="XXX_title">Title</h5>
+        <p class="page-header-card-desc" data-i18n="XXX_description">One-sentence description.</p>
+    </div>
+</div>
+```
+**NOT automatic** — every new top-level page's own view file must include this markup by hand (a
+`data-i18n`'d icon+title+description, same convention every other page's own `.page-header-card`
+already uses — see `app/views/payroll/index.php` for the pattern's own origin, 2026-08-21).
+
+**Confirmed exceptions (do not add this to these)**: `app/views/error404.php` (not a content page),
+`app/views/payslip-template/edit.php` (a canvas editor with its own bespoke topbar, same pattern
+every other canvas-editor page in this app deliberately uses instead).
+
+**2026-09-04 audit found one real, previously-missed gap**: `app/views/payroll/detail.php` — one of
+the highest-traffic pages in the app — had no page header at all despite the rule's "apply to every
+page header going forward" wording from 2026-08-21. Fixed by adding the standard component ABOVE the
+page's own existing dynamic run-summary card (run name/status badge/action buttons stayed exactly as
+they were, just gained a static identity header above them) — `#runDetailTabs` further down that same
+page is a separate, deliberately-exempted component (its own bespoke tab-polish CSS) and was not
+touched by this fix.
+
+**When auditing for gaps again**: grep every top-level page's view file for `page-header-card` — a
+page with neither this class nor a documented exception above is a real gap.
+
+---
+
+## Modal Cancel/Close button: `.btn-light`
+
+**Rule:** a modal-footer button whose only job is to dismiss the modal WITHOUT saving (labelled
+"Cancel" or "Close", carrying `data-bs-dismiss="modal"`, or — for an in-modal sub-view like a
+Rate History "add version" form — a JS-driven "go back without saving" button with the same
+semantic meaning) uses `class="btn btn-light"` (`px-4` optional, per-modal, purely a spacing choice
+— not part of the rule). Never `.btn-outline-secondary` for this exact job.
+
+**Why `.btn-light` and not `.btn-outline-secondary`**: **2026-09-04 audit found this app already had
+`.btn-light` in wider real use for this exact job before the audit (27 instances) than
+`.btn-outline-secondary` (28 instances, an almost-even split with no dominant "correct" pattern to
+just copy from) — `.btn-light` was picked as the standard because it's visually lighter/quieter than
+an outlined button, appropriately deferential to whichever Save/primary-action button sits next to it
+in the same footer (`.btn-primary`, the brand-orange `#FF9900`), which an outlined button's stronger
+border competes with more than a flat light-gray fill does.
+
+**Do NOT apply this to `.btn-outline-secondary` buttons doing a DIFFERENT job** — this rule is scoped
+specifically to "cancel/dismiss without saving." A button like `#btnCancelRequest` ("Cancel Request",
+a real business action that cancels an in-progress REQUEST, not "close this dialog") or a Preview/Add
+Row button that happens to also use `.btn-outline-secondary` styling is unrelated and untouched.
+
+**2026-09-04 fix**: 19 exact `data-bs-dismiss="modal"` Cancel/Close buttons across
+`app/views/layout/modals.php`, `app/views/payroll/detail.php`, `app/views/payroll/index.php`, and
+`app/views/setup-rules/index.php` converted from `.btn-outline-secondary` to `.btn-light`, plus one
+JS-driven "go back without saving" button (`#srCancelRateVersionBtn`, the Statutory Rate modal's Rate
+History sub-view) converted the same way for the same semantic reason even though it doesn't
+literally carry `data-bs-dismiss="modal"`.
+
+**When auditing for gaps again**: `grep -rn 'btn-outline-secondary.*data-bs-dismiss="modal"'
+app/views` should return nothing; any hit is a real gap, not a stylistic choice.
+
+---
+
+## Modal title: `.modal-title text-secondary`
+
+**Rule:** a modal's own `.modal-title` element carries exactly `class="modal-title text-secondary"`
+— no `fw-bold`, no other color/weight class — unless one of the 2 documented structural exceptions
+below genuinely applies.
+
+**2026-09-04 audit found 8+ different class combinations app-wide** with no single dominant pattern
+(`text-secondary` alone: 50 uses at audit time; `fw-bold text-secondary`: 32; bare `modal-title`: 29;
+several smaller variants) — user confirmed `text-secondary` alone as the canonical standard (the
+plain-weight version was the single largest existing group, and reads calmer/more consistent with
+this app's own general typography than a bold modal title fighting for attention against its own
+body content).
+
+**2 legitimate, preserved exceptions — do not flatten these into the plain style:**
+1. **`.modal-title text-secondary mb-0`** — used whenever the title `<h5>`/`<h6>` sits inside its own
+   wrapper `<div>` within `.modal-header` (almost always because it also contains an inline icon,
+   e.g. `<i class="fa-solid fa-list-check me-1"></i><span>Title</span>`) — the `mb-0` removes the
+   heading's default bottom margin, which would otherwise misalign the header's own flex layout.
+   Confirmed real, consistent, and necessary across 9 real modals (e.g. `#approvalTimelineModalLabel`,
+   `#manageLinesModalLabel`, `#joinEmployeesModalLabel`) — keep `mb-0` on any NEW modal that follows
+   this same "title wrapped in a div with an inline icon" shape.
+2. **`.modal-title text-secondary d-flex align-items-center gap-2`** — used exactly once
+   (`#pedTypeModalLabel`, the Earning/Deduction Type modal, whose title carries a live
+   Income/Deduction color badge next to the text) — the flex/gap classes are load-bearing for that
+   badge's own inline alignment, not decorative. Keep this shape only where a modal title genuinely
+   needs to lay out more than plain text next to itself.
+3. **`.modal-title text-danger`** — used exactly once, for a modal whose whole context is a
+   destructive/warning action — the color itself IS the information (this is a warning dialog), so
+   flattening it to the plain `text-secondary` style would remove a real, meaningful signal. Keep
+   `text-danger` (or another semantic color) for any future modal in a genuinely equivalent context —
+   this is not "any modal that feels important," only ones where the color change itself communicates
+   real risk/danger, same restraint CLAUDE.md's own UI Convention section already asks for elsewhere
+   (semantic color is separate from decorative choice).
+
+**2026-09-04 fix**: normalized ~46 instances across `app/views/layout/modals.php` and 8 other view
+files (`dashboard.php`, `payroll/detail.php`, `payroll/index.php`, `reports/run-audit.php`,
+`setup/announcements.php`, `setup-rules/index.php`, `employment-certificate/_modals_partial.php`,
+`payslip-template/_modals_partial.php`) to the canonical class, preserving the 2 structural exceptions
+and the 1 semantic-color exception above unchanged.
+
+**When auditing for gaps again**: `grep -orn 'class="modal-title[^"]*"' app/views -r --include=*.php`
+— every result should be exactly `modal-title text-secondary` (with an optional `mb-0` in the icon-div
+shape, or the 2 documented one-off exceptions above) — anything else is a real gap.
+
+---
+
+## Form field labels: `.form-label` spacing/modifier baseline
+
+**Rule:** every `<label class="form-label...">` carries a `mb-1` bottom-margin as its baseline —
+`class="form-label mb-1"` for an ordinary field with no other styling need. A label that genuinely
+needs a semantic/layout modifier (see the 4 preserved families below) keeps that modifier, in the
+canonical order `form-label [fw-semibold] [small] [text-muted] [d-block|pt-1] mb-1`, but still ends
+in `mb-1` — there is no longer a form-label anywhere in this app with `mb-0`/`mb-2`/`m-0`/no
+bottom-margin class at all.
+
+**2026-09-04 audit found ~21 different class combinations, 606 total instances, no dominant
+convention** — `form-label` bare (255) and `form-label mb-0` (128) together were the plurality, but
+neither was a real majority, and the remaining ~19 variants were mostly pure spacing drift
+(`mb-2`/`m-0`/reordered `mb-1 small` vs `small mb-1`) with no semantic difference from each other.
+User confirmed: retrofit the WHOLE app onto `mb-1` as the baseline, not just new pages going forward.
+
+**4 genuine semantic/layout families, investigated case-by-case before flattening anything (not a
+blind global regex) — preserved, not stripped, because removing them would be a real visible
+regression, not just spacing cleanup:**
+1. **`small`** (59 instances after normalization) — used for 2 real, distinct, legitimate contexts:
+   compact `.station-filter` filter-bar labels (e.g. `reports/annual-summary.php`'s own Fiscal
+   Year/Department/Team/Branch/Role filter row) and other intentionally-de-emphasized single fields
+   inside a dense modal section. Both are genuine size reductions, not drift — kept as `small mb-1`.
+2. **`small text-muted`** (18) — a label for an optional/secondary field where the muted color is
+   itself doing real communicative work (e.g. `destination_saved_label`, `select_item_placeholder`) —
+   kept as `small text-muted mb-1`.
+3. **`fw-semibold small`** (12, unified from the previously-separate `fw-bold small` /
+   `mb-0 fw-semibold small` / `small fw-semibold mb-1` variants — same real role, 3 different class
+   strings from copy-paste drift between an older bespoke assign-modal and the newer T055 shared
+   `#entityAssignModal`) — used specifically for CHECKBOX-GROUP COLUMN HEADERS (Department/Position/
+   Team/Employee headers above a multi-select checkbox list), a genuinely different UI role from an
+   ordinary field label (more like a mini section header) — kept, `fw-bold` normalized to
+   `fw-semibold` for consistency since both were being used for the identical role.
+4. **`d-block`** (15) and **`pt-1`** (2, kept separate from the `d-block` family — different real
+   purpose) — `d-block` labels all wrap a nested `<span data-i18n="...">` and sit above a toggle
+   switch/checkbox on the same row (`.form-label` is `display:inline-block` by default, which would
+   let it sit awkwardly inline next to the switch instead of stacking above it) — genuinely
+   load-bearing for layout, not decorative. `pt-1`'s 2 instances nudge a label down to vertically
+   align with an adjacent taller control in the same row — also a real alignment fix, not drift. Both
+   kept exactly as-is, with `mb-1` appended for the spacing baseline.
+
+**2026-09-04 fix**: 606 instances across 25 view files retargeted (496 flattened to the plain
+`form-label mb-1` baseline, 110 preserved into one of the 4 families above with `mb-1` appended/
+normalized) — confirmed via before/after total-instance-count match (606 = 606, nothing lost or
+duplicated) and a full `php -l` pass on all 25 touched files.
+
+**When auditing for gaps again**: `grep -roh 'class="form-label[^"]*"' app/views --include=*.php |
+sort | uniq -c | sort -rn` should show exactly 7 distinct strings (the plain baseline + the 4 families
+above, some split by whether `text-muted`/`fw-semibold` is present) — any 8th variant, or any string
+not ending in `mb-1`/`pt-1 mb-1`, is a real gap, not a stylistic choice.
+
+---
+
+## `.station-filter-label`: always paired with a leading `fa-solid fa-filter` icon
+
+**Rule:** every `.station-filter`'s own label span gets a sibling icon immediately before it —
+`<i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>`.
+The icon lives in MARKUP as a sibling `<i>` tag, not baked into the `label_filter` i18n string
+itself — matches this app's own established icon+label convention (every tab button already pairs
+an `<i>` icon with its own `data-i18n` span the same way, e.g. `.setup-menu`/`.structure-menu`), not
+a new pattern invented for this one component.
+
+**Scope:** T066's own 2026-09-04 audit found all 32 `.station-filter-label` instances across the
+whole app (`employee/list.php`, `employee/reports.php`, `reports/annual-summary.php`,
+`reports/index.php`, `payroll/index.php`, `payroll/approval.php`, `payroll/detail.php`,
+`manual-entry/index.php`, `notification/index.php`, `data-sync.php`, `document-approval.php`,
+`run-audit.php`, `employee/login-history.php`, `payslip/requests.php`, `layout/modals.php`,
+`employee/detail.php`) shared byte-identical markup with zero icon — a mechanical find/replace
+across all 16 files applied the icon everywhere at once.
+
+**When adding a new `.station-filter` going forward:** copy the icon+span pair verbatim from any
+existing instance (e.g. `employee/list.php`'s own filter header) — do not add a bare
+`<span class="station-filter-label">` without the icon.
+
+---
+
 ## Adding a new standard to this file
 
 Same shape as the two above: a short **Rule**/**Scope** statement, the actual snippet from

@@ -151,6 +151,21 @@ try {
     $freshCode = $model->generateNext($freshCompId, 'PAYROLL_RUN');
     check('fresh, never-touched company still gets a real code on the first call', $freshCode, 'PR-' . date('Y') . '-001');
 
+    echo "=== generateNext(): {COMP_CODE} placeholder substitution (Backlog Phase 11, T061) ===\n";
+    // Reuses $freshCompId's own real origami_payroll_comp_code ($freshCompCode) set above.
+    $model->save($freshCompId, 'PAYSLIP', ['prefix_format' => 'PS-{COMP_CODE}-{YYYY}-', 'digit_count' => 3, 'current_number' => 0, 'reset_cycle' => 'never'], $userId);
+    $compCodeInPrefixCode = $model->generateNext($freshCompId, 'PAYSLIP');
+    check('{COMP_CODE} substitutes the real origami_payroll_comp_code', $compCodeInPrefixCode, 'PS-' . $freshCompCode . '-' . date('Y') . '-001');
+
+    echo "=== generateNext(): {COMP_CODE} with a NULL comp code degrades to an empty substitution, never errors ===\n";
+    $noCodeComp = $pdo->prepare("INSERT INTO companies (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name, setup_status)
+        VALUES (:name, :name, 'TH', '1234567890124', 'Test Address', 'Tester', 'active')");
+    $noCodeComp->execute([':name' => 'DocNum NoCode Co ' . uniqid()]);
+    $noCodeCompId = (int)$pdo->lastInsertId();
+    $model->save($noCodeCompId, 'PAYSLIP', ['prefix_format' => 'PS-{COMP_CODE}-{YYYY}-', 'digit_count' => 3, 'current_number' => 0, 'reset_cycle' => 'never'], $userId);
+    $noCodeGenerated = $model->generateNext($noCodeCompId, 'PAYSLIP');
+    check('a company with NO origami_payroll_comp_code (null) substitutes an empty string, not "null"/an error', $noCodeGenerated, 'PS--' . date('Y') . '-001');
+
 } finally {
     $pdo->rollBack();
 }

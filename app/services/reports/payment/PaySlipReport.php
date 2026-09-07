@@ -5,6 +5,7 @@ require_once __DIR__ . '/../PdfRendererTrait.php';
 require_once __DIR__ . '/../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../../../models/PayslipTemplateModel.php';
+require_once __DIR__ . '/../../../models/DocumentNumberingModel.php';
 require_once __DIR__ . '/../../PayslipTemplateRenderer.php';
 require_once __DIR__ . '/../LocalizedException.php';
 
@@ -22,6 +23,18 @@ require_once __DIR__ . '/../LocalizedException.php';
  * PayslipTemplateModel's own docblock). If no default template exists (the common case for any
  * company that hasn't set one up yet), falls back to the original fixed buildHtml() layout
  * unchanged -- this class's behavior is 100% backward compatible until an admin opts in.
+ *
+ * 2026-09-05, Backlog Phase 12 T073 -- "generate once, persist, reuse" (Option C, chosen over
+ * A/background-on-cycle-close and B/regenerate-every-time via AskUserQuestion). Was previously
+ * regenerated from scratch on EVERY call regardless of caller (PayslipDeliveryService::deliver(),
+ * PayslipController::myDownload(), a manual Reports-page download, a payslip_requests approval --
+ * see PayslipDeliveryService's own docblock for those entry points). Now checks
+ * `payroll_run_details.payslip_pdf_path` FIRST and serves the already-rendered file if one exists;
+ * only the first-ever caller for a given (run, employee) actually renders and persists it, same
+ * resolve-once-persist-reuse shape `resolvePayslipNumber()` (T061) already established on this
+ * exact row. Safe because this method's own ALLOWED_STATES gate already guarantees the underlying
+ * numbers are finalized by the time anyone can reach this point at all -- unlike Option A's own
+ * "generate at cycle close" framing, there is no window where a cached file could go stale.
  */
 class PaySlipReport implements ReportGeneratorInterface {
     use PdfRendererTrait;
@@ -84,6 +97,15 @@ class PaySlipReport implements ReportGeneratorInterface {
         if (!$detail) {
             throw new LocalizedException('This employee is not part of the selected payroll run.', 'employee_not_in_run');
         }
+        $detail['payslip_number'] = $this->resolvePayslipNumber($compId, $runId, $employeeId, $detail['payslip_number'] ?? null);
+        $fileName = "PaySlip_{$detail['employee_no']}_{$run['id']}.pdf";
+
+        if ($format === 'pdf') {
+            $cached = $this->readCachedPdf($detail['payslip_pdf_path'] ?? null);
+            if ($cached !== null) {
+                return ['content' => $cached, 'file_name' => $fileName, 'mime_type' => 'application/pdf'];
+            }
+        }
 
         $company = $dataModel->getCompany($compId);
         $companyName = $company['local_name'] ?? $company['company_legal_name'] ?? '';
@@ -128,11 +150,88 @@ class PaySlipReport implements ReportGeneratorInterface {
             $content = $this->renderPdfFromHtml($html, 'A5', 'portrait');
         }
 
+        if ($format === 'pdf') {
+            $this->persistPdf($compId, $runId, $employeeId, $content);
+        }
+
         return [
             'content' => $content,
-            'file_name' => "PaySlip_{$detail['employee_no']}_{$run['id']}.pdf",
+            'file_name' => $fileName,
             'mime_type' => 'application/pdf',
         ];
+    }
+
+    /** Returns the cached PDF's bytes if $relativePath is set AND the file still genuinely exists
+     *  on disk, else null -- a null return always falls through to a fresh render, so a file that
+     *  was deleted/moved out-of-band (or a path from a differently-configured environment) never
+     *  hard-fails the payslip, it just re-renders and re-persists as if this were the first time. */
+    private function readCachedPdf(?string $relativePath): ?string {
+        if (empty($relativePath)) {
+            return null;
+        }
+        $fullPath = __DIR__ . '/../../../../' . $relativePath;
+        if (!is_file($fullPath)) {
+            return null;
+        }
+        $content = @file_get_contents($fullPath);
+        return $content !== false ? $content : null;
+    }
+
+    /** Writes the freshly-rendered PDF to disk ONCE and persists its path onto this exact (run,
+     *  employee) row -- same file-naming/storage convention as EmploymentCertificateRequestModel::
+     *  issuePdf() (a random 32-hex filename under public/uploads/, comp_id-scoped). Best-effort,
+     *  same "never let a caching side-effect block the real document" posture as
+     *  resolvePayslipNumber() -- a failure here still returns the real, already-rendered content
+     *  for THIS call, it just won't be cached yet (self-healing: the next caller renders and tries
+     *  to persist again). */
+    private function persistPdf(int $compId, int $runId, int $employeeId, string $pdfContent): void {
+        try {
+            $uploadDir = __DIR__ . "/../../../../public/uploads/payslip_files/{$compId}/";
+            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                return;
+            }
+            $fileName = bin2hex(random_bytes(16)) . '.pdf';
+            $relativePath = "public/uploads/payslip_files/{$compId}/{$fileName}";
+            file_put_contents(__DIR__ . '/../../../../' . $relativePath, $pdfContent);
+            Database::getInstance()->pdo->prepare(
+                "UPDATE `payroll_run_details` SET payslip_pdf_path = :path WHERE run_id = :run_id AND employee_id = :employee_id"
+            )->execute([':path' => $relativePath, ':run_id' => $runId, ':employee_id' => $employeeId]);
+        } catch (Throwable $e) {
+            // Swallow -- see this method's own docblock.
+        }
+    }
+
+    /**
+     * 2026-09-04, Backlog Phase 11, T061 -- a payslip is generated ON DEMAND (every time someone
+     * downloads it), not at a one-time "create" event the way a payroll run has -- calling
+     * DocumentNumberingModel::generateNext() unconditionally on every generate() call would
+     * silently assign a NEW number each time the SAME real payslip is re-downloaded, which is
+     * wrong. This stamps the number ONCE, on the first real generation of this exact (run,
+     * employee) pair, and persists it to payroll_run_details.payslip_number so every later
+     * re-download reuses the identical value. Best-effort/non-blocking, same posture
+     * PayrollRunModel::create() already established for PAYROLL_RUN's own run_code -- a numbering
+     * failure (null from generateNext(), or the persistence UPDATE itself failing) must never
+     * block the payslip from being generated; it just renders with no document number that time,
+     * self-healing on the next successful call.
+     */
+    private function resolvePayslipNumber(int $compId, int $runId, int $employeeId, ?string $existing): ?string {
+        if (!empty($existing)) {
+            return $existing;
+        }
+        $code = (new DocumentNumberingModel())->generateNext($compId, 'PAYSLIP');
+        if ($code === null) {
+            return null;
+        }
+        try {
+            Database::getInstance()->pdo->prepare(
+                "UPDATE `payroll_run_details` SET payslip_number = :code WHERE run_id = :run_id AND employee_id = :employee_id"
+            )->execute([':code' => $code, ':run_id' => $runId, ':employee_id' => $employeeId]);
+        } catch (Throwable $e) {
+            // Persistence failed but the code itself was validly generated -- still return it for
+            // THIS render (better than nothing), even though it won't be reused on the next
+            // download. Same "never let a numbering side-effect block the real document" posture.
+        }
+        return $code;
     }
 
     /* ==================== Original fixed layout (fallback when no template is set) ==================== */
@@ -160,6 +259,12 @@ class PaySlipReport implements ReportGeneratorInterface {
         $employeeNo = htmlspecialchars($detail['employee_no']);
         $empNameEsc = htmlspecialchars($employeeName);
         $companyEsc = htmlspecialchars($companyName);
+        // 2026-09-04, Backlog Phase 11, T061 -- DocumentNumberingModel-generated code (see
+        // resolvePayslipNumber()), only shown when one was actually assigned (a numbering failure
+        // must never block/blank the rest of the payslip -- see that method's own docblock).
+        $docNoLine = !empty($detail['payslip_number'])
+            ? '<div>เลขที่เอกสาร / Document No.: ' . htmlspecialchars((string)$detail['payslip_number']) . '</div>'
+            : '';
         return <<<HTML
 <html>
 <head><style>
@@ -175,6 +280,7 @@ th { background: #f0f0f0; }
 <h2>{$companyEsc}</h2>
 <div>สลิปเงินเดือน / Pay Slip — งวด {$period}</div>
 <div>รหัสพนักงาน: {$employeeNo} &nbsp; ชื่อ: {$empNameEsc}</div>
+{$docNoLine}
 <table>
 <thead><tr><th colspan="2">รายได้ / Earnings</th></tr></thead>
 <tbody>{$earningRows}</tbody>

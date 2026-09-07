@@ -29,26 +29,10 @@ function toLocalDateOnlyRd(value) {
     if (typeof formatDisplayDateTime !== 'function') return toDisplayDateRd(String(value).substring(0, 10));
     return formatDisplayDateTime(value).split(' ')[0];
 }
-function escapeHtmlRd(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
-// 2026-08-29: escapeHtmlRd() alone is NOT attribute-safe -- a text node's serialized innerHTML
-// escapes <, >, & but NOT " (browsers only need to escape a quote inside an ATTRIBUTE value, not a
-// plain text node), so embedding its output inside a double-quoted HTML attribute (e.g. an employee
-// name containing a literal ") could break out of the attribute. Same bug class already documented
-// elsewhere in this app (see escapeAttrEct() in employment-certificate-template.js) -- fixed the
-// same way, only where an attribute context actually needs it (commentButtonRd()'s data-employee-label).
-function escapeAttrRd(str) {
-    return escapeHtmlRd(str).replace(/"/g, '&quot;');
-}
-// 2026-08-31, explicit request ("สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX"): PayrollController may
-// send the literal string "XXXX" instead of a real number for a masked figure -- passed through
-// as-is rather than formatted (Number('XXXX') is NaN, which .toLocaleString() would otherwise
-// render as the confusing literal text "NaN").
-function fmtNumRd(n) {
-    if (n === 'XXXX') return n;
-    return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+// 2026-09-04, Backlog Phase 11, T065 -- escapeHtml()/escapeAttr()/fmtNum() moved to the shared
+// public/js/format-helpers.js (loaded globally via header.php); this file's own former
+// escapeHtmlRd/escapeAttrRd/fmtNumRd were confirmed byte-identical/behavior-preserving before the
+// merge, see that file's own docblock.
 function stateBadgeRd(state) {
     const map = {
         draft: 'bg-secondary-subtle text-secondary',
@@ -129,7 +113,7 @@ function calcErrorsRemarkRd(calcErrors) {
         if (code === 'mixed_payment_lines_mismatch') return langData['calc_error_mixed_payment_lines_mismatch'] || "This employee's Mixed payment lines don't add up to their net pay -- check the Payment tab on Employee Detail.";
         return code;
     });
-    return `<span class="text-danger small">${escapeHtmlRd(labels.join(' '))}</span>`;
+    return `<span class="text-danger small">${escapeHtml(labels.join(' '))}</span>`;
 }
 function employeeDisplayNameRd(row) {
     const name = currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`;
@@ -176,7 +160,7 @@ function nextStepBanner(state) {
     if (!text) {
         return { cls: '', html: '' };
     }
-    return { cls, html: `<i class="fa-solid ${icon}"></i><span>${escapeHtmlRd(text)}</span>` };
+    return { cls, html: `<i class="fa-solid ${icon}"></i><span>${escapeHtml(text)}</span>` };
 }
 
 /* ---------- Process timeline: a horizontal step tracker across the top of the page, mirroring
@@ -401,7 +385,7 @@ function renderProcessTimeline(run) {
         const actionsHtml = timelineStepActionsHtml(i, run, currentIndex);
         html += `<li class="tl-step ${cls}">
             <span class="tl-icon"><i class="fa-solid ${icon}"></i></span>
-            <span class="tl-label">${escapeHtmlRd(label)}</span>
+            <span class="tl-label">${escapeHtml(label)}</span>
             ${dateHtml}
             ${actionsHtml ? `<span class="tl-actions">${actionsHtml}</span>` : ''}
         </li>`;
@@ -475,7 +459,7 @@ function loadRunReportsTab() {
             const disabledAttr = rowIsReady ? '' : 'disabled';
             return `
             <tr>
-                <td>${escapeHtmlRd(rdReportLabel(row))}</td>
+                <td>${escapeHtml(rdReportLabel(row))}</td>
                 <td class="text-center">${Number(row.download_count) || 0}</td>
                 <td>${row.last_downloaded_at ? formatDisplayDateTime(row.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`}</td>
                 <td class="text-center">
@@ -519,16 +503,16 @@ function loadRunCashTab() {
             return;
         }
         const data = res.data;
-        $('#runCashTotalCash').text(fmtNumRd(data.total_cash));
-        $('#runCashTotalBank').text(fmtNumRd(data.total_bank));
+        $('#runCashTotalCash').text(fmtNum(data.total_cash));
+        $('#runCashTotalBank').text(fmtNum(data.total_bank));
         $('#runCashTableBody').html((data.rows || []).map(row => {
-            const name = escapeHtmlRd((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
+            const name = escapeHtml((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
             const isPaid = row.status === 'paid';
             const badge = isPaid
                 ? `<span class="badge bg-success-subtle text-success">${langData['status_paid'] || 'Paid'}</span>`
                 : `<span class="badge bg-secondary-subtle text-secondary">${langData['status_unpaid'] || 'Unpaid'}</span>`;
             const paidByName = currentLang === 'th' ? row.paid_by_name_th : row.paid_by_name_en;
-            const paidAtCell = isPaid ? `${formatDisplayDateTime(row.paid_at)}${paidByName ? `<div class="text-muted small">${escapeHtmlRd(paidByName)}</div>` : ''}` : '-';
+            const paidAtCell = isPaid ? `${formatDisplayDateTime(row.paid_at)}${paidByName ? `<div class="text-muted small">${escapeHtml(paidByName)}</div>` : ''}` : '-';
             // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
             // ".btn-circle-action" section) replace the old adjacent .btn-group (and its own former
             // .btn-sm, redundant now that .btn-circle-action sets a fixed 32x32 size itself).
@@ -536,9 +520,9 @@ function loadRunCashTab() {
                 ? `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-cash-mark-unpaid" data-id="${row.id}" title="${langData['mark_as_unpaid'] || 'Mark as Unpaid'}"><i class="fa-solid fa-rotate-left"></i></button>`
                 : `<button type="button" class="btn btn-link btn-circle-action text-success btn-cash-mark-paid" data-id="${row.id}" title="${langData['mark_as_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-check"></i></button>`;
             return `<tr>
-                <td>${escapeHtmlRd(row.employee_no)}</td>
+                <td>${escapeHtml(row.employee_no)}</td>
                 <td>${name}</td>
-                <td class="text-end">${fmtNumRd(row.amount)}</td>
+                <td class="text-end">${fmtNum(row.amount)}</td>
                 <td class="text-center">${badge}</td>
                 <td>${paidAtCell}</td>
                 <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtn}</div></td>
@@ -601,10 +585,10 @@ function loadRunBankAccountTab() {
         }
         rdBankAccountRows = res.data || [];
         $('#runBankAccountTableBody').html(rdBankAccountRows.map(row => {
-            const name = escapeHtmlRd((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
+            const name = escapeHtml((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
             const bankName = currentLang === 'th' ? row.bank_name_th : row.bank_name_en;
             const accountCell = row.bank_account_id
-                ? escapeHtmlRd(`${bankName || ''} - ${row.bank_account_name || ''}`)
+                ? escapeHtml(`${bankName || ''} - ${row.bank_account_name || ''}`)
                 : `<span class="text-danger">${langData['bank_account_unassigned'] || 'No account configured'}</span>`;
             const sourceBadgeClass = row.is_overridden ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary';
             const sourceLabel = langData[RD_BANK_ACCOUNT_SOURCE_LABEL_KEY[row.source]] || row.source;
@@ -615,7 +599,7 @@ function loadRunBankAccountTab() {
                 actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-bank-account-remove" data-employee-id="${row.employee_id}" title="${langData['bank_account_remove_override'] || 'Remove Override'}"><i class="fa-solid fa-rotate-left"></i></button>`;
             }
             return `<tr>
-                <td>${escapeHtmlRd(row.employee_no)}</td>
+                <td>${escapeHtml(row.employee_no)}</td>
                 <td>${name}</td>
                 <td>${accountCell}</td>
                 <td class="text-center"><span class="badge ${sourceBadgeClass}">${sourceLabel}</span></td>
@@ -738,14 +722,14 @@ function loadRunRemittanceTab() {
         rdRemittanceRows = res.data || [];
         const totals = { pending: 0, transferred: 0, success: 0, failed: 0 };
         rdRemittanceRows.forEach(row => { totals[row.status] = (totals[row.status] || 0) + Number(row.total_amount); });
-        $('#runRemittanceTotalPending').text(fmtNumRd(totals.pending));
-        $('#runRemittanceTotalTransferred').text(fmtNumRd(totals.transferred));
-        $('#runRemittanceTotalSuccess').text(fmtNumRd(totals.success));
-        $('#runRemittanceTotalFailed').text(fmtNumRd(totals.failed));
+        $('#runRemittanceTotalPending').text(fmtNum(totals.pending));
+        $('#runRemittanceTotalTransferred').text(fmtNum(totals.transferred));
+        $('#runRemittanceTotalSuccess').text(fmtNum(totals.success));
+        $('#runRemittanceTotalFailed').text(fmtNum(totals.failed));
         $('#runRemittanceTableBody').html(rdRemittanceRows.map(row => {
             const badgeClass = RD_REMITTANCE_STATUS_BADGE[row.status] || 'bg-secondary-subtle text-secondary';
             const badge = `<span class="badge ${badgeClass}">${langData[`remittance_status_${row.status}`] || row.status}</span>`;
-            const failedNote = row.status === 'failed' && row.note ? `<div class="text-danger small">${escapeHtmlRd(row.note)}</div>` : '';
+            const failedNote = row.status === 'failed' && row.note ? `<div class="text-danger small">${escapeHtml(row.note)}</div>` : '';
             const transferredAtCell = row.transferred_at ? formatDisplayDateTime(row.transferred_at) : '-';
             // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
             // ".btn-circle-action" section) replace the old adjacent .btn-group.
@@ -759,10 +743,10 @@ function loadRunRemittanceTab() {
                 actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-retry" data-id="${row.id}" title="${langData['retry'] || 'Retry'}"><i class="fa-solid fa-rotate-left"></i></button>`;
             }
             return `<tr>
-                <td>${escapeHtmlRd(rdRemittanceDestinationLabel(row))}</td>
-                <td>${escapeHtmlRd(rdRemittanceDestinationTypeLabel(row.destination_type))}</td>
+                <td>${escapeHtml(rdRemittanceDestinationLabel(row))}</td>
+                <td>${escapeHtml(rdRemittanceDestinationTypeLabel(row.destination_type))}</td>
                 <td class="text-center">${Number(row.employee_count) || 0}</td>
-                <td class="text-end">${fmtNumRd(row.total_amount)}</td>
+                <td class="text-end">${fmtNum(row.total_amount)}</td>
                 <td class="text-center">${badge}${failedNote}</td>
                 <td>${transferredAtCell}</td>
                 <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
@@ -784,12 +768,12 @@ $(document).on('click', '.btn-remittance-breakdown', function () {
     $.getJSON(`${BASE_URL}/api/payroll-remittance.items`, { id }, function (res) {
         if (!res.status) return;
         $('#remittanceBreakdownTableBody').html((res.data || []).map(item => {
-            const name = escapeHtmlRd((currentLang === 'th' ? `${item.name_th} ${item.surname_th}` : `${item.name_en} ${item.surname_en}`).trim());
+            const name = escapeHtml((currentLang === 'th' ? `${item.name_th} ${item.surname_th}` : `${item.name_en} ${item.surname_en}`).trim());
             return `<tr>
-                <td>${escapeHtmlRd(item.employee_no)}</td>
+                <td>${escapeHtml(item.employee_no)}</td>
                 <td>${name}</td>
-                <td>${escapeHtmlRd(item.item_code)}</td>
-                <td class="text-end">${fmtNumRd(item.amount)}</td>
+                <td>${escapeHtml(item.item_code)}</td>
+                <td class="text-end">${fmtNum(item.amount)}</td>
             </tr>`;
         }).join(''));
         new bootstrap.Modal(document.getElementById('remittanceBreakdownModal')).show();
@@ -1013,12 +997,12 @@ $(document).on('click', '.btn-report-history', function () {
             // correctly as a string already), not the dd/mm/yyyy display string -- same gotcha
             // documented in this project's own date-format-audit history.
             { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
-            { data: null, render: (l) => escapeHtmlRd(rdReportByLabel(l)) },
-            { data: null, render: (l) => escapeHtmlRd(rdReportLanguageLabel(l)) },
-            { data: null, render: (l) => escapeHtmlRd(rdReportDeviceLabel(l)) },
-            { data: null, render: (l) => escapeHtmlRd(rdReportBrowserLabel(l)) },
-            { data: 'ip_address', render: (v) => escapeHtmlRd(v || '-') },
-            { data: 'source', render: (v) => escapeHtmlRd(v || '-') },
+            { data: null, render: (l) => escapeHtml(rdReportByLabel(l)) },
+            { data: null, render: (l) => escapeHtml(rdReportLanguageLabel(l)) },
+            { data: null, render: (l) => escapeHtml(rdReportDeviceLabel(l)) },
+            { data: null, render: (l) => escapeHtml(rdReportBrowserLabel(l)) },
+            { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
+            { data: 'source', render: (v) => escapeHtml(v || '-') },
         ],
         // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
         // entirely, silently falling back to DataTables' own built-in default of 10.
@@ -1156,9 +1140,9 @@ function renderRunHeader(run) {
     $('#infoPeriod').text(`${toDisplayDateRd(run.period_start_date)} - ${toDisplayDateRd(run.period_end_date)}`);
     $('#infoPaymentDate').text(toDisplayDateRd(run.payment_date));
     $('#infoEmployeeCount').text(run.employee_count);
-    $('#infoGross').text(fmtNumRd(run.total_gross_amount));
-    $('#infoDeduction').text(fmtNumRd(run.total_deduction_amount));
-    $('#infoNet').text(fmtNumRd(run.total_net_amount));
+    $('#infoGross').text(fmtNum(run.total_gross_amount));
+    $('#infoDeduction').text(fmtNum(run.total_deduction_amount));
+    $('#infoNet').text(fmtNum(run.total_net_amount));
     const creatorName = (currentLang === 'th' ? run.created_by_name_th : run.created_by_name_en) || run.created_by_name_th || run.created_by_name_en || '-';
     $('#infoCreatedBy').text(creatorName);
     $('#infoRunType').text(runTypeLabelRd(run));
@@ -1178,12 +1162,12 @@ function renderRunHeader(run) {
     }
 
     if (run.state === 'rejected' && run.reject_reason) {
-        $('#rejectReasonBox').removeClass('d-none').html(`<i class="fa-solid fa-circle-exclamation me-1"></i><strong>${langData['reject_reason_display'] || 'Reject Reason'}:</strong> ${escapeHtmlRd(run.reject_reason)}`);
+        $('#rejectReasonBox').removeClass('d-none').html(`<i class="fa-solid fa-circle-exclamation me-1"></i><strong>${langData['reject_reason_display'] || 'Reject Reason'}:</strong> ${escapeHtml(run.reject_reason)}`);
     } else {
         $('#rejectReasonBox').addClass('d-none').html('');
     }
     if (run.state === 'cancelled' && run.cancel_reason) {
-        $('#cancelReasonBox').removeClass('d-none').html(`<i class="fa-solid fa-ban me-1"></i><strong>${langData['cancel_reason_display'] || 'Cancel Reason'}:</strong> ${escapeHtmlRd(run.cancel_reason)}`);
+        $('#cancelReasonBox').removeClass('d-none').html(`<i class="fa-solid fa-ban me-1"></i><strong>${langData['cancel_reason_display'] || 'Cancel Reason'}:</strong> ${escapeHtml(run.cancel_reason)}`);
     } else {
         $('#cancelReasonBox').addClass('d-none').html('');
     }
@@ -1221,13 +1205,36 @@ function renderRunHeader(run) {
 // normal api/payroll-run.get payload already (see PayrollRunModel::get()'s own LEFT JOIN).
 function renderMergeTargetBanner(run) {
     const eligible = !!run.merge_target_run_id && run.state === 'draft' && !run.cycle_id && !run.sync_process_id;
-    if (!eligible) {
-        $('#mergeTargetBanner').addClass('d-none');
-        return;
+    // 2026-09-06: the "future cycle" merge-target form -- merge_target_cycle_id is set instead of
+    // merge_target_run_id while genuinely waiting (see PayrollRunModel::resolveMergeTargetSpec()'s
+    // own docblock) -- the two are mutually exclusive at the DB layer, so at most one banner ever
+    // shows. No action button here (there's nothing to click yet -- PayrollRunModel::create()'s own
+    // auto-detect resolves this into the "ready" banner above automatically once the real round
+    // gets created, no admin action needed to notice it happened).
+    const waiting = !eligible && !!run.merge_target_cycle_id && run.state === 'draft' && !run.cycle_id && !run.sync_process_id;
+    $('#mergeTargetBanner').toggleClass('d-none', !eligible);
+    $('#mergeTargetWaitingBanner').toggleClass('d-none', !waiting);
+    if (eligible) {
+        const tpl = langData['merge_target_banner_text'] || 'This run is set to merge into "{target}" once ready.';
+        $('#mergeTargetBannerText').text(tpl.replace('{target}', run.merge_target_run_name || `#${run.merge_target_run_id}`));
     }
-    const tpl = langData['merge_target_banner_text'] || 'This run is set to merge into "{target}" once ready.';
-    $('#mergeTargetBannerText').text(tpl.replace('{target}', run.merge_target_run_name || `#${run.merge_target_run_id}`));
-    $('#mergeTargetBanner').removeClass('d-none');
+    if (waiting) {
+        const cycleLabel = run.merge_target_cycle_name || `#${run.merge_target_cycle_id}`;
+        const periodLabel = (run.merge_target_period_start_date && run.merge_target_period_end_date)
+            ? `${formatDisplayDate(run.merge_target_period_start_date)} - ${formatDisplayDate(run.merge_target_period_end_date)}`
+            : '';
+        // 2026-09-06, real gap found and fixed: the target cycle may have been deactivated/deleted
+        // since this spec was set -- create() requires status='active' to create a new run against
+        // it, so this is a genuine dead end, same category as the sync-side 'target_rejected'
+        // status -- swapped to a danger-styled alert with no "it'll resolve on its own" implication.
+        const cycleInactive = run.merge_target_cycle_status && run.merge_target_cycle_status !== 'active';
+        $('#mergeTargetWaitingBanner').toggleClass('alert-warning', !cycleInactive).toggleClass('alert-danger', cycleInactive);
+        $('#mergeTargetWaitingBanner i').toggleClass('fa-hourglass-half', !cycleInactive).toggleClass('fa-triangle-exclamation', cycleInactive);
+        const tpl = cycleInactive
+            ? (langData['merge_target_waiting_banner_inactive_text'] || 'The target Payroll Cycle "{cycle}" was deactivated or deleted -- this will never merge automatically. Edit this run to pick a different merge target.')
+            : (langData['merge_target_waiting_banner_text'] || 'This run is waiting to merge into the next round of "{cycle}" ({period}), once it\'s created.');
+        $('#mergeTargetWaitingBannerText').text(tpl.replace('{cycle}', cycleLabel).replace('{period}', periodLabel));
+    }
 }
 
 /* 2026-08-30 (Phase 8, T041) -- reconciliation warning for a sync-based run. Draft-only (same
@@ -1261,7 +1268,7 @@ function loadSyncMissingEmployeesBanner(run) {
 }
 $(document).on('click', '#syncMissingEmployeesViewBtn', function () {
     const list = $('#syncMissingEmployeesBanner').data('list') || [];
-    const listHtml = list.map(e => `<li class="text-start">${escapeHtmlRd(e.employee_no)} — ${escapeHtmlRd((currentLang === 'th' ? `${e.name_th} ${e.surname_th}` : `${e.name_en} ${e.surname_en}`).trim())}</li>`).join('');
+    const listHtml = list.map(e => `<li class="text-start">${escapeHtml(e.employee_no)} — ${escapeHtml((currentLang === 'th' ? `${e.name_th} ${e.surname_th}` : `${e.name_en} ${e.surname_en}`).trim())}</li>`).join('');
     Swal.fire({
         title: langData['sync_missing_employees_title'] || 'Not in This Sync',
         html: `<ul class="ps-3 mb-0">${listHtml}</ul>`,
@@ -1287,8 +1294,8 @@ function itemChecklistRowHtml(item, opts) {
     const safeId = `${opts.idPrefix}_${item.item_code}`.replace(/[^a-zA-Z0-9_-]/g, '_');
     const wasCheckedAttr = opts.trackWasChecked ? ` data-was-checked="${checked ? '1' : '0'}"` : '';
     return `<div class="form-check mb-1">
-        <input class="form-check-input ${opts.checkboxClass}" type="checkbox" value="${escapeHtmlRd(item.item_code)}"${wasCheckedAttr} id="${safeId}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
-        <label class="form-check-label small" for="${safeId}">${escapeHtmlRd(name)}${badge}</label>
+        <input class="form-check-input ${opts.checkboxClass}" type="checkbox" value="${escapeHtml(item.item_code)}"${wasCheckedAttr} id="${safeId}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+        <label class="form-check-label small" for="${safeId}">${escapeHtml(name)}${badge}</label>
     </div>`;
 }
 // 2026-08-29, same-day follow-up: "เป็น item 2 column หรือ 3 column ก็ได้ครับ และไม่ต้องมี Scroll และปรับ
@@ -1350,7 +1357,7 @@ function runSettingsExcludedItemsSummaryHtml(itemOptions, excludedCodes) {
     const excluded = itemOptions.filter(item => excludedCodes.includes(item.item_code));
     const chipClass = item => item.item_type === 'base_salary' ? 'text-bg-warning-subtle text-warning-emphasis'
         : item.item_type === 'earning' ? 'text-bg-success-subtle text-success' : 'text-bg-danger-subtle text-danger';
-    return `<div>${excluded.map(item => `<span class="badge rounded-pill ${chipClass(item)} me-1 mb-1">${escapeHtmlRd((currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_code)}</span>`).join('')}</div>`;
+    return `<div>${excluded.map(item => `<span class="badge rounded-pill ${chipClass(item)} me-1 mb-1">${escapeHtml((currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_code)}</span>`).join('')}</div>`;
 }
 function renderRunSettingsSummary(d) {
     const excludedCodes = d.excluded_item_codes || [];
@@ -1462,10 +1469,10 @@ $(document).on('click', '#btnSaveRunSettings', function () {
 function apvAvatarHtmlRd(name, size) {
     size = size || 26;
     const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
-    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtmlRd(initial)}</span>`;
+    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtml(initial)}</span>`;
 }
 function apvPersonLineHtmlRd(name) {
-    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlRd(name, 26)}<span class="apv-person-name">${escapeHtmlRd(name || '-')}</span></div>`;
+    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlRd(name, 26)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
 }
 const APV_COLORS_RD = {
     done: { icon: '#16a34a', badgeBg: '#dcfce7', badgeText: '#15803d' },
@@ -1476,7 +1483,7 @@ const APV_COLORS_RD = {
 };
 function apvBadgeHtmlRd(tone, label) {
     const c = APV_COLORS_RD[tone] || APV_COLORS_RD.muted;
-    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtmlRd(label)}</span>`;
+    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtml(label)}</span>`;
 }
 function apvIconHtmlRd(tone, icon) {
     const c = APV_COLORS_RD[tone] || APV_COLORS_RD.muted;
@@ -1493,11 +1500,11 @@ function apvApproverSubstepHtmlRd(a) {
     const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
     return `<div class="apv-substep">
         <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtmlRd(name, 22)}${escapeHtmlRd(name)}</span>
+            <span class="apv-substep-label">${apvAvatarHtmlRd(name, 22)}${escapeHtml(name)}</span>
             ${apvBadgeHtmlRd(apvApproverToneRd(a.status), apvApproverLabelRd(a.status))}
         </div>
-        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtmlRd(a.acted_at)}</div>` : ''}
-        ${a.note ? `<div class="apv-substep-remark">${escapeHtmlRd(a.note)}</div>` : ''}
+        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
+        ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
     </div>`;
 }
 function apvApprovalStageInfoRd(state) {
@@ -1523,7 +1530,7 @@ function apvStepDotsHtmlRd(steps) {
         const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
         const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
         const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
-        return `<div class="apv-step-dot-wrap" title="${escapeHtmlRd(s.step_name || '')}">
+        return `<div class="apv-step-dot-wrap" title="${escapeHtml(s.step_name || '')}">
             <div class="apv-step-dot ${apvStepDotToneRd(s)}">${icon}</div>
             ${lockIcon}
         </div>${connector}`;
@@ -1539,7 +1546,7 @@ function apvStepGroupHtmlRd(step) {
         : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
     return `<div class="apv-step-group">
         <div class="apv-step-group-head">
-            <span class="apv-step-group-title">${escapeHtmlRd(stepLabel)}${step.step_name ? ': ' + escapeHtmlRd(step.step_name) : ''}</span>
+            <span class="apv-step-group-title">${escapeHtml(stepLabel)}${step.step_name ? ': ' + escapeHtml(step.step_name) : ''}</span>
             ${badgeHtml}
         </div>
         <div class="apv-step-group-body">${approversHtml}</div>
@@ -1579,7 +1586,7 @@ function apvPaidStageHtmlRd(run) {
                     <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
                     ${apvBadgeHtmlRd(tone, label)}
                 </div>
-                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtmlRd(run.paid_at)}</div>` : ''}
+                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtml(run.paid_at)}</div>` : ''}
                 <div class="apv-stage-body">
                     <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
                 </div>
@@ -1597,7 +1604,7 @@ function apvCreatedStageHtmlRd(run) {
                     <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
                     ${apvBadgeHtmlRd('done', langData['stage_created'] || 'Created')}
                 </div>
-                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtmlRd(run.created_at)) : ''}</div>
+                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtml(run.created_at)) : ''}</div>
                 <div class="apv-stage-body">${apvPersonLineHtmlRd(creator)}</div>
             </div>
         </div>
@@ -1611,13 +1618,13 @@ function renderAuditTimelineRd(logs) {
     return ordered.map(l => {
         const actor = personDisplayNameRd(l, 'performed_by');
         const metaParts = [];
-        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtmlRd(l.ip_address)}`);
-        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtmlRd(l.user_agent)}`);
+        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtml(l.ip_address)}`);
+        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtml(l.user_agent)}`);
         return `<div class="apv-log-entry">
-            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtmlRd(l.performed_at)}</div>
-            <div class="apv-log-action">${escapeHtmlRd(auditActionLabel(l.action))} <span class="text-secondary fw-normal">(${escapeHtmlRd(actor)})</span></div>
+            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtml(l.performed_at)}</div>
+            <div class="apv-log-action">${escapeHtml(auditActionLabel(l.action))} <span class="text-secondary fw-normal">(${escapeHtml(actor)})</span></div>
             ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
-            ${l.note ? `<div class="apv-log-note">${escapeHtmlRd(l.note)}</div>` : ''}
+            ${l.note ? `<div class="apv-log-note">${escapeHtml(l.note)}</div>` : ''}
         </div>`;
     }).join('');
 }
@@ -1902,7 +1909,7 @@ function verifyLockButtonsRd(row) {
 // now includes it per employee). Re-rendered after every add/edit/delete via loadRunDetail(), same
 // refresh pattern every other mutating action on this page already uses.
 function commentButtonRd(row) {
-    const label = `${escapeAttrRd(row.employee_no)} - ${escapeAttrRd(employeeDisplayNameRd(row))}`;
+    const label = `${escapeAttr(row.employee_no)} - ${escapeAttr(employeeDisplayNameRd(row))}`;
     const count = Number(row.comment_count || 0);
     const countBadge = count > 0
         ? `<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.6rem;">${count}</span>`
@@ -1950,7 +1957,7 @@ function formulaStepRd(text) {
     return `<li class="mb-1">${text}</li>`;
 }
 function formulaResultLineRd(amount) {
-    return `<div class="mt-2 pt-2 border-top fw-bold text-brand">${langData['formula_result'] || 'Result'}: ${fmtNumRd(amount)}</div>`;
+    return `<div class="mt-2 pt-2 border-top fw-bold text-brand">${langData['formula_result'] || 'Result'}: ${fmtNum(amount)}</div>`;
 }
 /** @return string|null HTML step list (without the outer wrapper/title) or null if this formula type isn't recognized. */
 function buildFormulaStepsRd(formula) {
@@ -1960,13 +1967,13 @@ function buildFormulaStepsRd(formula) {
         case 'ot_multiplier': {
             const scopeLabel = langData[FORMULA_EVENT_LABELS_RD[formula.scope]] || formula.scope;
             if (formula.is_daily_base) {
-                steps.push(formulaStepRd(`${langData['formula_base_salary'] || 'Base salary'} ${fmtNumRd(formula.base_salary)} ÷ ${formula.days_divisor} ${langData['formula_unit_days'] || 'days'} = ${fmtNumRd(formula.unit_rate)} ${langData['formula_per_day'] || 'per day'}`));
-                steps.push(formulaStepRd(`${fmtNumRd(formula.unit_rate)} × ${formula.multiplier} (${scopeLabel}) = ${fmtNumRd(formula.unit_rate * formula.multiplier)} ${langData['formula_per_day'] || 'per day'}`));
-                steps.push(formulaStepRd(`${fmtNumRd(formula.unit_rate * formula.multiplier)} × (${formula.hours} ÷ ${formula.hours_divisor}) = ${fmtNumRd(formula.result)}`));
+                steps.push(formulaStepRd(`${langData['formula_base_salary'] || 'Base salary'} ${fmtNum(formula.base_salary)} ÷ ${formula.days_divisor} ${langData['formula_unit_days'] || 'days'} = ${fmtNum(formula.unit_rate)} ${langData['formula_per_day'] || 'per day'}`));
+                steps.push(formulaStepRd(`${fmtNum(formula.unit_rate)} × ${formula.multiplier} (${scopeLabel}) = ${fmtNum(formula.unit_rate * formula.multiplier)} ${langData['formula_per_day'] || 'per day'}`));
+                steps.push(formulaStepRd(`${fmtNum(formula.unit_rate * formula.multiplier)} × (${formula.hours} ÷ ${formula.hours_divisor}) = ${fmtNum(formula.result)}`));
             } else {
-                steps.push(formulaStepRd(`${langData['formula_base_salary'] || 'Base salary'} ${fmtNumRd(formula.base_salary)} ÷ ${formula.days_divisor} ${langData['formula_unit_days'] || 'days'} ÷ ${formula.hours_divisor} ${langData['formula_unit_hours'] || 'hours'} = ${fmtNumRd(formula.unit_rate)} ${langData['formula_per_hour'] || 'per hour'}`));
-                steps.push(formulaStepRd(`${fmtNumRd(formula.unit_rate)} × ${formula.multiplier} (${scopeLabel}) = ${fmtNumRd(formula.unit_rate * formula.multiplier)} ${langData['formula_per_hour'] || 'per hour'}`));
-                steps.push(formulaStepRd(`${fmtNumRd(formula.unit_rate * formula.multiplier)} × ${formula.hours} ${langData['formula_unit_hours'] || 'hours'} = ${fmtNumRd(formula.result)}`));
+                steps.push(formulaStepRd(`${langData['formula_base_salary'] || 'Base salary'} ${fmtNum(formula.base_salary)} ÷ ${formula.days_divisor} ${langData['formula_unit_days'] || 'days'} ÷ ${formula.hours_divisor} ${langData['formula_unit_hours'] || 'hours'} = ${fmtNum(formula.unit_rate)} ${langData['formula_per_hour'] || 'per hour'}`));
+                steps.push(formulaStepRd(`${fmtNum(formula.unit_rate)} × ${formula.multiplier} (${scopeLabel}) = ${fmtNum(formula.unit_rate * formula.multiplier)} ${langData['formula_per_hour'] || 'per hour'}`));
+                steps.push(formulaStepRd(`${fmtNum(formula.unit_rate * formula.multiplier)} × ${formula.hours} ${langData['formula_unit_hours'] || 'hours'} = ${fmtNum(formula.result)}`));
             }
             return steps.join('');
         }
@@ -1974,36 +1981,36 @@ function buildFormulaStepsRd(formula) {
             const scopeLabel = langData[FORMULA_EVENT_LABELS_RD[formula.scope]] || formula.scope;
             const qty = formula.is_daily_base ? (formula.hours / formula.hours_divisor) : formula.hours;
             const qtyUnit = formula.is_daily_base ? (langData['formula_unit_days'] || 'days') : (langData['formula_unit_hours'] || 'hours');
-            steps.push(formulaStepRd(`${langData['formula_flat_rate'] || 'Flat rate'} (${scopeLabel}) ${fmtNumRd(formula.flat_rate)} × ${fmtNumRd(qty)} ${qtyUnit} = ${fmtNumRd(formula.result)}`));
+            steps.push(formulaStepRd(`${langData['formula_flat_rate'] || 'Flat rate'} (${scopeLabel}) ${fmtNum(formula.flat_rate)} × ${fmtNum(qty)} ${qtyUnit} = ${fmtNum(formula.result)}`));
             return steps.join('');
         }
         case 'flat_rate': {
-            steps.push(formulaStepRd(`${langData['formula_eligible_base'] || 'Eligible base'} = ${fmtNumRd(formula.raw_base)}`));
+            steps.push(formulaStepRd(`${langData['formula_eligible_base'] || 'Eligible base'} = ${fmtNum(formula.raw_base)}`));
             if ((formula.min_base !== null && formula.effective_base > formula.raw_base) || (formula.max_base !== null && formula.effective_base < formula.raw_base)) {
-                steps.push(formulaStepRd(`${langData['formula_base_clamped'] || 'Clamped to configured min/max base'} (${langData['formula_min'] || 'min'} ${fmtNumRd(formula.min_base ?? 0)} / ${langData['formula_max'] || 'max'} ${formula.max_base !== null ? fmtNumRd(formula.max_base) : '-'}) = ${fmtNumRd(formula.effective_base)}`));
+                steps.push(formulaStepRd(`${langData['formula_base_clamped'] || 'Clamped to configured min/max base'} (${langData['formula_min'] || 'min'} ${fmtNum(formula.min_base ?? 0)} / ${langData['formula_max'] || 'max'} ${formula.max_base !== null ? fmtNum(formula.max_base) : '-'}) = ${fmtNum(formula.effective_base)}`));
             }
-            steps.push(formulaStepRd(`${fmtNumRd(formula.effective_base)} × ${formula.employee_rate}% = ${fmtNumRd(formula.employee_raw_amount)}`));
+            steps.push(formulaStepRd(`${fmtNum(formula.effective_base)} × ${formula.employee_rate}% = ${fmtNum(formula.employee_raw_amount)}`));
             if (formula.employee_capped) {
-                steps.push(formulaStepRd(`${langData['formula_capped_at'] || 'Capped at the configured maximum contribution'} ${fmtNumRd(formula.max_employee_contribution)}`));
+                steps.push(formulaStepRd(`${langData['formula_capped_at'] || 'Capped at the configured maximum contribution'} ${fmtNum(formula.max_employee_contribution)}`));
             }
             return steps.join('');
         }
         case 'attendance_percent': {
-            steps.push(formulaStepRd(`${fmtNumRd(formula.hourly_rate)} ÷ 60 × ${formula.minutes} ${langData['formula_unit_minutes'] || 'minutes'} × ${formula.multiplier} = ${fmtNumRd(formula.result)}`));
+            steps.push(formulaStepRd(`${fmtNum(formula.hourly_rate)} ÷ 60 × ${formula.minutes} ${langData['formula_unit_minutes'] || 'minutes'} × ${formula.multiplier} = ${fmtNum(formula.result)}`));
             return steps.join('');
         }
         case 'attendance_flat': {
             const unitLabel = langData[FORMULA_UNIT_LABELS_RD[formula.rate_unit]] || formula.rate_unit;
-            steps.push(formulaStepRd(`${fmtNumRd(formula.rate_per_unit)} / ${unitLabel} × ${fmtNumRd(formula.quantity_in_rate_unit)} ${unitLabel} = ${fmtNumRd(formula.result)}`));
+            steps.push(formulaStepRd(`${fmtNum(formula.rate_per_unit)} / ${unitLabel} × ${fmtNum(formula.quantity_in_rate_unit)} ${unitLabel} = ${fmtNum(formula.result)}`));
             return steps.join('');
         }
         case 'attendance_bracket': {
             const unitLabel = langData[FORMULA_UNIT_LABELS_RD[formula.rate_unit]] || formula.rate_unit;
-            steps.push(formulaStepRd(`${fmtNumRd(formula.quantity_in_rate_unit)} ${unitLabel} ${langData['formula_falls_in_bracket'] || 'falls in bracket'} ${formula.bracket_min}-${formula.bracket_max !== null ? formula.bracket_max : '∞'} = ${fmtNumRd(formula.result)}`));
+            steps.push(formulaStepRd(`${fmtNum(formula.quantity_in_rate_unit)} ${unitLabel} ${langData['formula_falls_in_bracket'] || 'falls in bracket'} ${formula.bracket_min}-${formula.bracket_max !== null ? formula.bracket_max : '∞'} = ${fmtNum(formula.result)}`));
             return steps.join('');
         }
         case 'passthrough': {
-            steps.push(formulaStepRd(`${langData['formula_reported_value'] || 'Reported value'}: ${fmtNumRd(formula.raw_value)}${formula.unit ? ' ' + (langData[FORMULA_UNIT_LABELS_RD[formula.unit] || ''] || formula.unit) : ''} = ${fmtNumRd(formula.result)}`));
+            steps.push(formulaStepRd(`${langData['formula_reported_value'] || 'Reported value'}: ${fmtNum(formula.raw_value)}${formula.unit ? ' ' + (langData[FORMULA_UNIT_LABELS_RD[formula.unit] || ''] || formula.unit) : ''} = ${fmtNum(formula.result)}`));
             return steps.join('');
         }
         // 2026-08-30 (T015, "เพิ่มตัวเลือก 'ไม่หัก'") -- in practice a no_deduction result (amount=0)
@@ -2029,10 +2036,10 @@ function explainLineNoteRd(note, amount) {
         const eventLabel = eventLabelKey ? (langData[eventLabelKey] || eventKey) : eventKey;
         const unitLabelKey = unit === 'money' ? null : (FORMULA_UNIT_LABELS_RD[unit.replace(/s$/, '')] || null);
         const unitLabel = unitLabelKey ? (langData[unitLabelKey] || unit) : '';
-        const fromText = unit === 'money' ? fmtNumRd(value) : `${value} ${unitLabel}`;
+        const fromText = unit === 'money' ? fmtNum(value) : `${value} ${unitLabel}`;
         const correctedNote = corrected ? `<div class="small text-warning mt-1"><i class="fa-solid fa-pen me-1"></i>${langData['formula_manually_corrected'] || 'Manually corrected from the originally synced value'}</div>` : '';
         return `<div><strong>${eventLabel}</strong></div>
-            <ol class="ps-3 mb-0 mt-1 small">${formulaStepRd(`${langData['formula_from'] || 'From'}: ${escapeHtmlRd(fromText)}`)}</ol>
+            <ol class="ps-3 mb-0 mt-1 small">${formulaStepRd(`${langData['formula_from'] || 'From'}: ${escapeHtml(fromText)}`)}</ol>
             ${formulaResultLineRd(amount)}
             ${correctedNote}`;
     }
@@ -2050,7 +2057,7 @@ function explainLineNoteRd(note, amount) {
         return `<div><strong>${langData['formula_event_pit'] || 'Personal Income Tax'}</strong></div>
             <ol class="ps-3 mb-0 mt-1 small">
                 ${formulaStepRd(methodLabel)}
-                ${formulaStepRd(`${langData['formula_pit_annual_estimate'] || 'Estimated annual tax'}: ${fmtNumRd(pitMatch[2])}`)}
+                ${formulaStepRd(`${langData['formula_pit_annual_estimate'] || 'Estimated annual tax'}: ${fmtNum(pitMatch[2])}`)}
             </ol>
             ${formulaResultLineRd(amount)}`;
     }
@@ -2062,7 +2069,7 @@ function formulaButtonRd(line) {
     let content;
     if (stepsHtml) {
         const title = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code || '';
-        content = `<div><strong>${escapeHtmlRd(title)}</strong></div>
+        content = `<div><strong>${escapeHtml(title)}</strong></div>
             <ol class="ps-3 mb-0 mt-1 small">${stepsHtml}</ol>
             ${formulaResultLineRd(amount)}`;
     } else {
@@ -2078,7 +2085,7 @@ function formulaButtonRd(line) {
 function breakdownLineRowsRd(lines) {
     return (lines || []).map(line => {
         const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || '';
-        const commentHtml = line.note ? `<div class="small text-muted fst-italic"><i class="fa-regular fa-comment me-1"></i>${escapeHtmlRd(line.note)}</div>` : '';
+        const commentHtml = line.note ? `<div class="small text-muted fst-italic"><i class="fa-regular fa-comment me-1"></i>${escapeHtml(line.note)}</div>` : '';
         // 2026-08-30, explicit request: "มีหมายเหตุในกรณีที่ไม่หัก ในการกดดูของพนักงานด้วยในหน้า Process
         // Detail" -- SyncPayResolver still emits a LINE (amount forced to 0) for an attendance
         // deduction this employee is exempt from, rather than dropping it silently, so there's
@@ -2086,7 +2093,7 @@ function breakdownLineRowsRd(lines) {
         // the generic `commentHtml` above (which shows the raw technical `note` string) -- this is a
         // dedicated, human-readable remark keyed off `is_exempted`/`exempted_amount`.
         const exemptedHtml = line.is_exempted
-            ? `<div class="small text-warning-emphasis mt-1"><i class="fa-solid fa-user-shield me-1"></i>${(langData['attendance_deduction_exempted_remark'] || 'Exempted from this deduction -- would have been {amount}').replace('{amount}', fmtNumRd(line.exempted_amount))}</div>`
+            ? `<div class="small text-warning-emphasis mt-1"><i class="fa-solid fa-user-shield me-1"></i>${(langData['attendance_deduction_exempted_remark'] || 'Exempted from this deduction -- would have been {amount}').replace('{amount}', fmtNum(line.exempted_amount))}</div>`
             : '';
         // Transfer-to-payee (2026-08-21): a 'transfer_in' earning line gets its own badge (not the
         // generic "Custom" one, even though it's technically is_custom too) so it reads distinctly
@@ -2101,16 +2108,16 @@ function breakdownLineRowsRd(lines) {
         } else if (line.is_custom) {
             codeHtml = `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
         } else {
-            codeHtml = `<code class="fw-bold text-dark">${escapeHtmlRd(line.code || '-')}</code>`;
+            codeHtml = `<code class="fw-bold text-dark">${escapeHtml(line.code || '-')}</code>`;
         }
         // 2026-08-31, same-day follow-up: payee_type widened to 'company'/'not_disbursed' too --
         // same branching as manualLineListItemHtml()'s own payeeHtml.
         let payeeHtml = '';
         if (line.payee_type === 'employee' && line.payee_employee_id) {
-            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
+            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
         } else if (!line.payee_type && line.payee_employee_id) {
             // Backward-compat: a row saved before payee_type existed only ever meant 'employee'.
-            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
+            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
         } else if (line.payee_type === 'company') {
             payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
         } else if (line.payee_type === 'other_person') {
@@ -2125,8 +2132,8 @@ function breakdownLineRowsRd(lines) {
         const exemptBadge = line.is_exempted ? `<span class="badge bg-warning-subtle text-warning-emphasis ms-1">${langData['attendance_deduction_exempted_badge'] || 'Exempted'}</span>` : '';
         return `<tr class="${line.is_exempted ? 'text-muted' : ''}">
             <td>${codeHtml}</td>
-            <td>${escapeHtmlRd(name)}${exemptBadge}${formulaButtonRd(line)}${commentHtml}${exemptedHtml}${payeeHtml}</td>
-            <td class="text-end">${fmtNumRd(line.amount)}</td>
+            <td>${escapeHtml(name)}${exemptBadge}${formulaButtonRd(line)}${commentHtml}${exemptedHtml}${payeeHtml}</td>
+            <td class="text-end">${fmtNum(line.amount)}</td>
         </tr>`;
     }).join('');
 }
@@ -2139,11 +2146,11 @@ function statutoryRowsRd(items) {
     // breakdownLineRowsRd() already uses for earning/deduction lines just above.
     return (items || []).map(item => {
         const name = (currentLang === 'th' ? item.name_th : item.name_en) || item.name_th || item.name_en || '';
-        const note = item.note ? ` <span class="text-muted small">(${escapeHtmlRd(item.note)})</span>` : '';
+        const note = item.note ? ` <span class="text-muted small">(${escapeHtml(item.note)})</span>` : '';
         return `<tr>
-            <td><code class="fw-bold text-dark">${escapeHtmlRd(item.code || '-')}</code>${note}</td>
-            <td>${escapeHtmlRd(name)}${formulaButtonRd(item)}</td>
-            <td class="text-end">${fmtNumRd(item.employee_amount)}</td>
+            <td><code class="fw-bold text-dark">${escapeHtml(item.code || '-')}</code>${note}</td>
+            <td>${escapeHtml(name)}${formulaButtonRd(item)}</td>
+            <td class="text-end">${fmtNum(item.employee_amount)}</td>
         </tr>`;
     }).join('');
 }
@@ -2165,8 +2172,8 @@ function breakdownSectionHtml(iconCls, colorCls, titleKey, titleFallback, rowsHt
                 <tbody>${rowsHtml}</tbody>
                 <tfoot>
                     <tr class="fw-bold border-top ${colorCls}">
-                        <td colspan="2">${escapeHtmlRd(totalLabel)}</td>
-                        <td class="text-end">${fmtNumRd(totalAmount)}</td>
+                        <td colspan="2">${escapeHtml(totalLabel)}</td>
+                        <td class="text-end">${fmtNum(totalAmount)}</td>
                     </tr>
                 </tfoot>
             </table>
@@ -2175,13 +2182,23 @@ function breakdownSectionHtml(iconCls, colorCls, titleKey, titleFallback, rowsHt
 }
 function renderBreakdownModal(row) {
     $('#breakdownEmployeeName').text(`${row.employee_no} - ${employeeDisplayNameRd(row)}`);
+    // 2026-09-06, explicit request: Origami's opt-in TOTAL_DAYS item_values entry (calendar-based
+    // day count) -- row.total_days is null (see PayrollRunModel::getDetails()'s own docblock) for
+    // every run/employee with no data, never 0, so a plain truthiness-adjacent null check is
+    // correct here (0 would be a real, displayable value if it ever happened).
+    const $totalDays = $('#breakdownTotalDays');
+    if (row.total_days !== null && row.total_days !== undefined) {
+        $totalDays.text(`${langData['total_days'] || 'Total Days'}: ${fmtNum(row.total_days)}`).removeClass('d-none');
+    } else {
+        $totalDays.addClass('d-none').text('');
+    }
 
     let earningRowsHtml = '';
     if (Number(row.base_salary_amount) > 0) {
         earningRowsHtml += `<tr>
             <td><code class="fw-bold text-dark">BASE</code></td>
-            <td>${escapeHtmlRd(langData['table_base_salary'] || 'Base Salary')}</td>
-            <td class="text-end">${fmtNumRd(row.base_salary_amount)}</td>
+            <td>${escapeHtml(langData['table_base_salary'] || 'Base Salary')}</td>
+            <td class="text-end">${fmtNum(row.base_salary_amount)}</td>
         </tr>`;
     }
     earningRowsHtml += breakdownLineRowsRd(row.earning_breakdown);
@@ -2194,7 +2211,7 @@ function renderBreakdownModal(row) {
     $('#breakdownModalBody').html(html);
     // Net Pay lives in the modal-footer now (2026-08-20, explicit request), not the scrollable
     // body -- always visible without scrolling past the itemized sections.
-    $('#breakdownModalNetPay').text(fmtNumRd(row.net_amount));
+    $('#breakdownModalNetPay').text(fmtNum(row.net_amount));
     // Bootstrap popovers need explicit per-element initialization (no data-attribute auto-init in
     // this app, see formulaButtonRd()'s own docblock) -- dispose any from a previous employee's
     // render first (the DOM nodes they were attached to are already gone via .html() above, but the
@@ -2260,19 +2277,19 @@ const RAW_SYNC_DATA_SECTIONS_RD = [
 ];
 function rawSyncDataValueDisplay(value) {
     if (value === null || value === undefined || value === '') return '-';
-    return escapeHtmlRd(value);
+    return escapeHtml(value);
 }
 function rawSyncDataItemValuesTableHtml(itemValues) {
     if (!itemValues || !itemValues.length) {
         return `<div class="text-muted small">${langData['raw_sync_data_item_values_empty'] || 'No additional line items sent.'}</div>`;
     }
     const rows = itemValues.map(iv => `<tr>
-        <td><code>${escapeHtmlRd(iv.item_code || '-')}</code></td>
-        <td>${escapeHtmlRd(iv.item_name || '-')}</td>
-        <td>${escapeHtmlRd(iv.item_type || '-')}</td>
-        <td>${escapeHtmlRd(iv.unit_type || '-')}</td>
+        <td><code>${escapeHtml(iv.item_code || '-')}</code></td>
+        <td>${escapeHtml(iv.item_name || '-')}</td>
+        <td>${escapeHtml(iv.item_type || '-')}</td>
+        <td>${escapeHtml(iv.unit_type || '-')}</td>
         <td class="text-end">${rawSyncDataValueDisplay(iv.value)}</td>
-        <td>${escapeHtmlRd(iv.remark || '-')}</td>
+        <td>${escapeHtml(iv.remark || '-')}</td>
     </tr>`).join('');
     return `<div class="table-responsive">
         <table class="table table-sm table-border align-middle mb-0">
@@ -2501,9 +2518,9 @@ function initRunDetailTable(details) {
                 if (row.has_calc_override) {
                     badges.push(`<i class="fa-solid fa-file-invoice-dollar text-info ms-1" title="${langData['row_badge_calc_override'] || 'Has tax/SSO override'}"></i>`);
                 }
-                return `<span class="fw-semibold">${escapeHtmlRd(d)}</span>${badges.join('')}`;
+                return `<span class="fw-semibold">${escapeHtml(d)}</span>${badges.join('')}`;
             } },
-            { data: null, orderable: false, render: (d, t, row) => escapeHtmlRd(employeeDisplayNameRd(row)) },
+            { data: null, orderable: false, render: (d, t, row) => escapeHtml(employeeDisplayNameRd(row)) },
             { data: null, className: 'text-center', render: (d, t, row) => dataSourceBadgeRd(row) },
             // 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือเงินสด" --
             // same badge markup the (since-removed) Payment Method Summary tab used, reused here for
@@ -2533,13 +2550,13 @@ function initRunDetailTable(details) {
             { data: 'base_salary_amount', className: 'text-end', render: {
                 display: (d, t, row) => row.base_salary_excluded
                     ? `<span class="text-danger fw-semibold small">${langData['base_salary_excluded_label'] || 'Not Calculated'}</span>`
-                    : `<span class="text-muted">${fmtNumRd(d)}</span>`,
+                    : `<span class="text-muted">${fmtNum(d)}</span>`,
                 sort: d => d,
                 filter: d => d,
             } },
-            { data: 'gross_amount', className: 'text-end text-success fw-semibold', render: d => fmtNumRd(d) },
-            { data: 'total_deduction_amount', className: 'text-end text-danger fw-semibold', render: d => fmtNumRd(d) },
-            { data: 'net_amount', className: 'text-end', render: d => `<span class="rd-net-pill">${fmtNumRd(d)}</span>` },
+            { data: 'gross_amount', className: 'text-end text-success fw-semibold', render: d => fmtNum(d) },
+            { data: 'total_deduction_amount', className: 'text-end text-danger fw-semibold', render: d => fmtNum(d) },
+            { data: 'net_amount', className: 'text-end', render: d => `<span class="rd-net-pill">${fmtNum(d)}</span>` },
             { data: 'calc_status', render: {
                 display: (d, t, row) => `${calcStatusBadgeRd(d)}<div class="small mt-1">${calcErrorsRemarkRd(row.calc_errors)}</div>`,
                 sort: d => d,
@@ -2588,10 +2605,10 @@ function initRunDetailTable(details) {
             const sumColRd = idx => api.column(idx, { search: 'applied' }).data().toArray().reduce((a, b) => a + (parseFloat(b) || 0), 0);
             const visibleRows = api.rows({ search: 'applied' }).data().toArray();
             $('#rdFootEmployeeCount').text(`${langData['table_employee'] || 'Employee'}: ${visibleRows.length}`);
-            $('#rdFootBaseSalary').text(fmtNumRd(sumColRd(5)));
-            $('#rdFootGross').text(fmtNumRd(sumColRd(6)));
-            $('#rdFootDeduction').text(fmtNumRd(sumColRd(7)));
-            $('#rdFootNet').text(fmtNumRd(sumColRd(8)));
+            $('#rdFootBaseSalary').text(fmtNum(sumColRd(5)));
+            $('#rdFootGross').text(fmtNum(sumColRd(6)));
+            $('#rdFootDeduction').text(fmtNum(sumColRd(7)));
+            $('#rdFootNet').text(fmtNum(sumColRd(8)));
             const calculatedCount = visibleRows.filter(r => r.calc_status === 'calculated').length;
             $('#rdFootCalcStatus').text(`${langData['calc_status_calculated'] || 'Calculated'} ${calculatedCount}/${visibleRows.length}`);
             const verifiedCount = visibleRows.filter(r => r.is_verified).length;
@@ -2797,12 +2814,12 @@ function renderEmployeeCommentTimeline(comments) {
             </div>
             <div class="apv-comment-card">
                 <div class="apv-comment-head">
-                    <span class="apv-comment-author"><i class="fa-solid fa-circle-user me-1"></i>${escapeHtmlRd(name || '-')}</span>
+                    <span class="apv-comment-author"><i class="fa-solid fa-circle-user me-1"></i>${escapeHtml(name || '-')}</span>
                     ${employeeCommentTagBadge(c.tag)}${editedTag}
                     <span class="apv-comment-spacer"></span>
                     ${editDeleteIcons}
                 </div>
-                <div class="apv-comment-body" data-raw-comment="${escapeAttrRd(c.comment)}">${escapeHtmlRd(c.comment).replace(/\n/g, '<br>')}</div>
+                <div class="apv-comment-body" data-raw-comment="${escapeAttr(c.comment)}">${escapeHtml(c.comment).replace(/\n/g, '<br>')}</div>
                 <div class="apv-comment-date"><i class="fa-regular fa-clock me-1"></i>${formatDisplayDateTime ? formatDisplayDateTime(c.created_at) : c.created_at}</div>
             </div>
         </div>`;
@@ -2983,8 +3000,8 @@ function auditHistoryRowHtmlRd(entry, index, isLast) {
         ? `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`
         : (entry.to_state ? stateBadgeRd(entry.to_state) : '');
     const metaParts = [];
-    if (entry.ip_address) metaParts.push(`<span class="me-3"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtmlRd(entry.ip_address)}</span>`);
-    if (entry.user_agent) metaParts.push(`<span><i class="fa-solid fa-desktop me-1"></i>${escapeHtmlRd(entry.user_agent)}</span>`);
+    if (entry.ip_address) metaParts.push(`<span class="me-3"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(entry.ip_address)}</span>`);
+    if (entry.user_agent) metaParts.push(`<span><i class="fa-solid fa-desktop me-1"></i>${escapeHtml(entry.user_agent)}</span>`);
     return `
         <div class="apv-history-row${isLast ? ' apv-history-row-last' : ''}">
             <div class="apv-history-row-marker">
@@ -2993,12 +3010,12 @@ function auditHistoryRowHtmlRd(entry, index, isLast) {
             </div>
             <div class="apv-history-row-card">
                 <div class="apv-history-row-top">
-                    <span class="apv-history-row-title">${escapeHtmlRd(auditActionLabel(entry.action))}</span>
-                    <span class="apv-history-row-date"><i class="fa-regular fa-clock me-1"></i>${escapeHtmlRd(formatDisplayDateTime(entry.performed_at))}</span>
+                    <span class="apv-history-row-title">${escapeHtml(auditActionLabel(entry.action))}</span>
+                    <span class="apv-history-row-date"><i class="fa-regular fa-clock me-1"></i>${escapeHtml(formatDisplayDateTime(entry.performed_at))}</span>
                 </div>
-                <div class="apv-history-row-actor">${escapeHtmlRd(actor || '-')}</div>
+                <div class="apv-history-row-actor">${escapeHtml(actor || '-')}</div>
                 ${stateChangeHtml ? `<div class="mt-2">${stateChangeHtml}</div>` : ''}
-                ${entry.note ? `<div class="apv-substep-remark mt-2">${escapeHtmlRd(entry.note)}</div>` : ''}
+                ${entry.note ? `<div class="apv-substep-remark mt-2">${escapeHtml(entry.note)}</div>` : ''}
                 ${metaParts.length ? `<div class="small text-muted mt-2">${metaParts.join('')}</div>` : ''}
             </div>
         </div>
@@ -3213,7 +3230,7 @@ let manageLinesEmployeeId = null;
 // same reasoning as eedItemNameCell()'s own update in employee/detail.js.
 function manualLineTagHtml(line) {
     if (!line.is_custom) {
-        return `<code class="fw-bold text-dark">${escapeHtmlRd(line.item_code)}</code>`;
+        return `<code class="fw-bold text-dark">${escapeHtml(line.item_code)}</code>`;
     }
     return line.is_other
         ? `<span class="badge bg-info-subtle text-info"><i class="fa-solid fa-circle-question me-1"></i>${langData['manual_line_other_badge'] || 'Other'}</span>`
@@ -3222,31 +3239,31 @@ function manualLineTagHtml(line) {
 function manualLineListItemHtml(line) {
     const name = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en;
     const amtCls = line.item_type === 'earning' ? 'text-success' : 'text-danger';
-    const commentHtml = line.note ? `<div class="small text-muted fst-italic mt-1"><i class="fa-regular fa-comment me-1"></i>${escapeHtmlRd(line.note)}</div>` : '';
+    const commentHtml = line.note ? `<div class="small text-muted fst-italic mt-1"><i class="fa-regular fa-comment me-1"></i>${escapeHtml(line.note)}</div>` : '';
     // 2026-08-31, same-day follow-up: payee_type widened to 'company'/'not_disbursed' too (was
     // 'employee' transfer only) -- same branching as Employee Detail's own eedItemNameCell().
     let payeeHtml = '';
     if (line.payee_type === 'employee' && line.payee_employee_id) {
-        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtmlRd(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
+        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
     } else if (line.payee_type === 'company') {
         payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
     } else if (line.payee_type === 'other_person') {
         // 2026-09-02, Deduction Destination & Third-Party Remittance -- real gap found while
         // touching this function for Phase 7 (same missing branch already found/fixed in
         // employee/detail.js's own eedItemNameCell()): 'other_person' had no tag here either.
-        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-building-columns me-1"></i>${escapeHtmlRd(line.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
+        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-building-columns me-1"></i>${escapeHtml(line.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
     } else if (line.payee_type === 'not_disbursed') {
         payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
     }
     return `<li class="list-group-item d-flex justify-content-between align-items-start px-0 py-2">
         <div>
             ${manualLineTagHtml(line)}
-            <div class="small text-muted">${escapeHtmlRd(name)}</div>
+            <div class="small text-muted">${escapeHtml(name)}</div>
             ${commentHtml}
             ${payeeHtml}
         </div>
         <div class="d-flex align-items-center gap-2">
-            <span class="fw-semibold ${amtCls}">${fmtNumRd(line.amount)}</span>
+            <span class="fw-semibold ${amtCls}">${fmtNum(line.amount)}</span>
             <button type="button" class="btn btn-sm btn-outline-danger btn-remove-manual-line" data-line-id="${line.id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-trash-alt"></i></button>
         </div>
     </li>`;
@@ -3273,9 +3290,9 @@ function loadManualLinesRd() {
                 : manualLineEmptyItemHtml('no_manual_deduction_lines', 'No deduction items added yet.'));
             const earningTotal = earningLines.reduce((sum, l) => sum + Number(l.amount || 0), 0);
             const deductionTotal = deductionLines.reduce((sum, l) => sum + Number(l.amount || 0), 0);
-            $('#manualLinesEarningTotal').text(fmtNumRd(earningTotal));
-            $('#manualLinesDeductionTotal').text(fmtNumRd(deductionTotal));
-            $('#manualLinesNetTotal').text(fmtNumRd(earningTotal - deductionTotal));
+            $('#manualLinesEarningTotal').text(fmtNum(earningTotal));
+            $('#manualLinesDeductionTotal').text(fmtNum(deductionTotal));
+            $('#manualLinesNetTotal').text(fmtNum(earningTotal - deductionTotal));
         }
     });
 }
@@ -3299,7 +3316,7 @@ function attendanceDataRowHtml(field, synced, override) {
     const hasOverride = override !== null && override !== undefined;
     const effective = hasOverride ? override : (synced !== null && synced !== undefined ? synced : '');
     const label = langData[field.labelKey] || field.fallback;
-    const syncedDisplay = (synced !== null && synced !== undefined) ? fmtNumRd(synced) : '-';
+    const syncedDisplay = (synced !== null && synced !== undefined) ? fmtNum(synced) : '-';
     const badge = hasOverride ? ` <span class="badge bg-warning-subtle text-warning">${langData['sync_line_override_overridden_badge'] || 'Overridden'}</span>` : '';
     return `<tr data-field="${field.key}">
         <td>${label}${badge}</td>
@@ -3399,14 +3416,14 @@ function syncLineOverrideRowHtml(line) {
     // recalculate()'s statutory-check loop. See PayrollRunModel::syncDeductionLinesForEmployee()'s
     // own line_type tagging.
     const lineType = line.line_type || 'earning_deduction';
-    return `<div class="border rounded-3 p-2 mb-2" data-item-code="${escapeHtmlRd(line.code)}" data-line-type="${escapeHtmlRd(lineType)}">
+    return `<div class="border rounded-3 p-2 mb-2" data-item-code="${escapeHtml(line.code)}" data-line-type="${escapeHtml(lineType)}">
         <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-1">
             <div>
-                <code class="fw-bold text-dark">${escapeHtmlRd(line.code)}</code> ${escapeHtmlRd(name)}${syncLineOverrideBadge(line)}
+                <code class="fw-bold text-dark">${escapeHtml(line.code)}</code> ${escapeHtml(name)}${syncLineOverrideBadge(line)}
                 ${lineType === 'statutory' ? `<span class="badge bg-info-subtle text-info ms-1">${langData['sync_line_statutory_badge'] || 'Statutory'}</span>` : ''}
-                <div class="small text-muted">${langData['sync_line_override_computed'] || 'Current'}: ${fmtNumRd(line.current_amount)}</div>
+                <div class="small text-muted">${langData['sync_line_override_computed'] || 'Current'}: ${fmtNum(line.current_amount)}</div>
             </div>
-            ${hasOverride ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-sync-line-reset" data-item-code="${escapeHtmlRd(line.code)}" data-line-type="${escapeHtmlRd(lineType)}">${langData['sync_line_override_reset'] || 'Reset to computed'}</button>` : ''}
+            ${hasOverride ? `<button type="button" class="btn btn-sm btn-outline-secondary btn-sync-line-reset" data-item-code="${escapeHtml(line.code)}" data-line-type="${escapeHtml(lineType)}">${langData['sync_line_override_reset'] || 'Reset to computed'}</button>` : ''}
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap sync-line-controls">
             <input type="number" step="0.01" min="0" class="form-control form-control-sm sync-line-amount-input" style="max-width:140px;" value="${amountValue}" ${isExcluded ? 'disabled' : ''}>
@@ -3449,9 +3466,9 @@ function syncLineOverrideRowHtml(line) {
 function syncLineOccurrenceBreakdownHtml(occurrences) {
     if (!occurrences || !occurrences.length) return '';
     const rows = occurrences.map(o => `<div class="d-flex justify-content-between small">
-        <span>${langData['sync_line_occurrence_installment'] || 'Installment'} ${o.installment_no != null ? escapeHtmlRd(o.installment_no) : '-'}
-            ${o.occurrence_code ? `<code class="text-muted ms-1">${escapeHtmlRd(o.occurrence_code)}</code>` : ''}</span>
-        <span>${fmtNumRd(o.amount)}${o.applied_at ? ` <span class="text-muted">(${formatDisplayDate(o.applied_at)})</span>` : ''}</span>
+        <span>${langData['sync_line_occurrence_installment'] || 'Installment'} ${o.installment_no != null ? escapeHtml(o.installment_no) : '-'}
+            ${o.occurrence_code ? `<code class="text-muted ms-1">${escapeHtml(o.occurrence_code)}</code>` : ''}</span>
+        <span>${fmtNum(o.amount)}${o.applied_at ? ` <span class="text-muted">(${formatDisplayDate(o.applied_at)})</span>` : ''}</span>
     </div>`).join('');
     return `<div class="mt-2 pt-2 border-top">
         <div class="small text-muted mb-1"><i class="fa-solid fa-list-ol me-1"></i>${langData['sync_line_occurrence_breakdown'] || 'Occurrence breakdown'}</div>
@@ -3661,9 +3678,9 @@ function recurringDestRowHtml(row) {
     return `<div class="border rounded-3 p-2 mb-2" data-recurring-id="${row.recurring_id}">
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
             <div>
-                <div class="fw-bold text-dark">${escapeHtmlRd(name)}</div>
-                <div class="small text-muted">${langData['recurring_dest_template_default'] || 'Template default'}: ${escapeHtmlRd(templateLabel)}</div>
-                <div class="small">${langData['recurring_dest_effective'] || 'Currently routed to'}: <strong>${escapeHtmlRd(effectiveLabel)}</strong>${isOverridden ? ` <span class="badge bg-warning-subtle text-warning">${langData['recurring_dest_overridden_badge'] || 'Overridden for this run'}</span>` : ''}</div>
+                <div class="fw-bold text-dark">${escapeHtml(name)}</div>
+                <div class="small text-muted">${langData['recurring_dest_template_default'] || 'Template default'}: ${escapeHtml(templateLabel)}</div>
+                <div class="small">${langData['recurring_dest_effective'] || 'Currently routed to'}: <strong>${escapeHtml(effectiveLabel)}</strong>${isOverridden ? ` <span class="badge bg-warning-subtle text-warning">${langData['recurring_dest_overridden_badge'] || 'Overridden for this run'}</span>` : ''}</div>
             </div>
             <div class="btn-group btn-group-sm">
                 <button type="button" class="btn btn-outline-primary btn-recurring-dest-edit" data-recurring-id="${row.recurring_id}">${isOverridden ? (langData['recurring_dest_change'] || 'Change Override') : (langData['recurring_dest_override'] || 'Override for this run')}</button>
@@ -4103,15 +4120,15 @@ function initJoinEmployeesTable() {
             {
                 data: null, orderable: false, render: (d, t, row) => {
                     const checked = joinSelectedEmployees[row.id] ? 'checked' : '';
-                    return `<input type="checkbox" class="join-emp-checkbox" data-id="${row.id}" data-employee-no="${escapeHtmlRd(row.employee_no)}" ${checked}>`;
+                    return `<input type="checkbox" class="join-emp-checkbox" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" ${checked}>`;
                 }
             },
             { data: 'employee_no' },
-            { data: null, render: (d, t, row) => escapeHtmlRd((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '-') },
-            { data: 'department', render: d => escapeHtmlRd(d || '-') },
-            { data: 'team', render: d => escapeHtmlRd(d || '-') },
-            { data: 'position', render: d => escapeHtmlRd(d || '-') },
-            { data: 'cycle_name', render: d => escapeHtmlRd(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '-') },
+            { data: 'department', render: d => escapeHtml(d || '-') },
+            { data: 'team', render: d => escapeHtml(d || '-') },
+            { data: 'position', render: d => escapeHtml(d || '-') },
+            { data: 'cycle_name', render: d => escapeHtml(d || '-') },
         ],
         order: [],
         searching: false,
@@ -4346,10 +4363,12 @@ $(document).on('change', 'input[name="editRunScheduleChoice"]', function () {
 function setEditMergeChoiceMode(choice) {
     const isReference = choice === 'reference';
     $('#edit_run_merge_target_row').toggleClass('d-none', !isReference);
-    $('#edit_run_merge_target_id').toggleClass('required', isReference);
     if (!isReference) {
         $('#edit_run_merge_target_id').val('').trigger('change.select2').removeClass('is-invalid');
+        $('#edit_run_merge_target_cycle_id').val('').trigger('change.select2').removeClass('is-invalid');
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').removeClass('is-invalid');
     }
+    setEditMergeTargetMode($('input[name="editRunMergeTargetMode"]:checked').val() || 'existing');
     // 2026-09-02, 2nd same-day follow-up: .active on the pill <label> -- .run-subchoice-btn (was
     // .run-choice-card until this round's #edit_run_offcycle_panel redesign).
     $('#edit_run_merge_choice_row .run-subchoice-btn').removeClass('active');
@@ -4357,6 +4376,46 @@ function setEditMergeChoiceMode(choice) {
 }
 $(document).on('change', 'input[name="editRunMergeChoice"]', function () {
     setEditMergeChoiceMode($(this).val());
+});
+// 2026-09-06: mirrors setMergeTargetMode() in index.js, adapted to this modal's own edit_run_*
+// field ids/name (editRunMergeTargetMode, distinct from the Create form's runMergeTargetMode).
+function setEditMergeTargetMode(mode) {
+    const isFutureCycle = mode === 'future_cycle';
+    const targetRowShowing = !$('#edit_run_merge_target_row').hasClass('d-none');
+    $('#edit_run_merge_target_existing_wrap').toggleClass('d-none', isFutureCycle);
+    $('#edit_run_merge_target_future_cycle_wrap').toggleClass('d-none', !isFutureCycle);
+    $('#edit_run_merge_target_id').toggleClass('required', targetRowShowing && !isFutureCycle);
+    $('#edit_run_merge_target_cycle_id').toggleClass('required', targetRowShowing && isFutureCycle);
+    $('#edit_run_merge_target_mode_row .run-subchoice-btn').removeClass('active');
+    $(isFutureCycle ? '#edit_run_merge_target_mode_future_cycle' : '#edit_run_merge_target_mode_existing').closest('.run-subchoice-btn').addClass('active');
+}
+$(document).on('change', 'input[name="editRunMergeTargetMode"]', function () {
+    const mode = $(this).val();
+    setEditMergeTargetMode(mode);
+    // A user-driven mode switch (not the initial populate-on-open) always clears the OTHER mode's
+    // own field(s) -- see collectRunFormData()'s own comment in index.js for why both keys must
+    // always be sent together, unambiguously, on every save.
+    if (mode === 'future_cycle') {
+        $('#edit_run_merge_target_id').val('').trigger('change.select2').removeClass('is-invalid');
+    } else {
+        $('#edit_run_merge_target_cycle_id').val('').trigger('change.select2').removeClass('is-invalid');
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').removeClass('is-invalid');
+    }
+});
+$(document).on('change', '#edit_run_merge_target_cycle_id', function () {
+    const cycleId = $(this).val();
+    if (!cycleId) {
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('');
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-cycle.suggest-period`, method: 'GET', data: { id: cycleId }, dataType: 'json',
+        success: function (res) {
+            if (!res.status) { return; }
+            $('#edit_run_merge_target_period_start').val(toDisplayDateRd(res.period_start_date)).removeClass('is-invalid');
+            $('#edit_run_merge_target_period_end').val(toDisplayDateRd(res.period_end_date)).removeClass('is-invalid');
+        }
+    });
 });
 // 2026-09-02, explicit request: "การเลือกรอบการจ่าย แล้ว Default...ช่วยปรับทั้ง Form ตอนดึง Origami และ Form
 // สร้างรอบใหม่ และ Form แก้ไขรอบ" -- same PayrollCycleModel::suggestNextPeriod() endpoint the Create
@@ -4434,8 +4493,24 @@ $(document).on('click', '#btnEditRun', function () {
     } else {
         $mergeTargetSel.val(null).trigger('change.select2');
     }
-    $(hasMergeTarget ? '#edit_run_merge_choice_reference' : '#edit_run_merge_choice_new').prop('checked', true);
-    setEditMergeChoiceMode(hasMergeTarget ? 'reference' : 'new');
+    // 2026-09-06: same populate-on-open treatment for the "future cycle" form -- 'change.select2'
+    // (not plain 'change') so opening Edit on an already-waiting run shows its REAL current target
+    // cycle/period without re-suggesting/overwriting them (mirrors #edit_run_cycle_id's own
+    // reasoning right above -- see applySuggestedPeriodRd()'s own docblock).
+    const hasFutureCycleTarget = !hasMergeTarget && !!currentRun.merge_target_cycle_id;
+    const $mergeTargetCycleSel = $('#edit_run_merge_target_cycle_id');
+    if (hasFutureCycleTarget) {
+        $mergeTargetCycleSel.empty().append(new Option(currentRun.merge_target_cycle_name || String(currentRun.merge_target_cycle_id), currentRun.merge_target_cycle_id, true, true)).trigger('change.select2');
+        $('#edit_run_merge_target_period_start').val(toDisplayDateRd(currentRun.merge_target_period_start_date));
+        $('#edit_run_merge_target_period_end').val(toDisplayDateRd(currentRun.merge_target_period_end_date));
+    } else {
+        $mergeTargetCycleSel.val(null).trigger('change.select2');
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('');
+    }
+    $(hasMergeTarget || hasFutureCycleTarget ? '#edit_run_merge_choice_reference' : '#edit_run_merge_choice_new').prop('checked', true);
+    $(hasFutureCycleTarget ? '#edit_run_merge_target_mode_future_cycle' : '#edit_run_merge_target_mode_existing').prop('checked', true);
+    setEditMergeChoiceMode(hasMergeTarget || hasFutureCycleTarget ? 'reference' : 'new');
+    setEditMergeTargetMode(hasFutureCycleTarget ? 'future_cycle' : 'existing');
     updateEditRunTypeSectionRd();
 
     if (isOffCycleRunRd(currentRun) || (currentRun.sync_process_id && currentRun.sync_run_kind === 'supplemental')) {
@@ -4483,7 +4558,16 @@ $(document).on('submit', '#editRunForm', function (e) {
     // the run-type fields below -- PayrollRunModel::update() itself also refuses this for any run
     // that's cycle-linked or sync-linked, so this omission just keeps the payload honest.
     if (!$('#edit_run_merge_target_row').hasClass('d-none')) {
-        payload.merge_target_run_id = $('#edit_run_merge_target_id').val() || null;
+        // 2026-09-06: both keys ALWAYS sent together here (one truthy, the other explicitly null,
+        // depending on editRunMergeTargetMode) -- PayrollRunModel::resolveMergeTargetSpec() resolves
+        // each independently and refuses an ambiguous "both non-null" result, so switching modes
+        // without explicitly clearing the other one would otherwise be rejected. See that method's
+        // own docblock and collectRunFormData()'s matching comment in index.js.
+        const editTargetMode = $('input[name="editRunMergeTargetMode"]:checked').val() || 'existing';
+        payload.merge_target_run_id = editTargetMode === 'future_cycle' ? null : ($('#edit_run_merge_target_id').val() || null);
+        payload.merge_target_cycle_id = editTargetMode === 'future_cycle' ? ($('#edit_run_merge_target_cycle_id').val() || null) : null;
+        payload.merge_target_period_start_date = editTargetMode === 'future_cycle' ? toIsoDateRd($('#edit_run_merge_target_period_start').val()) : null;
+        payload.merge_target_period_end_date = editTargetMode === 'future_cycle' ? toIsoDateRd($('#edit_run_merge_target_period_end').val()) : null;
     }
     // Sent whenever the run-type section is actually showing right now (genuine off-cycle OR
     // supplemental sync) -- reads the LIVE dropdown state (updateEditRunTypeSectionRd()), not just

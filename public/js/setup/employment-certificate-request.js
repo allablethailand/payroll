@@ -13,9 +13,6 @@
  */
 let tb_ecr_request;
 
-function escapeHtmlEcr(str) {
-    return $('<div>').text(str === null || str === undefined ? '' : str).html();
-}
 
 function ecrRequestStatusBadge(status) {
     const map = {
@@ -43,9 +40,9 @@ function initEcrRequestTable() {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/employment-certificate-request.list`, dataSrc: 'data' },
         columns: [
-            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtmlEcr(row.employee_no)} - ${escapeHtmlEcr(currentLang === 'th' ? row.employee_name_th : row.employee_name_en)}</strong>` },
+            { data: null, render: (d, t, row) => `<strong class="text-dark">${escapeHtml(row.employee_no)} - ${escapeHtml(currentLang === 'th' ? row.employee_name_th : row.employee_name_en)}</strong>` },
             { data: null, render: (d, t, row) => ecrLanguageLabel(row.language) },
-            { data: null, render: (d, t, row) => escapeHtmlEcr((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.requested_by_name_th : row.requested_by_name_en) || '-') },
             { data: 'status', render: d => ecrRequestStatusBadge(d) },
             // object-form render (display only) -- client-side table, defaults to sorting by this
             // exact column (order: [[4,'desc']] below), see reports/index.js's own comment for why

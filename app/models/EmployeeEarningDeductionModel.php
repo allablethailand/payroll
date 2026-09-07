@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/AuditLogModel.php';
 class EmployeeEarningDeductionModel {
     private $db;
+    private AuditLogModel $auditLog;
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
+        $this->auditLog = new AuditLogModel($this->db);
     }
 
     private function employeeBelongsToComp(int $employeeId, int $compId): bool {
@@ -220,7 +223,7 @@ class EmployeeEarningDeductionModel {
         return $amounts;
     }
 
-    public function save(int $employeeId, int $compId, array $data, int $userId): array {
+    public function save(int $employeeId, int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         if (!$this->employeeBelongsToComp($employeeId, $compId)) {
             return ['status' => false, 'message' => 'Employee not found.'];
         }
@@ -434,7 +437,7 @@ class EmployeeEarningDeductionModel {
             }
 
             if ($id !== null) {
-                $stmtCheck = $this->db->prepare("SELECT eed.id, eed.current_installment FROM `employee_earning_deductions` eed
+                $stmtCheck = $this->db->prepare("SELECT eed.* FROM `employee_earning_deductions` eed
                     JOIN `employees` e ON eed.employee_id = e.id
                     WHERE eed.id = :id AND eed.employee_id = :employee_id AND e.comp_id = :comp_id AND eed.deleted_at IS NULL");
                 $stmtCheck->execute([':id' => $id, ':employee_id' => $employeeId, ':comp_id' => $compId]);
@@ -486,6 +489,10 @@ class EmployeeEarningDeductionModel {
                     ':updated_by' => $userId,
                     ':id' => $id,
                 ]);
+                $stmtNewRow = $this->db->prepare("SELECT * FROM `employee_earning_deductions` WHERE id = :id");
+                $stmtNewRow->execute([':id' => $id]);
+                $newRow = $stmtNewRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                $this->auditLog->record($compId, 'employee_earning_deductions', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
 
                 $delStmt = $this->db->prepare("DELETE FROM `employee_earning_deduction_installments` WHERE assignment_id = :assignment_id");
                 $delStmt->execute([':assignment_id' => $id]);
@@ -543,7 +550,7 @@ class EmployeeEarningDeductionModel {
         }
     }
 
-    public function updateStatus(int $id, int $compId, int $employeeId, string $newStatus, int $userId): array {
+    public function updateStatus(int $id, int $compId, int $employeeId, string $newStatus, int $userId, ?string $ip = null, ?string $userAgent = null): array {
         if (!in_array($newStatus, ['active', 'paused', 'cancelled'], true)) {
             return ['status' => false, 'message' => 'Invalid status.'];
         }
@@ -565,11 +572,12 @@ class EmployeeEarningDeductionModel {
 
         $stmt = $this->db->prepare("UPDATE `employee_earning_deductions` SET status = :status, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
         $stmt->execute([':status' => $newStatus, ':updated_by' => $userId, ':id' => $id]);
+        $this->auditLog->record($compId, 'employee_earning_deductions', $id, 'update', ['status' => $currentStatus], ['status' => $newStatus], $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Status updated successfully.'];
     }
 
-    public function delete(int $id, int $compId, int $employeeId, int $userId): array {
-        $stmtCheck = $this->db->prepare("SELECT eed.id, eed.current_installment FROM `employee_earning_deductions` eed
+    public function delete(int $id, int $compId, int $employeeId, int $userId, ?string $ip = null, ?string $userAgent = null): array {
+        $stmtCheck = $this->db->prepare("SELECT eed.* FROM `employee_earning_deductions` eed
             JOIN `employees` e ON eed.employee_id = e.id
             WHERE eed.id = :id AND eed.employee_id = :employee_id AND e.comp_id = :comp_id AND eed.deleted_at IS NULL");
         $stmtCheck->execute([':id' => $id, ':employee_id' => $employeeId, ':comp_id' => $compId]);
@@ -582,6 +590,7 @@ class EmployeeEarningDeductionModel {
         }
         $stmt = $this->db->prepare("UPDATE `employee_earning_deductions` SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, deleted_by = :deleted_by WHERE id = :id");
         $stmt->execute([':deleted_by' => $userId, ':id' => $id]);
+        $this->auditLog->record($compId, 'employee_earning_deductions', $id, 'update', $existing, array_merge($existing, ['status' => 'deleted']), $userId, 'web', $ip, $userAgent);
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 }

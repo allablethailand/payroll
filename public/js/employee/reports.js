@@ -32,7 +32,7 @@ function summaryBadgeHtml(items, total, opts) {
         return `${name}${installmentSuffix}: ${fmtMoneyList(it.amount)}`;
     });
     const cls = opts.deduction ? 'bg-danger-subtle text-danger' : 'bg-success-subtle text-success';
-    return `<span class="badge ${cls}" title="${escapeHtmlList(lines.join(' | '))}">${items.length} ${langData['items_short'] || 'item(s)'} — ${fmtMoneyList(total)}</span>`;
+    return `<span class="badge ${cls}" title="${escapeHtml(lines.join(' | '))}">${items.length} ${langData['items_short'] || 'item(s)'} — ${fmtMoneyList(total)}</span>`;
 }
 function currentEmployeeSummaryFilters() {
     return {
@@ -102,8 +102,8 @@ function initEmployeeSummaryTable() {
             // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
             // one column with employee_no/name stacked, split into 2 (matches #tb_employee's own
             // convention, and the same fix just applied to #tb_employee_recheck above).
-            { data: 'employee_no', responsivePriority: 1, render: d => escapeHtmlList(d || '-') },
-            { data: 'name', responsivePriority: 1, render: d => escapeHtmlList(d || '-') },
+            { data: 'employee_no', responsivePriority: 1, render: d => escapeHtml(d || '-') },
+            { data: 'name', responsivePriority: 1, render: d => escapeHtml(d || '-') },
             { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.base_salary_amount : 0) },
             { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.recurring, row.summary.recurring_total, {}) : '-' },
             { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.recurring_deduction, row.summary.recurring_deduction_total, { deduction: true }) : '-' },
@@ -234,10 +234,10 @@ function initEmployeeHeadcountEventsTable(events) {
                     filter: d => d,
                 }
             },
-            { data: 'employee_no', render: d => escapeHtmlList(d || '-') },
-            { data: 'name', render: d => escapeHtmlList(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+            { data: 'employee_no', render: d => escapeHtml(d || '-') },
+            { data: 'name', render: d => escapeHtml(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
             {
                 data: 'movement_type',
                 render: {
@@ -326,14 +326,14 @@ function initEmployeeExpiryTable(items) {
         language: getTableLang(),
         order: [[6, 'asc']],
         columns: [
-            { data: 'employee_no', render: d => escapeHtmlList(d || '-') },
-            { data: 'name', render: d => escapeHtmlList(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+            { data: 'employee_no', render: d => escapeHtml(d || '-') },
+            { data: 'name', render: d => escapeHtml(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
             {
                 data: 'expiry_type',
                 render: {
-                    display: t => escapeHtmlList(employeeExpiryTypeLabel(t)),
+                    display: t => escapeHtml(employeeExpiryTypeLabel(t)),
                     sort: t => t,
                     filter: t => employeeExpiryTypeLabel(t),
                 }
@@ -426,10 +426,10 @@ function initEmployeeProbationTable(items) {
         language: getTableLang(),
         order: [[5, 'desc']],
         columns: [
-            { data: 'employee_no', render: d => escapeHtmlList(d || '-') },
-            { data: 'name', render: d => escapeHtmlList(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+            { data: 'employee_no', render: d => escapeHtml(d || '-') },
+            { data: 'name', render: d => escapeHtml(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
             {
                 data: 'employment_date',
                 render: {
@@ -528,10 +528,10 @@ function initEmployeeEnrollmentTable(items) {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         columns: [
-            { data: 'employee_no', render: d => escapeHtmlList(d || '-') },
-            { data: 'name', render: d => escapeHtmlList(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+            { data: 'employee_no', render: d => escapeHtml(d || '-') },
+            { data: 'name', render: d => escapeHtml(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
             {
                 data: 'sso_enrolled',
                 render: {
@@ -645,7 +645,7 @@ function loadEmployeeStructureReport() {
                     language: getTableLang(),
                     order: [[1, 'desc']],
                     columns: [
-                        { data: 'label', render: d => escapeHtmlList(d || '-') },
+                        { data: 'label', render: d => escapeHtml(d || '-') },
                         { data: 'count', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
                     ],
                 });
@@ -696,10 +696,10 @@ function initEmployeeTenureTable(items) {
         language: getTableLang(),
         order: [[5, 'desc']],
         columns: [
-            { data: 'employee_no', render: d => escapeHtmlList(d || '-') },
-            { data: 'name', render: d => escapeHtmlList(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+            { data: 'employee_no', render: d => escapeHtml(d || '-') },
+            { data: 'name', render: d => escapeHtml(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
             {
                 data: 'employment_date',
                 render: {
@@ -789,7 +789,7 @@ function updateClearEmployeeBirthdayFilterVisibility() {
     $('#employeeBirthdayFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function initEmployeeBirthdayTables(birthdays, anniversaries) {
-    const deptCol = { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') };
+    const deptCol = { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') };
     const dateCol = {
         data: 'event_date',
         render: {
@@ -808,8 +808,8 @@ function initEmployeeBirthdayTables(birthdays, anniversaries) {
             lengthMenu: lengthMenu,
             language: getTableLang(),
             columns: [
-                { data: 'employee_no', render: d => escapeHtmlList(d || '-') },
-                { data: 'name', render: d => escapeHtmlList(d || '-') },
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
                 deptCol,
                 dateCol,
             ],
@@ -828,8 +828,8 @@ function initEmployeeBirthdayTables(birthdays, anniversaries) {
             lengthMenu: lengthMenu,
             language: getTableLang(),
             columns: [
-                { data: 'employee_no', render: d => escapeHtmlList(d || '-') },
-                { data: 'name', render: d => escapeHtmlList(d || '-') },
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
                 deptCol,
                 dateCol,
                 { data: 'years', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
@@ -911,10 +911,10 @@ function initEmployeeCompletenessTable(items) {
         language: getTableLang(),
         order: [[4, 'asc']],
         columns: [
-            { data: 'employee_no', render: d => escapeHtmlList(d || '-') },
-            { data: 'name', render: d => escapeHtmlList(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtmlList((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+            { data: 'employee_no', render: d => escapeHtml(d || '-') },
+            { data: 'name', render: d => escapeHtml(d || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
             {
                 data: 'completeness',
                 className: 'text-end',

@@ -38,7 +38,7 @@
          across the WHOLE filtered set anyway, which a state-only-server-filter would need a second
          query for. -->
     <div class="station-filter" id="runAuditStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="runAuditStationFilterToggle" title="Toggle filter">
             <i class="fas fa-chevron-up"></i>
         </button>
@@ -146,7 +146,7 @@
     <div class="modal-dialog modal-fullscreen">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" data-i18n="run_audit_diff_title">Payroll Run Audit - Diff</h5>
+                <h5 class="modal-title text-secondary" data-i18n="run_audit_diff_title">Payroll Run Audit - Diff</h5>
                 <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="runAuditExportBtn">
                     <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
                 </button>

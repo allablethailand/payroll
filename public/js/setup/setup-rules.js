@@ -25,15 +25,9 @@ function actionBtns(editFn, delFn, extraBtns) {
 }
 function structureAssignExtraBtns(type, id, label) {
     return `
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttrSr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${id}" data-label="${escapeAttrSr(label)}" data-i18n-title="view_assigned_employees"><i class="fa-solid fa-users"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${id}" data-label="${escapeAttr(label)}" data-i18n-title="view_assigned_employees"><i class="fa-solid fa-users"></i></button>
     `;
-}
-function escapeAttrSr(str) {
-    return escapeHtmlSr(str).replace(/"/g, '&quot;');
-}
-function escapeHtmlSr(str) {
-    return $('<div>').text(str || '').html().replace(/"/g, '&quot;');
 }
 function fmtDate(d) {
     const dt = new Date(d + "T00:00:00");
@@ -130,11 +124,11 @@ function renderShift() {
             // column of the row now (client-side table -- DataTables sorts by each column's own
             // `data` key here, not by server-side index, so reordering is safe with zero backend risk).
             { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/shift.toggle-status') },
-            { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}</div>` },
-            { data: 'shift_code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
+            { data: null, render: (d, t, row) => `<div class="row-name">${escapeAttr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}</div>` },
+            { data: 'shift_code', render: d => `<span class="row-code">${escapeAttr(d)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint"><i class="fa-regular fa-clock me-1"></i>${(row.start_time || '').slice(0, 5)} - ${(row.end_time || '').slice(0, 5)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${shiftWorkDaysSummary(row)}</span>` },
-            { data: null, render: (d, t, row) => `<span class="text-faint">${row.location_name_th ? escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en) : '-'}</span>` },
+            { data: null, render: (d, t, row) => `<span class="text-faint">${row.location_name_th ? escapeAttr(currentLang === 'th' ? row.location_name_th : row.location_name_en) : '-'}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${row.updated_at ? fmtDate(localDateOnlyFromUtcSr(row.updated_at)) : fmtDate(localDateOnlyFromUtcSr(row.created_at))}</span>` },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
@@ -145,12 +139,29 @@ function renderShift() {
             // table in this file already uses -- SetupRulesModel::shiftAssignEmployees()/the
             // api/shift.assign-employees route are left in place, unused by any UI now, in case an
             // API consumer wants bulk-assign later.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openShiftModal(${row.id})`, `askDelete('shift', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`, structureAssignExtraBtns('shift', row.id, currentLang === 'th' ? row.shift_name_th : row.shift_name_en)) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openShiftModal(${row.id})`, `askDelete('shift', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`, structureAssignExtraBtns('shift', row.id, currentLang === 'th' ? row.shift_name_th : row.shift_name_en)) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-shift', 'fa-solid fa-plus', 'add_shift', 'Shift', 'openShiftModal()').call(this);
+            // 2026-09-04, Backlog Phase 9, T050 -- Shift has a real Origami-side master
+            // (api/hr/master/shifts, wired via MasterDataSyncOrchestrator/ShiftSyncer since
+            // 2026-09-02) but had no on-screen sync entry point anywhere before this (the
+            // centralized Data Sync settings page's own card was the only way to trigger it).
+            // Shift has no permission gate anywhere in this app (CLAUDE.md's RBAC section
+            // scopes enforcement to Holiday/Leave Type/Approval Workflow only) -- same as this
+            // tab's own Add/Edit/Delete buttons, this renders unconditionally (backend still
+            // requires company_structure.edit, same "backend decides" convention as elsewhere).
+            if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED && typeof initOrigamiSyncButton === 'function') {
+                initOrigamiSyncButton({
+                    container: $(this.api().table().container()).find('.dt-search'),
+                    url: `${BASE_URL}/api/master-data-sync.sync-one`,
+                    payload: { entity_type: 'shift' },
+                    entityLabel: langData['shift'] || 'Shift',
+                    onSuccess: () => dtShift.ajax.reload(null, false)
+                });
+            }
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, client mode. Excludes the interactive status SWITCH (0, not a display value),
             // the multi-value work-days summary (4, composite), and actions (7).
@@ -277,13 +288,13 @@ function renderHoliday() {
             // 2026-09-02, Platform Hardening Phase 1.1 -- status switch moved to the first column
             // (client-side table, safe to reorder, see Shift's own identical comment above).
             { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/holiday.toggle-status') },
-            { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
+            { data: null, render: (d, t, row) => `<div class="row-name">${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
             { data: null, render: (d, t, row) => `<span class="text-faint"><i class="fa-regular fa-calendar me-1"></i>${fmtDate(row.holiday_date)}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.is_recurring) === 1 ? `<span class="badge-soft badge-paid">${langData['recurring_every_year'] || 'Recurring'}</span>` : `<span class="badge-soft badge-unpaid">${langData['one_time_only'] || 'One-time'}</span>` },
             { data: null, render: (d, t, row) => holidayScopeSummary(row) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openHolidayModal(${row.id})`, `askDelete('holiday', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openHolidayModal(${row.id})`, `askDelete('holiday', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
@@ -307,6 +318,24 @@ function renderHoliday() {
                         <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="holiday_sync_log_button">Sync Log</span>
                     </button>
                 `);
+            }
+            // 2026-09-04, Backlog Phase 9, T050 -- a SEPARATE, real Origami-side master
+            // (api/hr/master/holidays -- the company's OWN configured day_off calendar in
+            // Origami HR, wired via MasterDataSyncOrchestrator/HolidaySyncer since 2026-09-02),
+            // genuinely distinct from the Google Calendar public-holiday feed the 2 buttons
+            // above already sync from (HolidaySyncModel) -- added alongside, not instead of.
+            // Gated on holiday.manage, same permission Add/Edit/Delete on this tab already
+            // require server-side; rendered unconditionally client-side ("backend decides, don't
+            // guess client-side" convention, same as every other permission-gated button in this
+            // app -- CLAUDE.md's own Approval Monitor precedent).
+            if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED && typeof initOrigamiSyncButton === 'function') {
+                initOrigamiSyncButton({
+                    container: $searchDiv,
+                    url: `${BASE_URL}/api/master-data-sync.sync-one`,
+                    payload: { entity_type: 'holiday' },
+                    entityLabel: langData['holiday'] || 'Holiday',
+                    onSuccess: () => dtHoliday.ajax.reload(null, false)
+                });
             }
             if (typeof updateText === 'function') updateText($searchDiv[0]);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
@@ -428,12 +457,12 @@ function renderWorkLocation() {
             // 2026-09-02, Platform Hardening Phase 1.1 -- status switch moved to the first column
             // (client-side table, safe to reorder, see Shift's own identical comment above).
             { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/work-location.toggle-status') },
-            { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}</div>` },
-            { data: 'location_code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
-            { data: 'address', render: d => `<span class="text-faint">${d ? escapeHtmlSr(d) : '-'}</span>` },
+            { data: null, render: (d, t, row) => `<div class="row-name">${escapeAttr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}</div>` },
+            { data: 'location_code', render: d => `<span class="row-code">${escapeAttr(d)}</span>` },
+            { data: 'address', render: d => `<span class="text-faint">${d ? escapeAttr(d) : '-'}</span>` },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`, structureAssignExtraBtns('work_location', row.id, currentLang === 'th' ? row.location_name_th : row.location_name_en)) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`, structureAssignExtraBtns('work_location', row.id, currentLang === 'th' ? row.location_name_th : row.location_name_en)) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },
@@ -525,15 +554,15 @@ function renderLeave() {
             // 2026-09-02, Platform Hardening Phase 1.1 -- status switch moved to the first column
             // (client-side table, safe to reorder, see Shift's own identical comment above).
             { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/leave-type.toggle-status') },
-            { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
-            { data: 'code', render: d => `<span class="row-code">${escapeHtmlSr(d)}</span>` },
-            { data: null, render: (d, t, row) => `<span class="text-faint">${escapeHtmlSr(currentLang === 'th' ? row.category_name_th : row.category_name_en)}</span>` },
+            { data: null, render: (d, t, row) => `<div class="row-name">${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
+            { data: 'code', render: d => `<span class="row-code">${escapeAttr(d)}</span>` },
+            { data: null, render: (d, t, row) => `<span class="text-faint">${escapeAttr(currentLang === 'th' ? row.category_name_th : row.category_name_en)}</span>` },
             { data: null, className: 'text-end', render: (d, t, row) => `<span class="text-faint">${parseFloat(row.quota_amount)} ${leaveQuotaUnitLabel(row.unit_type)}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="badge-soft badge-paid">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="badge-soft badge-unpaid">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-success me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openLeaveModal(${row.id})`, `askDelete('leave', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openLeaveModal(${row.id})`, `askDelete('leave', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
@@ -735,7 +764,7 @@ function renderOt() {
             // 2026-09-02, Platform Hardening Phase 1.1 -- status switch moved to the first column
             // (client-side table, safe to reorder, see Shift's own identical comment above).
             { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/ot-rate.toggle-status') },
-            { data: null, render: (d, t, row) => `<div class="row-name">${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
+            { data: null, render: (d, t, row) => `<div class="row-name">${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
             { data: null, className: 'text-end', render: (d, t, row) => otItemBadge(otItemByScopeCode(row, 'weekday')) },
             { data: null, className: 'text-end', render: (d, t, row) => otItemBadge(otItemByScopeCode(row, 'weekend')) },
             { data: null, className: 'text-end', render: (d, t, row) => otItemBadge(otItemByScopeCode(row, 'holiday')) },
@@ -743,11 +772,11 @@ function renderOt() {
             {
                 data: 'is_default', className: 'text-center', render: (d, t, row) => d
                     ? `<i class="fa-solid fa-star text-warning" title="${langData['ot_rate_set_default_badge'] || 'Default'}"></i>`
-                    : `<button type="button" class="btn btn-link p-0 text-muted" title="${langData['ot_rate_set_make_default'] || 'Make Default'}" onclick="askOtSetDefault(${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')"><i class="fa-regular fa-star"></i></button>`
+                    : `<button type="button" class="btn btn-link p-0 text-muted" title="${langData['ot_rate_set_make_default'] || 'Make Default'}" onclick="askOtSetDefault(${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')"><i class="fa-regular fa-star"></i></button>`
             },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeHtmlSr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
+            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
         ordering: false, lengthChange: false, pageLength: 10,
         language: { ...getTableLang(), emptyTable: langData['no_ot_rate_sets_yet'] || 'No OT Rate Sets have been added yet.' },
@@ -807,7 +836,7 @@ function otItemRowHtml(scope, item) {
     const base = (item && item.calculation_base) || 'hourly';
     const rate = item ? (method === 'flat_amount' ? item.flat_amount_rate : item.multiplier_rate) : (method === 'flat_amount' ? '' : 1.5);
     return `<tr data-scope-id="${scope.id}" data-scope-code="${scope.code}">
-        <td class="fw-bold">${escapeHtmlSr(currentLang === 'th' ? scope.text_th : scope.text_en)}</td>
+        <td class="fw-bold">${escapeAttr(currentLang === 'th' ? scope.text_th : scope.text_en)}</td>
         <td><select class="form-select form-select-sm select2-static ot-item-method" data-option-keys="ot_calc_method_multiplier,ot_calc_method_flat_amount" data-option-values="multiplier,flat_amount"></select></td>
         <td><select class="form-select form-select-sm select2-static ot-item-base" data-option-keys="ot_base_hourly,ot_base_daily" data-option-values="hourly,daily"></select></td>
         <td>
@@ -842,9 +871,9 @@ function otAssignListHtml(options, scopeType, checkedIds) {
         const id = o.id;
         const checked = checkedIds.includes(String(id)) ? 'checked' : '';
         const label = String(o.label || '');
-        return `<div class="form-check ot-assign-item" data-label="${escapeHtmlSr(label.toLowerCase())}">
+        return `<div class="form-check ot-assign-item" data-label="${escapeAttr(label.toLowerCase())}">
             <input class="form-check-input ot-assign-checkbox" type="checkbox" value="${id}" data-scope-type="${scopeType}" id="ot_assign_${scopeType}_${id}" ${checked}>
-            <label class="form-check-label small" for="ot_assign_${scopeType}_${id}">${escapeHtmlSr(label)}</label>
+            <label class="form-check-label small" for="ot_assign_${scopeType}_${id}">${escapeAttr(label)}</label>
         </div>`;
     }).join('');
 }

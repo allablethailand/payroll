@@ -55,7 +55,7 @@
             <div class="pst-info-card-body">
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label" data-i18n="distribution_mode">Distribution Mode</label>
+                  <label class="form-label mb-1" data-i18n="distribution_mode">Distribution Mode</label>
                   <select class="form-select select2-static" id="pd_mode"
                     data-option-keys="mode_auto,mode_request_only,mode_both" data-option-values="auto,request_only,both"></select>
                   <div class="text-secondary small mt-1" data-i18n="distribution_mode_hint">Auto = sent automatically when a run reaches Paid. Request-only = employee/HR must request each time. Both = either can happen.</div>
@@ -78,12 +78,12 @@
               <div class="pst-info-card-body">
                 <div class="row g-3">
                   <div class="col-md-8">
-                    <label class="form-label" data-i18n="delivery_channels">Delivery Channels &amp; Fallback Order</label>
+                    <label class="form-label mb-1" data-i18n="delivery_channels">Delivery Channels &amp; Fallback Order</label>
                     <select class="form-select select2-remote" id="pd_channels" multiple data-api="/api/payslip-distribution.channel-options"></select>
                     <div class="text-secondary small mt-1" data-i18n="delivery_channels_hint">Order you pick them in = attempt order (first = primary, rest = fallback if it fails).</div>
                   </div>
                   <div class="col-md-4">
-                    <label class="form-label" data-i18n="send_delay_hours">Send Delay (Hours)</label>
+                    <label class="form-label mb-1" data-i18n="send_delay_hours">Send Delay (Hours)</label>
                     <input type="number" class="form-control" id="pd_delay_hours" min="0" step="1" value="0" data-i18n="hours_placeholder" placeholder="e.g., 2">
                     <div class="text-secondary small mt-1" data-i18n="send_delay_hours_hint">0 = send immediately when the run becomes Paid.</div>
                   </div>
@@ -98,12 +98,12 @@
               <div class="pst-info-card-body">
                 <div class="row g-3">
                   <div class="col-md-6">
-                    <label class="form-label" data-i18n="scope_departments">Departments</label>
+                    <label class="form-label mb-1" data-i18n="scope_departments">Departments</label>
                     <select class="form-select select2-remote" id="pd_scope_departments" multiple data-api="/api/department.get" data-type="department"></select>
                     <div class="text-secondary small mt-1" data-i18n="scope_leave_empty_hint">Leave empty = no restriction (applies to all).</div>
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label" data-i18n="scope_employment_statuses">Employment Statuses</label>
+                    <label class="form-label mb-1" data-i18n="scope_employment_statuses">Employment Statuses</label>
                     <select class="form-select select2-static" id="pd_scope_statuses" multiple
                       data-option-keys="employment_status_probation,employment_status_permanent,employment_status_contract,employment_status_resigned,employment_status_terminated"
                       data-option-values="probation,permanent,contract,resigned,terminated"></select>
@@ -129,6 +129,12 @@
   <?php include __DIR__ . '/../employment-certificate/_modals_partial.php'; ?>
   <?php include __DIR__ . '/../payslip-template/_modals_partial.php'; ?>
 </div>
+<!-- 2026-09-04, Backlog Phase 11, T064 -- shared, genuinely stateless canvas-designer utilities
+     (page-size constants, margin presets, zoom levels, font-family CSS stack, a few pure helpers)
+     factored out of payslip-template.js/employment-certificate-template.js's own near-duplicate
+     copies. MUST load before both of those (they alias their own local const/function names to
+     window.CanvasDesignerCore's own members at their own top level). -->
+<script src="<?=asset('public/js/setup/canvas-designer-core.js')?>"></script>
 <script src="<?=asset('public/js/setup/payslip-template.js')?>"></script>
 <script src="<?=asset('public/js/setup/payslip-distribution.js')?>"></script>
 <script src="<?=asset('public/js/setup/employment-certificate-template.js')?>"></script>

@@ -69,6 +69,13 @@ class BankFileFormatModel {
         // pinned, else the company's default account), so a company with multiple accounts/codes
         // never has to keep 2+ places in sync by hand.
         'company_service_code' => ['th' => 'รหัสบริษัท/รหัสบริการที่ลงทะเบียนกับธนาคาร', 'en' => "Company/Service Code Registered with the Bank (header/trailer only)"],
+        // 2026-09-04, Backlog Phase 11, T061 ("wire into real document generation") --
+        // DocumentNumberingModel-generated file reference (payroll_runs.bank_transfer_file_code,
+        // resolved/stamped once per run by BankTransferFileReport::resolveBankTransferFileCode()).
+        // Same "not forced on anyone, just available to map" posture as every other aggregate
+        // field here -- a company only sees it in their own output if they configure a field to
+        // pull from it.
+        'batch_reference' => ['th' => 'เลขที่ไฟล์ (Document Numbering)', 'en' => 'Batch/File Reference No. (header/trailer only)'],
         // Distinct from pay_period (period_start_date) -- this is the run's actual disbursement
         // date (payroll_runs.payment_date), which is what a bank's own "transaction date" field
         // means (Krungsri's spec example: "วันที่ทำรายการจ่าย").

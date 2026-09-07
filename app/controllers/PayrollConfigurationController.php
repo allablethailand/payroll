@@ -163,7 +163,8 @@ class PayrollConfigurationController extends Controller {
         $isEdit = !empty($data['id']) && is_numeric($data['id']);
         if (!$this->requirePermission($isEdit ? 'payroll_configuration.edit' : 'payroll_configuration.add')) return;
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->cycleModel->save((int)$compId, $data, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->cycleModel->save((int)$compId, $data, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -205,7 +206,8 @@ class PayrollConfigurationController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->cycleModel->delete((int)$compId, $id, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->cycleModel->delete((int)$compId, $id, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -229,7 +231,8 @@ class PayrollConfigurationController extends Controller {
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->cycleModel->toggleStatus((int)$compId, $id, $userId);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->cycleModel->toggleStatus((int)$compId, $id, $userId, $ip, $ua);
         $this->json($result);
     }
 
@@ -462,5 +465,94 @@ class PayrollConfigurationController extends Controller {
         }
         [$ip, $ua] = $this->requestFingerprint();
         $this->json($this->policyModel->save((int)$compId, $data, $this->userId(), $ip, $ua));
+    }
+
+    /* ==================== PROBATION SETS (2026-09-04, Backlog Phase 10, T056) ====================
+     * Same permission pair as the rest of Payroll Configuration -- no new permission key, this is
+     * still "Payroll Policies" tab territory, just Set-shaped now instead of a single form. Assign
+     * uses T055's own EntityAssignmentModel directly (this controller's own request/transaction,
+     * same "no shared generic public endpoint" scope boundary that model's docblock documents). */
+
+    public function probationSetList() {
+        if (!$this->requirePermission('payroll_configuration.view')) return;
+        $compId = getCompId();
+        $this->json(['status' => true, 'data' => $this->policyModel->probationSetList((int)$compId)]);
+    }
+
+    public function probationSetGet() {
+        if (!$this->requirePermission('payroll_configuration.view')) return;
+        $compId = getCompId();
+        $id = (int)($_GET['id'] ?? 0);
+        $set = $this->policyModel->probationSetGet((int)$compId, $id);
+        if ($set === null) {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $set]);
+    }
+
+    public function probationSetSave() {
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data)) {
+            $this->json(['status' => false, 'message' => 'Invalid request payload.']);
+            return;
+        }
+        $this->json($this->policyModel->probationSetSave((int)$compId, $data, $this->userId()));
+    }
+
+    public function probationSetDelete() {
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->policyModel->probationSetDelete((int)$compId, $id, $this->userId()));
+    }
+
+    public function probationSetToggleStatus() {
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->policyModel->probationSetToggleStatus((int)$compId, $id, $this->userId()));
+    }
+
+    public function probationSetSetDefault() {
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->policyModel->probationSetSetDefault((int)$compId, $id, $this->userId()));
+    }
+
+    public function probationSetDuplicate() {
+        if (!$this->requirePermission('payroll_configuration.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $this->json($this->policyModel->probationSetDuplicate((int)$compId, $id, $this->userId()));
+    }
+
+    public function probationSetAssignableOptions() {
+        if (!$this->requirePermission('payroll_configuration.view')) return;
+        $compId = getCompId();
+        $this->json(['status' => true, 'data' => (new EntityAssignmentModel())->assignableOptions((int)$compId)]);
     }
 }
