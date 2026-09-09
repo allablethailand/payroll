@@ -34,7 +34,6 @@ function toIsoDateTs(displayVal) {
     return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 let tb_company_setting;
-let currentCsItem = null;
 
 function itemNameTs(row) {
     return (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '';
@@ -70,26 +69,31 @@ function lastEditedCellTs(row, dateField) {
 }
 
 /* ---------- Company Statutory Settings (Part 2) ---------- */
-function csHasOverrideTs(row) {
-    return row.employee_rate_override !== null || row.employer_rate_override !== null
-        || row.employee_amount_override !== null || row.employer_amount_override !== null;
+// 2026-09-08, Clone+Version redesign -- `row.effective_rate_source` ('master_clone'/'company_
+// custom'/null) replaces the old employee_rate_override-presence check: CompanyStatutorySettingModel
+// ::list() now resolves the company's own CURRENT version (or falls back to Master's) server-side
+// into `effective_employee_rate`/etc., so this cell no longer picks between override-vs-master
+// fields itself -- it just displays whatever the model already resolved. `null` (a master item this
+// company has never been cloned for at all, e.g. added to Master after this company's own
+// activation) reads the same as "Default" -- there's no customization to show either way.
+function csIsCustomizedTs(row) {
+    return row.effective_rate_source === 'company_custom';
 }
 function csRateInUseCellTs(row) {
-    const hasOverride = csHasOverrideTs(row);
-    const badge = hasOverride
-        ? `<span class="badge bg-warning-subtle text-warning border me-1">${langData['custom_rate'] || 'Custom Rate'}</span>`
-        : `<span class="badge bg-light text-dark border me-1">${langData['using_default'] || 'Using Default'}</span>`;
+    const badge = csIsCustomizedTs(row)
+        ? `<span class="badge bg-warning-subtle text-warning border me-1">${langData['sr_source_customized'] || 'Customized'}</span>`
+        : `<span class="badge bg-light text-dark border me-1">${langData['sr_source_default'] || 'Default'}</span>`;
     let valueText = '';
     if (row.calc_method === 'flat_rate') {
-        const empRate = hasOverride ? row.employee_rate_override : row.master_employee_rate;
-        const erRate = hasOverride ? row.employer_rate_override : row.master_employer_rate;
+        const empRate = row.effective_employee_rate;
+        const erRate = row.effective_employer_rate;
         const parts = [];
         if (row.is_employee_applicable == 1 && empRate !== null) parts.push(`${Number(empRate)}%`);
         if (row.is_employer_applicable == 1 && erRate !== null) parts.push(`${Number(erRate)}%`);
         valueText = parts.join(' / ');
     } else if (row.calc_method === 'fixed_amount') {
-        const empAmt = hasOverride ? row.employee_amount_override : row.master_employee_amount;
-        const erAmt = hasOverride ? row.employer_amount_override : row.master_employer_amount;
+        const empAmt = row.effective_employee_amount;
+        const erAmt = row.effective_employer_amount;
         const parts = [];
         if (row.is_employee_applicable == 1 && empAmt !== null) parts.push(fmtNum(empAmt));
         if (row.is_employer_applicable == 1 && erAmt !== null) parts.push(fmtNum(erAmt));
@@ -110,11 +114,15 @@ function csAdjustableCellTs(row) {
 // opens the single statutoryRateModal, tabs adapted per row.item_scope inside it (see
 // openStatutoryRateModal()). Delete only ever shown for a company's own custom item (item_scope=
 // 'custom') -- a master item has no delete action on this page at all, same as before T046.
+// 2026-09-08, explicit request: "ในตารางหลักเพิ่มปุ่ม View เพื่อดู Vertion อัตราล่าสุดที่ใช้ครับ View อย่าง
+// เดียว" -- opens the same statutoryRateModal, read-only (see openStatutoryRateModal()'s own
+// `readOnly` param), auto-loaded to the current version exactly like a normal open already does.
 function csActionButtonsTs(row) {
     const deleteBtn = row.item_scope === 'custom'
         ? `<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-custom-item" data-id="${row.statutory_item_id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>`
         : '';
     return `<div class="d-flex gap-1 justify-content-center">
+        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-view-sr-current" data-id="${row.statutory_item_id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
         <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-sr" data-id="${row.statutory_item_id}" title="${langData['manage'] || 'Manage'}"><i class="fa-solid fa-sliders"></i></button>
         ${deleteBtn}
     </div>`;
@@ -208,6 +216,10 @@ function initCompanySettingTable() {
 // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- reload after a successful status toggle,
 // same pattern as every other converted table's own identical listener.
 $(document).on('statusToggle:success', '#tb_company_setting', function () { tb_company_setting.ajax.reload(null, false); });
+// 2026-09-08, Clone+Version redesign -- reads `row.master_employee_rate`/etc. (Master's OWN
+// current rate, unaffected by this company's own cloned/customized version, still surfaced
+// separately by CompanyStatutorySettingModel::list() for exactly this display purpose) to build
+// the "Pull from Master" hint strip's text in the Rate Versions pane.
 function masterRateDisplayTs(row) {
     if (row.calc_method === 'flat_rate') {
         const parts = [];
@@ -224,56 +236,10 @@ function masterRateDisplayTs(row) {
     return '';
 }
 // 2026-09-03, Backlog Phase 9, T046 -- state for whichever item statutoryRateModal currently has
-// open, shared by every tab's own handlers below (Setting/Details/Rate History all act on the SAME
+// open, shared by every tab's own handlers below (Details/Rate Versions both act on the SAME
 // item). `id: null` means "not yet saved" (a brand-new custom item mid-creation) -- Rate History
 // stays unreachable until the item itself has a real id (see openStatutoryRateModal()).
 let currentSrItem = null;
-let tb_sr_rate_history;
-
-/** Setting tab content (master items only) -- was openCompanySettingModal()'s own modal-opening
- *  version before T046 folded it into one tab of statutoryRateModal; content/fields UNCHANGED. */
-function openCompanySettingTabContent(row) {
-    const adjustable = Number(row.is_company_rate_editable) === 1 && ['flat_rate', 'fixed_amount'].includes(row.calc_method);
-    currentCsItem = {
-        id: row.statutory_item_id,
-        calc_method: row.calc_method,
-        adjustable: adjustable
-    };
-    $('#companySettingForm')[0].reset();
-    $('#companySettingForm .is-invalid').removeClass('is-invalid');
-    $('#cs_is_active').prop('checked', row.effective_status === 'active');
-    $('#cs_rate_fields').toggleClass('d-none', !adjustable || row.calc_method !== 'flat_rate');
-    $('#cs_amount_fields').toggleClass('d-none', !adjustable || row.calc_method !== 'fixed_amount');
-    $('#cs_employee_rate_override').val(row.employee_rate_override !== null ? row.employee_rate_override : '');
-    $('#cs_employer_rate_override').val(row.employer_rate_override !== null ? row.employer_rate_override : '');
-    $('#cs_employee_amount_override').val(row.employee_amount_override !== null ? row.employee_amount_override : '');
-    $('#cs_employer_amount_override').val(row.employer_amount_override !== null ? row.employer_amount_override : '');
-    $('#cs_remark').val(row.remark || '');
-    if (adjustable) {
-        const tpl = langData['company_setting_rate_hint'] || "Master default rate: {value}. Leave the fields below blank to use this default.";
-        $('#cs_master_default_hint').text(tpl.replace('{value}', masterRateDisplayTs(row) || '-'));
-    } else {
-        $('#cs_master_default_hint').text(langData['not_adjustable_hint'] || "This item's rate is fixed by law and cannot be adjusted per company. You may only enable or disable it.");
-    }
-    // 2026-09-03, T046 -- "Update as system default" for THIS company's own rate override (see
-    // CompanyStatutorySettingModel::promoteOverrideToMaster()'s own docblock). Shown only when
-    // there's actually an override configured to promote -- the backend would refuse otherwise
-    // anyway, but hiding it here avoids a guaranteed-to-fail click for the common "still on
-    // default" case. Always rendered regardless of the viewer's own tax_statutory.promote_master
-    // permission though (see statutoryRateModal's own markup comment on why).
-    $('#srPromoteOverrideBtn').toggleClass('d-none', !csHasOverrideTs(row));
-}
-function collectCompanySettingFormData() {
-    return {
-        statutory_item_id: currentSrItem ? currentSrItem.id : null,
-        is_active: $('#cs_is_active').is(':checked'),
-        employee_rate_override: $('#cs_employee_rate_override').val(),
-        employer_rate_override: $('#cs_employer_rate_override').val(),
-        employee_amount_override: $('#cs_employee_amount_override').val(),
-        employer_amount_override: $('#cs_employer_amount_override').val(),
-        remark: $('#cs_remark').val().trim()
-    };
-}
 
 /* ---------- Item Details tab (custom items only, T046) ---------- */
 function resetSrDetailsForm() {
@@ -377,51 +343,144 @@ function srRateSummaryTs(row) {
     }
     return langData['calc_method_formula'] || 'Formula-based';
 }
-// 2026-09-03, T046 -- a real DataTable (client-side, small per-item list), NOT hand-rendered rows --
-// same "every list uses DataTables" rule + same paging:false/info:false/searching:true-with-hidden-
-// box/Excel-column-filter shape the old (T044-removed) tb_rate_history already established for this
-// exact "rate versions for one item" use case. Initialized ONCE (guarded, same pattern as
-// initCompanySettingTable()); re-opening the modal for a DIFFERENT item just calls ajax.reload() --
-// the `data` callback below reads currentSrItem.id fresh on every reload, so it always targets
-// whichever item the modal currently has open.
-function initSrRateHistoryTable() {
-    if ($.fn.DataTable.isDataTable('#tb_sr_rate_history')) {
-        $('#tb_sr_rate_history').DataTable().ajax.reload(null, false);
+// 2026-09-08, Clone+Version redesign -- 'master_clone' (byte-identical to Master when
+// cloned/pulled) reads "Default", 'company_custom' (the company added/edited it) reads
+// "Customized" -- the badge the user explicitly asked for ("ต้องมีบอกว่า ปรับแต่งหรือ Default").
+function srSourceBadgeTs(source) {
+    return source === 'company_custom'
+        ? `<span class="badge bg-warning-subtle text-warning border">${langData['sr_source_customized'] || 'Customized'}</span>`
+        : `<span class="badge bg-light text-dark border">${langData['sr_source_default'] || 'Default'}</span>`;
+}
+function srViewFieldHtml(label, value) {
+    return `<div class="sr-view-field"><div class="sr-view-label">${label}</div><div class="sr-view-value">${value}</div></div>`;
+}
+// 2026-09-08, same-day follow-up round 3, explicit request: "View Mode ปรับให้เป็น View จริงๆครับ ออกแบบ
+// Design ให้ใหม่" -- the previous "read-only" implementation was just the SAME edit form with its
+// fieldset disabled, which still looked/felt like an editable form (grayed-out input boxes). This
+// builds a genuinely different, plain read-only display -- labeled value tiles instead of input
+// boxes, a real (non-editable) table for brackets, pretty-printed JSON for a formula config -- shown
+// INSTEAD OF the form entirely in View mode (see showSrHistoryEditView()'s own branch), not layered
+// on top of it.
+function renderSrVersionViewCard(row) {
+    if (!row) {
+        return `<div class="text-muted small text-center py-4">${langData['no_data_found'] || 'No data found.'}</div>`;
+    }
+    const isMaster = currentSrItem && currentSrItem.scope === 'master';
+    const calcMethod = currentSrItem ? currentSrItem.calc_method : row.calc_method;
+    const endLabel = row.end_date ? formatDisplayDate(row.end_date) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`;
+
+    let valuesHtml = '';
+    if (calcMethod === 'flat_rate') {
+        valuesHtml = `
+            <div class="col-md-6">${srViewFieldHtml(langData['modal_employee_rate'] || 'Employee Rate (%)', row.employee_rate !== null ? Number(row.employee_rate) + '%' : '-')}</div>
+            <div class="col-md-6">${srViewFieldHtml(langData['modal_employer_rate'] || 'Employer Rate (%)', row.employer_rate !== null ? Number(row.employer_rate) + '%' : '-')}</div>
+        `;
+    } else if (calcMethod === 'fixed_amount') {
+        valuesHtml = `
+            <div class="col-md-6">${srViewFieldHtml(langData['modal_employee_amount'] || 'Employee Amount', row.employee_amount !== null ? fmtNum(row.employee_amount) : '-')}</div>
+            <div class="col-md-6">${srViewFieldHtml(langData['modal_employer_amount'] || 'Employer Amount', row.employer_amount !== null ? fmtNum(row.employer_amount) : '-')}</div>
+        `;
+    } else if (calcMethod === 'progressive_bracket') {
+        const brackets = row.brackets || [];
+        const bracketRows = brackets.map(b => `
+            <tr>
+                <td>${fmtNum(b.min_amount)}</td>
+                <td>${b.max_amount !== null && b.max_amount !== undefined ? fmtNum(b.max_amount) : (langData['no_upper_limit'] || 'No upper limit')}</td>
+                <td class="text-end">${Number(b.rate)}%</td>
+            </tr>
+        `).join('');
+        valuesHtml = `
+            <div class="col-12">
+                <div class="sr-view-label mb-1">${langData['tax_brackets'] || 'Tax Brackets'}</div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="text-muted small">
+                            <tr><th data-i18n="bracket_from">From</th><th data-i18n="bracket_to">To</th><th class="text-end" data-i18n="bracket_rate">Rate (%)</th></tr>
+                        </thead>
+                        <tbody>${bracketRows || `<tr><td colspan="3" class="text-muted small text-center">${langData['no_data_found'] || 'No data found.'}</td></tr>`}</tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    } else if (calcMethod === 'formula') {
+        const pretty = row.formula_config ? JSON.stringify(JSON.parse(row.formula_config), null, 2) : '-';
+        valuesHtml = `<div class="col-12">${srViewFieldHtml(langData['modal_formula_config'] || 'Formula Config (JSON)', `<pre class="sr-view-pre mb-0">${escapeHtml(pretty)}</pre>`)}</div>`;
+    }
+
+    // Only flat_rate ever reads these (see StatutoryCalculationEngine::computeFlatRate() -- the
+    // other 3 calc_methods never touch them at all), so shown only there -- same reasoning as
+    // applySrCalcMethodFields()'s own #sr_rate_base_fields toggle in the edit form.
+    const baseFieldsHtml = (calcMethod === 'flat_rate' && (row.min_base_amount !== null || row.max_base_amount !== null)) ? `
+        <div class="col-md-6">${srViewFieldHtml(langData['modal_min_base'] || 'Minimum Base Amount', row.min_base_amount !== null ? fmtNum(row.min_base_amount) : '-')}</div>
+        <div class="col-md-6">${srViewFieldHtml(langData['modal_max_base'] || 'Maximum Base Amount', row.max_base_amount !== null ? fmtNum(row.max_base_amount) : '-')}</div>
+    ` : '';
+    const remarkHtml = row.remark ? `<div class="col-12">${srViewFieldHtml(langData['modal_remark'] || 'Remark', escapeHtml(row.remark))}</div>` : '';
+
+    return `
+        <div class="sr-version-view-card">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div class="fw-semibold">${formatDisplayDate(row.effective_date)} &rarr; ${endLabel}</div>
+                ${isMaster ? srSourceBadgeTs(row.source) : ''}
+            </div>
+            <div class="row g-3">${valuesHtml}${baseFieldsHtml}${remarkHtml}</div>
+            <div class="text-muted small mt-3">${lastEditedCellTs(row)}</div>
+        </div>
+    `;
+}
+// 2026-09-08, same-day follow-up round 2, explicit request: "ฝั่งซ้ายให้เป็น li ก็ได้ครับ ลดความกว้างลง
+// หน่อย และปุ่มแก้ไขตัดออก กดแล้วให้แสดง form แก้ไขเลย ปุ่ม set to default ให้ย้ายมาไว้ที่ฝั่งขวาแทนครับ" --
+// replaces the DataTable-based tb_sr_rate_history with a plain `<li>` list (this is a small "pick
+// one to inspect/edit" master-detail selector, not a browsable data grid -- see modals.php's own
+// comment on this pane for why DataTables' "every table" convention doesn't apply here). Edit is
+// gone as a separate action -- clicking the `<li>` itself does that job (see the .sr-version-item
+// click handler in initStatutoryRateModalUI()); Promote moved OUT to the shared modal footer
+// (srPromoteVersionBtn, acts on whichever version is currently loaded in the form) -- only Delete
+// stays on the `<li>` itself, since there's no other control for it.
+function srVersionListItemHtml(row) {
+    const isMaster = currentSrItem && currentSrItem.scope === 'master';
+    const badgeHtml = isMaster ? `<div class="mt-1">${srSourceBadgeTs(row.source)}</div>` : '';
+    const endLabel = row.end_date ? formatDisplayDate(row.end_date) : (langData['current_version'] || 'Current');
+    return `<li class="list-group-item list-group-item-action sr-version-item" data-id="${row.id}">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="sr-version-item-body">
+                <div class="fw-semibold small">${formatDisplayDate(row.effective_date)} &rarr; ${endLabel}</div>
+                <div class="text-muted small">${srRateSummaryTs(row)}</div>
+                ${badgeHtml}
+            </div>
+            <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-sr-rate" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
+        </div>
+    </li>`;
+}
+function renderSrVersionList(rows) {
+    const $list = $('#sr_version_list').empty();
+    if (!rows.length) {
+        $list.append(`<li class="list-group-item text-muted small text-center">${langData['no_data_found'] || 'No data found.'}</li>`);
         return;
     }
-    tb_sr_rate_history = $('#tb_sr_rate_history').DataTable({
-        responsive: true,
-        paging: false,
-        info: false,
-        ajax: {
-            url: `${BASE_URL}/api/statutory-item.rate-history.list`,
-            dataSrc: 'data',
-            data: function (d) { d.item_id = currentSrItem ? currentSrItem.id : 0; }
+    rows.forEach(row => $list.append(srVersionListItemHtml(row)));
+}
+// Fetches this item's own version list (already sorted newest-effective_date-first server-side,
+// see CompanyStatutoryRateVersionModel::list()/TaxStatutoryModel::rateHistoryList()'s own ORDER BY)
+// and, per explicit request ("เปิดครั้งแรกให้ เปิด Version Default และฝั่ง List ก็ขึ้น active"),
+// auto-selects the first (= current) one into the form -- via a REAL get() fetch, not the raw list
+// row, since list responses have no `brackets` array for a progressive_bracket item.
+function loadSrVersionList() {
+    const isMaster = currentSrItem && currentSrItem.scope === 'master';
+    $.ajax({
+        url: isMaster ? `${BASE_URL}/api/company-rate-version.list` : `${BASE_URL}/api/statutory-item.rate-history.list`,
+        method: 'GET',
+        data: { item_id: currentSrItem ? currentSrItem.id : 0 },
+        dataType: 'json',
+        success: function (res) {
+            const rows = (res && res.status && Array.isArray(res.data)) ? res.data : [];
+            renderSrVersionList(rows);
+            if (rows.length > 0) {
+                fetchAndSelectSrHistoryRow(rows[0].id);
+            } else {
+                selectSrHistoryRow(null, null);
+            }
         },
-        columns: [
-            { data: 'effective_date', render: { display: d => formatDisplayDate(d), sort: d => d, filter: d => d } },
-            { data: 'end_date', render: { display: d => d ? formatDisplayDate(d) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`, sort: d => d || '', filter: d => d || '' } },
-            { data: null, className: 'text-end', render: (d, t, row) => srRateSummaryTs(row) },
-            { data: null, orderable: false, render: (d, t, row) => lastEditedCellTs(row) },
-            { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => `
-                <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-sr-rate" data-id="${row.id}"><i class="fas fa-edit"></i></button>
-                <button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-sr-rate" data-id="${row.id}"><i class="fas fa-trash-alt"></i></button>
-            ` }
-        ],
-        language: getTableLang(),
-        drawCallback: function () { getTableLang(); },
-        searching: true,
-        initComplete: function () {
-            const self = this.api();
-            $(self.table().container()).find('.dt-search').hide();
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'effective_date' },
-                    { index: 1, key: 'end_date' },
-                ]
-            });
-        }
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
     });
 }
 function applySrCalcMethodFields(calcMethod) {
@@ -429,6 +488,30 @@ function applySrCalcMethodFields(calcMethod) {
     $('#sr_rate_amount_fields').toggleClass('d-none', calcMethod !== 'fixed_amount');
     $('#sr_rate_bracket_fields').toggleClass('d-none', calcMethod !== 'progressive_bracket');
     $('#sr_rate_formula_fields').toggleClass('d-none', calcMethod !== 'formula');
+    // 2026-09-08, real gap found and fixed while answering an explicit question ("(TH_PIT) ฐาน
+    // คำนวณขั้นต่ำ ฐานคำนวณสูงสุด คืออะไรครับ") -- confirmed directly against
+    // StatutoryCalculationEngine's own source that min_base_amount/max_base_amount are read ONLY by
+    // computeFlatRate() (they clamp the wage base a % rate applies to, e.g. TH_SSO's real
+    // 1,650-15,000 THB range) -- every other calc_method (fixed_amount/progressive_bracket/formula)
+    // never reads them at all, so showing these 2 fields unconditionally for every calc_method (as
+    // this form always did before) was genuinely misleading for e.g. TH_PIT (progressive_bracket) --
+    // whatever was typed there had zero effect on the tax calculation.
+    $('#sr_rate_base_fields').toggleClass('d-none', calcMethod !== 'flat_rate');
+    // 2026-09-08, real gap found and fixed from an explicit example the user tried themselves
+    // (entered 35,000 for TH_PIT's own Calculation Preview and got 0.00, which read as a bug --
+    // see modals.php's own comment on #srRateCalcPreviewBaseHint for the full root-cause). "Sample
+    // Base Amount" means something genuinely different per calc_method: a per-PERIOD wage base for
+    // flat_rate/fixed_amount (e.g. TH_SSO's monthly salary), but ANNUAL NET TAXABLE INCOME (after
+    // deductions) for progressive_bracket (confirmed against PayrollRunModel::recalculate()'s own
+    // `taxable_income => gross * 12` construction for TH_PIT) -- neither the label nor the default
+    // 30000 ever said so. Swaps both the hint text AND the field's own starting value so testing a
+    // progressive_bracket item starts from a realistic annual figure instead of one that always
+    // lands in the 0% exempt bracket.
+    const isAnnualTaxableBase = calcMethod === 'progressive_bracket';
+    $('#srRateCalcPreviewBaseHint').text(isAnnualTaxableBase
+        ? (langData['calc_preview_base_hint_annual'] || 'Enter ANNUAL net taxable income (after deductions/allowances), not a monthly salary.')
+        : (langData['calc_preview_base_hint_period'] || 'Enter the wage base for one pay period (e.g. monthly salary).'));
+    $('#srRateCalcPreviewBase').val(isAnnualTaxableBase ? 400000 : 30000);
     const showEmployee = currentSrItem ? currentSrItem.is_employee_applicable : true;
     const showEmployer = currentSrItem ? currentSrItem.is_employer_applicable : true;
     $('#sr_rate_employee_rate_wrapper, #sr_rate_employee_amount_wrapper').toggleClass('d-none', !showEmployee);
@@ -471,14 +554,39 @@ function collectSrBrackets() {
     });
     return brackets;
 }
+// 2026-09-08, explicit request: "list version กับ form ปรับให้แสดงใน modal เดียวกันได้ไหมครับ แบ่งซ้ายขวา"
+// -- the list (left) and this form (right) are always BOTH visible now, so this no longer toggles
+// any .d-none view -- it just (re)populates the form itself, either blank (row=null, "Add Rate
+// Version") or with one version's data (row set, whether from a fresh fetch or the initial
+// auto-select). #srVersionFormContext gives the always-visible form a "what am I editing" label,
+// necessary now that it's never hidden between different rows the way the old swap-to-a-separate-
+// view design made obvious on its own.
 function showSrHistoryEditView(row) {
-    $('#srHistoryListView').addClass('d-none');
-    $('#srHistoryEditView').removeClass('d-none');
+    if (row) {
+        const tpl = langData['sr_editing_version_context'] || 'Editing version effective {date}';
+        $('#srVersionFormContext').text(tpl.replace('{date}', formatDisplayDate(row.effective_date)));
+    } else {
+        $('#srVersionFormContext').text(langData['sr_new_version_context'] || 'New Version');
+    }
+    // 2026-09-08, same-day follow-up round 3, explicit request: "View Mode ปรับให้เป็น View จริงๆครับ
+    // ออกแบบ Design ให้ใหม่" -- View mode shows a genuinely different, plain read-only display
+    // (renderSrVersionViewCard()) INSTEAD OF the edit form entirely, not the same form with its
+    // fields merely disabled.
+    const readOnly = !!(currentSrItem && currentSrItem.readOnly);
+    $('#srVersionViewCard').toggleClass('d-none', !readOnly);
+    $('#srRateVersionForm').toggleClass('d-none', readOnly);
+    if (readOnly) {
+        $('#srVersionViewCard').html(renderSrVersionViewCard(row));
+        $('#srPromoteVersionBtn').addClass('d-none');
+        return;
+    }
     $('#srRateVersionForm')[0].reset();
     $('#srRateVersionForm .is-invalid').removeClass('is-invalid');
     $('#sr_rate_id').val('');
     $('#srBracketBody').empty();
-    $('#srRateCalcPreviewBase').val(30000);
+    // Default value itself is set per-calc_method by applySrCalcMethodFields() below (called at the
+    // end of this function) -- see that function's own docblock on why 30000 is wrong for a
+    // progressive_bracket item like TH_PIT.
     $('#srRateCalcPreviewResult').addClass('d-none').empty();
     const calcMethod = currentSrItem ? currentSrItem.calc_method : 'flat_rate';
     if (row) {
@@ -503,10 +611,39 @@ function showSrHistoryEditView(row) {
         if (calcMethod === 'progressive_bracket') addSrBracketRow(0, '', '');
     }
     applySrCalcMethodFields(calcMethod);
+    // "ปุ่ม set to default ให้ย้ายมาไว้ที่ฝั่งขวาแทนครับ" -- Promote lives in the shared modal footer now
+    // (see modals.php's own comment), acting on whichever version is CURRENTLY loaded here -- only
+    // meaningful for a MASTER item's own version that's actually SAVED (has a real id; promoting a
+    // still-blank "New Version" draft makes no sense). Its own `data-id` is kept in sync with the
+    // form here so the footer button's click handler doesn't need to re-derive it separately.
+    const canPromote = !!(row && row.id && currentSrItem && currentSrItem.scope === 'master');
+    $('#srPromoteVersionBtn').toggleClass('d-none', !canPromote).data('id', row ? row.id : null);
 }
-function hideSrHistoryEditView() {
-    $('#srHistoryEditView').addClass('d-none');
-    $('#srHistoryListView').removeClass('d-none');
+// Highlights the `<li data-id="rowId">` currently loaded into the form -- `.sr-selected` (a custom
+// class, deliberately NOT Bootstrap's own `.list-group-item.active`, see style.css's own docblock
+// on why) (rowId=null just clears the selection, e.g. "Add Rate Version"'s blank-form state).
+function selectSrHistoryRow(rowData, rowId) {
+    $('#sr_version_list .sr-version-item').removeClass('sr-selected');
+    if (rowId) {
+        $(`#sr_version_list .sr-version-item[data-id="${rowId}"]`).addClass('sr-selected');
+    }
+    showSrHistoryEditView(rowData);
+}
+// Shared by the initial auto-select (loadSrVersionList()) and clicking a `<li>` -- always a fresh
+// GET by id (not the raw list-row data), since list() responses have no `brackets` array for a
+// progressive_bracket item (only get() does) and would otherwise silently show an empty starter
+// bracket instead of the version's real ones.
+function fetchAndSelectSrHistoryRow(id) {
+    const isMaster = currentSrItem && currentSrItem.scope === 'master';
+    $.ajax({
+        url: isMaster ? `${BASE_URL}/api/company-rate-version.get` : `${BASE_URL}/api/statutory-item.rate-history.get`,
+        method: 'GET', data: { id: id }, dataType: 'json',
+        success: function (res) {
+            if (res.status) selectSrHistoryRow(res.data, id);
+            else showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
 }
 function collectSrRateVersionFormData() {
     const data = {
@@ -556,13 +693,23 @@ function srRateVersionCalcPreviewFormulaStepsHtml(formula) {
  * item_scope). Which of the 3 tabs are even visible is decided HERE, once, based on scope + whether
  * the item has a real id yet -- every tab's own populate function assumes it's only ever called
  * when relevant.
+ * `readOnly` (2026-09-08, explicit request: "เพิ่มปุ่ม View เพื่อดู Vertion อัตราล่าสุดที่ใช้ครับ View อย่าง
+ * เดียว") -- the "View" action on the main list: skips Item Details entirely regardless of scope
+ * (View is about inspecting the current rate, not the item's own catalog definition) and jumps
+ * straight to Rate Versions, which -- like every other open -- auto-selects the current version.
+ * The whole form is disabled (via #srRateVersionFieldset) and Add/Pull/Delete/Save/Promote are all
+ * hidden (`.sr-modal-readonly` on the modal root, see style.css) -- the version LIST itself stays
+ * browsable (clicking another `<li>` still loads it into the, still-disabled, form) since nothing
+ * about "view only" implies restricting to just the one current version.
  */
-function openStatutoryRateModal(row) {
+function openStatutoryRateModal(row, readOnly) {
+    readOnly = !!readOnly;
     const isNew = !row;
     const scope = isNew ? 'custom' : row.item_scope;
     currentSrItem = {
         id: isNew ? null : row.statutory_item_id,
         scope: scope,
+        readOnly: readOnly,
         calc_method: isNew ? 'flat_rate' : row.calc_method,
         is_employee_applicable: isNew ? true : Number(row.is_employee_applicable) === 1,
         is_employer_applicable: isNew ? true : Number(row.is_employer_applicable) === 1,
@@ -572,44 +719,63 @@ function openStatutoryRateModal(row) {
     $('#srModalItemName').text(isNew ? (langData['sr_new_custom_item'] || 'New Custom Item') : `(${row.code} - ${itemNameTs(row)})`);
     $('#srModalScopeBadgeMaster').toggleClass('d-none', scope !== 'master');
     $('#srModalScopeBadgeCustom').toggleClass('d-none', scope !== 'custom');
+    $('#srModalReadOnlyBadge').toggleClass('d-none', !readOnly);
+    $('#statutoryRateModal').toggleClass('sr-modal-readonly', readOnly);
+    $('#srRateVersionFieldset').prop('disabled', readOnly);
 
-    $('#srDetailsTabItem').toggleClass('d-none', scope !== 'custom');
-    $('#srSettingTabItem').toggleClass('d-none', scope !== 'master');
+    $('#srDetailsTabItem').toggleClass('d-none', readOnly || scope !== 'custom');
     // Rate History needs a real item id to fetch against -- unreachable until the Details tab has
     // been saved at least once for a brand-new custom item.
     $('#srHistoryTabItem').toggleClass('d-none', isNew);
+    // 2026-09-08, Clone+Version redesign -- a MASTER item has exactly ONE tab now (Rate Versions;
+    // "Company Setting" is gone entirely, its rate-override job absorbed into the version list
+    // itself). With nothing left to switch between, the tab nav bar is hidden outright rather than
+    // showing a single-item tab strip -- the pane is shown directly instead of via
+    // bootstrap.Tab.show(). A brand-new custom item mid-creation (isNew) still needs the nav (it
+    // has Details visible, Rate History hidden) so the nav only hides for an EXISTING master item
+    // (or ANY item at all in View mode, which never shows Details -- see just above).
+    const hideNav = readOnly || (!isNew && scope === 'master');
+    $('#statutoryRateModalTabs').toggleClass('d-none', hideNav);
+    $('#sr-history-pane, #sr-details-pane').removeClass('show active');
 
-    hideSrHistoryEditView();
-    if (scope === 'custom') {
+    // Blank the right-side form + clear any stale selection immediately (list+form are both always
+    // visible now, unlike the old separate-view swap) -- loadSrVersionList()'s own auto-select
+    // (below) overwrites this the moment the version list finishes loading.
+    showSrHistoryEditView(null);
+    $('#sr_master_default_hint').addClass('d-none');
+    $('#srPullFromMasterBtn').addClass('d-none');
+    if (!readOnly && scope === 'custom') {
         resetSrDetailsForm();
         if (!isNew) populateSrDetailsForm(row);
         bootstrap.Tab.getOrCreateInstance(document.getElementById('sr-details-tab')).show();
+        // Item Details tab is the default view for a custom item -- Save/Promote live inline in
+        // that tab's own form, so the shared Rate Versions footer starts hidden (shown.bs.tab
+        // toggles it back on once the user actually switches to the History tab, see below).
+        $('#srHistoryModalFooter').addClass('d-none');
     } else {
-        openCompanySettingTabContent(row);
-        // 2026-09-05, real bug found and fixed (explicit report: "ตรงภาษีเงินได้ กดเข้าไปแก้ไขไม่ขึ้น
-        // Form 8 อัตราครับ ขึ้นแบบเดียวกับประกันสังคม" -- Personal Income Tax's edit click doesn't show
-        // the 8-bracket form, it shows the same [default tab] as Social Security) -- a MASTER item
-        // ALWAYS defaulted to the Setting tab regardless of whether that tab has anything useful to
-        // show. Setting tab is only ever meaningful for an ADJUSTABLE item (flat_rate/fixed_amount
-        // AND is_company_rate_editable=1, e.g. TH_SSO) -- it lets a company override the master
-        // rate. A progressive_bracket item like TH_PIT (or any item with is_company_rate_editable=0)
-        // can NEVER be overridden at all (see openCompanySettingTabContent()'s own `adjustable`
-        // check just above), so its Setting tab only ever shows a static "not adjustable" hint --
-        // the actual 8 PIT tax brackets live in the Rate History tab, one extra click away, which
-        // read to the user as "nothing happened / looks the same as SSO's [equally tab-first, but
-        // actually useful there] edit screen." Fixed by defaulting straight to the Rate History tab
-        // for a non-adjustable master item instead, since that's the only tab with real content to
-        // manage for one -- an adjustable item (SSO/PVD-style) is unaffected, still opens on Setting.
-        const adjustable = Number(row.is_company_rate_editable) === 1 && ['flat_rate', 'fixed_amount'].includes(row.calc_method);
-        const defaultTabId = adjustable ? 'sr-setting-tab' : 'sr-history-tab';
-        bootstrap.Tab.getOrCreateInstance(document.getElementById(defaultTabId)).show();
+        // "ปรับแต่งหรือ Default...และถ้าอยากจะดึง Master ก็สามารถดึงได้ทุกเมื่อที่ต้องการกลับมาใช้" -- the
+        // hint strip + Pull button both read Master's own CURRENT rate straight off this list row
+        // (master_employee_rate/etc., untouched by whatever version this company itself is on).
+        // Meaningless for a CUSTOM item (no master concept at all), so skipped for that scope.
+        if (scope === 'master') {
+            const masterText = masterRateDisplayTs(row);
+            if (masterText) {
+                const tpl = langData['sr_master_rate_hint'] || "Master's current rate: {value}";
+                $('#sr_master_default_hint').text(tpl.replace('{value}', masterText)).removeClass('d-none');
+            }
+            $('#srPullFromMasterBtn').toggleClass('d-none', !masterText);
+        }
+        if (hideNav) {
+            $('#sr-history-pane').addClass('show active');
+            $('#srHistoryModalFooter').removeClass('d-none');
+        } else {
+            bootstrap.Tab.getOrCreateInstance(document.getElementById('sr-history-tab')).show();
+        }
     }
     // Rate History tab is hidden entirely for a brand-new item (srHistoryTabItem's own d-none
-    // above) -- nothing to load yet, and manually touching #tb_sr_rate_history's DOM here (rather
-    // than through the DataTables API) would desync its internal state for whenever a REAL item
-    // does get opened later in the same page session.
+    // above) -- nothing to load yet.
     if (!isNew) {
-        initSrRateHistoryTable();
+        loadSrVersionList();
     }
     new bootstrap.Modal(document.getElementById('statutoryRateModal')).show();
 }
@@ -622,6 +788,13 @@ function initStatutoryRateModalUI() {
         const itemId = $(this).data('id');
         const rowData = tb_company_setting.rows().data().toArray().find(r => Number(r.statutory_item_id) === Number(itemId));
         if (rowData) openStatutoryRateModal(rowData);
+    });
+    // 2026-09-08, explicit request: "เพิ่มปุ่ม View เพื่อดู Vertion อัตราล่าสุดที่ใช้ครับ View อย่างเดียว" --
+    // same modal, read-only mode (see openStatutoryRateModal()'s own `readOnly` param docblock).
+    $(document).on('click', '.btn-view-sr-current', function () {
+        const itemId = $(this).data('id');
+        const rowData = tb_company_setting.rows().data().toArray().find(r => Number(r.statutory_item_id) === Number(itemId));
+        if (rowData) openStatutoryRateModal(rowData, true);
     });
     $(document).on('click', '.btn-delete-custom-item', function () {
         const id = $(this).data('id');
@@ -673,7 +846,7 @@ function initStatutoryRateModalUI() {
                     $('#sr_item_calc_method').prop('disabled', true);
                     $('#sr_calc_method_lock_hint').text(langData['sr_calc_method_locked_hint'] || "Can't be changed after the item has rate history -- delete and recreate if genuinely needed.");
                     $('#srPromoteItemBtn').removeClass('d-none');
-                    initSrRateHistoryTable();
+                    loadSrVersionList();
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
                 }
@@ -710,64 +883,53 @@ function initStatutoryRateModalUI() {
         );
     });
 
-    /* ---- Company Setting tab (master items) ---- */
-    $(document).on('submit', '#companySettingForm', function (e) {
-        e.preventDefault();
-        const payload = collectCompanySettingFormData();
-        const $btn = $('#companySettingForm button[type="submit"]');
-        const originalHtml = $btn.html();
-        $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
-        $.ajax({
-            url: `${BASE_URL}/api/company-statutory-setting.save`,
-            method: 'POST', contentType: 'application/json', dataType: 'json',
-            data: JSON.stringify(payload),
-            success: function (res) {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                if (res.status) {
-                    showSuccess(langData['save_success'] || 'Saved successfully.');
-                    bootstrap.Modal.getInstance(document.getElementById('statutoryRateModal')).hide();
-                    if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-                }
-            },
-            error: function () {
-                $btn.prop('disabled', false).html(originalHtml);
-                if (typeof updateText === 'function') updateText($btn[0]);
-                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+    // 2026-09-08, Clone+Version redesign -- "ถ้าอยากจะดึง Master ก็สามารถดึงได้ทุกเมื่อที่ต้องการกลับมา
+    // ใช้" -- adds Master's own currently-effective version as a brand-new version of this
+    // company's own (source='master_clone'). Same SweetAlert2-date-prompt pattern the old
+    // srPromoteOverrideBtn used, for the same reason (needs a real effective_date input, not just
+    // yes/no).
+    $(document).on('click', '#srPullFromMasterBtn', function () {
+        if (!currentSrItem || !currentSrItem.id) return;
+        const today = new Date().toISOString().slice(0, 10);
+        Swal.fire({
+            icon: 'info',
+            title: langData['sr_pull_from_master_confirm_title'] || "Pull Master's current rate as a new version?",
+            html: `<label class="form-label small mb-1 d-block text-start">${langData['modal_effective_date'] || 'Effective Date'}</label>
+                   <input type="date" id="swalSrPullDate" class="swal2-input" value="${today}">`,
+            showCancelButton: true,
+            confirmButtonText: langData.yes || 'Yes',
+            cancelButtonText: langData.no || 'No',
+            preConfirm: () => {
+                const val = document.getElementById('swalSrPullDate').value;
+                if (!val) { Swal.showValidationMessage(langData['required_star_message'] || 'Please fill all fields marked with *'); }
+                return val;
             }
-        });
-    });
-    $(document).on('click', '#btnResetCompanySetting', function () {
-        if (!currentCsItem) return;
-        const title = langData['reset_confirm_title'] || 'Reset to system default?';
-        const message = langData['reset_confirm_message'] || "This will remove your company's custom rate/enable setting for this item and fall back to the system default.";
-        showConfirm(title, message, function () {
+        }).then(r => {
+            if (!r.isConfirmed || !r.value) return;
             $.ajax({
-                url: `${BASE_URL}/api/company-statutory-setting.reset`,
+                url: `${BASE_URL}/api/company-rate-version.pull`,
                 method: 'POST', contentType: 'application/json', dataType: 'json',
-                data: JSON.stringify({ statutory_item_id: currentCsItem.id }),
+                data: JSON.stringify({ statutory_item_id: currentSrItem.id, effective_date: r.value }),
                 success: function (res) {
                     if (res.status) {
-                        showSuccess(langData['reset_success'] || 'Reset to system default successfully.');
-                        bootstrap.Modal.getInstance(document.getElementById('statutoryRateModal')).hide();
+                        showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                        loadSrVersionList();
                         if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
                     } else {
-                        showWarning(res.message || langData['save_failed'] || 'Failed to reset data.');
+                        showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
                     }
                 },
-                error: function () { showWarning(langData['save_failed'] || 'An error occurred.'); }
+                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
             });
         });
     });
-    // 2026-09-03, T046 -- "Update as system default" for this company's own rate OVERRIDE (the
-    // other promote case -- see srPromoteItemBtn above for promoting a whole custom item). Needs an
-    // effective_date the backend doesn't have a sensible default for (it's a real, dated master rate
-    // version) -- a plain SweetAlert2 input prompt rather than a new shared alert.js helper, since
-    // this is the one place in the app that needs a date INPUT inside a confirm, not just yes/no.
-    $(document).on('click', '#srPromoteOverrideBtn', function () {
-        if (!currentCsItem) return;
+    // "Promote to System Default" for whichever of this company's own versions is CURRENTLY loaded
+    // in the form (lives in the shared modal footer now, see modals.php's own comment -- its own
+    // `data-id` is kept in sync by showSrHistoryEditView() every time the form's contents change).
+    // Same date-prompt pattern as Pull above.
+    $(document).on('click', '#srPromoteVersionBtn', function () {
+        const versionId = $(this).data('id');
+        if (!versionId) return;
         const today = new Date().toISOString().slice(0, 10);
         Swal.fire({
             icon: 'info',
@@ -786,13 +948,12 @@ function initStatutoryRateModalUI() {
         }).then(r => {
             if (!r.isConfirmed || !r.value) return;
             $.ajax({
-                url: `${BASE_URL}/api/company-statutory-setting.promote`,
+                url: `${BASE_URL}/api/company-rate-version.promote`,
                 method: 'POST', contentType: 'application/json', dataType: 'json',
-                data: JSON.stringify({ statutory_item_id: currentCsItem.id, effective_date: r.value }),
+                data: JSON.stringify({ id: versionId, effective_date: r.value }),
                 success: function (res) {
                     if (res.status) {
                         showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
-                        bootstrap.Modal.getInstance(document.getElementById('statutoryRateModal')).hide();
                         if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
                     } else {
                         showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
@@ -804,31 +965,55 @@ function initStatutoryRateModalUI() {
     });
 
     /* ---- Rate History tab (both scopes) ---- */
-    $(document).on('click', '#srAddRateVersionBtn', function () { showSrHistoryEditView(null); });
-    $(document).on('click', '#srCancelRateVersionBtn', function () { hideSrHistoryEditView(); });
-    $(document).on('click', '.btn-edit-sr-rate', function () {
-        const id = $(this).data('id');
-        $.ajax({
-            url: `${BASE_URL}/api/statutory-item.rate-history.get`,
-            method: 'GET', data: { id: id }, dataType: 'json',
-            success: function (res) {
-                if (res.status) showSrHistoryEditView(res.data);
-                else showWarning(res.message || langData['save_failed'] || 'Failed to load data.');
-            },
-            error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
-        });
+    // "Add Rate Version" clears the current selection (list+form are both always visible now, no
+    // more separate list/edit view to switch between) and blanks the form for a new entry.
+    $(document).on('click', '#srAddRateVersionBtn', function () { selectSrHistoryRow(null, null); });
+    // 2026-09-08, explicit request: "ปุ่มแก้ไขตัดออก กดแล้วให้แสดง form แก้ไขเลย" -- there is no separate
+    // Edit action anymore, clicking the `<li>` itself loads it into the form (excluding a click on
+    // the li's own Delete button, handled separately just below -- stopPropagation() there keeps
+    // it from ALSO triggering this select).
+    $(document).on('click', '.sr-version-item', function () {
+        fetchAndSelectSrHistoryRow($(this).data('id'));
     });
-    $(document).on('click', '.btn-delete-sr-rate', function () {
+    // A MASTER item's own version rows come from THIS company's own api/company-rate-version.*
+    // endpoints (comp_id-scoped); a CUSTOM item's own rate history is unchanged, still
+    // api/statutory-item.rate-history.*.
+    // 2026-09-08, same-day follow-up round 3, explicit request: "ถ้ามี version เดียวแล้วลบจะเป็นยังไง
+    // inactive รายการนั้น auto ไหม หรือควรยังไงดี" -- deliberately NOT auto-flipping the item's own
+    // enable/disable status (company-statutory-setting.toggle-status) when its last version is
+    // deleted: enable/disable and rate versions are two genuinely independent concerns throughout
+    // this whole redesign (see CompanyStatutoryRateVersionModel's own docblock) -- silently flipping
+    // one as a side effect of the other would be a surprising, hidden behavior change an admin might
+    // not notice until a payroll run looks wrong. The two scopes have genuinely different real
+    // consequences once the last version is gone, so the confirm message is scope-specific instead
+    // of a generic warning: a MASTER item cleanly falls back to Master's own current rate (the
+    // engine's own resolveEffectiveRate() already does this automatically, see that class's own
+    // docblock) -- nothing breaks, so this is framed as "reverts to," not "removes." A CUSTOM item
+    // has no Master to fall back to at all -- deleting its only version genuinely leaves it with NO
+    // calculable rate (0 THB, `note: no_rate_configured` in the calc breakdown) until a new one is
+    // added, so this is framed as a real warning, not a neutral heads-up.
+    $(document).on('click', '.btn-delete-sr-rate', function (e) {
+        e.stopPropagation();
         const id = $(this).data('id');
-        showConfirm(langData['confirm_delete_title'] || 'Confirm Delete', langData['confirm_delete_message'] || 'Are you sure you want to delete this item?', function () {
+        const isMaster = currentSrItem && currentSrItem.scope === 'master';
+        const isLastVersion = $('#sr_version_list .sr-version-item').length === 1;
+        const title = isLastVersion
+            ? (langData['sr_delete_last_version_title'] || 'Delete the only version?')
+            : (langData['confirm_delete_title'] || 'Confirm Delete');
+        const message = isLastVersion
+            ? (isMaster
+                ? (langData['sr_delete_last_version_master_message'] || "This is the only version. Deleting it will revert this company to Master's current default rate.")
+                : (langData['sr_delete_last_version_custom_message'] || 'This is the only version. Deleting it will leave this item with no calculable rate (0) until a new version is added.'))
+            : (langData['confirm_delete_message'] || 'Are you sure you want to delete this item?');
+        showConfirm(title, message, function () {
             $.ajax({
-                url: `${BASE_URL}/api/statutory-item.rate-history.delete`,
+                url: isMaster ? `${BASE_URL}/api/company-rate-version.delete` : `${BASE_URL}/api/statutory-item.rate-history.delete`,
                 method: 'POST', contentType: 'application/json', dataType: 'json',
                 data: JSON.stringify({ id: id }),
                 success: function (res) {
                     if (res.status) {
                         showSuccess(langData['delete_success'] || 'Deleted successfully.');
-                        initSrRateHistoryTable();
+                        loadSrVersionList();
                         if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
                     } else {
                         showWarning(res.message || langData['delete_failed'] || 'Failed to delete data.');
@@ -867,10 +1052,26 @@ function initStatutoryRateModalUI() {
                 if (typeof updateText === 'function') updateText($btn[0]);
                 if (res.status) {
                     const stepsHtml = srRateVersionCalcPreviewFormulaStepsHtml(res.formula);
+                    // 2026-09-08, explicit question: "ยอดฝั่งนายจ้าง TH_PIT จำเป็นต้องแสดงในการคำนวณไหมครับ"
+                    // -- confirmed against statutory_items.is_employer_applicable (TH_PIT is seeded
+                    // 0 -- personal income tax structurally has no employer share at all in Thai
+                    // law, not merely "happens to compute 0 this time") and against the engine's own
+                    // progressive_bracket branch (StatutoryCalculationEngine::calculateLine(),
+                    // hardcodes employer_amount=0.0 unconditionally for that calc_method) -- this is
+                    // the SAME `is_employer_applicable` flag that already hides the Employer Rate/
+                    // Amount INPUT field earlier in this same form (applySrCalcMethodFields()'s own
+                    // employer wrapper toggle), just not applied to the preview RESULT line until
+                    // now. Employee-side is symmetric for the (currently theoretical, no real seed
+                    // data uses it) case of an employer-only item.
+                    const showEmployee = currentSrItem ? currentSrItem.is_employee_applicable : true;
+                    const showEmployer = currentSrItem ? currentSrItem.is_employer_applicable : true;
                     const empLabel = langData['calc_preview_step_employee_amount'] || 'Employee Amount';
                     const erLabel = langData['calc_preview_step_employer_amount'] || 'Employer Amount';
+                    const amountParts = [];
+                    if (showEmployee) amountParts.push(`${empLabel}: ${fmtNum(res.employee_amount)}`);
+                    if (showEmployer) amountParts.push(`${erLabel}: ${fmtNum(res.employer_amount)}`);
                     $('#srRateCalcPreviewResult').removeClass('d-none').html(`
-                        <div class="calc-preview-amount mb-1">${empLabel}: ${fmtNum(res.employee_amount)} &nbsp;|&nbsp; ${erLabel}: ${fmtNum(res.employer_amount)}</div>
+                        <div class="calc-preview-amount mb-1">${amountParts.join('&nbsp;|&nbsp;')}</div>
                         ${stepsHtml}
                     `);
                 } else {
@@ -887,11 +1088,16 @@ function initStatutoryRateModalUI() {
     $(document).on('submit', '#srRateVersionForm', function (e) {
         e.preventDefault();
         const payload = collectSrRateVersionFormData();
-        const $btn = $('#srRateVersionForm button[type="submit"]');
+        const isMaster = currentSrItem && currentSrItem.scope === 'master';
+        // 2026-09-08, explicit request: Save moved to the modal footer -- #srRateVersionSaveBtn is
+        // now OUTSIDE this <form> (associated via its own `form="srRateVersionForm"` attribute), so
+        // it can no longer be found via a `#srRateVersionForm button[type="submit"]` descendant
+        // selector (that would silently match nothing now) -- selected by its own id instead.
+        const $btn = $('#srRateVersionSaveBtn');
         const originalHtml = $btn.html();
         $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
         $.ajax({
-            url: `${BASE_URL}/api/statutory-item.rate-history.save`,
+            url: isMaster ? `${BASE_URL}/api/company-rate-version.save` : `${BASE_URL}/api/statutory-item.rate-history.save`,
             method: 'POST', contentType: 'application/json', dataType: 'json',
             data: JSON.stringify(payload),
             success: function (res) {
@@ -899,8 +1105,10 @@ function initStatutoryRateModalUI() {
                 if (typeof updateText === 'function') updateText($btn[0]);
                 if (res.status) {
                     showSuccess(langData['save_success'] || 'Saved successfully.');
-                    hideSrHistoryEditView();
-                    initSrRateHistoryTable();
+                    // Re-fetches the version list AND re-auto-selects the current (top) version --
+                    // no separate "go back to the list" step needed anymore since list+form are
+                    // always both visible.
+                    loadSrVersionList();
                     if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
@@ -966,6 +1174,16 @@ $(document).ready(function () {
         }
         if (tabId === 'nonresident-tax-tab') {
             loadNonResidentTaxSettings();
+        }
+        // 2026-09-08, explicit request: Save moved to the modal footer -- only meaningful while the
+        // Rate Versions pane (whose form it submits) is the one actually showing. A MASTER item
+        // never fires this (its nav is hidden, see openStatutoryRateModal()'s own hideNav branch) --
+        // this only matters for a CUSTOM item switching between its Details/History tabs.
+        if (tabId === 'sr-details-tab') {
+            $('#srHistoryModalFooter').addClass('d-none');
+        }
+        if (tabId === 'sr-history-tab') {
+            $('#srHistoryModalFooter').removeClass('d-none');
         }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
     });

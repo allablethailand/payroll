@@ -24,6 +24,7 @@ require_once __DIR__ . '/../app/models/AuditLogModel.php';
 require_once __DIR__ . '/../app/models/BankAccountModel.php';
 require_once __DIR__ . '/../app/models/PayrollCycleModel.php';
 require_once __DIR__ . '/../app/models/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../app/models/CompanyStatutoryRateVersionModel.php';
 require_once __DIR__ . '/../app/models/ApprovalWorkflowModel.php';
 
 $pdo = Database::getInstance()->pdo;
@@ -158,8 +159,13 @@ try {
         checkTrue('PayrollCycle delete: logged as a status->deleted update row', count($cycleDeleteRows) > 0);
     }
 
-    // ================= Integration: CompanyStatutorySettingModel::save()/toggleStatus()/reset() =================
-    echo "\n=== Integration: CompanyStatutorySettingModel ===\n";
+    // ================= Integration: CompanyStatutorySettingModel::toggleStatus() + CompanyStatutoryRateVersionModel =================
+    // 2026-09-08, Clone+Version redesign -- CompanyStatutorySettingModel::save()/reset() are gone
+    // entirely (rate-override-only concerns, replaced by a real dated version list -- see
+    // CompanyStatutoryRateVersionModel's own docblock); toggleStatus() (enable/disable only) is
+    // unchanged and still audited exactly as before. This section's own audit assertions for
+    // save()/reset() are replaced with the new model's save()/delete().
+    echo "\n=== Integration: CompanyStatutorySettingModel::toggleStatus() ===\n";
     $itemCode = 'AUDTEST' . substr(uniqid(), -6);
     $pdo->prepare("INSERT INTO `statutory_items`
         (country_code, code, name_th, name_en, category, calc_method, calc_base, is_employee_applicable, is_employer_applicable, default_is_active, is_company_rate_editable, status)
@@ -167,30 +173,41 @@ try {
         ->execute([':code' => $itemCode]);
     $statItemId = (int)$pdo->lastInsertId();
     $companySettingModel = new CompanyStatutorySettingModel($pdo);
-    $csSave1 = $companySettingModel->save($compId, [
-        'statutory_item_id' => $statItemId, 'is_active' => 1, 'employee_rate_override' => 5,
-    ], $userId);
-    checkTrue('create company statutory setting' . (empty($csSave1['status']) ? " ({$csSave1['message']})" : ''), $csSave1['status']);
-    $csId = (int)($csSave1['id'] ?? 0);
-    if ($csId > 0) {
-        check('CompanyStatutorySetting create branch is not audited', count(auditRowsFor($pdo, $compId, 'company_statutory_settings', $csId)), 0);
-
-        $csSave2 = $companySettingModel->save($compId, [
-            'statutory_item_id' => $statItemId, 'is_active' => 1, 'employee_rate_override' => 7.5,
-        ], $userId, '10.1.0.7');
-        checkTrue('update company statutory setting' . (empty($csSave2['status']) ? " ({$csSave2['message']})" : ''), $csSave2['status']);
-        $csFields = array_column(auditRowsFor($pdo, $compId, 'company_statutory_settings', $csId), 'field_name');
-        checkTrue('CompanyStatutorySetting update: employee_rate_override change logged', in_array('employee_rate_override', $csFields, true));
-
-        $csToggle = $companySettingModel->toggleStatus($compId, $statItemId, $userId, '10.1.0.8');
-        checkTrue('toggle company statutory setting status', $csToggle['status']);
-        $csToggleRow = current(array_filter(auditRowsFor($pdo, $compId, 'company_statutory_settings', $csId), fn($r) => $r['field_name'] === 'status' && $r['new_value'] === $csToggle['new_status']));
+    $csToggle = $companySettingModel->toggleStatus($compId, $statItemId, $userId, '10.1.0.8');
+    checkTrue('toggle company statutory setting status' . (empty($csToggle['status']) ? " ({$csToggle['message']})" : ''), $csToggle['status']);
+    $csSettingId = (int)$pdo->query("SELECT id FROM company_statutory_settings WHERE comp_id = {$compId} AND statutory_item_id = {$statItemId} AND deleted_at IS NULL")->fetchColumn();
+    checkTrue('fixture: a company_statutory_settings row now exists for this toggle', $csSettingId > 0);
+    if ($csSettingId > 0) {
+        // A brand-new row created BY the toggle itself has nothing to diff against (same "create
+        // branch is not audited" convention every other table here follows) -- only the SECOND
+        // toggle (flipping an EXISTING row) produces a real before/after status diff to check.
+        $csToggleBack = $companySettingModel->toggleStatus($compId, $statItemId, $userId, '10.1.0.8');
+        checkTrue('toggle company statutory setting status back', $csToggleBack['status']);
+        $csToggleRow = current(array_filter(auditRowsFor($pdo, $compId, 'company_statutory_settings', $csSettingId), fn($r) => $r['field_name'] === 'status' && $r['new_value'] === $csToggleBack['new_status']));
         checkTrue('CompanyStatutorySetting toggleStatus: status change logged', $csToggleRow !== false);
+    }
 
-        $csReset = $companySettingModel->reset($compId, $statItemId, $userId, '10.1.0.9');
-        checkTrue('reset company statutory setting to default', $csReset['status']);
-        $csResetRows = array_filter(auditRowsFor($pdo, $compId, 'company_statutory_settings', $csId), fn($r) => $r['field_name'] === 'status' && $r['new_value'] === 'deleted');
-        checkTrue('CompanyStatutorySetting reset: logged as a status->deleted update row', count($csResetRows) > 0);
+    echo "\n=== Integration: CompanyStatutoryRateVersionModel (Clone+Version redesign) ===\n";
+    $rateVersionModel = new CompanyStatutoryRateVersionModel($pdo);
+    $rvSave1 = $rateVersionModel->save($compId, [
+        'statutory_item_id' => $statItemId, 'effective_date' => '2020-01-01', 'employee_rate' => 5, 'employer_rate' => 5,
+    ], $userId);
+    checkTrue('create company rate version' . (empty($rvSave1['status']) ? " ({$rvSave1['message']})" : ''), $rvSave1['status']);
+    $rvId = (int)($rvSave1['id'] ?? 0);
+    if ($rvId > 0) {
+        check('CompanyStatutoryRateVersion create branch is not audited', count(auditRowsFor($pdo, $compId, 'statutory_item_rate_history', $rvId)), 0);
+
+        $rvSave2 = $rateVersionModel->save($compId, [
+            'id' => $rvId, 'statutory_item_id' => $statItemId, 'effective_date' => '2020-01-01', 'employee_rate' => 7.5, 'employer_rate' => 7.5,
+        ], $userId, '10.1.0.9');
+        checkTrue('update company rate version' . (empty($rvSave2['status']) ? " ({$rvSave2['message']})" : ''), $rvSave2['status']);
+        $rvFields = array_column(auditRowsFor($pdo, $compId, 'statutory_item_rate_history', $rvId), 'field_name');
+        checkTrue('CompanyStatutoryRateVersion update: employee_rate change logged', in_array('employee_rate', $rvFields, true));
+
+        $rvDelete = $rateVersionModel->delete($compId, $rvId, $userId, '10.1.0.10');
+        checkTrue('delete company rate version' . (empty($rvDelete['status']) ? " ({$rvDelete['message']})" : ''), $rvDelete['status']);
+        $rvDeleteRows = array_filter(auditRowsFor($pdo, $compId, 'statutory_item_rate_history', $rvId), fn($r) => $r['field_name'] === 'status' && $r['new_value'] === 'deleted');
+        checkTrue('CompanyStatutoryRateVersion delete: logged as status -> deleted', count($rvDeleteRows) > 0);
     }
 
     // ================= Integration: ApprovalWorkflowModel =================

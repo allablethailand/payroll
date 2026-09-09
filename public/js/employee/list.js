@@ -796,9 +796,24 @@ function currentEmployeeRecheckFilters() {
         view: currentEmployeeRecheckView
     };
 }
+// 2026-09-08, explicit follow-up request: "อยู่ในระบบเงิน ควรขึ้นไปอยู่บน Filter เป็น select" -- was a
+// `.btn-group` toggle in its own row below the filter card; app.js's own generic '.select2-static'
+// sweep already initializes #employee_recheck_filter_view with no explicit value (defaults to the
+// FIRST option, 'participant'/"In Payroll") -- re-init with an explicit selectedValue anyway, same
+// "before this table's own first ajax load" precedent as #employee_filter_payroll_participant above,
+// so this doesn't silently depend on option order alone.
+$(document).ready(function () {
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#employee_recheck_filter_view', { mode: 'static', selectedValue: 'participant' });
+    }
+});
 function updateClearEmployeeRecheckFilterVisibility() {
     const f = currentEmployeeRecheckFilters();
-    const hasFilter = !!(f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id);
+    // 2026-09-08: `view` joined this same filter row (was a separate .btn-group toggle before) --
+    // 'participant' ("In Payroll") is its default, so only 'excluded' counts as an active filter here,
+    // same "non-default state shows Clear Filter" convention the Employee tab's own
+    // is_payroll_participant filter already uses (see updateClearEmployeeFilterVisibility() above).
+    const hasFilter = !!(f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id || f.view !== 'participant');
     $('#employeeRecheckFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function initEmployeeRecheckTable() {
@@ -810,56 +825,64 @@ function initEmployeeRecheckTable() {
         serverSide: true,
         processing: true,
         ordering: false,
-        // 2026-08-30, same-day follow-up: "ปรับให้เป็น table responsive เหมือนเพื่อนไปเลยครับ ให้ Column
-        // แรกกับ Column สุดท้าย อยู่ตำแหน่งเดิม แล้วไป expand ส่วนอื่น" -- reverted from the previous
-        // round's scrollX+fixedColumns treatment to this app's own STANDARD responsive:true pattern,
-        // matching #tb_employee exactly: a dedicated expand-control column at index 0 (`details.type:
-        // 'column', target:0`, see that table's own comment on why a SEPARATE column instead of
-        // embedding the toggle into the first data column), and responsivePriority pinning Employee
-        // identity + Actions (the "first and last column stay in place" ask) as the 2 columns that
-        // never collapse -- every field-readiness/Identification/Bank Details/Status column in
-        // between collapses into the expand row first when space is tight (uniform low priority,
-        // there's no reason to rank one of these 16 above another).
-        responsive: { details: { type: 'column', target: 0 } },
+        // 2026-09-08, explicit follow-up request: "อยากให้ column รหัสพนักงาน และชื่อพนักงาน fixed อยู่กับที่
+        // ฝั่งซ้าย...และ column Action อยากให้ fixed อยู่ขวาตลอด ส่วน Column ส่วนกลางๆ อยากให้ใช้เมาส์เลื่อนดู
+        // ข้อมูลได้" -- reverts the 2026-08-30 responsive:true/column-collapse choice back to a frozen-
+        // column layout. 2026-09-08 same-day follow-up ("ตอนนี้ใช้เมาส์เลื่อนเพื่อลากดู column ไม่ได้") --
+        // the FIRST attempt used DataTables' own core `scrollX` option, which needs CSS
+        // (`.dataTables_scrollBody { overflow-x:auto; }` etc.) that lives in the BASE `datatables.net`
+        // skin's own stylesheet -- this app only ever loads the `datatables.net-bs5` skin on top of
+        // it, never that base skin itself, so `scrollX` had nothing to actually create a scrollable
+        // container with (confirmed by grepping the installed CSS directly). Rebuilt on this app's own
+        // ALREADY-established, ALREADY-working convention instead (see list.php's own comment on this
+        // table, and CLAUDE.md/style.css's "no DataTables scrollX, just .table-responsive" note) --
+        // the view now wraps this table in a plain `.table-responsive` div, and `initStickyColumns()`
+        // (public/js/sticky-table-columns.js, plain CSS position:sticky) freezes columns 1-2 (Employee
+        // No.+Employee) on the left and the last column (Actions) on the right directly on this table's
+        // own cells -- NOT DataTables' own FixedColumns extension, which is confirmed broken in this
+        // app for an unrelated reason (see that file's own docblock). Every field-readiness/
+        // Identification/Bank Details/Status column in between scrolls horizontally instead of
+        // collapsing into an expand row -- the dtr-control column from the old responsive:true layout
+        // is gone, nothing left to expand.
+        drawCallback: function () { initStickyColumns('#tb_employee_recheck', { left: 2, right: 1 }); },
         ajax: {
             url: `${BASE_URL}/api/employee.recheck-list`,
             type: 'POST',
             data: function (d) { Object.assign(d, currentEmployeeRecheckFilters()); }
         },
         columns: [
-            { data: null, orderable: false, className: 'dtr-control', defaultContent: '' },
             // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
             // one column with employee_no/name stacked as 2 divs, split into 2 real columns (matches
             // the main #tb_employee table's own convention, which already had them separate).
-            { data: 'employee_no', responsivePriority: 1, render: d => escapeHtml(d || '-') },
-            { data: 'name', responsivePriority: 1, render: d => escapeHtml(d || '-') },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.title) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.gender) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_th) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_en) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.date_of_birth) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.nationality) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckIdentificationHtml(row.field_readiness) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.personal_email) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.mobile_no) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.department_id) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.position_id) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.branch_id) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.employment_date) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckOtSummaryHtml(row.ot_summary) },
-            { data: 'sso_status', className: 'text-center', responsivePriority: 10, render: d => recheckSsoStatusHtml(d) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckBankDetailsHtml(row) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.base_salary_amount) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.salary_effective_date) },
-            { data: null, className: 'text-center', responsivePriority: 10, render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.tax_calculation_method) },
-            { data: 'is_ready', className: 'text-center', responsivePriority: 10, render: d => d ? `<span class="badge bg-success-subtle text-success">${langData['ready'] || 'Ready'}</span>` : `<span class="badge bg-danger-subtle text-danger">${langData['not_ready'] || 'Not Ready'}</span>` },
+            { data: 'employee_no', render: d => escapeHtml(d || '-') },
+            { data: 'name', render: d => escapeHtml(d || '-') },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.title) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.gender) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_th) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_en) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.date_of_birth) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.nationality) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckIdentificationHtml(row.field_readiness) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.personal_email) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.mobile_no) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.department_id) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.position_id) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.branch_id) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.employment_date) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckOtSummaryHtml(row.ot_summary) },
+            { data: 'sso_status', className: 'text-center', render: d => recheckSsoStatusHtml(d) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckBankDetailsHtml(row) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.base_salary_amount) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.salary_effective_date) },
+            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.tax_calculation_method) },
+            { data: 'is_ready', className: 'text-center', render: d => d ? `<span class="badge bg-success-subtle text-success">${langData['ready'] || 'Ready'}</span>` : `<span class="badge bg-danger-subtle text-danger">${langData['not_ready'] || 'Not Ready'}</span>` },
             {
                 // 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่
                 // ไม่ทำจ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- every row in a given ajax response shares the
                 // SAME is_payroll_participant value (recheckList() forces it via $participantMode, see that
                 // method's own comment), so branching on the current view toggle (not a per-row field) is
                 // correct and avoids needing to select+strip yet another raw column server-side.
-                data: null, className: 'text-center', orderable: false, responsivePriority: 1, render: (d, t, row) => {
+                data: null, className: 'text-center', orderable: false, render: (d, t, row) => {
                     // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
                     // ".btn-circle-action" section) replace the old adjacent .btn-group.
                     const editBtn = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-recheck-edit" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
@@ -875,6 +898,13 @@ function initEmployeeRecheckTable() {
         pageLength: pageLength,
         lengthMenu: lengthMenu,
         language: getTableLang(),
+        // 2026-09-08, round 3 follow-up -- fires ONCE, after DataTables has already built its own
+        // length/search/info/pagination controls as siblings of the table (see list.php's own comment
+        // on this table for why doing this any earlier, e.g. a static wrapper in the view, was wrong).
+        // `initTableDragScroll()` (public/js/sticky-table-columns.js) wraps ONLY the `<table>` element
+        // itself in `.table-responsive` at this point and adds real click-and-hold-then-drag panning
+        // on top of it (plain `overflow-x:auto` alone only ever supports scrollbar-drag/shift+wheel).
+        initComplete: function () { initTableDragScroll('#tb_employee_recheck'); },
     });
 }
 $(document).on('shown.bs.tab', '#employee-recheck-top-tab', function () {
@@ -891,6 +921,12 @@ $(document).on('change', '#employee_recheck_filter_role, #employee_recheck_filte
 });
 $(document).on('click', '#btnClearEmployeeRecheckFilter', function () {
     $('#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch').val(null).trigger('change.select2');
+    // 2026-09-08: reset the view select back to its own default ('participant'/"In Payroll") too --
+    // it's part of this same filter row now, so Clear Filter should clear it as well, same as every
+    // other field here. The 'change.select2' trigger fires the plain `change` handler above (which
+    // updates currentEmployeeRecheckView itself), same event-namespacing convention this file's
+    // other Clear Filter handlers already rely on.
+    $('#employee_recheck_filter_view').val('participant').trigger('change.select2');
     updateClearEmployeeRecheckFilterVisibility();
     if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);
 });
@@ -1070,12 +1106,13 @@ function syncRcMobileCountryCode() {
 // จ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- toggles which of the two views (In Payroll / Not in Payroll) the
 // Recheck table shows; just re-renders the SAME table against currentEmployeeRecheckFilters()'s new
 // `view` key, no separate table instance needed (see EmployeeModel::recheckList()'s own comment).
-$(document).on('click', '#employeeRecheckViewToggle button', function () {
-    const view = $(this).data('view');
+// 2026-09-08, same-day follow-up: was a `.btn-group` click handler -- now a plain select `change`
+// (see the filter-row markup's own comment on why it moved), same effect otherwise.
+$(document).on('change', '#employee_recheck_filter_view', function () {
+    const view = $(this).val() || 'participant';
+    updateClearEmployeeRecheckFilterVisibility();
     if (view === currentEmployeeRecheckView) return;
     currentEmployeeRecheckView = view;
-    $('#employeeRecheckViewToggle button').removeClass('active');
-    $(this).addClass('active');
     if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);
 });
 function toggleEmployeePayrollParticipant($btn, employeeId, participant, confirmTitle, confirmMessage, successMessage) {

@@ -750,22 +750,17 @@ function getTableLang() {
         info: langData.info || "Showing _START_ to _END_ of _TOTAL_ entries",
         infoEmpty: langData.infoEmpty || "Showing 0 to 0 of 0 entries",
         infoFiltered: langData.infoFiltered || "(filtered from _MAX_ total entries)",
-        // 2026-09-03, Platform UX review Phase 2 -- DataTables renders whatever HTML is given here
-        // straight into its own `.dataTables_processing` overlay (the standard customization point
-        // for this exact indicator, not a workaround) -- replaces the library's bare "Processing..."
-        // text/default look with the shared brand mark for every table that already spreads
-        // ...getTableLang() into its own `language` config (every DataTable in this app does).
-        // 2026-09-07, real bug found and fixed (explicit report: "Loader ใน Datatable...ดูไม่สมส่วน
-        // และไม่สวย") -- datatables.net-bs5's own CSS (`div.dt-processing > div:last-child { width:
-        // 80px; height:15px; ... }`) is written assuming the library's NATIVE 4-bouncing-dots
-        // animation is what's inside `.dt-processing` (that selector targets what would normally be
-        // the dots' own wrapper). Since this text label div is the LAST direct child of
-        // `.dt-processing` regardless, it was being force-squeezed into that same fixed 80x15px box
-        // -- never designed for arbitrary text -- clipping/skewing the label under the spinner.
-        // Wrapped both pieces in one `.om-dt-processing-inner` div so the CSS override in style.css
-        // (see its own comment) can target OUR markup specifically without touching
-        // `div.dt-processing` itself (still needed for the library's own centering/z-index).
-        processing: `<div class="om-dt-processing-inner">${originamiLoaderHtml('md')}<div class="om-dt-processing-label">${langData.processing || 'Loading...'}</div></div>`,
+        // 2026-09-08, explicit request: "Design Loading ของ Datatable อยากให้ปรับใหม่...เป็นแบบเดิมก็ได้
+        // Default ของ Datatable แต่เปลี่ยนเป็นสีส้ม" -- the 2026-09-03/2026-09-07 custom card+origami-
+        // mark design (both retired here) kept running into positioning/clipping fights with this
+        // app's own scrolling table wrappers (sticky columns, drag-scroll) -- exactly the "ซ่อนไปใน
+        // Datatable" (hidden inside the table) complaint this fixes. No `processing` override here
+        // at all anymore -- DataTables' own bs5 renderer already gives a clean, correctly-centered
+        // `.dt-processing.card` box (white surface, border, shadow) with its native 4-dot bounce
+        // animation, sized/positioned exactly the way the library itself expects, which is the
+        // "Default ของ Datatable" the request asked to keep -- only the dots' own color is
+        // recolored to brand orange, scoped narrowly via a CSS custom-property override on
+        // `div.dt-processing` itself (see style.css), not a global one.
         paginate: {
             first: langData.first || "First",
             last: langData.last || "Last",

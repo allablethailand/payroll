@@ -80,6 +80,43 @@ class PayrollSyncController extends Controller {
         ]);
     }
 
+    /**
+     * 2026-09-08, Origami email exchange (2 rounds) -- receives the new `attribution_update` event,
+     * a separate machine-to-machine endpoint from ingest() with its OWN Bearer key
+     * (PAYROLL_SYNC_ATTRIBUTION_UPDATE_API_KEY, per Origami's own explicit request for a separate
+     * key). Kept thin on purpose, same Controller/Model split as ingest() -- see
+     * PayrollSyncModel::applyAttributionUpdate()'s own docblock for the actual logic.
+     */
+    public function attributionUpdate(): void {
+        $header = $this->bearerToken();
+        if (PAYROLL_SYNC_ATTRIBUTION_UPDATE_API_KEY === '' || $header === null || !hash_equals(PAYROLL_SYNC_ATTRIBUTION_UPDATE_API_KEY, $header)) {
+            http_response_code(401);
+            $this->json(['status' => 'error', 'message' => 'Invalid or missing bearer token.']);
+        }
+
+        $raw = file_get_contents('php://input');
+        $payload = json_decode((string)$raw, true);
+        if (!is_array($payload)) {
+            http_response_code(400);
+            $this->json(['status' => 'error', 'message' => 'Invalid JSON body.']);
+        }
+
+        $model = new PayrollSyncModel();
+        $result = $model->applyAttributionUpdate($payload);
+
+        if (!$result['status']) {
+            http_response_code(422);
+            $this->json(['status' => 'error', 'message' => $result['message']]);
+        }
+
+        http_response_code(200);
+        $this->json([
+            'status' => 'ok',
+            'external_ref' => $result['process_row_id'],
+            'attribution_status' => $result['attribution_status'],
+        ]);
+    }
+
     public function pendingList(): void {
         $compId = getCompId();
         if (!$compId) {

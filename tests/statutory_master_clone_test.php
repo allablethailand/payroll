@@ -18,6 +18,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/models/TaxStatutoryModel.php';
 require_once __DIR__ . '/../app/models/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../app/models/CompanyStatutoryRateVersionModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -49,6 +50,7 @@ try {
     $compB = makeCompany($pdo, 'TH');
     $taxModel = new TaxStatutoryModel();
     $csModel = new CompanyStatutorySettingModel($pdo);
+    $rateVersionModel = new CompanyStatutoryRateVersionModel($pdo);
     $userId = 1;
 
     echo "=== Custom item creation, isolated per company ===\n";
@@ -122,9 +124,13 @@ try {
     foreach ($rowsA as $r) { if ($r['item_scope'] === 'master') $masterCountInA++; }
     checkTrue('company A\'s list() still includes real master items too (TH seeded, e.g. TH_SSO/TH_PIT)', $masterCountInA > 0);
 
-    echo "\n=== CompanyStatutorySettingModel::save()/toggleStatus() reject a custom item id ===\n";
-    $overrideOnCustom = $csModel->save($compA, ['statutory_item_id' => $customAId, 'is_active' => true, 'employee_rate_override' => '5.0'], $userId);
-    checkFalse('cannot "override" a custom item via company_statutory_settings (no override concept for owned items)', $overrideOnCustom['status']);
+    echo "\n=== CompanyStatutoryRateVersionModel::save() rejects a custom item id ===\n";
+    // 2026-09-08, Clone+Version redesign -- replaces the old CompanyStatutorySettingModel::save()
+    // (flat override) rejection check. A custom item has no "clone a master rate" concept at all --
+    // it's edited directly via TaxStatutoryModel::rateHistorySave() instead -- so
+    // getOwnedMasterItem()'s own `comp_id IS NULL` join means a custom item's id never resolves here.
+    $versionOnCustom = $rateVersionModel->save($compA, ['statutory_item_id' => $customAId, 'effective_date' => '2027-01-01', 'employee_rate' => 5, 'employer_rate' => 5], $userId);
+    checkFalse('cannot add a company rate VERSION on a custom item (no clone concept for owned items)', $versionOnCustom['status']);
 
     echo "\n=== TaxStatutoryModel::promoteToMaster() ===\n";
     $crossPromote = $taxModel->promoteToMaster($customAId, $compB, $userId);
@@ -141,35 +147,44 @@ try {
     $collidingPromote = $taxModel->promoteToMaster($customBId, $compB, $userId);
     checkFalse('promoting company B\'s custom item now fails: code collides with the newly-promoted master item', $collidingPromote['status']);
 
-    echo "\n=== CompanyStatutorySettingModel::promoteOverrideToMaster() ===\n";
-    // Use a real seeded master item that's genuinely company-rate-editable (TH_PVD -- TH_SSO is
-    // fixed-by-law, is_company_rate_editable=0, confirmed via direct query, so it would correctly
-    // refuse an override and can't be used for this half of the test).
+    echo "\n=== CompanyStatutoryRateVersionModel::promoteToMaster() ===\n";
+    // 2026-09-08, Clone+Version redesign -- replaces CompanyStatutorySettingModel::
+    // promoteOverrideToMaster() (flat override -> master). Use a real seeded master item that's
+    // genuinely company-rate-editable (TH_PVD -- TH_SSO is fixed-by-law, is_company_rate_
+    // editable=0, confirmed via direct query, so it would correctly refuse a version and can't be
+    // used for this half of the test).
     $stmtPvd = $pdo->prepare("SELECT id FROM statutory_items WHERE code = 'TH_PVD' AND country_code = 'TH' AND comp_id IS NULL AND deleted_at IS NULL AND is_company_rate_editable = 1 LIMIT 1");
     $stmtPvd->execute();
     $pvdId = (int)$stmtPvd->fetchColumn();
     checkTrue('TH_PVD master item (company-rate-editable) exists in the seeded dev DB (fixture precondition)', $pvdId > 0);
 
     if ($pvdId > 0) {
-        $noOverrideYet = $csModel->promoteOverrideToMaster($compA, $pvdId, '2027-01-01', $userId);
-        checkFalse('cannot promote when no override is configured yet', $noOverrideYet['status']);
+        $noVersionYet = $rateVersionModel->promoteToMaster($compA, 999999, '2027-01-01', $userId);
+        checkFalse('cannot promote a version id that does not exist/belong to this company', $noVersionYet['status']);
 
-        $setOverride = $csModel->save($compA, ['statutory_item_id' => $pvdId, 'is_active' => true, 'employee_rate_override' => '3.33', 'employer_rate_override' => '3.33'], $userId);
-        checkTrue('company A sets its own TH_PVD override', $setOverride['status']);
+        $setVersion = $rateVersionModel->save($compA, ['statutory_item_id' => $pvdId, 'effective_date' => '2026-01-01', 'employee_rate' => 3.33, 'employer_rate' => 3.33], $userId);
+        checkTrue('company A adds its own TH_PVD version', $setVersion['status']);
+        $pvdVersionId = $setVersion['id'];
 
-        $beforeHistoryCount = (int)$pdo->query("SELECT COUNT(*) FROM statutory_item_rate_history WHERE statutory_item_id = {$pvdId} AND deleted_at IS NULL")->fetchColumn();
+        $beforeHistoryCount = (int)$pdo->query("SELECT COUNT(*) FROM statutory_item_rate_history WHERE statutory_item_id = {$pvdId} AND comp_id IS NULL AND deleted_at IS NULL")->fetchColumn();
 
-        $promoteOverride = $csModel->promoteOverrideToMaster($compA, $pvdId, '2027-01-01', $userId);
-        checkTrue('company A promotes its own TH_PVD override to master', $promoteOverride['status']);
+        $promoteVersion = $rateVersionModel->promoteToMaster($compA, $pvdVersionId, '2027-01-01', $userId);
+        checkTrue('company A promotes its own TH_PVD version to master', $promoteVersion['status']);
 
-        $afterHistoryCount = (int)$pdo->query("SELECT COUNT(*) FROM statutory_item_rate_history WHERE statutory_item_id = {$pvdId} AND deleted_at IS NULL")->fetchColumn();
-        check('exactly one new master rate_history row was added', $afterHistoryCount, $beforeHistoryCount + 1);
+        $afterHistoryCount = (int)$pdo->query("SELECT COUNT(*) FROM statutory_item_rate_history WHERE statutory_item_id = {$pvdId} AND comp_id IS NULL AND deleted_at IS NULL")->fetchColumn();
+        check('exactly one new MASTER rate_history row was added', $afterHistoryCount, $beforeHistoryCount + 1);
 
-        $newRate = $pdo->query("SELECT employee_rate FROM statutory_item_rate_history WHERE statutory_item_id = {$pvdId} AND effective_date = '2027-01-01' AND deleted_at IS NULL")->fetchColumn();
+        $newRate = $pdo->query("SELECT employee_rate FROM statutory_item_rate_history WHERE statutory_item_id = {$pvdId} AND comp_id IS NULL AND effective_date = '2027-01-01' AND deleted_at IS NULL")->fetchColumn();
         check('the new master rate_history row carries the promoted 3.33 value', round((float)$newRate, 2), 3.33);
 
-        $settingAfter = $csModel->get($compA, $pvdId);
-        checkTrue('company A\'s own override was cleared after promoting (now matches the new default)', $settingAfter !== null && $settingAfter['employee_rate_override'] === null);
+        // 2026-09-08: unlike the OLD promoteOverrideToMaster(), promoteToMaster() deliberately does
+        // NOT clear/delete the company's own version afterward -- see that method's own docblock on
+        // why (nothing contradictory about the company keeping its own explicit version even once
+        // Master matches it now that "Default"/"Customized" is a per-version badge, not a single
+        // company-wide flag).
+        $ownVersionStillThere = $rateVersionModel->get($compA, $pvdVersionId);
+        checkTrue('company A\'s own version SURVIVES after promoting (not cleared, unlike the old flat-override flow)', $ownVersionStillThere !== null);
+        check('surviving version still carries its own 3.33 rate', round((float)($ownVersionStillThere['employee_rate'] ?? 0), 2), 3.33);
     }
 
 } finally {

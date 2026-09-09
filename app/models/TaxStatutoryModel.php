@@ -2,7 +2,9 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
 require_once __DIR__ . '/AuditLogModel.php';
+require_once __DIR__ . '/StatutoryRateHistoryTrait.php';
 class TaxStatutoryModel {
+    use StatutoryRateHistoryTrait;
     private $db;
     private AuditLogModel $auditLog;
     // 2026-09-04, Backlog Phase 9, T047, explicit request: "generic/extensible form for future
@@ -388,13 +390,22 @@ class TaxStatutoryModel {
         }
     }
 
+    // 2026-09-08, Clone+Version redesign -- `AND rh.comp_id IS NULL` added: `statutory_item_
+    // rate_history` now also holds every company's own cloned/customized version of a MASTER
+    // item, all sharing that same master item's `statutory_item_id` (see database/migrations/
+    // 2026-09-08_1_statutory_company_rate_versions.sql). Without this filter, this Master-catalog-
+    // facing rate-history list (and TaxStatutoryController's own permission gate around it) would
+    // show every company's own private rate versions mixed into the shared Master's own version
+    // list. Harmless no-op for a CUSTOM item's own rate history (those rows are already always
+    // comp_id IS NULL -- ownership is transitive via statutory_item_id -> statutory_items.comp_id,
+    // unchanged by this migration).
     public function rateHistoryList(int $itemId): array {
         $sql = "SELECT rh.*,
                     (SELECT COUNT(*) FROM `statutory_item_brackets` WHERE statutory_item_rate_history_id = rh.id) AS bracket_count,
                     editor.name_th AS last_edited_by_name_th, editor.name_en AS last_edited_by_name_en
                 FROM `statutory_item_rate_history` rh
                 LEFT JOIN `employees` editor ON editor.id = COALESCE(rh.updated_by, rh.created_by)
-                WHERE rh.statutory_item_id = :item_id AND rh.deleted_at IS NULL
+                WHERE rh.statutory_item_id = :item_id AND rh.deleted_at IS NULL AND rh.comp_id IS NULL
                 ORDER BY rh.effective_date DESC, rh.id DESC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':item_id' => $itemId]);
@@ -412,27 +423,6 @@ class TaxStatutoryModel {
         $stmtBrackets->execute([':id' => $id]);
         $row['brackets'] = $stmtBrackets->fetchAll(PDO::FETCH_ASSOC);
         return $row;
-    }
-
-    private function hasOverlap(int $itemId, string $effectiveDate, ?string $endDate, ?int $excludeId): bool {
-        $sql = "SELECT effective_date, end_date FROM `statutory_item_rate_history` WHERE statutory_item_id = :item_id AND deleted_at IS NULL";
-        $params = [':item_id' => $itemId];
-        if ($excludeId !== null) {
-            $sql .= " AND id != :exclude_id";
-            $params[':exclude_id'] = $excludeId;
-        }
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        $newStart = $effectiveDate;
-        $newEnd = $endDate ?? '9999-12-31';
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $exStart = $r['effective_date'];
-            $exEnd = $r['end_date'] ?? '9999-12-31';
-            if ($newStart <= $exEnd && $exStart <= $newEnd) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private function validateBrackets(array $brackets): array {
@@ -547,19 +537,10 @@ class TaxStatutoryModel {
             }
 
             if ($id === null && $endDate === null) {
-                $stmtOpen = $this->db->prepare("SELECT id, effective_date FROM `statutory_item_rate_history`
-                    WHERE statutory_item_id = :item_id AND deleted_at IS NULL AND end_date IS NULL AND effective_date < :effective_date
-                    ORDER BY effective_date DESC LIMIT 1");
-                $stmtOpen->execute([':item_id' => $itemId, ':effective_date' => $effectiveDate]);
-                $openRow = $stmtOpen->fetch(PDO::FETCH_ASSOC);
-                if ($openRow) {
-                    $prevEnd = date('Y-m-d', strtotime($effectiveDate . ' -1 day'));
-                    $stmtClose = $this->db->prepare("UPDATE `statutory_item_rate_history` SET end_date = :end_date WHERE id = :id");
-                    $stmtClose->execute([':end_date' => $prevEnd, ':id' => $openRow['id']]);
-                }
+                $this->closeOpenRateVersion($itemId, null, $effectiveDate);
             }
 
-            if ($this->hasOverlap($itemId, $effectiveDate, $endDate, $id)) {
+            if ($this->hasOverlapForItem($itemId, null, $effectiveDate, $endDate, $id)) {
                 if ($ownTransaction) {
                     $this->db->rollBack();
                 }

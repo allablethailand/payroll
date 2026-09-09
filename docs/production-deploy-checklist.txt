@@ -1,0 +1,139 @@
+=====================================================================
+CHECKLIST: สิ่งที่ต้องตรวจสอบ/ปรับ ก่อน Deploy ขึ้น Production
+สร้างเมื่อ 2026-09-08 จากการตรวจสอบ working directory จริง ณ ตอนนั้น
+=====================================================================
+
+หมายเหตุ: รายการนี้เขียนจากการตรวจสอบสถานะจริงของโปรเจกต์ ณ วันที่สร้างไฟล์
+(git status, .env, migrations/ ที่มีอยู่จริง) ถ้าเวลาผ่านไปนานควรเช็คซ้ำอีกครั้ง
+โดยเฉพาะข้อ 1 และ 2 ที่เปลี่ยนแปลงบ่อยที่สุด
+
+
+---------------------------------------------------------------------
+1) งานที่ยัง "ไม่ commit" อยู่ในเครื่องนี้ (ต้องจัดการก่อนอันดับแรก)
+---------------------------------------------------------------------
+ตอนสร้างไฟล์นี้ branch "chakrit" มีไฟล์ที่แก้ไขแล้วแต่ยังไม่ commit อยู่ 43 ไฟล์
+และไฟล์ใหม่ที่ยังไม่ add อีก 7 ไฟล์ (รวม Tax & Statutory Clone+Version redesign,
+Origami attribution_status/pending_fold_in feature, sticky-table-columns.js ฯลฯ)
+
+  - รัน `git status` เช็คให้แน่ใจว่าไม่มีไฟล์ค้าง
+  - Commit ให้ครบ, review diff ให้ดีก่อน (โดยเฉพาะไฟล์ที่แก้เยอะ เช่น
+    tax-statutory.js, StatutoryCalculationEngine.php)
+  - Merge เข้า main/dev ตาม flow ปกติของทีมก่อนค่อย deploy
+  - ห้าม deploy โค้ดที่ยังไม่ผ่านการ commit/review ขึ้น production เด็ดขาด
+
+
+---------------------------------------------------------------------
+2) Database Migrations (database/migrations/) — ต้องรันให้ครบ 135 ไฟล์
+---------------------------------------------------------------------
+database/payroll.sql เป็น baseline ที่ตรงกับ Production ณ วันที่ 2026-08-28 เท่านั้น
+ทุกการเปลี่ยนแปลง schema หลังจากนั้นอยู่ใน database/migrations/ แยกไฟล์ (ดู
+database/migrations/README.md) — Production ที่ยังไม่เคย sync เลยจะต้องรันไฟล์
+ทั้งหมดตั้งแต่ 2026-08-28 เป็นต้นมา (ปัจจุบันมี 135 ไฟล์)
+
+  - เรียงลำดับตามชื่อไฟล์ (YYYY-MM-DD ก่อน แล้วตามด้วยเลขลำดับในวันเดียวกัน)
+  - *** ระวัง ***: ถ้าใช้ `ls` หรือ wildcard sort ธรรมดา ไฟล์ที่มีเลขต่อท้ายเกิน
+    หลักเดียวในวันเดียวกัน (เช่น _10, _11) จะเรียงผิดลำดับกับ _1 ถึง _9 แบบ
+    lexicographic (string) sort ไม่ใช่ numeric sort — ต้องเรียงเลขให้ถูกต้องเอง
+    หรืออ้างอิงลำดับจาก `git log --follow --diff-filter=A` ของแต่ละไฟล์แทน
+  - ทดสอบรันบน DB สำเนา/backup ก่อนเสมอ (ห้ามรันตรงกับ production DB จริงโดย
+    ไม่มี backup ก่อน) ตรวจนับจำนวนแถวก่อน/หลังให้ตรงกับที่คาดไว้
+  - บาง migration มี data backfill/migration จริง (ไม่ใช่แค่ ALTER TABLE เปล่าๆ)
+    เช่น 2026-09-08_1_statutory_company_rate_versions.sql (clone rate ให้ทุก
+    บริษัท active) — อ่าน comment ในไฟล์ก่อนรันทุกไฟล์ที่มีคำว่า backfill/migrate
+  - **ห้าม sync กลับเข้า database/payroll.sql อีก** ปล่อยเป็น baseline นิ่งไว้
+
+
+---------------------------------------------------------------------
+3) ไฟล์ .env — ต้องสร้างใหม่/ปรับให้เหมาะกับ Production (gitignored ไม่ deploy
+   ผ่าน git อัตโนมัติ ต้องจัดการเองที่ server)
+---------------------------------------------------------------------
+อ้างอิงจาก .env.example (มีอยู่แล้วในโปรเจกต์ แต่ตอนนี้ยังไม่มี
+PAYROLL_SYNC_ATTRIBUTION_UPDATE_API_KEY — ควรเพิ่มเข้าไปด้วย)
+
+ค่าที่ "ต้องเปลี่ยน" จากค่า dev (ห้ามเอาค่าจาก dev ไปใช้ตรงๆ):
+  - APP_URL / BASE_URL          -> domain จริงของ production (ไม่ใช่ localhost)
+  - DB_HOST / DB_USER / DB_PASS / DB_NAME -> credential ของ production DB จริง
+  - ORIGAMI_API_BASE_URL         -> URL จริงของ Origami (ตอนนี้ dev ชี้ไป
+                                     http://origami.local ซึ่งเป็น local เท่านั้น)
+  - ORIGAMI_BASE_URL             -> เช่นเดียวกัน (ใช้สำหรับ SSO login handshake)
+  - O_CLIENT_ID / O_CLIENT_SECRET -> ต้องตรงกับ row ที่ Origami ลงทะเบียนไว้ให้
+                                     app ตัวนี้ "ฝั่ง production" (คนละชุดกับที่
+                                     ใช้ทดสอบใน dev)
+  - PAYROLL_SYNC_INGEST_API_KEY  -> ตอนนี้ใน dev ยังเป็นค่า placeholder
+                                     "CHANGE_ME_test_key_12345" ต้อง generate
+                                     key จริงแล้วส่งให้ทีม Origami ตั้งค่าฝั่งเขา
+                                     (generate ด้วย: php -r "echo bin2hex(random_bytes(32));")
+
+ค่าที่ "ต้องตรวจสอบว่าตั้งไว้ถูกต้องแล้วหรือยัง" (ไม่แน่ใจว่า production มีอยู่
+แล้วหรือยัง เพราะไม่มีสิทธิ์เข้าถึง production server จากเซสชันนี้):
+  - PAYROLL_SYNC_ATTRIBUTION_UPDATE_API_KEY -> ฟีเจอร์ attribution_update
+    (2026-09-08) เพิ่งทดสอบ end-to-end กับ Origami จริงสำเร็จแล้ว แต่การทดสอบ
+    นั้นต้องยิงเข้า endpoint ที่ Origami เข้าถึงได้จริง (ไม่ใช่ localhost:8080 ของ
+    เครื่อง dev นี้) — ต้อง**ยืนยันให้ชัดเจน**ว่า key ที่ใช้ทดสอบจริงกับ key ที่ตั้งไว้
+    ใน .env ของ production เป็นค่าเดียวกัน ไม่งั้น endpoint จะ 401 ทันทีที่ deploy
+  - MAIL_HOST / MAIL_PORT / MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM_ADDRESS
+    -> ถ้าจะใช้ Payslip Distribution ผ่าน Email ต้องมีค่าจริง (ว่าง = ระบบถือว่า
+    channel นี้ "ยังไม่ตั้งค่า" แล้ว fallback ไป channel อื่นในลำดับถัดไป)
+  - LINE_CHANNEL_ACCESS_TOKEN / TELEGRAM_BOT_TOKEN -> ถ้าจะใช้ช่องทางนี้ส่งสลิป
+    ต้องมีค่าจริง (ฟีเจอร์ส่งจริงทำเสร็จแล้วในโค้ด รอแค่ credential จริง)
+  - GOOGLE_CALENDAR_API_KEY -> ถ้า key ใน Google Cloud Console มีการจำกัด
+    HTTP referrer/domain ไว้ ต้องเพิ่ม domain ของ production เข้าไปด้วย
+
+ค่าที่ "ห้ามเปลี่ยน/ห้ามเอาค่า dev ไปทับ" ถ้า production มีข้อมูลจริงอยู่แล้ว:
+  - ENCRYPTION_KEY_V1 / ENCRYPTION_HMAC_KEY -> ใช้เข้ารหัสข้อมูลพนักงานจริง
+    (AES-256-GCM) ถ้า production มี key ของตัวเองอยู่แล้วและมีข้อมูลเข้ารหัส
+    ด้วย key นั้นอยู่จริง **ห้ามเอา key จาก dev ไปทับเด็ดขาด** ข้อมูลทั้งหมดจะ
+    decrypt ไม่ได้ทันที ถ้า production ยังไม่เคยมี key เลย (deploy ครั้งแรกจริงๆ)
+    ค่อย generate ใหม่เฉพาะของ production เอง (ห้ามใช้ค่าเดียวกับ dev เพื่อความ
+    ปลอดภัย): php -r "echo base64_encode(random_bytes(32)), PHP_EOL;"
+
+
+---------------------------------------------------------------------
+4) config.php และ .htaccess — gitignored เช่นกัน ไม่ได้มากับ git pull
+---------------------------------------------------------------------
+  - config.php: อ่านค่าจาก $_ENV ทั้งหมด (ไม่มี hardcode) ถ้า production มีไฟล์
+    นี้อยู่แล้วจากรอบ deploy ก่อนหน้า เช็คว่ามี define() ครบทุกตัวที่โค้ดปัจจุบัน
+    ใช้ (ล่าสุดเพิ่ม PAYROLL_SYNC_ATTRIBUTION_UPDATE_API_KEY เข้ามาใหม่ 2026-09-08
+    — ถ้า production ยังใช้ config.php เก่าจากก่อนวันนี้ จะไม่มี define ตัวนี้)
+  - .htaccess: ต้องเช็คว่า production มีไฟล์นี้อยู่แล้ว (auth/ เป็นโฟลเดอร์จริงที่
+    Apache ต้อง serve ตรง ไม่ผ่าน Router — ดู CLAUDE.md's Authentication section)
+    ถ้าต้องสร้างใหม่ ให้ขอ copy จากคนที่ deploy รอบก่อนหน้า อย่าเดาเอง
+
+
+---------------------------------------------------------------------
+5) โฟลเดอร์ Upload — gitignored ต้องมีอยู่จริงบน production และเขียนได้
+---------------------------------------------------------------------
+  - public/uploads/  (โลโก้บริษัท, โลโก้ template, employment cert logos,
+    payslip files, employment certificate files ฯลฯ)
+  - storage/uploads/ (เอกสารพนักงาน, รูปถ่าย, ไฟล์ import ต้นฉบับ)
+  - เช็คว่า web server user (เช่น www-data) มีสิทธิ์เขียนทั้ง 2 โฟลเดอร์นี้
+
+
+---------------------------------------------------------------------
+6) Dependencies — ไม่ต้องรัน composer install / npm install
+---------------------------------------------------------------------
+โปรเจกต์นี้ commit ทั้ง vendor/ (composer, 1,346 ไฟล์) และ node_modules/ (npm,
+8,400 ไฟล์) เข้า git โดยตรง — แค่ `git pull`/deploy โค้ดตามปกติก็ครบแล้ว
+  - font files (public/fonts/, storage/fonts/) ก็ commit ไว้แล้วเช่นกัน
+    (TH Sarabun New, DejaVu Sans/Serif/Sans Mono) ไม่ต้องเพิ่มเอง
+
+
+---------------------------------------------------------------------
+7) PHP version / extension
+---------------------------------------------------------------------
+  - ต้องเป็น PHP 8.x (ตาม stack ที่ระบุใน CLAUDE.md)
+  - ต้องมี extension: pdo_mysql, openssl (ใช้ใน EncryptionService),
+    gd หรือ imagick (thumbnail รูปที่ upload), mbstring
+
+
+---------------------------------------------------------------------
+8) หลัง deploy เสร็จ — ทดสอบเบื้องต้น
+---------------------------------------------------------------------
+  - Login ผ่าน Origami SSO ได้จริง (auth/index.php)
+  - สร้าง/ดึง payroll run 1 รอบทดสอบผ่านจนถึง lock ได้ปกติ
+  - ยิง POST /api/payroll-sync.ingest ด้วย PAYROLL_SYNC_INGEST_API_KEY ตัวจริง
+    ทดสอบ 1 ครั้งให้ Origami ยืนยันว่ายิงเข้ามาที่ endpoint ถูกต้อง
+  - Generate report สักตัว (เช่น Payroll Register) ให้แน่ใจว่า dompdf/
+    PhpSpreadsheet ทำงานได้ปกติบน production (เคยเจอปัญหา font/chroot path
+    ของ dompdf มาก่อนในช่วง dev — ดู Employment Certificate Template's v2
+    ใน CLAUDE.md ถ้าเจอปัญหาคล้ายกัน)

@@ -135,22 +135,29 @@
             </div>
         </div>
 
-        <div class="card-surface p-0 mb-5">
-            <div class="ais-legend px-3 pt-3">
-                <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-past_done"></span><span data-i18n="ais_legend_past_done">Processed</span></span>
-                <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-past_missing"></span><span data-i18n="ais_legend_past_missing">Past, not processed</span></span>
-                <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-current"></span><span data-i18n="ais_legend_current">Current month</span></span>
-                <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-future"></span><span data-i18n="ais_legend_future">Upcoming</span></span>
-            </div>
-            <div id="aisTableEmpty" class="text-center text-secondary py-5 d-none">
-                <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="ais_no_data">No payroll data found for this fiscal year.</span>
-            </div>
-            <div class="ais-table-wrap p-3 pt-2">
-                <table class="ais-table table table-hover w-100" id="tb_annual_summary">
-                    <thead></thead>
-                    <tfoot></tfoot>
-                </table>
-            </div>
+        <!-- 2026-09-08, explicit request: "card-surface p-0 mb-5 ไม่เอาครับ ให้แสดงตารางเลย" -- was
+             boxed in a `.card-surface` panel (same as every other page's own card treatment); now the
+             table (and its legend/empty-state) sit directly in the tab pane, matching Employee
+             Recheck Data's own table, which has never used a card wrapper. `mb-5` moved onto the last
+             element here (`.ais-table-wrap`) so the spacing before the next section is unchanged. -->
+        <div class="ais-legend px-3 pt-3">
+            <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-past_done"></span><span data-i18n="ais_legend_past_done">Processed</span></span>
+            <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-past_missing"></span><span data-i18n="ais_legend_past_missing">Past, not processed</span></span>
+            <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-current"></span><span data-i18n="ais_legend_current">Current month</span></span>
+            <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-future"></span><span data-i18n="ais_legend_future">Upcoming</span></span>
+        </div>
+        <div id="aisTableEmpty" class="text-center text-secondary py-5 d-none">
+            <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="ais_no_data">No payroll data found for this fiscal year.</span>
+        </div>
+        <!-- 2026-09-08, explicit follow-up: "เอา p-3 ออกครับ ความกว้างตารางไม่ตรงกับ header" -- `p-3` (left/
+             right padding on top of whatever the page's own container already provides) was insetting
+             this wrapper an extra layer beyond the legend/filter/stat-card rows above it, which don't
+             have that same extra inset -- dropped, `pt-2` (top spacing only) stays. -->
+        <div class="ais-table-wrap pt-2 mb-5">
+            <table class="ais-table table table-hover w-100" id="tb_annual_summary">
+                <thead></thead>
+                <tfoot></tfoot>
+            </table>
         </div>
     </div>
 
@@ -194,8 +201,13 @@
             <button type="button" class="btn btn-outline-secondary btn-sm" id="aisPitClearFilterBtn" data-i18n="clear_filter">Clear Filter</button>
         </div>
 
+        <!-- 2026-09-08, explicit request: "card summary ให้เป็น 4 card ทั้งหมดครับ ถ้ามีไม่ถึงก็แสดงตามนั้น" --
+             was `col-md-4` (a 3-card-wide grid basis) even though this tab only ever has 2 cards --
+             switched to `col-md-3`, the SAME 4-card-wide basis Tab 1's #aisSummaryCards and Tab 3's
+             #aisMonthlySummaryCards already use, so all 3 tabs' summary rows share one consistent
+             grid regardless of how many cards a given tab actually has. -->
         <div class="row g-3 mb-4" id="aisPitSummaryCards">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="stat-card stat-card-info h-100">
                     <div class="stat-card-icon"><i class="fa-solid fa-users"></i></div>
                     <div>
@@ -204,7 +216,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="stat-card stat-card-danger h-100">
                     <div class="stat-card-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
                     <div>
@@ -215,16 +227,15 @@
             </div>
         </div>
 
-        <div class="card-surface p-0 mb-5">
-            <div id="aisPitTableEmpty" class="text-center text-secondary py-5 d-none">
-                <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="ais_no_data">No payroll data found for this fiscal year.</span>
-            </div>
-            <div class="ais-table-wrap p-3 pt-2">
-                <table class="ais-table table table-hover w-100" id="tb_ais_pit">
-                    <thead></thead>
-                    <tfoot></tfoot>
-                </table>
-            </div>
+        <!-- 2026-09-08, same "no card wrapper" request as Tab 1 above. -->
+        <div id="aisPitTableEmpty" class="text-center text-secondary py-5 d-none">
+            <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="ais_no_data">No payroll data found for this fiscal year.</span>
+        </div>
+        <div class="ais-table-wrap pt-2 mb-5">
+            <table class="ais-table table table-hover w-100" id="tb_ais_pit">
+                <thead></thead>
+                <tfoot></tfoot>
+            </table>
         </div>
     </div>
 
@@ -309,35 +320,50 @@
             </div>
         </div>
 
-        <div class="card-surface p-0 mb-5">
-            <div id="aisMonthlyTableEmpty" class="text-center text-secondary py-5 d-none">
-                <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="ais_no_data_month">No payroll data found for this month.</span>
-            </div>
-            <div class="table-responsive p-3 pt-2">
-                <table class="table table-striped table-hover w-100" id="tb_ais_monthly">
-                    <thead class="table-light text-secondary">
-                        <tr>
-                            <th data-i18n="employee">Employee</th>
-                            <th data-i18n="department">Department</th>
-                            <th data-i18n="team">Team</th>
-                            <th data-i18n="position">Position</th>
-                            <th data-i18n="total_gross_income">Total Gross Income</th>
-                            <th data-i18n="total_deductions">Total Deductions</th>
-                            <th data-i18n="total_net_income">Total Net Income</th>
-                            <th data-i18n="ais_total_tax_withheld">Total Tax Withheld</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
+        <!-- 2026-09-08, same "no card wrapper" request as Tab 1/2 above -- `mb-5` moved onto
+             initTableDragScroll()'s own dynamically-created wrapper (JS, 'pt-2 mb-5' param) to
+             keep the same spacing before whatever follows. `p-3` (all-sides padding) was dropped
+             same-day, same reason as Tab 1/2's own `.ais-table-wrap` above: the extra left/right
+             inset it added (beyond what the page's own container already provides) misaligned the
+             table against the filter/stat-card rows above it, which don't have that same extra
+             inset ("ความกว้างตารางไม่ตรงกับ header").
+             This table's own STATIC `.table-responsive` wrapper (used to sit right here in the view)
+             had the exact same real bug already found and fixed on Employee Recheck Data: wrapping
+             the table BEFORE DataTables initializes on it makes DataTables build its own length/
+             search/info/pagination controls as siblings of the table WITHIN that same wrapper,
+             scrolling them along with the columns instead of keeping them fixed above/below.
+             public/js/reports/annual-summary.js's own aisRenderMonthlyTable() now wraps this table
+             itself, from `initComplete` (fires once, after those controls already exist) via the
+             shared initTableDragScroll() helper -- see that function's own docblock. -->
+        <div id="aisMonthlyTableEmpty" class="text-center text-secondary py-5 d-none">
+            <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="ais_no_data_month">No payroll data found for this month.</span>
         </div>
+        <table class="table table-striped table-hover w-100" id="tb_ais_monthly">
+            <thead class="table-light text-secondary">
+                <tr>
+                    <!-- 2026-09-08, explicit follow-up request: "แยก code กับ ชื่อพนักงานเป็นคนละ column" --
+                         same split as Tab 1/2's own JS-built headers. -->
+                    <th data-i18n="employee_no">Employee No.</th>
+                    <th data-i18n="employee">Employee</th>
+                    <th data-i18n="department">Department</th>
+                    <th data-i18n="team">Team</th>
+                    <th data-i18n="position">Position</th>
+                    <th data-i18n="total_gross_income">Total Gross Income</th>
+                    <th data-i18n="total_deductions">Total Deductions</th>
+                    <th data-i18n="total_net_income">Total Net Income</th>
+                    <th data-i18n="ais_total_tax_withheld">Total Tax Withheld</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
     </div>
     </div>
 </div>
-<!-- 2026-08-31, moved here from the global footer.php (see that file's own comment for the full
-     "DataTable.Dom is undefined in this datatables.net build" root cause) -- was throwing a
-     top-level error on EVERY page in the app; scoped to just this one page, which is the only real
-     consumer (annual-summary.js's own `fixedColumns: {...}` option below). -->
-<script src="<?=BASE_URL?>/node_modules/datatables.net-fixedcolumns/js/dataTables.fixedColumns.js"></script>
-<script src="<?=BASE_URL?>/node_modules/datatables.net-fixedcolumns-bs5/js/fixedColumns.bootstrap5.js"></script>
+<!-- 2026-09-08: the 2 FixedColumns extension scripts that used to load here (moved in 2026-08-31 from
+     the global footer.php, since they threw a top-level error on EVERY page otherwise) are gone --
+     annual-summary.js's own `fixedColumns: {...}` option, the only real consumer, is gone too (see
+     that file's own comment on aisTable's DataTable init for why: confirmed the extension itself
+     never actually worked at all, on this page or anywhere else in this app -- `DataTable.Dom` is
+     undefined in the installed `datatables.net` core build it depends on). Sticky columns are now
+     plain CSS via public/js/sticky-table-columns.js (loaded globally, header.php). -->
 <script src="<?=asset('public/js/reports/annual-summary.js')?>"></script>

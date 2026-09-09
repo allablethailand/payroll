@@ -2,14 +2,17 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../models/TaxStatutoryModel.php';
 require_once __DIR__ . '/../models/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../models/CompanyStatutoryRateVersionModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 class TaxStatutoryController extends Controller {
     private $model;
     private $companySettingModel;
+    private $companyRateVersionModel;
     private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new TaxStatutoryModel();
         $this->companySettingModel = new CompanyStatutorySettingModel();
+        $this->companyRateVersionModel = new CompanyStatutoryRateVersionModel();
         $this->permissionModel = new PermissionModel();
     }
 
@@ -408,7 +411,38 @@ class TaxStatutoryController extends Controller {
         }
     }
 
-    public function companySettingSave() {
+    // 2026-09-08, Clone+Version redesign -- replaces the old companySettingSave/Reset (flat
+    // override) endpoints. Each company's own rate is now a real dated version list, one row per
+    // version, sharing the exact same `statutory_item_rate_history` table Master's own dated
+    // versions live on -- see CompanyStatutoryRateVersionModel's own docblock.
+    public function companyRateVersionList() {
+        if (!$this->requirePermission('tax_statutory.view')) return;
+        $compId = getCompId();
+        $itemId = isset($_GET['item_id']) ? (int)$_GET['item_id'] : 0;
+        if (!$compId || $itemId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing item_id.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->companyRateVersionModel->list((int)$compId, $itemId)]);
+    }
+
+    public function companyRateVersionGet() {
+        if (!$this->requirePermission('tax_statutory.view')) return;
+        $compId = getCompId();
+        $versionId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $versionId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $row = $this->companyRateVersionModel->get((int)$compId, $versionId);
+        if ($row) {
+            $this->json(['status' => true, 'data' => $row]);
+        } else {
+            $this->json(['status' => false, 'message' => 'Record not found.']);
+        }
+    }
+
+    public function companyRateVersionSave() {
         if (!$this->requirePermission('tax_statutory.edit')) return;
         $compId = getCompId();
         if (!$compId) {
@@ -423,11 +457,33 @@ class TaxStatutoryController extends Controller {
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         [$ip, $ua] = $this->requestFingerprint();
-        $result = $this->companySettingModel->save((int)$compId, $data, $userId, $ip, $ua);
+        $result = $this->companyRateVersionModel->save((int)$compId, $data, $userId, $ip, $ua);
         $this->json($result);
     }
 
-    public function companySettingReset() {
+    public function companyRateVersionDelete() {
+        if (!$this->requirePermission('tax_statutory.delete')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $versionId = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        if ($versionId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        [$ip, $ua] = $this->requestFingerprint();
+        $result = $this->companyRateVersionModel->delete((int)$compId, $versionId, $userId, $ip, $ua);
+        $this->json($result);
+    }
+
+    // "ถ้าอยากจะดึง Master ก็สามารถดึงได้ทุกเมื่อที่ต้องการกลับมาใช้" -- pulls Master's own currently-
+    // effective version in as a brand-new version of this company's own (source='master_clone').
+    public function companyRateVersionPull() {
         if (!$this->requirePermission('tax_statutory.edit')) return;
         $compId = getCompId();
         if (!$compId) {
@@ -437,13 +493,41 @@ class TaxStatutoryController extends Controller {
         $rawInput = file_get_contents('php://input');
         $data = json_decode($rawInput, true);
         $itemId = (is_array($data) && isset($data['statutory_item_id'])) ? (int)$data['statutory_item_id'] : 0;
-        if ($itemId <= 0) {
-            $this->json(['status' => false, 'message' => 'Invalid statutory_item_id.']);
+        $effectiveDate = (is_array($data) && !empty($data['effective_date'])) ? (string)$data['effective_date'] : '';
+        if ($itemId <= 0 || $effectiveDate === '') {
+            $this->json(['status' => false, 'message' => 'Missing statutory_item_id or effective_date.']);
             return;
         }
         $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
         [$ip, $ua] = $this->requestFingerprint();
-        $result = $this->companySettingModel->reset((int)$compId, $itemId, $userId, $ip, $ua);
+        $result = $this->companyRateVersionModel->pullFromMaster((int)$compId, $itemId, $effectiveDate, $userId, $ip, $ua);
+        $this->json($result);
+    }
+
+    /**
+     * 2026-09-08, Clone+Version redesign -- replaces the old companySettingPromote() (flat
+     * override -> new master version). Now promotes ONE of this company's own explicit versions
+     * (by id, not "whatever the current override is") -- see CompanyStatutoryRateVersionModel::
+     * promoteToMaster()'s own docblock. Still `tax_statutory.promote_master`-gated, same reasoning
+     * as customItemPromote()/the old companySettingPromote(): affects every company at once.
+     */
+    public function companyRateVersionPromote() {
+        if (!$this->requirePermission('tax_statutory.promote_master')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+        $versionId = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
+        $effectiveDate = (is_array($data) && !empty($data['effective_date'])) ? (string)$data['effective_date'] : '';
+        if ($versionId <= 0 || $effectiveDate === '') {
+            $this->json(['status' => false, 'message' => 'Missing id or effective_date.']);
+            return;
+        }
+        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $result = $this->companyRateVersionModel->promoteToMaster((int)$compId, $versionId, $effectiveDate, $userId);
         $this->json($result);
     }
 
@@ -474,30 +558,4 @@ class TaxStatutoryController extends Controller {
         $this->json($result);
     }
 
-    /**
-     * 2026-09-03, Backlog Phase 9, T045 -- "Update as system default" for this company's own RATE
-     * OVERRIDE on an existing master item -- see CompanyStatutorySettingModel::
-     * promoteOverrideToMaster()'s own docblock. `tax_statutory.promote_master`-gated, same reasoning
-     * as customItemPromote() above: this affects every company on the platform at once, not just
-     * the caller's own data.
-     */
-    public function companySettingPromote() {
-        if (!$this->requirePermission('tax_statutory.promote_master')) return;
-        $compId = getCompId();
-        if (!$compId) {
-            $this->json(['status' => false, 'message' => 'Missing company context.']);
-            return;
-        }
-        $rawInput = file_get_contents('php://input');
-        $data = json_decode($rawInput, true);
-        $itemId = (is_array($data) && isset($data['statutory_item_id'])) ? (int)$data['statutory_item_id'] : 0;
-        $effectiveDate = (is_array($data) && !empty($data['effective_date'])) ? (string)$data['effective_date'] : '';
-        if ($itemId <= 0 || $effectiveDate === '') {
-            $this->json(['status' => false, 'message' => 'Missing statutory_item_id or effective_date.']);
-            return;
-        }
-        $userId = (int)($_SESSION['user']['employee_id'] ?? 0);
-        $result = $this->companySettingModel->promoteOverrideToMaster((int)$compId, $itemId, $effectiveDate, $userId);
-        $this->json($result);
-    }
 }
