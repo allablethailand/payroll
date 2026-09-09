@@ -30,36 +30,36 @@
          paint now (see login-history.js's own top-of-file comment).
     -->
         <div class="station-filter" id="employeeLoginHistoryStationFilter">
-            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="employeeLoginHistoryStationFilterToggle" title="Toggle filter">
                 <i class="fas fa-chevron-up"></i>
             </button>
             <div class="station-filter-body">
                 <div class="row g-2">
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="employee">Employee</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-user me-1 text-muted"></i><span data-i18n="employee">Employee</span></label>
                         <select class="form-select select2-remote" id="loginHistoryOverviewFilterEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker" id="loginHistoryOverviewFilterDateFrom" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker" id="loginHistoryOverviewFilterDateTo" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="device">Device</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-display me-1 text-muted"></i><span data-i18n="device">Device</span></label>
                         <select class="form-select select2-native" id="loginHistoryOverviewFilterDevice"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="browser">Browser</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-globe me-1 text-muted"></i><span data-i18n="browser">Browser</span></label>
                         <select class="form-select select2-native" id="loginHistoryOverviewFilterBrowser"></select>
                     </div>
                 </div>

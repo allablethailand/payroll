@@ -2443,26 +2443,26 @@
                  detail.js's own initLoginHistoryTable()/loadLoginHistoryFilterOptions() needed no
                  changes -- only the wrapper markup + a new toggle/clear-visibility JS pair. -->
             <div class="station-filter" id="loginHistoryStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="loginHistoryStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-3">
-                            <label class="form-label mb-1" data-i18n="date_from">From</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_from">From</span></label>
                             <input type="text" class="form-control datepicker" id="loginHistoryFilterDateFrom">
                         </div>
                         <div class="col-6 col-md-3">
-                            <label class="form-label mb-1" data-i18n="date_to">To</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_to">To</span></label>
                             <input type="text" class="form-control datepicker" id="loginHistoryFilterDateTo">
                         </div>
                         <div class="col-6 col-md-3">
-                            <label class="form-label mb-1" data-i18n="device">Device</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-display me-1 text-muted"></i><span data-i18n="device">Device</span></label>
                             <select class="form-select select2-native" id="loginHistoryFilterDevice"></select>
                         </div>
                         <div class="col-6 col-md-3">
-                            <label class="form-label mb-1" data-i18n="browser">Browser</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-globe me-1 text-muted"></i><span data-i18n="browser">Browser</span></label>
                             <select class="form-select select2-native" id="loginHistoryFilterBrowser"></select>
                         </div>
                     </div>

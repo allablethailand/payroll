@@ -93,30 +93,30 @@
         <div class="tab-content" id="employeeReportsSubTabsContent">
         <div class="tab-pane fade show active" id="empReportSub-standing-pane" role="tabpanel" aria-labelledby="empReportSub-standing-tab" tabindex="0">
         <div class="station-filter" id="employeeSummaryStationFilter">
-            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="employeeSummaryStationFilterToggle" title="Toggle filter">
                 <i class="fas fa-chevron-up"></i>
             </button>
             <div class="station-filter-body">
                 <div class="row g-2">
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="role">Role</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
                         <select class="form-select select2-remote" id="employee_summary_filter_role" data-api="/api/role.get" data-type="role"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="department">Department</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="employee_summary_filter_department" data-api="/api/department.get" data-type="department"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="team">Team</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
                         <select class="form-select select2-remote" id="employee_summary_filter_team" data-api="/api/team.get" data-type="team"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="shift">Shift</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-clock me-1 text-muted"></i><span data-i18n="shift">Shift</span></label>
                         <select class="form-select select2-remote" id="employee_summary_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                         <select class="form-select select2-remote" id="employee_summary_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                     </div>
                 </div>
@@ -236,14 +236,14 @@
              chart per explicit follow-up request: "อยากให้เพิ่มให้ด้วย...ไม่อยากให้เป็นตารางโล้นๆ". -->
         <div class="tab-pane fade" id="empReportSub-headcount-pane" role="tabpanel" aria-labelledby="empReportSub-headcount-tab" tabindex="0">
             <div class="station-filter" id="employeeHeadcountStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeHeadcountStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="year">Year</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="year">Year</span></label>
                             <select class="form-select select2-native" id="employee_headcount_filter_year">
                                 <?php
                                     // Native-populated (not select2-static's i18n-key lookup -- these
@@ -257,11 +257,11 @@
                             </select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                             <select class="form-select select2-remote" id="employee_headcount_filter_department" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                             <select class="form-select select2-remote" id="employee_headcount_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                         </div>
                     </div>
@@ -338,22 +338,22 @@
         <!-- 2026-09-02, Phase 2 -- Contract/Work Permit/Visa/Passport Expiry Alerts. -->
         <div class="tab-pane fade" id="empReportSub-expiry-pane" role="tabpanel" aria-labelledby="empReportSub-expiry-tab" tabindex="0">
             <div class="station-filter" id="employeeExpiryStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeExpiryStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="expiry_within_days">Expiring Within</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-hourglass-half me-1 text-muted"></i><span data-i18n="expiry_within_days">Expiring Within</span></label>
                             <select class="form-select select2-static" id="employee_expiry_filter_within_days" data-option-keys="expiry_within_30,expiry_within_60,expiry_within_90" data-option-values="30,60,90"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                             <select class="form-select select2-remote" id="employee_expiry_filter_department" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                             <select class="form-select select2-remote" id="employee_expiry_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                         </div>
                     </div>
@@ -425,18 +425,18 @@
              EmployeeModel::probationReport()'s own docblock. -->
         <div class="tab-pane fade" id="empReportSub-probation-pane" role="tabpanel" aria-labelledby="empReportSub-probation-tab" tabindex="0">
             <div class="station-filter" id="employeeProbationStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeProbationStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                             <select class="form-select select2-remote" id="employee_probation_filter_department" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                             <select class="form-select select2-remote" id="employee_probation_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                         </div>
                     </div>
@@ -479,18 +479,18 @@
              statutory SSO 1-10 FORM exports). -->
         <div class="tab-pane fade" id="empReportSub-enrollment-pane" role="tabpanel" aria-labelledby="empReportSub-enrollment-tab" tabindex="0">
             <div class="station-filter" id="employeeEnrollmentStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeEnrollmentStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                             <select class="form-select select2-remote" id="employee_enrollment_filter_department" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                             <select class="form-select select2-remote" id="employee_enrollment_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                         </div>
                     </div>
@@ -582,14 +582,14 @@
              by one dimension at a time. -->
         <div class="tab-pane fade" id="empReportSub-structure-pane" role="tabpanel" aria-labelledby="empReportSub-structure-tab" tabindex="0">
             <div class="station-filter" id="employeeStructureStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeStructureStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-3">
-                            <label class="form-label mb-1" data-i18n="structure_group_by">Group By</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-layer-group me-1 text-muted"></i><span data-i18n="structure_group_by">Group By</span></label>
                             <select class="form-select select2-static" id="employee_structure_filter_group_by" data-option-keys="structure_group_department,structure_group_position,structure_group_branch,structure_group_employment_type" data-option-values="department,position,branch,employment_type"></select>
                         </div>
                     </div>
@@ -649,18 +649,18 @@
         <!-- 2026-09-02, Phase 3 -- Tenure (อายุงาน), bucketed years-of-service. -->
         <div class="tab-pane fade" id="empReportSub-tenure-pane" role="tabpanel" aria-labelledby="empReportSub-tenure-tab" tabindex="0">
             <div class="station-filter" id="employeeTenureStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeTenureStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                             <select class="form-select select2-remote" id="employee_tenure_filter_department" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                             <select class="form-select select2-remote" id="employee_tenure_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                         </div>
                     </div>
@@ -730,14 +730,14 @@
              chart -- adds no decision-making value for this kind of report). -->
         <div class="tab-pane fade" id="empReportSub-birthday-pane" role="tabpanel" aria-labelledby="empReportSub-birthday-tab" tabindex="0">
             <div class="station-filter" id="employeeBirthdayStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeBirthdayStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="month">Month</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-week me-1 text-muted"></i><span data-i18n="month">Month</span></label>
                             <select class="form-select select2-native" id="employee_birthday_filter_month">
                                 <?php
                                     $bdayMonthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -749,11 +749,11 @@
                             </select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                             <select class="form-select select2-remote" id="employee_birthday_filter_department" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                             <select class="form-select select2-remote" id="employee_birthday_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                         </div>
                     </div>
@@ -825,18 +825,18 @@
              only (resigned/terminated excluded, same convention as the other Phase 3/4 reports). -->
         <div class="tab-pane fade" id="empReportSub-completeness-pane" role="tabpanel" aria-labelledby="empReportSub-completeness-tab" tabindex="0">
             <div class="station-filter" id="employeeCompletenessStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="employeeCompletenessStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                             <select class="form-select select2-remote" id="employee_completeness_filter_department" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                             <select class="form-select select2-remote" id="employee_completeness_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                         </div>
                     </div>
